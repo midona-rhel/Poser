@@ -34,8 +34,9 @@ public sealed class StableBindingRegistry
     private readonly IActorSpawnService _spawn;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly Dictionary<string, ActorLineage> _lineages =
+    private Dictionary<string, ActorLineage> _lineages =
         new(StringComparer.Ordinal);
+    private BindingCandidate? _stagedCandidate;
     private Dictionary<ActorId, IActor> _actorBindings = new();
     private Dictionary<BoneId, IBone> _boneBindings = new();
     private Dictionary<string, ActorId> _legacyActorIds =
@@ -77,9 +78,62 @@ public sealed class StableBindingRegistry
 
     private readonly PropSpawnService _props;
 
-    public SceneSnapshot RefreshCandidate()
+    /// <summary>
+    /// A framework-thread-only discovery result. Native maps and lineage state
+    /// stay private until the owning scene admits this exact candidate.
+    /// </summary>
+    public sealed class BindingCandidate
     {
-        foreach (var lineage in _lineages.Values)
+        internal BindingCandidate(
+            SceneSnapshot snapshot,
+            Dictionary<string, ActorLineage> lineages,
+            Dictionary<ActorId, IActor> actorBindings,
+            Dictionary<BoneId, IBone> boneBindings,
+            Dictionary<string, ActorId> legacyActorIds,
+            Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId> legacyBoneIds,
+            Dictionary<ILight, LightId> lightIds,
+            Dictionary<LightId, ILight> lightBindings,
+            Dictionary<IVirtualCamera, CameraId> cameraIds,
+            Dictionary<CameraId, IVirtualCamera> cameraBindings,
+            Dictionary<PropHandle, PropId> propIds,
+            Dictionary<PropId, PropHandle> propBindings)
+        {
+            Snapshot = snapshot;
+            Lineages = lineages;
+            ActorBindings = actorBindings;
+            BoneBindings = boneBindings;
+            LegacyActorIds = legacyActorIds;
+            LegacyBoneIds = legacyBoneIds;
+            LightIds = lightIds;
+            LightBindings = lightBindings;
+            CameraIds = cameraIds;
+            CameraBindings = cameraBindings;
+            PropIds = propIds;
+            PropBindings = propBindings;
+        }
+
+        public SceneSnapshot Snapshot { get; }
+
+        internal Dictionary<string, ActorLineage> Lineages { get; }
+        internal Dictionary<ActorId, IActor> ActorBindings { get; }
+        internal Dictionary<BoneId, IBone> BoneBindings { get; }
+        internal Dictionary<string, ActorId> LegacyActorIds { get; }
+        internal Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId> LegacyBoneIds { get; }
+        internal Dictionary<ILight, LightId> LightIds { get; }
+        internal Dictionary<LightId, ILight> LightBindings { get; }
+        internal Dictionary<IVirtualCamera, CameraId> CameraIds { get; }
+        internal Dictionary<CameraId, IVirtualCamera> CameraBindings { get; }
+        internal Dictionary<PropHandle, PropId> PropIds { get; }
+        internal Dictionary<PropId, PropHandle> PropBindings { get; }
+    }
+
+    public BindingCandidate RefreshCandidate()
+    {
+        if (_stagedCandidate is not null)
+            throw new InvalidOperationException("A binding candidate is already staged.");
+
+        var lineages = CloneLineages(_lineages);
+        foreach (var lineage in lineages.Values)
         {
             lineage.Present = false;
             foreach (var slot in lineage.Slots.Values)
@@ -108,10 +162,10 @@ public sealed class StableBindingRegistry
         void BindActor(IActor actor, List<ActorDescriptor>? descriptors)
         {
             var legacyKey = actor.Id.Unique;
-            if (!_lineages.TryGetValue(legacyKey, out var lineage))
+            if (!lineages.TryGetValue(legacyKey, out var lineage))
             {
                 lineage = new ActorLineage(Guid.NewGuid());
-                _lineages.Add(legacyKey, lineage);
+                lineages.Add(legacyKey, lineage);
             }
 
             if (lineage.HasEverBeenPresent &&
@@ -211,7 +265,7 @@ public sealed class StableBindingRegistry
             descriptorAddresses,
             companionOwners);
 
-        foreach (var lineage in _lineages.Values)
+        foreach (var lineage in lineages.Values)
         {
             lineage.PresentBeforeScan = lineage.Present;
             foreach (var slot in lineage.Slots.Values)
@@ -294,16 +348,6 @@ public sealed class StableBindingRegistry
                 prop.Visible));
         }
 
-        _actorBindings = actorBindings;
-        _boneBindings = boneBindings;
-        _legacyActorIds = legacyActorIds;
-        _legacyBoneIds = legacyBoneIds;
-        _lightIds = lightIds;
-        _lightBindings = lightBindings;
-        _cameraIds = cameraIds;
-        _cameraBindings = cameraBindings;
-        _propIds = propIds;
-        _propBindings = propBindings;
         // This registry can justify native identity/topology plus the current
         // actor, light, camera, and prop row fields above. The registry cannot
         // truthfully reduce a camera's display-name target and
@@ -312,12 +356,96 @@ public sealed class StableBindingRegistry
         // at explicit SceneSnapshot defaults rather than inventing state.
         // Revision zero marks candidate content only; SceneSession's serialized
         // lifecycle integration assigns the admission revision.
-        return new SceneSnapshot(
+        var candidate = new BindingCandidate(
+            new SceneSnapshot(
             0,
             actorDescriptors,
             lightDescriptors,
             cameraDescriptors,
-            propDescriptors);
+            propDescriptors),
+            lineages,
+            actorBindings,
+            boneBindings,
+            legacyActorIds,
+            legacyBoneIds,
+            lightIds,
+            lightBindings,
+            cameraIds,
+            cameraBindings,
+            propIds,
+            propBindings);
+        _stagedCandidate = candidate;
+        return candidate;
+    }
+
+    /// <summary>
+    /// Publishes the exact staged maps after scene admission. The structural
+    /// comparison matters for NoChange: a native refresh may only replace maps
+    /// when every published id and generation still names this scene.
+    /// </summary>
+    public void CommitCandidate(
+        BindingCandidate candidate,
+        SceneSnapshot admittedSnapshot)
+    {
+        EnsureStaged(candidate);
+        if (!candidate.Snapshot.ContentEquals(admittedSnapshot with { Revision = 0 }))
+            throw new InvalidOperationException(
+                "Binding candidate does not match the admitted scene.");
+        _lineages = candidate.Lineages;
+        _actorBindings = candidate.ActorBindings;
+        _boneBindings = candidate.BoneBindings;
+        _legacyActorIds = candidate.LegacyActorIds;
+        _legacyBoneIds = candidate.LegacyBoneIds;
+        _lightIds = candidate.LightIds;
+        _lightBindings = candidate.LightBindings;
+        _cameraIds = candidate.CameraIds;
+        _cameraBindings = candidate.CameraBindings;
+        _propIds = candidate.PropIds;
+        _propBindings = candidate.PropBindings;
+        _stagedCandidate = null;
+    }
+
+    /// <summary>Discards a candidate whose scene admission did not commit.</summary>
+    public void AbortCandidate(BindingCandidate candidate)
+    {
+        EnsureStaged(candidate);
+        _stagedCandidate = null;
+    }
+
+    private void EnsureStaged(BindingCandidate candidate)
+    {
+        if (!ReferenceEquals(_stagedCandidate, candidate))
+            throw new InvalidOperationException("Binding candidate is not staged.");
+    }
+
+    private static Dictionary<string, ActorLineage> CloneLineages(
+        IReadOnlyDictionary<string, ActorLineage> source)
+    {
+        var clone = new Dictionary<string, ActorLineage>(
+            source.Count,
+            StringComparer.Ordinal);
+        foreach (var (key, lineage) in source)
+        {
+            var copy = new ActorLineage(lineage.LogicalId)
+            {
+                ActorGeneration = lineage.ActorGeneration,
+                LastAddress = lineage.LastAddress,
+                Present = lineage.Present,
+                PresentBeforeScan = lineage.PresentBeforeScan,
+                HasEverBeenPresent = lineage.HasEverBeenPresent,
+            };
+            foreach (var (slot, state) in lineage.Slots)
+                copy.Slots[slot] = new SlotState
+                {
+                    Generation = state.Generation,
+                    LastKey = state.LastKey,
+                    Present = state.Present,
+                    PresentBeforeScan = state.PresentBeforeScan,
+                    HasEverBeenPresent = state.HasEverBeenPresent,
+                };
+            clone.Add(key, copy);
+        }
+        return clone;
     }
 
     /// <summary>
@@ -549,7 +677,7 @@ public sealed class StableBindingRegistry
             System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 
-    private sealed class ActorLineage(Guid logicalId)
+    internal sealed class ActorLineage(Guid logicalId)
     {
         public Guid LogicalId { get; } = logicalId;
         public uint ActorGeneration { get; set; }
@@ -563,7 +691,7 @@ public sealed class StableBindingRegistry
     /// <summary>Per-slot skeleton lineage: each slot generation advances
     /// independently, so replacing a weapon never invalidates Character or
     /// the other auxiliary slots.</summary>
-    private sealed class SlotState
+    internal sealed class SlotState
     {
         public uint Generation { get; set; }
         public string? LastKey { get; set; }

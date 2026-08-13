@@ -167,54 +167,71 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void RefreshCore()
     {
-        var candidate = _bindings.RefreshCandidate();
-        // The refresh is the only place that resolves a whole skeleton's bone
-        // names at once, so it owns the flush of whatever those lookups found
-        // untranslated. One line per refresh instead of one per bone: a modded
-        // 400-bone character used to pay hundreds of synchronous log writes on
-        // this exact tick. No-op when nothing new was seen.
-        Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
-        // One structural signature coalesces every refresh source (events,
-        // retries, session transitions): identical scenes publish nothing —
-        // no snapshot churn, no revision increment, no gesture cancellation.
-        var signature = CanonicalSignature(candidate);
-        _retryPending = candidate.Actors.Any(
-            actor => actor.CharacterSkeleton == null);
-        if (!_retryPending)
+        var staged = _bindings.RefreshCandidate();
+        var candidate = staged.Snapshot;
+        var admitted = false;
+        try
+        {
+            // The refresh is the only place that resolves a whole skeleton's bone
+            // names at once, so it owns the flush of whatever those lookups found
+            // untranslated. One line per refresh instead of one per bone: a modded
+            // 400-bone character used to pay hundreds of synchronous log writes on
+            // this exact tick. No-op when nothing new was seen.
+            Poser.Core.BoneInfo.BoneInfoService.FlushUntranslatedLog();
+            // One structural signature coalesces every refresh source (events,
+            // retries, session transitions): identical scenes publish nothing —
+            // no snapshot churn, no revision increment, no gesture cancellation.
+            var signature = CanonicalSignature(candidate);
+            _retryPending = candidate.Actors.Any(
+                actor => actor.CharacterSkeleton == null);
+            if (!_retryPending)
+                _retryInterval = InitialRetryInterval;
+            if (_lastSignature?.ContentEquals(signature) == true)
+                return;
+
+            var result = _scene.TryRefresh(CreateAdmissionCandidate(
+                candidate,
+                _scene.Snapshot));
+            if (!result.Accepted)
+                return;
+
+            // SceneSession owns application admission; native maps become visible
+            // only after that same admission accepts the candidate. This includes
+            // NoChange: exact ids/generations are still checked by the registry
+            // against the admitted structural snapshot before map publication.
+            _bindings.CommitCandidate(staged, _scene.Snapshot);
+            admitted = true;
+
+            // A rejected candidate is deliberately retried: recording its
+            // signature would coalesce away the correction opportunity.
+            _lastSignature = signature;
             _retryInterval = InitialRetryInterval;
-        if (_lastSignature?.ContentEquals(signature) == true)
-            return;
+            if (!result.StateChanged)
+                return;
 
-        var result = _scene.TryRefresh(CreateAdmissionCandidate(
-            candidate,
-            _scene.Snapshot));
-        if (!result.Accepted)
-            return;
-
-        // A rejected candidate is deliberately retried: recording its
-        // signature would coalesce away the correction opportunity.
-        _lastSignature = signature;
-        _retryInterval = InitialRetryInterval;
-        if (!result.StateChanged)
-            return;
-
-        // Selective reconciliation against the refreshed exact-generation
-        // scene: a gesture whose every target is still current survives and
-        // accepts the new revision (unrelated actors/slots may come and go
-        // mid-drag); any stale target cancels it once through the rebuilt
-        // bindings with no history entry. History patches follow the same
-        // rule per patch.
-        _gestures.ReconcileScene(_scene.Contains);
-        _history.Reconcile(_scene.Contains);
-        // Animation follows the same exact-generation rule: a replaced
-        // actor's old entry is released without touching the new body.
-        // The port's detour-facing address index is rebuilt from the
-        // surviving stable ids in the same step, so a redrawn actor can
-        // never inherit the previous body's speed enforcement.
-        _animation.Reconcile(_scene.Snapshot);
-        _presentation.Reconcile(_scene.Snapshot);
-        _integration.Reconcile(_scene.Snapshot);
-        _animationPort.SyncEnforcementIndex();
+            // Selective reconciliation against the refreshed exact-generation
+            // scene: a gesture whose every target is still current survives and
+            // accepts the new revision (unrelated actors/slots may come and go
+            // mid-drag); any stale target cancels it once through the rebuilt
+            // bindings with no history entry. History patches follow the same
+            // rule per patch.
+            _gestures.ReconcileScene(_scene.Contains);
+            _history.Reconcile(_scene.Contains);
+            // Animation follows the same exact-generation rule: a replaced
+            // actor's old entry is released without touching the new body.
+            // The port's detour-facing address index is rebuilt from the
+            // surviving stable ids in the same step, so a redrawn actor can
+            // never inherit the previous body's speed enforcement.
+            _animation.Reconcile(_scene.Snapshot);
+            _presentation.Reconcile(_scene.Snapshot);
+            _integration.Reconcile(_scene.Snapshot);
+            _animationPort.SyncEnforcementIndex();
+        }
+        finally
+        {
+            if (!admitted)
+                _bindings.AbortCandidate(staged);
+        }
     }
 
     /// <summary>
