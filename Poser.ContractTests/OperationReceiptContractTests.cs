@@ -42,8 +42,18 @@ public sealed class OperationReceiptContractTests
 
         generation.Deconstruct(out var identity);
         Assert.Equal(SessionId, identity);
-        Assert.False(typeof(SessionGeneration).GetInterfaces().Contains(
-            typeof(IComparable<SessionGeneration>)));
+        var interfaces = typeof(SessionGeneration).GetInterfaces();
+        Assert.DoesNotContain(typeof(IComparable<SessionGeneration>), interfaces);
+        Assert.DoesNotContain(typeof(IComparable), interfaces);
+        var orderingOperators = typeof(SessionGeneration)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(method => method.IsSpecialName)
+            .Select(method => method.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain("op_LessThan", orderingOperators);
+        Assert.DoesNotContain("op_LessThanOrEqual", orderingOperators);
+        Assert.DoesNotContain("op_GreaterThan", orderingOperators);
+        Assert.DoesNotContain("op_GreaterThanOrEqual", orderingOperators);
         Assert.Throws<ArgumentException>(
             () => SessionGeneration.Create(Guid.Empty));
     }
@@ -56,6 +66,7 @@ public sealed class OperationReceiptContractTests
         var same = OperationEpoch.Create(first.Value);
 
         Assert.True(first.IsValid);
+        Assert.Equal(1UL, first.Value);
         Assert.False(default(OperationEpoch).IsValid);
         Assert.Equal(first, same);
         Assert.NotEqual(first, second);
@@ -76,7 +87,7 @@ public sealed class OperationReceiptContractTests
     }
 
     [Fact]
-    public void All_receipt_factories_expose_only_the_six_terminal_states_and_legal_evidence()
+    public void All_receipt_factories_expose_the_six_receipt_states_and_legal_evidence()
     {
         var completeRecovery = CompleteRecovery();
         var incompleteRecovery = IncompleteRecovery();
@@ -88,7 +99,7 @@ public sealed class OperationReceiptContractTests
         var rolledBack = OperationReceipt.RolledBack(
             OperationId, Epoch, Session, Target, "rolled back", completeRecovery);
         var failed = OperationReceipt.Failed(
-            OperationId, Epoch, Session, Target, "write failed");
+            OperationId, Epoch, Session, Target, "write failed", completeRecovery);
         var recoveryRequired = OperationReceipt.RecoveryRequired(
             OperationId,
             Epoch,
@@ -97,38 +108,38 @@ public sealed class OperationReceiptContractTests
             "rollback is incomplete",
             incompleteRecovery);
         var cancelled = OperationReceipt.Cancelled(
-            OperationId, Epoch, Session, Target, "cancelled", completeRecovery);
+            OperationId, Epoch, Session, Target);
 
-        Assert.Equal(OperationTerminalState.Pending, pending.State);
+        Assert.Equal(OperationReceiptState.Pending, pending.State);
         Assert.Null(pending.Detail);
         Assert.Null(pending.Recovery);
-        Assert.Equal(OperationTerminalState.Applied, applied.State);
+        Assert.Equal(OperationReceiptState.Applied, applied.State);
         Assert.Equal("applied", applied.Detail);
         Assert.Null(applied.Recovery);
-        Assert.Equal(OperationTerminalState.RolledBack, rolledBack.State);
+        Assert.Equal(OperationReceiptState.RolledBack, rolledBack.State);
         Assert.Equal("rolled back", rolledBack.Detail);
         Assert.Same(completeRecovery, rolledBack.Recovery);
-        Assert.Equal(OperationTerminalState.Failed, failed.State);
+        Assert.Equal(OperationReceiptState.Failed, failed.State);
         Assert.Equal("write failed", failed.Detail);
-        Assert.Null(failed.Recovery);
-        Assert.Equal(OperationTerminalState.RecoveryRequired, recoveryRequired.State);
+        Assert.Same(completeRecovery, failed.Recovery);
+        Assert.Equal(OperationReceiptState.RecoveryRequired, recoveryRequired.State);
         Assert.Equal("rollback is incomplete", recoveryRequired.Detail);
         Assert.Same(incompleteRecovery, recoveryRequired.Recovery);
-        Assert.Equal(OperationTerminalState.Cancelled, cancelled.State);
-        Assert.Equal("cancelled", cancelled.Detail);
-        Assert.Same(completeRecovery, cancelled.Recovery);
+        Assert.Equal(OperationReceiptState.Cancelled, cancelled.State);
+        Assert.Null(cancelled.Detail);
+        Assert.Null(cancelled.Recovery);
 
         Assert.Equal(
             new[]
             {
-                OperationTerminalState.Pending,
-                OperationTerminalState.Applied,
-                OperationTerminalState.RolledBack,
-                OperationTerminalState.Failed,
-                OperationTerminalState.RecoveryRequired,
-                OperationTerminalState.Cancelled,
+                OperationReceiptState.Pending,
+                OperationReceiptState.Applied,
+                OperationReceiptState.RolledBack,
+                OperationReceiptState.Failed,
+                OperationReceiptState.RecoveryRequired,
+                OperationReceiptState.Cancelled,
             },
-            Enum.GetValues<OperationTerminalState>());
+            Enum.GetValues<OperationReceiptState>());
     }
 
     [Fact]
@@ -147,7 +158,7 @@ public sealed class OperationReceiptContractTests
         Assert.Equal(Epoch, receipt.OperationEpoch);
         Assert.Equal(Session, receipt.SessionGeneration);
         Assert.Equal(Target, receipt.TargetActorId);
-        Assert.Equal(OperationTerminalState.RolledBack, receipt.State);
+        Assert.Equal(OperationReceiptState.RolledBack, receipt.State);
         Assert.Equal("rollback complete", receipt.Detail);
         Assert.Same(recovery, receipt.Recovery);
 
@@ -156,7 +167,7 @@ public sealed class OperationReceiptContractTests
             Epoch,
             Session,
             Target,
-            OperationTerminalState.RolledBack,
+            OperationReceiptState.RolledBack,
             "rollback complete",
             recovery);
         Assert.Equal(receipt, equivalent);
@@ -180,7 +191,7 @@ public sealed class OperationReceiptContractTests
         Assert.Equal(Epoch, operationEpoch);
         Assert.Equal(Session, sessionGeneration);
         Assert.Equal(Target, targetActorId);
-        Assert.Equal(OperationTerminalState.RolledBack, state);
+        Assert.Equal(OperationReceiptState.RolledBack, state);
         Assert.Equal("rollback complete", detail);
         Assert.Same(recovery, deconstructedRecovery);
     }
@@ -213,6 +224,32 @@ public sealed class OperationReceiptContractTests
     }
 
     [Fact]
+    public void Distinct_recovery_instances_make_receipts_unequal_by_deliberate_reference_identity()
+    {
+        var first = OperationReceipt.RolledBack(
+            OperationId,
+            Epoch,
+            Session,
+            Target,
+            "same detail",
+            CompleteRecovery());
+        var second = OperationReceipt.RolledBack(
+            OperationId,
+            Epoch,
+            Session,
+            Target,
+            "same detail",
+            CompleteRecovery());
+
+        Assert.NotSame(first.Recovery, second.Recovery);
+        Assert.NotEqual(first, second);
+        // Unequal objects are permitted to share a hash code; only equal
+        // receipts are required to hash equally by the .NET contract.
+        Assert.Equal(first, first with { });
+        Assert.Equal(first.GetHashCode(), (first with { }).GetHashCode());
+    }
+
+    [Fact]
     public void Invalid_default_and_contradictory_receipts_are_rejected()
     {
         var completeRecovery = CompleteRecovery();
@@ -232,21 +269,21 @@ public sealed class OperationReceiptContractTests
             Epoch,
             Session,
             Target,
-            OperationTerminalState.Pending,
+            OperationReceiptState.Pending,
             recovery: incompleteRecovery));
         Assert.Throws<ArgumentException>(() => OperationReceipt.Create(
             OperationId,
             Epoch,
             Session,
             Target,
-            OperationTerminalState.Applied,
+            OperationReceiptState.Applied,
             recovery: completeRecovery));
         Assert.Throws<ArgumentNullException>(() => OperationReceipt.Create(
             OperationId,
             Epoch,
             Session,
             Target,
-            OperationTerminalState.RecoveryRequired,
+            OperationReceiptState.RecoveryRequired,
             "missing recovery"));
         Assert.Throws<ArgumentException>(() => OperationReceipt.RecoveryRequired(
             OperationId,
@@ -266,7 +303,7 @@ public sealed class OperationReceiptContractTests
             Epoch,
             Session,
             Target,
-            OperationTerminalState.Failed,
+            OperationReceiptState.Failed,
             "failed",
             incompleteRecovery));
         Assert.Throws<ArgumentOutOfRangeException>(() => OperationReceipt.Create(
@@ -274,7 +311,7 @@ public sealed class OperationReceiptContractTests
             Epoch,
             Session,
             Target,
-            (OperationTerminalState)999));
+            (OperationReceiptState)999));
     }
 
     [Fact]

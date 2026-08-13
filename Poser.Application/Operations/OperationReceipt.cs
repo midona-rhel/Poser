@@ -120,8 +120,11 @@ public readonly record struct OperationEpoch : IComparable<OperationEpoch>, ICom
         IsValid ? Value.ToString() : "default";
 }
 
-/// <summary>Exact terminal/read-model states for one logical operation.</summary>
-public enum OperationTerminalState
+/// <summary>
+/// Current state of one operation receipt. Every state except Pending is
+/// terminal; Pending is the explicit non-terminal acknowledgement state.
+/// </summary>
+public enum OperationReceiptState
 {
     Pending,
     Applied,
@@ -148,7 +151,7 @@ public sealed record OperationReceipt
         OperationEpoch operationEpoch,
         SessionGeneration sessionGeneration,
         ActorId targetActorId,
-        OperationTerminalState state,
+        OperationReceiptState state,
         string? detail,
         TransformRecoveryReceipt? recovery)
     {
@@ -174,14 +177,14 @@ public sealed record OperationReceipt
     public ActorId TargetActorId { get; }
 
     /// <summary>The operation's validated state.</summary>
-    public OperationTerminalState State { get; }
+    public OperationReceiptState State { get; }
 
     /// <summary>Optional human/read-model detail; failures require one.</summary>
     public string? Detail { get; }
 
     /// <summary>
     /// Existing immutable transform-recovery evidence. Incomplete evidence is
-    /// legal only with <see cref="OperationTerminalState.RecoveryRequired"/>.
+    /// legal only with <see cref="OperationReceiptState.RecoveryRequired"/>.
     /// </summary>
     public TransformRecoveryReceipt? Recovery { get; }
 
@@ -194,7 +197,7 @@ public sealed record OperationReceipt
         OperationEpoch operationEpoch,
         SessionGeneration sessionGeneration,
         ActorId targetActorId,
-        OperationTerminalState state,
+        OperationReceiptState state,
         string? detail = null,
         TransformRecoveryReceipt? recovery = null)
     {
@@ -228,7 +231,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.Pending,
+            OperationReceiptState.Pending,
             detail);
 
     /// <summary>Creates an applied terminal receipt.</summary>
@@ -243,7 +246,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.Applied,
+            OperationReceiptState.Applied,
             detail);
 
     /// <summary>
@@ -263,7 +266,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.RolledBack,
+            OperationReceiptState.RolledBack,
             detail,
             recovery);
 
@@ -280,7 +283,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.Failed,
+            OperationReceiptState.Failed,
             detail,
             recovery);
 
@@ -300,7 +303,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.RecoveryRequired,
+            OperationReceiptState.RecoveryRequired,
             detail,
             recovery);
 
@@ -320,7 +323,7 @@ public sealed record OperationReceipt
             operationEpoch,
             sessionGeneration,
             targetActorId,
-            OperationTerminalState.Cancelled,
+            OperationReceiptState.Cancelled,
             detail,
             recovery);
 
@@ -330,7 +333,7 @@ public sealed record OperationReceipt
         out OperationEpoch operationEpoch,
         out SessionGeneration sessionGeneration,
         out ActorId targetActorId,
-        out OperationTerminalState state,
+        out OperationReceiptState state,
         out string? detail,
         out TransformRecoveryReceipt? recovery)
     {
@@ -348,7 +351,7 @@ public sealed record OperationReceipt
         OperationEpoch operationEpoch,
         SessionGeneration sessionGeneration,
         ActorId targetActorId,
-        OperationTerminalState state,
+        OperationReceiptState state,
         string? detail,
         TransformRecoveryReceipt? recovery)
     {
@@ -374,14 +377,14 @@ public sealed record OperationReceipt
                 state,
                 "The operation terminal state is not defined.");
 
-        if (state is OperationTerminalState.Failed or
-            OperationTerminalState.RecoveryRequired)
+        if (state is OperationReceiptState.Failed or
+            OperationReceiptState.RecoveryRequired)
         {
             RequireDetail(detail);
         }
 
-        if (state is OperationTerminalState.Pending or
-            OperationTerminalState.Applied)
+        if (state is OperationReceiptState.Pending or
+            OperationReceiptState.Applied)
         {
             if (recovery is not null)
                 throw new ArgumentException(
@@ -389,7 +392,7 @@ public sealed record OperationReceipt
                     nameof(recovery));
         }
 
-        if (state == OperationTerminalState.RecoveryRequired)
+        if (state == OperationReceiptState.RecoveryRequired)
         {
             if (recovery is null)
                 throw new ArgumentNullException(
