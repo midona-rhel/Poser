@@ -477,6 +477,41 @@ public class AutoSaveServiceSnapshotTests
     }
 
     [Fact]
+    public void Acknowledged_pending_recovery_does_not_leak_into_the_next_session()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root,
+            new FailingFlushHealthFileSystem(failFlush: 3));
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("active-periodic"));
+        hold.WaitUntilHeld();
+        Assert.Equal(1, h.Service.SaveNow("pending-periodic"));
+        var firstPending = h.Service.LastHealthRecord!.OperationId;
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, h.Service.CaptureForExit().Status);
+        hold.Release();
+        h.WaitForWrite();
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, h.Service.CompleteForExit().Status);
+
+        // The next session starts only after the first terminal merge has been
+        // durably acknowledged. Its clean exit must not replay the old entry.
+        h.Service.Tick(DateTime.UtcNow);
+        Assert.Equal(1, h.Service.SaveNow("next-session"));
+        h.WaitForWrite();
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, h.Service.CaptureForExit().Status);
+        var second = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveTerminalStatus.Written, second.Status);
+        var health = new AutoSaveHealthStore(h.Root).Read()!;
+        Assert.Equal(AutoSaveHealthStatus.Written, health.Status);
+        Assert.DoesNotContain(health.RecoveryEntries, entry => entry.OperationId == firstPending);
+        Assert.Equal(0, health.RecoveryOverflowCount);
+    }
+
+    [Fact]
     public void Failed_periodic_coalescing_cancellation_is_reported_without_admitting_replacement()
     {
         using var h = new AutoSaveHarness();

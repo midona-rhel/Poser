@@ -87,7 +87,9 @@ interchange with Brio and (via name conversion) Anamnesis.
    [application-state.md](../architecture/application-state.md).
 - `AutoSaves/.autosave-health.json` is the root-level atomic health read model.
   It records bounded operation identity, reason, intended/written counts,
-  affected paths, terminal status, and failure/recovery evidence. Pending,
+  affected paths, terminal status, and failure/recovery evidence; structured
+  recovery entries retain at most four entries and report any discarded entries
+  in an explicit overflow count. Pending,
   queued, or dispatch-accepted records found at startup are promoted to
   `RecoveryRequired` with an `Interrupted` phase; failure to update the record
   is itself a recovery failure and never implies durable success. The health

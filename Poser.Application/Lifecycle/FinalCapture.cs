@@ -29,6 +29,7 @@ public enum FinalPersistenceStatus
     Written,
     Cleaned,
     RecoveryRequired,
+    Cancelled,
 }
 
 /// <summary>Immutable Application projection of one autosave recovery obligation.</summary>
@@ -47,17 +48,17 @@ public sealed class FinalPersistenceRecoveryEntry
         string? detail,
         IEnumerable<string>? recoveryEvidencePaths)
     {
-        OperationId = operationId;
-        Reason = reason;
+        OperationId = Limit(operationId, 128);
+        Reason = Limit(reason, 128);
         Status = status;
         CreatedUtc = createdUtc;
         UpdatedUtc = updatedUtc;
-        IntendedActors = intendedActors;
-        WrittenActors = writtenActors;
-        AffectedPaths = Array.AsReadOnly((affectedPaths ?? Array.Empty<string>()).ToArray());
-        FailurePhase = failurePhase;
-        Detail = detail;
-        RecoveryEvidencePaths = Array.AsReadOnly((recoveryEvidencePaths ?? Array.Empty<string>()).ToArray());
+        IntendedActors = Math.Clamp(intendedActors, 0, 8192);
+        WrittenActors = Math.Clamp(writtenActors, 0, IntendedActors);
+        AffectedPaths = Freeze(affectedPaths);
+        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
+        Detail = detail is null ? null : Limit(detail, 4096);
+        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
     }
 
     public string OperationId { get; }
@@ -71,6 +72,16 @@ public sealed class FinalPersistenceRecoveryEntry
     public string? FailurePhase { get; }
     public string? Detail { get; }
     public IReadOnlyList<string> RecoveryEvidencePaths { get; }
+
+    private static string Limit(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
+
+    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(256)
+            .Select(static value => Limit(value, 1024))
+            .ToArray());
 }
 
 /// <summary>Immutable additive evidence for terminal final persistence.</summary>
@@ -98,12 +109,15 @@ public sealed class FinalPersistenceEvidence
         UpdatedUtc = updatedUtc;
         IntendedActors = intendedActors;
         WrittenActors = writtenActors;
-        AffectedPaths = Array.AsReadOnly((affectedPaths ?? Array.Empty<string>()).ToArray());
-        FailurePhase = failurePhase;
-        Detail = detail;
-        RecoveryEvidencePaths = Array.AsReadOnly((recoveryEvidencePaths ?? Array.Empty<string>()).ToArray());
-        RecoveryEntries = Array.AsReadOnly((recoveryEntries ?? Array.Empty<FinalPersistenceRecoveryEntry>()).Take(4).ToArray());
-        RecoveryOverflowCount = Math.Max(0, recoveryOverflowCount);
+        AffectedPaths = Freeze(affectedPaths);
+        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
+        Detail = detail is null ? null : Limit(detail, 4096);
+        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
+        var incoming = (recoveryEntries ?? Array.Empty<FinalPersistenceRecoveryEntry>()).ToArray();
+        RecoveryEntries = Array.AsReadOnly(incoming.Take(MaxRecoveryEntries).ToArray());
+        var discarded = Math.Max(0, incoming.Length - MaxRecoveryEntries);
+        RecoveryOverflowCount = (int)Math.Min(int.MaxValue,
+            (long)Math.Max(0, recoveryOverflowCount) + discarded);
     }
 
     public string OperationId { get; }
@@ -119,6 +133,18 @@ public sealed class FinalPersistenceEvidence
     public IReadOnlyList<string> RecoveryEvidencePaths { get; }
     public IReadOnlyList<FinalPersistenceRecoveryEntry> RecoveryEntries { get; }
     public int RecoveryOverflowCount { get; }
+
+    private const int MaxRecoveryEntries = 4;
+
+    private static string Limit(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
+
+    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(256)
+            .Select(static value => Limit(value, 1024))
+            .ToArray());
 }
 
 /// <summary>

@@ -50,11 +50,13 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
                     entry.Reason,
                     entry.Status switch
                     {
+                        AutoSaveHealthStatus.Pending => FinalPersistenceStatus.Pending,
                         AutoSaveHealthStatus.Written => FinalPersistenceStatus.Written,
                         AutoSaveHealthStatus.Cleaned => FinalPersistenceStatus.Cleaned,
                         AutoSaveHealthStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
                         AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted => FinalPersistenceStatus.Pending,
-                        _ => FinalPersistenceStatus.NotAttempted,
+                        AutoSaveHealthStatus.Cancelled => FinalPersistenceStatus.Cancelled,
+                        _ => throw new ArgumentOutOfRangeException(nameof(entry.Status), entry.Status, "Unknown autosave health status."),
                     },
                     entry.CreatedUtc,
                     entry.UpdatedUtc,

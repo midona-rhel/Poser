@@ -358,8 +358,9 @@ public sealed class AutoSaveHealthStore
             using (var verify = _fileSystem.OpenRead(temp))
             {
                 var roundTrip = JsonSerializer.Deserialize<AutoSaveHealthRecord>(verify, JsonOptions);
-                if (roundTrip is null || roundTrip.OperationId != record.OperationId || roundTrip.Status != record.Status)
-                    return AutoSaveHealthWriteResult.Failed("Autosave health validation failed.", Observe(temp));
+                if (!RecordsEqual(record, roundTrip))
+                    return CleanupPrecommitFailure(
+                        "Autosave health validation failed.", ref temp);
             }
 
             if (_fileSystem.Exists(HealthPath))
@@ -372,6 +373,20 @@ public sealed class AutoSaveHealthStore
             {
                 moveAttempted = true;
                 _fileSystem.Move(temp, HealthPath);
+            }
+
+            try
+            {
+                if (!TryReadMatchingRecord(HealthPath, record))
+                    return AutoSaveHealthWriteResult.Failed(
+                        "Autosave health commit could not confirm its destination.",
+                        Observe(HealthPath).Concat(Observe(backup)).ToArray());
+            }
+            catch (Exception ex)
+            {
+                return AutoSaveHealthWriteResult.Failed(
+                    $"Autosave health commit confirmation failed: {ex.Message}",
+                    Observe(HealthPath).Concat(Observe(backup)).ToArray());
             }
 
             temp = null;
@@ -387,20 +402,6 @@ public sealed class AutoSaveHealthStore
                         $"Autosave health backup cleanup failed: {ex.Message}",
                         Observe(backup));
                 }
-            }
-
-            try
-            {
-                if (!_fileSystem.Exists(HealthPath))
-                    return AutoSaveHealthWriteResult.Failed(
-                        "Autosave health commit could not confirm its destination.",
-                        Observe(HealthPath));
-            }
-            catch (Exception ex)
-            {
-                return AutoSaveHealthWriteResult.Failed(
-                    $"Autosave health commit confirmation failed: {ex.Message}",
-                    Observe(HealthPath));
             }
             return AutoSaveHealthWriteResult.Success();
         }
@@ -467,10 +468,74 @@ public sealed class AutoSaveHealthStore
             current.AffectedPaths,
             "Interrupted",
             "Autosave operation was interrupted before a terminal health record was written.",
-            current.RecoveryEvidencePaths);
+            current.RecoveryEvidencePaths,
+            current.RecoveryEntries,
+            current.RecoveryOverflowCount);
         var write = Write(recovered);
         return new AutoSaveHealthRecoveryResult(recovered, write);
     }
+
+    private AutoSaveHealthWriteResult CleanupPrecommitFailure(
+        string detail,
+        ref string? temp)
+    {
+        if (temp is null)
+            return AutoSaveHealthWriteResult.Failed(detail);
+        var path = temp;
+        try
+        {
+            _fileSystem.Delete(path);
+            temp = null;
+            return AutoSaveHealthWriteResult.Failed(detail);
+        }
+        catch (Exception cleanup)
+        {
+            return AutoSaveHealthWriteResult.Failed(
+                $"{detail}; temp cleanup failed: {cleanup.Message}", Observe(path));
+        }
+    }
+
+    private bool TryReadMatchingRecord(string path, AutoSaveHealthRecord expected)
+    {
+        if (!_fileSystem.Exists(path))
+            return false;
+        using var stream = _fileSystem.OpenRead(path);
+        if (stream.Length <= 0 || stream.Length > MaxBytes)
+            return false;
+        return RecordsEqual(expected,
+            JsonSerializer.Deserialize<AutoSaveHealthRecord>(stream, JsonOptions));
+    }
+
+    private static bool RecordsEqual(AutoSaveHealthRecord expected, AutoSaveHealthRecord? actual) =>
+        actual is not null &&
+        expected.OperationId == actual.OperationId &&
+        expected.Reason == actual.Reason &&
+        expected.Status == actual.Status &&
+        expected.CreatedUtc == actual.CreatedUtc &&
+        expected.UpdatedUtc == actual.UpdatedUtc &&
+        expected.IntendedActors == actual.IntendedActors &&
+        expected.WrittenActors == actual.WrittenActors &&
+        ListsEqual(expected.AffectedPaths, actual.AffectedPaths) &&
+        expected.FailurePhase == actual.FailurePhase &&
+        expected.Detail == actual.Detail &&
+        ListsEqual(expected.RecoveryEvidencePaths, actual.RecoveryEvidencePaths) &&
+        expected.RecoveryOverflowCount == actual.RecoveryOverflowCount &&
+        expected.RecoveryEntries.Count == actual.RecoveryEntries.Count &&
+        expected.RecoveryEntries.Zip(actual.RecoveryEntries).All(pair =>
+            pair.First.OperationId == pair.Second.OperationId &&
+            pair.First.Reason == pair.Second.Reason &&
+            pair.First.Status == pair.Second.Status &&
+            pair.First.CreatedUtc == pair.Second.CreatedUtc &&
+            pair.First.UpdatedUtc == pair.Second.UpdatedUtc &&
+            pair.First.IntendedActors == pair.Second.IntendedActors &&
+            pair.First.WrittenActors == pair.Second.WrittenActors &&
+            ListsEqual(pair.First.AffectedPaths, pair.Second.AffectedPaths) &&
+            pair.First.FailurePhase == pair.Second.FailurePhase &&
+            pair.First.Detail == pair.Second.Detail &&
+            ListsEqual(pair.First.RecoveryEvidencePaths, pair.Second.RecoveryEvidencePaths));
+
+    private static bool ListsEqual(IReadOnlyList<string> left, IReadOnlyList<string> right) =>
+        left.Count == right.Count && left.SequenceEqual(right, StringComparer.Ordinal);
 
     private IReadOnlyList<string> Observe(string? path)
     {

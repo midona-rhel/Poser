@@ -234,6 +234,47 @@ public sealed class AutoSaveHealthStoreTests
         Assert.Empty(Directory.EnumerateFiles(root.Path, ".*.tmp"));
     }
 
+    [Fact]
+    public void Reopen_validation_failure_preserves_old_record_and_only_existing_evidence()
+    {
+        using var root = new TempRoot();
+        var normal = new AutoSaveHealthStore(root.Path);
+        Assert.True(normal.Write(AutoSaveHealthRecord.Create(
+            "old", "interval", AutoSaveHealthStatus.Written,
+            DateTime.UtcNow, DateTime.UtcNow)).Succeeded);
+
+        var failing = new AutoSaveHealthStore(root.Path,
+            new CorruptReopenFileSystem(new SystemAutoSaveHealthFileSystem()));
+        var result = failing.Write(AutoSaveHealthRecord.Create(
+            "new", "final", AutoSaveHealthStatus.Queued,
+            DateTime.UtcNow, DateTime.UtcNow));
+
+        Assert.False(result.Succeeded);
+        Assert.All(result.RecoveryEvidencePaths, path => Assert.True(File.Exists(path), path));
+        Assert.Equal("old", normal.Read()!.OperationId);
+    }
+
+    [Fact]
+    public void Successful_replace_followed_by_destination_loss_retains_backup_evidence()
+    {
+        using var root = new TempRoot();
+        var normal = new AutoSaveHealthStore(root.Path);
+        Assert.True(normal.Write(AutoSaveHealthRecord.Create(
+            "old", "interval", AutoSaveHealthStatus.Written,
+            DateTime.UtcNow, DateTime.UtcNow)).Succeeded);
+
+        var failing = new AutoSaveHealthStore(root.Path,
+            new ReplaceThenLoseDestinationFileSystem(new SystemAutoSaveHealthFileSystem()));
+        var result = failing.Write(AutoSaveHealthRecord.Create(
+            "new", "final", AutoSaveHealthStatus.Queued,
+            DateTime.UtcNow, DateTime.UtcNow));
+
+        Assert.False(result.Succeeded);
+        Assert.Contains(result.RecoveryEvidencePaths,
+            path => path.EndsWith(".bak", StringComparison.Ordinal) && File.Exists(path));
+        Assert.All(result.RecoveryEvidencePaths, path => Assert.True(File.Exists(path), path));
+    }
+
     private sealed class TempRoot : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
@@ -316,6 +357,42 @@ public sealed class AutoSaveHealthStoreTests
         public void FlushToDisk(Stream stream) => throw new IOException("simulated flush failure");
         public bool Exists(string path) => _inner.Exists(path);
         public void Replace(string source, string destination, string backup) => _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
+    private sealed class CorruptReopenFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner;
+        public CorruptReopenFileSystem(IAutoSaveHealthFileSystem inner) => _inner = inner;
+        public Stream OpenRead(string path)
+        {
+            if (path.EndsWith(".tmp", StringComparison.Ordinal))
+                return new MemoryStream(System.Text.Encoding.UTF8.GetBytes("{\"corrupt\":true}"));
+            return _inner.OpenRead(path);
+        }
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) => _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
+    private sealed class ReplaceThenLoseDestinationFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner;
+        public ReplaceThenLoseDestinationFileSystem(IAutoSaveHealthFileSystem inner) => _inner = inner;
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup)
+        {
+            _inner.Replace(source, destination, backup);
+            File.Delete(destination);
+            throw new IOException("simulated post-commit destination loss");
+        }
         public void Move(string source, string destination) => _inner.Move(source, destination);
         public void Delete(string path) => _inner.Delete(path);
     }

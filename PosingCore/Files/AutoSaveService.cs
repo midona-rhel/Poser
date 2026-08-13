@@ -996,6 +996,18 @@ public class AutoSaveService : IAutoSaveService
                 retainFailure: true);
             if (!healthUpdate.Succeeded)
                 result = AutoSaveTerminalResult.RecoveryRequired($"Autosave health update failed: {healthUpdate.Detail}");
+            else if (pendingRecovery is not null)
+            {
+                // Clear only the exact recovery set acknowledged by the
+                // current terminal publication. A failed or stale-suppressed
+                // update must remain actionable for the next exit.
+                lock (_healthGate)
+                {
+                    if (healthGeneration == _currentHealthGeneration &&
+                        ReferenceEquals(_pendingHealthRecovery, pendingRecovery))
+                        _pendingHealthRecovery = null;
+                }
+            }
         }
 
         lock (_queueGate)

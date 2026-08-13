@@ -1,6 +1,7 @@
 extern alias ProductionPoser;
 
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -486,6 +487,79 @@ public sealed class LifecycleContractTests
             result);
         service.Received(1).CaptureForExit();
         service.Received(1).CompleteForExit();
+    }
+
+    [Fact]
+    public void Application_recovery_evidence_is_bounded_and_counts_discarded_entries()
+    {
+        var entries = Enumerable.Range(1, 6).Select(index =>
+            new FinalPersistenceRecoveryEntry(
+                new string((char)('a' + index), 300),
+                new string('r', 300),
+                FinalPersistenceStatus.RecoveryRequired,
+                DateTime.UtcNow,
+                DateTime.UtcNow,
+                9000,
+                9000,
+                Enumerable.Range(0, 300).Select(_ => new string('p', 2000)),
+                new string('f', 300),
+                new string('d', 5000),
+                Enumerable.Range(0, 300).Select(_ => new string('e', 2000))))
+            .ToArray();
+
+        var evidence = new FinalPersistenceEvidence(
+            "op", "final", FinalPersistenceStatus.RecoveryRequired,
+            DateTime.UtcNow, DateTime.UtcNow, 2, 1, null, "HealthTransition", "detail", null,
+            entries);
+
+        Assert.Equal(4, evidence.RecoveryEntries.Count);
+        Assert.Equal(2, evidence.RecoveryOverflowCount);
+        var first = evidence.RecoveryEntries[0];
+        Assert.Equal(128, first.OperationId.Length);
+        Assert.Equal(128, first.Reason.Length);
+        Assert.Equal(8192, first.IntendedActors);
+        Assert.Equal(8192, first.WrittenActors);
+        Assert.Equal(256, first.AffectedPaths.Count);
+        Assert.Equal(1024, first.AffectedPaths[0].Length);
+        Assert.Equal(128, first.FailurePhase!.Length);
+        Assert.Equal(4096, first.Detail!.Length);
+        Assert.Equal(256, first.RecoveryEvidencePaths.Count);
+        Assert.Equal(1024, first.RecoveryEvidencePaths[0].Length);
+    }
+
+    [Fact]
+    public void Adapter_maps_every_health_status_to_an_explicit_application_status()
+    {
+        foreach (var status in Enum.GetValues<AutoSaveHealthStatus>())
+        {
+            var service = Substitute.For<IAutoSaveService>();
+            service.CaptureForExit().Returns(AutoSaveCaptureResult.DispatchStarted(1));
+            service.CompleteForExit().Returns(AutoSaveTerminalResult.RecoveryRequired("terminal"));
+            service.LastHealthRecord.Returns(JsonSerializer.Deserialize<AutoSaveHealthRecord>($$"""
+                {
+                  "OperationId": "op-{{(int)status}}", "Reason": "test", "Status": {{(int)status}},
+                  "CreatedUtc": "2026-08-13T10:00:00Z", "UpdatedUtc": "2026-08-13T10:01:00Z",
+                  "IntendedActors": 1, "WrittenActors": 0, "RecoveryEntries": [{
+                    "OperationId": "entry-{{(int)status}}", "Reason": "test", "Status": {{(int)status}},
+                    "CreatedUtc": "2026-08-13T10:00:00Z", "UpdatedUtc": "2026-08-13T10:01:00Z",
+                    "IntendedActors": 1, "WrittenActors": 0
+                  }]
+                }
+                """));
+
+            var result = new ProductionPoser::Poser.Lifecycle.AutoSaveFinalCapturePort(() => service).CaptureForExit();
+            var entry = Assert.Single(result.PersistenceEvidence!.RecoveryEntries);
+            var expected = status switch
+            {
+                AutoSaveHealthStatus.Pending or AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted => FinalPersistenceStatus.Pending,
+                AutoSaveHealthStatus.Written => FinalPersistenceStatus.Written,
+                AutoSaveHealthStatus.Cleaned => FinalPersistenceStatus.Cleaned,
+                AutoSaveHealthStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
+                AutoSaveHealthStatus.Cancelled => FinalPersistenceStatus.Cancelled,
+                _ => throw new Xunit.Sdk.XunitException($"Unhandled status {status}"),
+            };
+            Assert.Equal(expected, entry.Status);
+        }
     }
 
     [Fact]
