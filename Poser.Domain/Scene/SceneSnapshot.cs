@@ -178,8 +178,13 @@ public sealed record GazeDescriptor(
 
 /// <summary>
 /// Immutable, pointer-free application read state for one logical scene. It
-/// owns no native entities and carries no application indexes; SceneSession is
-/// the sole owner of indexing, stale resolution, and revision acceptance.
+/// owns no native entities and carries no application indexes. SceneSession is
+/// the committed Application owner of this state, while the current Game
+/// producer remains a transitional candidate source and may leave additive
+/// relationship, environment, and gaze fields empty until lifecycle
+/// integration is serialized. Generated record equality remains reference
+/// based for collection properties; use <see cref="ContentEquals"/> when
+/// scene content equality is required.
 /// </summary>
 public sealed record SceneSnapshot
 {
@@ -237,7 +242,31 @@ public sealed record SceneSnapshot
     public IReadOnlyList<GazeDescriptor> GazeStates
     {
         get;
-        init => field = Freeze(value);
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = Freeze(value);
+        }
+    }
+
+    /// <summary>
+    /// Compares the complete snapshot content, including revision and nested
+    /// collection values. Generated record equality is intentionally not used
+    /// for scene admission because <see cref="IReadOnlyList{T}"/> equality is
+    /// reference-based; SceneSession uses this structural comparison for
+    /// equal-replay detection.
+    /// </summary>
+    public bool ContentEquals(SceneSnapshot? other)
+    {
+        if (other is null || Revision != other.Revision)
+            return false;
+
+        return ActorsEqual(Actors, other.Actors) &&
+               LightsEqual(Lights, other.Lights) &&
+               CamerasEqual(Cameras, other.Cameras) &&
+               PropsEqual(Props, other.Props) &&
+               EnvironmentEqual(Environment, other.Environment) &&
+               GazeEqual(GazeStates, other.GazeStates);
     }
 
     public static SceneSnapshot Empty { get; } =
@@ -290,5 +319,182 @@ public sealed record SceneSnapshot
     {
         ArgumentNullException.ThrowIfNull(values);
         return Array.AsReadOnly(values.ToArray());
+    }
+
+    private static bool ActorsEqual(
+        IReadOnlyList<ActorDescriptor> left,
+        IReadOnlyList<ActorDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.IsPlayer != second.IsPlayer ||
+                first.IsCompanion != second.IsCompanion ||
+                first.IsHidden != second.IsHidden ||
+                first.OwnerActor != second.OwnerActor ||
+                !SkeletonsEqual(first.Skeletons, second.Skeletons))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool SkeletonsEqual(
+        IReadOnlyList<SkeletonDescriptor> left,
+        IReadOnlyList<SkeletonDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !BonesEqual(first.Bones, second.Bones))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool BonesEqual(
+        IReadOnlyList<BoneDescriptor> left,
+        IReadOnlyList<BoneDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(
+                    first.DisplayName,
+                    second.DisplayName) ||
+                first.Parent != second.Parent ||
+                first.IsHidden != second.IsHidden)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool LightsEqual(
+        IReadOnlyList<LightDescriptor> left,
+        IReadOnlyList<LightDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Kind != second.Kind ||
+                first.IsOn != second.IsOn ||
+                first.Ownership != second.Ownership ||
+                first.AttachedBone != second.AttachedBone)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool CamerasEqual(
+        IReadOnlyList<CameraDescriptor> left,
+        IReadOnlyList<CameraDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Kind != second.Kind ||
+                first.IsLive != second.IsLive ||
+                first.IsDefault != second.IsDefault ||
+                first.IsLocked != second.IsLocked ||
+                first.TargetActor != second.TargetActor ||
+                first.TargetBone != second.TargetBone ||
+                first.TargetOffset != second.TargetOffset)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool PropsEqual(
+        IReadOnlyList<PropDescriptor> left,
+        IReadOnlyList<PropDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Visible != second.Visible)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool EnvironmentEqual(
+        EnvironmentDescriptor? left,
+        EnvironmentDescriptor? right)
+    {
+        if (left is null || right is null)
+            return left is null && right is null;
+
+        return left.MinuteOfDay == right.MinuteOfDay &&
+               left.DayOfMonth == right.DayOfMonth &&
+               left.WeatherId == right.WeatherId &&
+               left.IsTimeFrozen == right.IsTimeFrozen &&
+               left.IsWeatherOverrideEnabled ==
+                   right.IsWeatherOverrideEnabled &&
+               left.HeldSections == right.HeldSections;
+    }
+
+    private static bool GazeEqual(
+        IReadOnlyList<GazeDescriptor> left,
+        IReadOnlyList<GazeDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Actor != second.Actor ||
+                first.Mode != second.Mode ||
+                first.Parts != second.Parts ||
+                first.LockedParts != second.LockedParts ||
+                first.TargetActor != second.TargetActor ||
+                first.Anchor != second.Anchor ||
+                first.EyesPosition != second.EyesPosition ||
+                first.HeadPosition != second.HeadPosition ||
+                first.BodyPosition != second.BodyPosition)
+                return false;
+        }
+
+        return true;
     }
 }

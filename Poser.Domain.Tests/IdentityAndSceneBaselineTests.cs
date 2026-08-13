@@ -176,6 +176,34 @@ public sealed class IdentityAndSceneBaselineTests
         Assert.Equal(GazeMode.Position, snapshot.GazeStates[0].Mode);
         Assert.Equal(GazeParts.Head, snapshot.GazeStates[0].LockedParts);
         Assert.Equal(new Vector3(10, 11, 12), snapshot.GazeStates[0].HeadPosition);
+
+        var (
+            revision,
+            deconstructedActors,
+            deconstructedLights,
+            deconstructedCameras,
+            deconstructedProps,
+            deconstructedEnvironment,
+            deconstructedGaze) = snapshot;
+        Assert.Equal(19UL, revision);
+        Assert.Equal(actor, deconstructedActors[0].Id);
+        Assert.Equal(light, deconstructedLights[0].Id);
+        Assert.Equal(camera, deconstructedCameras[0].Id);
+        Assert.Equal(prop, deconstructedProps[0].Id);
+        Assert.Equal(snapshot.Environment, deconstructedEnvironment);
+        Assert.Equal(snapshot.GazeStates[0], deconstructedGaze[0]);
+
+        var (
+            legacyRevision,
+            legacyActors,
+            legacyLights,
+            legacyCameras,
+            legacyProps) = snapshot;
+        Assert.Equal(revision, legacyRevision);
+        Assert.Equal(deconstructedActors, legacyActors);
+        Assert.Equal(deconstructedLights, legacyLights);
+        Assert.Equal(deconstructedCameras, legacyCameras);
+        Assert.Equal(deconstructedProps, legacyProps);
     }
 
     [Fact]
@@ -218,6 +246,83 @@ public sealed class IdentityAndSceneBaselineTests
         Assert.Single(withSnapshot.Actors);
         Assert.Single(withSnapshot.Actors[0].Skeletons);
         Assert.Single(withSnapshot.Actors[0].Skeletons[0].Bones);
+        Assert.True(snapshot.ContentEquals(withSnapshot));
+    }
+
+    [Fact]
+    public void Scene_snapshot_content_equality_is_structural_and_revision_sensitive()
+    {
+        var first = new SceneSnapshot(
+            7,
+            [],
+            [],
+            [],
+            [],
+            new EnvironmentDescriptor(120, 1, 0),
+            []);
+        var equivalent = new SceneSnapshot(
+            7,
+            [],
+            [],
+            [],
+            [],
+            new EnvironmentDescriptor(120, 1, 0),
+            []);
+
+        Assert.True(first.ContentEquals(equivalent));
+        Assert.False(first.ContentEquals(null));
+        Assert.False(first.ContentEquals(equivalent with { Revision = 8 }));
+        Assert.False(first.ContentEquals(equivalent with
+        {
+            Environment = new EnvironmentDescriptor(121, 1, 0),
+        }));
+    }
+
+    [Fact]
+    public void Scene_snapshot_flag_values_round_trip_through_storage_casts()
+    {
+        var heldSections = (EnvironmentSection)(int)(
+            EnvironmentSection.Sky | EnvironmentSection.Fog);
+        var gazeParts = (GazeParts)(int)GazeParts.Head;
+
+        Assert.Equal(EnvironmentSection.Sky | EnvironmentSection.Fog, heldSections);
+        Assert.Equal(GazeParts.Head, gazeParts);
+        Assert.Equal(
+            EnvironmentSection.All,
+            EnvironmentSection.Sky |
+            EnvironmentSection.Clouds |
+            EnvironmentSection.Lighting |
+            EnvironmentSection.Fog |
+            EnvironmentSection.Rain |
+            EnvironmentSection.Particles |
+            EnvironmentSection.Stars |
+            EnvironmentSection.Wind);
+        Assert.Equal(GazeParts.All, GazeParts.Body | GazeParts.Head | GazeParts.Eyes);
+    }
+
+    [Fact]
+    public void Bone_identity_validation_rejects_unknown_slot_negative_indices_and_blank_names()
+    {
+        var actor = Actor();
+        var unknownSlot = new BoneId(
+            new SkeletonId(actor, PoseSlot.Unknown, 0),
+            0,
+            0,
+            "j_root");
+        var negativePartial = new BoneId(
+            new SkeletonId(actor, PoseSlot.Character, 0),
+            -1,
+            0,
+            "j_root");
+        var blankName = new BoneId(
+            new SkeletonId(actor, PoseSlot.Character, 0),
+            0,
+            0,
+            " ");
+
+        Assert.False(unknownSlot.IsValid);
+        Assert.False(negativePartial.IsValid);
+        Assert.False(blankName.IsValid);
     }
 
     [Fact]

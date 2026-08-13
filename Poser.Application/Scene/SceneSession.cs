@@ -1,13 +1,89 @@
+using System.Numerics;
+using System.Threading;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
 
+/// <summary>The outcome of one candidate scene admission.</summary>
+public enum SceneRefreshOutcome
+{
+    /// <summary>The candidate became the committed scene.</summary>
+    Applied,
+
+    /// <summary>The candidate committed, but a post-commit observer failed.</summary>
+    AppliedWithNotificationFailures,
+
+    /// <summary>The candidate was an exact structural replay.</summary>
+    NoChange,
+
+    /// <summary>The producer revision was older than the committed revision.</summary>
+    RejectedOlderRevision,
+
+    /// <summary>The candidate failed scene schema or topology validation.</summary>
+    RejectedInvalidCandidate,
+
+    /// <summary>An admission was attempted from a reentrant observer call.</summary>
+    RejectedReentrant,
+
+    // Short alias for callers that prefer the concise outcome name.
+    RejectedInvalid = RejectedInvalidCandidate,
+}
+
 /// <summary>
-/// Owns the application scene read model, exact-id indexes, selection
-/// reconciliation, and monotonic refresh policy. It does not create snapshots,
-/// own native handles, or duplicate Game's binding registry.
+/// Feature-specific result for scene admission. A rejected result means that
+/// the committed snapshot, indexes, generation floors, selection, and scene
+/// event were left unchanged. Notification failures are reported after the
+/// scene has already committed.
+/// </summary>
+public sealed record SceneRefreshResult
+{
+    public SceneRefreshResult(
+        SceneRefreshOutcome outcome,
+        string? detail = null,
+        IReadOnlyList<string>? notificationFailures = null)
+    {
+        Outcome = outcome;
+        Detail = detail;
+        NotificationFailures = Array.AsReadOnly(
+            (notificationFailures ?? Array.Empty<string>()).ToArray());
+    }
+
+    public SceneRefreshOutcome Outcome { get; }
+    public string? Detail { get; }
+    public IReadOnlyList<string> NotificationFailures { get; }
+
+    /// <summary>Whether the candidate was accepted or was an exact replay.</summary>
+    public bool Accepted => Outcome is
+        SceneRefreshOutcome.Applied or
+        SceneRefreshOutcome.AppliedWithNotificationFailures or
+        SceneRefreshOutcome.NoChange;
+
+    /// <summary>Whether the committed scene state changed.</summary>
+    public bool StateChanged => Outcome is
+        SceneRefreshOutcome.Applied or
+        SceneRefreshOutcome.AppliedWithNotificationFailures;
+
+    /// <summary>Whether the candidate was rejected without scene mutation.</summary>
+    public bool Rejected => !Accepted;
+
+    /// <summary>
+    /// Compatibility conversion for existing boolean admission checks. New
+    /// callers should inspect <see cref="Outcome"/> so that NoChange and
+    /// post-commit notification failures remain distinguishable.
+    /// </summary>
+    public static implicit operator bool(SceneRefreshResult result) =>
+        result.Accepted;
+}
+
+/// <summary>
+/// Owns the committed Application scene read model, exact-id indexes,
+/// selection reconciliation, and producer-revision admission policy. It does
+/// not create snapshots, own native handles, or replace Game's transitional
+/// binding registry/current-snapshot producer. Refresh and event delivery are
+/// required to stay on the owning application/framework thread; this class
+/// does not guess that host affinity without a host dependency.
 /// </summary>
 public sealed class SceneSession
 {
@@ -18,14 +94,16 @@ public sealed class SceneSession
     private Dictionary<CameraId, CameraDescriptor> _cameras = new();
     private Dictionary<PropId, PropDescriptor> _props = new();
 
-    // A producer must never make an accepted scene generation go backwards,
-    // even when an entity disappeared from an intervening snapshot.
+    // These floors live for this SceneSession, including through removals and
+    // reappearances. A new logical scene session gets a new owner instance;
+    // there is deliberately no reset that could weaken stale-target safety.
     private readonly Dictionary<Guid, uint> _actorGenerationFloors = new();
     private readonly Dictionary<(Guid Actor, uint ActorGeneration, PoseSlot Slot), uint>
         _skeletonGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _lightGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _cameraGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _propGenerationFloors = new();
+    private int _refreshGate;
 
     public SceneSession(SelectionSession selection)
     {
@@ -39,52 +117,90 @@ public sealed class SceneSession
     public ulong Revision => _snapshot.Revision;
 
     /// <summary>
-    /// Compatibility entry point for existing producers. Rejected stale or
-    /// regressing snapshots leave every session-owned value unchanged; callers
-    /// that need the decision use <see cref="TryRefresh"/>.
+    /// Compatibility entry point for existing producers. It intentionally
+    /// keeps the historical void signature and discards the typed result;
+    /// callers that need to know whether admission succeeded must use
+    /// <see cref="TryRefresh"/>. It never claims that a candidate committed.
     /// </summary>
-    public void Refresh(SceneSnapshot snapshot) => _ = TryRefresh(snapshot);
+    public void Refresh(SceneSnapshot? snapshot) => _ = TryRefresh(snapshot);
 
     /// <summary>
-    /// Publishes one non-older, generation-monotonic snapshot. The
-    /// candidate is fully indexed before the current scene is replaced, so a
-    /// malformed or regressing refresh cannot partially mutate the session.
+    /// Validates and transactionally admits one producer snapshot. Revisions
+    /// are producer-supplied and non-decreasing. An equal-revision structural
+    /// replay is <see cref="SceneRefreshOutcome.NoChange"/>; equal revision
+    /// content changes are admitted for independent slot/object updates.
     /// </summary>
-    public bool TryRefresh(SceneSnapshot snapshot)
+    public SceneRefreshResult TryRefresh(SceneSnapshot? snapshot)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
+        if (Interlocked.Exchange(ref _refreshGate, 1) != 0)
+            return new(
+                SceneRefreshOutcome.RejectedReentrant,
+                "Scene refresh is already validating or notifying observers.");
 
-        if (snapshot.Revision < Revision)
-            return false;
+        try
+        {
+            if (snapshot is null)
+                return Invalid("A scene snapshot is required.");
 
-        BuildIndexes(
-            snapshot,
-            out var actors,
-            out var bones,
-            out var lights,
-            out var cameras,
-            out var props);
+            if (snapshot.Revision < Revision)
+                return new(
+                    SceneRefreshOutcome.RejectedOlderRevision,
+                    $"Revision {snapshot.Revision} is older than committed revision {Revision}.");
 
-        if (!HasMonotonicGenerations(snapshot))
-            return false;
+            if (!TryBuildIndexes(
+                    snapshot,
+                    out var actors,
+                    out var bones,
+                    out var lights,
+                    out var cameras,
+                    out var props,
+                    out var validationError))
+                return Invalid(validationError!);
 
-        _actors = actors;
-        _bones = bones;
-        _lights = lights;
-        _cameras = cameras;
-        _props = props;
-        _snapshot = snapshot;
-        RecordGenerationFloors(snapshot);
+            if (!TryValidateGenerationFloors(snapshot, out var floorError))
+                return Invalid(floorError!);
 
-        Selection.Reconcile(Resolve);
-        SceneChanged?.Invoke(snapshot);
-        return true;
+            if (snapshot.ContentEquals(_snapshot))
+                return new(SceneRefreshOutcome.NoChange);
+
+            // Everything above is candidate-local. The following swap is the
+            // single commit point for snapshot, indexes, and generation floors.
+            _actors = actors;
+            _bones = bones;
+            _lights = lights;
+            _cameras = cameras;
+            _props = props;
+            _snapshot = snapshot;
+            RecordGenerationFloors(snapshot);
+
+            var failures = new List<string>();
+            try
+            {
+                Selection.Reconcile(Resolve);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(DescribeFailure("Selection reconciliation", exception));
+            }
+
+            failures.AddRange(PublishSceneChanged(snapshot));
+            return failures.Count == 0
+                ? new(SceneRefreshOutcome.Applied)
+                : new(
+                    SceneRefreshOutcome.AppliedWithNotificationFailures,
+                    "Scene committed; one or more post-commit observers failed.",
+                    failures);
+        }
+        finally
+        {
+            Volatile.Write(ref _refreshGate, 0);
+        }
     }
 
     /// <summary>
-    /// Reconciles a stable selection id to the current exact generation. A
-    /// bone selection survives only while its exact BoneId is present; a
-    /// missing bone may fall back to its current actor, never another bone.
+    /// Reconciles a selection id to the current exact generation. A bone
+    /// selection survives only while its exact BoneId is present; a missing
+    /// bone may fall back to its current actor, never another bone.
     /// </summary>
     public SelectionId? Resolve(SelectionId id)
     {
@@ -138,7 +254,7 @@ public sealed class SceneSession
                 : null;
 
         // Environment is the scene singleton and carries no generation. Its
-        // optional descriptor is read state, not a second selectable entity.
+        // descriptor is read state, not a second selectable entity.
         if (id.Kind == SceneEntityKind.Environment)
             return id;
 
@@ -160,119 +276,412 @@ public sealed class SceneSession
             _ => false,
         };
 
-    private static void BuildIndexes(
+    private static SceneRefreshResult Invalid(string detail) =>
+        new(SceneRefreshOutcome.RejectedInvalidCandidate, detail);
+
+    private static bool TryBuildIndexes(
         SceneSnapshot snapshot,
         out Dictionary<ActorId, ActorDescriptor> actors,
         out Dictionary<BoneId, BoneDescriptor> bones,
         out Dictionary<LightId, LightDescriptor> lights,
         out Dictionary<CameraId, CameraDescriptor> cameras,
-        out Dictionary<PropId, PropDescriptor> props)
+        out Dictionary<PropId, PropDescriptor> props,
+        out string? validationError)
     {
         actors = new();
         bones = new();
         lights = new();
         cameras = new();
         props = new();
+        validationError = null;
 
         var actorLineages = new HashSet<Guid>();
+        var skeletonIds = new HashSet<SkeletonId>();
+        var boneLookup =
+            new HashSet<(SkeletonId Skeleton, int PartialId, int BoneIndex)>();
+
         foreach (var actor in snapshot.Actors)
         {
+            if (actor is null)
+                return Fail("Scene contains a null actor descriptor.", out validationError);
+            if (!IsValidActorId(actor.Id))
+                return Fail($"Actor id {actor.Id} is invalid.", out validationError);
             if (!actorLineages.Add(actor.Id.LogicalId))
-                throw new ArgumentException(
+                return Fail(
                     $"Scene contains more than one actor generation for {actor.Id.LogicalId:N}.",
-                    nameof(snapshot));
+                    out validationError);
             if (!actors.TryAdd(actor.Id, actor))
-                throw new ArgumentException(
-                    $"Scene contains duplicate actor {actor.Id}.",
-                    nameof(snapshot));
+                return Fail($"Scene contains duplicate actor {actor.Id}.", out validationError);
+            if (actor.Skeletons is null)
+                return Fail($"Actor {actor.Id} has no skeleton collection.", out validationError);
 
             var slots = new HashSet<PoseSlot>();
             foreach (var skeleton in actor.Skeletons)
             {
+                if (skeleton is null)
+                    return Fail(
+                        $"Actor {actor.Id} contains a null skeleton descriptor.",
+                        out validationError);
+                if (!IsValidSkeletonId(skeleton.Id))
+                    return Fail(
+                        $"Skeleton id {skeleton.Id} is invalid.",
+                        out validationError);
                 if (skeleton.Id.Actor != actor.Id)
-                    throw new ArgumentException(
+                    return Fail(
                         $"Skeleton {skeleton.Id} is not owned by actor {actor.Id}.",
-                        nameof(snapshot));
+                        out validationError);
                 if (!slots.Add(skeleton.Id.Slot))
-                    throw new ArgumentException(
+                    return Fail(
                         $"Scene contains duplicate {skeleton.Id.Slot} skeletons for {actor.Id}.",
-                        nameof(snapshot));
+                        out validationError);
+                if (!skeletonIds.Add(skeleton.Id))
+                    return Fail(
+                        $"Scene contains duplicate skeleton {skeleton.Id}.",
+                        out validationError);
+                if (skeleton.Bones is null)
+                    return Fail(
+                        $"Skeleton {skeleton.Id} has no bone collection.",
+                        out validationError);
 
                 foreach (var bone in skeleton.Bones)
                 {
+                    if (bone is null)
+                        return Fail(
+                            $"Skeleton {skeleton.Id} contains a null bone descriptor.",
+                            out validationError);
+                    if (!IsValidBoneId(bone.Id))
+                        return Fail($"Bone id {bone.Id} is invalid.", out validationError);
                     if (bone.Id.Skeleton != skeleton.Id)
-                        throw new ArgumentException(
+                        return Fail(
                             $"Bone {bone.Id} is not owned by skeleton {skeleton.Id}.",
-                            nameof(snapshot));
-                    if (bone.Parent is { } parent && parent.Skeleton != skeleton.Id)
-                        throw new ArgumentException(
-                            $"Bone {bone.Id} has a parent from another skeleton.",
-                            nameof(snapshot));
+                            out validationError);
                     if (!bones.TryAdd(bone.Id, bone))
-                        throw new ArgumentException(
+                        return Fail(
                             $"Scene contains duplicate bone {bone.Id}.",
-                            nameof(snapshot));
+                            out validationError);
+
+                    var lookup = (
+                        bone.Id.Skeleton,
+                        bone.Id.PartialId,
+                        bone.Id.BoneIndex);
+                    if (!boneLookup.Add(lookup))
+                        return Fail(
+                            $"Scene contains duplicate native bone lookup {bone.Id.Skeleton}/{bone.Id.PartialId}:{bone.Id.BoneIndex}; canonical names cannot disambiguate it.",
+                            out validationError);
                 }
             }
         }
 
-        AddLightIndexes(snapshot, lights);
-        AddCameraIndexes(snapshot, cameras);
-        AddPropIndexes(snapshot, props);
+        foreach (var actor in actors.Values)
+        {
+            if (actor.OwnerActor is not { } owner)
+                continue;
+            if (!actor.IsCompanion)
+                return Fail(
+                    $"Actor {actor.Id} has OwnerActor but is not a companion.",
+                    out validationError);
+            if (owner == actor.Id)
+                return Fail($"Actor {actor.Id} cannot own itself.", out validationError);
+            if (!actors.TryGetValue(owner, out var ownerDescriptor))
+                return Fail(
+                    $"Companion {actor.Id} refers to missing owner {owner}.",
+                    out validationError);
+            if (ownerDescriptor.IsCompanion)
+                return Fail(
+                    $"Companion {actor.Id} refers to companion owner {owner}.",
+                    out validationError);
+        }
 
-        var gazeActors = new HashSet<ActorId>();
+        foreach (var bone in bones.Values)
+        {
+            if (bone.Parent is not { } parent)
+                continue;
+            if (!IsValidBoneId(parent))
+                return Fail(
+                    $"Bone {bone.Id} has an invalid parent id {parent}.",
+                    out validationError);
+            if (parent == bone.Id)
+                return Fail($"Bone {bone.Id} cannot parent itself.", out validationError);
+            if (parent.Skeleton != bone.Id.Skeleton)
+                return Fail(
+                    $"Bone {bone.Id} has a parent from another skeleton.",
+                    out validationError);
+            if (!bones.ContainsKey(parent))
+                return Fail(
+                    $"Bone {bone.Id} refers to missing parent {parent}.",
+                    out validationError);
+        }
+
+        if (!TryValidateBoneGraph(bones, out validationError))
+            return false;
+
+        if (!TryBuildLightIndexes(snapshot, bones, lights, out validationError))
+            return false;
+        if (!TryBuildCameraIndexes(
+                snapshot,
+                actors,
+                bones,
+                cameras,
+                out validationError))
+            return false;
+        if (!TryBuildPropIndexes(snapshot, props, out validationError))
+            return false;
+
+        var gazeActors = new HashSet<Guid>();
         foreach (var gaze in snapshot.GazeStates)
         {
-            if (!gazeActors.Add(gaze.Actor))
-                throw new ArgumentException(
-                    $"Scene contains duplicate gaze state for {gaze.Actor}.",
-                    nameof(snapshot));
+            if (gaze is null)
+                return Fail("Scene contains a null gaze descriptor.", out validationError);
+            if (!actors.ContainsKey(gaze.Actor))
+                return Fail(
+                    $"Gaze state refers to missing actor {gaze.Actor}.",
+                    out validationError);
+            if (!gazeActors.Add(gaze.Actor.LogicalId))
+                return Fail(
+                    $"Scene contains duplicate gaze state for {gaze.Actor.LogicalId:N}.",
+                    out validationError);
+            if (!Enum.IsDefined(typeof(GazeMode), gaze.Mode))
+                return Fail(
+                    $"Gaze state for {gaze.Actor} has unknown mode {gaze.Mode}.",
+                    out validationError);
+            if ((gaze.Parts & ~GazeParts.All) != GazeParts.None)
+                return Fail(
+                    $"Gaze state for {gaze.Actor} has unknown part bits.",
+                    out validationError);
+            if ((gaze.LockedParts & ~GazeParts.All) != GazeParts.None ||
+                (gaze.LockedParts & ~gaze.Parts) != GazeParts.None)
+                return Fail(
+                    $"Gaze state for {gaze.Actor} has an invalid lock mask.",
+                    out validationError);
+            if (gaze.Parts == GazeParts.None &&
+                (gaze.Mode != GazeMode.Off ||
+                 gaze.LockedParts != GazeParts.None))
+                return Fail(
+                    $"Gaze state for {gaze.Actor} has parts disabled outside Off mode.",
+                    out validationError);
+            if (gaze.Mode != GazeMode.Off && gaze.Parts == GazeParts.None)
+                return Fail(
+                    $"Gaze state for {gaze.Actor} is active without participating parts.",
+                    out validationError);
+            if (gaze.Mode == GazeMode.Off &&
+                gaze.LockedParts != GazeParts.None)
+                return Fail(
+                    $"Gaze state for {gaze.Actor} locks parts while Off.",
+                    out validationError);
+            if (gaze.Mode == GazeMode.Actor)
+            {
+                if (gaze.TargetActor is not { } target)
+                    return Fail(
+                        $"Actor gaze state for {gaze.Actor} has no target.",
+                        out validationError);
+                if (target == gaze.Actor)
+                    return Fail(
+                        $"Actor gaze state for {gaze.Actor} targets itself.",
+                        out validationError);
+                if (!actors.ContainsKey(target))
+                    return Fail(
+                        $"Gaze state for {gaze.Actor} refers to missing target {target}.",
+                        out validationError);
+            }
+            else if (gaze.TargetActor is not null)
+            {
+                return Fail(
+                    $"Only Actor gaze mode may carry TargetActor for {gaze.Actor}.",
+                    out validationError);
+            }
+            if (!IsFinite(gaze.Anchor) ||
+                !IsFinite(gaze.EyesPosition) ||
+                !IsFinite(gaze.HeadPosition) ||
+                !IsFinite(gaze.BodyPosition))
+                return Fail(
+                    $"Gaze state for {gaze.Actor} contains a non-finite position.",
+                    out validationError);
         }
+
+        if (snapshot.Environment is { } environment)
+        {
+            if (environment.MinuteOfDay is < 0 or > 1439)
+                return Fail(
+                    $"Environment minute {environment.MinuteOfDay} is outside 0..1439.",
+                    out validationError);
+            if (environment.DayOfMonth is < 1 or > 31)
+                return Fail(
+                    $"Environment day {environment.DayOfMonth} is outside 1..31.",
+                    out validationError);
+            if ((environment.HeldSections & ~EnvironmentSection.All) !=
+                EnvironmentSection.None)
+                return Fail(
+                    "Environment contains unknown held-section bits.",
+                    out validationError);
+        }
+
+        validationError = null;
+        return true;
     }
 
-    private static void AddLightIndexes(
+    private static bool TryBuildLightIndexes(
         SceneSnapshot snapshot,
-        Dictionary<LightId, LightDescriptor> lights)
+        Dictionary<BoneId, BoneDescriptor> bones,
+        Dictionary<LightId, LightDescriptor> lights,
+        out string? validationError)
     {
         var lineages = new HashSet<Guid>();
         foreach (var light in snapshot.Lights)
         {
+            if (light is null)
+                return Fail("Scene contains a null light descriptor.", out validationError);
+            if (!IsValidLightId(light.Id))
+                return Fail($"Light id {light.Id} is invalid.", out validationError);
             if (!lineages.Add(light.Id.LogicalId) || !lights.TryAdd(light.Id, light))
-                throw new ArgumentException(
+                return Fail(
                     $"Scene contains duplicate light {light.Id.LogicalId:N}.",
-                    nameof(snapshot));
+                    out validationError);
+            if (!Enum.IsDefined(typeof(LightKind), light.Kind) ||
+                !Enum.IsDefined(typeof(LightOwnership), light.Ownership))
+                return Fail(
+                    $"Light {light.Id} has an unknown kind or ownership.",
+                    out validationError);
+            if (light.AttachedBone is { } bone && !bones.ContainsKey(bone))
+                return Fail(
+                    $"Light {light.Id} refers to missing attached bone {bone}.",
+                    out validationError);
         }
+
+        validationError = null;
+        return true;
     }
 
-    private static void AddCameraIndexes(
+    private static bool TryBuildCameraIndexes(
         SceneSnapshot snapshot,
-        Dictionary<CameraId, CameraDescriptor> cameras)
+        Dictionary<ActorId, ActorDescriptor> actors,
+        Dictionary<BoneId, BoneDescriptor> bones,
+        Dictionary<CameraId, CameraDescriptor> cameras,
+        out string? validationError)
     {
         var lineages = new HashSet<Guid>();
+        var liveCount = 0;
         foreach (var camera in snapshot.Cameras)
         {
+            if (camera is null)
+                return Fail("Scene contains a null camera descriptor.", out validationError);
+            if (!IsValidCameraId(camera.Id))
+                return Fail($"Camera id {camera.Id} is invalid.", out validationError);
             if (!lineages.Add(camera.Id.LogicalId) || !cameras.TryAdd(camera.Id, camera))
-                throw new ArgumentException(
+                return Fail(
                     $"Scene contains duplicate camera {camera.Id.LogicalId:N}.",
-                    nameof(snapshot));
+                    out validationError);
+            if (!Enum.IsDefined(typeof(CameraKind), camera.Kind))
+                return Fail(
+                    $"Camera {camera.Id} has an unknown kind.",
+                    out validationError);
+            if (camera.IsLive && ++liveCount > 1)
+                return Fail("Scene contains more than one live camera.", out validationError);
+            if (!IsFinite(camera.TargetOffset))
+                return Fail(
+                    $"Camera {camera.Id} contains a non-finite target offset.",
+                    out validationError);
+
+            if (camera.TargetActor is null && camera.TargetBone is null)
+            {
+                if (camera.TargetOffset != Vector3.Zero)
+                    return Fail(
+                        $"Camera {camera.Id} has an offset without a target.",
+                        out validationError);
+            }
+            else
+            {
+                if (camera.TargetActor is { } targetActor &&
+                    !actors.ContainsKey(targetActor))
+                    return Fail(
+                        $"Camera {camera.Id} refers to missing target actor {targetActor}.",
+                        out validationError);
+                if (camera.TargetBone is { } targetBone)
+                {
+                    if (!bones.ContainsKey(targetBone))
+                        return Fail(
+                            $"Camera {camera.Id} refers to missing target bone {targetBone}.",
+                            out validationError);
+                    if (camera.TargetActor is { } representedActor &&
+                        targetBone.Skeleton.Actor != representedActor)
+                        return Fail(
+                            $"Camera {camera.Id} has contradictory actor and bone targets.",
+                            out validationError);
+                }
+            }
         }
+
+        validationError = null;
+        return true;
     }
 
-    private static void AddPropIndexes(
+    private static bool TryBuildPropIndexes(
         SceneSnapshot snapshot,
-        Dictionary<PropId, PropDescriptor> props)
+        Dictionary<PropId, PropDescriptor> props,
+        out string? validationError)
     {
         var lineages = new HashSet<Guid>();
         foreach (var prop in snapshot.Props)
         {
+            if (prop is null)
+                return Fail("Scene contains a null prop descriptor.", out validationError);
+            if (!IsValidPropId(prop.Id))
+                return Fail($"Prop id {prop.Id} is invalid.", out validationError);
             if (!lineages.Add(prop.Id.LogicalId) || !props.TryAdd(prop.Id, prop))
-                throw new ArgumentException(
+                return Fail(
                     $"Scene contains duplicate prop {prop.Id.LogicalId:N}.",
-                    nameof(snapshot));
+                    out validationError);
         }
+
+        validationError = null;
+        return true;
     }
 
-    private bool HasMonotonicGenerations(SceneSnapshot snapshot)
+    private static bool TryValidateBoneGraph(
+        Dictionary<BoneId, BoneDescriptor> bones,
+        out string? validationError)
+    {
+        var visited = new HashSet<BoneId>();
+        foreach (var bone in bones.Keys)
+        {
+            if (!VisitBone(bone, bones, visited, new HashSet<BoneId>(), out validationError))
+                return false;
+        }
+
+        validationError = null;
+        return true;
+    }
+
+    private static bool VisitBone(
+        BoneId bone,
+        Dictionary<BoneId, BoneDescriptor> bones,
+        HashSet<BoneId> visited,
+        HashSet<BoneId> visiting,
+        out string? validationError)
+    {
+        if (visited.Contains(bone))
+        {
+            validationError = null;
+            return true;
+        }
+        if (!visiting.Add(bone))
+        {
+            validationError = $"Bone parent graph contains a cycle at {bone}.";
+            return false;
+        }
+
+        if (bones[bone].Parent is { } parent &&
+            !VisitBone(parent, bones, visited, visiting, out validationError))
+            return false;
+
+        visiting.Remove(bone);
+        visited.Add(bone);
+        validationError = null;
+        return true;
+    }
+
+    private bool TryValidateGenerationFloors(
+        SceneSnapshot snapshot,
+        out string? validationError)
     {
         foreach (var actor in snapshot.Actors)
         {
@@ -280,7 +689,11 @@ public sealed class SceneSession
                     actor.Id.LogicalId,
                     out var actorFloor) &&
                 actor.Id.Generation < actorFloor)
+            {
+                validationError =
+                    $"Actor {actor.Id.LogicalId:N} regressed from generation {actorFloor} to {actor.Id.Generation}.";
                 return false;
+            }
 
             foreach (var skeleton in actor.Skeletons)
             {
@@ -290,37 +703,59 @@ public sealed class SceneSession
                     skeleton.Id.Slot);
                 if (_skeletonGenerationFloors.TryGetValue(key, out var floor) &&
                     skeleton.Id.Generation < floor)
+                {
+                    validationError =
+                        $"Skeleton {skeleton.Id} regressed from generation {floor} to {skeleton.Id.Generation}.";
                     return false;
+                }
             }
         }
 
-        return HasMonotonicObjectGenerations(
-                   snapshot.Lights,
-                   _lightGenerationFloors,
-                   static light => (light.Id.LogicalId, light.Id.Generation)) &&
-               HasMonotonicObjectGenerations(
-                   snapshot.Cameras,
-                   _cameraGenerationFloors,
-                   static camera => (camera.Id.LogicalId, camera.Id.Generation)) &&
-               HasMonotonicObjectGenerations(
-                   snapshot.Props,
-                   _propGenerationFloors,
-                   static prop => (prop.Id.LogicalId, prop.Id.Generation));
+        if (!TryValidateObjectGenerationFloors(
+                snapshot.Lights,
+                _lightGenerationFloors,
+                static light => (light.Id.LogicalId, light.Id.Generation),
+                "light",
+                out validationError))
+            return false;
+        if (!TryValidateObjectGenerationFloors(
+                snapshot.Cameras,
+                _cameraGenerationFloors,
+                static camera => (camera.Id.LogicalId, camera.Id.Generation),
+                "camera",
+                out validationError))
+            return false;
+        if (!TryValidateObjectGenerationFloors(
+                snapshot.Props,
+                _propGenerationFloors,
+                static prop => (prop.Id.LogicalId, prop.Id.Generation),
+                "prop",
+                out validationError))
+            return false;
+
+        validationError = null;
+        return true;
     }
 
-    private static bool HasMonotonicObjectGenerations<T>(
+    private static bool TryValidateObjectGenerationFloors<T>(
         IReadOnlyList<T> values,
         Dictionary<Guid, uint> floors,
-        Func<T, (Guid LogicalId, uint Generation)> identity)
+        Func<T, (Guid LogicalId, uint Generation)> identity,
+        string kind,
+        out string? validationError)
     {
         foreach (var value in values)
         {
             var (logicalId, generation) = identity(value);
-            if (floors.TryGetValue(logicalId, out var floor) &&
-                generation < floor)
+            if (floors.TryGetValue(logicalId, out var floor) && generation < floor)
+            {
+                validationError =
+                    $"{kind} {logicalId:N} regressed from generation {floor} to {generation}.";
                 return false;
+            }
         }
 
+        validationError = null;
         return true;
     }
 
@@ -357,6 +792,58 @@ public sealed class SceneSession
         if (!floors.TryGetValue(logicalId, out var floor) || generation > floor)
             floors[logicalId] = generation;
     }
+
+    private IReadOnlyList<string> PublishSceneChanged(SceneSnapshot snapshot)
+    {
+        var handlers = SceneChanged?.GetInvocationList();
+        if (handlers is null || handlers.Length == 0)
+            return Array.Empty<string>();
+
+        var failures = new List<string>();
+        foreach (var handler in handlers)
+        {
+            try
+            {
+                ((Action<SceneSnapshot>)handler)(snapshot);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(DescribeFailure("SceneChanged observer", exception));
+            }
+        }
+
+        return failures.AsReadOnly();
+    }
+
+    private static string DescribeFailure(string source, Exception exception) =>
+        $"{source} {exception.GetType().Name}: {exception.Message}";
+
+    private static bool Fail(string detail, out string? validationError)
+    {
+        validationError = detail;
+        return false;
+    }
+
+    private static bool IsValidActorId(ActorId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsValidSkeletonId(SkeletonId id) =>
+        IsValidActorId(id.Actor) &&
+        Enum.IsDefined(typeof(PoseSlot), id.Slot) &&
+        id.Slot != PoseSlot.Unknown;
+
+    private static bool IsValidBoneId(BoneId id) =>
+        IsValidSkeletonId(id.Skeleton) && id.IsValid;
+
+    private static bool IsValidLightId(LightId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsValidCameraId(CameraId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsValidPropId(PropId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) &&
+        float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
 
     private bool TryFindActor(Guid logicalId, out ActorDescriptor actor)
     {
