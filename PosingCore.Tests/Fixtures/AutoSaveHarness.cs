@@ -5,7 +5,6 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin;
@@ -42,30 +41,12 @@ internal sealed record FakeActor(IActor Actor, IReadOnlyList<ISkeleton> Skeleton
 ///
 /// <para>THE SERVICE IS SPLIT ACROSS TWO THREADS. <c>SaveNow</c> only captures
 /// (<see cref="IPoseFileService.CreatePoseFile"/>) and returns; the folder, the
-/// files and the prune all happen on a worker. Every assertion about the disk
-/// therefore has to be preceded by <see cref="WaitForWrite"/>, and so does every
-/// second save — a save that arrives while the previous write is in flight is
-/// DROPPED by the service, so an unsynchronised test would silently lose it.
-/// <see cref="TickAt"/> waits on its own for exactly that reason.</para>
+/// files and the prune all happen on one owned worker. Every assertion about the
+/// disk therefore has to be preceded by <see cref="WaitForWrite"/>.</para>
 /// </summary>
 internal sealed class AutoSaveHarness : IDisposable
 {
     public const string StampFormat = "yyyy-MM-dd HH-mm-ss'Z'";
-
-    /// <summary>
-    /// The service's in-flight latch. It is set BEFORE <c>Task.Run</c> and
-    /// cleared in the worker's <c>finally</c>, i.e. after the prune, so polling
-    /// it is an exact "the worker is done" signal with no window at either end.
-    ///
-    /// <para>Reflection rather than a new seam on the service: nothing the
-    /// worker does last is observable from outside (a prune that finds nothing
-    /// stale writes nothing and logs nothing), so disk polling can only ever
-    /// approximate completion and still races the next save's drop check. This
-    /// keeps the production type untouched; if the field is ever renamed the
-    /// assert below names the fix.</para>
-    /// </summary>
-    private static readonly FieldInfo? WriteInFlightField = typeof(AutoSaveService)
-        .GetField("_writeInFlight", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private readonly List<IActor> _actors = new();
     private AutoSaveService? _service;
@@ -272,29 +253,8 @@ internal sealed class AutoSaveHarness : IDisposable
     /// </summary>
     public void WaitForWrite(int timeoutMs = 5000)
     {
-        Assert.True(
-            WriteInFlightField != null,
-            "AutoSaveService._writeInFlight is gone; AutoSaveHarness.WaitForWrite needs updating.");
-
-        if (!SpinUntilIdle(timeoutMs))
+        if (!Service.WaitForIdle(TimeSpan.FromMilliseconds(timeoutMs)))
             Assert.Fail($"the auto-save write worker was still running after {timeoutMs} ms");
-    }
-
-    private bool SpinUntilIdle(int timeoutMs)
-    {
-        if (_service is null || WriteInFlightField is null)
-            return true;
-
-        var clock = Stopwatch.StartNew();
-        var spin = new SpinWait();
-        while ((int)WriteInFlightField.GetValue(_service)! != 0)
-        {
-            if (clock.ElapsedMilliseconds >= timeoutMs)
-                return false;
-            spin.SpinOnce();
-        }
-
-        return true;
     }
 
     private static SkeletonPoseInfo BuildPoseInfo(bool authored)
@@ -398,7 +358,8 @@ internal sealed class AutoSaveHarness : IDisposable
     {
         // The worker only touches the temp root, but deleting it out from under
         // a live write would spray unrelated IO errors through the log.
-        SpinUntilIdle(timeoutMs: 5000);
+        if (_service is not null)
+            _service.WaitForIdle(TimeSpan.FromSeconds(5));
 
         try
         {

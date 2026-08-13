@@ -15,30 +15,58 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
 
     public FinalCaptureResult CaptureForExit()
     {
-        var result = _resolve().CaptureForExit();
+        var service = _resolve();
+        var result = service.CaptureForExit();
+        var terminal = service.CompleteForExit();
+        var persistence = terminal.Status switch
+        {
+            AutoSaveTerminalStatus.Pending => FinalPersistenceStatus.Pending,
+            AutoSaveTerminalStatus.Written => FinalPersistenceStatus.Written,
+            AutoSaveTerminalStatus.Cleaned => FinalPersistenceStatus.Cleaned,
+            AutoSaveTerminalStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
+            _ => FinalPersistenceStatus.NotAttempted,
+        };
         return result.Status switch
         {
             AutoSaveCaptureStatus.NotCaptured =>
-                FinalCaptureResult.NotCaptured(result.Detail),
+                new FinalCaptureResult(
+                    FinalCaptureStatus.NotCaptured,
+                    result.CapturedActors,
+                    result.Detail,
+                    result.DispatchAccepted,
+                    persistence,
+                    terminal.Detail),
             AutoSaveCaptureStatus.Captured =>
                 new FinalCaptureResult(
                     FinalCaptureStatus.Captured,
                     result.CapturedActors,
                     result.Detail,
-                    result.DispatchAccepted),
+                    result.DispatchAccepted,
+                    persistence,
+                    terminal.Detail),
             AutoSaveCaptureStatus.DispatchStarted =>
-                FinalCaptureResult.DispatchStarted(
+                new FinalCaptureResult(
+                    FinalCaptureStatus.DispatchStarted,
                     result.CapturedActors,
-                    result.Detail),
+                    result.Detail,
+                    result.DispatchAccepted,
+                    persistence,
+                    terminal.Detail),
             AutoSaveCaptureStatus.Failure =>
-                FinalCaptureResult.Failure(
-                    result.Detail ?? "Auto-save final capture failed.",
+                new FinalCaptureResult(
+                    FinalCaptureStatus.Failure,
                     result.CapturedActors,
-                    result.DispatchAccepted),
-            _ => FinalCaptureResult.Failure(
-                "Auto-save final capture returned an unknown result.",
+                    result.Detail ?? "Auto-save final capture failed.",
+                    result.DispatchAccepted,
+                    persistence,
+                    terminal.Detail),
+            _ => new FinalCaptureResult(
+                FinalCaptureStatus.Failure,
                 result.CapturedActors,
-                result.DispatchAccepted),
+                "Auto-save final capture returned an unknown result.",
+                result.DispatchAccepted,
+                persistence,
+                terminal.Detail),
         };
     }
 }

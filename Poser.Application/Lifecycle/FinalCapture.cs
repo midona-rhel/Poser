@@ -16,6 +16,15 @@ public enum FinalCaptureStatus
     Failure,
 }
 
+public enum FinalPersistenceStatus
+{
+    NotAttempted,
+    Pending,
+    Written,
+    Cleaned,
+    RecoveryRequired,
+}
+
 /// <summary>
 /// Result of one final-capture attempt. <see cref="DispatchAccepted"/> means
 /// only that the existing worker dispatcher accepted detached data; it does
@@ -26,7 +35,9 @@ public readonly record struct FinalCaptureResult(
     FinalCaptureStatus Status,
     int CapturedActors,
     string? Detail = null,
-    bool DispatchAccepted = false)
+    bool DispatchAccepted = false,
+    FinalPersistenceStatus Persistence = FinalPersistenceStatus.NotAttempted,
+    string? PersistenceDetail = null)
 {
     /// <summary>
     /// True only when every eligible actor in the attempt was detached. A
@@ -34,6 +45,9 @@ public readonly record struct FinalCaptureResult(
     /// </summary>
     public bool CaptureCompleted =>
         Status is FinalCaptureStatus.Captured or FinalCaptureStatus.DispatchStarted;
+
+    public bool DurableSuccess =>
+        Persistence == FinalPersistenceStatus.Written;
 
     public static FinalCaptureResult NotCaptured(string? detail = null) =>
         new(FinalCaptureStatus.NotCaptured, 0, detail);

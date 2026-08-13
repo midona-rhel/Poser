@@ -21,6 +21,8 @@ public class GPoseService : IGPoseService
     private readonly object _stateGate = new();
 
     private bool _lastGPoseState = false;
+    private bool _sessionActive;
+    private bool _unloadExitHandled;
 
     public bool IsGPosing => _clientState.IsGPosing;
 
@@ -62,20 +64,60 @@ public class GPoseService : IGPoseService
             _lastGPoseState = currentState;
             if (currentState)
             {
+                _sessionActive = true;
+                _unloadExitHandled = false;
                 _lifecycle.OnGposeEntered();
             }
             else
             {
-                var exit = _lifecycle.OnGposeExit();
-                if (!exit.AlreadyHandled &&
-                    exit.Capture.Status == FinalCaptureStatus.Failure)
-                {
-                    _log.Error(
-                        $"GPose exit final capture failed: {exit.Capture.Detail ?? "unknown failure"}");
-                }
+                ProcessExitEdge();
             }
 
             _eventBus.Publish(new GPoseStateChangedEvent(currentState));
+        }
+    }
+
+    /// <summary>
+    /// Host unload entry point. It must run before the service provider starts
+    /// disposing graph/session collaborators, and it deliberately shares the
+    /// normal edge so unload cannot duplicate the false GPose notification.
+    /// </summary>
+    public void ExitForUnload()
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            _log.Error("Plugin unload GPose exit was not requested on the framework thread.");
+            return;
+        }
+
+        lock (_stateGate)
+        {
+            if (_unloadExitHandled)
+                return;
+            if (!_sessionActive && !_clientState.IsGPosing)
+                return;
+
+            _sessionActive = true;
+            _unloadExitHandled = true;
+            _lastGPoseState = false;
+            ProcessExitEdge();
+            _eventBus.Publish(new GPoseStateChangedEvent(false));
+        }
+    }
+
+    private void ProcessExitEdge()
+    {
+        if (!_sessionActive)
+            return;
+
+        var exit = _lifecycle.OnGposeExit();
+        _sessionActive = false;
+        if (!exit.AlreadyHandled &&
+            exit.Capture.Status == FinalCaptureStatus.Failure ||
+            exit.Capture.Persistence == FinalPersistenceStatus.RecoveryRequired)
+        {
+            _log.Error(
+                $"GPose exit final capture failed: {exit.Capture.Detail ?? exit.Capture.PersistenceDetail ?? "unknown failure"}");
         }
     }
 

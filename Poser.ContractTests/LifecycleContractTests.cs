@@ -1,5 +1,6 @@
 extern alias ProductionPoser;
 
+using System.IO;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,6 +200,79 @@ public sealed class LifecycleContractTests
 
         Assert.Equal(1, capture.CallCount);
         eventBus.Received(2).Publish(Arg.Any<GPoseStateChangedEvent>());
+    }
+
+    [Fact]
+    public void Plugin_unload_uses_the_same_exit_edge_and_publishes_false_once()
+    {
+        var clientState = Substitute.For<IClientState>();
+        var framework = Substitute.For<IFramework>();
+        var eventBus = Substitute.For<IEventBus>();
+        var log = Substitute.For<IPluginLog>();
+        var capture = new RecordingCapturePort(
+            () => FinalCaptureResult.Captured(1));
+        var coordinator = new SessionLifecycleCoordinator(capture);
+        var exitEvents = 0;
+        framework.IsInFrameworkUpdateThread.Returns(true);
+        clientState.IsGPosing.Returns(true);
+
+        eventBus.When(bus => bus.Publish(Arg.Any<GPoseStateChangedEvent>()))
+            .Do(callInfo =>
+            {
+                if (!callInfo.Arg<GPoseStateChangedEvent>().IsGPosing)
+                    exitEvents++;
+            });
+
+        using var gpose = new GPoseService(
+            clientState,
+            framework,
+            eventBus,
+            log,
+            coordinator);
+
+        gpose.ExitForUnload();
+        gpose.ExitForUnload();
+
+        Assert.Equal(1, capture.CallCount);
+        Assert.Equal(1, exitEvents);
+        eventBus.Received(1).Publish(
+            Arg.Is<GPoseStateChangedEvent>(evt => !evt.IsGPosing));
+        Assert.Equal(FinalCaptureStatus.Captured, coordinator.LastExit!.Value.Capture.Status);
+    }
+
+    [Fact]
+    public void Plugin_unload_failure_still_publishes_false_once()
+    {
+        var clientState = Substitute.For<IClientState>();
+        var framework = Substitute.For<IFramework>();
+        var eventBus = Substitute.For<IEventBus>();
+        var log = Substitute.For<IPluginLog>();
+        var coordinator = new SessionLifecycleCoordinator(
+            new RecordingCapturePort(
+                () => throw new IOException("unload capture failed")));
+        var exitEvents = 0;
+        framework.IsInFrameworkUpdateThread.Returns(true);
+        clientState.IsGPosing.Returns(true);
+
+        eventBus.When(bus => bus.Publish(Arg.Any<GPoseStateChangedEvent>()))
+            .Do(callInfo =>
+            {
+                if (!callInfo.Arg<GPoseStateChangedEvent>().IsGPosing)
+                    exitEvents++;
+            });
+
+        using var gpose = new GPoseService(
+            clientState,
+            framework,
+            eventBus,
+            log,
+            coordinator);
+
+        gpose.ExitForUnload();
+
+        Assert.Equal(1, exitEvents);
+        Assert.Equal(FinalCaptureStatus.Failure, coordinator.LastExit!.Value.Capture.Status);
+        Assert.Contains("unload capture failed", coordinator.LastExit.Value.Capture.Detail);
     }
 
     [Fact]

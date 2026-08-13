@@ -33,6 +33,9 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(1, result.CapturedActors);
         Assert.False(result.DispatchAccepted);
         Assert.Null(h.Service.LastSaveUtc);
+        Assert.Equal(
+            AutoSaveTerminalStatus.RecoveryRequired,
+            h.Service.CompleteForExit().Status);
     }
 
     [Fact]
@@ -65,6 +68,9 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(1, result.CapturedActors);
         Assert.True(result.DispatchAccepted);
         Assert.False(result.CaptureCompleted);
+        Assert.Equal(
+            AutoSaveTerminalStatus.RecoveryRequired,
+            h.Service.CompleteForExit().Status);
         h.WaitForWrite();
     }
 
@@ -321,7 +327,7 @@ public class AutoSaveServiceSnapshotTests
     }
 
     [Fact]
-    public void SaveNow_drops_a_snapshot_that_arrives_while_the_previous_write_is_in_flight()
+    public void SaveNow_coalesces_a_snapshot_that_arrives_while_the_previous_write_is_in_flight()
     {
         using var h = new AutoSaveHarness();
         h.AddActor("Alpha");
@@ -330,11 +336,10 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(1, h.Service.SaveNow("first"));
         hold.WaitUntilHeld();
 
-        // The worker still holds the latch, and the service drops rather than
-        // queues — the next interval is a fresher capture than any backlog
-        // entry would be.
-        Assert.Equal(0, h.Service.SaveNow("second"));
-        Assert.Equal(1, h.CaptureCallCount);
+        // The worker still holds the active item. The bounded writer captures
+        // one pending periodic item and replaces it if another tick arrives.
+        Assert.Equal(1, h.Service.SaveNow("second"));
+        Assert.Equal(2, h.CaptureCallCount);
 
         hold.Release();
         h.WaitForWrite();
@@ -343,5 +348,47 @@ public class AutoSaveServiceSnapshotTests
         // Once the worker is idle the very same call goes through.
         Assert.Equal(1, h.Service.SaveNow("third"));
         h.WaitForWrite();
+    }
+
+    [Fact]
+    public void Final_terminal_result_is_written_only_after_the_worker_finishes()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        using var hold = h.HoldWorker();
+
+        h.Service.SaveNow("interval");
+        hold.WaitUntilHeld();
+        h.Service.CaptureForExit();
+
+        Assert.Equal(
+            AutoSaveTerminalStatus.Pending,
+            h.Service.LastTerminalResult.Status);
+
+        hold.Release();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveTerminalStatus.Written, terminal.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, h.Service.LastTerminalResult.Status);
+    }
+
+    [Fact]
+    public void Final_write_failure_returns_recovery_required_after_join()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        var broken = h.AddActor("Broken");
+        h.FailWriteFor(broken);
+
+        var capture = h.Service.CaptureForExit();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, capture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, terminal.Status);
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, h.Service.LastTerminalResult.Status);
+        Assert.True(h.ErrorCount >= 1);
     }
 }

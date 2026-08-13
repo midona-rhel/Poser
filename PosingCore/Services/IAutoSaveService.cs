@@ -14,6 +14,40 @@ public enum AutoSaveCaptureStatus
     Failure,
 }
 
+public enum AutoSaveTerminalStatus
+{
+    /// <summary>No exit drain has been requested.</summary>
+    Pending,
+    /// <summary>Every accepted snapshot reached durable storage.</summary>
+    Written,
+    /// <summary>Clean-on-exit removed all snapshots after a successful drain.</summary>
+    Cleaned,
+    /// <summary>Capture, writing, cleanup, or worker ownership failed.</summary>
+    RecoveryRequired,
+    /// <summary>No final snapshot was requested.</summary>
+    NotAttempted,
+}
+
+public readonly record struct AutoSaveTerminalResult(
+    AutoSaveTerminalStatus Status,
+    string? Detail = null)
+{
+    public static AutoSaveTerminalResult PendingResult =>
+        new(AutoSaveTerminalStatus.Pending);
+
+    public static AutoSaveTerminalResult Written(string? detail = null) =>
+        new(AutoSaveTerminalStatus.Written, detail);
+
+    public static AutoSaveTerminalResult Cleaned(string? detail = null) =>
+        new(AutoSaveTerminalStatus.Cleaned, detail);
+
+    public static AutoSaveTerminalResult RecoveryRequired(string detail) =>
+        new(AutoSaveTerminalStatus.RecoveryRequired, detail);
+
+    public static AutoSaveTerminalResult NotAttempted(string? detail = null) =>
+        new(AutoSaveTerminalStatus.NotAttempted, detail);
+}
+
 /// <summary>
 /// Result of one AutoSave capture attempt. Dispatch acceptance is not worker
 /// completion or durable write success. A partial failure is not complete even
@@ -85,6 +119,12 @@ public interface IAutoSaveService : IDisposable
     DateTime? LastSaveUtc { get; }
 
     /// <summary>
+    /// Terminal result of the most recent lifecycle drain. Pending means that
+    /// capture or periodic work has been admitted but not joined yet.
+    /// </summary>
+    AutoSaveTerminalResult LastTerminalResult { get; }
+
+    /// <summary>
     /// Takes a periodic snapshot immediately, regardless of the interval, and
     /// returns the number of actors CAPTURED (0 when nothing had authored edits,
     /// in which case no folder is created). The disk write runs on a worker
@@ -97,13 +137,19 @@ public interface IAutoSaveService : IDisposable
 
     /// <summary>
     /// Attempts exactly one synchronous final capture for a GPose exit edge.
-    /// When the latch is available, authored state is read and detached
-    /// synchronously before this method returns.
-    /// If an earlier dispatch is still in flight, this returns
-    /// <see cref="AutoSaveCaptureStatus.NotCaptured"/> without reading actor
-    /// state; it does not claim an immutable capture occurred. The result
-    /// distinguishes a skipped/not-attempted capture, a completed capture,
-    /// accepted dispatch, and failure; dispatch is not a write acknowledgement.
+    /// Authored state is read and detached synchronously before this method
+    /// returns. The final reservation remains independent of an active periodic
+    /// write; its immutable job is serialized behind that write. A duplicate
+    /// call returns the original compatibility result without recapturing.
+    /// Dispatch acceptance is not a write acknowledgement; call
+    /// <see cref="CompleteForExit"/> for terminal persistence truth.
     /// </summary>
     AutoSaveCaptureResult CaptureForExit();
+
+    /// <summary>
+    /// Closes periodic admission, joins owned worker work, and completes the
+    /// final or clean-on-exit operation. It never returns while a writer remains
+    /// detached.
+    /// </summary>
+    AutoSaveTerminalResult CompleteForExit();
 }

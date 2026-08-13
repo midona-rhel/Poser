@@ -211,35 +211,99 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
-    public void Final_capture_attempt_reports_not_captured_when_prior_dispatch_is_in_flight()
+    public void Final_capture_is_idempotent_after_reserving_behind_periodic_work()
     {
         using var h = new AutoSaveHarness();
         h.Settings.Enabled = true;
         h.Settings.CleanOnExit = false;
         h.AddActor("Alpha");
 
-        Action? queuedWorker = null;
-        h.Dispatch = work =>
-        {
-            queuedWorker = work;
-            return true;
-        };
-
+        using var hold = h.HoldWorker();
+        var periodic = h.Service.SaveNow("interval");
+        hold.WaitUntilHeld();
         var first = h.Service.CaptureForExit();
         var second = h.Service.CaptureForExit();
 
         Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, first.Status);
         Assert.True(first.DispatchAccepted);
         Assert.True(first.CaptureCompleted);
-        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, second.Status);
-        Assert.False(second.DispatchAccepted);
-        Assert.False(second.CaptureCompleted);
-        Assert.Contains("in flight", second.Detail);
-        Assert.Equal(1, h.CaptureCallCount);
+        Assert.Equal(first.Status, second.Status);
+        Assert.True(second.DispatchAccepted);
+        Assert.True(second.CaptureCompleted);
+        Assert.Equal(first.CapturedActors, second.CapturedActors);
+        Assert.Equal(2, h.CaptureCallCount);
         Assert.Equal(h.NowUtc, h.Service.LastSaveUtc);
 
-        queuedWorker!();
+        Assert.Equal(1, periodic);
+        hold.Release();
+        var terminal = h.Service.CompleteForExit();
+        Assert.Equal(AutoSaveTerminalStatus.Written, terminal.Status);
         h.WaitForWrite();
+    }
+
+    [Fact]
+    public void Final_capture_is_reserved_behind_active_periodic_work_and_is_not_dropped()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("interval"));
+        hold.WaitUntilHeld();
+
+        var final = h.Service.CaptureForExit();
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, final.Status);
+        Assert.True(final.DispatchAccepted);
+
+        hold.Release();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveTerminalStatus.Written, terminal.Status);
+        Assert.Equal(2, h.CaptureCallCount);
+        Assert.Equal(
+            new[] { $"{h.PrefixNow()} Alpha (2).pose", $"{h.PrefixNow()} Alpha.pose" },
+            h.SnapshotFiles(h.DayNow()));
+    }
+
+    [Fact]
+    public void Periodic_admission_is_closed_after_final_reservation()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+
+        var final = h.Service.CaptureForExit();
+        var periodic = h.Service.SaveNow("interval-after-final");
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, final.Status);
+        Assert.Equal(0, periodic);
+        Assert.Equal(AutoSaveTerminalStatus.Written, h.Service.CompleteForExit().Status);
+    }
+
+    [Fact]
+    public void Clean_on_exit_joins_active_periodic_work_before_deleting()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = true;
+        h.AddActor("Alpha");
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("interval"));
+        hold.WaitUntilHeld();
+
+        var exit = h.Service.CaptureForExit();
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, exit.Status);
+        Assert.True(Directory.Exists(h.Root));
+
+        hold.Release();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveTerminalStatus.Cleaned, terminal.Status);
+        Assert.Empty(Directory.GetDirectories(h.Root));
     }
 
     [Fact]

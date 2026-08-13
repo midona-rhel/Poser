@@ -74,14 +74,42 @@ public class AutoSaveService : IAutoSaveService
     private DateTime? _nextDueUtc;
     private bool _disposed;
 
-    /// <summary>0 idle, 1 a snapshot is still being written. A snapshot that
-    /// arrives while the previous one is in flight is DROPPED, not queued: the
-    /// next interval is a fresher capture than any backlog entry.</summary>
-    private int _writeInFlight;
+    private readonly object _queueGate = new();
+    private SnapshotJob? _pendingPeriodic;
+    private SnapshotJob? _finalJob;
+    private Task? _writerTask;
+    private bool _writerRunning;
+    private bool _exitReserved;
+    private bool _exitCompleted;
+    private bool _cleanOnExit;
+    private bool _finalCaptureStarted;
+    private AutoSaveCaptureResult _finalCapture;
+    private bool _hasFinalCapture;
+    private string? _workerFailure;
+    private AutoSaveTerminalResult _lastTerminalResult =
+        AutoSaveTerminalResult.PendingResult;
 
     public string RootDirectory { get; }
 
     public DateTime? LastSaveUtc { get; private set; }
+
+    public AutoSaveTerminalResult LastTerminalResult
+    {
+        get
+        {
+            lock (_queueGate)
+                return _lastTerminalResult;
+        }
+    }
+
+    private readonly record struct SnapshotJob(
+        string Reason,
+        DateTime NowUtc,
+        int Keep,
+        IReadOnlyList<CapturedPose> Captured,
+        bool IsFinal);
+
+    private readonly record struct WorkerResult(bool Success, string? Detail);
 
     public AutoSaveService(
         IPluginLog log,
@@ -157,6 +185,23 @@ public class AutoSaveService : IAutoSaveService
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
 
+    private void ResetCompletedExitForNewSession()
+    {
+        lock (_queueGate)
+        {
+            if (!_exitCompleted || _writerRunning)
+                return;
+
+            _exitReserved = false;
+            _exitCompleted = false;
+            _cleanOnExit = false;
+            _finalCaptureStarted = false;
+            _hasFinalCapture = false;
+            _workerFailure = null;
+            _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
+        }
+    }
+
     private void OnFrameworkUpdate(IFramework framework) => Tick(_clock());
 
     /// <summary>
@@ -173,6 +218,7 @@ public class AutoSaveService : IAutoSaveService
             return;
         }
 
+        ResetCompletedExitForNewSession();
         var interval = TimeSpan.FromSeconds(Math.Max(1, settings.IntervalSeconds));
 
         if (_nextDueUtc is null)
@@ -189,28 +235,58 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Exactly one final-capture attempt for this call. GPoseService calls this
-    /// before it publishes the legacy exit event, so the attempt does not
-    /// depend on EventBus subscription order. If an earlier worker dispatch is
-    /// still in flight, the latch returns NotCaptured without reading actor
-    /// state or claiming immutable capture occurred.
+    /// Reserves exactly one final-capture attempt for this exit edge. The
+    /// reservation is independent of an active periodic write; the immutable
+    /// final job waits behind that write. A duplicate call returns the original
+    /// compatibility result without recapturing live state.
     /// </summary>
     public AutoSaveCaptureResult CaptureForExit()
     {
-        _nextDueUtc = null;
-
-        var settings = Settings;
-        if (!settings.Enabled)
-            return AutoSaveCaptureResult.NotCaptured("Auto-save is disabled.");
-
-        if (settings.CleanOnExit)
+        lock (_queueGate)
         {
-            CleanAll();
-            return AutoSaveCaptureResult.NotCaptured(
-                "Clean-on-exit is enabled; snapshots were cleaned.");
+            if (_hasFinalCapture)
+                return _finalCapture;
+            if (_finalCaptureStarted)
+                return AutoSaveCaptureResult.NotCaptured(
+                    "Final auto-save capture is already in progress.");
+
+            _finalCaptureStarted = true;
+            _exitReserved = true;
+            _cleanOnExit = Settings.Enabled && Settings.CleanOnExit;
+            _nextDueUtc = null;
+            _pendingPeriodic = null;
         }
 
-        return CaptureAndDispatch("gpose-exit");
+        var settings = Settings;
+        AutoSaveCaptureResult result;
+        if (!settings.Enabled)
+        {
+            result = AutoSaveCaptureResult.NotCaptured("Auto-save is disabled.");
+        }
+        else if (settings.CleanOnExit)
+        {
+            result = AutoSaveCaptureResult.NotCaptured(
+                "Clean-on-exit is enabled; cleanup is pending.");
+        }
+        else
+        {
+            result = CaptureAndDispatch("gpose-exit", isFinal: true);
+        }
+
+        lock (_queueGate)
+        {
+            _finalCapture = result;
+            _hasFinalCapture = true;
+            _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
+        }
+
+        // Clean-on-exit has no final pose reservation, but direct callers still
+        // receive the historical synchronous cleanup behavior. The lifecycle
+        // port calls CompleteForExit again, which is idempotent.
+        if (!settings.Enabled || _cleanOnExit)
+            CompleteForExit();
+
+        return result;
     }
 
     /// <summary>
@@ -227,16 +303,20 @@ public class AutoSaveService : IAutoSaveService
     /// <summary>
     /// Returns the number of actors CAPTURED, not the number of files that
     /// landed: the writes outlive this call. Zero therefore also covers
-    /// "nothing had authored edits" and "the previous snapshot is still being
-    /// written", both of which are no-ops by design.
+    /// "nothing had authored edits" and "a periodic item was coalesced into the
+    /// bounded pending slot", both of which may produce zero.
     /// </summary>
-    public int SaveNow(string reason) => CaptureAndDispatch(reason).CapturedActors;
+    public int SaveNow(string reason) =>
+        CaptureAndDispatch(reason, isFinal: false).CapturedActors;
 
-    private AutoSaveCaptureResult CaptureAndDispatch(string reason)
+    private AutoSaveCaptureResult CaptureAndDispatch(string reason, bool isFinal)
     {
-        if (Interlocked.CompareExchange(ref _writeInFlight, 1, 0) != 0)
-            return AutoSaveCaptureResult.NotCaptured(
-                "A previous auto-save dispatch is still in flight.");
+        lock (_queueGate)
+        {
+            if (_disposed || (_exitReserved && !isFinal))
+                return AutoSaveCaptureResult.NotCaptured(
+                    "Auto-save admission is closed.");
+        }
 
         var dispatchAccepted = false;
         try
@@ -284,17 +364,34 @@ public class AutoSaveService : IAutoSaveService
             var keep = Math.Max(1, Settings.MaxAutoSaves);
             var nowUtc = _clock();
 
-            try
+            var job = new SnapshotJob(reason, nowUtc, keep, captured, isFinal);
+            lock (_queueGate)
             {
-                dispatchAccepted = _dispatch(
-                    () => WriteSnapshot(reason, nowUtc, keep, captured));
+                if (_disposed || (_exitReserved && !isFinal))
+                    return AutoSaveCaptureResult.NotCaptured(
+                        "Auto-save admission is closed.");
+
+                if (isFinal)
+                    _finalJob = job;
+                else
+                    _pendingPeriodic = job;
+
+                dispatchAccepted = EnsureWriterLocked();
             }
-            catch (Exception ex)
+
+            if (!dispatchAccepted)
             {
-                _log.Error($"Auto-save ({reason}) dispatch failed: {ex}");
-                return AutoSaveCaptureResult.Failure(
-                    $"Auto-save ({reason}) dispatch failed: {ex.Message}",
-                    captured.Count);
+                lock (_queueGate)
+                {
+                    if (isFinal)
+                        _finalJob = null;
+                    else if (_pendingPeriodic.Equals(job))
+                        _pendingPeriodic = null;
+                    _workerFailure ??= $"Auto-save ({reason}) dispatch was not accepted.";
+                }
+                return AutoSaveCaptureResult.Captured(
+                    captured.Count,
+                    $"Auto-save ({reason}) dispatch was not accepted.");
             }
 
             if (dispatchAccepted)
@@ -328,11 +425,177 @@ public class AutoSaveService : IAutoSaveService
             return AutoSaveCaptureResult.Failure(
                 $"Auto-save ({reason}) failed: {ex.Message}");
         }
-        finally
+    }
+
+    private bool EnsureWriterLocked()
+    {
+        if (_writerRunning)
         {
-            if (!dispatchAccepted)
-                Interlocked.Exchange(ref _writeInFlight, 0);
+            _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
+            return true;
         }
+
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _writerRunning = true;
+        try
+        {
+            var accepted = _dispatch(() => WorkerDrain(completion));
+            if (!accepted)
+            {
+                _writerRunning = false;
+                completion.TrySetResult(false);
+                _log.Error("Auto-save worker dispatch was not accepted.");
+                return false;
+            }
+
+            // The task is retained even when the test dispatcher invokes the
+            // callback synchronously; unload always owns the join boundary.
+            _writerTask = completion.Task;
+            _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _writerRunning = false;
+            completion.TrySetException(ex);
+            _log.Error($"Auto-save worker dispatch failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void WorkerDrain(TaskCompletionSource<bool> completion)
+    {
+        var success = true;
+        try
+        {
+            while (true)
+            {
+                SnapshotJob? job;
+                lock (_queueGate)
+                {
+                    job = _pendingPeriodic ?? _finalJob;
+                    if (job is null)
+                    {
+                        _writerRunning = false;
+                        _lastTerminalResult = success
+                            ? AutoSaveTerminalResult.Written()
+                            : AutoSaveTerminalResult.RecoveryRequired(
+                                _workerFailure ?? "Auto-save worker failed.");
+                        completion.TrySetResult(success);
+                        return;
+                    }
+
+                    if (job.Value.IsFinal)
+                        _finalJob = null;
+                    else
+                        _pendingPeriodic = null;
+                }
+
+                var result = WriteSnapshot(
+                    job.Value.Reason,
+                    job.Value.NowUtc,
+                    job.Value.Keep,
+                    job.Value.Captured);
+                if (!result.Success)
+                {
+                    success = false;
+                    lock (_queueGate)
+                        _workerFailure ??= result.Detail;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (_queueGate)
+            {
+                success = false;
+                _workerFailure ??= ex.Message;
+                _writerRunning = false;
+                _lastTerminalResult = AutoSaveTerminalResult.RecoveryRequired(ex.Message);
+            }
+            completion.TrySetResult(false);
+        }
+    }
+
+    /// <summary>
+    /// Closes admission, joins every owned writer, then performs clean-on-exit
+    /// cleanup if requested. No timeout path releases ownership of the writer.
+    /// </summary>
+    public AutoSaveTerminalResult CompleteForExit()
+    {
+        Task? writer;
+        bool clean;
+        lock (_queueGate)
+        {
+            if (_exitCompleted)
+                return _lastTerminalResult;
+
+            _exitReserved = true;
+            _pendingPeriodic = null;
+            clean = _cleanOnExit;
+            writer = _writerTask;
+        }
+
+        try
+        {
+            writer?.GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            lock (_queueGate)
+                _workerFailure ??= ex.Message;
+        }
+
+        AutoSaveTerminalResult result;
+        lock (_queueGate)
+        {
+            if (_writerRunning || _finalJob is not null || _pendingPeriodic is not null)
+            {
+                // A callback can only reach here if a custom dispatcher violated
+                // its ownership contract. Keep the service in recovery rather
+                // than claiming that unload is safe.
+                _workerFailure ??= "Auto-save worker did not reach a terminal state.";
+            }
+
+            result = _workerFailure is not null
+                ? AutoSaveTerminalResult.RecoveryRequired(_workerFailure)
+                : _hasFinalCapture &&
+                  _finalCapture.Status == AutoSaveCaptureStatus.Failure
+                    ? AutoSaveTerminalResult.RecoveryRequired(
+                        _finalCapture.Detail ?? "Final auto-save capture failed.")
+                : clean
+                    ? AutoSaveTerminalResult.PendingResult
+                    : _hasFinalCapture &&
+                      (_finalCapture.Status is AutoSaveCaptureStatus.Captured
+                        or AutoSaveCaptureStatus.DispatchStarted)
+                        ? AutoSaveTerminalResult.Written()
+                        : AutoSaveTerminalResult.NotAttempted();
+        }
+
+        if (clean && result.Status != AutoSaveTerminalStatus.RecoveryRequired)
+        {
+            if (CleanAll())
+                result = AutoSaveTerminalResult.Cleaned();
+            else
+                result = AutoSaveTerminalResult.RecoveryRequired(
+                    "Clean-on-exit could not remove every snapshot.");
+        }
+
+        lock (_queueGate)
+        {
+            _lastTerminalResult = result;
+            _exitCompleted = true;
+            return result;
+        }
+    }
+
+    internal bool WaitForIdle(TimeSpan timeout)
+    {
+        Task? writer;
+        lock (_queueGate)
+            writer = _writerTask;
+        return writer is null || writer.Wait(timeout);
     }
 
     /// <summary>
@@ -341,12 +604,14 @@ public class AutoSaveService : IAutoSaveService
     /// are the inline ones — every failure is swallowed and logged, and one bad
     /// actor never aborts the rest of the snapshot.
     /// </summary>
-    private void WriteSnapshot(
+    private WorkerResult WriteSnapshot(
         string reason,
         DateTime nowUtc,
         int keep,
-        List<CapturedPose> captured)
+        IReadOnlyList<CapturedPose> captured)
     {
+        var success = true;
+        string? failure = null;
         try
         {
             var local = nowUtc.ToLocalTime();
@@ -368,6 +633,8 @@ public class AutoSaveService : IAutoSaveService
                     }
                     else
                     {
+                        success = false;
+                        failure ??= $"export failed for actor '{entry.ActorName}'";
                         // PoseFile.Save swallows the underlying failure; this
                         // adds the auto-save context it cannot see.
                         _log.Error(
@@ -376,22 +643,27 @@ public class AutoSaveService : IAutoSaveService
                 }
                 catch (Exception ex)
                 {
+                    success = false;
+                    failure ??= ex.Message;
                     _log.Error(
                         $"Auto-save ({reason}): actor '{entry.ActorName}' -> {path} threw: {ex.Message}");
                 }
             }
 
             _log.Info($"Auto-saved {saved}/{captured.Count} actor(s) to {dayFolder} ({reason})");
-            Prune(keep);
+            if (!Prune(keep))
+            {
+                success = false;
+                failure ??= "retention pruning failed";
+            }
         }
         catch (Exception ex)
         {
+            success = false;
+            failure ??= ex.Message;
             _log.Error($"Auto-save ({reason}) failed: {ex}");
         }
-        finally
-        {
-            Interlocked.Exchange(ref _writeInFlight, 0);
-        }
+        return new WorkerResult(success, failure);
     }
 
     /// <summary>
@@ -473,7 +745,7 @@ public class AutoSaveService : IAutoSaveService
     /// is total even at one-second stamp granularity. A day folder whose last
     /// event was pruned goes with it.</para>
     /// </summary>
-    private void Prune(int keep)
+    private bool Prune(int keep)
     {
         var events = new List<(DateTime AtUtc, string Key, string? LegacyDir, List<string>? Files)>();
         var dayFolders = new List<string>();
@@ -508,7 +780,7 @@ public class AutoSaveService : IAutoSaveService
         catch (Exception ex)
         {
             _log.Error($"Auto-save: could not enumerate '{RootDirectory}' to prune: {ex.Message}");
-            return;
+            return false;
         }
 
         var stale = events
@@ -518,6 +790,7 @@ public class AutoSaveService : IAutoSaveService
             .ToList();
 
         var pruned = 0;
+        var success = true;
         foreach (var (_, _, legacyDir, files) in stale)
         {
             try
@@ -531,6 +804,7 @@ public class AutoSaveService : IAutoSaveService
             }
             catch (Exception ex)
             {
+                success = false;
                 _log.Error(
                     $"Auto-save: could not prune '{legacyDir ?? files![0]}': {ex.Message}");
             }
@@ -545,6 +819,7 @@ public class AutoSaveService : IAutoSaveService
             }
             catch (Exception ex)
             {
+                success = false;
                 _log.Error(
                     $"Auto-save: could not remove empty day folder '{dir}': {ex.Message}");
             }
@@ -552,6 +827,7 @@ public class AutoSaveService : IAutoSaveService
 
         if (pruned > 0)
             _log.Debug($"Auto-save pruned {pruned} old save(s).");
+        return success;
     }
 
     private static bool IsDayFolder(string name) =>
@@ -580,7 +856,7 @@ public class AutoSaveService : IAutoSaveService
         return fileName ?? string.Empty;
     }
 
-    private void CleanAll()
+    private bool CleanAll()
     {
         List<string> folders;
         try
@@ -590,10 +866,11 @@ public class AutoSaveService : IAutoSaveService
         catch (Exception ex)
         {
             _log.Error($"Auto-save: could not enumerate '{RootDirectory}' to clean: {ex.Message}");
-            return;
+            return false;
         }
 
         var deleted = 0;
+        var success = true;
         foreach (var dir in folders)
         {
             try
@@ -603,26 +880,31 @@ public class AutoSaveService : IAutoSaveService
             }
             catch (Exception ex)
             {
+                success = false;
                 _log.Error($"Auto-save: could not delete '{dir}': {ex.Message}");
             }
         }
 
         _log.Info($"Auto-save cleaned {deleted} snapshot folder(s) on leaving GPose.");
+        return success && !Directory.EnumerateDirectories(RootDirectory).Any();
     }
 
-    /// <summary>
-    /// Unhook the framework tick only. An in-flight <see cref="WriteSnapshot"/>
-    /// is deliberately not waited on: it holds a detached copy and only touches
-    /// the disk.
-    /// </summary>
+    /// <summary>Close admission and join the owned worker before disposal.</summary>
     public void Dispose()
     {
         if (_disposed)
             return;
-        _disposed = true;
+
+        lock (_queueGate)
+        {
+            _disposed = true;
+            _exitReserved = true;
+            _pendingPeriodic = null;
+        }
 
         if (_framework != null)
             _framework.Update -= OnFrameworkUpdate;
+        CompleteForExit();
         GC.SuppressFinalize(this);
     }
 }

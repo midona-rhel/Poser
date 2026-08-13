@@ -158,6 +158,18 @@ public class Poser : IDalamudPlugin
 
     public void Dispose()
     {
+        // Unload is the same lifecycle edge as ordinary GPose exit. Marshal the
+        // live graph read to the framework thread and join it before the
+        // provider can dispose any legacy subscriber or native collaborator.
+        var framework = _serviceProvider.GetRequiredService<IFramework>();
+        var gpose = _serviceProvider.GetRequiredService<IGPoseService>();
+        if (framework.IsInFrameworkUpdateThread)
+            gpose.ExitForUnload();
+        else
+            framework.RunOnFrameworkThread(gpose.ExitForUnload)
+                .GetAwaiter()
+                .GetResult();
+
         _commandManager.RemoveHandler(CommandName);
         Crystarium.IconTextureUploader = null;
         FontRegistry.Dispose();

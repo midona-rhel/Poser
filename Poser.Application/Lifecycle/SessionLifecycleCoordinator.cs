@@ -2,22 +2,24 @@ namespace Poser.Application.Lifecycle;
 
 /// <summary>
 /// Host-provided bridge for the one lifecycle operation currently migrated:
-/// synchronously attempt one final immutable capture before legacy GPose teardown
-/// runs. An implementation may return <see cref="FinalCaptureStatus.NotCaptured"/>
-/// when an earlier dispatch is in flight; the result never acknowledges worker
-/// completion or a durable write.
+/// synchronously reserve/capture the final immutable snapshot and join its
+/// persistence worker before legacy GPose teardown runs. The result preserves
+/// the capture compatibility fields and separately reports terminal persistence.
 /// </summary>
 public interface IFinalCapturePort
 {
-    /// <summary>Attempts exactly one synchronous final capture.</summary>
+    /// <summary>
+    /// Attempts exactly one synchronous final capture and returns only after the
+    /// owned autosave worker has reached a terminal result.
+    /// </summary>
     FinalCaptureResult CaptureForExit();
 }
 
 /// <summary>
-/// Coordinates the pre-publish capture edge. Legacy teardown remains behind
-/// the existing GPose event and is reported as pending here. The host invokes
-/// this synchronously from its framework update callback; no cross-thread
-/// scheduling is performed by this coordinator.
+/// Coordinates the pre-publish capture/drain edge. Legacy teardown remains
+/// behind the existing GPose event and is reported as pending here. The host
+/// invokes this synchronously from its framework update callback; no
+/// cross-thread scheduling is performed by this coordinator.
 /// </summary>
 public interface ISessionLifecycleCoordinator
 {
