@@ -43,23 +43,22 @@ callbacks or hidden state. File and MCDF transaction details live in
 
 ## Session lifecycle
 
-One explicit `SessionLifecycleCoordinator` owns startup, quiesce, and exit
-ordering. Event-subscription or dependency-construction order is not a
-lifecycle contract. On final exit it:
+This slice gives `SessionLifecycleCoordinator` one idempotent normal-exit and
+plugin-unload edge. It does not yet own startup or the complete session phase
+machine; those remain deferred to Slice 3. Event-subscription or
+dependency-construction order is not a lifecycle contract. On the implemented
+exit edge it:
 
-1. captures the immutable final autosave snapshot while the session is still
-   readable;
-2. invalidates operation epochs and cancels/drains active work;
-3. restores Poser-owned state;
-4. tears down native entities and resources;
-5. clears/detaches bindings and publishes the resulting read-model/UI change.
+1. reserves and captures the immutable final autosave snapshot while the graph
+   and session are still readable;
+2. drains and joins the owned autosave worker to a terminal result; then
+3. publishes the existing legacy false-GPose event exactly once.
 
-The persistence worker receives immutable snapshots only and final exit joins
-it. It never reads live Game/runtime state and is not a detached best-effort
-worker. A final snapshot is not successful merely because capture returned:
-atomic write failure, persistence-worker failure, or final worker join/drain
-failure also makes the outcome `RecoveryRequired` with durable failure
-evidence, as do capture, cancellation/drain, restoration, or teardown
-failures.
-Autosave file layout, retention, and atomic-write rules are normative in
+The worker receives immutable snapshots only, never reads live Game/runtime
+state, and is joined before unload/provider disposal. Capture and worker
+failures are typed; a final snapshot is not successful merely because capture
+returned. Operation-epoch invalidation, Poser-owned restoration, native/resource
+teardown, and binding clearing remain with the current legacy subscribers and
+are deferred migration work for Slice 3.
+Autosave file layout, retention, and autosave storage rules are normative in
 [files-and-transfer.md](../features/files-and-transfer.md).

@@ -40,8 +40,9 @@ interchange with Brio and (via name conversion) Anamnesis.
 
 - While in GPose, every actor passing the authored-edits predicate (any
   bone stack with a null layer — `CleanPoseFacade.HasAuthoredEdits`
-  semantics) exports through the normal `IPoseFileService.ExportPose`
-  path — auto-saves are byte-model-identical to manual exports — into
+  semantics) is synchronously detached with
+  `IPoseFileService.CreatePoseFile`; the owned worker then serializes and writes
+  that immutable data into
   `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose`
   (one folder per LOCAL day — user call 2026-08-08, replacing the
   references' folder-per-save clutter; 24-hour prefix keeps name order ==
@@ -49,22 +50,18 @@ interchange with Brio and (via name conversion) Anamnesis.
   same-second collisions suffixed ` (2)`). No actor qualifies → no
   folder. First save lands one full interval after entering GPose, then
   every interval.
-- Periodic and final capture are explicit operations of the one
-  `SessionLifecycleCoordinator`. Final capture occurs while the session is
-  readable, before operation-epoch invalidation, cancellation/drain,
-  restoration, and native/resource teardown. Event-subscription order,
-  dependency-construction order, and a first subscriber are not correctness
-  contracts. Disconnect, posing-disable, and plugin exit use the same ordered
-  lifecycle edge. With clean-on-exit the ordered exit deletes all snapshots;
-  a crash never runs it, so snapshots survive for recovery.
+- Lifecycle ownership and exit ordering are defined once in
+  [application-state.md](../architecture/application-state.md). The autosave
+  edge reserves/captures while the session is readable, joins its owned worker
+  before the legacy false-GPose notification, and performs clean-on-exit
+  deletion only after that drain; a crash leaves snapshots for recovery.
 - Capture produces an immutable snapshot. The persistence worker receives only
-  that snapshot, performs atomic file writes, and is joined by final exit. It
-  never reads live runtime state and is never detached as best-effort work. A
-  final snapshot is not successful merely because capture occurred: atomic
-  write failure, persistence-worker failure, and final worker join/drain
-  failure, as well as capture, cancellation/drain, restore, or teardown
-  failure, yield `RecoveryRequired` plus durable evidence. Lifecycle ownership
-  and receipt semantics are defined once in
+  that snapshot, serializes/writes it, and is joined by final exit. It never
+  reads live runtime state and is never detached as best-effort work. A final
+  snapshot is not successful merely because capture occurred: capture or
+  persistence failure, and final worker join/drain failure, produce typed
+  failure or `RecoveryRequired` evidence. Lifecycle ownership and receipt
+  semantics are defined once in
   [application-state.md](../architecture/application-state.md).
 - Retention prunes from DISK to the configured count of SAVE EVENTS —
   the files sharing one time prefix in a day folder, or one whole folder

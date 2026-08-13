@@ -91,12 +91,13 @@ public readonly record struct AutoSaveCaptureResult(
 /// <summary>
 /// Timed pose auto-save. While GPose is active and
 /// <c>PoserConfiguration.AutoSave.Enabled</c> is set, every actor carrying
-/// Poser-authored (unnamed-layer) edits is exported through
-/// <see cref="IPoseFileService.ExportPose"/> into a timestamped folder under
+/// Poser-authored (unnamed-layer) edits is synchronously detached through
+/// <see cref="IPoseFileService.CreatePoseFile"/> into immutable pose data. An
+/// owned worker serializes and writes that data into a timestamped folder under
 /// <see cref="RootDirectory"/> on the configured interval, plus once when GPose
 /// is left through the application lifecycle coordinator. The exit operation is
-/// one final capture attempt; it is not a durable-write acknowledgement. Files are
-/// byte-identical to a manual export; only the location and the trigger differ.
+/// one final capture and worker-drain edge; capture or dispatch acceptance is
+/// not a durable-write acknowledgement.
 ///
 /// Snapshot folders older than <c>AutoSave.MaxAutoSaves</c> are pruned from disk
 /// after each save, so retention survives a plugin restart.
