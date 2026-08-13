@@ -58,7 +58,6 @@ public sealed class StableBindingRegistry
     private Dictionary<PropHandle, PropId> _propIds =
         new(ReferenceComparer<PropHandle>.Instance);
     private Dictionary<PropId, PropHandle> _propBindings = new();
-    private ulong _revision;
 
     public StableBindingRegistry(
         IActorManager actors,
@@ -78,10 +77,7 @@ public sealed class StableBindingRegistry
 
     private readonly PropSpawnService _props;
 
-    public SceneSnapshot CurrentSnapshot { get; private set; } =
-        SceneSnapshot.Empty;
-
-    public SceneSnapshot Refresh()
+    public SceneSnapshot RefreshCandidate()
     {
         foreach (var lineage in _lineages.Values)
         {
@@ -222,6 +218,12 @@ public sealed class StableBindingRegistry
                 slot.PresentBeforeScan = slot.Present;
         }
 
+        var describedBoneIds = actorDescriptors
+            .SelectMany(actor => actor.Skeletons)
+            .SelectMany(skeleton => skeleton.Bones)
+            .Select(bone => bone.Id)
+            .ToHashSet();
+
         // Lights present and still valid keep their id; anything else drops
         // out of both maps with this rebuild.
         var lightIds = new Dictionary<ILight, LightId>(
@@ -236,12 +238,18 @@ public sealed class StableBindingRegistry
                 lightId = LightId.New();
             lightIds[light] = lightId;
             lightBindings[lightId] = light;
+            BoneId? attachedBoneId = null;
+            if (light.AttachedBone is { } attached &&
+                GetBoneId(attached, legacyBoneIds, boneBindings) is { } id &&
+                describedBoneIds.Contains(id))
+                attachedBoneId = id;
             lightDescriptors.Add(new LightDescriptor(
                 lightId,
                 light.Name,
                 light.Kind,
                 light.IsOn,
-                light.Ownership));
+                light.Ownership,
+                attachedBoneId));
         }
 
         // Cameras keep their id while present and valid, exactly as lights
@@ -263,7 +271,8 @@ public sealed class StableBindingRegistry
                 camera.Name,
                 camera.Kind,
                 camera.IsLive,
-                camera.IsDefault));
+                camera.IsDefault,
+                camera.IsLocked));
         }
 
         // Props keep their id while present and valid, exactly as lights do.
@@ -295,13 +304,20 @@ public sealed class StableBindingRegistry
         _cameraBindings = cameraBindings;
         _propIds = propIds;
         _propBindings = propBindings;
-        CurrentSnapshot = new SceneSnapshot(
-            checked(++_revision),
+        // This registry can justify native identity/topology plus the current
+        // actor, light, camera, and prop row fields above. The registry cannot
+        // truthfully reduce a camera's display-name target and
+        // potentially-many tracked bones to one exact actor/bone target, and
+        // owns no environment or gaze state. Those relationship fields stay
+        // at explicit SceneSnapshot defaults rather than inventing state.
+        // Revision zero marks candidate content only; SceneSession's serialized
+        // lifecycle integration assigns the admission revision.
+        return new SceneSnapshot(
+            0,
             actorDescriptors,
             lightDescriptors,
             cameraDescriptors,
             propDescriptors);
-        return CurrentSnapshot;
     }
 
     /// <summary>
@@ -352,10 +368,18 @@ public sealed class StableBindingRegistry
             ? id
             : null;
 
-    public BoneId? GetBoneId(IBone bone)
+    public BoneId? GetBoneId(IBone bone) =>
+        GetBoneId(bone, _legacyBoneIds, _boneBindings);
+
+    private static BoneId? GetBoneId(
+        IBone bone,
+        IReadOnlyDictionary<
+            (string Actor, PoseSlot Slot, int Partial, int Index),
+            BoneId> legacyBoneIds,
+        IReadOnlyDictionary<BoneId, IBone> boneBindings)
     {
         var actorKey = bone.Skeleton.Actor.Id.Unique;
-        if (!_legacyBoneIds.TryGetValue(
+        if (!legacyBoneIds.TryGetValue(
                 (actorKey, bone.Skeleton.Slot, bone.PartialId, bone.BoneIndex),
                 out var id) ||
             !id.CanonicalName.Equals(
@@ -366,7 +390,7 @@ public sealed class StableBindingRegistry
         // THIS bone object. A bone from a released/replaced skeleton shares
         // the reverse key with its replacement but is a different instance —
         // it maps to null, never to the replacement's identity.
-        return _boneBindings.TryGetValue(id, out var bound) &&
+        return boneBindings.TryGetValue(id, out var bound) &&
                ReferenceEquals(bound, bone)
             ? id
             : null;

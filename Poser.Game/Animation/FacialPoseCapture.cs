@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -46,6 +47,7 @@ public sealed class FacialPoseCapture : IDisposable
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
+    private readonly SceneSession _scene;
     private readonly AnimationSession _animation;
     private readonly TransformCommandService _transforms;
     private readonly TransformGestureService _gestures;
@@ -74,6 +76,7 @@ public sealed class FacialPoseCapture : IDisposable
     public FacialPoseCapture(
         IFramework framework,
         StableBindingRegistry bindings,
+        SceneSession scene,
         AnimationSession animation,
         TransformCommandService transforms,
         TransformGestureService gestures,
@@ -81,6 +84,7 @@ public sealed class FacialPoseCapture : IDisposable
     {
         _framework = framework;
         _bindings = bindings;
+        _scene = scene;
         _animation = animation;
         _transforms = transforms;
         _gestures = gestures;
@@ -247,7 +251,7 @@ public sealed class FacialPoseCapture : IDisposable
         if (_bindings.Resolve(pending.Actor) is not { Success: true })
             return "the actor is no longer available";
 
-        var snapshot = _bindings.CurrentSnapshot;
+        var snapshot = _scene.Snapshot;
         ActorDescriptor? descriptor = null;
         foreach (var candidate in snapshot.Actors)
             if (candidate.Id.Equals(pending.Actor))

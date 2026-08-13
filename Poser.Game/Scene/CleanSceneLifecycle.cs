@@ -1,8 +1,8 @@
-using System.Text;
 using Dalamud.Plugin.Services;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
+using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.Services;
 
@@ -38,7 +38,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly object _disposeGate = new();
     private bool _disposeRestoreAbandoned;
 
-    private string? _lastSignature;
+    private SceneSnapshot? _lastSignature;
     private bool _refreshing;
     private bool _retryPending;
     private TimeSpan _retryInterval = TimeSpan.FromMilliseconds(500);
@@ -167,7 +167,7 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void RefreshCore()
     {
-        var snapshot = _bindings.Refresh();
+        var candidate = _bindings.RefreshCandidate();
         // The refresh is the only place that resolves a whole skeleton's bone
         // names at once, so it owns the flush of whatever those lookups found
         // untranslated. One line per refresh instead of one per bone: a modded
@@ -177,17 +177,27 @@ public sealed class CleanSceneLifecycle : IDisposable
         // One structural signature coalesces every refresh source (events,
         // retries, session transitions): identical scenes publish nothing —
         // no snapshot churn, no revision increment, no gesture cancellation.
-        var signature = Signature(snapshot);
-        _retryPending = snapshot.Actors.Any(
+        var signature = CanonicalSignature(candidate);
+        _retryPending = candidate.Actors.Any(
             actor => actor.CharacterSkeleton == null);
         if (!_retryPending)
             _retryInterval = InitialRetryInterval;
-        if (signature == _lastSignature)
+        if (_lastSignature?.ContentEquals(signature) == true)
             return;
+
+        var result = _scene.TryRefresh(CreateAdmissionCandidate(
+            candidate,
+            _scene.Snapshot));
+        if (!result.Accepted)
+            return;
+
+        // A rejected candidate is deliberately retried: recording its
+        // signature would coalesce away the correction opportunity.
         _lastSignature = signature;
         _retryInterval = InitialRetryInterval;
+        if (!result.StateChanged)
+            return;
 
-        _scene.Refresh(snapshot);
         // Selective reconciliation against the refreshed exact-generation
         // scene: a gesture whose every target is still current survives and
         // accepts the new revision (unrelated actors/slots may come and go
@@ -238,74 +248,29 @@ public sealed class CleanSceneLifecycle : IDisposable
         Refresh();
     }
 
-    private static string Signature(Poser.Domain.Scene.SceneSnapshot snapshot)
+    /// <summary>
+    /// Creates the one revision-neutral structural fingerprint. ContentEquals
+    /// is the normative full-scene policy, including exact ids, bone topology,
+    /// relationships, environment, gaze, and every camera field.
+    /// </summary>
+    internal static SceneSnapshot CanonicalSignature(SceneSnapshot candidate) =>
+        candidate with { Revision = 0 };
+
+    /// <summary>
+    /// Serializes producer content against the committed Application scene.
+    /// Exact replays retain its revision; changed content requests the next
+    /// revision. SceneSession remains the only committed revision owner.
+    /// </summary>
+    internal static SceneSnapshot CreateAdmissionCandidate(
+        SceneSnapshot candidate,
+        SceneSnapshot committed)
     {
-        var builder = new StringBuilder();
-        foreach (var actor in snapshot.Actors)
-        {
-            builder.Append(actor.Id.LogicalId);
-            builder.Append(':');
-            builder.Append(actor.Id.Generation);
-            builder.Append(':');
-            // Slot presence and each slot's structural identity participate
-            // in the signature: an appearing/vanishing/replaced slot is a
-            // structural change; identical scenes still publish nothing.
-            foreach (var skeleton in actor.Skeletons)
-            {
-                builder.Append((int)skeleton.Id.Slot);
-                builder.Append('=');
-                builder.Append(skeleton.Id.Generation);
-                builder.Append(':');
-                builder.Append(skeleton.Bones.Count);
-                builder.Append(',');
-            }
-            builder.Append('|');
-        }
-        // Lights participate structurally: without their name/kind/on state a
-        // spawn, rename, or toggle would coalesce away and never publish.
-        foreach (var light in snapshot.Lights)
-        {
-            builder.Append(light.Id.LogicalId);
-            builder.Append(':');
-            builder.Append(light.Id.Generation);
-            builder.Append(':');
-            builder.Append(light.Name);
-            builder.Append(':');
-            builder.Append((int)light.Kind);
-            builder.Append(':');
-            builder.Append(light.IsOn ? '1' : '0');
-            builder.Append('|');
-        }
-        // Cameras participate for the same reason: a create, rename, or live
-        // switch must publish a new revision.
-        foreach (var camera in snapshot.Cameras)
-        {
-            builder.Append(camera.Id.LogicalId);
-            builder.Append(':');
-            builder.Append(camera.Id.Generation);
-            builder.Append(':');
-            builder.Append(camera.Name);
-            builder.Append(':');
-            builder.Append((int)camera.Kind);
-            builder.Append(':');
-            builder.Append(camera.IsLive ? '1' : '0');
-            builder.Append('|');
-        }
-        // Props participate for the same reason: a spawn, destroy, or
-        // visibility flip must publish a new revision or the PROPS section
-        // never hears about it.
-        foreach (var prop in snapshot.Props)
-        {
-            builder.Append(prop.Id.LogicalId);
-            builder.Append(':');
-            builder.Append(prop.Id.Generation);
-            builder.Append(':');
-            builder.Append(prop.Name);
-            builder.Append(':');
-            builder.Append(prop.Visible ? '1' : '0');
-            builder.Append('|');
-        }
-        return builder.ToString();
+        var signature = CanonicalSignature(candidate);
+        var committedSignature = CanonicalSignature(committed);
+        var revision = signature.ContentEquals(committedSignature)
+            ? committed.Revision
+            : checked(committed.Revision + 1);
+        return candidate with { Revision = revision };
     }
 
     private void OnActorListChanged(ActorListChangedEvent _) =>
