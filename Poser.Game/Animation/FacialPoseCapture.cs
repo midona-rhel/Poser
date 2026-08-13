@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Application.Lifecycle;
+using Poser.Application.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Animation;
@@ -16,32 +17,17 @@ using LegacyTransform = Poser.Transform;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Keeps a previewed facial animation after the preview stops.
+/// Two-phase capture of a previewed facial animation into one transform patch.
+/// The pending token is owner-local and session-bound: framework callbacks must
+/// prove the exact session, actor, skeleton, and bindings before any write or
+/// restoration can happen.
 ///
-/// This cannot be done in one frame. Poser applies its pose layers as
-/// deltas on top of whatever the animation is currently producing, so
-/// while a facial timeline plays there is no observable "what this face
-/// would be without it" — reading and writing the same value on the same
-/// tick yields an identity delta and changes nothing. The delta only
-/// exists once the preview has stopped and the face has settled back.
-///
-/// So the bake is two phases:
-///   1. capture each Character face bone's LastRawTransform while the
-///      preview is visible — the same basis PoseFileService saves;
-///   2. stop ONLY the facial slot, let the baseline settle for two
-///      framework ticks, then apply each captured value against the
-///      bone's now-current LastRawTransform, exactly as loading a pose
-///      file does.
-///
-/// Ktisis achieves the same result by calling the original
-/// hkaPose::syncModelSpace on the face partial, which works only because
-/// its posing freezes model space by neutering that hook. Poser has no
-/// such hook and deliberately does not add one.
-///
-/// Expression and gaze are named layers present in BOTH phases, so their
-/// contribution appears on both sides of the delta and cancels; they are
-/// never cleared and never double-applied. Manual edits to other bones
-/// are untouched because only face bones are written.
+/// The two framework ticks are intentional. Poser applies facial layers as
+/// deltas, so reading and writing on the same tick observes an identity delta;
+/// after ReleaseExpression the face must settle before LastRawTransform is
+/// used as the raw-baseline application basis. This keeps the proven
+/// Brio/Ktisis interaction contract: release only the facial preview, preserve
+/// expression/gaze semantics, and let one linked-aware command own the patch.
 /// </summary>
 public sealed class FacialPoseCapture : IDisposable
 {
@@ -51,27 +37,28 @@ public sealed class FacialPoseCapture : IDisposable
     private readonly AnimationSession _animation;
     private readonly TransformCommandService _transforms;
     private readonly TransformGestureService _gestures;
+    private readonly ISessionGenerationSource _sessionGeneration;
     private readonly IPluginLog _log;
 
-    /// <summary>Ticks to let the face settle after the preview stops.
-    /// Ktisis proc's its own sync twice for the same reason.</summary>
     private const int SettleTicks = 2;
 
     private sealed class PendingBake
     {
+        public required Guid OperationId;
+        public required OperationEpoch OperationEpoch;
+        public required SessionGeneration SessionGeneration;
         public required ActorId Actor;
         public required SkeletonId Skeleton;
-        /// <summary>The EXACT speed ownership before the bake paused the
-        /// actor: an owned override value (0 = already paused, 0.5 = a
-        /// custom slow-motion), or null when the game owned its own speed.
-        /// Restored verbatim — collapsing this to a pause/resume pair
-        /// destroyed custom speeds.</summary>
         public required float? PriorSpeed;
         public required List<(BoneId Bone, LegacyTransform Captured)> Captures;
         public int TicksRemaining = SettleTicks;
+        public bool Completing;
     }
 
     private PendingBake? _pending;
+    private OperationEpoch _operationEpoch;
+    private OperationReceipt? _lastReceipt;
+    private bool _disposed;
 
     public FacialPoseCapture(
         IFramework framework,
@@ -80,6 +67,7 @@ public sealed class FacialPoseCapture : IDisposable
         AnimationSession animation,
         TransformCommandService transforms,
         TransformGestureService gestures,
+        ISessionGenerationSource sessionGeneration,
         IPluginLog log)
     {
         _framework = framework;
@@ -88,187 +76,484 @@ public sealed class FacialPoseCapture : IDisposable
         _animation = animation;
         _transforms = transforms;
         _gestures = gestures;
+        _sessionGeneration = sessionGeneration;
         _log = log;
         _framework.Update += OnFrameworkUpdate;
     }
 
-    /// <summary>True between the two phases. While pending, the session
-    /// refuses animation commands and the surface disables the control,
-    /// so nothing can change the face under the capture.</summary>
+    public event Action<OperationReceipt>? ReceiptChanged;
+
     public bool IsPending => _pending != null;
 
-    /// <summary>Face bones use the game's own naming, the same rule the
-    /// Face pose region uses, so bake and Reset Face cover the same set.</summary>
+    public OperationReceipt? LastReceipt => _lastReceipt;
+
+    /// <summary>Returns a receipt only for the exact actor generation that
+    /// initiated it; selection changes cannot consume another actor's result.</summary>
+    public OperationReceipt? ReceiptFor(ActorId actor) =>
+        _lastReceipt is { TargetActorId: var target } && target == actor
+            ? _lastReceipt
+            : null;
+
     private static bool IsFaceBone(string name) =>
         name.StartsWith("j_f_", StringComparison.Ordinal) ||
         name.Equals("j_kao", StringComparison.Ordinal) ||
         name.StartsWith("j_ago", StringComparison.Ordinal);
 
     /// <summary>
-    /// Phase one: pause, capture the visible face, and stop the preview.
+    /// Arms capture and returns the legacy success/failure shape used by the
+    /// pane. The immutable operation receipt is available through
+    /// <see cref="LastReceipt"/> and <see cref="ReceiptChanged"/>.
     /// </summary>
     public GestureResult Begin(ActorId actor, ActorDescriptor descriptor)
     {
-        if (_pending != null)
-            return GestureResult.Fail("A face capture is already in progress.");
-        if (!_framework.IsInFrameworkUpdateThread)
-            return GestureResult.Fail("Face capture must start on the framework thread.");
-        // A live transform gesture owns the pose right now; baking under
-        // it would interleave two writers on the same bones.
-        if (_gestures.ActiveGesture != null)
-            return GestureResult.Fail("Finish the current transform gesture first.");
+        if (_disposed)
+            return GestureResult.Fail("Face capture is disposed.");
 
-        // Only the Character skeleton carries face bones; auxiliary slots
-        // must not be swept in.
-        if (descriptor.CharacterSkeleton is not { } skeleton)
-            return GestureResult.Fail("This actor has no character skeleton.");
+        if (!TryPrepare(actor, descriptor, out var session, out var captures,
+                out var detail))
+            return GestureResult.Fail(detail!);
 
-        var captures = new List<(BoneId, LegacyTransform)>();
-        foreach (var bone in skeleton.Bones)
-        {
-            if (!IsFaceBone(bone.Id.CanonicalName))
-                continue;
-            if (_bindings.Resolve(bone.Id) is not { Success: true, Value: { } live })
-                continue;
-            // LastRawTransform is the pre-reparent absolute a pose file
-            // stores; LastTransform diverges for face partials.
-            captures.Add((bone.Id, live.LastRawTransform));
-        }
+        // A validated new request may supersede an older pending request. The
+        // old token is invalidated before its guard/speed teardown and cannot
+        // publish Applied after this point.
+        if (_pending is { } prior)
+            InvalidatePending(prior, "Face capture was superseded.");
 
-        if (captures.Count == 0)
-            return GestureResult.Fail("This actor has no face bones to capture.");
-
-        // Pause for the capture, remembering the exact prior ownership so
-        // the end of the bake can put back a custom speed, a pause, or
-        // no override at all — whichever was true.
         float? priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
-        if (priorSpeed is not 0f)
+        if (!IsCurrentSession(session))
+            return GestureResult.Fail(
+                "The application session changed while arming capture.");
+        bool setupTouchedSpeed = false;
+        try
         {
-            var paused = _animation.Pause(actor);
-            if (!paused.Success)
-                return GestureResult.Fail(paused.Detail ?? "Could not pause the actor.");
-        }
+            if (priorSpeed is not 0f)
+            {
+                setupTouchedSpeed = true;
+                var paused = _animation.Pause(actor);
+                if (!paused.Success)
+                    return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
+                        paused.Detail ?? "Could not pause the actor.");
+            }
 
-        // Stop ONLY the preview: the session's expression release (Brio's
-        // unpin / Straight face / idle sequence), which touches nothing
-        // but the face.
-        var stopped = _animation.ReleaseExpression(actor);
-        if (!stopped.Success)
-        {
-            RestoreSpeed(actor, priorSpeed);
-            return GestureResult.Fail(stopped.Detail ?? "Could not stop the facial preview.");
-        }
+            if (!IsCurrentSession(session))
+                return SetupFailure(
+                    actor,
+                    session,
+                    priorSpeed,
+                    setupTouchedSpeed,
+                    "The application session changed while pausing capture.");
 
-        // Suspend AFTER our own setup calls, so the guard blocks the user
-        // and not this operation.
-        _animation.SuspendCommands();
-        _pending = new PendingBake
+            var stopped = _animation.ReleaseExpression(actor);
+            if (!stopped.Success)
+                return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
+                    stopped.Detail ?? "Could not stop the facial preview.");
+
+            if (!IsCurrentSession(session))
+                return SetupFailure(
+                    actor,
+                    session,
+                    priorSpeed,
+                    setupTouchedSpeed,
+                    "The application session changed while stopping the preview.");
+
+            _animation.SuspendCommands();
+            if (!IsCurrentSession(session))
+                return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
+                    "The application session changed while arming capture.");
+
+            var epoch = NextEpoch();
+            var operationId = Guid.NewGuid();
+            var pending = new PendingBake
+            {
+                OperationId = operationId,
+                OperationEpoch = epoch,
+                SessionGeneration = session,
+                Actor = actor,
+                Skeleton = descriptor.CharacterSkeleton!.Id,
+                PriorSpeed = priorSpeed,
+                Captures = captures,
+            };
+            _pending = pending;
+            Publish(OperationReceipt.Pending(
+                operationId,
+                epoch,
+                session,
+                actor,
+                "Facial capture is settling."));
+            return GestureResult.Ok();
+        }
+        catch (Exception exception)
         {
-            Actor = actor,
-            Skeleton = skeleton.Id,
-            PriorSpeed = priorSpeed,
-            Captures = captures,
-        };
-        return GestureResult.Ok();
+            return SetupFailure(
+                actor,
+                session,
+                priorSpeed,
+                setupTouchedSpeed,
+                $"Could not arm facial capture: {exception.Message}");
+        }
+    }
+
+    /// <summary>Invalidates the current operation before restoring its owned
+    /// guard and speed. A late callback therefore cannot revive the token.</summary>
+    public OperationReceipt? CancelPending(
+        string detail = "Facial capture was cancelled.")
+    {
+        if (_pending is not { } pending)
+            return _lastReceipt;
+        InvalidatePending(pending, detail);
+        return _lastReceipt;
+    }
+
+    private GestureResult SetupFailure(
+        ActorId actor,
+        SessionGeneration session,
+        float? priorSpeed,
+        bool setupTouchedSpeed,
+        string detail)
+    {
+        if (_animation.CommandsSuspended)
+            _animation.ResumeCommands();
+        var restored = (setupTouchedSpeed || priorSpeed is not null) &&
+                CanRestoreSetupIdentity(actor, session)
+            ? RestoreSpeed(actor, priorSpeed)
+            : AnimationResult.Ok();
+        if (!restored.Success)
+            detail = $"{detail} Speed restore failed: {restored.Detail}";
+        return GestureResult.Fail(detail);
     }
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (_pending is not { } pending)
+        if (_disposed || _pending is not { } pending)
             return;
+        if (pending.Completing)
+            return;
+
+        // This check precedes the tick decrement and every possible write,
+        // restore, or terminal publication from this callback.
+        if (!IsCurrentToken(pending))
+        {
+            InvalidatePending(
+                pending,
+                "Facial capture was cancelled because its session changed.");
+            return;
+        }
+
         if (--pending.TicksRemaining > 0)
             return;
-        _pending = null;
+
         Complete(pending);
     }
 
-    /// <summary>
-    /// Phase two: re-validate, then apply through the ONE atomic transform
-    /// authority. SetAbsoluteMany captures every target before writing,
-    /// rolls the whole face back on any failure, refuses to run under a
-    /// live gesture, and records the single undoable history patch — the
-    /// per-bone linked-aware path double-applied linked bones and is not
-    /// used here.
-    /// </summary>
     private void Complete(PendingBake pending)
+    {
+        if (_disposed || !ReferenceEquals(_pending, pending))
+            return;
+        if (pending.Completing)
+            return;
+        if (!IsCurrentToken(pending))
+        {
+            InvalidatePending(
+                pending,
+                "Facial capture was cancelled because its token became stale.");
+            return;
+        }
+
+        if (Revalidate(pending) is { } problem)
+        {
+            InvalidatePending(pending, $"Facial capture cancelled: {problem}");
+            return;
+        }
+
+        // Revalidate immediately before handing control to the one atomic
+        // transform authority; the authority records one history patch.
+        if (!IsCurrentToken(pending))
+        {
+            InvalidatePending(
+                pending,
+                "Facial capture was cancelled because its token became stale.");
+            return;
+        }
+
+        pending.Completing = true;
+
+        var writes = new List<(
+            TransformTargetId Target,
+            Poser.Domain.Transforms.PoseTransform Desired)>(pending.Captures.Count);
+        foreach (var (boneId, captured) in pending.Captures)
+            writes.Add((
+                TransformTargetId.ForBone(boneId),
+                new Poser.Domain.Transforms.PoseTransform(
+                    captured.Position, captured.Rotation, captured.Scale)));
+
+        GestureResult applied;
+        try
+        {
+            applied = _transforms.SetAbsoluteMany(
+                writes,
+                "Apply facial animation to pose",
+                rawBaseline: true);
+        }
+        catch (Exception exception)
+        {
+            applied = GestureResult.Fail(
+                $"Facial capture apply threw: {exception.Message}");
+        }
+
+        _pending = null;
+        var teardown = FinishOwnedState(pending, requireExactIdentity: true);
+        if (!applied.Success)
+        {
+            var state = applied.Recovery is { Complete: false }
+                ? OperationReceiptState.RecoveryRequired
+                : applied.Recovery is not null
+                    ? OperationReceiptState.RolledBack
+                    : OperationReceiptState.Failed;
+            var detail = applied.Detail ?? "Facial capture apply failed.";
+            if (!teardown.Success)
+            {
+                state = applied.Recovery is { Complete: false }
+                    ? OperationReceiptState.RecoveryRequired
+                    : OperationReceiptState.Failed;
+                detail = $"{detail} Teardown failed: {teardown.Detail}";
+            }
+            Publish(CreateTerminal(
+                pending,
+                state,
+                detail,
+                applied.Recovery));
+            return;
+        }
+
+        if (!teardown.Success)
+        {
+            Publish(CreateTerminal(
+                pending,
+                OperationReceiptState.Failed,
+                $"Facial pose applied, but teardown failed: {teardown.Detail}"));
+            return;
+        }
+
+        Publish(CreateTerminal(
+            pending,
+            OperationReceiptState.Applied,
+            "Facial pose applied."));
+    }
+
+    private void InvalidatePending(PendingBake pending, string detail)
+    {
+        if (!ReferenceEquals(_pending, pending))
+            return;
+
+        _pending = null;
+        _operationEpoch = NextEpoch();
+        var teardown = FinishOwnedState(pending, requireExactIdentity: true);
+        var state = teardown.Success
+            ? OperationReceiptState.Cancelled
+            : OperationReceiptState.Failed;
+        Publish(CreateTerminal(
+            pending,
+            state,
+            teardown.Success
+                ? detail
+                : $"{detail} Teardown failed: {teardown.Detail}"));
+    }
+
+    private (bool Success, string? Detail) FinishOwnedState(
+        PendingBake pending,
+        bool requireExactIdentity)
     {
         try
         {
-            if (Revalidate(pending) is { } problem)
-            {
-                _log.Warning($"Face capture abandoned: {problem}");
-                return;
-            }
-
-            var writes = new List<(TransformTargetId, Poser.Domain.Transforms.PoseTransform)>(
-                pending.Captures.Count);
-            foreach (var (boneId, captured) in pending.Captures)
-                writes.Add((
-                    TransformTargetId.ForBone(boneId),
-                    new Poser.Domain.Transforms.PoseTransform(
-                        captured.Position, captured.Rotation, captured.Scale)));
-
-            // rawBaseline: the application basis is each bone's CURRENT
-            // LastRawTransform — the settled, preview-free face — exactly
-            // as a pose file loads. The default captured baseline is
-            // LastTransform, which diverges on face partials.
-            var applied = _transforms.SetAbsoluteMany(
-                writes, "Apply facial animation to pose", rawBaseline: true);
-            if (!applied.Success)
-                _log.Warning($"Face capture abandoned: {applied.Detail}");
+            if (_animation.CommandsSuspended)
+                _animation.ResumeCommands();
+            if (requireExactIdentity && !CanRestoreExactIdentity(pending))
+                return (true, null);
+            var restored = RestoreSpeed(pending.Actor, pending.PriorSpeed);
+            return restored.Success
+                ? (true, null)
+                : (false, restored.Detail ?? "Could not restore playback speed.");
         }
-        finally
+        catch (Exception exception)
         {
-            // Release the guard before our own teardown call, then give
-            // the actor back its EXACT prior speed ownership.
-            _animation.ResumeCommands();
-            RestoreSpeed(pending.Actor, pending.PriorSpeed);
+            return (false, exception.Message);
         }
     }
 
-    /// <summary>Puts back the speed state recorded at Begin: an owned
-    /// override is re-written verbatim (including 0 — an actor that was
-    /// already paused stays paused); no override hands the speed back to
-    /// the game.</summary>
-    private void RestoreSpeed(ActorId actor, float? priorSpeed)
+    private AnimationResult RestoreSpeed(ActorId actor, float? priorSpeed)
     {
         var restored = priorSpeed is { } speed
             ? _animation.SetSpeed(actor, speed)
             : _animation.ClearSpeed(actor);
         if (!restored.Success)
-            _log.Warning(
-                $"Face bake could not restore playback speed: {restored.Detail}");
+            _log.Warning($"Face capture could not restore playback speed: {restored.Detail}");
+        return restored;
     }
 
-    /// <summary>
-    /// Anything that could make the captured values belong to a different
-    /// body: the actor generation, the Character skeleton generation, or
-    /// any individual bone binding. Returns a reason, or null when the
-    /// capture is still valid.
-    /// </summary>
+    private bool TryPrepare(
+        ActorId actor,
+        ActorDescriptor descriptor,
+        out SessionGeneration session,
+        out List<(BoneId Bone, LegacyTransform Captured)> captures,
+        out string? detail)
+    {
+        captures = new();
+        detail = null;
+        session = default;
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            detail = "Face capture must start on the framework thread.";
+            return false;
+        }
+        if (_gestures.ActiveGesture != null)
+        {
+            detail = "Finish the current transform gesture first.";
+            return false;
+        }
+        if (_sessionGeneration.ActiveSessionGeneration is not { } active)
+        {
+            detail = "Face capture requires an active application session.";
+            return false;
+        }
+        if (descriptor.Id != actor)
+        {
+            detail = "The actor descriptor is stale.";
+            return false;
+        }
+        if (FindActor(actor)?.CharacterSkeleton is not { } skeleton)
+        {
+            detail = "This actor has no current character skeleton.";
+            return false;
+        }
+        if (descriptor.CharacterSkeleton is not { } described ||
+            described.Id != skeleton.Id)
+        {
+            detail = "The actor character skeleton is stale.";
+            return false;
+        }
+        if (_bindings.Resolve(actor) is not { Success: true })
+        {
+            detail = "The actor is not currently bound.";
+            return false;
+        }
+
+        foreach (var bone in skeleton.Bones)
+        {
+            if (!IsFaceBone(bone.Id.CanonicalName))
+                continue;
+            if (_bindings.Resolve(bone.Id) is not { Success: true, Value: { } live })
+            {
+                detail = $"Face bone {bone.Id.CanonicalName} is not currently bound.";
+                return false;
+            }
+            captures.Add((bone.Id, live.LastRawTransform));
+        }
+
+        if (captures.Count == 0)
+        {
+            detail = "This actor has no face bones to capture.";
+            return false;
+        }
+        session = active;
+        return true;
+    }
+
+    private ActorDescriptor? FindActor(ActorId actor)
+    {
+        foreach (var candidate in _scene.Snapshot.Actors)
+            if (candidate.Id == actor)
+                return candidate;
+        return null;
+    }
+
     private string? Revalidate(PendingBake pending)
     {
-        if (_bindings.Resolve(pending.Actor) is not { Success: true })
-            return "the actor is no longer available";
-
-        var snapshot = _scene.Snapshot;
-        ActorDescriptor? descriptor = null;
-        foreach (var candidate in snapshot.Actors)
-            if (candidate.Id.Equals(pending.Actor))
-                descriptor = candidate;
-        if (descriptor?.CharacterSkeleton is not { } skeleton)
+        if (!IsCurrentToken(pending))
+            return "its session is no longer active";
+        var actor = FindActor(pending.Actor);
+        if (actor?.CharacterSkeleton is not { } skeleton)
             return "the character skeleton is gone";
-        if (!skeleton.Id.Equals(pending.Skeleton))
+        if (skeleton.Id != pending.Skeleton)
             return "the character skeleton was replaced";
-
+        if (_bindings.Resolve(pending.Actor) is not { Success: true })
+            return "the actor binding is stale";
         foreach (var (boneId, _) in pending.Captures)
             if (_bindings.Resolve(boneId) is not { Success: true })
                 return $"bone {boneId.CanonicalName} was rebound";
         return null;
     }
 
+    private bool CanRestoreExactIdentity(PendingBake pending)
+    {
+        if (!IsCurrentSession(pending.SessionGeneration))
+            return false;
+        if (FindActor(pending.Actor)?.CharacterSkeleton?.Id != pending.Skeleton)
+            return false;
+        if (_bindings.Resolve(pending.Actor) is not { Success: true })
+            return false;
+        foreach (var (boneId, _) in pending.Captures)
+            if (_bindings.Resolve(boneId) is not { Success: true })
+                return false;
+        return true;
+    }
+
+    private bool CanRestoreSetupIdentity(
+        ActorId actor,
+        SessionGeneration session) =>
+        IsCurrentSession(session) &&
+        FindActor(actor) is not null &&
+        _bindings.Resolve(actor) is { Success: true };
+
+    private bool IsCurrentToken(PendingBake pending) =>
+        !_disposed &&
+        _sessionGeneration.ActiveSessionGeneration is { } active &&
+        active == pending.SessionGeneration &&
+        _operationEpoch == pending.OperationEpoch;
+
+    private bool IsCurrentSession(SessionGeneration session) =>
+        !_disposed &&
+        _sessionGeneration.ActiveSessionGeneration is { } active &&
+        active == session;
+
+    private OperationEpoch NextEpoch() =>
+        _operationEpoch = _operationEpoch.IsValid
+            ? _operationEpoch.Next()
+            : OperationEpoch.First;
+
+    private OperationReceipt CreateTerminal(
+        PendingBake pending,
+        OperationReceiptState state,
+        string detail,
+        TransformRecoveryReceipt? recovery = null) =>
+        OperationReceipt.Create(
+            pending.OperationId,
+            pending.OperationEpoch,
+            pending.SessionGeneration,
+            pending.Actor,
+            state,
+            detail,
+            recovery);
+
+    private void Publish(OperationReceipt receipt)
+    {
+        _lastReceipt = receipt;
+        try
+        {
+            ReceiptChanged?.Invoke(receipt);
+        }
+        catch (Exception exception)
+        {
+            _log.Warning($"Facial capture receipt observer failed: {exception.Message}");
+        }
+    }
+
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        if (_pending is { } pending)
+            InvalidatePending(pending, "Facial capture was disposed.");
+        _disposed = true;
         _framework.Update -= OnFrameworkUpdate;
         GC.SuppressFinalize(this);
     }

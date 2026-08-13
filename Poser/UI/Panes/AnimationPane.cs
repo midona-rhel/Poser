@@ -657,6 +657,8 @@ public sealed class AnimationPane
         ActorId actor,
         ActorAnimationReading reading)
     {
+        if (_facialCapture.ReceiptFor(actor) is { } receipt)
+            form.Label($"Face capture: {FacialReceiptText(receipt)}");
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort facial = held != 0
             ? held
@@ -1237,4 +1239,15 @@ public sealed class AnimationPane
         _status = report.Success && report.Skipped.Count == 0
             ? string.Empty
             : report.Summary(verb);
+
+    private static string FacialReceiptText(
+        global::Poser.Application.Operations.OperationReceipt receipt) =>
+        receipt.State switch
+        {
+            global::Poser.Application.Operations.OperationReceiptState.Pending =>
+                "Pending",
+            _ when string.IsNullOrWhiteSpace(receipt.Detail) =>
+                receipt.State.ToString(),
+            _ => $"{receipt.State}: {receipt.Detail}",
+        };
 }
