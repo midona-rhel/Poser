@@ -1,4 +1,5 @@
 using System;
+using Poser.Files;
 
 namespace Poser.Services;
 
@@ -131,6 +132,10 @@ public interface IAutoSaveService : IDisposable
     /// capture or periodic work has been admitted but not joined yet.
     /// </summary>
     AutoSaveTerminalResult LastTerminalResult { get; }
+
+    /// <summary>Most recent immutable durable health observation, when one
+    /// has been admitted or recovered.</summary>
+    AutoSaveHealthRecord? LastHealthRecord { get; }
 
     /// <summary>
     /// Takes a periodic snapshot immediately, regardless of the interval, and

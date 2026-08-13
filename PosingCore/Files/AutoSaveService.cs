@@ -87,6 +87,8 @@ public class AutoSaveService : IAutoSaveService
     private AutoSaveCaptureResult _finalCapture;
     private bool _hasFinalCapture;
     private string? _workerFailure;
+    private string? _startupHealthFailure;
+    private AutoSaveHealthRecord? _lastHealthRecord;
     private AutoSaveTerminalResult _lastTerminalResult =
         AutoSaveTerminalResult.PendingResult;
 
@@ -100,6 +102,15 @@ public class AutoSaveService : IAutoSaveService
         {
             lock (_queueGate)
                 return _lastTerminalResult;
+        }
+    }
+
+    public AutoSaveHealthRecord? LastHealthRecord
+    {
+        get
+        {
+            lock (_queueGate)
+                return _lastHealthRecord;
         }
     }
 
@@ -152,7 +163,8 @@ public class AutoSaveService : IAutoSaveService
         ConfigurationService configuration,
         string rootDirectory,
         Func<DateTime>? utcClock = null,
-        Func<Action, bool>? dispatch = null)
+        Func<Action, bool>? dispatch = null,
+        AutoSaveHealthStore? healthStore = null)
     {
         _log = log;
         _framework = framework;
@@ -169,8 +181,24 @@ public class AutoSaveService : IAutoSaveService
             return true;
         });
         RootDirectory = rootDirectory;
-        _health = new AutoSaveHealthStore(rootDirectory);
-        _health.RecoverStale();
+        _health = healthStore ?? new AutoSaveHealthStore(rootDirectory);
+        var stale = _health.RecoverStale();
+        if (!stale.Succeeded)
+        {
+            _startupHealthFailure = stale.Write?.Detail ??
+                "Autosave stale health recovery could not be persisted.";
+            _lastHealthRecord = stale.Record?.With(
+                status: AutoSaveHealthStatus.RecoveryRequired,
+                updatedUtc: DateTime.UtcNow,
+                failurePhase: "HealthTransition",
+                detail: _startupHealthFailure,
+                recoveryEvidencePaths: stale.Write?.RecoveryEvidencePaths);
+            _log.Error($"Auto-save: {_startupHealthFailure}");
+        }
+        else if (stale.Record is not null)
+        {
+            _lastHealthRecord = stale.Record;
+        }
 
         try
         {
@@ -188,6 +216,48 @@ public class AutoSaveService : IAutoSaveService
     }
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
+
+    private AutoSaveHealthWriteResult PublishHealth(AutoSaveHealthRecord record)
+    {
+        AutoSaveHealthWriteResult result;
+        try
+        {
+            result = _health.Write(record);
+        }
+        catch (Exception ex)
+        {
+            result = AutoSaveHealthWriteResult.Failed(
+                $"Autosave health transition threw: {ex.Message}");
+        }
+        lock (_queueGate)
+        {
+            _lastHealthRecord = result.Succeeded
+                ? record
+                : record.With(
+                    status: AutoSaveHealthStatus.RecoveryRequired,
+                    updatedUtc: DateTime.UtcNow,
+                    failurePhase: "HealthTransition",
+                    detail: result.Detail,
+                    recoveryEvidencePaths: result.RecoveryEvidencePaths);
+        }
+        if (!result.Succeeded)
+            _log.Error($"Auto-save health transition failed: {result.Detail}");
+        return result;
+    }
+
+    private AutoSaveHealthWriteResult PublishRecovery(
+        SnapshotJob job,
+        string phase,
+        string detail) =>
+        PublishHealth(AutoSaveHealthRecord.Create(
+            job.OperationId,
+            job.Reason,
+            AutoSaveHealthStatus.RecoveryRequired,
+            job.NowUtc,
+            DateTime.UtcNow,
+            intendedActors: job.Captured.Count,
+            detail: detail,
+            failurePhase: phase));
 
     private void ResetCompletedExitForNewSession()
     {
@@ -246,6 +316,7 @@ public class AutoSaveService : IAutoSaveService
     /// </summary>
     public AutoSaveCaptureResult CaptureForExit()
     {
+        SnapshotJob? cancelled = null;
         lock (_queueGate)
         {
             if (_hasFinalCapture)
@@ -258,23 +329,26 @@ public class AutoSaveService : IAutoSaveService
             _exitReserved = true;
             _cleanOnExit = Settings.Enabled && Settings.CleanOnExit;
             _nextDueUtc = null;
-            if (_pendingPeriodic is { } cancelled)
+            cancelled = _pendingPeriodic;
+            _pendingPeriodic = null;
+        }
+
+        if (cancelled is { } cancelledJob)
+        {
+            var cancelledHealth = PublishHealth(AutoSaveHealthRecord.Create(
+                cancelledJob.OperationId,
+                cancelledJob.Reason,
+                AutoSaveHealthStatus.Cancelled,
+                cancelledJob.NowUtc,
+                DateTime.UtcNow,
+                intendedActors: cancelledJob.Captured.Count,
+                detail: "Periodic autosave was coalesced by final reservation.",
+                failurePhase: "Admission"));
+            if (!cancelledHealth.Succeeded)
             {
-                var cancelledHealth = _health.Write(new AutoSaveHealthRecord
-                {
-                    OperationId = cancelled.OperationId,
-                    Reason = cancelled.Reason,
-                    Status = AutoSaveHealthStatus.Cancelled,
-                    CreatedUtc = cancelled.NowUtc,
-                    UpdatedUtc = _clock(),
-                    IntendedActors = cancelled.Captured.Count,
-                    Detail = "Periodic autosave was coalesced by final reservation.",
-                    FailurePhase = "Admission",
-                });
-                if (!cancelledHealth.Succeeded)
+                lock (_queueGate)
                     _workerFailure ??= cancelledHealth.Detail;
             }
-            _pendingPeriodic = null;
         }
 
         var settings = Settings;
@@ -333,9 +407,9 @@ public class AutoSaveService : IAutoSaveService
     {
         lock (_queueGate)
         {
-            if (_disposed || (_exitReserved && !isFinal))
+            if (_disposed || _startupHealthFailure is not null || (_exitReserved && !isFinal))
                 return AutoSaveCaptureResult.NotCaptured(
-                    "Auto-save admission is closed.");
+                    _startupHealthFailure ?? "Auto-save admission is closed.");
         }
 
         var dispatchAccepted = false;
@@ -386,63 +460,92 @@ public class AutoSaveService : IAutoSaveService
 
             var job = new SnapshotJob(
                 Guid.NewGuid().ToString("N"), reason, nowUtc, keep, captured, isFinal);
-            var health = _health.Write(new AutoSaveHealthRecord
-            {
-                OperationId = job.OperationId,
-                Reason = reason,
-                Status = AutoSaveHealthStatus.Queued,
-                CreatedUtc = nowUtc,
-                UpdatedUtc = nowUtc,
-                IntendedActors = captured.Count,
-                AffectedPaths = captured.Select(entry => entry.FileName + ".pose").ToArray(),
-            });
+            var health = PublishHealth(AutoSaveHealthRecord.Create(
+                job.OperationId,
+                reason,
+                AutoSaveHealthStatus.Queued,
+                nowUtc,
+                nowUtc,
+                intendedActors: captured.Count,
+                affectedPaths: captured.Select(entry => entry.FileName).ToArray()));
             if (!health.Succeeded)
             {
-                _log.Error($"Auto-save ({reason}): health admission failed: {health.Detail}");
                 return AutoSaveCaptureResult.Failure(
                     $"Auto-save ({reason}) health admission failed: {health.Detail}",
                     captured.Count);
             }
+
+            SnapshotJob? displaced = null;
+            string? admissionFailure = null;
             lock (_queueGate)
             {
-                if (_disposed || (_exitReserved && !isFinal))
-                    return AutoSaveCaptureResult.NotCaptured(
-                        "Auto-save admission is closed.");
+                if (_disposed || _startupHealthFailure is not null || (_exitReserved && !isFinal))
+                    admissionFailure = _startupHealthFailure ?? "Auto-save admission is closed.";
 
-                if (isFinal)
+                if (admissionFailure is null && isFinal)
                     _finalJob = job;
-                else
-                    _pendingPeriodic = job;
-
-                dispatchAccepted = EnsureWriterLocked();
+                else if (admissionFailure is null)
+                {
+                    displaced = _pendingPeriodic;
+                    _pendingPeriodic = null;
+                }
             }
 
-            if (dispatchAccepted)
+            if (admissionFailure is not null)
             {
-                var accepted = _health.Write(new AutoSaveHealthRecord
+                PublishRecovery(job, "Admission", admissionFailure);
+                return AutoSaveCaptureResult.Failure(
+                    $"Auto-save ({reason}) was not admitted: {admissionFailure}",
+                    captured.Count);
+            }
+
+            if (displaced is { } displacedJob)
+            {
+                var cancelled = PublishHealth(AutoSaveHealthRecord.Create(
+                    displacedJob.OperationId,
+                    displacedJob.Reason,
+                    AutoSaveHealthStatus.Cancelled,
+                    displacedJob.NowUtc,
+                    DateTime.UtcNow,
+                    intendedActors: displacedJob.Captured.Count,
+                    detail: "Periodic autosave was coalesced by a newer periodic capture.",
+                    failurePhase: "Admission"));
+                if (!cancelled.Succeeded)
                 {
-                    OperationId = job.OperationId,
-                    Reason = reason,
-                    Status = AutoSaveHealthStatus.DispatchAccepted,
-                    CreatedUtc = nowUtc,
-                    UpdatedUtc = _clock(),
-                    IntendedActors = captured.Count,
-                    AffectedPaths = captured.Select(entry => entry.FileName + ".pose").ToArray(),
-                });
-                if (!accepted.Succeeded)
-                {
-                    _log.Error($"Auto-save ({reason}): health dispatch update failed: {accepted.Detail}");
                     lock (_queueGate)
-                    {
-                        if (isFinal) _finalJob = null;
-                        else if (_pendingPeriodic.Equals(job)) _pendingPeriodic = null;
-                        _workerFailure ??= accepted.Detail;
-                    }
+                        _workerFailure ??= cancelled.Detail;
+                    PublishRecovery(
+                        job,
+                        "Admission",
+                        $"Auto-save ({reason}) coalescing evidence failed: {cancelled.Detail}");
                     return AutoSaveCaptureResult.Failure(
-                        $"Auto-save ({reason}) health update failed: {accepted.Detail}",
-                        captured.Count,
-                        dispatchAccepted: true);
+                        $"Auto-save ({reason}) coalescing evidence failed: {cancelled.Detail}",
+                        captured.Count);
                 }
+            }
+
+            if (!isFinal)
+            {
+                string? closedFailure = null;
+                lock (_queueGate)
+                {
+                    if (_disposed || _startupHealthFailure is not null || _exitReserved)
+                        closedFailure = _startupHealthFailure ?? "Auto-save admission is closed.";
+                    else
+                        _pendingPeriodic = job;
+                }
+                if (closedFailure is not null)
+                {
+                    PublishRecovery(job, "Admission", closedFailure);
+                    return AutoSaveCaptureResult.Failure(
+                        $"Auto-save ({reason}) was not admitted: {closedFailure}",
+                        captured.Count);
+                }
+            }
+
+            lock (_queueGate)
+            {
+                dispatchAccepted = EnsureWriterLocked();
             }
 
             if (!dispatchAccepted)
@@ -455,6 +558,15 @@ public class AutoSaveService : IAutoSaveService
                         _pendingPeriodic = null;
                     _workerFailure ??= $"Auto-save ({reason}) dispatch was not accepted.";
                 }
+                PublishHealth(AutoSaveHealthRecord.Create(
+                    job.OperationId,
+                    reason,
+                    AutoSaveHealthStatus.RecoveryRequired,
+                    nowUtc,
+                    DateTime.UtcNow,
+                    intendedActors: captured.Count,
+                    detail: "Auto-save worker dispatch was not accepted.",
+                    failurePhase: "Dispatch"));
                 return AutoSaveCaptureResult.Captured(
                     captured.Count,
                     $"Auto-save ({reason}) dispatch was not accepted.");
@@ -593,15 +705,35 @@ public class AutoSaveService : IAutoSaveService
     {
         Task? writer;
         bool clean;
+        SnapshotJob? cancelled = null;
         lock (_queueGate)
         {
             if (_exitCompleted)
                 return _lastTerminalResult;
 
             _exitReserved = true;
+            cancelled = _pendingPeriodic;
             _pendingPeriodic = null;
             clean = _cleanOnExit;
             writer = _writerTask;
+        }
+
+        if (cancelled is { } cancelledJob)
+        {
+            var cancelledHealth = PublishHealth(AutoSaveHealthRecord.Create(
+                cancelledJob.OperationId,
+                cancelledJob.Reason,
+                AutoSaveHealthStatus.Cancelled,
+                cancelledJob.NowUtc,
+                DateTime.UtcNow,
+                intendedActors: cancelledJob.Captured.Count,
+                detail: "Periodic autosave was cancelled during exit drain.",
+                failurePhase: "Shutdown"));
+            if (!cancelledHealth.Succeeded)
+            {
+                lock (_queueGate)
+                    _workerFailure ??= cancelledHealth.Detail;
+            }
         }
 
         try
@@ -627,6 +759,8 @@ public class AutoSaveService : IAutoSaveService
 
             result = _workerFailure is not null
                 ? AutoSaveTerminalResult.RecoveryRequired(_workerFailure)
+                : _startupHealthFailure is not null
+                    ? AutoSaveTerminalResult.RecoveryRequired(_startupHealthFailure)
                 : _hasFinalCapture &&
                   _finalCapture.Status == AutoSaveCaptureStatus.Failure
                     ? AutoSaveTerminalResult.RecoveryRequired(
@@ -649,7 +783,10 @@ public class AutoSaveService : IAutoSaveService
                     "Clean-on-exit could not remove every snapshot.");
         }
 
-        var healthRecord = _health.Read();
+        AutoSaveHealthRecord? healthRecord;
+        lock (_queueGate)
+            healthRecord = _lastHealthRecord;
+        healthRecord ??= _health.Read();
         if (healthRecord is not null)
         {
             var healthStatus = result.Status switch
@@ -659,20 +796,24 @@ public class AutoSaveService : IAutoSaveService
                 AutoSaveTerminalStatus.RecoveryRequired => AutoSaveHealthStatus.RecoveryRequired,
                 _ => healthRecord.Status,
             };
-            var healthUpdate = _health.Write(new AutoSaveHealthRecord
-            {
-                OperationId = healthRecord.OperationId,
-                Reason = healthRecord.Reason,
-                Status = healthStatus,
-                CreatedUtc = healthRecord.CreatedUtc,
-                UpdatedUtc = _clock(),
-                IntendedActors = healthRecord.IntendedActors,
-                WrittenActors = healthRecord.WrittenActors,
-                AffectedPaths = healthRecord.AffectedPaths,
-                FailurePhase = result.Status == AutoSaveTerminalStatus.RecoveryRequired ? "CompleteForExit" : healthRecord.FailurePhase,
-                Detail = result.Detail ?? healthRecord.Detail,
-                RecoveryEvidencePaths = healthRecord.RecoveryEvidencePaths,
-            });
+            var healthUpdate = PublishHealth(AutoSaveHealthRecord.Create(
+                healthRecord.OperationId,
+                healthRecord.Reason,
+                healthStatus,
+                healthRecord.CreatedUtc,
+                DateTime.UtcNow,
+                healthRecord.IntendedActors,
+                healthRecord.WrittenActors,
+                healthRecord.AffectedPaths,
+                result.Status == AutoSaveTerminalStatus.RecoveryRequired
+                    ? clean
+                        ? "Cleanup"
+                        : healthRecord.FailurePhase ?? "CompleteForExit"
+                    : healthRecord.FailurePhase,
+                clean
+                    ? result.Detail ?? healthRecord.Detail
+                    : healthRecord.Detail ?? result.Detail,
+                healthRecord.RecoveryEvidencePaths));
             if (!healthUpdate.Succeeded)
                 result = AutoSaveTerminalResult.RecoveryRequired($"Autosave health update failed: {healthUpdate.Detail}");
         }
@@ -696,8 +837,8 @@ public class AutoSaveService : IAutoSaveService
     /// <summary>
     /// Worker half: serialization, folder creation, the writes and retention.
     /// Touches nothing but the captured data and the disk. Failure semantics
-    /// are the inline ones — every failure is swallowed and logged, and one bad
-    /// actor never aborts the rest of the snapshot.
+    /// are recorded in the operation health receipt and logged; one bad actor
+    /// never aborts the rest of the snapshot.
     /// </summary>
     private WorkerResult WriteSnapshot(
         string operationId,
@@ -708,19 +849,28 @@ public class AutoSaveService : IAutoSaveService
     {
         var success = true;
         string? failure = null;
+        string? failurePhase = null;
+        var affectedPaths = new List<string>();
+        var recoveryEvidence = new List<string>();
+        var saved = 0;
         try
         {
             var local = nowUtc.ToLocalTime();
             var dayFolder = Path.Combine(
                 RootDirectory,
                 local.ToString(DayFolderFormat, CultureInfo.InvariantCulture));
-            Directory.CreateDirectory(dayFolder);
             var prefix = local.ToString(TimePrefixFormat, CultureInfo.InvariantCulture);
-            var saved = 0;
-
+            var planned = new List<(CapturedPose Entry, string Path)>(captured.Count);
             foreach (var entry in captured)
             {
                 var path = SnapshotFilePath(dayFolder, prefix, entry.FileName);
+                affectedPaths.Add(path);
+                planned.Add((entry, path));
+            }
+
+            Directory.CreateDirectory(dayFolder);
+            foreach (var (entry, path) in planned)
+            {
                 try
                 {
                     var write = AtomicPoseFileStore.Default.Write(entry.Pose, path);
@@ -731,9 +881,11 @@ public class AutoSaveService : IAutoSaveService
                     else
                     {
                         success = false;
+                        failurePhase ??= "ActorWrite";
                         failure ??= write.Failure?.Detail ?? $"export failed for actor '{entry.ActorName}'";
-                        // PoseFile.Save swallows the underlying failure; this
-                        // adds the auto-save context it cannot see.
+                        recoveryEvidence.AddRange(write.RecoveryEvidencePaths);
+                        // The typed atomic store carries the filesystem
+                        // evidence; this adds the auto-save actor context.
                         _log.Error(
                             $"Auto-save ({reason}): export failed for actor '{entry.ActorName}' -> {path}: {write.Failure?.Detail}");
                     }
@@ -741,6 +893,7 @@ public class AutoSaveService : IAutoSaveService
                 catch (Exception ex)
                 {
                     success = false;
+                    failurePhase ??= "ActorWrite";
                     failure ??= ex.Message;
                     _log.Error(
                         $"Auto-save ({reason}): actor '{entry.ActorName}' -> {path} threw: {ex.Message}");
@@ -751,30 +904,33 @@ public class AutoSaveService : IAutoSaveService
             if (!Prune(keep))
             {
                 success = false;
+                failurePhase ??= "Retention";
                 failure ??= "retention pruning failed";
             }
         }
         catch (Exception ex)
         {
             success = false;
+            failurePhase ??= "Worker";
             failure ??= ex.Message;
             _log.Error($"Auto-save ({reason}) failed: {ex}");
         }
-        var health = _health.Write(new AutoSaveHealthRecord
-        {
-            OperationId = operationId,
-            Reason = reason,
-            Status = success ? AutoSaveHealthStatus.Written : AutoSaveHealthStatus.RecoveryRequired,
-            CreatedUtc = nowUtc,
-            UpdatedUtc = _clock(),
-            IntendedActors = captured.Count,
-            WrittenActors = success ? captured.Count : Math.Max(0, captured.Count - 1),
-            Detail = failure,
-            FailurePhase = success ? null : "WriteSnapshot",
-        });
+        var health = PublishHealth(AutoSaveHealthRecord.Create(
+            operationId,
+            reason,
+            success ? AutoSaveHealthStatus.Written : AutoSaveHealthStatus.RecoveryRequired,
+            nowUtc,
+            DateTime.UtcNow,
+            intendedActors: captured.Count,
+            writtenActors: saved,
+            affectedPaths: affectedPaths,
+            failurePhase: success ? null : failurePhase,
+            detail: failure,
+            recoveryEvidencePaths: recoveryEvidence));
         if (!health.Succeeded)
         {
             success = false;
+            failurePhase = "HealthTransition";
             failure ??= $"health update failed: {health.Detail}";
         }
         return new WorkerResult(success, failure);

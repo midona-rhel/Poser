@@ -71,6 +71,9 @@ internal sealed class AutoSaveHarness : IDisposable
         return true;
     };
 
+    /// <summary>Optional health store seam for admission/startup fault tests.</summary>
+    public AutoSaveHealthStore? HealthStoreOverride { get; set; }
+
     public AutoSaveConfiguration Settings => Configuration.Config.AutoSave;
 
     public AutoSaveHarness()
@@ -119,7 +122,8 @@ internal sealed class AutoSaveHarness : IDisposable
         Configuration,
         Root,
         () => NowUtc,
-        Dispatch);
+        Dispatch,
+        HealthStoreOverride);
 
     /// <summary>
     /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces

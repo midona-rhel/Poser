@@ -1,5 +1,6 @@
 using System;
 using Poser.Application.Lifecycle;
+using Poser.Files;
 using Poser.Services;
 
 namespace Poser.Lifecycle;
@@ -28,7 +29,22 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
             AutoSaveTerminalStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
             _ => FinalPersistenceStatus.NotAttempted,
         };
-        return result.Status switch
+        var health = service.LastHealthRecord;
+        var evidence = health is null
+            ? null
+            : new FinalPersistenceEvidence(
+                health.OperationId,
+                health.Reason,
+                persistence,
+                health.CreatedUtc,
+                health.UpdatedUtc,
+                health.IntendedActors,
+                health.WrittenActors,
+                health.AffectedPaths,
+                health.FailurePhase,
+                terminal.Detail ?? health.Detail,
+                health.RecoveryEvidencePaths);
+        var mapped = result.Status switch
         {
             AutoSaveCaptureStatus.NotCaptured =>
                 new FinalCaptureResult(
@@ -70,5 +86,6 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
                 persistence,
                 terminal.Detail),
         };
+        return mapped with { PersistenceEvidence = evidence };
     }
 }

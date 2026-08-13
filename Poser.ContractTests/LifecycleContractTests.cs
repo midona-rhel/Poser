@@ -1,6 +1,7 @@
 extern alias ProductionPoser;
 
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin;
@@ -10,6 +11,7 @@ using NSubstitute;
 using Poser.Application.Lifecycle;
 using Poser.Core;
 using Poser.Entities;
+using Poser.Files;
 using Poser.Game;
 using Poser.Services;
 using ProductionPoser::Poser.Composition;
@@ -416,6 +418,53 @@ public sealed class LifecycleContractTests
         Assert.Equal(1, result.CapturedActors);
         Assert.True(result.DispatchAccepted);
         Assert.False(result.CaptureCompleted);
+    }
+
+    [Fact]
+    public void Autosave_terminal_health_is_carried_into_the_application_receipt()
+    {
+        var service = Substitute.For<IAutoSaveService>();
+        service.CaptureForExit().Returns(AutoSaveCaptureResult.DispatchStarted(2));
+        service.CompleteForExit().Returns(
+            AutoSaveTerminalResult.RecoveryRequired("worker failed"));
+        service.LastHealthRecord.Returns(JsonSerializer.Deserialize<AutoSaveHealthRecord>("""
+            {
+              "OperationId": "op-1",
+              "Reason": "gpose-exit",
+              "Status": 5,
+              "CreatedUtc": "2026-08-13T10:00:00Z",
+              "UpdatedUtc": "2026-08-13T10:01:00Z",
+              "IntendedActors": 2,
+              "WrittenActors": 1,
+              "AffectedPaths": ["a.pose", "b.pose"],
+              "FailurePhase": "ActorWrite",
+              "Detail": "first actor failed",
+              "RecoveryEvidencePaths": ["a.tmp"]
+            }
+            """));
+
+        var port = new ProductionPoser::Poser.Lifecycle.AutoSaveFinalCapturePort(
+            () => service);
+        var result = port.CaptureForExit();
+
+        Assert.Equal(FinalPersistenceStatus.RecoveryRequired, result.Persistence);
+        Assert.Equal("worker failed", result.PersistenceDetail);
+        Assert.NotNull(result.PersistenceEvidence);
+        Assert.Equal("op-1", result.PersistenceEvidence!.OperationId);
+        Assert.Equal(1, result.PersistenceEvidence.WrittenActors);
+        Assert.Equal("ActorWrite", result.PersistenceEvidence.FailurePhase);
+        Assert.Equal(new[] { "a.tmp" }, result.PersistenceEvidence.RecoveryEvidencePaths);
+        Assert.Equal(
+            new FinalCaptureResult(
+                FinalCaptureStatus.DispatchStarted,
+                2,
+                null,
+                true,
+                FinalPersistenceStatus.RecoveryRequired,
+                "worker failed"),
+            result);
+        service.Received(1).CaptureForExit();
+        service.Received(1).CompleteForExit();
     }
 
     [Fact]

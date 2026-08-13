@@ -391,4 +391,124 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, h.Service.LastTerminalResult.Status);
         Assert.True(h.ErrorCount >= 1);
     }
+
+    [Fact]
+    public void Terminal_health_reports_exact_written_count_and_paths()
+    {
+        using var h = new AutoSaveHarness();
+        var bad = h.AddActor("Bad");
+        h.AddActor("Good");
+        h.FailWriteFor(bad);
+
+        h.Service.SaveNow("terminal-evidence");
+        h.WaitForWrite();
+
+        var health = new AutoSaveHealthStore(h.Root).Read();
+        Assert.NotNull(health);
+        Assert.Equal(2, health!.IntendedActors);
+        Assert.Equal(1, health.WrittenActors);
+        Assert.Equal(
+            new[]
+            {
+                Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} Bad.pose"),
+                Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} Good.pose"),
+            },
+            health.AffectedPaths);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, health.Status);
+    }
+
+    [Fact]
+    public void Health_admission_failure_does_not_publish_a_worker_job()
+    {
+        using var h = new AutoSaveHarness();
+        var dispatchCalls = 0;
+        h.Dispatch = _ =>
+        {
+            dispatchCalls++;
+            return true;
+        };
+        h.HealthStoreOverride = new AutoSaveHealthStore(
+            h.Root,
+            new FailingHealthFileSystem());
+        h.AddActor("Alpha");
+
+        var result = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.Failure, result.Status);
+        Assert.False(result.DispatchAccepted);
+        Assert.Equal(1, h.CaptureCallCount);
+        Assert.Equal(0, dispatchCalls);
+        Assert.Empty(h.SnapshotFolders());
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired,
+            h.Service.LastHealthRecord!.Status);
+    }
+
+    [Fact]
+    public void Startup_stale_health_failure_blocks_capture_with_recovery_evidence()
+    {
+        using var h = new AutoSaveHarness();
+        var normal = new AutoSaveHealthStore(h.Root);
+        Assert.True(normal.Write(AutoSaveHealthRecord.Create(
+            "stale", "interval", AutoSaveHealthStatus.Queued,
+            DateTime.UtcNow, DateTime.UtcNow, intendedActors: 1)).Succeeded);
+        h.HealthStoreOverride = new AutoSaveHealthStore(
+            h.Root,
+            new FailingHealthFileSystem());
+        h.AddActor("Alpha");
+
+        var result = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, result.Status);
+        Assert.Equal(0, h.CaptureCallCount);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired,
+            h.Service.LastHealthRecord!.Status);
+        Assert.Equal("HealthTransition", h.Service.LastHealthRecord.FailurePhase);
+        Assert.False(string.IsNullOrEmpty(h.Service.LastHealthRecord.Detail));
+        Assert.Equal(
+            AutoSaveTerminalStatus.RecoveryRequired,
+            h.Service.CompleteForExit().Status);
+    }
+
+    [Fact]
+    public void Multiple_actor_failures_preserve_ordered_paths_and_later_success()
+    {
+        using var h = new AutoSaveHarness();
+        var first = h.AddActor("First");
+        var middle = h.AddActor("Middle");
+        h.AddActor("Last");
+        h.FailWriteFor(first);
+        h.FailWriteFor(middle);
+
+        Assert.Equal(3, h.Service.SaveNow("multiple-failures"));
+        h.WaitForWrite();
+
+        var health = new AutoSaveHealthStore(h.Root).Read()!;
+        Assert.Equal(3, health.IntendedActors);
+        Assert.Equal(1, health.WrittenActors);
+        Assert.Equal(
+            new[]
+            {
+                Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} First.pose"),
+                Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} Middle.pose"),
+                Path.Combine(h.Root, h.DayNow(), $"{h.PrefixNow()} Last.pose"),
+            },
+            health.AffectedPaths);
+        Assert.Equal(new[] { $"{h.PrefixNow()} Last.pose" }, h.SnapshotFiles(h.DayNow()));
+    }
+
+    private sealed class FailingHealthFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner =
+            new SystemAutoSaveHealthFileSystem();
+
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => throw new IOException("health admission failed");
+        public void FlushToDisk(Stream stream) => throw new IOException("health flush failed");
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) =>
+            throw new IOException("health replace failed");
+        public void Move(string source, string destination) =>
+            throw new IOException("health move failed");
+        public void Delete(string path) { }
+    }
 }

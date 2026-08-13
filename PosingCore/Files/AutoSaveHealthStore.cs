@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Poser.Files;
 
-/// <summary>Terminal/read-model states persisted for one autosave operation.</summary>
 public enum AutoSaveHealthStatus
 {
     Pending,
@@ -18,68 +18,174 @@ public enum AutoSaveHealthStatus
     Cancelled,
 }
 
-/// <summary>Bounded immutable health evidence for the most recent operation.</summary>
+/// <summary>Immutable bounded observation of one autosave operation.</summary>
 public sealed class AutoSaveHealthRecord
 {
-    public string OperationId { get; init; } = string.Empty;
-    public string Reason { get; init; } = string.Empty;
-    public AutoSaveHealthStatus Status { get; init; }
-    public DateTime CreatedUtc { get; init; }
-    public DateTime UpdatedUtc { get; init; }
-    public int IntendedActors { get; init; }
-    public int WrittenActors { get; init; }
-    public IReadOnlyList<string> AffectedPaths { get; init; } = Array.Empty<string>();
-    public string? FailurePhase { get; init; }
-    public string? Detail { get; init; }
-    public IReadOnlyList<string> RecoveryEvidencePaths { get; init; } = Array.Empty<string>();
-
-    internal AutoSaveHealthRecord Bounded()
+    [JsonConstructor]
+    internal AutoSaveHealthRecord(
+        string operationId,
+        string reason,
+        AutoSaveHealthStatus status,
+        DateTime createdUtc,
+        DateTime updatedUtc,
+        int intendedActors,
+        int writtenActors,
+        IReadOnlyList<string>? affectedPaths,
+        string? failurePhase,
+        string? detail,
+        IReadOnlyList<string>? recoveryEvidencePaths)
     {
-        static IReadOnlyList<string> Bound(IEnumerable<string> values) =>
-            values.Where(static value => !string.IsNullOrWhiteSpace(value))
-                .Take(256)
-                .Select(static value => value.Length > 1024 ? value[..1024] : value)
-                .ToArray();
-
-        return new AutoSaveHealthRecord
-        {
-            OperationId = OperationId.Length > 128 ? OperationId[..128] : OperationId,
-            Reason = Reason.Length > 128 ? Reason[..128] : Reason,
-            Status = Status,
-            CreatedUtc = CreatedUtc,
-            UpdatedUtc = UpdatedUtc,
-            IntendedActors = Math.Clamp(IntendedActors, 0, 8192),
-            WrittenActors = Math.Clamp(WrittenActors, 0, 8192),
-            AffectedPaths = Bound(AffectedPaths),
-            FailurePhase = FailurePhase is null ? null : (FailurePhase.Length > 128 ? FailurePhase[..128] : FailurePhase),
-            Detail = Detail is null ? null : (Detail.Length > 4096 ? Detail[..4096] : Detail),
-            RecoveryEvidencePaths = Bound(RecoveryEvidencePaths),
-        };
+        OperationId = Limit(operationId, 128);
+        Reason = Limit(reason, 128);
+        Status = status;
+        CreatedUtc = createdUtc;
+        UpdatedUtc = updatedUtc;
+        IntendedActors = Math.Clamp(intendedActors, 0, 8192);
+        WrittenActors = Math.Clamp(writtenActors, 0, IntendedActors);
+        AffectedPaths = Freeze(affectedPaths);
+        FailurePhase = failurePhase is null ? null : Limit(failurePhase, 128);
+        Detail = detail is null ? null : Limit(detail, 4096);
+        RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
     }
+
+    public string OperationId { get; }
+    public string Reason { get; }
+    public AutoSaveHealthStatus Status { get; }
+    public DateTime CreatedUtc { get; }
+    public DateTime UpdatedUtc { get; }
+    public int IntendedActors { get; }
+    public int WrittenActors { get; }
+    public IReadOnlyList<string> AffectedPaths { get; }
+    public string? FailurePhase { get; }
+    public string? Detail { get; }
+    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
+
+    internal static AutoSaveHealthRecord Create(
+        string operationId,
+        string reason,
+        AutoSaveHealthStatus status,
+        DateTime createdUtc,
+        DateTime updatedUtc,
+        int intendedActors = 0,
+        int writtenActors = 0,
+        IEnumerable<string>? affectedPaths = null,
+        string? failurePhase = null,
+        string? detail = null,
+        IEnumerable<string>? recoveryEvidencePaths = null) =>
+        new(
+            operationId,
+            reason,
+            status,
+            createdUtc,
+            updatedUtc,
+            intendedActors,
+            writtenActors,
+            affectedPaths?.ToArray(),
+            failurePhase,
+            detail,
+            recoveryEvidencePaths?.ToArray());
+
+    internal AutoSaveHealthRecord With(
+        AutoSaveHealthStatus? status = null,
+        DateTime? updatedUtc = null,
+        int? writtenActors = null,
+        IEnumerable<string>? affectedPaths = null,
+        string? failurePhase = null,
+        string? detail = null,
+        IEnumerable<string>? recoveryEvidencePaths = null) =>
+        Create(
+            OperationId,
+            Reason,
+            status ?? Status,
+            CreatedUtc,
+            updatedUtc ?? UpdatedUtc,
+            IntendedActors,
+            writtenActors ?? WrittenActors,
+            affectedPaths ?? AffectedPaths,
+            failurePhase ?? FailurePhase,
+            detail ?? Detail,
+            recoveryEvidencePaths ?? RecoveryEvidencePaths);
+
+    private static string Limit(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : value.Length <= max ? value : value[..max];
+
+    private static IReadOnlyList<string> Freeze(IEnumerable<string>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<string>())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(256)
+            .Select(static value => Limit(value, 1024))
+            .ToArray());
 }
 
 public sealed class AutoSaveHealthWriteResult
 {
-    private AutoSaveHealthWriteResult(bool succeeded, string? detail, string? evidencePath)
+    private AutoSaveHealthWriteResult(
+        bool succeeded,
+        string? detail,
+        IReadOnlyList<string> recoveryEvidencePaths)
     {
         Succeeded = succeeded;
         Detail = detail;
-        RecoveryEvidencePath = evidencePath;
+        RecoveryEvidencePaths = recoveryEvidencePaths;
     }
 
     public bool Succeeded { get; }
     public string? Detail { get; }
-    public string? RecoveryEvidencePath { get; }
+    public IReadOnlyList<string> RecoveryEvidencePaths { get; }
 
-    internal static AutoSaveHealthWriteResult Success() => new(true, null, null);
-    internal static AutoSaveHealthWriteResult Failed(string detail, string? evidence = null) => new(false, detail, evidence);
+    internal static AutoSaveHealthWriteResult Success() =>
+        new(true, null, Array.Empty<string>());
+
+    internal static AutoSaveHealthWriteResult Failed(
+        string detail,
+        IEnumerable<string>? evidence = null) =>
+        new(false, detail, Array.AsReadOnly((evidence ?? Array.Empty<string>())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray()));
 }
 
-/// <summary>
-/// Root-level atomic autosave health record. It deliberately owns only the
-/// health schema and replacement mechanics; pose codecs remain in
-/// <see cref="AtomicPoseFileStore"/>.
-/// </summary>
+public sealed class AutoSaveHealthRecoveryResult
+{
+    internal AutoSaveHealthRecoveryResult(
+        AutoSaveHealthRecord? record,
+        AutoSaveHealthWriteResult? write)
+    {
+        Record = record;
+        Write = write;
+    }
+
+    public AutoSaveHealthRecord? Record { get; }
+    public AutoSaveHealthWriteResult? Write { get; }
+    public bool Succeeded => Record is null || Write?.Succeeded == true;
+}
+
+internal interface IAutoSaveHealthFileSystem
+{
+    Stream OpenRead(string path);
+    Stream CreateNew(string path);
+    void FlushToDisk(Stream stream);
+    bool Exists(string path);
+    void Replace(string source, string destination, string backup);
+    void Move(string source, string destination);
+    void Delete(string path);
+}
+
+internal sealed class SystemAutoSaveHealthFileSystem : IAutoSaveHealthFileSystem
+{
+    public Stream OpenRead(string path) => new FileStream(
+        path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+
+    public Stream CreateNew(string path) => new FileStream(
+        path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan);
+
+    public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
+    public bool Exists(string path) => File.Exists(path);
+    public void Replace(string source, string destination, string backup) => File.Replace(source, destination, backup);
+    public void Move(string source, string destination) => File.Move(source, destination);
+    public void Delete(string path) => File.Delete(path);
+}
+
+/// <summary>Bounded atomic root-level autosave health storage.</summary>
 public sealed class AutoSaveHealthStore
 {
     public const string FileName = ".autosave-health.json";
@@ -91,10 +197,18 @@ public sealed class AutoSaveHealthStore
         PropertyNamingPolicy = null,
     };
 
+    private readonly IAutoSaveHealthFileSystem _fileSystem;
+
     public AutoSaveHealthStore(string rootDirectory)
+        : this(rootDirectory, new SystemAutoSaveHealthFileSystem())
+    {
+    }
+
+    internal AutoSaveHealthStore(string rootDirectory, IAutoSaveHealthFileSystem fileSystem)
     {
         RootDirectory = rootDirectory;
         HealthPath = Path.Combine(rootDirectory, FileName);
+        _fileSystem = fileSystem;
     }
 
     public string RootDirectory { get; }
@@ -104,14 +218,12 @@ public sealed class AutoSaveHealthStore
     {
         try
         {
-            if (!File.Exists(HealthPath))
+            if (!_fileSystem.Exists(HealthPath))
                 return null;
-            var info = new FileInfo(HealthPath);
-            if (info.Length <= 0 || info.Length > MaxBytes)
+            using var stream = _fileSystem.OpenRead(HealthPath);
+            if (stream.Length <= 0 || stream.Length > MaxBytes)
                 return null;
-            using var stream = new FileStream(HealthPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var record = JsonSerializer.Deserialize<AutoSaveHealthRecord>(stream, JsonOptions);
-            return record?.Bounded();
+            return JsonSerializer.Deserialize<AutoSaveHealthRecord>(stream, JsonOptions);
         }
         catch
         {
@@ -121,71 +233,143 @@ public sealed class AutoSaveHealthStore
 
     public AutoSaveHealthWriteResult Write(AutoSaveHealthRecord record)
     {
-        var bounded = record.Bounded();
         string? temp = null;
+        string? backup = null;
+        var replaceAttempted = false;
+        var moveAttempted = false;
         try
         {
-            Directory.CreateDirectory(RootDirectory);
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(bounded, JsonOptions);
+            byte[] bytes;
+            try
+            {
+                bytes = JsonSerializer.SerializeToUtf8Bytes(record, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                return AutoSaveHealthWriteResult.Failed(
+                    $"Autosave health serialization failed: {ex.Message}");
+            }
+
             if (bytes.Length == 0 || bytes.Length > MaxBytes)
                 return AutoSaveHealthWriteResult.Failed("Autosave health record exceeded its size limit.");
 
+            Directory.CreateDirectory(RootDirectory);
             temp = Path.Combine(RootDirectory, $".{FileName}.{Guid.NewGuid():N}.tmp");
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var stream = _fileSystem.CreateNew(temp))
             {
                 stream.Write(bytes, 0, bytes.Length);
-                stream.Flush(flushToDisk: true);
+                _fileSystem.FlushToDisk(stream);
             }
 
-            using (var verify = new FileStream(temp, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var verify = _fileSystem.OpenRead(temp))
             {
                 var roundTrip = JsonSerializer.Deserialize<AutoSaveHealthRecord>(verify, JsonOptions);
-                if (roundTrip is null || roundTrip.OperationId != bounded.OperationId || roundTrip.Status != bounded.Status)
-                    return AutoSaveHealthWriteResult.Failed("Autosave health validation failed.", temp);
+                if (roundTrip is null || roundTrip.OperationId != record.OperationId || roundTrip.Status != record.Status)
+                    return AutoSaveHealthWriteResult.Failed("Autosave health validation failed.", Observe(temp));
             }
 
-            if (File.Exists(HealthPath))
-                File.Replace(temp, HealthPath, null);
+            if (_fileSystem.Exists(HealthPath))
+            {
+                backup = Path.Combine(RootDirectory, $".{FileName}.{Guid.NewGuid():N}.bak");
+                replaceAttempted = true;
+                _fileSystem.Replace(temp, HealthPath, backup);
+            }
             else
-                File.Move(temp, HealthPath);
+            {
+                moveAttempted = true;
+                _fileSystem.Move(temp, HealthPath);
+            }
+
             temp = null;
+            if (backup is not null)
+            {
+                try
+                {
+                    _fileSystem.Delete(backup);
+                }
+                catch (Exception ex)
+                {
+                    return AutoSaveHealthWriteResult.Failed(
+                        $"Autosave health backup cleanup failed: {ex.Message}",
+                        Observe(backup));
+                }
+            }
+
+            try
+            {
+                if (!_fileSystem.Exists(HealthPath))
+                    return AutoSaveHealthWriteResult.Failed(
+                        "Autosave health commit could not confirm its destination.",
+                        Observe(HealthPath));
+            }
+            catch (Exception ex)
+            {
+                return AutoSaveHealthWriteResult.Failed(
+                    $"Autosave health commit confirmation failed: {ex.Message}",
+                    Observe(HealthPath));
+            }
             return AutoSaveHealthWriteResult.Success();
         }
         catch (Exception ex)
         {
-            return AutoSaveHealthWriteResult.Failed(ex.Message, temp);
+            var evidence = new List<string>();
+            if (replaceAttempted)
+            {
+                evidence.AddRange(Observe(HealthPath));
+                evidence.AddRange(Observe(temp));
+                evidence.AddRange(Observe(backup));
+            }
+            else
+            {
+                evidence.AddRange(Observe(temp));
+                evidence.AddRange(Observe(backup));
+            }
+            return AutoSaveHealthWriteResult.Failed(ex.Message, evidence);
         }
         finally
         {
-            if (temp is not null)
+            if (temp is not null && !replaceAttempted && !moveAttempted)
             {
-                try { File.Delete(temp); }
-                catch { /* returned as evidence above */ }
+                try { _fileSystem.Delete(temp); }
+                catch { /* temp remains recoverable through the failure evidence */ }
             }
         }
     }
 
-    /// <summary>Promotes stale nonterminal work after startup.</summary>
-    public AutoSaveHealthRecord? RecoverStale()
+    public AutoSaveHealthRecoveryResult RecoverStale()
     {
         var current = Read();
-        if (current is null || current.Status is not (AutoSaveHealthStatus.Pending or AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted))
-            return current;
+        if (current is null || current.Status is not
+            (AutoSaveHealthStatus.Pending or AutoSaveHealthStatus.Queued or AutoSaveHealthStatus.DispatchAccepted))
+            return new AutoSaveHealthRecoveryResult(current, null);
 
-        var recovered = new AutoSaveHealthRecord
+        var recovered = AutoSaveHealthRecord.Create(
+            current.OperationId,
+            current.Reason,
+            AutoSaveHealthStatus.RecoveryRequired,
+            current.CreatedUtc,
+            DateTime.UtcNow,
+            current.IntendedActors,
+            current.WrittenActors,
+            current.AffectedPaths,
+            "Interrupted",
+            "Autosave operation was interrupted before a terminal health record was written.",
+            current.RecoveryEvidencePaths);
+        var write = Write(recovered);
+        return new AutoSaveHealthRecoveryResult(recovered, write);
+    }
+
+    private IReadOnlyList<string> Observe(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return Array.Empty<string>();
+        try
         {
-            OperationId = current.OperationId,
-            Reason = current.Reason,
-            Status = AutoSaveHealthStatus.RecoveryRequired,
-            CreatedUtc = current.CreatedUtc,
-            UpdatedUtc = DateTime.UtcNow,
-            IntendedActors = current.IntendedActors,
-            WrittenActors = current.WrittenActors,
-            AffectedPaths = current.AffectedPaths,
-            FailurePhase = "Interrupted",
-            Detail = "Autosave operation was interrupted before a terminal health record was written.",
-            RecoveryEvidencePaths = current.RecoveryEvidencePaths,
-        };
-        return Write(recovered).Succeeded ? recovered : recovered;
+            return _fileSystem.Exists(path) ? new[] { path } : Array.Empty<string>();
+        }
+        catch
+        {
+            return new[] { path };
+        }
     }
 }
