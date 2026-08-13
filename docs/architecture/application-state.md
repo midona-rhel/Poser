@@ -47,20 +47,29 @@ callbacks or hidden state. File and MCDF transaction details live in
 This slice gives `SessionLifecycleCoordinator` one idempotent normal-exit and
 plugin-unload edge. It does not yet own startup or the complete session phase
 machine; those remain deferred to Slice 3. Event-subscription or
-dependency-construction order is not a lifecycle contract. On a successfully
-dispatched framework-thread exit edge it attempts/reserves the immutable final
-autosave capture when applicable, while the graph and session are still
-readable. Disabled autosave or no eligible actors may return `NotCaptured`;
-`CleanOnExit` instead closes periodic admission and drains the owned worker
-without reserving a final pose. The edge then drains and joins the owned worker
-to a terminal result, deletes only after that drain for `CleanOnExit`, and
-publishes the existing legacy false-GPose event exactly once.
+dependency-construction order is not a lifecycle contract. The first accepted
+framework-thread GPose entry mints one opaque `SessionGeneration`; duplicate
+entry observations return that token, and a later normal re-entry mints a new
+one. Exit clears the active token before capture/worker drain and the legacy
+false-GPose event. A reentrant or running exit cannot admit a new token.
+`InvalidateForUnload` is an any-thread, idempotent permanent admission closure;
+it clears the token without capture, events, or native work.
+
+On a successfully dispatched framework-thread exit edge it attempts/reserves
+the immutable final autosave capture when applicable, while the graph and
+session are still readable. Disabled autosave or no eligible actors may return
+`NotCaptured`; `CleanOnExit` instead closes periodic admission and drains the
+owned worker without reserving a final pose. The edge then drains and joins the
+owned worker to a terminal result, deletes only after that drain for
+`CleanOnExit`, and publishes the existing legacy false-GPose event exactly
+once.
 
 This ordering is conditional on successful framework-thread lifecycle
-dispatch. If dispatch faults or is canceled, the host logs the failure and
-guarantees provider disposal; this slice does not claim that final capture,
-worker drain/join, or the legacy false event completed before provider
-disposal begins.
+dispatch. If dispatch faults or is canceled, the host logs the failure,
+permanently invalidates session admission before cleanup, and guarantees
+provider disposal; this slice does not claim that final capture, worker
+drain/join, or the legacy false event completed before provider disposal
+begins.
 
 The worker receives immutable snapshots only and never reads live Game/runtime
 state. On the successfully dispatched edge it is joined before

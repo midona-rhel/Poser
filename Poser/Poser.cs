@@ -6,6 +6,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
+using Poser.Application.Lifecycle;
 using Poser.Composition;
 using Poser.Config;
 using Poser.Core;
@@ -164,6 +165,7 @@ public class Poser : IDalamudPlugin
         IPluginLog log,
         Action cleanup)
     {
+        var lifecycle = serviceProvider.GetService<ISessionLifecycleCoordinator>();
         try
         {
             // Unload is the same lifecycle edge as ordinary GPose exit. Marshal
@@ -183,6 +185,11 @@ public class Poser : IDalamudPlugin
         }
         finally
         {
+            // A failed or canceled framework hop cannot claim that the exit
+            // edge ran. Close token admission before cleanup can dispose any
+            // provider-owned collaborator, so no late GPose entry can reopen
+            // the graph during teardown.
+            lifecycle?.InvalidateForUnload();
             try
             {
                 cleanup();

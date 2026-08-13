@@ -1,3 +1,5 @@
+using Poser.Application.Operations;
+
 namespace Poser.Application.Lifecycle;
 
 /// <summary>
@@ -21,7 +23,13 @@ public interface IFinalCapturePort
 /// invokes this synchronously from its framework update callback; no
 /// cross-thread scheduling is performed by this coordinator.
 /// </summary>
-public interface ISessionLifecycleCoordinator
+public interface ISessionGenerationSource
+{
+    /// <summary>Current accepted GPose session identity, or null when inactive.</summary>
+    SessionGeneration? ActiveSessionGeneration { get; }
+}
+
+public interface ISessionLifecycleCoordinator : ISessionGenerationSource
 {
     /// <summary>
     /// Latest point-in-time exit result, or null before an exit edge. This is a
@@ -30,7 +38,14 @@ public interface ISessionLifecycleCoordinator
     SessionExitResult? LastExit { get; }
 
     /// <summary>Marks the start of a new GPose session for this coordinator.</summary>
-    void OnGposeEntered();
+    SessionGeneration? OnGposeEntered();
+
+    /// <summary>
+    /// Permanently closes session admission for unload or failed framework
+    /// dispatch. This operation is thread-safe and performs no capture or
+    /// native/event work.
+    /// </summary>
+    void InvalidateForUnload();
 
     /// <summary>
     /// Attempts the final capture for the current exit edge at most once and
@@ -75,6 +90,8 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
     private ExitState _state = ExitState.Ready;
     private SessionExitResult _lastExit;
     private bool _hasLastExit;
+    private SessionGeneration? _activeSessionGeneration;
+    private bool _unloadInvalidated;
 
     public SessionLifecycleCoordinator(IFinalCapturePort finalCapture)
     {
@@ -90,15 +107,38 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
         }
     }
 
-    public void OnGposeEntered()
+    public SessionGeneration? ActiveSessionGeneration
+    {
+        get
+        {
+            lock (_gate)
+                return _activeSessionGeneration;
+        }
+    }
+
+    public SessionGeneration? OnGposeEntered()
     {
         lock (_gate)
         {
-            if (_state == ExitState.Running)
-                return;
+            if (_unloadInvalidated || _state == ExitState.Running)
+                return null;
 
+            if (_activeSessionGeneration is { } active)
+                return active;
+
+            _activeSessionGeneration = SessionGeneration.New();
             _state = ExitState.Ready;
             _hasLastExit = false;
+            return _activeSessionGeneration;
+        }
+    }
+
+    public void InvalidateForUnload()
+    {
+        lock (_gate)
+        {
+            _activeSessionGeneration = null;
+            _unloadInvalidated = true;
         }
     }
 
@@ -106,12 +146,19 @@ public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
     {
         lock (_gate)
         {
+            if (_unloadInvalidated)
+                return _hasLastExit
+                    ? _lastExit with { AlreadyHandled = true }
+                    : SessionExitResult.Reentrant;
             if (_state == ExitState.Completed)
                 return _lastExit with { AlreadyHandled = true };
             if (_state == ExitState.Running)
                 return SessionExitResult.Reentrant;
 
             _state = ExitState.Running;
+            // Publish no token to capture, worker, or legacy observers after
+            // this point: the exit edge owns the active token's lifetime.
+            _activeSessionGeneration = null;
         }
 
         FinalCaptureResult capture;

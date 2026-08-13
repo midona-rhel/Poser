@@ -68,16 +68,19 @@ public class GPoseService : IGPoseService
             _lastGPoseState = currentState;
             if (currentState)
             {
+                var generation = _lifecycle.OnGposeEntered();
+                if (!generation.HasValue)
+                    return;
+
                 _sessionActive = true;
                 _unloadExitHandled = false;
-                _lifecycle.OnGposeEntered();
+                _eventBus.Publish(new GPoseStateChangedEvent(true));
             }
             else
             {
-                ProcessExitEdge();
+                if (ProcessExitEdge())
+                    _eventBus.Publish(new GPoseStateChangedEvent(false));
             }
-
-            _eventBus.Publish(new GPoseStateChangedEvent(currentState));
         }
     }
 
@@ -102,28 +105,36 @@ public class GPoseService : IGPoseService
             if (!_sessionActive && !_clientState.IsGPosing)
                 return;
 
-            _sessionActive = true;
             _unloadExitHandled = true;
             _lastGPoseState = false;
-            ProcessExitEdge();
-            _eventBus.Publish(new GPoseStateChangedEvent(false));
+            if (!_sessionActive)
+            {
+                if (!_lifecycle.OnGposeEntered().HasValue)
+                    return;
+                _sessionActive = true;
+            }
+
+            if (ProcessExitEdge())
+                _eventBus.Publish(new GPoseStateChangedEvent(false));
         }
     }
 
-    private void ProcessExitEdge()
+    private bool ProcessExitEdge()
     {
         if (!_sessionActive)
-            return;
+            return false;
 
         var exit = _lifecycle.OnGposeExit();
         _sessionActive = false;
         if (!exit.AlreadyHandled &&
-            exit.Capture.Status == FinalCaptureStatus.Failure ||
-            exit.Capture.Persistence == FinalPersistenceStatus.RecoveryRequired)
+            (exit.Capture.Status == FinalCaptureStatus.Failure ||
+             exit.Capture.Persistence == FinalPersistenceStatus.RecoveryRequired))
         {
             _log.Error(
                 $"GPose exit final capture failed: {exit.Capture.Detail ?? exit.Capture.PersistenceDetail ?? "unknown failure"}");
         }
+
+        return true;
     }
 
     public void Dispose()
@@ -131,6 +142,7 @@ public class GPoseService : IGPoseService
         lock (_stateGate)
             _closing = true;
         _framework.Update -= OnFrameworkUpdate;
+        _lifecycle.InvalidateForUnload();
         GC.SuppressFinalize(this);
     }
 }

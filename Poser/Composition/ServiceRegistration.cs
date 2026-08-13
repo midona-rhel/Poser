@@ -78,6 +78,8 @@ internal static class ServiceRegistration
         services.AddSingleton<SessionLifecycleCoordinator>();
         services.AddSingleton<ISessionLifecycleCoordinator>(sp =>
             sp.GetRequiredService<SessionLifecycleCoordinator>());
+        services.AddSingleton<ISessionGenerationSource>(sp =>
+            sp.GetRequiredService<SessionLifecycleCoordinator>());
 
         services.AddSingleton<IGPoseService, GPoseService>();
         services.AddSingleton<IActorManager, ActorManager>();

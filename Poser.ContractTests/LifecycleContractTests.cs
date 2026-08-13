@@ -10,6 +10,9 @@ using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Poser.Application.Lifecycle;
+using Poser.Application.Operations;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Core;
 using Poser.Entities;
 using Poser.Files;
@@ -312,16 +315,40 @@ public sealed class LifecycleContractTests
     }
 
     [Fact]
+    public void GPose_dispose_is_safe_when_called_directly_and_repeatedly()
+    {
+        var clientState = Substitute.For<IClientState>();
+        var framework = Substitute.For<IFramework>();
+        var eventBus = Substitute.For<IEventBus>();
+        var log = Substitute.For<IPluginLog>();
+        var capture = new RecordingCapturePort(
+            () => FinalCaptureResult.Captured(1));
+        var coordinator = new SessionLifecycleCoordinator(capture);
+        coordinator.OnGposeEntered();
+
+        var gpose = new GPoseService(
+            clientState, framework, eventBus, log, coordinator);
+        gpose.Dispose();
+        gpose.Dispose();
+
+        Assert.Null(coordinator.ActiveSessionGeneration);
+        Assert.Equal(0, capture.CallCount);
+        eventBus.DidNotReceive().Publish(Arg.Any<GPoseStateChangedEvent>());
+    }
+
+    [Fact]
     public void Faulted_framework_unload_dispatch_still_disposes_provider()
     {
         var framework = Substitute.For<IFramework>();
         var gpose = Substitute.For<IGPoseService>();
+        var lifecycle = Substitute.For<ISessionLifecycleCoordinator>();
         var log = Substitute.For<IPluginLog>();
         framework.IsInFrameworkUpdateThread.Returns(false);
         framework.RunOnFrameworkThread(Arg.Any<Action>())
             .Returns(Task.FromException(new InvalidOperationException("dispatcher faulted")));
 
         using var provider = new ServiceCollection()
+            .AddSingleton<ISessionLifecycleCoordinator>(lifecycle)
             .AddSingleton<DisposalProbe>()
             .BuildServiceProvider();
         var probe = provider.GetRequiredService<DisposalProbe>();
@@ -334,6 +361,7 @@ public sealed class LifecycleContractTests
             cleanup: static () => { });
 
         Assert.True(probe.Disposed);
+        lifecycle.Received(1).InvalidateForUnload();
         log.Received(1).Error(
             Arg.Is<string>(message => message.Contains("dispatcher faulted")));
     }
@@ -343,12 +371,14 @@ public sealed class LifecycleContractTests
     {
         var framework = Substitute.For<IFramework>();
         var gpose = Substitute.For<IGPoseService>();
+        var lifecycle = Substitute.For<ISessionLifecycleCoordinator>();
         var log = Substitute.For<IPluginLog>();
         framework.IsInFrameworkUpdateThread.Returns(false);
         framework.RunOnFrameworkThread(Arg.Any<Action>())
             .Returns(Task.FromCanceled(new CancellationToken(canceled: true)));
 
         using var provider = new ServiceCollection()
+            .AddSingleton<ISessionLifecycleCoordinator>(lifecycle)
             .AddSingleton<DisposalProbe>()
             .BuildServiceProvider();
         var probe = provider.GetRequiredService<DisposalProbe>();
@@ -361,6 +391,7 @@ public sealed class LifecycleContractTests
             cleanup: static () => { });
 
         Assert.True(probe.Disposed);
+        lifecycle.Received(1).InvalidateForUnload();
         log.Received(1).Error(
             Arg.Is<string>(message => message.Contains("canceled")));
     }
@@ -620,6 +651,106 @@ public sealed class LifecycleContractTests
     }
 
     [Fact]
+    public void Session_generation_is_stable_for_duplicate_entry_and_changes_on_reentry()
+    {
+        var coordinator = new SessionLifecycleCoordinator(
+            new RecordingCapturePort(() => FinalCaptureResult.Captured(1)));
+
+        var first = coordinator.OnGposeEntered();
+        var duplicate = coordinator.OnGposeEntered();
+
+        Assert.True(first.HasValue);
+        Assert.Equal(first, duplicate);
+        Assert.Equal(first, coordinator.ActiveSessionGeneration);
+
+        coordinator.OnGposeExit();
+
+        Assert.Null(coordinator.ActiveSessionGeneration);
+        var reentry = coordinator.OnGposeEntered();
+        Assert.True(reentry.HasValue);
+        Assert.NotEqual(first, reentry);
+        Assert.Equal(reentry, coordinator.ActiveSessionGeneration);
+    }
+
+    [Fact]
+    public void Session_generation_clears_before_capture_and_false_event()
+    {
+        var clientState = Substitute.For<IClientState>();
+        var framework = Substitute.For<IFramework>();
+        var eventBus = Substitute.For<IEventBus>();
+        var log = Substitute.For<IPluginLog>();
+        framework.IsInFrameworkUpdateThread.Returns(true);
+        SessionLifecycleCoordinator? coordinator = null;
+        var capture = new RecordingCapturePort(() =>
+        {
+            Assert.Null(coordinator!.ActiveSessionGeneration);
+            return FinalCaptureResult.Captured(1);
+        });
+        coordinator = new SessionLifecycleCoordinator(capture);
+        SessionGeneration? observedAtFalseEvent = null;
+        eventBus.When(bus => bus.Publish(Arg.Any<GPoseStateChangedEvent>()))
+            .Do(callInfo =>
+            {
+                if (!callInfo.Arg<GPoseStateChangedEvent>().IsGPosing)
+                    observedAtFalseEvent = coordinator.ActiveSessionGeneration;
+            });
+
+        using var gpose = new GPoseService(
+            clientState, framework, eventBus, log, coordinator);
+        clientState.IsGPosing.Returns(true);
+        framework.Update += Raise.Event<IFramework.OnUpdateDelegate>(framework);
+        Assert.NotNull(coordinator.ActiveSessionGeneration);
+        clientState.IsGPosing.Returns(false);
+        framework.Update += Raise.Event<IFramework.OnUpdateDelegate>(framework);
+
+        Assert.Null(observedAtFalseEvent);
+        Assert.Null(coordinator.ActiveSessionGeneration);
+    }
+
+    [Fact]
+    public async Task Entry_during_running_exit_is_rejected_and_invalidation_closes_permanently()
+    {
+        var captureStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseCapture = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var coordinator = new SessionLifecycleCoordinator(
+            new RecordingCapturePort(() =>
+            {
+                captureStarted.SetResult(true);
+                releaseCapture.Task.GetAwaiter().GetResult();
+                return FinalCaptureResult.Captured(1);
+            }));
+        var first = coordinator.OnGposeEntered();
+        var exit = Task.Run(coordinator.OnGposeExit);
+        await captureStarted.Task;
+
+        Assert.Null(coordinator.OnGposeEntered());
+        coordinator.InvalidateForUnload();
+        Assert.Null(coordinator.ActiveSessionGeneration);
+        Assert.Null(coordinator.OnGposeEntered());
+
+        releaseCapture.SetResult(true);
+        await exit;
+        Assert.True(first.HasValue);
+        Assert.Null(coordinator.ActiveSessionGeneration);
+        Assert.Null(coordinator.OnGposeEntered());
+    }
+
+    [Fact]
+    public void Scene_refresh_does_not_rotate_session_generation()
+    {
+        var coordinator = new SessionLifecycleCoordinator(
+            new RecordingCapturePort(() => FinalCaptureResult.Captured(1)));
+        var token = coordinator.OnGposeEntered();
+        var scene = new SceneSession(new SelectionSession());
+
+        scene.Refresh(null);
+
+        Assert.Equal(token, coordinator.ActiveSessionGeneration);
+    }
+
+    [Fact]
     public void Lazy_capture_port_defers_service_stub_construction()
     {
         var services = new ServiceCollection();
@@ -673,6 +804,9 @@ public sealed class LifecycleContractTests
                 new ServiceProviderOptions { ValidateOnBuild = false, ValidateScopes = true });
             var eventBus = provider.GetRequiredService<IEventBus>();
             var coordinator = provider.GetRequiredService<ISessionLifecycleCoordinator>();
+            Assert.Same(
+                coordinator,
+                provider.GetRequiredService<ISessionGenerationSource>());
             var configuration = provider.GetRequiredService<global::Poser.Config.ConfigurationService>();
             configuration.Config.AutoSave.Enabled = true;
             var legacyObserved = false;
