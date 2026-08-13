@@ -53,6 +53,7 @@ public sealed class PortablePoseApplicationContractTests
 
         Assert.True(result.Success, result.Detail);
         Assert.Equal(1, result.Affected);
+        Assert.Null(result.Detail);
         Assert.Single(app.Runtime.RestoreCalls);
         Assert.Equal(target, app.Runtime.RestoreCalls[0]);
         Assert.Equal(8, app.Runtime.State(target).Pose.Layers[0].Delta.Position.X);
@@ -77,6 +78,53 @@ public sealed class PortablePoseApplicationContractTests
         Assert.False(result.Success);
         Assert.Contains("Ambiguous", result.Detail!);
         Assert.Empty(app.Runtime.RestoreCalls);
+    }
+
+    [Fact]
+    public void ApplyPortable_rejects_mixed_exact_and_ambiguous_matches_atomically()
+    {
+        var (left, right) = DuplicateBones();
+        using var app = Harness(left, right);
+        var pose = new PortablePose([
+            new PortableBoneEntry(
+                new PortableBoneKey(
+                    PoseSlot.Character,
+                    left.PartialId,
+                    left.CanonicalName,
+                    new BonePath("root", "left", "j_dup")),
+                PoseAt(4),
+                NativeIndexHint: left.BoneIndex),
+            new PortableBoneEntry(
+                PortableBoneKey.Legacy(
+                    new PortableBoneId(PoseSlot.Character, 0, "j_dup")),
+                PoseAt(8)),
+        ]);
+
+        var result = app.PoseEdits.ApplyPortable(
+            [TransformTargetId.ForBone(left), TransformTargetId.ForBone(right)],
+            pose,
+            "mixed ambiguous apply");
+
+        Assert.False(result.Success);
+        Assert.Contains("Ambiguous", result.Detail!);
+        Assert.Empty(app.Runtime.RestoreCalls);
+        Assert.False(app.History.CanUndo);
+        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(left)).Pose.Layers);
+        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(right)).Pose.Layers);
+    }
+
+    [Fact]
+    public void CapturePortable_returns_typed_failure_for_indistinguishable_siblings()
+    {
+        var (first, second) = DuplicateBones();
+        using var app = SiblingHarness(first, second);
+
+        var captured = app.PoseEdits.CapturePortable(
+            [TransformTargetId.ForBone(first), TransformTargetId.ForBone(second)]);
+
+        Assert.False(captured.Success);
+        Assert.Null(captured.Pose);
+        Assert.Contains("duplicate", captured.Detail!, StringComparison.OrdinalIgnoreCase);
     }
 
     private static TransformApplicationHarness Harness(params BoneId[] bones)
@@ -111,6 +159,35 @@ public sealed class PortablePoseApplicationContractTests
                             bones[1],
                             bones[1].CanonicalName,
                             new BoneId(bones[0].Skeleton, 0, 2, "right")),
+                    ])])],
+            [],
+            [],
+            []));
+        foreach (var bone in bones)
+        {
+            var target = TransformTargetId.ForBone(bone);
+            app.Runtime.Seed(TestStates.At(target, 0, hasOverride: false));
+        }
+
+        return app;
+    }
+
+    private static TransformApplicationHarness SiblingHarness(params BoneId[] bones)
+    {
+        var app = new TransformApplicationHarness();
+        var actor = TestIds.Actor();
+        var root = new BoneId(bones[0].Skeleton, 0, 0, "root");
+        app.Scene.Refresh(new SceneSnapshot(
+            1,
+            [new ActorDescriptor(
+                actor,
+                "Test actor",
+                [new SkeletonDescriptor(
+                    bones[0].Skeleton,
+                    [
+                        new BoneDescriptor(root, "root", null),
+                        new BoneDescriptor(bones[0], bones[0].CanonicalName, root),
+                        new BoneDescriptor(bones[1], bones[1].CanonicalName, root),
                     ])])],
             [],
             [],

@@ -299,8 +299,15 @@ public sealed class PoseEditService
                 portableTarget.NativeIndexHint));
         }
 
-        var pose = new PortablePose(entries);
-        return PoseCaptureResult.Ok(pose);
+        try
+        {
+            return PoseCaptureResult.Ok(new PortablePose(entries));
+        }
+        catch (ArgumentException exception)
+        {
+            return PoseCaptureResult.Fail(
+                $"Captured portable pose is not structurally representable: {exception.Message}");
+        }
     }
 
     public PoseEditResult ApplyPortable(
@@ -333,6 +340,9 @@ public sealed class PoseEditService
         }
 
         var match = pose.Match(destinations);
+        if (match.Ambiguous.Count > 0)
+            return PoseEditResult.Fail(DescribeMatchFailure(match)!);
+
         var statesByBone = prepared.States.ToDictionary(
             state => state.Target.Bone!.Value);
         var before = match.Matches
@@ -340,7 +350,8 @@ public sealed class PoseEditService
             .ToArray();
         if (before.Length == 0)
             return PoseEditResult.Fail(
-                DescribeMatchFailure(match)!);
+                DescribeMatchFailure(match) ??
+                "The portable pose has no bones matching this skeleton.");
 
         var desired = match.Matches.Select(item =>
         {
@@ -443,9 +454,7 @@ public sealed class PoseEditService
         if (match.Unmatched.Count > 0)
             details.Add(
                 $"Unmatched portable bones: {string.Join(", ", match.Unmatched.Select(item => item.Entry.Key.CanonicalName))}.");
-        return details.Count == 0
-            ? "The portable pose has no bones matching this skeleton."
-            : string.Join(" ", details);
+        return details.Count == 0 ? null : string.Join(" ", details);
     }
 
     private CaptureResult CaptureBones(
