@@ -87,7 +87,8 @@ public readonly record struct McdfProgressStep(
 public sealed record McdfOperationDirectory(
     string Path,
     string OwnerToken,
-    string? Identity);
+    string? Identity,
+    string? MarkerIdentity);
 
 /// <summary>
 /// A validated, fully extracted MCDF package. Payloads live as generated

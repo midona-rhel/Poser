@@ -42,6 +42,8 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     private readonly Func<SafeFileHandle, string> _getOperationFinalPath;
     private readonly Func<SafeFileHandle, string?> _getOperationIdentity;
     private readonly Action<SafeFileHandle> _markDeleteOnClose;
+    private readonly Action<string>? _beforeDestinationCommit;
+    private readonly Func<SafeFileHandle, string?> _getDestinationIdentity;
 
     public McdfFileBoundary() : this(Guid.NewGuid, null, null)
     {
@@ -55,7 +57,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         Func<SafeFileHandle, string?>? getIdentity = null,
         Func<SafeFileHandle, string>? getOperationFinalPath = null,
         Func<SafeFileHandle, string?>? getOperationIdentity = null,
-        Action<SafeFileHandle>? markDeleteOnClose = null)
+        Action<SafeFileHandle>? markDeleteOnClose = null,
+        Action<string>? beforeDestinationCommit = null,
+        Func<SafeFileHandle, string?>? getDestinationIdentity = null)
     {
         _newGuid = newGuid ?? Guid.NewGuid;
         _inspectionChunk = inspectChunk;
@@ -70,6 +74,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             getOperationIdentity ?? McdfPlatformFileOwnership.TryGetIdentity;
         _markDeleteOnClose =
             markDeleteOnClose ?? McdfPlatformFileOwnership.MarkDeleteOnClose;
+        _beforeDestinationCommit = beforeDestinationCommit;
+        _getDestinationIdentity =
+            getDestinationIdentity ?? McdfPlatformFileOwnership.TryGetIdentity;
     }
 
     public string GetFileName(string path)
@@ -90,6 +97,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         {
             string root = Path.Combine(Path.GetTempPath(), "Poser");
             Directory.CreateDirectory(root);
+            string? lastAllocationFailure = null;
             for (int attempt = 0; attempt < 8; attempt++)
             {
                 string allocationStep = "claiming the staging name";
@@ -134,7 +142,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                     allocationStep = "reopening the owner marker";
                     markerStream = ReopenAndVerifyOwnerMarker(
                         Path.Combine(directory, ".owner"),
-                        markerIdentity, token);
+                        markerIdentity, token, throwOnFailure: true);
                     if (markerStream == null)
                         throw new IOException(
                             "The MCDF owner marker changed during allocation.");
@@ -153,10 +161,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                     markerStream = null;
                     return IntegrationValue<McdfOperationDirectory>.Ok(
                         new McdfOperationDirectory(
-                            finalPath, token, identity));
+                            finalPath, token, identity, markerIdentity));
                 }
-                catch (Exception) when (attempt < 7 && (!renamed || ownerVerified))
+                catch (Exception ex) when (attempt < 7 && (!renamed || ownerVerified))
                 {
+                    lastAllocationFailure = $"{allocationStep}: {ex.Message}";
                     if (markerStream == null && directoryHandle != null)
                     {
                         try
@@ -178,6 +187,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 }
                 catch (Exception ex)
                 {
+                    lastAllocationFailure = $"{allocationStep}: {ex.Message}";
                     if (markerStream == null && directoryHandle != null)
                     {
                         try
@@ -207,7 +217,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 }
             }
             return IntegrationValue<McdfOperationDirectory>.Fail(
-                "The MCDF operation directory could not be allocated.");
+                lastAllocationFailure == null
+                    ? "The MCDF operation directory could not be allocated."
+                    : $"The MCDF operation directory could not be allocated: {lastAllocationFailure}");
         }
         catch (Exception ex)
         {
@@ -387,7 +399,16 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             if (!OwnedDirectoryMatches(operationDirectory, root))
                 return IntegrationPortResult.Fail(
                     "The extraction directory ownership changed; cleanup was refused.");
-            DeleteOwnedChildren(operationDirectory, root);
+            using var marker = ReopenAndVerifyOwnerMarker(
+                Path.Combine(operationDirectory.Path, ".owner"),
+                operationDirectory.MarkerIdentity,
+                operationDirectory.OwnerToken);
+            if (marker == null)
+                return IntegrationPortResult.Fail(
+                    "The extraction directory owner marker changed; cleanup was refused.");
+            DeleteOwnedChildren(operationDirectory, root, marker);
+            McdfPlatformFileOwnership.MarkDeleteOnClose(marker.SafeFileHandle);
+            marker.Dispose();
             McdfPlatformFileOwnership.MarkDeleteOnClose(root);
             return IntegrationPortResult.Ok();
         }
@@ -405,10 +426,15 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     private static FileStream? ReopenAndVerifyOwnerMarker(
         string path,
         string? expectedIdentity,
-        string expectedToken)
+        string expectedToken,
+        bool throwOnFailure = false)
     {
         if (expectedIdentity == null)
+        {
+            if (throwOnFailure)
+                throw new IOException("The expected MCDF owner marker identity was null.");
             return null;
+        }
         FileStream? marker = null;
         try
         {
@@ -418,16 +444,28 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             if (currentIdentity == null
                 || !string.Equals(
                     currentIdentity, expectedIdentity, StringComparison.Ordinal))
+            {
+                if (throwOnFailure)
+                    throw new IOException($"The MCDF owner marker identity did not match (expected {expectedIdentity}, current {currentIdentity ?? "<null>"}).");
                 return null;
+            }
             using var reader = new StreamReader(
                 marker, Encoding.UTF8, leaveOpen: true);
             if (!string.Equals(
                     reader.ReadToEnd(), expectedToken, StringComparison.Ordinal))
+            {
+                if (throwOnFailure)
+                    throw new IOException("The MCDF owner marker token did not match.");
                 return null;
+            }
             marker.Position = 0;
             var verified = marker;
             marker = null;
             return verified;
+        }
+        catch (Exception ex) when (throwOnFailure && ex is not IOException)
+        {
+            throw new IOException($"The MCDF owner marker could not be reopened: {ex.Message}", ex);
         }
         finally
         {
@@ -452,12 +490,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 || identity == null
                 || !string.Equals(identity, ownership.Identity, StringComparison.Ordinal))
                 return false;
-            string marker = Path.Combine(ownership.Path, ".owner");
-            return File.Exists(marker)
-                && string.Equals(
-                    File.ReadAllText(marker, Encoding.UTF8),
-                    ownership.OwnerToken,
-                    StringComparison.Ordinal);
+            using var marker = ReopenAndVerifyOwnerMarker(
+                Path.Combine(ownership.Path, ".owner"),
+                ownership.MarkerIdentity,
+                ownership.OwnerToken);
+            return marker != null;
         }
         catch
         {
@@ -467,7 +504,8 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
     private static void DeleteOwnedChildren(
         McdfOperationDirectory ownership,
-        SafeFileHandle rootHandle)
+        SafeFileHandle rootHandle,
+        FileStream markerHandle)
     {
         string marker = Path.Combine(ownership.Path, ".owner");
         foreach (string child in Directory.EnumerateFileSystemEntries(ownership.Path)
@@ -488,7 +526,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         if (!OwnedDirectoryMatches(ownership, rootHandle))
             throw new IOException(
                 "The extraction directory ownership changed during cleanup.");
-        File.Delete(marker);
+        string markerPath = McdfPlatformFileOwnership.GetRequiredFinalPath(
+            markerHandle.SafeFileHandle);
+        if (!PathsEqual(markerPath, marker))
+            throw new IOException(
+                "The extraction directory owner marker changed during cleanup.");
     }
 
     private static void DeleteAllocatedDirectoryWithHandles(
@@ -736,6 +778,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         string temporary = string.Empty;
         bool moved = false;
         FileStream? ownedOutput = null;
+        SafeFileHandle? destinationHandle = null;
         IntegrationValue<McdfWriteStats> result =
             IntegrationValue<McdfWriteStats>.Fail(
                 "Writing the package failed unexpectedly.");
@@ -745,6 +788,16 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         {
             fullDestination = Path.GetFullPath(destination);
             destinationExisted = File.Exists(fullDestination);
+            string? destinationIdentity = null;
+            if (destinationExisted)
+            {
+                destinationHandle =
+                    McdfPlatformFileOwnership.OpenDestinationForCommit(fullDestination);
+                destinationIdentity = _getDestinationIdentity(destinationHandle);
+                if (destinationIdentity == null)
+                    throw new WriteFailureException(
+                        "The existing destination identity could not be verified.");
+            }
             // Pass 1 — hash and measure every local file so the header can
             // precede the payloads, deduplicating identical content by
             // SHA-1 while every game path is preserved.
@@ -902,6 +955,23 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
             ownedOutput.Flush(flushToDisk: true);
             _beforeCommit?.Invoke(temporary);
+            _beforeDestinationCommit?.Invoke(fullDestination);
+            if (destinationExisted)
+            {
+                if (!File.Exists(fullDestination)
+                    || destinationHandle == null
+                    || !string.Equals(
+                        _getDestinationIdentity(destinationHandle),
+                        destinationIdentity,
+                        StringComparison.Ordinal))
+                    throw new WriteFailureException(
+                        "The existing destination changed before commit; the export was refused.");
+            }
+            else if (File.Exists(fullDestination))
+            {
+                throw new WriteFailureException(
+                    "A destination appeared before commit; the export was refused.");
+            }
             cancellation.ThrowIfCancellationRequested();
             McdfPlatformFileOwnership.CommitExactHandle(
                 ownedOutput.SafeFileHandle, fullDestination, destinationExisted);
@@ -944,6 +1014,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 }
             }
             ownedOutput?.Dispose();
+            destinationHandle?.Dispose();
         }
         return result;
     }

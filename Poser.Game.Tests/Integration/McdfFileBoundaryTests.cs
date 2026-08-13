@@ -282,7 +282,8 @@ public sealed class McdfFileBoundaryTests
         using var files = new TempFiles();
         var first = files.Boundary.CreateOperationDirectory();
         var second = files.Boundary.CreateOperationDirectory();
-        Assert.True(first.Success && second.Success, $"{first.Detail} | {second.Detail}");
+        Assert.True(first.Success, first.Detail);
+        Assert.True(second.Success, second.Detail);
         Assert.NotEqual(first.Value, second.Value);
         Assert.True(Directory.Exists(first.Value!.Path));
         Assert.True(Directory.Exists(second.Value!.Path));
@@ -368,6 +369,27 @@ public sealed class McdfFileBoundaryTests
 
         Assert.False(deleted.Success);
         Assert.Equal("foreign", File.ReadAllText(Path.Combine(ownership.Path, "foreign.txt")));
+        Directory.Delete(ownership.Path, recursive: true);
+    }
+
+    [Fact]
+    public void Operation_cleanup_refuses_marker_identity_replacement_even_with_same_token()
+    {
+        var boundary = new McdfFileBoundary();
+        var allocated = boundary.CreateOperationDirectory();
+        Assert.True(allocated.Success, allocated.Detail);
+        var ownership = allocated.Value!;
+        string marker = Path.Combine(ownership.Path, ".owner");
+        string replacement = marker + ".replacement";
+        File.Move(marker, replacement);
+        File.WriteAllText(marker, ownership.OwnerToken);
+        File.WriteAllText(Path.Combine(ownership.Path, "foreign.txt"), "foreign");
+
+        var deleted = boundary.DeleteOperationDirectory(ownership);
+
+        Assert.False(deleted.Success);
+        Assert.Equal("foreign", File.ReadAllText(Path.Combine(ownership.Path, "foreign.txt")));
+        Assert.True(File.Exists(marker));
         Directory.Delete(ownership.Path, recursive: true);
     }
 
@@ -537,6 +559,55 @@ public sealed class McdfFileBoundaryTests
         Assert.Contains("injected disposition refusal", result.Detail!);
         Assert.Contains(ownedTemporary, result.Detail!);
         Assert.Contains("manual cleanup", result.Detail!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Existing_destination_replacement_is_refused_without_overwrite()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        string foreign = Path.Combine(files.Root, "foreign.mcdf");
+        File.WriteAllText(source, "payload");
+        File.WriteAllText(destination, "original destination");
+        File.WriteAllText(foreign, "foreign destination");
+        int identityReads = 0;
+        var boundary = new McdfFileBoundary(
+            beforeDestinationCommit: _ => File.Replace(foreign, destination, null),
+            getDestinationIdentity: _ =>
+                ++identityReads == 1 ? "admitted" : "replaced");
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("foreign destination", File.ReadAllText(destination));
+    }
+
+    [Fact]
+    public async Task Existing_destination_disappearance_is_refused_without_create()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        File.WriteAllText(source, "payload");
+        File.WriteAllText(destination, "original destination");
+        var boundary = new McdfFileBoundary(
+            beforeDestinationCommit: _ => File.Delete(destination));
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(File.Exists(destination));
     }
 
     [Fact]

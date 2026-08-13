@@ -123,6 +123,20 @@ internal static class McdfPlatformFileOwnership
         return handle;
     }
 
+    internal static SafeFileHandle OpenDestinationForCommit(string path)
+    {
+        var handle = CreateFile(
+            path, GenericRead | ReadAttributes,
+            ShareRead | ShareWrite | ShareDelete, IntPtr.Zero,
+            OpenExisting, FileAttributeNormal, IntPtr.Zero);
+        if (handle.IsInvalid)
+        {
+            handle.Dispose();
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+        return handle;
+    }
+
     internal static void CommitExactHandle(
         SafeFileHandle handle, string destination, bool replaceExisting)
     {
