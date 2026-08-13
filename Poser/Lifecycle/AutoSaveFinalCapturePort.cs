@@ -28,7 +28,8 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
             AutoSaveTerminalStatus.Written => FinalPersistenceStatus.Written,
             AutoSaveTerminalStatus.Cleaned => FinalPersistenceStatus.Cleaned,
             AutoSaveTerminalStatus.RecoveryRequired => FinalPersistenceStatus.RecoveryRequired,
-            _ => FinalPersistenceStatus.NotAttempted,
+            AutoSaveTerminalStatus.NotAttempted => FinalPersistenceStatus.NotAttempted,
+            _ => throw new ArgumentOutOfRangeException(nameof(terminal.Status), terminal.Status, "Unknown autosave terminal status."),
         };
         var health = service.LastHealthRecord;
         var evidence = health is null

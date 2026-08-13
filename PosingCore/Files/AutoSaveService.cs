@@ -138,6 +138,16 @@ public class AutoSaveService : IAutoSaveService
 
     private readonly record struct WorkerResult(bool Success, string? Detail);
 
+    private readonly record struct RecoveryEntryIdentity(
+        string OperationId,
+        AutoSaveHealthStatus Status,
+        string? FailurePhase,
+        DateTime CreatedUtc,
+        DateTime UpdatedUtc,
+        string? Detail,
+        string AffectedPaths,
+        string EvidencePaths);
+
     public AutoSaveService(
         IPluginLog log,
         IFramework framework,
@@ -331,16 +341,45 @@ public class AutoSaveService : IAutoSaveService
             recovery.Detail,
             recovery.RecoveryEvidencePaths);
         var prior = _pendingHealthRecovery;
-        var allEntries = (prior?.RecoveryEntries ?? Array.Empty<AutoSaveHealthRecoveryEntry>())
-            .Concat(new[] { entry })
-            .ToArray();
-        var overflow = (prior?.RecoveryOverflowCount ?? 0) +
-            Math.Max(0, allEntries.Length - AutoSaveHealthRecord.MaxRecoveryEntries);
+        var merged = MergeRecoveryEntries(
+            prior?.RecoveryEntries ?? Array.Empty<AutoSaveHealthRecoveryEntry>(),
+            prior?.RecoveryOverflowCount ?? 0,
+            new[] { entry }, 0);
         _pendingHealthRecovery = (prior ?? recovery).With(
             status: AutoSaveHealthStatus.RecoveryRequired,
             updatedUtc: DateTime.UtcNow,
-            recoveryEntries: allEntries.Take(AutoSaveHealthRecord.MaxRecoveryEntries),
-            recoveryOverflowCount: overflow);
+            recoveryEntries: merged.Entries,
+            recoveryOverflowCount: merged.OverflowCount);
+    }
+
+    private static (IReadOnlyList<AutoSaveHealthRecoveryEntry> Entries, int OverflowCount)
+        MergeRecoveryEntries(
+            IEnumerable<AutoSaveHealthRecoveryEntry> first,
+            int firstOverflow,
+            IEnumerable<AutoSaveHealthRecoveryEntry> second,
+            int secondOverflow)
+    {
+        var seen = new HashSet<RecoveryEntryIdentity>();
+        var unique = new List<AutoSaveHealthRecoveryEntry>();
+        foreach (var entry in first.Concat(second))
+        {
+            var identity = new RecoveryEntryIdentity(
+                entry.OperationId,
+                entry.Status,
+                entry.FailurePhase,
+                entry.CreatedUtc,
+                entry.UpdatedUtc,
+                entry.Detail,
+                string.Join("\u001f", entry.AffectedPaths),
+                string.Join("\u001f", entry.RecoveryEvidencePaths));
+            if (seen.Add(identity))
+                unique.Add(entry);
+        }
+
+        var overflow = Math.Max(0, firstOverflow) + Math.Max(0, secondOverflow);
+        overflow = (int)Math.Min(int.MaxValue,
+            (long)overflow + Math.Max(0, unique.Count - AutoSaveHealthRecord.MaxRecoveryEntries));
+        return (unique.Take(AutoSaveHealthRecord.MaxRecoveryEntries).ToArray(), overflow);
     }
 
     private static string LimitHealthText(string value, int max) =>
@@ -954,15 +993,13 @@ public class AutoSaveService : IAutoSaveService
                     .Distinct(StringComparer.Ordinal)
                     .Take(256)
                     .ToArray();
-                mergedRecoveryEntries = healthRecord.RecoveryEntries
-                    .Concat(pendingRecovery.RecoveryEntries)
-                    .Take(AutoSaveHealthRecord.MaxRecoveryEntries)
-                    .ToArray();
-                mergedRecoveryOverflow = healthRecord.RecoveryOverflowCount +
-                    pendingRecovery.RecoveryOverflowCount +
-                    Math.Max(0, healthRecord.RecoveryEntries.Count +
-                        pendingRecovery.RecoveryEntries.Count -
-                        AutoSaveHealthRecord.MaxRecoveryEntries);
+                var mergedRecovery = MergeRecoveryEntries(
+                    healthRecord.RecoveryEntries,
+                    healthRecord.RecoveryOverflowCount,
+                    pendingRecovery.RecoveryEntries,
+                    pendingRecovery.RecoveryOverflowCount);
+                mergedRecoveryEntries = mergedRecovery.Entries;
+                mergedRecoveryOverflow = mergedRecovery.OverflowCount;
                 failurePhase = pendingRecovery.FailurePhase ?? "HealthTransition";
             }
             var healthStatus = result.Status switch

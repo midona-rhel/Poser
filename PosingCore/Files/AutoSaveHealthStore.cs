@@ -360,7 +360,7 @@ public sealed class AutoSaveHealthStore
                 var roundTrip = JsonSerializer.Deserialize<AutoSaveHealthRecord>(verify, JsonOptions);
                 if (!RecordsEqual(record, roundTrip))
                     return CleanupPrecommitFailure(
-                        "Autosave health validation failed.", ref temp);
+                        "Autosave health validation failed.", ref temp, ref tempCleanupAttempted);
             }
 
             if (_fileSystem.Exists(HealthPath))
@@ -477,11 +477,13 @@ public sealed class AutoSaveHealthStore
 
     private AutoSaveHealthWriteResult CleanupPrecommitFailure(
         string detail,
-        ref string? temp)
+        ref string? temp,
+        ref bool cleanupAttempted)
     {
         if (temp is null)
             return AutoSaveHealthWriteResult.Failed(detail);
         var path = temp;
+        cleanupAttempted = true;
         try
         {
             _fileSystem.Delete(path);

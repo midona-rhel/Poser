@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Text.Json;
 using NSubstitute;
@@ -508,6 +509,43 @@ public class AutoSaveServiceSnapshotTests
         var health = new AutoSaveHealthStore(h.Root).Read()!;
         Assert.Equal(AutoSaveHealthStatus.Written, health.Status);
         Assert.DoesNotContain(health.RecoveryEntries, entry => entry.OperationId == firstPending);
+        Assert.Equal(0, health.RecoveryOverflowCount);
+    }
+
+    [Fact]
+    public void Failed_terminal_publication_does_not_duplicate_pending_recovery_on_no_admission_exit()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root,
+            new FailingFlushHealthFileSystem(failFlush: 6));
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("active-periodic"));
+        hold.WaitUntilHeld();
+        Assert.Equal(1, h.Service.SaveNow("pending-periodic"));
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, h.Service.CaptureForExit().Status);
+        hold.Release();
+        h.WaitForWrite();
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired,
+            h.Service.CompleteForExit().Status);
+
+        // Reset the exit state without admitting another operation. The next
+        // merge must deduplicate the recovery already present in the current
+        // health record, then acknowledge and clear the pending set.
+        h.Settings.Enabled = true;
+        h.Service.Tick(DateTime.UtcNow);
+        h.Settings.Enabled = false;
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured,
+            h.Service.CaptureForExit().Status);
+        var second = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, second.Status);
+        var health = new AutoSaveHealthStore(h.Root).Read()!;
+        var ids = health.RecoveryEntries.Select(entry => entry.OperationId).ToArray();
+        Assert.Equal(ids.Distinct(StringComparer.Ordinal), ids);
         Assert.Equal(0, health.RecoveryOverflowCount);
     }
 

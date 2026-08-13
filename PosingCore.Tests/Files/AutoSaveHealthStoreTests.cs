@@ -255,6 +255,28 @@ public sealed class AutoSaveHealthStoreTests
     }
 
     [Fact]
+    public void Reopen_failure_evidence_survives_a_fail_once_cleanup_attempt()
+    {
+        using var root = new TempRoot();
+        var normal = new AutoSaveHealthStore(root.Path);
+        Assert.True(normal.Write(AutoSaveHealthRecord.Create(
+            "old", "interval", AutoSaveHealthStatus.Written,
+            DateTime.UtcNow, DateTime.UtcNow)).Succeeded);
+
+        var failing = new AutoSaveHealthStore(root.Path,
+            new FailOnceDeleteFileSystem(new CorruptReopenFileSystem(
+                new SystemAutoSaveHealthFileSystem())));
+        var result = failing.Write(AutoSaveHealthRecord.Create(
+            "new", "final", AutoSaveHealthStatus.Queued,
+            DateTime.UtcNow, DateTime.UtcNow));
+
+        Assert.False(result.Succeeded);
+        Assert.NotEmpty(result.RecoveryEvidencePaths);
+        Assert.All(result.RecoveryEvidencePaths, path => Assert.True(File.Exists(path), path));
+        Assert.Equal("old", normal.Read()!.OperationId);
+    }
+
+    [Fact]
     public void Successful_replace_followed_by_destination_loss_retains_backup_evidence()
     {
         using var root = new TempRoot();
@@ -395,5 +417,27 @@ public sealed class AutoSaveHealthStoreTests
         }
         public void Move(string source, string destination) => _inner.Move(source, destination);
         public void Delete(string path) => _inner.Delete(path);
+    }
+
+    private sealed class FailOnceDeleteFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner;
+        private bool _failed;
+        public FailOnceDeleteFileSystem(IAutoSaveHealthFileSystem inner) => _inner = inner;
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) => _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) => _inner.Move(source, destination);
+        public void Delete(string path)
+        {
+            if (!_failed && path.EndsWith(".tmp", StringComparison.Ordinal))
+            {
+                _failed = true;
+                throw new IOException("simulated first cleanup failure");
+            }
+            _inner.Delete(path);
+        }
     }
 }

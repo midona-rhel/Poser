@@ -563,6 +563,18 @@ public sealed class LifecycleContractTests
     }
 
     [Fact]
+    public void Adapter_rejects_unknown_terminal_status_instead_of_claiming_not_attempted()
+    {
+        var service = Substitute.For<IAutoSaveService>();
+        service.CaptureForExit().Returns(AutoSaveCaptureResult.NotCaptured());
+        service.CompleteForExit().Returns(
+            new AutoSaveTerminalResult((AutoSaveTerminalStatus)999, "invalid"));
+
+        var port = new ProductionPoser::Poser.Lifecycle.AutoSaveFinalCapturePort(() => service);
+        Assert.Throws<ArgumentOutOfRangeException>(() => port.CaptureForExit());
+    }
+
+    [Fact]
     public void Reentrant_and_duplicate_exit_edges_capture_once()
     {
         SessionLifecycleCoordinator? coordinator = null;
