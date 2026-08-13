@@ -8,6 +8,29 @@ namespace Poser.ContractTests;
 public sealed class SelectionScopeContractTests
 {
     [Fact]
+    public void Selected_views_are_read_only_and_do_not_expose_backing_lists()
+    {
+        var actor = Actor(0);
+        var first = SelectionId.ForActor(actor);
+        var second = SelectionId.ForActor(actor.NextGeneration());
+        var session = new SelectionSession();
+        var scope = new SelectionScope(first);
+
+        session.Live.Select(first);
+
+        Assert.False(scope.Selected is List<SelectionId>);
+        Assert.False(session.Selected is List<SelectionId>);
+
+        var scopeView = Assert.IsAssignableFrom<IList<SelectionId>>(scope.Selected);
+        var sessionView = Assert.IsAssignableFrom<IList<SelectionId>>(session.Selected);
+        Assert.Throws<NotSupportedException>(() => scopeView.Add(second));
+        Assert.Throws<NotSupportedException>(() => sessionView.Clear());
+
+        Assert.Equal(new[] { first }, scope.Selected);
+        Assert.Equal(new[] { first }, session.Selected);
+    }
+
+    [Fact]
     public void Explicit_scopes_are_independent_without_ambient_redirection()
     {
         var actor = Actor(0);
@@ -123,6 +146,54 @@ public sealed class SelectionScopeContractTests
     }
 
     [Fact]
+    public void Direct_live_mutation_notifies_once_inside_compatibility_scope_and_reconcile()
+    {
+        var oldActor = Actor(0);
+        var replacementActor = Actor(1);
+        var liveOld = SelectionId.ForActor(oldActor);
+        var liveReplacement = SelectionId.ForActor(replacementActor);
+        var scopedFirst = SelectionId.ForBone(Bone(oldActor, 1, "scoped-first"));
+        var scopedSecond = SelectionId.ForBone(Bone(oldActor, 2, "scoped-second"));
+        var session = new SelectionSession();
+        var scene = new SceneSession(session);
+        var scope = new SelectionScope(scopedFirst);
+        var notifications = new List<IReadOnlyList<SelectionId>>();
+
+        session.SelectionChanged += ids => notifications.Add(ids.ToArray());
+        session.Live.Select(liveOld);
+
+        using (session.BeginScope(scope))
+        {
+            session.Select(scopedSecond);
+            session.Live.Add(liveReplacement);
+            session.Live.Select(liveOld);
+        }
+
+        Assert.Equal(3, notifications.Count);
+        Assert.Equal(new[] { liveOld }, notifications[0]);
+        Assert.Equal(new[] { liveOld, liveReplacement }, notifications[1]);
+        Assert.Equal(new[] { liveOld }, notifications[2]);
+        Assert.Equal(new[] { scopedSecond }, scope.Selected);
+
+        scene.Refresh(SceneWithActor(replacementActor));
+
+        Assert.Equal(4, notifications.Count);
+        Assert.Equal(new[] { liveReplacement }, notifications[3]);
+        Assert.Equal(new[] { liveReplacement }, session.Live.Selected);
+    }
+
+    [Fact]
+    public void Live_selection_cannot_be_registered_as_a_reconcile_scope()
+    {
+        var session = new SelectionSession();
+
+        var error = Assert.Throws<ArgumentException>(
+            () => session.TrackScope(session.Live));
+
+        Assert.Contains("live selection", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Scope_mutation_rules_preserve_order_primary_and_homogeneous_ranges()
     {
         var actor = Actor(0);
@@ -171,6 +242,20 @@ public sealed class SelectionScopeContractTests
                             bone.Skeleton,
                             new[] { new BoneDescriptor(bone, bone.CanonicalName, Parent: null) }),
                     }),
+            },
+            Lights: Array.Empty<LightDescriptor>(),
+            Cameras: Array.Empty<CameraDescriptor>(),
+            Props: Array.Empty<PropDescriptor>());
+
+    private static SceneSnapshot SceneWithActor(ActorId actor) =>
+        new(
+            Revision: actor.Generation + 1,
+            Actors: new[]
+            {
+                new ActorDescriptor(
+                    actor,
+                    "Test actor",
+                    Array.Empty<SkeletonDescriptor>()),
             },
             Lights: Array.Empty<LightDescriptor>(),
             Cameras: Array.Empty<CameraDescriptor>(),

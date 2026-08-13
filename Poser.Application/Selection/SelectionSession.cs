@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Selection;
@@ -13,21 +14,24 @@ namespace Poser.Application.Selection;
 public sealed class SelectionScope
 {
     private readonly List<SelectionId> _selected = new();
+    private readonly ReadOnlyCollection<SelectionId> _selectedView;
     private SelectionId? _anchor;
     private readonly Action? _changed;
 
     public SelectionScope(SelectionId seed)
     {
+        _selectedView = _selected.AsReadOnly();
         _selected.Add(seed);
         _anchor = seed;
     }
 
     internal SelectionScope(Action changed)
     {
+        _selectedView = _selected.AsReadOnly();
         _changed = changed;
     }
 
-    public IReadOnlyList<SelectionId> Selected => _selected;
+    public IReadOnlyList<SelectionId> Selected => _selectedView;
 
     public SelectionId? Primary =>
         _selected.Count == 0 ? null : _selected[0];
@@ -221,8 +225,10 @@ public sealed class SelectionSession
 
     /// <summary>
     /// Compatibility adapter for the current ambient UI callers. The token
-    /// restores nested adapters on disposal; scoped writes do not publish the
-    /// live-selection event. Explicit scope callers do not use this method.
+    /// restores nested adapters on disposal; legacy session-member writes to
+    /// the redirected scope do not publish the live-selection event. Direct
+    /// <see cref="Live"/> writes remain observable. Explicit scope callers do
+    /// not use this method.
     /// </summary>
     public IDisposable BeginScope(SelectionScope scope)
     {
@@ -240,6 +246,13 @@ public sealed class SelectionSession
     public void TrackScope(SelectionScope scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
+        if (ReferenceEquals(scope, _live))
+        {
+            throw new ArgumentException(
+                "The live selection is reconciled automatically and cannot be tracked as a scope.",
+                nameof(scope));
+        }
+
         if (!_scopes.Contains(scope))
             _scopes.Add(scope);
     }
@@ -302,9 +315,8 @@ public sealed class SelectionSession
 
     private void PublishLiveChanged()
     {
-        // Direct live operations publish unless a legacy adapter is active;
-        // this preserves the old rule that scoped writes are private.
-        if (_compatibilityScope == null)
-            SelectionChanged?.Invoke(_live.Selected.ToArray());
+        // Live is an explicit owner, so its notifications remain observable
+        // even when legacy session members are redirected to a private scope.
+        SelectionChanged?.Invoke(_live.Selected.ToArray());
     }
 }
