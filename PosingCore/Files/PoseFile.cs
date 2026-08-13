@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -81,10 +82,11 @@ public class PoseFile
 
     // Mirrors Brio/Brio/Core/JsonSerializer.cs so files round-trip byte-compatibly:
     // numerics as "X, Y, Z" strings, relaxed escaping (smaller Base64Image), trailing commas tolerated.
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
         AllowTrailingCommas = true,
+        MaxDepth = PoseFileLimits.MaxJsonDepth,
         PropertyNamingPolicy = null, // Keep PascalCase to match Brio
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters =
@@ -98,51 +100,39 @@ public class PoseFile
     };
 
     /// <summary>
-    /// Loads a pose file from disk.
+    /// Lossy compatibility load. Returns null for every typed read, size,
+    /// JSON, or validation failure; new storage workflows use
+    /// <see cref="AtomicPoseFileStore.Read"/>.
     /// </summary>
     public static PoseFile? Load(string path)
     {
-        try
-        {
-            var json = File.ReadAllText(path);
-            return FromJson(json);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        // Intentionally lossy compatibility wrapper. New storage callers use
+        // AtomicPoseFileStore.Read so the typed failure and path survive.
+        return AtomicPoseFileStore.Default.Read(path).Pose;
     }
 
     /// <summary>
-    /// Parses a pose file from JSON string.
+    /// Lossy compatibility parse. Returns null for every typed size, JSON, or
+    /// validation failure; new storage workflows use
+    /// <see cref="AtomicPoseFileStore.Parse"/>.
     /// </summary>
     public static PoseFile? FromJson(string json)
     {
-        try
-        {
-            return JsonSerializer.Deserialize<PoseFile>(json, JsonOptions);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        // Intentionally lossy compatibility wrapper for clipboard/rest-pose
+        // callers that predate the typed ordinary-pose codec outcome.
+        return AtomicPoseFileStore.Default.Parse(json).Pose;
     }
 
     /// <summary>
-    /// Saves this pose file to disk.
+    /// Lossy compatibility save. Returns false for every typed validation,
+    /// serialization, temp, flush, validation, replace, or move failure; new
+    /// storage workflows use <see cref="AtomicPoseFileStore.Write"/>.
     /// </summary>
     public bool Save(string path)
     {
-        try
-        {
-            var json = JsonSerializer.Serialize(this, JsonOptions);
-            File.WriteAllText(path, json);
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
+        // Intentionally lossy compatibility wrapper. The typed store retains
+        // the phase and any undeletable temp as recovery evidence.
+        return AtomicPoseFileStore.Default.Write(this, path).Succeeded;
     }
 
     /// <summary>
@@ -151,8 +141,12 @@ public class PoseFile
     /// </summary>
     public void SanitizeBoneNames()
     {
+        var aliases = PoseFileValidation.ValidateAnamnesisAliases(Bones);
+        if (!aliases.Succeeded)
+            throw new InvalidDataException(aliases.Failure!.Detail);
+
         var newBones = new Dictionary<string, BoneData>();
-        foreach (var bone in Bones)
+        foreach (var bone in Bones.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             newBones[AnamnesisBoneNameConverter.ToGame(bone.Key)] = bone.Value;
         }

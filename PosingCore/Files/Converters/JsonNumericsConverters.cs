@@ -22,6 +22,7 @@ public class Vector2Converter : JsonConverter<Vector2>
 
     public override void Write(Utf8JsonWriter writer, Vector2 value, JsonSerializerOptions options)
     {
+        RequireFinite(nameof(Vector2), value.X, value.Y);
         writer.WriteStringValue(FormattableString.Invariant($"{value.X}, {value.Y}"));
     }
 
@@ -34,8 +35,19 @@ public class Vector2Converter : JsonConverter<Vector2>
 
         var values = new float[count];
         for (int i = 0; i < count; i++)
+        {
             values[i] = float.Parse(parts[i], CultureInfo.InvariantCulture);
+            if (!float.IsFinite(values[i]))
+                throw new JsonException($"{typeName} contains NaN or infinity.");
+        }
         return values;
+    }
+
+    internal static void RequireFinite(string typeName, params float[] values)
+    {
+        foreach (var value in values)
+            if (!float.IsFinite(value))
+                throw new JsonException($"{typeName} contains NaN or infinity.");
     }
 }
 
@@ -49,6 +61,7 @@ public class Vector3Converter : JsonConverter<Vector3>
 
     public override void Write(Utf8JsonWriter writer, Vector3 value, JsonSerializerOptions options)
     {
+        Vector2Converter.RequireFinite(nameof(Vector3), value.X, value.Y, value.Z);
         writer.WriteStringValue(FormattableString.Invariant($"{value.X}, {value.Y}, {value.Z}"));
     }
 }
@@ -63,6 +76,7 @@ public class Vector4Converter : JsonConverter<Vector4>
 
     public override void Write(Utf8JsonWriter writer, Vector4 value, JsonSerializerOptions options)
     {
+        Vector2Converter.RequireFinite(nameof(Vector4), value.X, value.Y, value.Z, value.W);
         writer.WriteStringValue(FormattableString.Invariant($"{value.X}, {value.Y}, {value.Z}, {value.W}"));
     }
 }
@@ -77,6 +91,7 @@ public class QuaternionConverter : JsonConverter<Quaternion>
 
     public override void Write(Utf8JsonWriter writer, Quaternion value, JsonSerializerOptions options)
     {
+        Vector2Converter.RequireFinite(nameof(Quaternion), value.X, value.Y, value.Z, value.W);
         writer.WriteStringValue(FormattableString.Invariant($"{value.X}, {value.Y}, {value.Z}, {value.W}"));
     }
 }

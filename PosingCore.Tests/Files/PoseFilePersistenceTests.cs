@@ -41,7 +41,8 @@ public sealed class PoseFilePersistenceTests
         var written = AtomicPoseFileStore.Default.Write(parsed.Pose, fixture.Destination);
 
         Assert.True(written.Succeeded, written.Failure?.Detail);
-        var output = File.ReadAllText(fixture.Destination);
+        var output = File.ReadAllText(fixture.Destination)
+            .Replace("\r\n", "\n", StringComparison.Ordinal);
         Assert.Contains("\n  \"TypeName\": \"Brio Pose\"", output);
         Assert.Contains("\"Position\": \"1.25, 2.5, -3.75\"", output);
         Assert.Contains("\"Description\": \"<current & compatible>\"", output);
@@ -75,6 +76,30 @@ public sealed class PoseFilePersistenceTests
 
         Assert.False(result.Succeeded);
         Assert.Equal(PoseFileStoreFailureKind.SizeLimit, result.Failure?.Kind);
+    }
+
+    [Fact]
+    public void Read_accepts_a_valid_file_at_exactly_32_mib()
+    {
+        using var fixture = new StoreFixture();
+        using (var stream = new FileStream(
+                   fixture.Destination, FileMode.CreateNew, FileAccess.Write))
+        {
+            stream.Write("{}"u8);
+            var spaces = new byte[8192];
+            Array.Fill(spaces, (byte)' ');
+            var remaining = PoseFileLimits.MaxFileBytes - stream.Position;
+            while (remaining > 0)
+            {
+                var count = (int)Math.Min(remaining, spaces.Length);
+                stream.Write(spaces, 0, count);
+                remaining -= count;
+            }
+        }
+
+        var result = AtomicPoseFileStore.Default.Read(fixture.Destination);
+
+        Assert.True(result.Succeeded, result.Failure?.Detail);
     }
 
     [Theory]
@@ -260,24 +285,25 @@ public sealed class AtomicPoseFileStoreTests
 {
     public static IEnumerable<object[]> ExistingDestinationFailures()
     {
-        yield return new object[] { PoseFileStorePhase.Serialize, PoseFileStoreFailureKind.Serialization };
-        yield return new object[] { PoseFileStorePhase.CreateTemporary, PoseFileStoreFailureKind.TemporaryCreate };
-        yield return new object[] { PoseFileStorePhase.WriteTemporary, PoseFileStoreFailureKind.TemporaryWrite };
-        yield return new object[] { PoseFileStorePhase.FlushTemporary, PoseFileStoreFailureKind.TemporaryFlush };
-        yield return new object[] { PoseFileStorePhase.ReopenTemporary, PoseFileStoreFailureKind.TemporaryReopen };
-        yield return new object[] { PoseFileStorePhase.ReplaceDestination, PoseFileStoreFailureKind.Replace };
+        yield return new object[] { (int)PoseFileStorePhase.Serialize, PoseFileStoreFailureKind.Serialization };
+        yield return new object[] { (int)PoseFileStorePhase.CreateTemporary, PoseFileStoreFailureKind.TemporaryCreate };
+        yield return new object[] { (int)PoseFileStorePhase.WriteTemporary, PoseFileStoreFailureKind.TemporaryWrite };
+        yield return new object[] { (int)PoseFileStorePhase.FlushTemporary, PoseFileStoreFailureKind.TemporaryFlush };
+        yield return new object[] { (int)PoseFileStorePhase.ReopenTemporary, PoseFileStoreFailureKind.TemporaryReopen };
+        yield return new object[] { (int)PoseFileStorePhase.ReplaceDestination, PoseFileStoreFailureKind.Replace };
     }
 
     [Theory]
     [MemberData(nameof(ExistingDestinationFailures))]
     public void Every_precommit_failure_preserves_the_existing_destination(
-        PoseFileStorePhase injected,
+        int injectedValue,
         PoseFileStoreFailureKind expected)
     {
+        var injected = (PoseFileStorePhase)injectedValue;
         using var fixture = new StoreFixture();
         var oldBytes = new byte[] { 0x13, 0x37, 0x42, 0x7f };
         File.WriteAllBytes(fixture.Destination, oldBytes);
-        var store = new AtomicPoseFileStore(phase =>
+        var store = new AtomicPoseFileStore((phase, _) =>
         {
             if (phase == injected)
                 throw new IOException($"injected {phase}");
@@ -313,7 +339,7 @@ public sealed class AtomicPoseFileStoreTests
     public void Move_failure_leaves_an_absent_destination_absent()
     {
         using var fixture = new StoreFixture();
-        var store = new AtomicPoseFileStore(phase =>
+        var store = new AtomicPoseFileStore((phase, _) =>
         {
             if (phase == PoseFileStorePhase.MoveDestination)
                 throw new IOException("injected move");
@@ -332,7 +358,7 @@ public sealed class AtomicPoseFileStoreTests
     {
         using var fixture = new StoreFixture();
         File.WriteAllText(fixture.Destination, "old");
-        var store = new AtomicPoseFileStore(phase =>
+        var store = new AtomicPoseFileStore((phase, _) =>
         {
             if (phase is PoseFileStorePhase.ReplaceDestination or PoseFileStorePhase.CleanupTemporary)
                 throw new IOException($"injected {phase}");
@@ -356,7 +382,7 @@ public sealed class AtomicPoseFileStoreTests
         using var fixture = new StoreFixture();
         File.WriteAllText(fixture.Destination, "old");
         var phases = new List<PoseFileStorePhase>();
-        var store = new AtomicPoseFileStore(phases.Add);
+        var store = new AtomicPoseFileStore((phase, _) => phases.Add(phase));
 
         var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
 
@@ -364,6 +390,28 @@ public sealed class AtomicPoseFileStoreTests
         Assert.True(phases.IndexOf(PoseFileStorePhase.ReopenTemporary) <
                     phases.IndexOf(PoseFileStorePhase.ReplaceDestination));
         Assert.NotNull(PoseFile.Load(fixture.Destination));
+        Assert.Single(Directory.EnumerateFiles(fixture.Root));
+    }
+
+    [Fact]
+    public void Reopened_temp_must_decode_and_validate_before_replacing()
+    {
+        using var fixture = new StoreFixture();
+        var oldBytes = new byte[] { 4, 3, 2, 1 };
+        File.WriteAllBytes(fixture.Destination, oldBytes);
+        var store = new AtomicPoseFileStore((phase, path) =>
+        {
+            if (phase == PoseFileStorePhase.ReopenTemporary)
+                File.WriteAllText(path!, "{ not valid");
+        });
+
+        var result = store.Write(
+            PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.TemporaryReopen, result.Failure?.Kind);
+        Assert.Equal(oldBytes, File.ReadAllBytes(fixture.Destination));
+        Assert.Null(result.RecoveryEvidencePath);
         Assert.Single(Directory.EnumerateFiles(fixture.Root));
     }
 }
