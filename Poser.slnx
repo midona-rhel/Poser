@@ -3,6 +3,7 @@
   <Project Path="Poser/Poser.csproj" />
   <Project Path="Poser.Application/Poser.Application.csproj" />
   <Project Path="Poser.Domain/Poser.Domain.csproj" />
+  <Project Path="Poser.Domain.Tests/Poser.Domain.Tests.csproj" />
   <Project Path="Poser.Game/Poser.Game.csproj" />
   <Project Path="PosingCore/PosingCore.csproj" />
   <Project Path="PosingCore.Tests/PosingCore.Tests.csproj" />
