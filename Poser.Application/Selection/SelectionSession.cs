@@ -3,152 +3,93 @@ using Poser.Domain.Identity;
 namespace Poser.Application.Selection;
 
 /// <summary>
-/// A window's own selection state, substituted into the session for the span
-/// of that window's draw. A frozen pop-out seeds one with its entity and
-/// wraps its frame in <see cref="SelectionSession.BeginScope"/>: every pane
-/// and facade it hosts then resolves — and edits — the scope's selection,
-/// while the live selection (the gizmo's, the sidebar's) stays untouched.
-/// Registered scopes ride the same stable-id reconciliation the live list
-/// gets, so a scope survives scene refreshes exactly as far as its ids do.
+/// Explicit ordered selection state for a live or scoped view.
 /// </summary>
+/// <remarks>
+/// This type owns selection mutation and reconciliation rules so callers can
+/// operate on a scope directly without entering a session compatibility
+/// adapter. A scope has no ambient link to any other scope.
+/// </remarks>
 public sealed class SelectionScope
 {
-    internal readonly List<SelectionId> Selected = new();
-    internal SelectionId? Anchor;
+    private readonly List<SelectionId> _selected = new();
+    private SelectionId? _anchor;
+    private readonly Action? _changed;
 
     public SelectionScope(SelectionId seed)
     {
-        Selected.Add(seed);
-        Anchor = seed;
+        _selected.Add(seed);
+        _anchor = seed;
     }
+
+    internal SelectionScope(Action changed)
+    {
+        _changed = changed;
+    }
+
+    public IReadOnlyList<SelectionId> Selected => _selected;
 
     public SelectionId? Primary =>
-        Selected.Count == 0 ? null : Selected[0];
-}
+        _selected.Count == 0 ? null : _selected[0];
 
-/// <summary>Stable-id selection authority with homogeneous grouping.</summary>
-public sealed class SelectionSession
-{
-    private readonly List<SelectionId> _liveSelected = new();
-    private SelectionId? _liveAnchor;
+    public SelectionId? Anchor => _anchor;
 
-    /// <summary>The scope writes and reads land on while one is active —
-    /// active only inside a pop-out window's draw, on the one UI thread.
-    /// </summary>
-    private SelectionScope? _scope;
-
-    /// <summary>Scopes registered for reconciliation alongside the live list.
-    /// </summary>
-    private readonly List<SelectionScope> _scopes = new();
-
-    public event Action<IReadOnlyList<SelectionId>>? SelectionChanged;
-
-    public IReadOnlyList<SelectionId> Selected =>
-        _scope?.Selected ?? _liveSelected;
-    public SelectionId? Primary
-    {
-        get
-        {
-            var selected = _scope?.Selected ?? _liveSelected;
-            return selected.Count == 0 ? null : selected[0];
-        }
-    }
-    public SelectionId? Anchor
-    {
-        get => _scope is { } scope ? scope.Anchor : _liveAnchor;
-        private set
-        {
-            if (_scope is { } scope)
-                scope.Anchor = value;
-            else
-                _liveAnchor = value;
-        }
-    }
-
-    /// <summary>Substitutes <paramref name="scope"/> for the live selection
-    /// until the returned token is disposed. Scoped writes do not publish —
-    /// <see cref="SelectionChanged"/> subscribers are live-selection
-    /// listeners.</summary>
-    public IDisposable BeginScope(SelectionScope scope)
-    {
-        var previous = _scope;
-        _scope = scope;
-        return new ScopeToken(this, previous);
-    }
-
-    /// <summary>Keeps <paramref name="scope"/> id-fresh across scene
-    /// refreshes; forgotten with <see cref="ForgetScope"/> when its window
-    /// closes.</summary>
-    public void TrackScope(SelectionScope scope) => _scopes.Add(scope);
-
-    public void ForgetScope(SelectionScope scope) => _scopes.Remove(scope);
-
-    private sealed class ScopeToken(
-        SelectionSession session, SelectionScope? previous) : IDisposable
-    {
-        public void Dispose() => session._scope = previous;
-    }
-
-    /// <summary>The list a member operates on this call: the active scope's,
-    /// else the live one.</summary>
-    private List<SelectionId> Target => _scope?.Selected ?? _liveSelected;
-
-    public bool IsSelected(SelectionId id) => Target.Contains(id);
+    public bool IsSelected(SelectionId id) => _selected.Contains(id);
 
     public void Select(SelectionId id)
     {
-        var target = Target;
-        target.Clear();
-        target.Add(id);
-        Anchor = id;
-        Publish();
+        _selected.Clear();
+        _selected.Add(id);
+        _anchor = id;
+        NotifyChanged();
     }
 
     public void Add(SelectionId id)
     {
-        var target = Target;
-        if (target.Count > 0 && !IsCompatible(target[0], id))
+        if (_selected.Count > 0 && !IsCompatible(_selected[0], id))
         {
             Select(id);
             return;
         }
 
-        if (!target.Contains(id))
-            target.Add(id);
-        Anchor = id;
-        Publish();
+        if (!_selected.Contains(id))
+            _selected.Add(id);
+        _anchor = id;
+        NotifyChanged();
     }
 
     public void Toggle(SelectionId id)
     {
-        if (Target.Contains(id))
+        if (IsSelected(id))
         {
             Remove(id);
             return;
         }
+
         Add(id);
     }
 
     public void Remove(SelectionId id)
     {
-        if (!Target.Remove(id))
+        if (!_selected.Remove(id))
             return;
-        if (Anchor == id)
-            Anchor = Primary;
-        Publish();
+
+        if (_anchor == id)
+            _anchor = Primary;
+        NotifyChanged();
     }
 
     public void Promote(SelectionId id)
     {
-        var target = Target;
-        if (!target.Remove(id))
+        if (!_selected.Remove(id))
         {
             Select(id);
             return;
         }
-        target.Insert(0, id);
-        Anchor = id;
-        Publish();
+
+        _selected.Insert(0, id);
+        _anchor = id;
+        NotifyChanged();
     }
 
     public void SelectRange(
@@ -156,12 +97,13 @@ public sealed class SelectionSession
         SelectionId to,
         IReadOnlyList<SelectionId> displayOrder)
     {
+        ArgumentNullException.ThrowIfNull(displayOrder);
+
         var fromIndex = IndexOf(displayOrder, from);
         var toIndex = IndexOf(displayOrder, to);
 
-        // No visible range (the anchor is filtered or collapsed away) or an
-        // incompatible anchor: the clicked target replaces the selection —
-        // the same contract as incompatible Ctrl input.
+        // A hidden anchor or incompatible input replaces the selection with
+        // the clicked target, matching the existing Ctrl-input contract.
         if (fromIndex < 0 || toIndex < 0 || !IsCompatible(to, from))
         {
             Select(to);
@@ -170,78 +112,70 @@ public sealed class SelectionSession
 
         var start = Math.Min(fromIndex, toIndex);
         var end = Math.Max(fromIndex, toIndex);
-        var target = Target;
-        target.Clear();
+        _selected.Clear();
         for (var index = start; index <= end; index++)
         {
             var candidate = displayOrder[index];
-            // Compatibility is anchored on the CLICKED target so an
-            // incompatible row inside the span can never redefine the group
-            // or exclude the clicked target itself.
-            if (IsCompatible(to, candidate) && !target.Contains(candidate))
-                target.Add(candidate);
+            // The clicked target anchors compatibility, so an incompatible
+            // row inside the span cannot change the selected group.
+            if (IsCompatible(to, candidate) && !_selected.Contains(candidate))
+                _selected.Add(candidate);
         }
-        Anchor = to;
-        Publish();
+
+        _anchor = to;
+        NotifyChanged();
     }
 
     public void Clear()
     {
-        if (Target.Count == 0 && Anchor == null)
+        if (_selected.Count == 0 && _anchor == null)
             return;
-        Target.Clear();
-        Anchor = null;
-        Publish();
+
+        _selected.Clear();
+        _anchor = null;
+        NotifyChanged();
     }
 
-    internal void Reconcile(Func<SelectionId, SelectionId?> resolver)
+    internal bool Reconcile(Func<SelectionId, SelectionId?> resolver)
     {
-        bool changed = ReconcileList(
-            _liveSelected, ref _liveAnchor, resolver);
-        foreach (var scope in _scopes)
-        {
-            var anchor = scope.Anchor;
-            ReconcileList(scope.Selected, ref anchor, resolver);
-            scope.Anchor = anchor;
-        }
-        if (changed)
-            SelectionChanged?.Invoke(_liveSelected.ToArray());
-    }
+        ArgumentNullException.ThrowIfNull(resolver);
 
-    private static bool ReconcileList(
-        List<SelectionId> selected,
-        ref SelectionId? anchor,
-        Func<SelectionId, SelectionId?> resolver)
-    {
-        var next = new List<SelectionId>(selected.Count);
-        foreach (var candidate in selected)
+        var next = new List<SelectionId>(_selected.Count);
+        foreach (var candidate in _selected)
         {
             var resolved = resolver(candidate);
             if (resolved is { } value &&
                 (next.Count == 0 || IsCompatible(next[0], value)) &&
                 !next.Contains(value))
+            {
                 next.Add(value);
+            }
         }
 
-        var nextAnchor = anchor is { } current ? resolver(current) : null;
-        if (selected.SequenceEqual(next) && anchor == nextAnchor)
+        var nextAnchor = _anchor is { } current ? resolver(current) : null;
+        if (_selected.SequenceEqual(next) && _anchor == nextAnchor)
             return false;
 
-        selected.Clear();
-        selected.AddRange(next);
-        anchor = nextAnchor is { } kept && selected.Contains(kept)
+        _selected.Clear();
+        _selected.AddRange(next);
+        _anchor = nextAnchor is { } kept && _selected.Contains(kept)
             ? kept
-            : selected.Count == 0 ? null : selected[0];
+            : _selected.Count == 0 ? null : _selected[0];
         return true;
     }
+
+    private void NotifyChanged() => _changed?.Invoke();
 
     private static int IndexOf(
         IReadOnlyList<SelectionId> source,
         SelectionId value)
     {
         for (var index = 0; index < source.Count; index++)
+        {
             if (source[index] == value)
                 return index;
+        }
+
         return -1;
     }
 
@@ -253,13 +187,124 @@ public sealed class SelectionSession
             return left.ActorLineage == right.ActorLineage;
         return true;
     }
+}
 
-    private void Publish()
+/// <summary>Stable-id selection authority with homogeneous grouping.</summary>
+public sealed class SelectionSession
+{
+    private readonly SelectionScope _live;
+    private readonly List<SelectionScope> _scopes = new();
+
+    // Compatibility-only cursor for current UI callers. New code should use
+    // SelectionScope directly; UI migration will remove this adapter later.
+    private SelectionScope? _compatibilityScope;
+
+    public SelectionSession()
     {
-        // A scoped write is the pop-out window's own affair; subscribers —
-        // gesture cancellation, the overlay — watch the live selection.
-        if (_scope != null)
-            return;
-        SelectionChanged?.Invoke(_liveSelected.ToArray());
+        _live = new SelectionScope(PublishLiveChanged);
+    }
+
+    public event Action<IReadOnlyList<SelectionId>>? SelectionChanged;
+
+    /// <summary>The independently addressable live selection.</summary>
+    public SelectionScope Live => _live;
+
+    /// <summary>
+    /// The compatibility view used by legacy session-member callers while a
+    /// <see cref="BeginScope"/> token is active.
+    /// </summary>
+    public IReadOnlyList<SelectionId> Selected => Target.Selected;
+
+    public SelectionId? Primary => Target.Primary;
+
+    public SelectionId? Anchor => Target.Anchor;
+
+    /// <summary>
+    /// Compatibility adapter for the current ambient UI callers. The token
+    /// restores nested adapters on disposal; scoped writes do not publish the
+    /// live-selection event. Explicit scope callers do not use this method.
+    /// </summary>
+    public IDisposable BeginScope(SelectionScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        var previous = _compatibilityScope;
+        _compatibilityScope = scope;
+        return new CompatibilityScopeToken(this, previous);
+    }
+
+    /// <summary>
+    /// Retains an explicit scope for stable-id reconciliation. The scope is
+    /// still mutated directly; registration does not redirect session calls.
+    /// </summary>
+    public void TrackScope(SelectionScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        if (!_scopes.Contains(scope))
+            _scopes.Add(scope);
+    }
+
+    public void ForgetScope(SelectionScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        _scopes.Remove(scope);
+    }
+
+    private sealed class CompatibilityScopeToken(
+        SelectionSession session,
+        SelectionScope? previous) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            session._compatibilityScope = previous;
+        }
+    }
+
+    private SelectionScope Target => _compatibilityScope ?? _live;
+
+    public bool IsSelected(SelectionId id) => Target.IsSelected(id);
+
+    public void Select(SelectionId id) => Target.Select(id);
+
+    public void Add(SelectionId id) => Target.Add(id);
+
+    public void Toggle(SelectionId id) => Target.Toggle(id);
+
+    public void Remove(SelectionId id) => Target.Remove(id);
+
+    public void Promote(SelectionId id) => Target.Promote(id);
+
+    public void SelectRange(
+        SelectionId from,
+        SelectionId to,
+        IReadOnlyList<SelectionId> displayOrder) =>
+        Target.SelectRange(from, to, displayOrder);
+
+    public void Clear() => Target.Clear();
+
+    internal void Reconcile(Func<SelectionId, SelectionId?> resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+
+        var liveChanged = _live.Reconcile(resolver);
+        foreach (var scope in _scopes)
+            scope.Reconcile(resolver);
+
+        if (liveChanged)
+            SelectionChanged?.Invoke(_live.Selected.ToArray());
+    }
+
+    private void PublishLiveChanged()
+    {
+        // Direct live operations publish unless a legacy adapter is active;
+        // this preserves the old rule that scoped writes are private.
+        if (_compatibilityScope == null)
+            SelectionChanged?.Invoke(_live.Selected.ToArray());
     }
 }
