@@ -36,7 +36,12 @@ public static class PoseOperations
         Quaternion sourceBaseline,
         Quaternion destinationBaseline)
     {
-        var mirroredSource = MirrorRotation(sourceBaseline);
+        delta = delta.Normalized();
+        sourceBaseline = Transforms.TransformMath.NormalizeRotation(sourceBaseline);
+        destinationBaseline =
+            Transforms.TransformMath.NormalizeRotation(destinationBaseline);
+        var mirroredSource = Transforms.TransformMath.NormalizeRotation(
+            MirrorRotation(sourceBaseline));
         var rotation = Transforms.TransformMath.NormalizeRotation(
             Quaternion.Inverse(destinationBaseline) *
             mirroredSource *

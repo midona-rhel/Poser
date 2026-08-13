@@ -246,7 +246,9 @@ public readonly record struct IkPolicyResult(
     public bool Success =>
         Outcome == IkPolicyOutcome.Supported &&
         Definition is not null &&
-        Configuration is not null;
+        Configuration is not null &&
+        Configuration.Validate() is null &&
+        Detail is null;
 
     internal static IkPolicyResult CreateSupported(
         IkChainDefinition definition,

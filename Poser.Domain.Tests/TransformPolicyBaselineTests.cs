@@ -171,6 +171,81 @@ public sealed class TransformPolicyBaselineTests
     }
 
     [Fact]
+    public void Direct_pose_mirror_rejects_malformed_inputs_and_normalizes_huge_values()
+    {
+        var nonFiniteDelta = new PoseDelta(
+            new Vector3(float.NaN, 0, 0),
+            Quaternion.Identity,
+            new Vector3(1, 2, 3));
+        var hugeDelta = new PoseDelta(
+            new Vector3(1, 2, 3),
+            new Quaternion(float.MaxValue, 1, -2, 3),
+            new Vector3(4, 5, 6));
+        var hugeSource = new Quaternion(float.MaxValue, -4, 5, 6);
+        var hugeDestination = new Quaternion(-7, float.MaxValue, 8, 9);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PoseOperations.MirrorRebased(
+                nonFiniteDelta,
+                Quaternion.Identity,
+                Quaternion.Identity));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PoseOperations.MirrorRebased(
+                PoseDelta.Identity,
+                new Quaternion(float.PositiveInfinity, 0, 0, 1),
+                Quaternion.Identity));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PoseOperations.MirrorRebased(
+                PoseDelta.Identity,
+                Quaternion.Identity,
+                Quaternion.Zero));
+
+        var result = PoseOperations.MirrorRebased(
+            hugeDelta,
+            hugeSource,
+            hugeDestination);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(hugeDelta.Scale, result.Scale);
+    }
+
+    [Fact]
+    public void Direct_pose_mirror_preserves_the_established_formula_and_additive_scale()
+    {
+        var delta = new PoseDelta(
+            new Vector3(1, 2, 3),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f),
+            new Vector3(4, 5, 6));
+        var sourceBaseline =
+            Quaternion.CreateFromAxisAngle(Vector3.UnitX, 0.7f);
+        var destinationBaseline =
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, -0.3f);
+        var normalizedSource = TransformMath.NormalizeRotation(sourceBaseline);
+        var normalizedDestination =
+            TransformMath.NormalizeRotation(destinationBaseline);
+        var mirroredSource = PoseOperations.MirrorRotation(normalizedSource);
+        var expectedRotation = TransformMath.NormalizeRotation(
+            Quaternion.Inverse(normalizedDestination) *
+            mirroredSource *
+            PoseOperations.MirrorRotation(
+                TransformMath.NormalizeRotation(delta.Rotation)) *
+            Quaternion.Inverse(mirroredSource) *
+            normalizedDestination);
+
+        var result = PoseOperations.MirrorRebased(
+            delta,
+            sourceBaseline,
+            destinationBaseline);
+
+        Assert.Equal(new Vector3(-1, 2, 3), result.Position);
+        Assert.Equal(expectedRotation.X, result.Rotation.X, 5);
+        Assert.Equal(expectedRotation.Y, result.Rotation.Y, 5);
+        Assert.Equal(expectedRotation.Z, result.Rotation.Z, 5);
+        Assert.Equal(expectedRotation.W, result.Rotation.W, 5);
+        Assert.Equal(delta.Scale, result.Scale);
+    }
+
+    [Fact]
     public void Bone_pose_stores_normalized_layers_and_invalid_replace_is_atomic()
     {
         var nonNormalized = new PoseLayer(

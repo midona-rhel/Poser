@@ -78,10 +78,15 @@ public sealed class IkPolicyBaselineTests
     }
 
     [Fact]
-    public void Default_or_inconsistent_policy_result_is_never_successful()
+    public void Policy_result_success_requires_a_truthful_public_payload()
     {
         IkPolicyResult defaultResult = default;
         var definition = IkChains.ForEndpoint("j_te_l");
+        var validConfiguration = IkChainConfig.DefaultsFor(isArm: true);
+        var invalidConfiguration = validConfiguration with
+        {
+            CcdGain = float.NaN,
+        };
         var missingConfiguration = new IkPolicyResult(
             IkPolicyOutcome.Supported,
             definition,
@@ -90,12 +95,32 @@ public sealed class IkPolicyBaselineTests
         var missingDefinition = new IkPolicyResult(
             IkPolicyOutcome.Supported,
             null,
-            IkChainConfig.DefaultsFor(isArm: true),
+            validConfiguration,
             null);
+        var invalidPayload = new IkPolicyResult(
+            IkPolicyOutcome.Supported,
+            definition,
+            invalidConfiguration,
+            null);
+        var detailedPayload = new IkPolicyResult(
+            IkPolicyOutcome.Supported,
+            definition,
+            validConfiguration,
+            "unexpected detail");
+        var publicValidPayload = new IkPolicyResult(
+            IkPolicyOutcome.Supported,
+            definition,
+            validConfiguration,
+            null);
+        var factoryResult = IkPolicy.Resolve("j_te_l", IkPreset.Defaults);
 
         Assert.False(defaultResult.Success);
         Assert.False(missingConfiguration.Success);
         Assert.False(missingDefinition.Success);
+        Assert.False(invalidPayload.Success);
+        Assert.False(detailedPayload.Success);
+        Assert.True(publicValidPayload.Success);
+        Assert.True(factoryResult.Success);
     }
 
     [Fact]
