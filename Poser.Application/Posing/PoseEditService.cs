@@ -3,6 +3,7 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
+using Poser.Domain.Scene;
 
 namespace Poser.Application.Posing;
 
@@ -284,11 +285,21 @@ public sealed class PoseEditService
         if (!prepared.Success)
             return PoseCaptureResult.Fail(prepared.Detail!);
 
-        var pose = new PortablePose(
-            prepared.States!.Select(state =>
-                new PortableBonePose(
-                    PortableBoneId.From(state.Target.Bone!.Value),
-                    state.Pose.InteractiveOnly())));
+        var entries = new List<PortableBoneEntry>(prepared.States!.Count);
+        foreach (var state in prepared.States)
+        {
+            if (!TryCreatePortableTarget(
+                    state.Target.Bone!.Value,
+                    out var portableTarget,
+                    out var detail))
+                return PoseCaptureResult.Fail(detail!);
+            entries.Add(new PortableBoneEntry(
+                portableTarget.Key,
+                state.Pose.InteractiveOnly(),
+                portableTarget.NativeIndexHint));
+        }
+
+        var pose = new PortablePose(entries);
         return PoseCaptureResult.Ok(pose);
     }
 
@@ -310,31 +321,31 @@ public sealed class PoseEditService
         if (!prepared.Success)
             return PoseEditResult.Fail(prepared.Detail!);
 
-        var before = prepared.States!
-            .Where(state =>
-                pose.TryGet(
-                    PortableBoneId.From(state.Target.Bone!.Value),
-                    out _))
+        var destinations = new List<PortableBoneTarget>(prepared.States!.Count);
+        foreach (var state in prepared.States)
+        {
+            if (!TryCreatePortableTarget(
+                    state.Target.Bone!.Value,
+                    out var destination,
+                    out var detail))
+                return PoseEditResult.Fail(detail!);
+            destinations.Add(destination);
+        }
+
+        var match = pose.Match(destinations);
+        var statesByBone = prepared.States.ToDictionary(
+            state => state.Target.Bone!.Value);
+        var before = match.Matches
+            .Select(item => statesByBone[item.Target.Bone])
             .ToArray();
         if (before.Length == 0)
             return PoseEditResult.Fail(
-                "The portable pose has no bones matching this skeleton.");
+                DescribeMatchFailure(match)!);
 
-        // Source bones whose slot-qualified identity has no destination are
-        // REPORTED, never redirected to another slot; the matching set still
-        // applies atomically.
-        var destinations = prepared.States!
-            .Select(state => PortableBoneId.From(state.Target.Bone!.Value))
-            .ToHashSet();
-        var unmatched = pose.Bones
-            .Where(entry => !destinations.Contains(entry.Bone))
-            .ToArray();
-
-        var desired = before.Select(state =>
+        var desired = match.Matches.Select(item =>
         {
-            pose.TryGet(
-                PortableBoneId.From(state.Target.Bone!.Value),
-                out var source);
+            var state = statesByBone[item.Target.Bone];
+            var source = item.Source.Pose;
             var transferred = new BonePose(
                 source.Layers,
                 checked(state.Pose.Version + 1));
@@ -345,16 +356,96 @@ public sealed class PoseEditService
             };
         }).ToArray();
         var result = Apply(description, before, desired);
-        if (!result.Success || unmatched.Length == 0)
+        var matchDetail = DescribeMatchFailure(match);
+        if (!result.Success || matchDetail is null)
             return result;
-        var bySlot = unmatched
-            .GroupBy(entry => entry.Bone.Slot)
-            .OrderBy(group => (int)group.Key)
-            .Select(group => $"{group.Key} ×{group.Count()}");
         return result with
         {
-            Detail = $"Unmatched (destination slot/bone absent): {string.Join(", ", bySlot)}.",
+            Detail = matchDetail,
         };
+    }
+
+    private bool TryCreatePortableTarget(
+        BoneId bone,
+        out PortableBoneTarget target,
+        out string? detail)
+    {
+        if (!TryFindBoneDescriptor(bone, out var descriptor))
+        {
+            target = default;
+            detail = $"Could not construct a structural path for bone {bone}.";
+            return false;
+        }
+
+        var parents = _scene.Snapshot.Actors
+            .SelectMany(actor => actor.Skeletons)
+            .SelectMany(skeleton => skeleton.Bones)
+            .ToDictionary(item => item.Id);
+        var segments = new List<string>();
+        var seen = new HashSet<BoneId>();
+        var current = descriptor;
+        while (true)
+        {
+            if (!seen.Add(current.Id) ||
+                string.IsNullOrWhiteSpace(current.Id.CanonicalName))
+            {
+                target = default;
+                detail = $"Bone parent graph is invalid for {bone}.";
+                return false;
+            }
+
+            segments.Add(current.Id.CanonicalName);
+            if (current.Parent is not { } parent)
+                break;
+            if (!parents.TryGetValue(parent, out var parentDescriptor))
+            {
+                target = default;
+                detail = $"Bone parent {parent} is missing for {bone}.";
+                return false;
+            }
+            current = parentDescriptor;
+        }
+
+        segments.Reverse();
+        target = PortableBoneTarget.From(
+            bone,
+            new BonePath(segments),
+            bone.BoneIndex);
+        detail = null;
+        return true;
+    }
+
+    private bool TryFindBoneDescriptor(
+        BoneId bone,
+        out BoneDescriptor descriptor)
+    {
+        foreach (var actor in _scene.Snapshot.Actors)
+        foreach (var skeleton in actor.Skeletons)
+        foreach (var candidate in skeleton.Bones)
+        {
+            if (candidate.Id == bone)
+            {
+                descriptor = candidate;
+                return true;
+            }
+        }
+
+        descriptor = null!;
+        return false;
+    }
+
+    private static string? DescribeMatchFailure(PortablePoseMatchResult match)
+    {
+        var details = new List<string>();
+        if (match.Ambiguous.Count > 0)
+            details.Add(
+                $"Ambiguous portable bones: {string.Join(", ", match.Ambiguous.Select(item => item.Entry.Key.CanonicalName))}.");
+        if (match.Unmatched.Count > 0)
+            details.Add(
+                $"Unmatched portable bones: {string.Join(", ", match.Unmatched.Select(item => item.Entry.Key.CanonicalName))}.");
+        return details.Count == 0
+            ? "The portable pose has no bones matching this skeleton."
+            : string.Join(" ", details);
     }
 
     private CaptureResult CaptureBones(
