@@ -34,8 +34,9 @@ Application workflows own logical transactions and rollback/recovery meaning;
 Game owns native materialization and native failure evidence; optional
 Persistence owns codecs and atomic storage. A transaction is not a generic
 manager or mediator framework. `OperationReceipt` is an immutable read model
-carrying the session generation and a terminal outcome: `Pending`, `Applied`,
-`RolledBack`, `Failed`, `RecoveryRequired`, or `Cancelled`. The workflow owns
+carrying the session generation and an operation state/outcome: `Pending` is
+  a non-terminal acknowledgement; `Applied`, `RolledBack`, `Failed`,
+  `RecoveryRequired`, and `Cancelled` are terminal outcomes. The workflow owns
 its active operation epoch, and late results are rejected against the exact
 session and epoch. UI renders the receipt; it does not infer success from
 callbacks or hidden state. File and MCDF transaction details live in
