@@ -106,7 +106,7 @@ public sealed class SelectionScopeContractTests
     {
         var oldActor = Actor(0);
         var currentActor = Actor(1);
-        var validOld = SelectionId.ForBone(Bone(oldActor, 1, "root"));
+        var staleOld = SelectionId.ForBone(Bone(oldActor, 1, "root"));
         var missingOld = SelectionId.ForBone(Bone(oldActor, 9, "missing"));
         var missingOldAgain = SelectionId.ForBone(Bone(oldActor, 10, "also-missing"));
         var validCurrent = SelectionId.ForBone(Bone(currentActor, 1, "root"));
@@ -114,11 +114,11 @@ public sealed class SelectionScopeContractTests
         var session = new SelectionSession();
         var scene = new SceneSession(session);
         var notifications = new List<IReadOnlyList<SelectionId>>();
-        var firstScope = new SelectionScope(validOld);
+        var firstScope = new SelectionScope(validCurrent);
         var secondScope = new SelectionScope(missingOld);
 
         session.SelectionChanged += ids => notifications.Add(ids.ToArray());
-        session.Live.Select(validOld);
+        session.Live.Select(staleOld);
         session.Live.Add(missingOld);
         firstScope.Add(missingOldAgain);
         secondScope.Add(missingOldAgain);
@@ -128,13 +128,13 @@ public sealed class SelectionScopeContractTests
         scene.Refresh(SceneWithBone(currentActor, validCurrent.Bone!.Value));
 
         Assert.Equal(3, notifications.Count);
-        Assert.Equal(new[] { validOld }, notifications[0]);
-        Assert.Equal(new[] { validOld, missingOld }, notifications[1]);
-        Assert.Equal(new[] { validCurrent }, notifications[2]);
+        Assert.Equal(new[] { staleOld }, notifications[0]);
+        Assert.Equal(new[] { staleOld, missingOld }, notifications[1]);
+        Assert.Equal(new[] { currentActorSelection }, notifications[2]);
 
-        Assert.Equal(new[] { validCurrent }, session.Live.Selected);
-        Assert.Equal(validCurrent, session.Live.Primary);
-        Assert.Equal(validCurrent, session.Live.Anchor);
+        Assert.Equal(new[] { currentActorSelection }, session.Live.Selected);
+        Assert.Equal(currentActorSelection, session.Live.Primary);
+        Assert.Equal(currentActorSelection, session.Live.Anchor);
 
         Assert.Equal(new[] { validCurrent }, firstScope.Selected);
         Assert.Equal(validCurrent, firstScope.Primary);
