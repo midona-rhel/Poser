@@ -59,6 +59,11 @@ public sealed class FacialPoseCapture : IDisposable
     private OperationEpoch _operationEpoch;
     private OperationReceipt? _lastReceipt;
     private bool _disposed;
+    private bool _terminating;
+    private int _disposeRequested;
+
+    private bool DisposeRequested =>
+        Volatile.Read(ref _disposeRequested) != 0;
 
     public FacialPoseCapture(
         IFramework framework,
@@ -106,18 +111,19 @@ public sealed class FacialPoseCapture : IDisposable
     /// </summary>
     public GestureResult Begin(ActorId actor, ActorDescriptor descriptor)
     {
-        if (_disposed)
+        if (_disposed || DisposeRequested)
             return GestureResult.Fail("Face capture is disposed.");
+        if (!_framework.IsInFrameworkUpdateThread)
+            return GestureResult.Fail(
+                "Face capture must start on the framework thread.");
+        if (_pending != null || _terminating)
+            return GestureResult.Fail(
+                "A face capture is already pending; cancel it and preview " +
+                "the expression again before retrying.");
 
         if (!TryPrepare(actor, descriptor, out var session, out var captures,
                 out var detail))
             return GestureResult.Fail(detail!);
-
-        // A validated new request may supersede an older pending request. The
-        // old token is invalidated before its guard/speed teardown and cannot
-        // publish Applied after this point.
-        if (_pending is { } prior)
-            InvalidatePending(prior, "Face capture was superseded.");
 
         float? priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
         if (!IsCurrentSession(session))
@@ -198,7 +204,17 @@ public sealed class FacialPoseCapture : IDisposable
     public OperationReceipt? CancelPending(
         string detail = "Facial capture was cancelled.")
     {
+        if (DisposeRequested)
+            return _lastReceipt;
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            _log.Warning(
+                "Face capture cancellation was refused off the framework thread.");
+            return _lastReceipt;
+        }
         if (_pending is not { } pending)
+            return _lastReceipt;
+        if (pending.Completing)
             return _lastReceipt;
         InvalidatePending(pending, detail);
         return _lastReceipt;
@@ -224,6 +240,12 @@ public sealed class FacialPoseCapture : IDisposable
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        if (DisposeRequested && !_disposed &&
+            _pending is not { Completing: true })
+        {
+            DisposeOnFrameworkThread();
+            return;
+        }
         if (_disposed || _pending is not { } pending)
             return;
         if (pending.Completing)
@@ -292,7 +314,11 @@ public sealed class FacialPoseCapture : IDisposable
             applied = _transforms.SetAbsoluteMany(
                 writes,
                 "Apply facial animation to pose",
-                rawBaseline: true);
+                rawBaseline: true,
+                cancellationRequested: () =>
+                    DisposeRequested ||
+                    !ReferenceEquals(_pending, pending) ||
+                    !IsCurrentToken(pending));
         }
         catch (Exception exception)
         {
@@ -300,8 +326,21 @@ public sealed class FacialPoseCapture : IDisposable
                 $"Facial capture apply threw: {exception.Message}");
         }
 
-        _pending = null;
-        var teardown = FinishOwnedState(pending, requireExactIdentity: true);
+        if (DisposeRequested && !applied.Success)
+        {
+            pending.Completing = false;
+            DisposeAfterCancelledCommand(pending, applied);
+            return;
+        }
+
+        // Synchronous history/port observers may dispose this owner while the
+        // command is committing. Only the still-owned exact token may tear
+        // down or publish a terminal receipt.
+        if (_disposed || !ReferenceEquals(_pending, pending))
+            return;
+        var teardown = FinishOwnedState(pending);
+        if (_disposed || !ReferenceEquals(_pending, pending))
+            return;
         if (!applied.Success)
         {
             var state = applied.Recovery is { Complete: false }
@@ -317,7 +356,7 @@ public sealed class FacialPoseCapture : IDisposable
                     : OperationReceiptState.Failed;
                 detail = $"{detail} Teardown failed: {teardown.Detail}";
             }
-            Publish(CreateTerminal(
+            PublishCompletionTerminal(pending, CreateTerminal(
                 pending,
                 state,
                 detail,
@@ -327,48 +366,70 @@ public sealed class FacialPoseCapture : IDisposable
 
         if (!teardown.Success)
         {
-            Publish(CreateTerminal(
+            PublishCompletionTerminal(pending, CreateTerminal(
                 pending,
                 OperationReceiptState.Failed,
                 $"Facial pose applied, but teardown failed: {teardown.Detail}"));
             return;
         }
 
-        Publish(CreateTerminal(
+        PublishCompletionTerminal(pending, CreateTerminal(
             pending,
             OperationReceiptState.Applied,
             "Facial pose applied."));
     }
 
-    private void InvalidatePending(PendingBake pending, string detail)
+    private void InvalidatePending(
+        PendingBake pending,
+        string detail,
+        TransformRecoveryReceipt? recovery = null,
+        string? recoveryDetail = null)
     {
         if (!ReferenceEquals(_pending, pending))
             return;
 
         _pending = null;
-        _operationEpoch = NextEpoch();
-        var teardown = FinishOwnedState(pending, requireExactIdentity: true);
-        var state = teardown.Success
-            ? OperationReceiptState.Cancelled
-            : OperationReceiptState.Failed;
-        Publish(CreateTerminal(
-            pending,
-            state,
-            teardown.Success
-                ? detail
-                : $"{detail} Teardown failed: {teardown.Detail}"));
+        _terminating = true;
+        try
+        {
+            _operationEpoch = NextEpoch();
+            var teardown = FinishOwnedState(pending);
+            var state = recovery is { Complete: false }
+                ? OperationReceiptState.RecoveryRequired
+                : teardown.Success
+                    ? OperationReceiptState.Cancelled
+                    : OperationReceiptState.Failed;
+            if (recovery is { Complete: false } && recoveryDetail is not null)
+                detail = $"{detail} {recoveryDetail}";
+            Publish(CreateTerminal(
+                pending,
+                state,
+                teardown.Success
+                    ? detail
+                    : $"{detail} Teardown failed: {teardown.Detail}",
+                recovery));
+        }
+        finally
+        {
+            _terminating = false;
+            if (DisposeRequested)
+                DisposeOnFrameworkThread();
+        }
     }
 
-    private (bool Success, string? Detail) FinishOwnedState(
-        PendingBake pending,
-        bool requireExactIdentity)
+    private (bool Success, string? Detail) FinishOwnedState(PendingBake pending)
     {
         try
         {
             if (_animation.CommandsSuspended)
                 _animation.ResumeCommands();
-            if (requireExactIdentity && !CanRestoreExactIdentity(pending))
-                return (true, null);
+            // Speed ownership is actor-local. A session or skeleton change
+            // invalidates bone writes, but the same exact ActorId is still the
+            // only safe and required target for restoring the pre-capture speed.
+            if (!CanRestoreSpeedIdentity(pending.Actor))
+                return (
+                    false,
+                    "The exact actor is no longer available for playback speed restore.");
             var restored = RestoreSpeed(pending.Actor, pending.PriorSpeed);
             return restored.Success
                 ? (true, null)
@@ -408,6 +469,11 @@ public sealed class FacialPoseCapture : IDisposable
         if (_gestures.ActiveGesture != null)
         {
             detail = "Finish the current transform gesture first.";
+            return false;
+        }
+        if (_gestures.PendingRecovery != null)
+        {
+            detail = "Transform recovery must complete before face capture.";
             return false;
         }
         if (_sessionGeneration.ActiveSessionGeneration is not { } active)
@@ -483,19 +549,9 @@ public sealed class FacialPoseCapture : IDisposable
         return null;
     }
 
-    private bool CanRestoreExactIdentity(PendingBake pending)
-    {
-        if (!IsCurrentSession(pending.SessionGeneration))
-            return false;
-        if (FindActor(pending.Actor)?.CharacterSkeleton?.Id != pending.Skeleton)
-            return false;
-        if (_bindings.Resolve(pending.Actor) is not { Success: true })
-            return false;
-        foreach (var (boneId, _) in pending.Captures)
-            if (_bindings.Resolve(boneId) is not { Success: true })
-                return false;
-        return true;
-    }
+    private bool CanRestoreSpeedIdentity(ActorId actor) =>
+        FindActor(actor) is not null &&
+        _bindings.Resolve(actor) is { Success: true };
 
     private bool CanRestoreSetupIdentity(
         ActorId actor,
@@ -547,14 +603,81 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
+    private void PublishCompletionTerminal(
+        PendingBake pending,
+        OperationReceipt receipt)
+    {
+        if (_disposed || !ReferenceEquals(_pending, pending))
+            return;
+        _pending = null;
+        _terminating = true;
+        try
+        {
+            Publish(receipt);
+        }
+        finally
+        {
+            _terminating = false;
+            if (DisposeRequested)
+                DisposeOnFrameworkThread();
+        }
+    }
+
     public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposeRequested, 1) != 0)
+            return;
+        GC.SuppressFinalize(this);
+        if (_framework.IsInFrameworkUpdateThread)
+        {
+            DisposeOnFrameworkThread();
+            return;
+        }
+
+        try
+        {
+            _ = _framework.RunOnFrameworkThread(DisposeOnFrameworkThread);
+        }
+        catch (Exception exception)
+        {
+            // Never fall back to native/session writes on the provider's
+            // off-thread shutdown path. The owner remains closed to new work.
+            _log.Warning(
+                $"Face capture disposal could not reach the framework thread: " +
+                exception.Message);
+        }
+    }
+
+    private void DisposeOnFrameworkThread()
     {
         if (_disposed)
             return;
-        if (_pending is { } pending)
-            InvalidatePending(pending, "Facial capture was disposed.");
+        if (!_framework.IsInFrameworkUpdateThread)
+            return;
+        // A reentrant request from ApplyAbsolute cannot touch the facial
+        // guard, speed, or receipts until SetAbsoluteMany observes the
+        // cancellation and returns from its exhaustive rollback.
+        if (_pending is { Completing: true } || _terminating)
+            return;
+
         _disposed = true;
         _framework.Update -= OnFrameworkUpdate;
-        GC.SuppressFinalize(this);
+        if (_pending is { } pending)
+            InvalidatePending(pending, "Facial capture was disposed.");
+    }
+
+    private void DisposeAfterCancelledCommand(
+        PendingBake pending,
+        GestureResult applied)
+    {
+        if (_disposed || !ReferenceEquals(_pending, pending))
+            return;
+        _disposed = true;
+        _framework.Update -= OnFrameworkUpdate;
+        InvalidatePending(
+            pending,
+            "Facial capture was disposed.",
+            applied.Recovery,
+            applied.Detail);
     }
 }

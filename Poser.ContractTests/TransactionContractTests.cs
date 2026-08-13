@@ -659,6 +659,152 @@ public sealed class TransactionContractTests
         Assert.Equal("Apply stashed pose", app.History.UndoDescription);
     }
 
+    [Fact]
+    public void Thrown_baseline_capture_returns_typed_recovery_for_every_capture_so_far()
+    {
+        var first = TestIds.ActorTarget();
+        var second = TestIds.BoneTarget();
+        using var app = new TransformApplicationHarness();
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            TestIds.Actor(), second.Bone!.Value));
+        app.Runtime.Seed(TestStates.At(first, 1));
+        app.Runtime.Seed(TestStates.At(second, 2, hasOverride: false));
+        app.Runtime.ThrowCaptureCall = 2;
+
+        var result = app.Commands.SetAbsoluteMany(
+            new[]
+            {
+                (first, TestStates.Translated(3)),
+                (second, TestStates.Translated(4)),
+            },
+            "throwing baseline capture");
+
+        Assert.False(result.Success);
+        Assert.Contains("capture threw", result.Detail!);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.True(recovery.Complete);
+        Assert.Equal(new[] { first }, recovery.Attempts.Select(a => a.RequestedState.Target));
+        Assert.Equal(new[] { first }, app.Runtime.RestoreCalls);
+        Assert.False(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Thrown_apply_returns_exhaustive_typed_recovery()
+    {
+        var first = TestIds.ActorTarget();
+        var second = TestIds.BoneTarget();
+        using var app = new TransformApplicationHarness();
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            TestIds.Actor(), second.Bone!.Value));
+        app.Runtime.Seed(TestStates.At(first, 1));
+        app.Runtime.Seed(TestStates.At(second, 2, hasOverride: false));
+        app.Runtime.ThrowApplyCall = 2;
+
+        var result = app.Commands.SetAbsoluteMany(
+            new[]
+            {
+                (first, TestStates.Translated(3)),
+                (second, TestStates.Translated(4)),
+            },
+            "throwing apply");
+
+        Assert.False(result.Success);
+        Assert.Contains("apply threw", result.Detail!);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.True(recovery.Complete);
+        Assert.Equal(
+            new[] { first, second },
+            recovery.Attempts.Select(a => a.RequestedState.Target));
+        Assert.Equal(new[] { first, second }, app.Runtime.RestoreCalls);
+        Assert.False(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Thrown_post_capture_returns_exhaustive_typed_recovery()
+    {
+        var first = TestIds.ActorTarget();
+        var second = TestIds.BoneTarget();
+        using var app = new TransformApplicationHarness();
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            TestIds.Actor(), second.Bone!.Value));
+        app.Runtime.Seed(TestStates.At(first, 1));
+        app.Runtime.Seed(TestStates.At(second, 2, hasOverride: false));
+        app.Runtime.ThrowCaptureCall = 3;
+
+        var result = app.Commands.SetAbsoluteMany(
+            new[]
+            {
+                (first, TestStates.Translated(3)),
+                (second, TestStates.Translated(4)),
+            },
+            "throwing post capture");
+
+        Assert.False(result.Success);
+        Assert.Contains("capture threw", result.Detail!);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.True(recovery.Complete);
+        Assert.Equal(
+            new[] { first, second },
+            recovery.Attempts.Select(a => a.RequestedState.Target));
+        Assert.Equal(new[] { first, second }, app.Runtime.RestoreCalls);
+        Assert.False(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Patch_observer_exception_after_commit_does_not_masquerade_as_apply_failure()
+    {
+        var target = TestIds.ActorTarget();
+        using var app = ActorHarness(target, TestStates.At(target, 1));
+        app.History.PatchAppended += () =>
+            throw new InvalidOperationException("observer threw");
+
+        var result = app.Commands.SetAbsolute(
+            target,
+            TestStates.Translated(8),
+            "observer isolation");
+
+        Assert.True(result.Success);
+        Assert.True(app.History.CanUndo);
+        Assert.Equal(TestStates.Translated(8), app.Runtime.State(target).Transform);
+        Assert.Empty(app.Runtime.RestoreCalls);
+    }
+
+    [Fact]
+    public void Thrown_restore_is_typed_incomplete_and_later_targets_are_still_attempted()
+    {
+        var first = TestIds.ActorTarget();
+        var second = TestIds.BoneTarget();
+        using var app = new TransformApplicationHarness();
+        app.Scene.Refresh(TestScenes.ActorAndBoneScene(
+            TestIds.Actor(), second.Bone!.Value));
+        var firstInitial = TestStates.At(first, 1);
+        var secondInitial = TestStates.At(second, 2, hasOverride: false);
+        app.Runtime.Seed(firstInitial);
+        app.Runtime.Seed(secondInitial);
+        app.Runtime.FailApplyCall = 2;
+        app.Runtime.ThrowRestoreCalls.Add(1);
+
+        var result = app.Commands.SetAbsoluteMany(
+            new[]
+            {
+                (first, TestStates.Translated(3)),
+                (second, TestStates.Translated(4)),
+            },
+            "throwing restore");
+
+        Assert.False(result.Success);
+        Assert.Contains("restore threw", result.Detail!);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.False(recovery.Complete);
+        Assert.Equal(2, recovery.Attempts.Count);
+        Assert.Single(recovery.Failures);
+        Assert.Equal(first, recovery.Failures[0].RequestedState.Target);
+        Assert.Equal(new[] { first, second }, app.Runtime.RestoreCalls);
+        Assert.Same(recovery, app.Gestures.PendingRecovery);
+        Assert.Equal(TestStates.Translated(3), app.Runtime.State(first).Transform);
+        Assert.Equal(secondInitial, app.Runtime.State(second));
+    }
+
     private static TransformApplicationHarness ActorHarness(
         TransformTargetId target,
         TransformTargetState initial)

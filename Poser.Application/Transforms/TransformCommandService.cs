@@ -39,12 +39,32 @@ public sealed class TransformCommandService
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail(
                 "A transform gesture is active.");
-        var captured = Capture(target);
+        TransformPortResult captured;
+        try
+        {
+            captured = Capture(target);
+        }
+        catch (Exception exception)
+        {
+            return ThrownFailureAfterRecovery(
+                $"Could not capture {target}",
+                exception,
+                Array.Empty<TransformTargetState>());
+        }
         if (!captured.Success || captured.State == null)
             return GestureResult.Fail(captured.Detail!);
         var before = captured.State;
 
-        var applied = _runtime.ApplyAbsolute(before, desired);
+        TransformPortResult applied;
+        try
+        {
+            applied = _runtime.ApplyAbsolute(before, desired);
+        }
+        catch (Exception exception)
+        {
+            return ThrownFailureAfterRecovery(
+                $"Could not transform {target}", exception, new[] { before });
+        }
         if (!applied.Success)
         {
             var rollback = _gestures.AttemptRecovery(new[] { before });
@@ -53,7 +73,18 @@ public sealed class TransformCommandService
                 rollback);
         }
 
-        var after = _runtime.Capture(target);
+        TransformPortResult after;
+        try
+        {
+            after = _runtime.Capture(target);
+        }
+        catch (Exception exception)
+        {
+            return ThrownFailureAfterRecovery(
+                $"Could not capture {target} after transform",
+                exception,
+                new[] { before });
+        }
         if (!after.Success || after.State == null)
         {
             var rollback = _gestures.AttemptRecovery(new[] { before });
@@ -80,11 +111,15 @@ public sealed class TransformCommandService
     /// is returned as typed recovery evidence and blocks later mutations.
     /// Targets not supplied are untouched, which is what leaves expression,
     /// gaze, and unrelated manual edits intact.
+    /// A supplied cancellation probe is sampled between native calls and
+    /// immediately before history commit; cancellation restores every frozen
+    /// baseline and never starts a later write or appends a patch.
     /// </summary>
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
         string description,
-        bool rawBaseline = false)
+        bool rawBaseline = false,
+        Func<bool>? cancellationRequested = null)
     {
         if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
             return recoveryBarrier;
@@ -99,15 +134,42 @@ public sealed class TransformCommandService
         var before = new List<TransformTargetState>(writes.Count);
         foreach (var (target, _) in writes)
         {
-            var captured = Capture(target);
+            TransformPortResult captured;
+            try
+            {
+                captured = Capture(target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture {target}", exception, before);
+            }
             if (!captured.Success || captured.State == null)
                 return GestureResult.Fail(captured.Detail!);
             before.Add(captured.State);
+            if (cancellationRequested?.Invoke() == true)
+                return CancelledAfterRecovery(before);
         }
 
         for (int i = 0; i < writes.Count; i++)
         {
-            var applied = _runtime.ApplyAbsolute(before[i], writes[i].Desired, rawBaseline);
+            if (cancellationRequested?.Invoke() == true)
+                return CancelledAfterRecovery(before);
+            TransformPortResult applied;
+            try
+            {
+                applied = _runtime.ApplyAbsolute(
+                    before[i], writes[i].Desired, rawBaseline);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not transform {writes[i].Target}",
+                    exception,
+                    before);
+            }
+            if (cancellationRequested?.Invoke() == true)
+                return CancelledAfterRecovery(before);
             if (applied.Success)
                 continue;
             var rollback = _gestures.AttemptRecovery(before);
@@ -119,7 +181,18 @@ public sealed class TransformCommandService
         var after = new List<TransformTargetState>(before.Count);
         foreach (var state in before)
         {
-            var captured = _runtime.Capture(state.Target);
+            TransformPortResult captured;
+            try
+            {
+                captured = _runtime.Capture(state.Target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture {state.Target} after transform",
+                    exception,
+                    before);
+            }
             if (!captured.Success || captured.State == null)
             {
                 var rollback = _gestures.AttemptRecovery(before);
@@ -128,8 +201,12 @@ public sealed class TransformCommandService
                     rollback);
             }
             after.Add(captured.State);
+            if (cancellationRequested?.Invoke() == true)
+                return CancelledAfterRecovery(before);
         }
 
+        if (cancellationRequested?.Invoke() == true)
+            return CancelledAfterRecovery(before);
         _history.Append(new TransformPatch(description, before, after));
         return GestureResult.Ok();
     }
@@ -156,7 +233,16 @@ public sealed class TransformCommandService
         var before = new List<TransformTargetState>(targets.Count);
         foreach (var target in targets.Distinct())
         {
-            var captured = Capture(target);
+            TransformPortResult captured;
+            try
+            {
+                captured = Capture(target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture {target}", exception, before);
+            }
             if (!captured.Success || captured.State == null)
                 return GestureResult.Fail(captured.Detail!);
             before.Add(captured.State);
@@ -165,7 +251,18 @@ public sealed class TransformCommandService
         foreach (var state in before)
         {
             var cleared = state with { HasOverride = false };
-            var result = _runtime.Restore(cleared);
+            TransformPortResult result;
+            try
+            {
+                result = _runtime.Restore(cleared);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not clear actor override {state.Target}",
+                    exception,
+                    before);
+            }
             if (result.Success)
                 continue;
             var rollback = _gestures.AttemptRecovery(before);
@@ -178,7 +275,18 @@ public sealed class TransformCommandService
         var after = new List<TransformTargetState>(before.Count);
         foreach (var state in before)
         {
-            var captured = _runtime.Capture(state.Target);
+            TransformPortResult captured;
+            try
+            {
+                captured = _runtime.Capture(state.Target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture {state.Target} after reset",
+                    exception,
+                    before);
+            }
             if (!captured.Success || captured.State == null)
             {
                 var rollback = _gestures.AttemptRecovery(before);
@@ -212,4 +320,24 @@ public sealed class TransformCommandService
         {
             Recovery = recovery,
         };
+
+    private GestureResult ThrownFailureAfterRecovery(
+        string operation,
+        Exception exception,
+        IReadOnlyList<TransformTargetState> baselines)
+    {
+        var recovery = _gestures.AttemptRecovery(baselines);
+        return FailureAfterRecovery(
+            $"{operation}: {exception.Message}",
+            recovery);
+    }
+
+    private GestureResult CancelledAfterRecovery(
+        IReadOnlyList<TransformTargetState> baselines)
+    {
+        var recovery = _gestures.AttemptRecovery(baselines);
+        return FailureAfterRecovery(
+            "Transform application was cancelled.",
+            recovery);
+    }
 }

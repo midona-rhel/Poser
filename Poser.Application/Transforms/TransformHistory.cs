@@ -32,7 +32,19 @@ public sealed class TransformHistory
         if (_undo.Count > _capacity)
             _undo.RemoveAt(0);
         _redo.Clear();
-        PatchAppended?.Invoke();
+        // The patch is committed before observers run. A surface observer is
+        // never part of the transaction and cannot turn committed history into
+        // an apparent apply failure (or prevent later observers from updating).
+        if (PatchAppended is { } observers)
+            foreach (Action observer in observers.GetInvocationList())
+                try
+                {
+                    observer();
+                }
+                catch
+                {
+                    // Observers have no transaction authority or result channel.
+                }
     }
 
     public TransformPatch? PeekUndo() =>

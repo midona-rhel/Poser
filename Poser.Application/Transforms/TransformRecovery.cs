@@ -47,7 +47,20 @@ internal static class TransformRecovery
         var attempts = new List<TransformRecoveryAttempt>();
         foreach (var state in states)
         {
-            var result = runtime.Restore(state);
+            TransformPortResult result;
+            try
+            {
+                result = runtime.Restore(state);
+            }
+            catch (Exception exception)
+            {
+                // A thrown native boundary is mutation-unknown just like an
+                // explicit failure. Record it and continue so the receipt is
+                // exhaustive and every later frozen baseline is attempted.
+                result = TransformPortResult.Fail(
+                    TransformPortStatus.NativeUnavailable,
+                    $"Restore threw for {state.Target}: {exception.Message}");
+            }
             attempts.Add(new TransformRecoveryAttempt(
                 state,
                 result.Status,

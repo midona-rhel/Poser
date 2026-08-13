@@ -30,6 +30,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
+    private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
     private readonly IEventBus _events;
     private readonly IFramework _framework;
 
@@ -54,6 +55,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Application.Presentation.ActorPresentationSession presentation,
         Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
+        Poser.Game.Animation.FacialPoseCapture facialCapture,
         IEventBus events,
         IFramework framework)
     {
@@ -65,6 +67,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _presentation = presentation;
         _integration = integration;
         _animationPort = animationPort;
+        _facialCapture = facialCapture;
         _events = events;
         _framework = framework;
         _events.Subscribe<ActorListChangedEvent>(OnActorListChanged);
@@ -104,10 +107,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             {
                 // Dalamud disposes plugins on the framework thread; run
                 // inline — no waiting, no queue.
-                _animation.ResumeCommands();
-                _animation.ResetAll();
-                _presentation.ResetAll();
-                _integration.ResetAll();
+                ResetOwnedState("Scene lifecycle disposed.");
             }
             else
             {
@@ -124,10 +124,7 @@ public sealed class CleanSceneLifecycle : IDisposable
                     {
                         if (_disposeRestoreAbandoned)
                             return;
-                        _animation.ResumeCommands();
-                        _animation.ResetAll();
-                        _presentation.ResetAll();
-                        _integration.ResetAll();
+                        ResetOwnedState("Scene lifecycle disposed.");
                     }
                 });
                 if (!task.Wait(TimeSpan.FromSeconds(2)))
@@ -319,10 +316,30 @@ public sealed class CleanSceneLifecycle : IDisposable
             // Leaving GPose is the last moment the actors Poser overrode
             // are still resolvable, so every animation override is put
             // back here rather than dropped when they disappear.
-            _animation.ResetAll();
-            _presentation.ResetAll();
-            _integration.ResetAll();
+            ResetOwnedState("GPose exited.");
         }
         Refresh();
+    }
+
+    private void ResetOwnedState(string reason) =>
+        ResetOwnedStateForLifecycle(
+            reason,
+            detail => { _facialCapture.CancelPending(detail); },
+            () => { _animation.ResetAll(); },
+            () => { _presentation.ResetAll(); },
+            () => { _integration.ResetAll(); });
+
+    /// <summary>One teardown order for GPose exit and plugin disposal.</summary>
+    internal static void ResetOwnedStateForLifecycle(
+        string reason,
+        Action<string> cancelFacialCapture,
+        Action resetAnimation,
+        Action resetPresentation,
+        Action resetIntegration)
+    {
+        cancelFacialCapture(reason);
+        resetAnimation();
+        resetPresentation();
+        resetIntegration();
     }
 }

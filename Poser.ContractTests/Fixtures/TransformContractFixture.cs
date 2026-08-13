@@ -92,10 +92,12 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     public Action? DuringApply { get; set; }
     public Action? DuringRestore { get; set; }
     public int? FailApplyCall { get; set; }
+    public int? ThrowApplyCall { get; set; }
     public bool MutateBeforeApplyFailure { get; set; }
     public int? FailCaptureCall { get; set; }
     public int? ThrowCaptureCall { get; set; }
     public HashSet<int> FailRestoreCalls { get; } = new();
+    public HashSet<int> ThrowRestoreCalls { get; } = new();
     public HashSet<int> MutateBeforeRestoreFailureCalls { get; } = new();
     public Dictionary<int, string> RestoreFailureDetails { get; } = new();
     public TransformPortStatus FailureStatus { get; set; } =
@@ -118,7 +120,7 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
         CaptureCalls.Add(target);
         _captureCount++;
         if (ThrowCaptureCall == _captureCount)
-            throw new InvalidOperationException("capture exploded");
+            throw new InvalidOperationException("capture threw");
         if (FailCaptureCall == _captureCount)
             return TransformPortResult.Fail(
                 FailureStatus,
@@ -138,6 +140,8 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     {
         ApplyCalls.Add(baseline.Target);
         DuringApply?.Invoke();
+        if (ThrowApplyCall == ApplyCalls.Count)
+            throw new InvalidOperationException("apply threw");
         if (FailApplyCall == ApplyCalls.Count)
         {
             if (MutateBeforeApplyFailure)
@@ -156,6 +160,8 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
         RestoreCalls.Add(state.Target);
         DuringRestore?.Invoke();
         var call = RestoreCalls.Count;
+        if (ThrowRestoreCalls.Contains(call))
+            throw new InvalidOperationException("restore threw");
         if (FailRestoreCalls.Contains(call))
         {
             if (MutateBeforeRestoreFailureCalls.Contains(call))

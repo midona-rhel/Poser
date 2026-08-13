@@ -30,9 +30,13 @@
   by `SupportsStance`. Scrubbing is a gesture: freeze at Begin, clamp to the
   captured duration, skeleton-token mismatch cancels instead of writing.
 - The facial bake is two-phase (capture during preview → release only the
-  face → settle → apply) through the atomic `SetAbsoluteMany`, refuses to run
-  under a live transform gesture, suspends animation commands and loops while
-  pending, and restores the actor's exact prior speed ownership.
+  face → two framework ticks → one raw-baseline patch) through the atomic
+  `SetAbsoluteMany`. A pending bake or transform recovery is a mutation
+  barrier: cancel first, preview again, then retry. GPose exit and disposal
+  cancel facial ownership before the full animation reset, and speed cleanup
+  follows exact `ActorId` identity independently of skeleton write validity.
+  Off-thread disposal is deferred to the framework thread; disposal reentered
+  during apply rolls back and stops before any later face write or history.
 - UI: one shared picker (caller supplies the destination); catalog admits
   only named, non-zero, known-slot timelines so nothing fails after
   selection; controls display only state the session actually owns.
