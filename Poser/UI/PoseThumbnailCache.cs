@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
+using Poser.Files;
 
 namespace Poser.UI;
 
@@ -45,10 +46,6 @@ public sealed class PoseThumbnailCache : IDisposable
     /// selection buffer so eviction stays allocation-free.</summary>
     private const int EvictionBatch = 32;
 
-    /// <summary>Guards the <c>int</c> cast for the pooled rental. A pose file
-    /// past this is not a thumbnail source; it is treated as image-less.</summary>
-    private const long MaxPoseFileBytes = 32L * 1024 * 1024;
-
     private const string Base64ImageProperty = "Base64Image";
 
     // The repo's own pose reader tolerates trailing commas (PoseFile.JsonOptions),
@@ -57,6 +54,7 @@ public sealed class PoseThumbnailCache : IDisposable
     {
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip,
+        MaxDepth = PoseFileLimits.MaxJsonDepth,
     };
 
     /// <summary>
@@ -347,9 +345,15 @@ public sealed class PoseThumbnailCache : IDisposable
 
             try
             {
-                using var handle = File.OpenHandle(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var length = RandomAccess.GetLength(handle);
-                if (length is > 0 and <= MaxPoseFileBytes)
+                using var stream = new FileStream(
+                    filePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read,
+                    bufferSize: 4096,
+                    FileOptions.SequentialScan);
+                var length = stream.Length;
+                if (length is > 0 and <= PoseFileLimits.MaxFileBytes)
                 {
                     var size = (int)length;
                     rented = ArrayPool<byte>.Shared.Rent(size);
@@ -357,7 +361,7 @@ public sealed class PoseThumbnailCache : IDisposable
                     var read = 0;
                     while (read < size)
                     {
-                        var got = RandomAccess.Read(handle, rented.AsSpan(read, size - read), read);
+                        var got = stream.Read(rented, read, size - read);
                         if (got <= 0)
                             break;
                         read += got;
@@ -368,8 +372,13 @@ public sealed class PoseThumbnailCache : IDisposable
                     // whole lifetime, so the rental must outlive it. The inner
                     // scope forces the document's dispose to run before the
                     // finally below hands the array back to the pool.
+                    var jsonOffset = read >= 3 &&
+                        rented[0] == 0xef && rented[1] == 0xbb && rented[2] == 0xbf
+                        ? 3
+                        : 0;
                     using var document = JsonDocument.Parse(
-                        new ReadOnlyMemory<byte>(rented, 0, read), JsonReadOptions);
+                        new ReadOnlyMemory<byte>(rented, jsonOffset, read - jsonOffset),
+                        JsonReadOptions);
 
                     var root = document.RootElement;
                     if (root.ValueKind == JsonValueKind.Object

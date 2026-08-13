@@ -56,6 +56,16 @@ interchange with Brio and (via name conversion) Anamnesis.
   confirmation; the target actor freezes at dialog open. In-memory
   copy/stash uses `PortablePose` and is equally history-integrated.
 
+## Pose library indexing
+
+- Library scans run off-thread and publish one immutable snapshot only after a
+  complete bounded pass. Directory depth, folder count, file count, file size,
+  and JSON depth are bounded by the shared codec/traversal limits; cancellation,
+  traversal failure, or a bound breach retains the previous snapshot.
+- `.pose` metadata is observed through the typed pose codec. Each entry carries
+  `Valid`, `Corrupt`, `Future`, or `Oversized` status with a concise detail;
+  recovery/quarantine UI is explicitly deferred.
+
 ## Auto-save
 
 - While in GPose, every actor passing the authored-edits predicate (any

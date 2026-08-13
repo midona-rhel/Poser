@@ -70,6 +70,48 @@ public sealed class PoseFileReadOutcome
     internal static PoseFileReadOutcome Failed(PoseFileStoreFailure failure) => new(null, failure);
 }
 
+/// <summary>
+/// Bounded, typed metadata observation for a <c>.pose</c> file. The codec
+/// validates the complete document before exposing these header values, so a
+/// library index cannot advertise metadata from a file that import would
+/// reject.
+/// </summary>
+public sealed class PoseFileMetadataReadOutcome
+{
+    public bool Succeeded { get; }
+    public string? Author { get; }
+    public string? Version { get; }
+    public IReadOnlyList<string> Tags { get; }
+    public bool HasThumbnail { get; }
+    public PoseFileStoreFailure? Failure { get; }
+
+    private PoseFileMetadataReadOutcome(
+        string? author,
+        string? version,
+        IReadOnlyList<string> tags,
+        bool hasThumbnail,
+        PoseFileStoreFailure? failure)
+    {
+        Succeeded = failure is null;
+        Author = author;
+        Version = version;
+        Tags = tags;
+        HasThumbnail = hasThumbnail;
+        Failure = failure;
+    }
+
+    internal static PoseFileMetadataReadOutcome Success(PoseFile pose) =>
+        new(
+            pose.Author,
+            pose.Version,
+            Array.AsReadOnly((pose.Tags ?? []).ToArray()),
+            !string.IsNullOrEmpty(pose.Base64Image),
+            null);
+
+    internal static PoseFileMetadataReadOutcome Failed(PoseFileStoreFailure failure) =>
+        new(null, null, Array.Empty<string>(), false, failure);
+}
+
 public sealed class PoseFileWriteOutcome
 {
     public bool Succeeded { get; }
@@ -224,6 +266,59 @@ public sealed class AtomicPoseFileStore
                 PoseFileStoreFailureKind.Read,
                 $"Reading the pose file failed: {ex.Message}",
                 path);
+        }
+    }
+
+    /// <summary>
+    /// Reads and fully validates a bounded pose document, returning only its
+    /// metadata. This is the shared seam for indexing and thumbnail probes;
+    /// it deliberately reuses the ordinary pose codec's limits and typed
+    /// validation rather than maintaining a second JSON contract.
+    /// </summary>
+    public PoseFileMetadataReadOutcome ReadMetadata(string path)
+    {
+        try
+        {
+            using var stream = _fileSystem.OpenRead(path);
+            if (stream.Length <= 0)
+            {
+                return PoseFileMetadataReadOutcome.Failed(
+                    ValidationReadFailure(
+                        PoseFileValidationFailure.Create(
+                            PoseFileValidationFailureKind.Document,
+                            "The pose file is empty."),
+                        path).Failure!);
+            }
+            if (stream.Length > PoseFileLimits.MaxFileBytes)
+            {
+                return PoseFileMetadataReadOutcome.Failed(
+                    PoseFileStoreFailure.Create(
+                        PoseFileStoreFailureKind.SizeLimit,
+                        $"The pose file is {stream.Length} bytes " +
+                        $"(limit {PoseFileLimits.MaxFileBytes}).",
+                        path));
+            }
+
+            var bytes = new byte[(int)stream.Length];
+            stream.ReadExactly(bytes);
+            if (stream.ReadByte() != -1)
+            {
+                return PoseFileMetadataReadOutcome.Failed(
+                    PoseFileStoreFailure.Create(
+                        PoseFileStoreFailureKind.SizeLimit,
+                        "The pose file changed while it was being read.",
+                        path));
+            }
+
+            return DecodeMetadata(bytes, path);
+        }
+        catch (Exception ex)
+        {
+            return PoseFileMetadataReadOutcome.Failed(
+                PoseFileStoreFailure.Create(
+                    PoseFileStoreFailureKind.Read,
+                    $"Reading the pose metadata failed: {ex.Message}",
+                    path));
         }
     }
 
@@ -593,6 +688,47 @@ public sealed class AtomicPoseFileStore
                 PoseFileStoreFailureKind.Json,
                 $"The pose JSON could not be decoded: {ex.Message}",
                 path);
+        }
+    }
+
+    private PoseFileMetadataReadOutcome DecodeMetadata(
+        ReadOnlySpan<byte> bytes,
+        string path)
+    {
+        try
+        {
+            var preflight = PoseFileValidation.Preflight(bytes);
+            if (!preflight.Succeeded)
+            {
+                return PoseFileMetadataReadOutcome.Failed(
+                    ValidationReadFailure(preflight.Failure!, path).Failure!);
+            }
+
+            var pose = JsonSerializer.Deserialize<PoseFile>(bytes, PoseFile.JsonOptions);
+            var validation = PoseFileValidation.Validate(pose);
+            if (!validation.Succeeded)
+            {
+                return PoseFileMetadataReadOutcome.Failed(
+                    ValidationReadFailure(validation.Failure!, path).Failure!);
+            }
+
+            return PoseFileMetadataReadOutcome.Success(pose!);
+        }
+        catch (JsonException ex)
+        {
+            return PoseFileMetadataReadOutcome.Failed(
+                PoseFileStoreFailure.Create(
+                    PoseFileStoreFailureKind.Json,
+                    $"The pose JSON is invalid: {ex.Message}",
+                    path));
+        }
+        catch (Exception ex)
+        {
+            return PoseFileMetadataReadOutcome.Failed(
+                PoseFileStoreFailure.Create(
+                    PoseFileStoreFailureKind.Json,
+                    $"The pose JSON could not be decoded: {ex.Message}",
+                    path));
         }
     }
 

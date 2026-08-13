@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Poser.Library;
 
@@ -15,6 +16,15 @@ public enum PoseLibraryEntryKind : byte
     /// <summary>A Mare character file. Carries no pose metadata at all — no
     /// author, no tags, no preview — so the scan never opens one.</summary>
     Mcdf,
+}
+
+/// <summary>Why a pose metadata probe did or did not produce metadata.</summary>
+public enum PoseLibraryMetadataStatus : byte
+{
+    Valid,
+    Corrupt,
+    Future,
+    Oversized,
 }
 
 /// <summary>
@@ -45,16 +55,35 @@ public sealed class PoseLibraryEntry
 
     public string? Author { get; init; }
 
-    public IReadOnlyList<string> Tags { get; init; } = [];
+    private IReadOnlyList<string> _tags = Array.Empty<string>();
+    private IReadOnlyList<string> _tagsLower = Array.Empty<string>();
+
+    public IReadOnlyList<string> Tags
+    {
+        get => _tags;
+        init => _tags = Freeze(value);
+    }
 
     /// <summary>Invariant lowercase copies of <see cref="Tags"/>, same order.</summary>
-    public IReadOnlyList<string> TagsLower { get; init; } = [];
+    public IReadOnlyList<string> TagsLower
+    {
+        get => _tagsLower;
+        init => _tagsLower = Freeze(value);
+    }
+
+    public PoseLibraryMetadataStatus MetadataStatus { get; init; }
+
+    /// <summary>Short diagnostic suitable for a future recovery surface.</summary>
+    public string MetadataDetail { get; init; } = string.Empty;
 
     /// <summary>An Anamnesis <c>.cmp</c> file; carries no metadata.</summary>
     public bool IsLegacy { get; init; }
 
     /// <summary>A <c>.pose</c> file with a non-empty embedded preview image.</summary>
     public bool HasThumbnail { get; init; }
+
+    private static IReadOnlyList<string> Freeze(IReadOnlyList<string>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<string>()).ToArray());
 }
 
 /// <summary>
@@ -79,18 +108,18 @@ public sealed class PoseLibraryFolder
 
     /// <summary>Recursive file count at and below this folder, both kinds.
     /// </summary>
-    public int Count { get; set; }
+    public int Count { get; init; }
 
     /// <summary>Recursive <see cref="PoseLibraryEntryKind.Pose"/> count at and
     /// below this folder.</summary>
-    public int PoseCount { get; set; }
+    public int PoseCount { get; init; }
 
     /// <summary>Recursive <see cref="PoseLibraryEntryKind.Mcdf"/> count at and
     /// below this folder. Both per-kind counts are recursive, so a folder with
     /// none of a kind has no descendant of that kind either — which is what
     /// lets a browser tab drop the whole subtree and keep a valid tree.
     /// </summary>
-    public int McdfCount { get; set; }
+    public int McdfCount { get; init; }
 }
 
 /// <summary>
@@ -102,8 +131,22 @@ public sealed class PoseLibrarySnapshot
     public required int Revision { get; init; }
 
     /// <summary>Sorted by folder order, then <c>NameLower</c> ordinal.</summary>
-    public required IReadOnlyList<PoseLibraryEntry> Entries { get; init; }
+    private IReadOnlyList<PoseLibraryEntry> _entries = Array.Empty<PoseLibraryEntry>();
+    private IReadOnlyList<PoseLibraryFolder> _folders = Array.Empty<PoseLibraryFolder>();
+
+    public required IReadOnlyList<PoseLibraryEntry> Entries
+    {
+        get => _entries;
+        init => _entries = Freeze(value);
+    }
 
     /// <summary>Flattened depth-first in display order.</summary>
-    public required IReadOnlyList<PoseLibraryFolder> Folders { get; init; }
+    public required IReadOnlyList<PoseLibraryFolder> Folders
+    {
+        get => _folders;
+        init => _folders = Freeze(value);
+    }
+
+    private static IReadOnlyList<T> Freeze<T>(IReadOnlyList<T>? values) =>
+        Array.AsReadOnly((values ?? Array.Empty<T>()).ToArray());
 }

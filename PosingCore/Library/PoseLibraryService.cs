@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Poser.Config;
+using Poser.Files;
 
 namespace Poser.Library;
 
@@ -25,17 +26,28 @@ public sealed class PoseLibraryService : IPoseLibraryService
     };
 
     private readonly ConfigurationService _config;
+    private readonly AtomicPoseFileStore _poseStore;
     private readonly object _sync = new();
 
     private PoseLibrarySnapshot _snapshot = EmptySnapshot;
     private string _sourceSignature;
+    private CancellationTokenSource? _scanCancellation;
+    private long _generation;
     private bool _scanning;
     private bool _scanQueued;
     private bool _disposed;
 
     public PoseLibraryService(ConfigurationService config)
+        : this(config, AtomicPoseFileStore.Default)
+    {
+    }
+
+    internal PoseLibraryService(
+        ConfigurationService config,
+        AtomicPoseFileStore poseStore)
     {
         _config = config;
+        _poseStore = poseStore;
         _sourceSignature = BuildSourceSignature();
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
@@ -58,16 +70,19 @@ public sealed class PoseLibraryService : IPoseLibraryService
             if (_disposed)
                 return;
 
+            _generation++;
             if (_scanning)
             {
                 _scanQueued = true;
+                _scanCancellation?.Cancel();
                 return;
             }
 
             _scanning = true;
+            _scanCancellation = new CancellationTokenSource();
         }
 
-        Task.Run(ScanLoop);
+        _ = Task.Run(ScanLoop);
     }
 
     public void Dispose()
@@ -79,6 +94,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
             _disposed = true;
             _scanQueued = false;
+            _scanCancellation?.Cancel();
         }
 
         _config.OnConfigurationChanged -= OnConfigurationChanged;
@@ -90,10 +106,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private void OnConfigurationChanged()
     {
         var signature = BuildSourceSignature();
-        if (string.Equals(signature, _sourceSignature, StringComparison.Ordinal))
-            return;
+        lock (_sync)
+        {
+            if (_disposed || string.Equals(signature, _sourceSignature, StringComparison.Ordinal))
+                return;
+            _sourceSignature = signature;
+        }
 
-        _sourceSignature = signature;
         RequestScan();
     }
 
@@ -117,9 +136,33 @@ public sealed class PoseLibraryService : IPoseLibraryService
     {
         while (true)
         {
+            CancellationToken token;
+            long generation;
+            lock (_sync)
+            {
+                if (_disposed || _scanCancellation is null)
+                {
+                    _scanning = false;
+                    return;
+                }
+
+                _scanQueued = false;
+                token = _scanCancellation.Token;
+                generation = _generation;
+            }
+
             try
             {
-                RunScan();
+                RunScan(generation, token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                // Cancellation abandons the whole pass; no partial result is
+                // ever handed to the reader.
+            }
+            catch (ScanAbortException)
+            {
+                // IO, traversal, and bound failures retain the last snapshot.
             }
             catch (Exception)
             {
@@ -129,25 +172,43 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
             lock (_sync)
             {
-                if (_disposed || !_scanQueued)
+                if (_disposed)
                 {
                     _scanning = false;
+                    _scanCancellation?.Dispose();
+                    _scanCancellation = null;
                     return;
                 }
 
-                _scanQueued = false;
+                if (_scanQueued)
+                {
+                    _scanCancellation?.Dispose();
+                    _scanCancellation = new CancellationTokenSource();
+                    continue;
+                }
+
+                _scanning = false;
+                _scanCancellation?.Dispose();
+                _scanCancellation = null;
+                return;
             }
         }
     }
 
-    private void RunScan()
+    private void RunScan(long generation, CancellationToken cancellation)
     {
         var folders = new List<PoseLibraryFolder>();
         var entries = new List<PoseLibraryEntry>();
+        var folderCount = 0;
+        var fileCount = 0;
 
-        var sources = _config.Config.Library.Sources;
-        for (var i = 0; i < sources.Count; i++)
+        var sources = _config.Config.Library.Sources
+            .Select(source => new SourceSpec(source.Name, source.Path, source.Enabled))
+            .ToArray();
+
+        for (var i = 0; i < sources.Length; i++)
         {
+            cancellation.ThrowIfCancellationRequested();
             var source = sources[i];
             if (!source.Enabled || string.IsNullOrWhiteSpace(source.Path))
                 continue;
@@ -155,9 +216,18 @@ public sealed class PoseLibraryService : IPoseLibraryService
             if (!SafeDirectoryExists(source.Path))
                 continue;
 
-            var root = BuildNode(i, source.Name, source.Path, "", 0, isRoot: true);
+            var root = BuildNode(
+                i,
+                source.Name,
+                source.Path,
+                "",
+                0,
+                isRoot: true,
+                cancellation,
+                ref folderCount,
+                ref fileCount);
             if (root is not null)
-                Flatten(root, folders, entries);
+                Flatten(root, folders, entries, cancellation);
         }
 
         entries.Sort(static (a, b) =>
@@ -166,15 +236,22 @@ public sealed class PoseLibraryService : IPoseLibraryService
             return byFolder != 0 ? byFolder : string.CompareOrdinal(a.NameLower, b.NameLower);
         });
 
-        // Single reference swap is the last step, so a reader either sees the
-        // whole previous snapshot or the whole new one.
-        var revision = Volatile.Read(ref _snapshot).Revision + 1;
-        Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
+        cancellation.ThrowIfCancellationRequested();
+        lock (_sync)
         {
-            Revision = revision,
-            Entries = entries,
-            Folders = folders
-        });
+            if (_disposed || generation != _generation || cancellation.IsCancellationRequested)
+                return;
+
+            // Single reference swap is the last step, so a reader either sees
+            // the whole previous snapshot or the whole new one.
+            var revision = _snapshot.Revision + 1;
+            Volatile.Write(ref _snapshot, new PoseLibrarySnapshot
+            {
+                Revision = revision,
+                Entries = entries,
+                Folders = folders
+            });
+        }
     }
 
     private sealed class ScanNode
@@ -190,19 +267,29 @@ public sealed class PoseLibraryService : IPoseLibraryService
         public int McdfCount { get; set; }
     }
 
+    private readonly record struct SourceSpec(string Name, string Path, bool Enabled);
+
     /// <summary>
-    /// Builds one directory subtree. Returns null for a subfolder holding no
-    /// library file at or below it; a source root is always kept so a
-    /// configured but empty root still lists.
+    /// Builds one directory subtree. Any traversal failure or bound breach
+    /// aborts the pass, because publishing a partial tree is misleading.
     /// </summary>
-    private static ScanNode? BuildNode(
+    private ScanNode? BuildNode(
         int sourceIndex,
         string label,
         string directory,
         string relativePath,
         int depth,
-        bool isRoot)
+        bool isRoot,
+        CancellationToken cancellation,
+        ref int folderCount,
+        ref int fileCount)
     {
+        cancellation.ThrowIfCancellationRequested();
+        if (depth > PoseLibraryLimits.MaxDepth)
+            throw new ScanAbortException("The pose library directory depth exceeded its bound.");
+        if (++folderCount > PoseLibraryLimits.MaxFolders)
+            throw new ScanAbortException("The pose library folder count exceeded its bound.");
+
         var node = new ScanNode
         {
             SourceIndex = sourceIndex,
@@ -211,38 +298,66 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Depth = depth
         };
 
+        var files = new List<string>();
         try
         {
             foreach (var file in Directory.EnumerateFiles(directory))
             {
-                if (IsLibraryFile(file))
-                    node.Files.Add(file);
+                cancellation.ThrowIfCancellationRequested();
+                if (!IsLibraryFile(file))
+                    continue;
+                if (++fileCount > PoseLibraryLimits.MaxFiles)
+                    throw new ScanAbortException("The pose library file count exceeded its bound.");
+                files.Add(file);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Unreadable directory contributes nothing.
+            if (ex is ScanAbortException or OperationCanceledException)
+                throw;
+            throw new ScanAbortException($"Enumerating pose library files failed: {ex.Message}", ex);
         }
+
+        node.Files.AddRange(files);
 
         var subdirectories = new List<string>();
         try
         {
-            subdirectories.AddRange(Directory.EnumerateDirectories(directory));
+            foreach (var subdirectory in Directory.EnumerateDirectories(directory))
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (folderCount + subdirectories.Count + 1 > PoseLibraryLimits.MaxFolders)
+                    throw new ScanAbortException("The pose library folder count exceeded its bound.");
+                subdirectories.Add(subdirectory);
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            if (ex is ScanAbortException or OperationCanceledException)
+                throw;
+            throw new ScanAbortException($"Enumerating pose library folders failed: {ex.Message}", ex);
         }
 
         subdirectories.Sort(StringComparer.OrdinalIgnoreCase);
 
         foreach (var subdirectory in subdirectories)
         {
+            cancellation.ThrowIfCancellationRequested();
             var name = Path.GetFileName(subdirectory);
             if (string.IsNullOrEmpty(name))
                 continue;
 
             var childRelative = relativePath.Length == 0 ? name : Path.Combine(relativePath, name);
-            var child = BuildNode(sourceIndex, name, subdirectory, childRelative, depth + 1, isRoot: false);
+            var child = BuildNode(
+                sourceIndex,
+                name,
+                subdirectory,
+                childRelative,
+                depth + 1,
+                isRoot: false,
+                cancellation,
+                ref folderCount,
+                ref fileCount);
             if (child is not null)
                 node.Children.Add(child);
         }
@@ -266,11 +381,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
         return !isRoot && node.Count == 0 ? null : node;
     }
 
-    private static void Flatten(
+    private void Flatten(
         ScanNode node,
         List<PoseLibraryFolder> folders,
-        List<PoseLibraryEntry> entries)
+        List<PoseLibraryEntry> entries,
+        CancellationToken cancellation)
     {
+        cancellation.ThrowIfCancellationRequested();
         var folderIndex = folders.Count;
         folders.Add(new PoseLibraryFolder
         {
@@ -284,13 +401,16 @@ public sealed class PoseLibraryService : IPoseLibraryService
         });
 
         foreach (var file in node.Files)
+        {
+            cancellation.ThrowIfCancellationRequested();
             entries.Add(CreateEntry(file, folderIndex));
+        }
 
         foreach (var child in node.Children)
-            Flatten(child, folders, entries);
+            Flatten(child, folders, entries, cancellation);
     }
 
-    private static PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
+    private PoseLibraryEntry CreateEntry(string filePath, int folderIndex)
     {
         var name = Path.GetFileNameWithoutExtension(filePath);
 
@@ -309,14 +429,39 @@ public sealed class PoseLibraryService : IPoseLibraryService
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
 
         string? author = null;
+        string? version = null;
         IReadOnlyList<string> tags = [];
         IReadOnlyList<string> tagsLower = [];
         var hasThumbnail = false;
+        var status = PoseLibraryMetadataStatus.Valid;
+        var detail = string.Empty;
 
         // A .cmp has no header and an .mcdf is a compressed archive: opening
         // either would cost a read that can never answer.
         if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
-            ReadPoseMetadata(filePath, out author, out tags, out tagsLower, out hasThumbnail);
+        {
+            var metadata = _poseStore.ReadMetadata(filePath);
+            if (metadata.Succeeded)
+            {
+                author = metadata.Author;
+                version = metadata.Version;
+                tags = metadata.Tags;
+                tagsLower = tags.Select(tag => tag.ToLowerInvariant()).ToArray();
+                hasThumbnail = metadata.HasThumbnail;
+                if (!string.IsNullOrWhiteSpace(version))
+                {
+                    status = PoseLibraryMetadataStatus.Future;
+                    detail = $"Pose version '{version}' is not supported.";
+                }
+            }
+            else
+            {
+                status = metadata.Failure?.Kind == PoseFileStoreFailureKind.SizeLimit
+                    ? PoseLibraryMetadataStatus.Oversized
+                    : PoseLibraryMetadataStatus.Corrupt;
+                detail = metadata.Failure?.Detail ?? "The pose metadata could not be read.";
+            }
+        }
 
         return new PoseLibraryEntry
         {
@@ -330,75 +475,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Author = author,
             Tags = tags,
             TagsLower = tagsLower,
+            MetadataStatus = status,
+            MetadataDetail = detail,
             IsLegacy = isLegacy,
             HasThumbnail = hasThumbnail
         };
-    }
-
-    /// <summary>
-    /// Reads the header fields only. The bone dictionaries are never
-    /// materialized and the preview image is never retained — the scan answers
-    /// whether one exists, nothing more.
-    /// </summary>
-    private static void ReadPoseMetadata(
-        string filePath,
-        out string? author,
-        out IReadOnlyList<string> tags,
-        out IReadOnlyList<string> tagsLower,
-        out bool hasThumbnail)
-    {
-        author = null;
-        tags = [];
-        tagsLower = [];
-        hasThumbnail = false;
-
-        try
-        {
-            using var document = JsonDocument.Parse(new ReadOnlyMemory<byte>(File.ReadAllBytes(filePath)));
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return;
-
-            if (root.TryGetProperty("Author", out var authorElement)
-                && authorElement.ValueKind == JsonValueKind.String)
-            {
-                author = authorElement.GetString();
-            }
-
-            if (root.TryGetProperty("Tags", out var tagsElement)
-                && tagsElement.ValueKind == JsonValueKind.Array)
-            {
-                var values = new List<string>(tagsElement.GetArrayLength());
-                var lowered = new List<string>(tagsElement.GetArrayLength());
-                foreach (var tag in tagsElement.EnumerateArray())
-                {
-                    if (tag.ValueKind != JsonValueKind.String)
-                        continue;
-
-                    var value = tag.GetString();
-                    if (string.IsNullOrEmpty(value))
-                        continue;
-
-                    values.Add(value);
-                    lowered.Add(value.ToLowerInvariant());
-                }
-
-                tags = values;
-                tagsLower = lowered;
-            }
-
-            if (root.TryGetProperty("Base64Image", out var imageElement)
-                && imageElement.ValueKind == JsonValueKind.String)
-            {
-                // ValueEquals compares against the raw UTF-8 span, so the
-                // encoded image is never allocated as a string.
-                hasThumbnail = !imageElement.ValueEquals(string.Empty);
-            }
-        }
-        catch (Exception)
-        {
-            // A corrupt or unreadable pose still lists, just without metadata.
-        }
     }
 
     private static bool IsLibraryFile(string path)
@@ -423,6 +504,19 @@ public sealed class PoseLibraryService : IPoseLibraryService
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    private sealed class ScanAbortException : Exception
+    {
+        public ScanAbortException(string message)
+            : base(message)
+        {
+        }
+
+        public ScanAbortException(string message, Exception inner)
+            : base(message, inner)
+        {
         }
     }
 }
