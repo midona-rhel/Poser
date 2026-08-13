@@ -155,7 +155,7 @@ public sealed class AtomicPoseFileStore
             Before(PoseFileStorePhase.Serialize, destination);
             bytes = JsonSerializer.SerializeToUtf8Bytes(
                 pose,
-                PoseFile.SerializerOptions);
+                PoseFile.JsonOptions);
         }
         catch (Exception ex)
         {
@@ -297,7 +297,7 @@ public sealed class AtomicPoseFileStore
         {
             var pose = JsonSerializer.Deserialize<PoseFile>(
                 bytes,
-                PoseFile.SerializerOptions);
+                PoseFile.JsonOptions);
             var validation = PoseFileValidation.Validate(pose);
             if (!validation.Succeeded)
             {
