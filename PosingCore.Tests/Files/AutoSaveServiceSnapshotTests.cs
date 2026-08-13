@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Threading;
+using System.Text.Json;
 using NSubstitute;
 using Poser.Files;
 using Poser.Services;
@@ -393,6 +395,120 @@ public class AutoSaveServiceSnapshotTests
     }
 
     [Fact]
+    public void Older_periodic_terminal_health_cannot_overwrite_final_queued_admission()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        var healthFileSystem = new BlockingFinalWrittenReplaceFileSystem();
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root, healthFileSystem);
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("periodic"));
+        hold.WaitUntilHeld();
+
+        var finalCapture = h.Service.CaptureForExit();
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, finalCapture.Status);
+        var finalQueued = h.Service.LastHealthRecord;
+        Assert.NotNull(finalQueued);
+        Assert.Equal(AutoSaveHealthStatus.Queued, finalQueued!.Status);
+        healthFileSystem.FinalOperationId = finalQueued.OperationId;
+
+        hold.Release();
+        healthFileSystem.WaitUntilFinalReplace();
+
+        // The final replacement is held after the older worker has had the
+        // opportunity to finish.  A stale periodic terminal record must not
+        // have replaced the final Queued record beneath it.
+        var whileBlocked = new AutoSaveHealthStore(h.Root).Read();
+        Assert.NotNull(whileBlocked);
+        Assert.Equal(finalQueued.OperationId, whileBlocked!.OperationId);
+        Assert.Equal(AutoSaveHealthStatus.Queued, whileBlocked.Status);
+
+        healthFileSystem.Release();
+        h.WaitForWrite();
+        Assert.Equal(AutoSaveTerminalStatus.Written, h.Service.CompleteForExit().Status);
+
+        var terminal = new AutoSaveHealthStore(h.Root).Read();
+        Assert.NotNull(terminal);
+        Assert.Equal(finalQueued.OperationId, terminal!.OperationId);
+        Assert.Equal(AutoSaveHealthStatus.Written, terminal.Status);
+    }
+
+    [Fact]
+    public void Failed_pending_periodic_cancellation_evidence_survives_final_admission()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        var healthFileSystem = new FailingFlushHealthFileSystem(failFlush: 3);
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root, healthFileSystem);
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("active-periodic"));
+        hold.WaitUntilHeld();
+        Assert.Equal(1, h.Service.SaveNow("pending-periodic"));
+        var pendingOperationId = h.Service.LastHealthRecord!.OperationId;
+
+        var finalCapture = h.Service.CaptureForExit();
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, finalCapture.Status);
+        var finalQueued = h.Service.LastHealthRecord;
+        Assert.NotNull(finalQueued);
+        Assert.NotEqual(pendingOperationId, finalQueued!.OperationId);
+        Assert.Equal(AutoSaveHealthStatus.Queued, finalQueued.Status);
+
+        hold.Release();
+        h.WaitForWrite();
+
+        var terminal = h.Service.CompleteForExit();
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, terminal.Status);
+        Assert.Contains(pendingOperationId, terminal.Detail);
+        Assert.Contains("HealthTransition", terminal.Detail);
+        Assert.Contains("intended=1", terminal.Detail);
+
+        var health = new AutoSaveHealthStore(h.Root).Read();
+        Assert.NotNull(health);
+        Assert.Equal(finalQueued.OperationId, health!.OperationId);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, health.Status);
+        Assert.Contains(pendingOperationId, health.Detail);
+        Assert.Contains(health.RecoveryEvidencePaths, path => path.Contains(".tmp", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Failed_periodic_coalescing_cancellation_is_reported_without_admitting_replacement()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        h.HealthStoreOverride = new AutoSaveHealthStore(
+            h.Root,
+            new FailingFlushHealthFileSystem(failFlush: 3));
+        using var hold = h.HoldWorker();
+
+        Assert.Equal(1, h.Service.SaveNow("active-periodic"));
+        hold.WaitUntilHeld();
+        Assert.Equal(1, h.Service.SaveNow("pending-periodic"));
+        var pendingOperationId = h.Service.LastHealthRecord!.OperationId;
+
+        var replacement = h.Service.SaveNow("replacement-periodic");
+        Assert.Equal(1, replacement);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired,
+            h.Service.LastHealthRecord!.Status);
+        Assert.Equal(pendingOperationId, h.Service.LastHealthRecord.OperationId);
+        Assert.Contains("health write failed", h.Service.LastHealthRecord.Detail);
+        Assert.Equal(3, h.CaptureCallCount);
+
+        hold.Release();
+        var terminal = h.Service.CompleteForExit();
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, terminal.Status);
+        Assert.Contains(pendingOperationId, terminal.Detail);
+        Assert.Contains("HealthTransition", terminal.Detail);
+    }
+
+    [Fact]
     public void Terminal_health_reports_exact_written_count_and_paths()
     {
         using var h = new AutoSaveHarness();
@@ -510,5 +626,69 @@ public class AutoSaveServiceSnapshotTests
         public void Move(string source, string destination) =>
             throw new IOException("health move failed");
         public void Delete(string path) { }
+    }
+
+    private sealed class BlockingFinalWrittenReplaceFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner =
+            new SystemAutoSaveHealthFileSystem();
+        private readonly ManualResetEventSlim _reached = new(false);
+        private readonly ManualResetEventSlim _release = new(false);
+
+        public string? FinalOperationId { get; set; }
+
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup)
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(source));
+            var operationId = document.RootElement.GetProperty("OperationId").GetString();
+            var status = (AutoSaveHealthStatus)document.RootElement.GetProperty("Status").GetInt32();
+            if (status == AutoSaveHealthStatus.Written && operationId == FinalOperationId)
+            {
+                _reached.Set();
+                Assert.True(_release.Wait(TimeSpan.FromSeconds(5)),
+                    "the final health transition never released");
+            }
+            _inner.Replace(source, destination, backup);
+        }
+        public void Move(string source, string destination) =>
+            _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
+
+        public void WaitUntilFinalReplace() => Assert.True(
+            _reached.Wait(TimeSpan.FromSeconds(5)),
+            "the final health transition never reached its hold");
+
+        public void Release() => _release.Set();
+    }
+
+    private sealed class FailingFlushHealthFileSystem : IAutoSaveHealthFileSystem
+    {
+        private readonly IAutoSaveHealthFileSystem _inner =
+            new SystemAutoSaveHealthFileSystem();
+        private readonly int _failFlush;
+        private int _flushCount;
+
+        public FailingFlushHealthFileSystem(int failFlush) => _failFlush = failFlush;
+
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream)
+        {
+            if (Interlocked.Increment(ref _flushCount) == _failFlush)
+                throw new IOException("pending periodic cancellation health write failed");
+            _inner.FlushToDisk(stream);
+        }
+
+        public bool Exists(string path) => _inner.Exists(path);
+        public void Replace(string source, string destination, string backup) =>
+            _inner.Replace(source, destination, backup);
+        public void Move(string source, string destination) =>
+            _inner.Move(source, destination);
+        public void Delete(string path) => _inner.Delete(path);
     }
 }

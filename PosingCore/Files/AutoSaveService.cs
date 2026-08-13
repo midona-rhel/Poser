@@ -76,6 +76,12 @@ public class AutoSaveService : IAutoSaveService
     private bool _disposed;
 
     private readonly object _queueGate = new();
+    // Health transitions have their own serial owner.  Admission obtains a
+    // monotonically increasing generation before the job becomes visible to
+    // the queue; older worker terminal evidence can therefore never replace a
+    // newer admitted operation.  No queue lock is held while this gate does
+    // filesystem I/O, so the worker can always reach its next queue item.
+    private readonly object _healthGate = new();
     private SnapshotJob? _pendingPeriodic;
     private SnapshotJob? _finalJob;
     private Task? _writerTask;
@@ -89,6 +95,9 @@ public class AutoSaveService : IAutoSaveService
     private string? _workerFailure;
     private string? _startupHealthFailure;
     private AutoSaveHealthRecord? _lastHealthRecord;
+    private AutoSaveHealthRecord? _pendingHealthRecovery;
+    private long _nextHealthGeneration;
+    private long _currentHealthGeneration;
     private AutoSaveTerminalResult _lastTerminalResult =
         AutoSaveTerminalResult.PendingResult;
 
@@ -109,7 +118,7 @@ public class AutoSaveService : IAutoSaveService
     {
         get
         {
-            lock (_queueGate)
+            lock (_healthGate)
                 return _lastHealthRecord;
         }
     }
@@ -120,7 +129,12 @@ public class AutoSaveService : IAutoSaveService
         DateTime NowUtc,
         int Keep,
         IReadOnlyList<CapturedPose> Captured,
-        bool IsFinal);
+        bool IsFinal,
+        long HealthGeneration);
+
+    private readonly record struct HealthAdmission(
+        AutoSaveHealthWriteResult Result,
+        long Generation);
 
     private readonly record struct WorkerResult(bool Success, string? Detail);
 
@@ -217,7 +231,52 @@ public class AutoSaveService : IAutoSaveService
 
     private AutoSaveConfiguration Settings => _configuration.Config.AutoSave;
 
-    private AutoSaveHealthWriteResult PublishHealth(AutoSaveHealthRecord record)
+    private HealthAdmission PublishAdmissionHealth(AutoSaveHealthRecord record)
+    {
+        AutoSaveHealthWriteResult result;
+        long generation;
+        lock (_healthGate)
+        {
+            generation = ++_nextHealthGeneration;
+            result = WriteHealthLocked(record);
+            if (result.Succeeded)
+                _currentHealthGeneration = generation;
+        }
+        LogHealthFailure(result);
+        return new HealthAdmission(result, generation);
+    }
+
+    private AutoSaveHealthWriteResult PublishHealth(
+        AutoSaveHealthRecord record,
+        long healthGeneration = 0,
+        bool retainFailure = false)
+    {
+        AutoSaveHealthWriteResult result;
+        lock (_healthGate)
+        {
+            // Once a newer operation has been admitted, an older worker may
+            // still finish its disk work, but its terminal record is evidence
+            // for that operation only and cannot become the current record.
+            if (healthGeneration > 0 && healthGeneration < _currentHealthGeneration)
+            {
+                if (retainFailure || record.Status == AutoSaveHealthStatus.RecoveryRequired)
+                {
+                    RetainHealthRecoveryLocked(record);
+                }
+                result = AutoSaveHealthWriteResult.Success();
+            }
+            else
+            {
+                result = WriteHealthLocked(record);
+            }
+        }
+        LogHealthFailure(result);
+        return result;
+    }
+
+    private AutoSaveHealthWriteResult WriteHealthLocked(
+        AutoSaveHealthRecord record,
+        bool allowCurrentUpdate = true)
     {
         AutoSaveHealthWriteResult result;
         try
@@ -229,21 +288,86 @@ public class AutoSaveService : IAutoSaveService
             result = AutoSaveHealthWriteResult.Failed(
                 $"Autosave health transition threw: {ex.Message}");
         }
-        lock (_queueGate)
+
+        if (result.Succeeded)
         {
-            _lastHealthRecord = result.Succeeded
-                ? record
-                : record.With(
-                    status: AutoSaveHealthStatus.RecoveryRequired,
-                    updatedUtc: DateTime.UtcNow,
-                    failurePhase: "HealthTransition",
-                    detail: result.Detail,
-                    recoveryEvidencePaths: result.RecoveryEvidencePaths);
+            if (allowCurrentUpdate)
+                _lastHealthRecord = record;
         }
-        if (!result.Succeeded)
-            _log.Error($"Auto-save health transition failed: {result.Detail}");
+        else
+        {
+            var recovery = record.With(
+                status: AutoSaveHealthStatus.RecoveryRequired,
+                updatedUtc: DateTime.UtcNow,
+                failurePhase: "HealthTransition",
+                detail: result.Detail,
+                recoveryEvidencePaths: result.RecoveryEvidencePaths);
+            if (allowCurrentUpdate)
+                _lastHealthRecord = recovery;
+            RetainHealthRecoveryLocked(recovery);
+        }
+
         return result;
     }
+
+    private void LogHealthFailure(AutoSaveHealthWriteResult result)
+    {
+        if (!result.Succeeded)
+            _log.Error($"Auto-save health transition failed: {result.Detail}");
+    }
+
+    private void RetainHealthRecoveryLocked(AutoSaveHealthRecord recovery)
+    {
+        if (_pendingHealthRecovery is null)
+        {
+            _pendingHealthRecovery = recovery;
+            return;
+        }
+
+        var prior = _pendingHealthRecovery;
+        var operationId = LimitHealthText(
+            $"{prior.OperationId},{recovery.OperationId}", 128);
+        var reason = LimitHealthText($"{prior.Reason},{recovery.Reason}", 128);
+        var detail = LimitHealthText(
+            $"{prior.Detail}; additionally {recovery.OperationId}: {recovery.Detail}",
+            4096);
+        var evidence = prior.RecoveryEvidencePaths
+            .Concat(recovery.RecoveryEvidencePaths)
+            .Distinct(StringComparer.Ordinal)
+            .Take(256)
+            .ToArray();
+        _pendingHealthRecovery = AutoSaveHealthRecord.Create(
+            operationId,
+            reason,
+            AutoSaveHealthStatus.RecoveryRequired,
+            prior.CreatedUtc,
+            DateTime.UtcNow,
+            Math.Max(prior.IntendedActors, recovery.IntendedActors),
+            Math.Min(prior.WrittenActors, recovery.WrittenActors),
+            prior.AffectedPaths.Concat(recovery.AffectedPaths).Take(256),
+            "HealthTransition",
+            detail,
+            evidence);
+    }
+
+    private static string LimitHealthText(string value, int max) =>
+        value.Length <= max ? value : value[..max];
+
+    private static string HealthFailureDetail(
+        SnapshotJob job,
+        string? detail) =>
+        $"operation {job.OperationId} ({job.Reason}) HealthTransition: {detail}";
+
+    private static string DescribeHealthRecovery(AutoSaveHealthRecord recovery) =>
+        LimitHealthText(
+            $"operation {recovery.OperationId} ({recovery.Reason}) " +
+            $"status={recovery.Status}, intended={recovery.IntendedActors}, " +
+            $"written={recovery.WrittenActors}, " +
+            $"paths=[{string.Join(",", recovery.AffectedPaths)}], " +
+            $"phase={recovery.FailurePhase ?? "HealthTransition"}, " +
+            $"detail={recovery.Detail}, " +
+            $"evidence=[{string.Join(",", recovery.RecoveryEvidencePaths)}]",
+            4096);
 
     private AutoSaveHealthWriteResult PublishRecovery(
         SnapshotJob job,
@@ -257,7 +381,9 @@ public class AutoSaveService : IAutoSaveService
             DateTime.UtcNow,
             intendedActors: job.Captured.Count,
             detail: detail,
-            failurePhase: phase));
+            failurePhase: phase),
+            job.HealthGeneration,
+            retainFailure: true);
 
     private void ResetCompletedExitForNewSession()
     {
@@ -343,11 +469,13 @@ public class AutoSaveService : IAutoSaveService
                 DateTime.UtcNow,
                 intendedActors: cancelledJob.Captured.Count,
                 detail: "Periodic autosave was coalesced by final reservation.",
-                failurePhase: "Admission"));
+                failurePhase: "Admission"),
+                cancelledJob.HealthGeneration,
+                retainFailure: true);
             if (!cancelledHealth.Succeeded)
             {
                 lock (_queueGate)
-                    _workerFailure ??= cancelledHealth.Detail;
+                    _workerFailure ??= HealthFailureDetail(cancelledJob, cancelledHealth.Detail);
             }
         }
 
@@ -459,8 +587,58 @@ public class AutoSaveService : IAutoSaveService
             var nowUtc = _clock();
 
             var job = new SnapshotJob(
-                Guid.NewGuid().ToString("N"), reason, nowUtc, keep, captured, isFinal);
-            var health = PublishHealth(AutoSaveHealthRecord.Create(
+                Guid.NewGuid().ToString("N"), reason, nowUtc, keep, captured, isFinal, 0);
+
+            // A pending periodic item is canceled before the replacement's
+            // Queued record is admitted.  This keeps the single health file's
+            // current record ordered with the bounded queue and ensures a
+            // failed cancellation transition remains actionable instead of
+            // being hidden by the newer admission.
+            SnapshotJob? displaced = null;
+            string? admissionFailure = null;
+            if (!isFinal)
+            {
+                lock (_queueGate)
+                {
+                    if (_disposed || _startupHealthFailure is not null || _exitReserved)
+                        admissionFailure = _startupHealthFailure ?? "Auto-save admission is closed.";
+                    else
+                    {
+                        displaced = _pendingPeriodic;
+                        _pendingPeriodic = null;
+                    }
+                }
+
+                if (admissionFailure is not null)
+                    return AutoSaveCaptureResult.Failure(
+                        $"Auto-save ({reason}) was not admitted: {admissionFailure}",
+                        captured.Count);
+
+                if (displaced is { } displacedJob)
+                {
+                    var cancelled = PublishHealth(AutoSaveHealthRecord.Create(
+                        displacedJob.OperationId,
+                        displacedJob.Reason,
+                        AutoSaveHealthStatus.Cancelled,
+                        displacedJob.NowUtc,
+                        DateTime.UtcNow,
+                        intendedActors: displacedJob.Captured.Count,
+                        detail: "Periodic autosave was coalesced by a newer periodic capture.",
+                        failurePhase: "Admission"),
+                        displacedJob.HealthGeneration,
+                        retainFailure: true);
+                    if (!cancelled.Succeeded)
+                    {
+                        lock (_queueGate)
+                            _workerFailure ??= HealthFailureDetail(displacedJob, cancelled.Detail);
+                        return AutoSaveCaptureResult.Failure(
+                            $"Auto-save ({reason}) coalescing evidence failed: {cancelled.Detail}",
+                            captured.Count);
+                    }
+                }
+            }
+
+            var admission = PublishAdmissionHealth(AutoSaveHealthRecord.Create(
                 job.OperationId,
                 reason,
                 AutoSaveHealthStatus.Queued,
@@ -468,15 +646,14 @@ public class AutoSaveService : IAutoSaveService
                 nowUtc,
                 intendedActors: captured.Count,
                 affectedPaths: captured.Select(entry => entry.FileName).ToArray()));
-            if (!health.Succeeded)
+            if (!admission.Result.Succeeded)
             {
                 return AutoSaveCaptureResult.Failure(
-                    $"Auto-save ({reason}) health admission failed: {health.Detail}",
+                    $"Auto-save ({reason}) health admission failed: {admission.Result.Detail}",
                     captured.Count);
             }
+            job = job with { HealthGeneration = admission.Generation };
 
-            SnapshotJob? displaced = null;
-            string? admissionFailure = null;
             lock (_queueGate)
             {
                 if (_disposed || _startupHealthFailure is not null || (_exitReserved && !isFinal))
@@ -485,10 +662,7 @@ public class AutoSaveService : IAutoSaveService
                 if (admissionFailure is null && isFinal)
                     _finalJob = job;
                 else if (admissionFailure is null)
-                {
-                    displaced = _pendingPeriodic;
-                    _pendingPeriodic = null;
-                }
+                    _pendingPeriodic = job;
             }
 
             if (admissionFailure is not null)
@@ -497,50 +671,6 @@ public class AutoSaveService : IAutoSaveService
                 return AutoSaveCaptureResult.Failure(
                     $"Auto-save ({reason}) was not admitted: {admissionFailure}",
                     captured.Count);
-            }
-
-            if (displaced is { } displacedJob)
-            {
-                var cancelled = PublishHealth(AutoSaveHealthRecord.Create(
-                    displacedJob.OperationId,
-                    displacedJob.Reason,
-                    AutoSaveHealthStatus.Cancelled,
-                    displacedJob.NowUtc,
-                    DateTime.UtcNow,
-                    intendedActors: displacedJob.Captured.Count,
-                    detail: "Periodic autosave was coalesced by a newer periodic capture.",
-                    failurePhase: "Admission"));
-                if (!cancelled.Succeeded)
-                {
-                    lock (_queueGate)
-                        _workerFailure ??= cancelled.Detail;
-                    PublishRecovery(
-                        job,
-                        "Admission",
-                        $"Auto-save ({reason}) coalescing evidence failed: {cancelled.Detail}");
-                    return AutoSaveCaptureResult.Failure(
-                        $"Auto-save ({reason}) coalescing evidence failed: {cancelled.Detail}",
-                        captured.Count);
-                }
-            }
-
-            if (!isFinal)
-            {
-                string? closedFailure = null;
-                lock (_queueGate)
-                {
-                    if (_disposed || _startupHealthFailure is not null || _exitReserved)
-                        closedFailure = _startupHealthFailure ?? "Auto-save admission is closed.";
-                    else
-                        _pendingPeriodic = job;
-                }
-                if (closedFailure is not null)
-                {
-                    PublishRecovery(job, "Admission", closedFailure);
-                    return AutoSaveCaptureResult.Failure(
-                        $"Auto-save ({reason}) was not admitted: {closedFailure}",
-                        captured.Count);
-                }
             }
 
             lock (_queueGate)
@@ -566,7 +696,9 @@ public class AutoSaveService : IAutoSaveService
                     DateTime.UtcNow,
                     intendedActors: captured.Count,
                     detail: "Auto-save worker dispatch was not accepted.",
-                    failurePhase: "Dispatch"));
+                    failurePhase: "Dispatch"),
+                    job.HealthGeneration,
+                    retainFailure: true);
                 return AutoSaveCaptureResult.Captured(
                     captured.Count,
                     $"Auto-save ({reason}) dispatch was not accepted.");
@@ -675,7 +807,8 @@ public class AutoSaveService : IAutoSaveService
                     job.Value.Reason,
                     job.Value.NowUtc,
                     job.Value.Keep,
-                    job.Value.Captured);
+                    job.Value.Captured,
+                    job.Value.HealthGeneration);
                 if (!result.Success)
                 {
                     success = false;
@@ -728,11 +861,13 @@ public class AutoSaveService : IAutoSaveService
                 DateTime.UtcNow,
                 intendedActors: cancelledJob.Captured.Count,
                 detail: "Periodic autosave was cancelled during exit drain.",
-                failurePhase: "Shutdown"));
+                failurePhase: "Shutdown"),
+                cancelledJob.HealthGeneration,
+                retainFailure: true);
             if (!cancelledHealth.Succeeded)
             {
                 lock (_queueGate)
-                    _workerFailure ??= cancelledHealth.Detail;
+                    _workerFailure ??= HealthFailureDetail(cancelledJob, cancelledHealth.Detail);
             }
         }
 
@@ -783,12 +918,49 @@ public class AutoSaveService : IAutoSaveService
                     "Clean-on-exit could not remove every snapshot.");
         }
 
+        AutoSaveHealthRecord? pendingRecovery;
         AutoSaveHealthRecord? healthRecord;
-        lock (_queueGate)
-            healthRecord = _lastHealthRecord;
-        healthRecord ??= _health.Read();
+        long healthGeneration;
+        lock (_healthGate)
+        {
+            pendingRecovery = _pendingHealthRecovery;
+            healthRecord = _lastHealthRecord ?? _health.Read();
+            healthGeneration = _currentHealthGeneration;
+        }
+
+        if (pendingRecovery is not null)
+        {
+            var pendingDetail =
+                $"Outstanding health recovery: {DescribeHealthRecovery(pendingRecovery)}";
+            result = AutoSaveTerminalResult.RecoveryRequired(
+                result.Detail is null
+                    ? pendingDetail
+                    : $"{result.Detail}; {pendingDetail}");
+        }
+
         if (healthRecord is not null)
         {
+            var mergedDetail = healthRecord.Detail ?? result.Detail;
+            var mergedEvidence = healthRecord.RecoveryEvidencePaths;
+            var mergedPaths = healthRecord.AffectedPaths;
+            var failurePhase = healthRecord.FailurePhase;
+            if (pendingRecovery is not null)
+            {
+                mergedDetail = healthRecord.Detail is null
+                    ? result.Detail
+                    : $"{healthRecord.Detail}; {result.Detail}";
+                mergedEvidence = healthRecord.RecoveryEvidencePaths
+                    .Concat(pendingRecovery.RecoveryEvidencePaths)
+                    .Distinct(StringComparer.Ordinal)
+                    .Take(256)
+                    .ToArray();
+                mergedPaths = healthRecord.AffectedPaths
+                    .Concat(pendingRecovery.AffectedPaths)
+                    .Distinct(StringComparer.Ordinal)
+                    .Take(256)
+                    .ToArray();
+                failurePhase = pendingRecovery.FailurePhase ?? "HealthTransition";
+            }
             var healthStatus = result.Status switch
             {
                 AutoSaveTerminalStatus.Written => AutoSaveHealthStatus.Written,
@@ -804,16 +976,18 @@ public class AutoSaveService : IAutoSaveService
                 DateTime.UtcNow,
                 healthRecord.IntendedActors,
                 healthRecord.WrittenActors,
-                healthRecord.AffectedPaths,
+                mergedPaths,
                 result.Status == AutoSaveTerminalStatus.RecoveryRequired
                     ? clean
                         ? "Cleanup"
-                        : healthRecord.FailurePhase ?? "CompleteForExit"
-                    : healthRecord.FailurePhase,
+                        : failurePhase ?? "CompleteForExit"
+                    : failurePhase,
                 clean
-                    ? result.Detail ?? healthRecord.Detail
-                    : healthRecord.Detail ?? result.Detail,
-                healthRecord.RecoveryEvidencePaths));
+                    ? result.Detail ?? mergedDetail
+                    : mergedDetail,
+                mergedEvidence),
+                healthGeneration,
+                retainFailure: true);
             if (!healthUpdate.Succeeded)
                 result = AutoSaveTerminalResult.RecoveryRequired($"Autosave health update failed: {healthUpdate.Detail}");
         }
@@ -845,7 +1019,8 @@ public class AutoSaveService : IAutoSaveService
         string reason,
         DateTime nowUtc,
         int keep,
-        IReadOnlyList<CapturedPose> captured)
+        IReadOnlyList<CapturedPose> captured,
+        long healthGeneration)
     {
         var success = true;
         string? failure = null;
@@ -926,7 +1101,9 @@ public class AutoSaveService : IAutoSaveService
             affectedPaths: affectedPaths,
             failurePhase: success ? null : failurePhase,
             detail: failure,
-            recoveryEvidencePaths: recoveryEvidence));
+            recoveryEvidencePaths: recoveryEvidence),
+            healthGeneration,
+            retainFailure: !success);
         if (!health.Succeeded)
         {
             success = false;
