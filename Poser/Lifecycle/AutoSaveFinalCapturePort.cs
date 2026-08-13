@@ -13,6 +13,8 @@ internal sealed class AutoSaveFinalCapturePort : IFinalCapturePort
         _resolve = resolve;
     }
 
+    /// <summary>Maps the autosave compatibility result and terminal health
+    /// outcome exhaustively into the Application-owned receipt.</summary>
     public FinalCaptureResult CaptureForExit()
     {
         var service = _resolve();

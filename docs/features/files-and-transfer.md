@@ -84,7 +84,14 @@ interchange with Brio and (via name conversion) Anamnesis.
   persistence failure, and final worker join/drain failure, produce typed
   failure or `RecoveryRequired` evidence. Lifecycle ownership and receipt
   semantics are defined once in
-  [application-state.md](../architecture/application-state.md).
+   [application-state.md](../architecture/application-state.md).
+- `AutoSaves/.autosave-health.json` is the root-level atomic health read model.
+  It records bounded operation identity, reason, intended/written counts,
+  affected paths, terminal status, and failure/recovery evidence. Pending,
+  queued, or dispatch-accepted records found at startup are promoted to
+  `RecoveryRequired` with an `Interrupted` phase; failure to update the record
+  is itself a recovery failure and never implies durable success. The health
+  file is not a snapshot folder and is excluded from retention enumeration.
 - Retention prunes from DISK to the configured count of SAVE EVENTS —
   the files sharing one time prefix in a day folder, or one whole folder
   of the pre-2026-08-08 folder-per-save layout, which ages out through

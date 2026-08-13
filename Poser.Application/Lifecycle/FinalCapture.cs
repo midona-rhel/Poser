@@ -3,6 +3,8 @@ namespace Poser.Application.Lifecycle;
 /// <summary>
 /// Truth about the synchronous final-capture boundary. A dispatch is not a
 /// write acknowledgement: the existing persistence worker remains separate.
+/// Terminal durability is represented by <see cref="FinalPersistenceStatus"/>;
+/// the host may retain additional immutable health evidence behind the port.
 /// </summary>
 public enum FinalCaptureStatus
 {

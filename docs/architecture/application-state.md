@@ -71,3 +71,5 @@ with the current legacy subscribers and are deferred migration work for Slice
 3.
 Autosave file layout, retention, and autosave storage rules are normative in
 [files-and-transfer.md](../features/files-and-transfer.md).
+The autosave health read model remains storage-owned there; Application only
+interprets its terminal persistence meaning through the final-capture receipt.

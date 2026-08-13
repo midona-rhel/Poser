@@ -103,8 +103,11 @@ public readonly record struct AutoSaveCaptureResult(
 /// worker-drain edge only when applicable; capture or dispatch acceptance is
 /// not a durable-write acknowledgement.
 ///
-/// Snapshot folders older than <c>AutoSave.MaxAutoSaves</c> are pruned from disk
-/// after each save, so retention survives a plugin restart.
+    /// Snapshot folders older than <c>AutoSave.MaxAutoSaves</c> are pruned from disk
+    /// after each save, so retention survives a plugin restart. A bounded,
+    /// root-level <c>.autosave-health.json</c> record is atomically updated for
+    /// queued, dispatch, terminal, and recovery outcomes; it is not a snapshot
+    /// folder and is never counted by retention.
 /// </summary>
 public interface IAutoSaveService : IDisposable
 {
