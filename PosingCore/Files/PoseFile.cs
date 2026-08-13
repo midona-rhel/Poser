@@ -80,8 +80,9 @@ public class PoseFile
         }
     }
 
-    // Mirrors Brio/Brio/Core/JsonSerializer.cs so files round-trip byte-compatibly:
-    // numerics as "X, Y, Z" strings, relaxed escaping (smaller Base64Image), trailing commas tolerated.
+    // Accepts and emits Brio-compatible wire conventions: invariant comma-space
+    // numeric strings, PascalCase, pretty printing, relaxed escaping, tolerated
+    // trailing commas/unknown members, and both supported tag shapes.
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,

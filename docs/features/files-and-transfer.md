@@ -21,10 +21,18 @@ interchange with Brio and (via name conversion) Anamnesis.
   deterministic conflict, never last-write-wins.
 - Saves validate and serialize completely before touching the destination,
   write and durably flush a unique same-directory temp, reopen and validate it,
-  then replace/move atomically. Failure preserves the previous destination;
-  an undeletable temp is returned as recovery evidence. Legacy nullable/bool
-  codec methods are intentionally lossy compatibility wrappers over typed
-  `.pose` outcomes.
+  then replace/move atomically. Existing files use a unique same-directory
+  backup until the committed bytes are confirmed; an uncertain commit never
+  deletes the sole old or validated-new copy, and every surviving temp/backup
+  is returned as recovery evidence. Cleanup uses unconditional delete (missing
+  is success) only after the relevant postcondition. Legacy nullable/bool codec
+  methods are intentionally lossy wrappers over observation-only typed `.pose`
+  outcomes.
+- The store is synchronous and stateless. A caller must not mutate a `PoseFile`
+  while writing it; concurrent callers get last-successful-writer filesystem
+  semantics. Destination and parent paths are trusted, with operating-system
+  reparse-point and race behavior; this boundary makes no path-containment
+  security claim.
 - `ModelDifference` applies only with `ApplyModelTransform` (default false,
   Brio parity). Anamnesis names rewrite through the 161-entry Brio table.
 - `.cmp` carries no positions — import forces `ApplyPosition = false` so a

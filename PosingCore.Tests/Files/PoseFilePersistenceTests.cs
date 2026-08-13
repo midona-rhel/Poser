@@ -187,6 +187,27 @@ public sealed class PoseFilePersistenceTests
     }
 
     [Fact]
+    public void Exact_32_mib_path_rejects_a_raw_limit_before_reaching_an_invalid_tail()
+    {
+        using var fixture = new StoreFixture();
+        var entries = string.Join(",", Enumerable.Repeat(
+            "\"same\":{}", PoseFileLimits.MaxEntriesPerCollection + 1));
+        var prefix = Encoding.UTF8.GetBytes($"{{\"Bones\":{{{entries}");
+        using (var stream = new FileStream(fixture.Destination, FileMode.CreateNew, FileAccess.Write))
+        {
+            stream.Write(prefix);
+            stream.SetLength(PoseFileLimits.MaxFileBytes);
+        }
+
+        var result = AtomicPoseFileStore.Default.Read(fixture.Destination);
+
+        Assert.Equal(PoseFileStoreFailureKind.Validation, result.Failure?.Kind);
+        Assert.Equal(
+            PoseFileValidationFailureKind.CollectionSize,
+            result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Fact]
     public void Structural_preflight_counts_raw_total_entries_across_duplicate_keys()
     {
         var full = string.Join(",", Enumerable.Repeat(
@@ -624,6 +645,34 @@ public sealed class AtomicPoseFileStoreTests
     }
 
     [Fact]
+    public void Destination_loss_between_commit_confirmation_and_backup_cleanup_preserves_backup()
+    {
+        using var fixture = new StoreFixture();
+        var oldBytes = new byte[] { 9, 8, 7 };
+        File.WriteAllBytes(fixture.Destination, oldBytes);
+        var deleteCalls = 0;
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            DeleteBehavior = path =>
+            {
+                deleteCalls++;
+                if (deleteCalls == 1)
+                    File.Delete(fixture.Destination);
+                File.Delete(path);
+            },
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.Cleanup, result.Failure?.Kind);
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.Equal(fileSystem.LastBackupPath, result.RecoveryEvidencePaths[0]);
+        Assert.Equal(oldBytes, File.ReadAllBytes(result.RecoveryEvidencePaths[0]));
+    }
+
+    [Fact]
     public void Destination_deleted_during_replace_keeps_the_sole_validated_new_copy()
     {
         using var fixture = new StoreFixture();
@@ -682,6 +731,8 @@ internal sealed class EmulatedPoseFileSystem : IPoseFileStoreFileSystem
 
     public Stream CreateNew(string path) => new FileStream(
         path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan);
+
+    public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
 
     public bool Exists(string path) => File.Exists(path);
 
