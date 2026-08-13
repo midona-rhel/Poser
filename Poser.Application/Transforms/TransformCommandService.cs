@@ -4,7 +4,9 @@ using Poser.Domain.Transforms;
 
 namespace Poser.Application.Transforms;
 
-/// <summary>Atomic non-interactive transform commands.</summary>
+/// <summary>
+/// Non-interactive transform commands with exhaustive rollback evidence.
+/// </summary>
 public sealed class TransformCommandService
 {
     private readonly SceneSession _scene;
@@ -29,6 +31,8 @@ public sealed class TransformCommandService
         PoseTransform desired,
         string description)
     {
+        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail(
                 "A transform gesture is active.");
@@ -39,15 +43,20 @@ public sealed class TransformCommandService
 
         var applied = _runtime.ApplyAbsolute(before, desired);
         if (!applied.Success)
-            return GestureResult.Fail(
-                applied.Detail ?? $"Could not transform {target}.");
+        {
+            var rollback = _gestures.AttemptRecovery(new[] { before });
+            return FailureAfterRecovery(
+                applied.Detail ?? $"Could not transform {target}.",
+                rollback);
+        }
 
         var after = _runtime.Capture(target);
         if (!after.Success || after.State == null)
         {
-            _runtime.Restore(before);
-            return GestureResult.Fail(
-                after.Detail ?? $"Could not capture {target}.");
+            var rollback = _gestures.AttemptRecovery(new[] { before });
+            return FailureAfterRecovery(
+                after.Detail ?? $"Could not capture {target}.",
+                rollback);
         }
 
         _history.Append(new TransformPatch(
@@ -64,16 +73,18 @@ public sealed class TransformCommandService
     /// back together instead of unwinding bone by bone.
     ///
     /// Every target is captured before anything is written, and any
-    /// failure restores what was already applied, so the edit either
-    /// lands whole or not at all. Targets not supplied are untouched,
-    /// which is what leaves expression, gaze, and unrelated manual edits
-    /// intact.
+    /// failure attempts every captured baseline in order. Incomplete rollback
+    /// is returned as typed recovery evidence and blocks later mutations.
+    /// Targets not supplied are untouched, which is what leaves expression,
+    /// gaze, and unrelated manual edits intact.
     /// </summary>
     public GestureResult SetAbsoluteMany(
         IReadOnlyList<(TransformTargetId Target, PoseTransform Desired)> writes,
         string description,
         bool rawBaseline = false)
     {
+        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail("A transform gesture is active.");
         if (writes.Count == 0)
@@ -93,9 +104,10 @@ public sealed class TransformCommandService
             var applied = _runtime.ApplyAbsolute(before[i], writes[i].Desired, rawBaseline);
             if (applied.Success)
                 continue;
-            RestoreAll(before);
-            return GestureResult.Fail(
-                applied.Detail ?? $"Could not transform {writes[i].Target}.");
+            var rollback = _gestures.AttemptRecovery(before);
+            return FailureAfterRecovery(
+                applied.Detail ?? $"Could not transform {writes[i].Target}.",
+                rollback);
         }
 
         var after = new List<TransformTargetState>(before.Count);
@@ -104,9 +116,10 @@ public sealed class TransformCommandService
             var captured = _runtime.Capture(state.Target);
             if (!captured.Success || captured.State == null)
             {
-                RestoreAll(before);
-                return GestureResult.Fail(
-                    captured.Detail ?? $"Could not capture {state.Target}.");
+                var rollback = _gestures.AttemptRecovery(before);
+                return FailureAfterRecovery(
+                    captured.Detail ?? $"Could not capture {state.Target}.",
+                    rollback);
             }
             after.Add(captured.State);
         }
@@ -119,6 +132,8 @@ public sealed class TransformCommandService
         IReadOnlyList<TransformTargetId> targets,
         string description)
     {
+        if (_gestures.RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return GestureResult.Fail(
                 "A transform gesture is active.");
@@ -144,10 +159,11 @@ public sealed class TransformCommandService
             var result = _runtime.Restore(cleared);
             if (result.Success)
                 continue;
-            RestoreAll(before);
-            return GestureResult.Fail(
+            var rollback = _gestures.AttemptRecovery(before);
+            return FailureAfterRecovery(
                 result.Detail ??
-                $"Could not clear actor override {state.Target}.");
+                $"Could not clear actor override {state.Target}.",
+                rollback);
         }
 
         var after = new List<TransformTargetState>(before.Count);
@@ -156,10 +172,11 @@ public sealed class TransformCommandService
             var captured = _runtime.Capture(state.Target);
             if (!captured.Success || captured.State == null)
             {
-                RestoreAll(before);
-                return GestureResult.Fail(
+                var rollback = _gestures.AttemptRecovery(before);
+                return FailureAfterRecovery(
                     captured.Detail ??
-                    $"Could not capture {state.Target} after reset.");
+                    $"Could not capture {state.Target} after reset.",
+                    rollback);
             }
             after.Add(captured.State);
         }
@@ -177,10 +194,13 @@ public sealed class TransformCommandService
         return _runtime.Capture(target);
     }
 
-    private void RestoreAll(
-        IReadOnlyList<TransformTargetState> states)
-    {
-        foreach (var state in states)
-            _runtime.Restore(state);
-    }
+    private static GestureResult FailureAfterRecovery(
+        string primaryFailure,
+        TransformRecoveryReceipt recovery) =>
+        GestureResult.Fail(TransformRecovery.AppendRollbackFailure(
+            primaryFailure,
+            recovery)) with
+        {
+            Recovery = recovery,
+        };
 }

@@ -24,6 +24,8 @@ public readonly record struct PoseEditResult(
 
     public static PoseEditResult Fail(string detail) =>
         new(false, 0, detail);
+
+    public TransformRecoveryReceipt? Recovery { get; init; }
 }
 
 public readonly record struct PoseCaptureResult(
@@ -38,7 +40,9 @@ public readonly record struct PoseCaptureResult(
         new(false, null, detail);
 }
 
-/// <summary>Atomic stable-id commands for discrete manual pose edits.</summary>
+/// <summary>
+/// Stable-id pose edits with exhaustive rollback and typed recovery evidence.
+/// </summary>
 public sealed class PoseEditService
 {
     private readonly SceneSession _scene;
@@ -63,6 +67,8 @@ public sealed class PoseEditService
         PoseRegion region,
         string description)
     {
+        if (RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -100,6 +106,8 @@ public sealed class PoseEditService
         TransformTargetId target,
         string description)
     {
+        if (RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -135,6 +143,8 @@ public sealed class PoseEditService
         IReadOnlyList<TransformTargetId> targets,
         string description)
     {
+        if (RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -246,6 +256,8 @@ public sealed class PoseEditService
         string description)
     {
         ArgumentNullException.ThrowIfNull(pose);
+        if (RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
@@ -339,9 +351,10 @@ public sealed class PoseEditService
             var result = _runtime.Restore(state);
             if (result.Success)
                 continue;
-            RestoreAll(before);
-            return PoseEditResult.Fail(
-                result.Detail ?? $"Could not apply pose to {state.Target}.");
+            var rollback = _gestures.AttemptRecovery(before);
+            return FailureAfterRecovery(
+                result.Detail ?? $"Could not apply pose to {state.Target}.",
+                rollback);
         }
 
         var after = new List<TransformTargetState>(desired.Count);
@@ -350,10 +363,11 @@ public sealed class PoseEditService
             var result = _runtime.Capture(state.Target);
             if (!result.Success || result.State == null)
             {
-                RestoreAll(before);
-                return PoseEditResult.Fail(
+                var rollback = _gestures.AttemptRecovery(before);
+                return FailureAfterRecovery(
                     result.Detail ??
-                    $"Could not capture final pose for {state.Target}.");
+                    $"Could not capture final pose for {state.Target}.",
+                    rollback);
             }
             after.Add(result.State);
         }
@@ -362,12 +376,24 @@ public sealed class PoseEditService
         return PoseEditResult.Ok(desired.Count);
     }
 
-    private void RestoreAll(
-        IReadOnlyList<TransformTargetState> states)
-    {
-        foreach (var state in states)
-            _runtime.Restore(state);
-    }
+    private PoseEditResult? RecoveryBarrier() =>
+        _gestures.PendingRecovery is { } recovery
+            ? PoseEditResult.Fail(
+                "Transform recovery must complete before another mutation.") with
+            {
+                Recovery = recovery,
+            }
+            : null;
+
+    private static PoseEditResult FailureAfterRecovery(
+        string primaryFailure,
+        TransformRecoveryReceipt recovery) =>
+        PoseEditResult.Fail(TransformRecovery.AppendRollbackFailure(
+            primaryFailure,
+            recovery)) with
+        {
+            Recovery = recovery,
+        };
 
     private static (PoseSlot Slot, int Partial, string Name) Key(
         BoneId bone) =>

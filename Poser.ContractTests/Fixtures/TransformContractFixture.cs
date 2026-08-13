@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Application.Posing;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Domain.Identity;
@@ -22,7 +23,8 @@ internal static class TestIds
     public static TransformTargetId BoneTarget(
         uint actorGeneration = 0,
         uint skeletonGeneration = 0,
-        string name = "j_kao")
+        string name = "j_kao",
+        int boneIndex = 1)
     {
         var skeleton = new SkeletonId(
             Actor(actorGeneration),
@@ -31,7 +33,7 @@ internal static class TestIds
         return TransformTargetId.ForBone(new BoneId(
             skeleton,
             PartialId: 0,
-            BoneIndex: 1,
+            BoneIndex: boneIndex,
             CanonicalName: name));
     }
 }
@@ -53,6 +55,11 @@ internal static class TestScenes
             Props: Array.Empty<PropDescriptor>());
 
     public static SceneSnapshot ActorAndBoneScene(ActorId actor, BoneId bone) =>
+        ActorAndBonesScene(actor, bone);
+
+    public static SceneSnapshot ActorAndBonesScene(
+        ActorId actor,
+        params BoneId[] bones) =>
         new(
             Revision: actor.Generation + 1,
             Actors: new[]
@@ -63,14 +70,11 @@ internal static class TestScenes
                     new[]
                     {
                         new SkeletonDescriptor(
-                            bone.Skeleton,
-                            new[]
-                            {
-                                new BoneDescriptor(
-                                    bone,
-                                    bone.CanonicalName,
-                                    Parent: null),
-                            }),
+                            bones[0].Skeleton,
+                            bones.Select(bone => new BoneDescriptor(
+                                bone,
+                                bone.CanonicalName,
+                                Parent: null)).ToArray()),
                     }),
             },
             Lights: Array.Empty<LightDescriptor>(),
@@ -85,10 +89,17 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     public List<TransformTargetId> ApplyCalls { get; } = new();
     public List<TransformTargetId> RestoreCalls { get; } = new();
     public int? FailApplyCall { get; set; }
+    public bool MutateBeforeApplyFailure { get; set; }
     public int? FailCaptureCall { get; set; }
+    public HashSet<int> FailRestoreCalls { get; } = new();
+    public HashSet<int> MutateBeforeRestoreFailureCalls { get; } = new();
+    public Dictionary<int, string> RestoreFailureDetails { get; } = new();
     public TransformPortStatus FailureStatus { get; set; } =
         TransformPortStatus.Rejected;
     public string FailureDetail { get; set; } = "fake runtime failure";
+    public string? ApplyFailureDetail { get; set; }
+    public string? CaptureFailureDetail { get; set; }
+    public string? RestoreFailureDetail { get; set; }
 
     private int _captureCount;
 
@@ -102,7 +113,9 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     {
         _captureCount++;
         if (FailCaptureCall == _captureCount)
-            return TransformPortResult.Fail(FailureStatus, FailureDetail);
+            return TransformPortResult.Fail(
+                FailureStatus,
+                CaptureFailureDetail ?? FailureDetail);
 
         return _states.TryGetValue(target, out var state)
             ? TransformPortResult.Ok(state)
@@ -118,7 +131,13 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     {
         ApplyCalls.Add(baseline.Target);
         if (FailApplyCall == ApplyCalls.Count)
-            return TransformPortResult.Fail(FailureStatus, FailureDetail);
+        {
+            if (MutateBeforeApplyFailure)
+                _states[baseline.Target] = baseline with { Transform = desired };
+            return TransformPortResult.Fail(
+                FailureStatus,
+                ApplyFailureDetail ?? FailureDetail);
+        }
 
         _states[baseline.Target] = baseline with { Transform = desired };
         return TransformPortResult.Ok();
@@ -127,6 +146,17 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     public TransformPortResult Restore(TransformTargetState state)
     {
         RestoreCalls.Add(state.Target);
+        var call = RestoreCalls.Count;
+        if (FailRestoreCalls.Contains(call))
+        {
+            if (MutateBeforeRestoreFailureCalls.Contains(call))
+                _states[state.Target] = state;
+            return TransformPortResult.Fail(
+                FailureStatus,
+                RestoreFailureDetails.GetValueOrDefault(call) ??
+                RestoreFailureDetail ??
+                FailureDetail);
+        }
         _states[state.Target] = state;
         return TransformPortResult.Ok();
     }
@@ -164,6 +194,7 @@ internal sealed class TransformApplicationHarness : IDisposable
         History = new TransformHistory();
         Gestures = new TransformGestureService(Scene, Runtime, History);
         Commands = new TransformCommandService(Scene, Runtime, History, Gestures);
+        PoseEdits = new PoseEditService(Scene, Runtime, History, Gestures);
     }
 
     public Poser.Application.Selection.SelectionSession Selection { get; }
@@ -172,6 +203,7 @@ internal sealed class TransformApplicationHarness : IDisposable
     public TransformHistory History { get; }
     public TransformGestureService Gestures { get; }
     public TransformCommandService Commands { get; }
+    public PoseEditService PoseEdits { get; }
 
     public void Dispose() => Gestures.Dispose();
 }

@@ -28,10 +28,12 @@ public readonly record struct GestureResult(
         new(true, null, id);
     public static GestureResult Fail(string detail) =>
         new(false, detail);
+
+    public TransformRecoveryReceipt? Recovery { get; init; }
 }
 
 /// <summary>
-/// Idempotent transform gesture and patch-history coordinator.
+/// Idempotent transform gesture, recovery, and patch-history coordinator.
 /// </summary>
 public sealed class TransformGestureService : IDisposable
 {
@@ -53,8 +55,16 @@ public sealed class TransformGestureService : IDisposable
     public TransformHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
 
+    /// <summary>
+    /// An incomplete exact-state restore. While present it blocks every new
+    /// transform/pose mutation so partial state cannot become a new baseline.
+    /// </summary>
+    public TransformRecoveryReceipt? PendingRecovery { get; private set; }
+
     public GestureResult Begin(BeginTransformGesture command)
     {
+        if (PendingRecovery is { } pending)
+            return RecoveryRequired(pending);
         if (_active != null)
             return GestureResult.Fail("A transform gesture is already active.");
         if (command.Targets.Count == 0)
@@ -111,8 +121,10 @@ public sealed class TransformGestureService : IDisposable
             return GestureResult.Fail("Transform gesture is not active.");
         if (_scene.Revision != active.SceneRevision)
         {
-            Cancel(gestureId);
-            return GestureResult.Fail("Scene changed during transform gesture.");
+            var cancellation = Cancel(gestureId);
+            return FailureAfterRecovery(
+                "Scene changed during transform gesture.",
+                cancellation.Recovery!);
         }
         if (!delta.IsValid)
             return GestureResult.Fail("Transform delta is invalid.");
@@ -181,20 +193,15 @@ public sealed class TransformGestureService : IDisposable
             if (result.Success)
                 continue;
 
-            // A runtime apply failure ends the gesture: restore the captured
-            // Before states exactly once and clear the active gesture before
-            // returning, so callers observe it as already cancelled and never
-            // restore again. The original apply detail is preserved; a failed
-            // rollback appends its own detail.
-            var rollback = RestoreAll(active.Before);
+            // A runtime apply failure ends the gesture. Every frozen Before
+            // state is attempted in order even after a restore failure, and
+            // the complete receipt remains available for exact retry.
+            var rollback = AttemptRecovery(active.Before);
             _active = null;
             var applyDetail =
                 result.Detail ??
                 $"Runtime rejected target {active.Before[index].Target}.";
-            return GestureResult.Fail(
-                rollback.Success
-                    ? applyDetail
-                    : $"{applyDetail} Rollback also failed: {rollback.Detail}");
+            return FailureAfterRecovery(applyDetail, rollback);
         }
 
         return GestureResult.Ok(gestureId);
@@ -206,9 +213,10 @@ public sealed class TransformGestureService : IDisposable
             return GestureResult.Fail("Transform gesture is not active.");
         if (_scene.Revision != active.SceneRevision)
         {
-            Cancel(gestureId);
-            return GestureResult.Fail(
-                "Scene changed during transform gesture.");
+            var cancellation = Cancel(gestureId);
+            return FailureAfterRecovery(
+                "Scene changed during transform gesture.",
+                cancellation.Recovery!);
         }
 
         var after = new List<TransformTargetState>(active.Before.Count);
@@ -217,10 +225,12 @@ public sealed class TransformGestureService : IDisposable
             var result = _runtime.Capture(before.Target);
             if (!result.Success || result.State == null)
             {
-                RestoreAll(active.Before);
+                var rollback = AttemptRecovery(active.Before);
                 _active = null;
-                return GestureResult.Fail(
-                    result.Detail ?? $"Could not capture final state for {before.Target}.");
+                return FailureAfterRecovery(
+                    result.Detail ??
+                    $"Could not capture final state for {before.Target}.",
+                    rollback);
             }
             after.Add(result.State);
         }
@@ -237,9 +247,9 @@ public sealed class TransformGestureService : IDisposable
     {
         if (_active is not { } active || active.Id != gestureId)
             return GestureResult.Fail("Transform gesture is not active.");
-        var result = RestoreAll(active.Before);
+        var recovery = AttemptRecovery(active.Before);
         _active = null;
-        return result;
+        return RecoveryResult(recovery);
     }
 
     /// <summary>
@@ -248,9 +258,8 @@ public sealed class TransformGestureService : IDisposable
     /// generation, the gesture SURVIVES and accepts the new revision — an
     /// unrelated actor or slot appearing, vanishing, or changing does not
     /// end a drag. When any target is stale it cancels once: every
-    /// still-current target restores from the frozen baseline (stale
-    /// restores fail individually without a write) and no history entry is
-    /// created.
+    /// frozen baseline is attempted in order, incomplete recovery is retained
+    /// as a mutation barrier, and no history entry is created.
     /// </summary>
     public void ReconcileScene(Func<TransformTargetId, bool> isCurrent)
     {
@@ -266,28 +275,32 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Undo()
     {
+        if (PendingRecovery is { } pending)
+            return RecoveryRequired(pending);
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before undo.");
         var patch = History.PeekUndo();
         if (patch == null)
             return GestureResult.Fail("Nothing to undo.");
-        var result = RestoreAll(patch.Before);
-        if (result.Success)
+        var recovery = AttemptRecovery(patch.Before);
+        if (recovery.Complete)
             History.CommitUndo(patch);
-        return result;
+        return RecoveryResult(recovery);
     }
 
     public GestureResult Redo()
     {
+        if (PendingRecovery is { } pending)
+            return RecoveryRequired(pending);
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before redo.");
         var patch = History.PeekRedo();
         if (patch == null)
             return GestureResult.Fail("Nothing to redo.");
-        var result = RestoreAll(patch.After);
-        if (result.Success)
+        var recovery = AttemptRecovery(patch.After);
+        if (recovery.Complete)
             History.CommitRedo(patch);
-        return result;
+        return RecoveryResult(recovery);
     }
 
     public void Dispose()
@@ -297,20 +310,81 @@ public sealed class TransformGestureService : IDisposable
             Cancel(active.Id);
     }
 
-    private GestureResult RestoreAll(IReadOnlyList<TransformTargetState> states)
+    /// <summary>
+    /// The only mutation accepted while recovery is pending. Replays every
+    /// originally requested state in order and replaces the receipt on another
+    /// partial failure; complete recovery clears the mutation barrier.
+    /// </summary>
+    public GestureResult RetryRecovery(TransformRecoveryReceipt recovery)
     {
-        string? firstFailure = null;
-        foreach (var state in states)
+        ArgumentNullException.ThrowIfNull(recovery);
+        if (_active != null)
+            return GestureResult.Fail(
+                "Cancel the active gesture before retrying recovery.") with
+            {
+                Recovery = recovery,
+            };
+        if (PendingRecovery is not { } pending ||
+            !ReferenceEquals(pending, recovery))
         {
-            var result = _runtime.Restore(state);
-            if (!result.Success && firstFailure == null)
-                firstFailure =
-                    result.Detail ?? $"Could not restore {state.Target}.";
+            return GestureResult.Fail(
+                "This transform recovery receipt is not pending.") with
+            {
+                Recovery = recovery,
+            };
         }
-        return firstFailure == null
-            ? GestureResult.Ok()
-            : GestureResult.Fail(firstFailure);
+
+        var retried = TransformRecovery.RestoreAll(
+            _runtime,
+            recovery.Attempts.Select(attempt => attempt.RequestedState));
+        if (retried.Complete)
+            PendingRecovery = null;
+        else
+            PendingRecovery = retried;
+        return RecoveryResult(retried);
     }
+
+    internal TransformRecoveryReceipt AttemptRecovery(
+        IReadOnlyList<TransformTargetState> states)
+    {
+        var recovery = TransformRecovery.RestoreAll(_runtime, states);
+        if (!recovery.Complete)
+            PendingRecovery = recovery;
+        return recovery;
+    }
+
+    internal GestureResult? RecoveryBarrier() =>
+        PendingRecovery is { } pending
+            ? RecoveryRequired(pending)
+            : null;
+
+    private static GestureResult FailureAfterRecovery(
+        string primaryFailure,
+        TransformRecoveryReceipt recovery) =>
+        GestureResult.Fail(TransformRecovery.AppendRollbackFailure(
+            primaryFailure,
+            recovery)) with
+        {
+            Recovery = recovery,
+        };
+
+    private static GestureResult RecoveryResult(
+        TransformRecoveryReceipt recovery) =>
+        recovery.Complete
+            ? GestureResult.Ok() with { Recovery = recovery }
+            : GestureResult.Fail(
+                TransformRecovery.DescribeFailures(recovery)) with
+            {
+                Recovery = recovery,
+            };
+
+    private static GestureResult RecoveryRequired(
+        TransformRecoveryReceipt recovery) =>
+        GestureResult.Fail(
+            "Transform recovery must complete before another mutation.") with
+        {
+            Recovery = recovery,
+        };
 
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)
