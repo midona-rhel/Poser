@@ -324,15 +324,15 @@ public sealed class PoseEditService
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
-        var prepared = CaptureBones(targets);
-        if (!prepared.Success)
-            return PoseEditResult.Fail(prepared.Detail!);
 
-        var destinations = new List<PortableBoneTarget>(prepared.States!.Count);
-        foreach (var state in prepared.States)
+        if (!TryValidateBoneTargets(targets, out var targetDetail))
+            return PoseEditResult.Fail(targetDetail!);
+
+        var destinations = new List<PortableBoneTarget>(targets.Count);
+        foreach (var target in targets.Distinct())
         {
             if (!TryCreatePortableTarget(
-                    state.Target.Bone!.Value,
+                    target.Bone!.Value,
                     out var destination,
                     out var detail))
                 return PoseEditResult.Fail(detail!);
@@ -340,10 +340,14 @@ public sealed class PoseEditService
         }
 
         var match = pose.Match(destinations);
-        if (match.Ambiguous.Count > 0)
+        if (match.Ambiguous.Count > 0 || match.Unmatched.Count > 0)
             return PoseEditResult.Fail(DescribeMatchFailure(match)!);
 
-        var statesByBone = prepared.States.ToDictionary(
+        var prepared = CaptureBones(targets);
+        if (!prepared.Success)
+            return PoseEditResult.Fail(prepared.Detail!);
+
+        var statesByBone = prepared.States!.ToDictionary(
             state => state.Target.Bone!.Value);
         var before = match.Matches
             .Select(item => statesByBone[item.Target.Bone])
@@ -365,15 +369,8 @@ public sealed class PoseEditService
                 Pose = transferred,
                 HasOverride = transferred.Layers.Count > 0,
             };
-        }).ToArray();
-        var result = Apply(description, before, desired);
-        var matchDetail = DescribeMatchFailure(match);
-        if (!result.Success || matchDetail is null)
-            return result;
-        return result with
-        {
-            Detail = matchDetail,
-        };
+            }).ToArray();
+        return Apply(description, before, desired);
     }
 
     private bool TryCreatePortableTarget(
@@ -460,16 +457,8 @@ public sealed class PoseEditService
     private CaptureResult CaptureBones(
         IReadOnlyList<TransformTargetId> targets)
     {
-        if (targets.Count == 0)
-            return CaptureResult.Fail("A pose edit requires at least one bone.");
-        if (targets.Any(target => target.Kind != TransformTargetKind.Bone))
-            return CaptureResult.Fail("Pose edits accept bone targets only.");
-        if (targets.Any(target => !_scene.Contains(target)))
-            return CaptureResult.Fail("A pose target is stale.");
-        var lineage = targets[0].ActorLineage;
-        if (targets.Any(target => target.ActorLineage != lineage))
-            return CaptureResult.Fail(
-                "A pose edit cannot span actor lineages.");
+        if (!TryValidateBoneTargets(targets, out var detail))
+            return CaptureResult.Fail(detail!);
 
         var states = new List<TransformTargetState>(targets.Count);
         foreach (var target in targets.Distinct())
@@ -481,6 +470,36 @@ public sealed class PoseEditService
             states.Add(captured.State);
         }
         return CaptureResult.Ok(states);
+    }
+
+    private bool TryValidateBoneTargets(
+        IReadOnlyList<TransformTargetId> targets,
+        out string? detail)
+    {
+        if (targets.Count == 0)
+        {
+            detail = "A pose edit requires at least one bone.";
+            return false;
+        }
+        if (targets.Any(target => target.Kind != TransformTargetKind.Bone))
+        {
+            detail = "Pose edits accept bone targets only.";
+            return false;
+        }
+        if (targets.Any(target => !_scene.Contains(target)))
+        {
+            detail = "A pose target is stale.";
+            return false;
+        }
+        var lineage = targets[0].ActorLineage;
+        if (targets.Any(target => target.ActorLineage != lineage))
+        {
+            detail = "A pose edit cannot span actor lineages.";
+            return false;
+        }
+
+        detail = null;
+        return true;
     }
 
     private PoseEditResult Apply(

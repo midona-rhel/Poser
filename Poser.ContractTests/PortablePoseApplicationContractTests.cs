@@ -77,6 +77,7 @@ public sealed class PortablePoseApplicationContractTests
 
         Assert.False(result.Success);
         Assert.Contains("Ambiguous", result.Detail!);
+        Assert.Empty(app.Runtime.CaptureCalls);
         Assert.Empty(app.Runtime.RestoreCalls);
     }
 
@@ -107,6 +108,41 @@ public sealed class PortablePoseApplicationContractTests
 
         Assert.False(result.Success);
         Assert.Contains("Ambiguous", result.Detail!);
+        Assert.Empty(app.Runtime.CaptureCalls);
+        Assert.Empty(app.Runtime.RestoreCalls);
+        Assert.False(app.History.CanUndo);
+        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(left)).Pose.Layers);
+        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(right)).Pose.Layers);
+    }
+
+    [Fact]
+    public void ApplyPortable_rejects_mixed_exact_and_unmatched_matches_atomically()
+    {
+        var (left, right) = DuplicateBones();
+        using var app = Harness(left, right);
+        var pose = new PortablePose([
+            new PortableBoneEntry(
+                new PortableBoneKey(
+                    PoseSlot.Character,
+                    left.PartialId,
+                    left.CanonicalName,
+                    new BonePath("root", "left", "j_dup")),
+                PoseAt(4),
+                NativeIndexHint: left.BoneIndex),
+            new PortableBoneEntry(
+                PortableBoneKey.Legacy(
+                    new PortableBoneId(PoseSlot.Character, 0, "j_missing")),
+                PoseAt(8)),
+        ]);
+
+        var result = app.PoseEdits.ApplyPortable(
+            [TransformTargetId.ForBone(left), TransformTargetId.ForBone(right)],
+            pose,
+            "mixed unmatched apply");
+
+        Assert.False(result.Success);
+        Assert.Equal("Unmatched portable bones: j_missing.", result.Detail);
+        Assert.Empty(app.Runtime.CaptureCalls);
         Assert.Empty(app.Runtime.RestoreCalls);
         Assert.False(app.History.CanUndo);
         Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(left)).Pose.Layers);
