@@ -329,7 +329,7 @@ public class AutoSaveService : IAutoSaveService
             $"{prior.OperationId},{recovery.OperationId}", 128);
         var reason = LimitHealthText($"{prior.Reason},{recovery.Reason}", 128);
         var detail = LimitHealthText(
-            $"{prior.Detail}; additionally {recovery.OperationId}: {recovery.Detail}",
+            $"{DescribeHealthRecovery(prior)}; additionally {DescribeHealthRecovery(recovery)}",
             4096);
         var evidence = prior.RecoveryEvidencePaths
             .Concat(recovery.RecoveryEvidencePaths)
