@@ -23,6 +23,7 @@ public class GPoseService : IGPoseService
     private bool _lastGPoseState = false;
     private bool _sessionActive;
     private bool _unloadExitHandled;
+    private bool _closing;
 
     public bool IsGPosing => _clientState.IsGPosing;
 
@@ -56,6 +57,9 @@ public class GPoseService : IGPoseService
 
         lock (_stateGate)
         {
+            if (_closing)
+                return;
+
             var currentState = _clientState.IsGPosing;
 
             if (currentState == _lastGPoseState)
@@ -92,6 +96,7 @@ public class GPoseService : IGPoseService
 
         lock (_stateGate)
         {
+            _closing = true;
             if (_unloadExitHandled)
                 return;
             if (!_sessionActive && !_clientState.IsGPosing)
@@ -123,6 +128,8 @@ public class GPoseService : IGPoseService
 
     public void Dispose()
     {
+        lock (_stateGate)
+            _closing = true;
         _framework.Update -= OnFrameworkUpdate;
         GC.SuppressFinalize(this);
     }

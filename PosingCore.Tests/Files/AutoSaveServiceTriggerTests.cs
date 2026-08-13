@@ -307,6 +307,33 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
+    public void Clean_on_exit_reports_recovery_when_root_disappears_during_final_enumeration()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = true;
+        h.SeedSnapshot("2026-03-04 05-00-00Z", withFile: true);
+        h.Log.When(log => log.Info(
+                Arg.Any<string>(),
+                Arg.Any<object[]>()))
+            .Do(_ =>
+            {
+                if (Directory.Exists(h.Root))
+                    Directory.Delete(h.Root, recursive: true);
+            });
+
+        var capture = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, capture.Status);
+        Assert.Equal(
+            AutoSaveTerminalStatus.RecoveryRequired,
+            h.Service.LastTerminalResult.Status);
+        Assert.Contains(
+            "could not remove every snapshot",
+            h.Service.LastTerminalResult.Detail);
+    }
+
+    [Fact]
     public void Construction_does_not_snapshot_or_clean()
     {
         using var h = new AutoSaveHarness();

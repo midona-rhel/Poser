@@ -1,6 +1,8 @@
 extern alias ProductionPoser;
 
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -276,6 +278,91 @@ public sealed class LifecycleContractTests
     }
 
     [Fact]
+    public void Framework_update_after_unload_cannot_reopen_or_publish_a_true_edge()
+    {
+        var clientState = Substitute.For<IClientState>();
+        var framework = Substitute.For<IFramework>();
+        var eventBus = Substitute.For<IEventBus>();
+        var log = Substitute.For<IPluginLog>();
+        var capture = new RecordingCapturePort(
+            () => FinalCaptureResult.Captured(1));
+        var coordinator = new SessionLifecycleCoordinator(capture);
+        framework.IsInFrameworkUpdateThread.Returns(true);
+        clientState.IsGPosing.Returns(true);
+
+        using var gpose = new GPoseService(
+            clientState,
+            framework,
+            eventBus,
+            log,
+            coordinator);
+
+        gpose.ExitForUnload();
+        framework.Update += Raise.Event<IFramework.OnUpdateDelegate>(framework);
+
+        Assert.Equal(1, capture.CallCount);
+        eventBus.Received(1).Publish(
+            Arg.Is<GPoseStateChangedEvent>(evt => !evt.IsGPosing));
+        eventBus.DidNotReceive().Publish(
+            Arg.Is<GPoseStateChangedEvent>(evt => evt.IsGPosing));
+        Assert.Equal(FinalCaptureStatus.Captured, coordinator.LastExit!.Value.Capture.Status);
+    }
+
+    [Fact]
+    public void Faulted_framework_unload_dispatch_still_disposes_provider()
+    {
+        var framework = Substitute.For<IFramework>();
+        var gpose = Substitute.For<IGPoseService>();
+        var log = Substitute.For<IPluginLog>();
+        framework.IsInFrameworkUpdateThread.Returns(false);
+        framework.RunOnFrameworkThread(Arg.Any<Action>())
+            .Returns(Task.FromException(new InvalidOperationException("dispatcher faulted")));
+
+        using var provider = new ServiceCollection()
+            .AddSingleton<DisposalProbe>()
+            .BuildServiceProvider();
+        var probe = provider.GetRequiredService<DisposalProbe>();
+
+        ProductionPoser::Poser.Poser.DisposeProviderAfterFrameworkExit(
+            provider,
+            framework,
+            gpose,
+            log,
+            cleanup: static () => { });
+
+        Assert.True(probe.Disposed);
+        log.Received(1).Error(
+            Arg.Is<string>(message => message.Contains("dispatcher faulted")));
+    }
+
+    [Fact]
+    public void Canceled_framework_unload_dispatch_still_disposes_provider()
+    {
+        var framework = Substitute.For<IFramework>();
+        var gpose = Substitute.For<IGPoseService>();
+        var log = Substitute.For<IPluginLog>();
+        framework.IsInFrameworkUpdateThread.Returns(false);
+        framework.RunOnFrameworkThread(Arg.Any<Action>())
+            .Returns(Task.FromCanceled(new CancellationToken(canceled: true)));
+
+        using var provider = new ServiceCollection()
+            .AddSingleton<DisposalProbe>()
+            .BuildServiceProvider();
+        var probe = provider.GetRequiredService<DisposalProbe>();
+
+        ProductionPoser::Poser.Poser.DisposeProviderAfterFrameworkExit(
+            provider,
+            framework,
+            gpose,
+            log,
+            cleanup: static () => { });
+
+        Assert.True(probe.Disposed);
+        log.Received(1).Error(
+            Arg.Is<string>(message => message.Contains("canceled")));
+    }
+
+    [Fact]
     public void Exit_captures_before_legacy_teardown_mutates_authored_state()
     {
         var authoredState = "readable";
@@ -476,6 +563,13 @@ public sealed class LifecycleContractTests
         : IFinalCapturePort
     {
         public FinalCaptureResult CaptureForExit() => capture();
+    }
+
+    private sealed class DisposalProbe : IDisposable
+    {
+        public bool Disposed { get; private set; }
+
+        public void Dispose() => Disposed = true;
     }
 
     private sealed class DeferredCaptureServiceStub

@@ -886,7 +886,16 @@ public class AutoSaveService : IAutoSaveService
         }
 
         _log.Info($"Auto-save cleaned {deleted} snapshot folder(s) on leaving GPose.");
-        return success && !Directory.EnumerateDirectories(RootDirectory).Any();
+        try
+        {
+            return success && !Directory.EnumerateDirectories(RootDirectory).Any();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                $"Auto-save: could not verify clean-on-exit root '{RootDirectory}': {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>Close admission and join the owned worker before disposal.</summary>

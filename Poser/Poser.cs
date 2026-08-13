@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
@@ -156,23 +157,58 @@ public class Poser : IDalamudPlugin
             });
     }
 
+    internal static void DisposeProviderAfterFrameworkExit(
+        ServiceProvider serviceProvider,
+        IFramework framework,
+        IGPoseService gpose,
+        IPluginLog log,
+        Action cleanup)
+    {
+        try
+        {
+            // Unload is the same lifecycle edge as ordinary GPose exit. Marshal
+            // the live graph read to the framework thread and join it before
+            // provider teardown. A failed/canceled hop is logged as evidence;
+            // it never claims that final capture completed.
+            if (framework.IsInFrameworkUpdateThread)
+                gpose.ExitForUnload();
+            else
+                framework.RunOnFrameworkThread(gpose.ExitForUnload)
+                    .GetAwaiter()
+                    .GetResult();
+        }
+        catch (Exception ex)
+        {
+            log.Error($"GPose unload lifecycle dispatch failed: {ex}");
+        }
+        finally
+        {
+            try
+            {
+                cleanup();
+            }
+            finally
+            {
+                serviceProvider.Dispose();
+            }
+        }
+    }
+
     public void Dispose()
     {
-        // Unload is the same lifecycle edge as ordinary GPose exit. Marshal the
-        // live graph read to the framework thread and join it before the
-        // provider can dispose any legacy subscriber or native collaborator.
         var framework = _serviceProvider.GetRequiredService<IFramework>();
         var gpose = _serviceProvider.GetRequiredService<IGPoseService>();
-        if (framework.IsInFrameworkUpdateThread)
-            gpose.ExitForUnload();
-        else
-            framework.RunOnFrameworkThread(gpose.ExitForUnload)
-                .GetAwaiter()
-                .GetResult();
-
-        _commandManager.RemoveHandler(CommandName);
-        Crystarium.IconTextureUploader = null;
-        FontRegistry.Dispose();
-        _serviceProvider.Dispose();
+        var log = _serviceProvider.GetRequiredService<IPluginLog>();
+        DisposeProviderAfterFrameworkExit(
+            _serviceProvider,
+            framework,
+            gpose,
+            log,
+            () =>
+            {
+                _commandManager.RemoveHandler(CommandName);
+                Crystarium.IconTextureUploader = null;
+                FontRegistry.Dispose();
+            });
     }
 }
