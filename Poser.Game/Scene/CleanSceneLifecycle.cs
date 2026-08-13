@@ -259,7 +259,9 @@ public sealed class CleanSceneLifecycle : IDisposable
     /// <summary>
     /// Serializes producer content against the committed Application scene.
     /// Exact replays retain its revision; changed content requests the next
-    /// revision. SceneSession remains the only committed revision owner.
+    /// revision, saturating at ulong.MaxValue where SceneSession permits an
+    /// equal-revision content update. SceneSession remains the only committed
+    /// revision owner.
     /// </summary>
     internal static SceneSnapshot CreateAdmissionCandidate(
         SceneSnapshot candidate,
@@ -269,7 +271,9 @@ public sealed class CleanSceneLifecycle : IDisposable
         var committedSignature = CanonicalSignature(committed);
         var revision = signature.ContentEquals(committedSignature)
             ? committed.Revision
-            : checked(committed.Revision + 1);
+            : committed.Revision == ulong.MaxValue
+                ? ulong.MaxValue
+                : committed.Revision + 1;
         return candidate with { Revision = revision };
     }
 

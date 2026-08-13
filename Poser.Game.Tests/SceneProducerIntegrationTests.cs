@@ -24,18 +24,22 @@ public sealed class SceneProducerIntegrationTests
     [Fact]
     public void Facial_capture_reads_the_committed_scene_session()
     {
-        var sceneField = typeof(FacialPoseCapture).GetField(
-            "_scene",
-            BindingFlags.Instance | BindingFlags.NonPublic);
+        var constructor = Assert.Single(typeof(FacialPoseCapture).GetConstructors());
 
-        Assert.NotNull(sceneField);
-        Assert.Equal(typeof(SceneSession), sceneField!.FieldType);
+        Assert.Contains(
+            constructor.GetParameters(),
+            parameter => parameter.ParameterType == typeof(SceneSession));
     }
 
     [Fact]
     public void Canonical_signature_is_revision_neutral_and_covers_all_scene_content()
     {
         var baseline = CompleteScene(41);
+        var session = new SceneSession(new Poser.Application.Selection.SelectionSession());
+
+        Assert.Equal(
+            SceneRefreshOutcome.Applied,
+            session.TryRefresh(baseline).Outcome);
         var signature = CleanSceneLifecycle.CanonicalSignature(baseline);
 
         Assert.Equal(0UL, signature.Revision);
@@ -53,6 +57,8 @@ public sealed class SceneProducerIntegrationTests
     public void Admission_revision_advances_only_for_content_changes()
     {
         var committed = CompleteScene(12);
+        var session = new SceneSession(new Poser.Application.Selection.SelectionSession());
+        Assert.Equal(SceneRefreshOutcome.Applied, session.TryRefresh(committed).Outcome);
         var replay = CleanSceneLifecycle.CreateAdmissionCandidate(
             CompleteScene(900),
             committed);
@@ -65,6 +71,27 @@ public sealed class SceneProducerIntegrationTests
 
         Assert.Equal(12UL, replay.Revision);
         Assert.Equal(13UL, changed.Revision);
+        Assert.Equal(SceneRefreshOutcome.NoChange, session.TryRefresh(replay).Outcome);
+        Assert.Equal(SceneRefreshOutcome.Applied, session.TryRefresh(changed).Outcome);
+    }
+
+    [Fact]
+    public void Changed_content_at_max_revision_uses_equal_revision_admission()
+    {
+        var committed = CompleteScene(ulong.MaxValue);
+        var session = new SceneSession(new Poser.Application.Selection.SelectionSession());
+        Assert.Equal(SceneRefreshOutcome.Applied, session.TryRefresh(committed).Outcome);
+
+        var changed = CleanSceneLifecycle.CreateAdmissionCandidate(
+            CompleteScene(0) with
+            {
+                Environment = committed.Environment! with { WeatherId = 88 },
+            },
+            committed);
+
+        Assert.Equal(ulong.MaxValue, changed.Revision);
+        Assert.Equal(SceneRefreshOutcome.Applied, session.TryRefresh(changed).Outcome);
+        Assert.Equal(88U, session.Snapshot.Environment!.WeatherId);
     }
 
     private static IEnumerable<SceneSnapshot> ContentMutations(SceneSnapshot scene)
@@ -83,6 +110,7 @@ public sealed class SceneProducerIntegrationTests
         yield return scene with { Actors = [actor with { Id = actor.Id with { Generation = 4 } }, otherActor] };
         yield return scene with { Actors = [actor with { Name = "Renamed" }, otherActor] };
         yield return scene with { Actors = [actor with { IsPlayer = false }, otherActor] };
+        yield return scene with { Actors = [actor with { IsCompanion = true }, otherActor] };
         yield return scene with { Actors = [actor with { IsHidden = true }, otherActor] };
         yield return scene with { Actors = [actor, otherActor with { OwnerActor = null }] };
         yield return scene with
@@ -191,7 +219,7 @@ public sealed class SceneProducerIntegrationTests
         yield return scene with { GazeStates = [gaze with { Mode = GazeMode.Forward }] };
         yield return scene with { GazeStates = [gaze with { Parts = GazeParts.Eyes }] };
         yield return scene with { GazeStates = [gaze with { LockedParts = GazeParts.None }] };
-        yield return scene with { GazeStates = [gaze with { TargetActor = null }] };
+        yield return scene with { GazeStates = [gaze with { TargetActor = otherActor.Id }] };
         yield return scene with { GazeStates = [gaze with { Anchor = Vector3.Zero }] };
         yield return scene with { GazeStates = [gaze with { EyesPosition = Vector3.Zero }] };
         yield return scene with { GazeStates = [gaze with { HeadPosition = Vector3.Zero }] };
@@ -269,7 +297,6 @@ public sealed class SceneProducerIntegrationTests
                 GazeMode.Position,
                 GazeParts.All,
                 GazeParts.Eyes,
-                TargetActor: companionId,
                 Anchor: new Vector3(4, 5, 6),
                 EyesPosition: new Vector3(7, 8, 9),
                 HeadPosition: new Vector3(10, 11, 12),

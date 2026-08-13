@@ -81,7 +81,7 @@ public sealed record SceneRefreshResult
 /// Owns the committed Application scene read model, exact-id indexes,
 /// selection reconciliation, and producer-revision admission policy. It does
 /// not create snapshots, own native handles, or replace Game's transitional
-/// binding registry/current-snapshot producer. Refresh and event delivery are
+/// candidate/binding producer. Refresh and event delivery are
 /// required to stay on the owning application/framework thread; this class
 /// does not guess that host affinity without a host dependency.
 /// </summary>
