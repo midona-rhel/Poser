@@ -110,6 +110,67 @@ public sealed class TransformPolicyBaselineTests
     }
 
     [Fact]
+    public void Direct_transform_helpers_reject_malformed_delta_and_baselines()
+    {
+        var zeroRotation = new TransformDelta(
+            Vector3.Zero,
+            Quaternion.Zero,
+            Vector3.One);
+        var nonFiniteDelta = new TransformDelta(
+            new Vector3(float.NaN, 0, 0),
+            Quaternion.Identity,
+            Vector3.One);
+        var nonFiniteBaseline = new Quaternion(
+            float.PositiveInfinity,
+            0,
+            0,
+            1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TransformMath.Mirror(zeroRotation));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TransformMath.Mirror(nonFiniteDelta));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TransformMath.MirrorRebased(
+                TransformDelta.Identity,
+                nonFiniteBaseline,
+                Quaternion.Identity));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TransformMath.LinkRebased(
+                TransformDelta.Identity,
+                Quaternion.Identity,
+                Quaternion.Zero));
+    }
+
+    [Fact]
+    public void Direct_transform_helpers_robustly_normalize_huge_rotations()
+    {
+        var hugeDelta = new TransformDelta(
+            new Vector3(1, 2, 3),
+            new Quaternion(float.MaxValue, 1, -2, 3),
+            Vector3.One);
+        var hugeBaseline = new Quaternion(float.MaxValue, -4, 5, 6);
+        var destinationBaseline = new Quaternion(-7, float.MaxValue, 8, 9);
+
+        var mirrored = TransformMath.Mirror(hugeDelta);
+        var rebased = TransformMath.MirrorRebased(
+            hugeDelta,
+            hugeBaseline,
+            destinationBaseline);
+        var linked = TransformMath.LinkRebased(
+            hugeDelta,
+            hugeBaseline,
+            destinationBaseline);
+
+        Assert.True(mirrored.IsValid);
+        Assert.True(rebased.IsValid);
+        Assert.True(linked.IsValid);
+        Assert.Equal(hugeDelta.ScaleFactor, mirrored.ScaleFactor);
+        Assert.Equal(hugeDelta.ScaleFactor, rebased.ScaleFactor);
+        Assert.Equal(hugeDelta.ScaleFactor, linked.ScaleFactor);
+    }
+
+    [Fact]
     public void Bone_pose_stores_normalized_layers_and_invalid_replace_is_atomic()
     {
         var nonNormalized = new PoseLayer(

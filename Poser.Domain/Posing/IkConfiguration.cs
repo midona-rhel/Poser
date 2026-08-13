@@ -49,6 +49,10 @@ public sealed record IkChainConfig(
     /// never reach the native boundary.</summary>
     public string? Validate()
     {
+        if (Solver is not (IkSolver.TwoJoint or IkSolver.Ccd))
+            return "IK solver is unsupported.";
+        if (TargetMode is not (IkTargetMode.Relative or IkTargetMode.Fixed))
+            return "IK target mode is unsupported.";
         if (CcdDepth is < MinDepth or > MaxDepth)
             return $"CCD depth must be {MinDepth}..{MaxDepth}.";
         if (CcdIterations is < MinIterations or > MaxIterations)
@@ -131,27 +135,58 @@ public sealed record IkChainConfig(
 /// The four supported chain definitions. Every member resolves inside the
 /// endpoint's exact skeleton and partial — never another slot.
 /// </summary>
-public sealed record IkChainDefinition(
-    string Endpoint,
-    IReadOnlyList<string> EndpointAliases,
-    string FirstJoint,
-    string? FirstTwist,
-    string SecondJoint,
-    string? SecondTwist,
-    bool IsArm);
+public sealed record IkChainDefinition
+{
+    public IkChainDefinition(
+        string Endpoint,
+        IReadOnlyList<string> EndpointAliases,
+        string FirstJoint,
+        string? FirstTwist,
+        string SecondJoint,
+        string? SecondTwist,
+        bool IsArm)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(Endpoint);
+        ArgumentNullException.ThrowIfNull(EndpointAliases);
+        if (EndpointAliases.Any(string.IsNullOrWhiteSpace))
+            throw new ArgumentException(
+                "IK endpoint aliases cannot be blank.",
+                nameof(EndpointAliases));
+
+        this.Endpoint = Endpoint;
+        this.EndpointAliases = Array.AsReadOnly(EndpointAliases.ToArray());
+        this.FirstJoint = FirstJoint;
+        this.FirstTwist = FirstTwist;
+        this.SecondJoint = SecondJoint;
+        this.SecondTwist = SecondTwist;
+        this.IsArm = IsArm;
+    }
+
+    public string Endpoint { get; }
+    public IReadOnlyList<string> EndpointAliases { get; }
+    public string FirstJoint { get; }
+    public string? FirstTwist { get; }
+    public string SecondJoint { get; }
+    public string? SecondTwist { get; }
+    public bool IsArm { get; }
+}
 
 public static class IkChains
 {
     // Arm: j_ude_a (twist n_hkata), j_ude_b (twist n_hhiji), end j_te
     // (Ktisis-compatible alias j_hand). Leg: j_asi_a, j_asi_b (twist
     // j_asi_c), end j_asi_d (alias j_foot) — the Ktisis Categories chains.
-    private static readonly IkChainDefinition[] Definitions =
-    {
-        Arm("l"), Arm("r"), Leg("l"), Leg("r"),
-    };
+    private static readonly IReadOnlyList<IkChainDefinition> Definitions =
+        Array.AsReadOnly(new[]
+        {
+            Arm("l"), Arm("r"), Leg("l"), Leg("r"),
+        });
 
-    public static readonly string[] SupportedEndpoints =
-        { "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r" };
+    public static IReadOnlyList<string> SupportedEndpoints { get; } =
+        Array.AsReadOnly(new[]
+        {
+            "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r",
+        });
 
     private static IkChainDefinition Arm(string side) => new(
         $"j_te_{side}",
@@ -208,7 +243,25 @@ public readonly record struct IkPolicyResult(
     IkChainConfig? Configuration,
     string? Detail)
 {
-    public bool Success => Outcome == IkPolicyOutcome.Supported;
+    public bool Success =>
+        Outcome == IkPolicyOutcome.Supported &&
+        Definition is not null &&
+        Configuration is not null;
+
+    internal static IkPolicyResult CreateSupported(
+        IkChainDefinition definition,
+        IkChainConfig configuration)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(configuration);
+        if (configuration.Validate() is { } error)
+            throw new ArgumentException(error, nameof(configuration));
+        return new(
+            IkPolicyOutcome.Supported,
+            definition,
+            configuration,
+            null);
+    }
 }
 
 /// <summary>Owns endpoint and configuration acceptance for fixed IK policy.</summary>
@@ -248,11 +301,9 @@ public static class IkPolicy
                 error);
         }
 
-        return new(
-            IkPolicyOutcome.Supported,
+        return IkPolicyResult.CreateSupported(
             definition,
-            configuration.Normalized(),
-            null);
+            configuration.Normalized());
     }
 
     public static IkPolicyResult Validate(
@@ -279,11 +330,9 @@ public static class IkPolicy
                 error);
         }
 
-        return new(
-            IkPolicyOutcome.Supported,
+        return IkPolicyResult.CreateSupported(
             definition,
-            configuration.Normalized(),
-            null);
+            configuration.Normalized());
     }
 }
 

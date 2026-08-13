@@ -151,14 +151,17 @@ public static class TransformMath
     // composes that with a 180° root yaw; the net reflection is the same
     // YZ plane. Poser mirrors per-pair without turning the root, so the
     // plane must be applied directly.)
-    public static TransformDelta Mirror(TransformDelta delta) =>
-        new(
+    public static TransformDelta Mirror(TransformDelta delta)
+    {
+        delta = delta.Normalized();
+        return new TransformDelta(
             new Vector3(
                 -delta.Translation.X,
                 delta.Translation.Y,
                 delta.Translation.Z),
-            Quaternion.Normalize(MirrorRotation(delta.Rotation)),
+            NormalizeRotation(MirrorRotation(delta.Rotation)),
             delta.ScaleFactor);
+    }
 
     /// <summary>
     /// Counterpart-frame-aware mirror for LOCAL-space symmetry deltas:
@@ -172,8 +175,11 @@ public static class TransformMath
         Quaternion sourceBaseline,
         Quaternion destinationBaseline)
     {
-        var mirroredSource = MirrorRotation(sourceBaseline);
-        var rotation = Quaternion.Normalize(
+        delta = delta.Normalized();
+        sourceBaseline = NormalizeRotation(sourceBaseline);
+        destinationBaseline = NormalizeRotation(destinationBaseline);
+        var mirroredSource = NormalizeRotation(MirrorRotation(sourceBaseline));
+        var rotation = NormalizeRotation(
             Quaternion.Inverse(destinationBaseline) *
             mirroredSource *
             MirrorRotation(delta.Rotation) *
@@ -200,7 +206,10 @@ public static class TransformMath
         Quaternion sourceBaseline,
         Quaternion destinationBaseline)
     {
-        var rotation = Quaternion.Normalize(
+        delta = delta.Normalized();
+        sourceBaseline = NormalizeRotation(sourceBaseline);
+        destinationBaseline = NormalizeRotation(destinationBaseline);
+        var rotation = NormalizeRotation(
             destinationBaseline *
             Quaternion.Inverse(sourceBaseline) *
             delta.Rotation *
@@ -219,15 +228,11 @@ public static class TransformMath
         Vector3 pivot,
         bool rotatePosition)
     {
-        if (!baseline.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(baseline));
-        if (!delta.IsValid)
-            throw new ArgumentOutOfRangeException(nameof(delta));
-
+        baseline = baseline.Normalized();
         delta = delta.Normalized();
         var rotation = space == TransformSpace.Local
-            ? Quaternion.Normalize(baseline.Rotation * delta.Rotation)
-            : Quaternion.Normalize(delta.Rotation * baseline.Rotation);
+            ? NormalizeRotation(baseline.Rotation * delta.Rotation)
+            : NormalizeRotation(delta.Rotation * baseline.Rotation);
 
         var position = baseline.Position + delta.Translation;
         if (rotatePosition)
