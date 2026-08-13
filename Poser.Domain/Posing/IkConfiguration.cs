@@ -182,11 +182,9 @@ public static class IkChains
             Arm("l"), Arm("r"), Leg("l"), Leg("r"),
         });
 
+    /// <summary>Read-only endpoint projection of the fixed definitions.</summary>
     public static IReadOnlyList<string> SupportedEndpoints { get; } =
-        Array.AsReadOnly(new[]
-        {
-            "j_te_l", "j_te_r", "j_asi_d_l", "j_asi_d_r",
-        });
+        Array.AsReadOnly(Definitions.Select(definition => definition.Endpoint).ToArray());
 
     private static IkChainDefinition Arm(string side) => new(
         $"j_te_{side}",
@@ -219,6 +217,27 @@ public static class IkChains
         return null;
     }
 
+    /// <summary>
+    /// Validates exact fixed-chain structure, including endpoint, aliases,
+    /// joint names, twist names, and arm/leg identity.
+    /// </summary>
+    public static bool IsSupportedDefinition(IkChainDefinition? definition)
+    {
+        if (definition is null)
+            return false;
+
+        return Definitions.Any(expected =>
+            string.Equals(expected.Endpoint, definition.Endpoint, StringComparison.Ordinal) &&
+            expected.EndpointAliases.SequenceEqual(
+                definition.EndpointAliases,
+                StringComparer.Ordinal) &&
+            string.Equals(expected.FirstJoint, definition.FirstJoint, StringComparison.Ordinal) &&
+            string.Equals(expected.FirstTwist, definition.FirstTwist, StringComparison.Ordinal) &&
+            string.Equals(expected.SecondJoint, definition.SecondJoint, StringComparison.Ordinal) &&
+            string.Equals(expected.SecondTwist, definition.SecondTwist, StringComparison.Ordinal) &&
+            expected.IsArm == definition.IsArm);
+    }
+
     public static bool IsSupportedEndpoint(string boneName) =>
         ForEndpoint(boneName) != null;
 }
@@ -245,7 +264,7 @@ public readonly record struct IkPolicyResult(
 {
     public bool Success =>
         Outcome == IkPolicyOutcome.Supported &&
-        Definition is not null &&
+        IkChains.IsSupportedDefinition(Definition) &&
         Configuration is not null &&
         Configuration.Validate() is null &&
         Detail is null;
@@ -256,6 +275,10 @@ public readonly record struct IkPolicyResult(
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(configuration);
+        if (!IkChains.IsSupportedDefinition(definition))
+            throw new ArgumentException(
+                "IK definition is not one of the fixed supported chains.",
+                nameof(definition));
         if (configuration.Validate() is { } error)
             throw new ArgumentException(error, nameof(configuration));
         return new(

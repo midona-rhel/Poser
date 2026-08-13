@@ -124,6 +124,82 @@ public sealed class IkPolicyBaselineTests
     }
 
     [Fact]
+    public void Supported_result_requires_one_exact_fixed_chain_definition()
+    {
+        var validConfiguration = IkChainConfig.DefaultsFor(isArm: true);
+        var validDefinition = IkChains.ForEndpoint("j_te_l")!;
+        var arbitraryEndpoint = new IkChainDefinition(
+            "j_custom",
+            ["j_custom_alias"],
+            "j_custom_a",
+            "j_custom_twist_a",
+            "j_custom_b",
+            "j_custom_twist_b",
+            true);
+        var blankJoint = new IkChainDefinition(
+            "j_te_l",
+            ["j_hand_l"],
+            "",
+            "n_hkata_l",
+            "j_ude_b_l",
+            "n_hhiji_l",
+            true);
+        var inconsistentAlias = new IkChainDefinition(
+            "j_te_l",
+            ["j_other_l"],
+            "j_ude_a_l",
+            "n_hkata_l",
+            "j_ude_b_l",
+            "n_hhiji_l",
+            true);
+        var inconsistentJoint = new IkChainDefinition(
+            "j_te_l",
+            ["j_hand_l"],
+            "j_wrong_a_l",
+            "n_hkata_l",
+            "j_ude_b_l",
+            "n_hhiji_l",
+            true);
+        var structuralClone = new IkChainDefinition(
+            "j_te_l",
+            ["j_hand_l"],
+            "j_ude_a_l",
+            "n_hkata_l",
+            "j_ude_b_l",
+            "n_hhiji_l",
+            true);
+
+        foreach (var invalidDefinition in new[]
+        {
+            arbitraryEndpoint,
+            blankJoint,
+            inconsistentAlias,
+            inconsistentJoint,
+        })
+        {
+            Assert.False(IkChains.IsSupportedDefinition(invalidDefinition));
+            Assert.False(new IkPolicyResult(
+                IkPolicyOutcome.Supported,
+                invalidDefinition,
+                validConfiguration,
+                null).Success);
+        }
+
+        Assert.True(IkChains.IsSupportedDefinition(validDefinition));
+        Assert.True(IkChains.IsSupportedDefinition(structuralClone));
+        Assert.True(new IkPolicyResult(
+            IkPolicyOutcome.Supported,
+            validDefinition,
+            validConfiguration,
+            null).Success);
+        Assert.True(new IkPolicyResult(
+            IkPolicyOutcome.Supported,
+            structuralClone,
+            validConfiguration,
+            null).Success);
+    }
+
+    [Fact]
     public void Fixed_endpoint_and_alias_collections_reject_mutation()
     {
         AssertReadOnly(IkChains.SupportedEndpoints);
