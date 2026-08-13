@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using Poser.Files;
 
 namespace Poser.Tests.Files;
@@ -10,7 +11,7 @@ namespace Poser.Tests.Files;
 public sealed class PoseFilePersistenceTests
 {
     [Fact]
-    public void Current_wire_shape_round_trips_without_a_file_version()
+    public void Brio_authored_input_golden_is_accepted_without_a_file_version()
     {
         const string json = """
         {
@@ -37,18 +38,70 @@ public sealed class PoseFilePersistenceTests
         Assert.Equal(new[] { "sitting" }, parsed.Pose!.Tags);
         Assert.Equal(new Vector3(1.25f, 2.5f, -3.75f), parsed.Pose.Bones["j_kao"].Position);
 
+    }
+
+    [Fact]
+    public void Emitted_wire_golden_uses_the_accepted_Brio_conventions()
+    {
+        const string expected = """
+        {
+          "TypeName": "Brio Pose",
+          "Author": null,
+          "Description": "<current & compatible>",
+          "Version": null,
+          "Base64Image": null,
+          "Tags": [
+            "sitting"
+          ],
+          "ModelDifference": {
+            "Position": "0, 0, 0",
+            "Rotation": "0, 0, 0, 1",
+            "Scale": "0, 0, 0"
+          },
+          "ModelAbsoluteValues": {
+            "Position": "0, 0, 0",
+            "Rotation": "0, 0, 0, 1",
+            "Scale": "0, 0, 0"
+          },
+          "Bones": {
+            "j_kao": {
+              "Position": "1.25, 2.5, -3.75",
+              "Rotation": "0, 0.25, 0, 0.9682458",
+              "Scale": "1, 1, 1"
+            }
+          },
+          "MainHand": {},
+          "OffHand": {},
+          "Prop": {},
+          "Ornament": {},
+          "Position": "0, 0, 0",
+          "Rotation": "0, 0, 0, 0",
+          "Scale": "0, 0, 0"
+        }
+        """;
+        const string input = """
+        {
+          "Description": "<current & compatible>",
+          "Tags": [{ "DisplayName": "sitting", "Name": "sitting" }],
+          "Bones": {
+            "j_kao": {
+              "Position": "1.25, 2.5, -3.75",
+              "Rotation": "0, 0.25, 0, 0.9682458",
+              "Scale": "1, 1, 1"
+            }
+          },
+        }
+        """;
+        var parsed = AtomicPoseFileStore.Default.Parse(input);
+        Assert.True(parsed.Succeeded, parsed.Failure?.Detail);
         using var fixture = new StoreFixture();
-        var written = AtomicPoseFileStore.Default.Write(parsed.Pose, fixture.Destination);
+
+        var written = AtomicPoseFileStore.Default.Write(parsed.Pose!, fixture.Destination);
 
         Assert.True(written.Succeeded, written.Failure?.Detail);
-        var output = File.ReadAllText(fixture.Destination)
+        var output = Encoding.UTF8.GetString(File.ReadAllBytes(fixture.Destination))
             .Replace("\r\n", "\n", StringComparison.Ordinal);
-        Assert.Contains("\n  \"TypeName\": \"Brio Pose\"", output);
-        Assert.Contains("\"Position\": \"1.25, 2.5, -3.75\"", output);
-        Assert.Contains("\"Description\": \"<current & compatible>\"", output);
-        Assert.Contains("\"Tags\": [\n    \"sitting\"", output);
-        Assert.DoesNotContain("FileVersion", output);
-        Assert.DoesNotContain("FutureBrioMember", output);
+        Assert.Equal(expected, output);
     }
 
     [Fact]
@@ -114,6 +167,85 @@ public sealed class PoseFilePersistenceTests
         Assert.Equal(accepted, result.Succeeded);
         if (!accepted)
             Assert.Equal(PoseFileStoreFailureKind.Json, result.Failure?.Kind);
+    }
+
+    [Fact]
+    public void Structural_preflight_counts_duplicate_raw_collection_properties_before_deserialization()
+    {
+        var entries = string.Join(",", Enumerable.Repeat(
+            "\"same\":{}", PoseFileLimits.MaxEntriesPerCollection + 1));
+        var json = $"{{\"Bones\":{{{entries}}},\"MalformedTail\":";
+        Assert.True(Encoding.UTF8.GetByteCount(json) < PoseFileLimits.MaxFileBytes);
+
+        var result = AtomicPoseFileStore.Default.Parse(json);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.Validation, result.Failure?.Kind);
+        Assert.Equal(
+            PoseFileValidationFailureKind.CollectionSize,
+            result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Fact]
+    public void Structural_preflight_counts_raw_total_entries_across_duplicate_keys()
+    {
+        var full = string.Join(",", Enumerable.Repeat(
+            "\"same\":{}", PoseFileLimits.MaxEntriesPerCollection));
+        var json = $"{{\"Bones\":{{{full}}},\"MainHand\":{{{full}}}," +
+                   $"\"OffHand\":{{{full}}},\"Prop\":{{{full}}}," +
+                   "\"Ornament\":{\"same\":{}}}";
+
+        var result = AtomicPoseFileStore.Default.Parse(json);
+
+        Assert.Equal(PoseFileStoreFailureKind.Validation, result.Failure?.Kind);
+        Assert.Equal(
+            PoseFileValidationFailureKind.TotalEntries,
+            result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Fact]
+    public void Structural_preflight_rejects_a_raw_bone_key_before_dictionary_materialization()
+    {
+        var key = new string('x', PoseFileLimits.MaxBoneNameCharacters + 1);
+
+        var result = AtomicPoseFileStore.Default.Parse($"{{\"Bones\":{{\"{key}\":{{}}}}}}");
+
+        Assert.Equal(PoseFileValidationFailureKind.BoneName, result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public void Structural_preflight_counts_every_raw_tag_element(string element)
+    {
+        var tags = string.Join(",", Enumerable.Repeat(element, PoseFileLimits.MaxTags + 1));
+
+        var result = AtomicPoseFileStore.Default.Parse($"{{\"Tags\":[{tags}]}}");
+
+        Assert.Equal(PoseFileValidationFailureKind.TagCount, result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Structural_preflight_rejects_long_raw_tag_strings_in_both_shapes(bool objectShape)
+    {
+        var tag = new string('x', PoseFileLimits.MaxTagCharacters + 1);
+        var value = objectShape ? $"{{\"Name\":\"{tag}\"}}" : $"\"{tag}\"";
+
+        var result = AtomicPoseFileStore.Default.Parse($"{{\"Tags\":[{value}]}}");
+
+        Assert.Equal(PoseFileValidationFailureKind.TagLength, result.Failure?.ValidationFailure?.Kind);
+    }
+
+    [Fact]
+    public void Typed_outcomes_have_no_public_construction_path_for_impossible_states()
+    {
+        Assert.Empty(typeof(PoseFileStoreFailure).GetConstructors());
+        Assert.Empty(typeof(PoseFileReadOutcome).GetConstructors());
+        Assert.Empty(typeof(PoseFileWriteOutcome).GetConstructors());
+        Assert.Empty(typeof(PoseFileValidationFailure).GetConstructors());
+        Assert.Empty(typeof(PoseFileValidationOutcome).GetConstructors());
     }
 
     [Fact]
@@ -290,7 +422,6 @@ public sealed class AtomicPoseFileStoreTests
         yield return new object[] { (int)PoseFileStorePhase.WriteTemporary, PoseFileStoreFailureKind.TemporaryWrite };
         yield return new object[] { (int)PoseFileStorePhase.FlushTemporary, PoseFileStoreFailureKind.TemporaryFlush };
         yield return new object[] { (int)PoseFileStorePhase.ReopenTemporary, PoseFileStoreFailureKind.TemporaryReopen };
-        yield return new object[] { (int)PoseFileStorePhase.ReplaceDestination, PoseFileStoreFailureKind.Replace };
     }
 
     [Theory]
@@ -314,7 +445,7 @@ public sealed class AtomicPoseFileStoreTests
         Assert.False(result.Succeeded);
         Assert.Equal(expected, result.Failure?.Kind);
         Assert.Equal(oldBytes, File.ReadAllBytes(fixture.Destination));
-        Assert.Null(result.RecoveryEvidencePath);
+        Assert.Empty(result.RecoveryEvidencePaths);
         Assert.Single(Directory.EnumerateFiles(fixture.Root));
     }
 
@@ -336,21 +467,22 @@ public sealed class AtomicPoseFileStoreTests
     }
 
     [Fact]
-    public void Move_failure_leaves_an_absent_destination_absent()
+    public void Move_failure_preserves_the_validated_temp_as_recovery_evidence()
     {
         using var fixture = new StoreFixture();
-        var store = new AtomicPoseFileStore((phase, _) =>
+        var fileSystem = new EmulatedPoseFileSystem
         {
-            if (phase == PoseFileStorePhase.MoveDestination)
-                throw new IOException("injected move");
-        });
+            MoveBehavior = (_, _) => throw new IOException("injected move"),
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
 
         var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
 
         Assert.False(result.Succeeded);
         Assert.Equal(PoseFileStoreFailureKind.Move, result.Failure?.Kind);
         Assert.False(File.Exists(fixture.Destination));
-        Assert.Empty(Directory.EnumerateFiles(fixture.Root));
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.True(File.Exists(result.RecoveryEvidencePaths[0]));
     }
 
     [Fact]
@@ -358,22 +490,26 @@ public sealed class AtomicPoseFileStoreTests
     {
         using var fixture = new StoreFixture();
         File.WriteAllText(fixture.Destination, "old");
-        var store = new AtomicPoseFileStore((phase, _) =>
+        var fileSystem = new EmulatedPoseFileSystem
         {
-            if (phase is PoseFileStorePhase.ReplaceDestination or PoseFileStorePhase.CleanupTemporary)
-                throw new IOException($"injected {phase}");
+            DeleteBehavior = _ => throw new IOException("injected delete"),
+        };
+        var store = new AtomicPoseFileStore(fileSystem, (phase, _) =>
+        {
+            if (phase == PoseFileStorePhase.WriteTemporary)
+                throw new IOException("injected write");
         });
 
         var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(PoseFileStoreFailureKind.Replace, result.Failure?.Kind);
-        Assert.NotNull(result.RecoveryEvidencePath);
-        Assert.True(File.Exists(result.RecoveryEvidencePath));
+        Assert.Equal(PoseFileStoreFailureKind.TemporaryWrite, result.Failure?.Kind);
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.True(File.Exists(result.RecoveryEvidencePaths[0]));
         Assert.Equal(
             Path.GetFullPath(fixture.Root),
-            Path.GetDirectoryName(Path.GetFullPath(result.RecoveryEvidencePath!)));
-        Assert.NotEqual(Path.GetFullPath(fixture.Destination), Path.GetFullPath(result.RecoveryEvidencePath!));
+            Path.GetDirectoryName(Path.GetFullPath(result.RecoveryEvidencePaths[0])));
+        Assert.NotEqual(Path.GetFullPath(fixture.Destination), Path.GetFullPath(result.RecoveryEvidencePaths[0]));
     }
 
     [Fact]
@@ -411,8 +547,167 @@ public sealed class AtomicPoseFileStoreTests
         Assert.False(result.Succeeded);
         Assert.Equal(PoseFileStoreFailureKind.TemporaryReopen, result.Failure?.Kind);
         Assert.Equal(oldBytes, File.ReadAllBytes(fixture.Destination));
-        Assert.Null(result.RecoveryEvidencePath);
+        Assert.Empty(result.RecoveryEvidencePaths);
         Assert.Single(Directory.EnumerateFiles(fixture.Root));
+    }
+
+    [Fact]
+    public void ReplaceFile_1176_layout_preserves_old_destination_and_validated_temp()
+    {
+        using var fixture = new StoreFixture();
+        var oldBytes = new byte[] { 0x11, 0x76 };
+        File.WriteAllBytes(fixture.Destination, oldBytes);
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            ReplaceBehavior = (_, _, _) => throw new IOException("ReplaceFile 1176", 1176),
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.Replace, result.Failure?.Kind);
+        Assert.Equal(oldBytes, File.ReadAllBytes(fixture.Destination));
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.True(File.Exists(result.RecoveryEvidencePaths[0]));
+        Assert.False(File.Exists(fileSystem.LastBackupPath));
+    }
+
+    [Fact]
+    public void ReplaceFile_1177_layout_surfaces_both_old_backup_and_validated_temp()
+    {
+        using var fixture = new StoreFixture();
+        var oldBytes = new byte[] { 0x11, 0x77 };
+        File.WriteAllBytes(fixture.Destination, oldBytes);
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            ReplaceBehavior = (source, destination, backup) =>
+            {
+                File.Move(destination, backup);
+                throw new IOException("ReplaceFile 1177", 1177);
+            },
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.False(File.Exists(fixture.Destination));
+        Assert.Equal(2, result.RecoveryEvidencePaths.Count);
+        Assert.Contains(fileSystem.LastBackupPath!, result.RecoveryEvidencePaths);
+        Assert.Equal(oldBytes, File.ReadAllBytes(fileSystem.LastBackupPath!));
+        Assert.All(result.RecoveryEvidencePaths, path => Assert.True(File.Exists(path)));
+    }
+
+    [Fact]
+    public void Exception_after_replace_commit_is_confirmed_and_backup_is_then_cleaned()
+    {
+        using var fixture = new StoreFixture();
+        File.WriteAllText(fixture.Destination, "old");
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            ReplaceBehavior = (source, destination, backup) =>
+            {
+                File.Move(destination, backup);
+                File.Move(source, destination);
+                throw new IOException("exception after commit");
+            },
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.True(result.Succeeded, result.Failure?.Detail);
+        Assert.NotNull(PoseFile.Load(fixture.Destination));
+        Assert.False(File.Exists(fileSystem.LastBackupPath));
+        Assert.Single(Directory.EnumerateFiles(fixture.Root));
+    }
+
+    [Fact]
+    public void Destination_deleted_during_replace_keeps_the_sole_validated_new_copy()
+    {
+        using var fixture = new StoreFixture();
+        File.WriteAllText(fixture.Destination, "old");
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            ReplaceBehavior = (_, destination, _) =>
+            {
+                File.Delete(destination);
+                throw new IOException("destination disappeared");
+            },
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.False(File.Exists(fixture.Destination));
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.NotNull(PoseFile.Load(result.RecoveryEvidencePaths[0]));
+    }
+
+    [Fact]
+    public void Destination_created_during_move_survives_and_temp_remains_recoverable()
+    {
+        using var fixture = new StoreFixture();
+        var competingBytes = new byte[] { 7, 7, 7 };
+        var fileSystem = new EmulatedPoseFileSystem
+        {
+            MoveBehavior = (_, destination) =>
+            {
+                File.WriteAllBytes(destination, competingBytes);
+                throw new IOException("destination appeared");
+            },
+        };
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.Write(PoseFilePersistenceTests.ValidPose(), fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(competingBytes, File.ReadAllBytes(fixture.Destination));
+        Assert.Single(result.RecoveryEvidencePaths);
+        Assert.NotNull(PoseFile.Load(result.RecoveryEvidencePaths[0]));
+    }
+}
+
+internal sealed class EmulatedPoseFileSystem : IPoseFileStoreFileSystem
+{
+    public Action<string, string, string>? ReplaceBehavior { get; init; }
+    public Action<string, string>? MoveBehavior { get; init; }
+    public Action<string>? DeleteBehavior { get; init; }
+    public string? LastBackupPath { get; private set; }
+
+    public Stream OpenRead(string path) => new FileStream(
+        path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.SequentialScan);
+
+    public Stream CreateNew(string path) => new FileStream(
+        path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan);
+
+    public bool Exists(string path) => File.Exists(path);
+
+    public void Replace(string source, string destination, string backup)
+    {
+        LastBackupPath = backup;
+        if (ReplaceBehavior is { } behavior)
+            behavior(source, destination, backup);
+        else
+            File.Replace(source, destination, backup);
+    }
+
+    public void Move(string source, string destination)
+    {
+        if (MoveBehavior is { } behavior)
+            behavior(source, destination);
+        else
+            File.Move(source, destination);
+    }
+
+    public void Delete(string path)
+    {
+        if (DeleteBehavior is { } behavior)
+            behavior(path);
+        else
+            File.Delete(path);
     }
 }
 
