@@ -375,7 +375,7 @@ public sealed record OperationReceipt
             throw new ArgumentOutOfRangeException(
                 nameof(state),
                 state,
-                "The operation terminal state is not defined.");
+                "The operation receipt state is not defined.");
 
         if (state is OperationReceiptState.Failed or
             OperationReceiptState.RecoveryRequired)

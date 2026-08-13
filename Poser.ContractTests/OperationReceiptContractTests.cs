@@ -45,6 +45,10 @@ public sealed class OperationReceiptContractTests
         var interfaces = typeof(SessionGeneration).GetInterfaces();
         Assert.DoesNotContain(typeof(IComparable<SessionGeneration>), interfaces);
         Assert.DoesNotContain(typeof(IComparable), interfaces);
+        Assert.DoesNotContain(
+            typeof(SessionGeneration).GetMethods(
+                BindingFlags.Public | BindingFlags.Instance),
+            method => method.Name == nameof(IComparable.CompareTo));
         var orderingOperators = typeof(SessionGeneration)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(method => method.IsSpecialName)
@@ -98,7 +102,9 @@ public sealed class OperationReceiptContractTests
             OperationId, Epoch, Session, Target, "applied");
         var rolledBack = OperationReceipt.RolledBack(
             OperationId, Epoch, Session, Target, "rolled back", completeRecovery);
-        var failed = OperationReceipt.Failed(
+        var failedWithoutRecovery = OperationReceipt.Failed(
+            OperationId, Epoch, Session, Target, "write failed");
+        var failedWithRecovery = OperationReceipt.Failed(
             OperationId, Epoch, Session, Target, "write failed", completeRecovery);
         var recoveryRequired = OperationReceipt.RecoveryRequired(
             OperationId,
@@ -107,8 +113,15 @@ public sealed class OperationReceiptContractTests
             Target,
             "rollback is incomplete",
             incompleteRecovery);
-        var cancelled = OperationReceipt.Cancelled(
+        var cancelledWithoutDetailOrRecovery = OperationReceipt.Cancelled(
             OperationId, Epoch, Session, Target);
+        var cancelledWithDetailAndRecovery = OperationReceipt.Cancelled(
+            OperationId,
+            Epoch,
+            Session,
+            Target,
+            "cancelled after rollback",
+            completeRecovery);
 
         Assert.Equal(OperationReceiptState.Pending, pending.State);
         Assert.Null(pending.Detail);
@@ -119,15 +132,25 @@ public sealed class OperationReceiptContractTests
         Assert.Equal(OperationReceiptState.RolledBack, rolledBack.State);
         Assert.Equal("rolled back", rolledBack.Detail);
         Assert.Same(completeRecovery, rolledBack.Recovery);
-        Assert.Equal(OperationReceiptState.Failed, failed.State);
-        Assert.Equal("write failed", failed.Detail);
-        Assert.Same(completeRecovery, failed.Recovery);
+        Assert.Equal(OperationReceiptState.Failed, failedWithoutRecovery.State);
+        Assert.Equal("write failed", failedWithoutRecovery.Detail);
+        Assert.Null(failedWithoutRecovery.Recovery);
+        Assert.Equal(OperationReceiptState.Failed, failedWithRecovery.State);
+        Assert.Equal("write failed", failedWithRecovery.Detail);
+        Assert.Same(completeRecovery, failedWithRecovery.Recovery);
         Assert.Equal(OperationReceiptState.RecoveryRequired, recoveryRequired.State);
         Assert.Equal("rollback is incomplete", recoveryRequired.Detail);
         Assert.Same(incompleteRecovery, recoveryRequired.Recovery);
-        Assert.Equal(OperationReceiptState.Cancelled, cancelled.State);
-        Assert.Null(cancelled.Detail);
-        Assert.Null(cancelled.Recovery);
+        Assert.Equal(
+            OperationReceiptState.Cancelled,
+            cancelledWithoutDetailOrRecovery.State);
+        Assert.Null(cancelledWithoutDetailOrRecovery.Detail);
+        Assert.Null(cancelledWithoutDetailOrRecovery.Recovery);
+        Assert.Equal(
+            OperationReceiptState.Cancelled,
+            cancelledWithDetailAndRecovery.State);
+        Assert.Equal("cancelled after rollback", cancelledWithDetailAndRecovery.Detail);
+        Assert.Same(completeRecovery, cancelledWithDetailAndRecovery.Recovery);
 
         Assert.Equal(
             new[]
