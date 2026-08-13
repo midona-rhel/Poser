@@ -288,6 +288,199 @@ public sealed class PoseImportContractTests
     }
 
     [Fact]
+    public void Deferred_flatten_pose_read_throw_rolls_back_prior_phase_once_and_ignores_late_timeout()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.PoseFiles.CreatePoseFile(
+                Arg.Any<IReadOnlyList<Poser.Entities.ISkeleton>>())
+            .Returns(_ => throw new InvalidOperationException("flatten read exploded"));
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4); // reconcile registration
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(0); // finish-after-reconcile schedules flatten
+        app.UseWeaponFlattenPlan();
+        app.RunNextDelay(2); // deferred flatten setup throws
+
+        var terminal = Assert.Single(receipts);
+        Assert.Equal(OperationReceiptState.RolledBack, terminal.State);
+        Assert.True(terminal.Recovery?.Complete);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(app.History.PeekUndo());
+
+        app.RunNextDelay(60); // stale timeout must not complete/apply again
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        Assert.Single(receipts);
+    }
+
+    [Fact]
+    public void Deferred_head_restore_pose_info_throw_rolls_back_prior_apply_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnPoseInfoCall = 1;
+
+        Assert.True(app.BeginHeadRestoreImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_head_restore_register_throw_rolls_back_the_head_pop_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnRegisterCall = 2;
+
+        Assert.True(app.BeginHeadRestoreImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_reconcile_pose_info_throw_rolls_back_prior_apply_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnPoseInfoCall = 1;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_reconcile_capture_throw_rolls_back_prior_apply_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.Runtime.ThrowCaptureCall = 2;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_reconcile_register_throw_rolls_back_captured_targets_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnRegisterCall = 2;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_flatten_plan_build_throw_rolls_back_prior_phases_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowDuringBuildImportPlan = () =>
+            throw new InvalidOperationException("flatten build exploded");
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.ReachFlattenSetup();
+        app.RunNextDelay(2);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_flatten_capture_throw_rolls_back_prior_phases_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.Runtime.ThrowCaptureCall = 3;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.ReachFlattenSetup();
+        app.RunNextDelay(2);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_flatten_reset_pose_info_throw_rolls_back_prior_phases_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnPoseInfoCall = 2;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.ReachFlattenSetup();
+        app.RunNextDelay(2);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    [Fact]
+    public void Deferred_flatten_register_throw_rolls_back_its_reset_and_prior_phases_once()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var receipts = new List<OperationReceipt>();
+        app.SeedHeadInteractiveStack();
+        app.ThrowOnRegisterCall = 3;
+
+        Assert.True(app.BeginFaceExpressionImport(receipts.Add).Success);
+        app.ReachFlattenSetup();
+        app.RunNextDelay(2);
+
+        AssertDeferredRollback(app, receipts);
+    }
+
+    private static void AssertDeferredRollback(
+        PoseImportCaptureHarness app,
+        IReadOnlyList<OperationReceipt> receipts)
+    {
+        var terminal = Assert.Single(receipts);
+        Assert.Equal(OperationReceiptState.RolledBack, terminal.State);
+        Assert.True(terminal.Recovery?.Complete);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(app.Gestures.PendingRecovery);
+        Assert.NotEmpty(app.Runtime.RestoreCalls);
+        Assert.Null(app.History.PeekUndo());
+
+        app.RunIfQueued(60);
+        app.FireCharacterNativeActions();
+        app.EndRegisteredNativeBatch();
+        app.FireWeaponNativeAction();
+        app.EndWeaponNativeBatch();
+        Assert.Single(receipts);
+    }
+
+    [Fact]
     public void Terminal_is_published_once_even_when_completion_callbacks_throw()
     {
         var app = new PoseImportCaptureHarness();

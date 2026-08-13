@@ -72,6 +72,8 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     private readonly IActorManager _actorManager;
     private IActor _currentActor;
     private ISkeleton _currentWeaponSkeleton;
+    private int _poseInfoCallCount;
+    private int _registerCallCount;
 
     public PoseImportCaptureHarness()
     {
@@ -216,6 +218,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             var skeleton = call.Arg<ISkeleton>();
             if (ReferenceEquals(skeleton, Skeleton))
                 ThrowDuringReset?.Invoke();
+            _poseInfoCallCount++;
+            if (ThrowOnPoseInfoCall == _poseInfoCallCount)
+                throw new InvalidOperationException("pose info read exploded");
             if (!_poseInfos.TryGetValue(skeleton, out var info))
                 _poseInfos[skeleton] = info = new SkeletonPoseInfo();
             return info;
@@ -226,6 +231,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             .Do(call =>
             {
                 ThrowDuringRegister?.Invoke();
+                _registerCallCount++;
+                if (ThrowOnRegisterCall == _registerCallCount)
+                    throw new InvalidOperationException("register exploded");
                 _registeredActions[call.ArgAt<ISkeleton>(0)] =
                     call.ArgAt<Action<IBone, BonePoseInfo>>(1);
             });
@@ -234,9 +242,17 @@ internal sealed class PoseImportCaptureHarness : IDisposable
                 Arg.Any<IReadOnlyList<ISkeleton>>(),
                 Arg.Any<PoseFile>(),
                 Arg.Any<PoseImportOptions>())
-            .Returns(_ => _nextPlan);
+            .Returns(_ =>
+            {
+                ThrowDuringBuildImportPlan?.Invoke();
+                return _nextPlan;
+            });
         PoseFiles.CreatePoseFile(Arg.Any<IReadOnlyList<ISkeleton>>())
-            .Returns(new PoseFile());
+            .Returns(_ =>
+            {
+                ThrowDuringCreatePoseFile?.Invoke();
+                return new PoseFile();
+            });
         var sessions = new FakeSessionGenerationSource
         {
             ActiveSessionGeneration = SessionGeneration.New(),
@@ -331,6 +347,10 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     public Action? ThrowDuringReset { get; set; }
     public Action? ThrowDuringRegister { get; set; }
     public Action? ThrowDuringSchedule { get; set; }
+    public int? ThrowOnPoseInfoCall { get; set; }
+    public int? ThrowOnRegisterCall { get; set; }
+    public Action? ThrowDuringBuildImportPlan { get; set; }
+    public Action? ThrowDuringCreatePoseFile { get; set; }
     public int RewindCalls { get; private set; }
     public int BeginCalls => Runtime.ApplyCalls.Count;
     public int RestoreArmCalls { get; private set; }
@@ -467,6 +487,20 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             onReceipt: onReceipt);
     }
 
+    public GestureResult BeginHeadRestoreImport(Action<OperationReceipt> onReceipt)
+    {
+        var desired = Transform.Identity;
+        desired.Position = new Vector3(1, 0, 0);
+        var plan = new PoseImportPlan { FileBoneCount = 2 };
+        plan.Writes.Add((Bone, desired, TransformComponents.All));
+        plan.Writes.Add((FaceBone, desired, TransformComponents.All));
+        return Imports.Begin(
+            plan,
+            "head restore import",
+            expression: true,
+            onReceipt: onReceipt);
+    }
+
     public void SeedHeadInteractiveStack()
     {
         var delta = Transform.Identity;
@@ -486,6 +520,17 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         _nextPlan = new PoseImportPlan { FileBoneCount = 1 };
         _nextPlan.Resets.Add(WeaponBone);
         _nextPlan.Writes.Add((WeaponBone, desired, TransformComponents.All));
+    }
+
+    public void ReachFlattenSetup()
+    {
+        FireCharacterNativeActions();
+        EndRegisteredNativeBatch();
+        RunNextDelay(4);
+        FireCharacterNativeActions();
+        EndRegisteredNativeBatch();
+        RunNextDelay(0);
+        UseWeaponFlattenPlan();
     }
 
     public void FireRegisteredNativeAction() =>
@@ -525,6 +570,15 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             .First(item => item.item.Delay == delay)
             .queuedIndex;
         _ticks.RunAt(queued);
+    }
+
+    public void RunIfQueued(int delay)
+    {
+        var queued = _ticks.Queued
+            .Select((item, queuedIndex) => (item, queuedIndex))
+            .FirstOrDefault(item => item.item.Delay == delay);
+        if (queued.item.Callback != null)
+            _ticks.RunAt(queued.queuedIndex);
     }
 
     public void RunQueued(int index)

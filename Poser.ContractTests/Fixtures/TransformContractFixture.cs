@@ -94,6 +94,7 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     public int? FailApplyCall { get; set; }
     public bool MutateBeforeApplyFailure { get; set; }
     public int? FailCaptureCall { get; set; }
+    public int? ThrowCaptureCall { get; set; }
     public HashSet<int> FailRestoreCalls { get; } = new();
     public HashSet<int> MutateBeforeRestoreFailureCalls { get; } = new();
     public Dictionary<int, string> RestoreFailureDetails { get; } = new();
@@ -116,6 +117,8 @@ internal sealed class FakeTransformRuntime : ITransformRuntimePort
     {
         CaptureCalls.Add(target);
         _captureCount++;
+        if (ThrowCaptureCall == _captureCount)
+            throw new InvalidOperationException("capture exploded");
         if (FailCaptureCall == _captureCount)
             return TransformPortResult.Fail(
                 FailureStatus,

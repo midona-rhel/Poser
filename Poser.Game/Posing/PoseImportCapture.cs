@@ -677,6 +677,9 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             // true): each import write is its OWN stack entry, which is what
             // makes the expression head restore's RemoveLastStack pop
             // exactly the phase-1 head write and nothing else.
+            // The posing provider owns the mutation; mark before entering it
+            // so a partial write followed by a throw still rolls back.
+            import.MutationStarted = true;
             if (poseInfo.Apply(
                     desired, basis,
                     Poser.Core.TransformComponents.All,
@@ -687,7 +690,6 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                     $"{bone.BoneName} produced a non-finite import delta.";
                 return;
             }
-            import.MutationStarted = true;
             import.Written.Add(entry.Target);
         }
         catch (Exception ex)
@@ -923,6 +925,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
 
+        try
+        {
         var applied = import.Failure == null;
         if (applied)
         {
@@ -1047,6 +1051,9 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         // named service layers stay and re-drive themselves.
         foreach (var (bone, _) in resetBones)
         {
+            // Mark before the reset call: a provider may mutate state before
+            // reporting an exception, and rollback must remain truthful.
+            import.MutationStarted = true;
             _posing.GetPoseInfo(bone.Skeleton)
                 .GetPoseInfo(bone.BoneName, bone.PartialId)
                 .RestoreInteractiveStacks(Array.Empty<BonePoseTransformInfo>());
@@ -1061,6 +1068,11 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             _posing.RegisterTransitiveAction(
                 scope.Skeleton,
                 (bone, poseInfo) => ApplyBone(import, scope, bone, poseInfo));
+        }
+        }
+        catch (Exception exception)
+        {
+            FailAndPublish(import, $"Pose import flatten setup failed: {exception.Message}");
         }
     }
 
@@ -1083,6 +1095,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
 
+        try
+        {
         var applied = import.Failure == null;
         if (applied)
         {
@@ -1109,6 +1123,9 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             // on the pre-import authored state exactly.
             if (!import.Written.Contains(headRestore.Target))
                 continue;
+            // The pop mutates the interactive stack before the deferred
+            // restore batch is registered; mark before entering that call.
+            import.MutationStarted = true;
             _posing.GetPoseInfo(skeleton)
                 .GetPoseInfo(headRestore.Bone.BoneName, headRestore.Bone.PartialId)
                 .RemoveLastInteractiveStack();
@@ -1131,6 +1148,11 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         _posing.RegisterTransitiveAction(
             restore.Skeleton,
             (bone, poseInfo) => ApplyBone(import, restore, bone, poseInfo));
+        }
+        catch (Exception exception)
+        {
+            FailAndPublish(import, $"Pose import head restore setup failed: {exception.Message}");
+        }
     }
 
     /// <summary>
@@ -1155,6 +1177,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         if (!GuardFramework(import, "The pose import session or target was replaced."))
             return;
 
+        try
+        {
         // A failed or unexecuted apply phase completes (and rolls back) via
         // Complete's own verdict on the still-current apply slots.
         var applied = import.Failure == null;
@@ -1185,6 +1209,11 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         _posing.RegisterTransitiveAction(
             reconcile.Skeleton,
             (bone, poseInfo) => ApplyBone(import, reconcile, bone, poseInfo));
+        }
+        catch (Exception exception)
+        {
+            FailAndPublish(import, $"Pose import reconcile setup failed: {exception.Message}");
+        }
     }
 
     /// <summary>
