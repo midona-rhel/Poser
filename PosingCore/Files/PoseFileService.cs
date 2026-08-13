@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
 
@@ -99,11 +100,13 @@ public class PoseFileService : IPoseFileService
         try
         {
             var poseFile = CreatePoseFile(slots);
-            if (poseFile.Save(path))
+            var written = AtomicPoseFileStore.Default.Write(poseFile, path);
+            if (written.Succeeded)
             {
                 _log.Debug($"Exported pose ({slots.Count} slots) to {path}");
                 return true;
             }
+            _log.Error($"Failed to export pose: {written.Failure?.Detail ?? "unknown persistence failure"}");
             return false;
         }
         catch (Exception ex)
@@ -136,12 +139,13 @@ public class PoseFileService : IPoseFileService
                     TransformComponents.Rotation | TransformComponents.Scale);
             }
 
-            var poseFile = PoseFile.Load(path);
-            if (poseFile == null)
+            var read = AtomicPoseFileStore.Default.Read(path);
+            if (!read.Succeeded || read.Pose == null)
             {
-                _log.Error($"Failed to load pose file from {path}");
+                _log.Error($"Failed to load pose file from {path}: {read.Failure?.Detail ?? "unknown persistence failure"}");
                 return null;
             }
+            var poseFile = read.Pose;
 
             // Sanitize bone names for Anamnesis compatibility
             poseFile.SanitizeBoneNames();
@@ -251,7 +255,7 @@ public class PoseFileService : IPoseFileService
             plan.ModelTransform = new Transform
             {
                 Position = current.Position + difference.Position,
-                Rotation = Quaternion.Normalize(current.Rotation * difference.Rotation),
+                Rotation = TransformMath.NormalizeRotation(current.Rotation * difference.Rotation),
                 Scale = current.Scale + difference.Scale
             };
         }
@@ -471,7 +475,7 @@ public class PoseFileService : IPoseFileService
         plan.Writes.Add((bone, new Transform
         {
             Position = boneData.Position,
-            Rotation = boneData.Rotation,
+            Rotation = TransformMath.NormalizeRotation(boneData.Rotation),
             Scale = boneData.Scale
         }, components));
     }
