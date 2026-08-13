@@ -19,6 +19,17 @@ guard, never portable identity. Exact actor, skeleton, slot, and bone
 generations are re-resolved immediately before a write; failed resolution is
 explicit, and no native object or address is handed to Application or UI.
 
+Spawned actors follow the same boundary: the service owns one private record
+per operation, keyed by a service token plus the current native index, address,
+and native identity descriptor. Every later classification, visibility
+override, or deletion re-resolves that descriptor; index reuse or unavailable
+identity fails closed. Post-create and GPose-exit deletion is exact and
+retryable: successful deletion or verified absence retires one record, while
+uncertain or failed deletion remains pending. Records are session-only and
+never become a public handle or background retry mechanism. This preserves
+Brio's create/copy/model-before-draw/GPose ordering without allowing a stale
+actor wrapper to affect a replacement.
+
 The current Application-facing native transform write/capture path is
 `ITransformRuntimePort`, implemented by Game's `TransformRuntimePort`; it
 captures, applies, and restores transform targets. It resolves exact

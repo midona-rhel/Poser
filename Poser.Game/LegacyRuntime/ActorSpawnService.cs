@@ -14,6 +14,228 @@ using Poser.Services;
 
 namespace Poser.Game;
 
+internal readonly record struct SpawnNativeDescriptor(
+    ushort Index,
+    nint Address,
+    uint BaseId);
+
+internal enum SpawnOwnershipState
+{
+    Live,
+    PendingDelete,
+}
+
+internal sealed class SpawnOwnershipRecord
+{
+    public SpawnOwnershipRecord(
+        Guid token,
+        SpawnNativeDescriptor descriptor,
+        CompanionKind kind,
+        bool hasCompanionSlot)
+    {
+        Token = token;
+        Descriptor = descriptor;
+        Kind = kind;
+        HasCompanionSlot = hasCompanionSlot;
+    }
+
+    public Guid Token { get; }
+    public SpawnNativeDescriptor Descriptor { get; }
+    public IActor? Actor { get; private set; }
+    public CompanionKind Kind { get; }
+    public bool HasCompanionSlot { get; }
+    public bool Visible { get; private set; } = true;
+    public SpawnOwnershipState State { get; private set; } = SpawnOwnershipState.Live;
+
+    public void Bind(IActor actor) => Actor = actor;
+    public void MarkPending() => State = SpawnOwnershipState.PendingDelete;
+    public void SetVisibility(bool visible) => Visible = visible;
+}
+
+internal sealed class SpawnOwnershipLedger
+{
+    private readonly Dictionary<Guid, SpawnOwnershipRecord> _records = new();
+
+    public IReadOnlyList<SpawnOwnershipRecord> Snapshot => _records.Values.ToArray();
+
+    public SpawnOwnershipRecord Add(
+        SpawnNativeDescriptor descriptor,
+        CompanionKind kind,
+        bool hasCompanionSlot)
+    {
+        var record = new SpawnOwnershipRecord(
+            Guid.NewGuid(),
+            descriptor,
+            kind,
+            hasCompanionSlot);
+        _records.Add(record.Token, record);
+        return record;
+    }
+
+    public bool Bind(Guid token, IActor actor)
+    {
+        return _records.TryGetValue(token, out var record)
+            && record.Descriptor.Address == actor.Address
+            && (record.Actor is null || ReferenceEquals(record.Actor, actor))
+            && BindRecord(record, actor);
+    }
+
+    private static bool BindRecord(SpawnOwnershipRecord record, IActor actor)
+    {
+        record.Bind(actor);
+        return true;
+    }
+
+    public bool TryGetBound(IActor actor, out SpawnOwnershipRecord record)
+    {
+        record = _records.Values.FirstOrDefault(candidate =>
+            (candidate.Actor is not null
+                ? ReferenceEquals(candidate.Actor, actor)
+                : candidate.Descriptor.Address == actor.Address))!;
+        return record is not null;
+    }
+
+    public bool TryGetExact(
+        IActor actor,
+        SpawnNativeDescriptor descriptor,
+        out SpawnOwnershipRecord record)
+    {
+        record = _records.Values.FirstOrDefault(candidate =>
+            candidate.Descriptor == descriptor
+            && candidate.Descriptor.Address == actor.Address
+            && (candidate.Actor is null || ReferenceEquals(candidate.Actor, actor)))!;
+        return record is not null;
+    }
+
+    public CompanionKind GetKind(IActor actor, SpawnNativeDescriptor descriptor) =>
+        TryGetExact(actor, descriptor, out var record)
+            ? record.Kind
+            : CompanionKind.None;
+
+    public bool TrySetVisibility(
+        IActor actor,
+        SpawnNativeDescriptor descriptor,
+        bool visible)
+    {
+        if (!TryGetExact(actor, descriptor, out var record))
+            return false;
+        record.SetVisibility(visible);
+        return true;
+    }
+
+    public bool TryRetire(Guid token, SpawnNativeDescriptor? descriptor)
+    {
+        if (!_records.TryGetValue(token, out var record)
+            || descriptor is null
+            || record.Descriptor != descriptor.Value)
+            return false;
+        _records.Remove(token);
+        return true;
+    }
+
+    public bool TryRetire(SpawnOwnershipRecord record) =>
+        TryRetire(record.Token, record.Descriptor);
+
+    public bool MarkPending(Guid token)
+    {
+        if (!_records.TryGetValue(token, out var record))
+            return false;
+        record.MarkPending();
+        return true;
+    }
+}
+
+internal interface IActorSpawnNativeAdapter
+{
+    bool IsAvailable { get; }
+    uint CreateBattleCharacter(byte reserveCompanionSlot);
+    SpawnNativeDescriptor? ResolveByIndex(ushort index);
+    SpawnNativeDescriptor? ResolveActor(nint address);
+    bool DeleteExact(SpawnNativeDescriptor descriptor);
+}
+
+internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter
+{
+    public bool IsAvailable => ClientObjectManager.Instance() is not null;
+
+    public uint CreateBattleCharacter(byte reserveCompanionSlot)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is null)
+            return 0xFFFFFFFF;
+        return com->CreateBattleCharacter(reserveCompanionSlot);
+    }
+
+    public SpawnNativeDescriptor? ResolveByIndex(ushort index)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is null)
+            return null;
+        var native = com->GetObjectByIndex(index);
+        return native is null
+            ? null
+            : new SpawnNativeDescriptor(native->ObjectIndex, (nint)native, native->BaseId);
+    }
+
+    public SpawnNativeDescriptor? ResolveActor(nint address)
+    {
+        if (address == nint.Zero)
+            return null;
+        var com = ClientObjectManager.Instance();
+        if (com is null)
+            return null;
+        var native = (GameObject*)address;
+        var index = com->GetIndexByObject(native);
+        if (index == 0xFFFFFFFF)
+            return null;
+        var current = ResolveByIndex((ushort)index);
+        return current is { } descriptor && descriptor.Address == address
+            ? descriptor
+            : null;
+    }
+
+    public bool DeleteExact(SpawnNativeDescriptor descriptor)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is null)
+            return false;
+        var current = ResolveByIndex(descriptor.Index);
+        if (current is null || current.Value != descriptor)
+            return false;
+        com->DeleteObjectByIndex(descriptor.Index, 0);
+        return true;
+    }
+}
+
+internal static class SpawnOwnershipCleanup
+{
+    public static bool TryDelete(
+        SpawnOwnershipLedger ledger,
+        IActorSpawnNativeAdapter native,
+        SpawnOwnershipRecord ownership)
+    {
+        ledger.MarkPending(ownership.Token);
+        try
+        {
+            if (!native.IsAvailable)
+                return false;
+
+            var current = native.ResolveByIndex(ownership.Descriptor.Index);
+            if (current is null)
+                return ledger.TryRetire(ownership);
+            if (current.Value != ownership.Descriptor)
+                return false;
+            if (!native.DeleteExact(ownership.Descriptor))
+                return false;
+            return ledger.TryRetire(ownership);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}
+
 /// <summary>
 /// Service for spawning and destroying actors in GPose.
 /// Based on Brio's ActorSpawnService implementation.
@@ -28,9 +250,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private readonly IPluginLog _log;
     private readonly IFramework _framework;
 
-    private readonly HashSet<ushort> _spawnedIndexes = new();
-    private readonly Dictionary<ushort, CompanionKind> _spawnedKinds = new();
-    private readonly Dictionary<nint, bool> _visibilityOverrides = new();
+    private readonly IActorSpawnNativeAdapter _native;
+    private readonly SpawnOwnershipLedger _ownership = new();
 
     public ActorSpawnService(
         IClientState clientState,
@@ -48,6 +269,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         _actorManager = actorManager;
         _eventBus = eventBus;
         _log = log;
+        _native = new ActorSpawnNativeAdapter();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
@@ -91,10 +313,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             localPlayer,
             reserveCompanionSlot: false,
             modelCharaId: entry.ModelCharaId,
-            name: entry.Name);
-        if (actor != null && actor.Address != nint.Zero)
-            _spawnedKinds[((GameObject*)actor.Address)->ObjectIndex] =
-                entry.Kind;
+            name: entry.Name,
+            kind: entry.Kind);
         return actor;
     }
 
@@ -102,10 +322,17 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         if (actor.Address == nint.Zero)
             return CompanionKind.None;
-        return _spawnedKinds.TryGetValue(
-            ((GameObject*)actor.Address)->ObjectIndex, out var kind)
-            ? kind
-            : CompanionKind.None;
+        try
+        {
+            var descriptor = _native.ResolveActor(actor.Address);
+            return descriptor is { } current
+                ? _ownership.GetKind(actor, current)
+                : CompanionKind.None;
+        }
+        catch
+        {
+            return CompanionKind.None;
+        }
     }
 
     /// <summary>Shared spawn path: new battle character + appearance/position copy.</summary>
@@ -113,53 +340,52 @@ public unsafe class ActorSpawnService : IActorSpawnService
         nint sourceAddress,
         bool reserveCompanionSlot,
         int modelCharaId = 0,
-        string? name = null)
+        string? name = null,
+        CompanionKind kind = CompanionKind.None)
     {
+        SpawnOwnershipRecord? ownership = null;
         try
         {
-            var com = ClientObjectManager.Instance();
-            if (com == null)
-            {
-                _log.Warning("ActorSpawnService: ClientObjectManager not available");
-                return null;
-            }
-
-            // param 1 RESERVES THE COMPANION SLOT (Brio
-            // SpawnFlags.ReserveCompanionSlot) — without it, minions and
-            // mounts can never attach to this actor. It costs one extra
-            // object slot, so basic spawning passes 0 (Brio's plain
-            // "Actor" entry) and only the companion-slot entry pays it.
-            uint idCheck = com->CreateBattleCharacter(
-                param: (byte)(reserveCompanionSlot ? 1 : 0));
+            uint idCheck = _native.CreateBattleCharacter(
+                (byte)(reserveCompanionSlot ? 1 : 0));
             if (idCheck == 0xFFFFFFFF)
             {
                 _log.Warning("ActorSpawnService: Failed to create character - invalid ID");
                 return null;
             }
 
-            ushort newIndex = (ushort)idCheck;
-            _spawnedIndexes.Add(newIndex);
-
-            var newObject = com->GetObjectByIndex(newIndex);
-            if (newObject == null)
+            // Capture ownership before the first native mutation after create.
+            // The descriptor is the only safe authority when an object-table
+            // index is reused between frames.
+            var descriptor = _native.ResolveByIndex((ushort)idCheck);
+            if (descriptor is null)
             {
-                _log.Warning("ActorSpawnService: Created object is null");
-                _spawnedIndexes.Remove(newIndex);
+                _log.Warning("ActorSpawnService: Created character could not be resolved");
                 return null;
             }
+
+            ownership = _ownership.Add(
+                descriptor.Value,
+                kind,
+                reserveCompanionSlot);
+            var newObject = (GameObject*)descriptor.Value.Address;
+            EnsureCurrent(ownership);
 
             var newCharacter = (Character*)newObject;
 
             // Set a name for the character (like Brio does)
-            SetName((GameObject*)newObject, name ?? ToPoserName(newIndex));
+            EnsureCurrent(ownership);
+            SetName(newObject, name ?? ToPoserName(descriptor.Value.Index));
 
             // Copy appearance from the source actor
             var sourceCharacter = (Character*)sourceAddress;
+            EnsureCurrent(ownership);
             newCharacter->CharacterSetup.CopyFromCharacter(
                 sourceCharacter,
                 CharacterSetupContainer.CopyFlags.WeaponHiding | CharacterSetupContainer.CopyFlags.Position);
 
             // Copy again to trigger redraws for tools like Penumbra
+            EnsureCurrent(ownership);
             newCharacter->CharacterSetup.CopyFromCharacter(
                 newCharacter,
                 CharacterSetupContainer.CopyFlags.None);
@@ -168,21 +394,27 @@ public unsafe class ActorSpawnService : IActorSpawnService
             // is written after the appearance copy and before EnableDraw
             // (write site verified against Brio ActorAppearanceService).
             if (modelCharaId != 0)
+            {
+                EnsureCurrent(ownership);
                 newCharacter->ModelContainer.ModelCharaId = modelCharaId;
+            }
 
             // Copy position
+            EnsureCurrent(ownership);
             newObject->Position = sourceCharacter->GameObject.Position;
             newObject->Rotation = sourceCharacter->GameObject.Rotation;
             newObject->DefaultPosition = sourceCharacter->GameObject.Position;
             newObject->DefaultRotation = sourceCharacter->GameObject.Rotation;
 
             // Add to GPose
+            EnsureCurrent(ownership);
             AddCharacterToGPose(newCharacter);
 
             // Enable drawing
+            EnsureCurrent(ownership);
             newObject->EnableDraw();
 
-            _log.Debug($"ActorSpawnService: Spawned clone at index {newIndex}");
+            _log.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
 
             // Refresh actor list and find the new actor
             _actorManager.RefreshActors();
@@ -190,17 +422,63 @@ public unsafe class ActorSpawnService : IActorSpawnService
             // Find actor by checking the spawned index
             foreach (var actor in _actorManager.Actors)
             {
-                if (actor.Address == (nint)newObject)
+                if (actor.Address == descriptor.Value.Address)
+                {
+                    if (!_ownership.Bind(ownership.Token, actor))
+                        throw new InvalidOperationException("Spawned actor binding changed");
                     return actor;
+                }
             }
 
-            return null;
+            throw new InvalidOperationException("Spawned actor was not present after refresh");
         }
         catch (Exception ex)
         {
+            if (ownership is not null)
+                TryDelete(ownership);
             _log.Error($"ActorSpawnService: Failed to spawn clone: {ex.Message}");
             return null;
         }
+    }
+
+    private void EnsureCurrent(SpawnOwnershipRecord ownership)
+    {
+        var current = _native.ResolveByIndex(ownership.Descriptor.Index);
+        if (current is null || current.Value != ownership.Descriptor)
+            throw new InvalidOperationException("Spawned object identity changed");
+    }
+
+    private bool TryResolveActorForOperation(
+        IActor actor,
+        out SpawnNativeDescriptor descriptor)
+    {
+        descriptor = default;
+        if (actor.Address == nint.Zero)
+            return false;
+
+        try
+        {
+            var current = _native.ResolveActor(actor.Address);
+            if (current is null)
+                return false;
+            if (_ownership.TryGetBound(actor, out _)
+                && !_ownership.TryGetExact(actor, current.Value, out _))
+                return false;
+            descriptor = current.Value;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool TryDelete(SpawnOwnershipRecord ownership)
+    {
+        var result = SpawnOwnershipCleanup.TryDelete(_ownership, _native, ownership);
+        if (!result)
+            _log.Warning($"ActorSpawnService: Exact delete pending at index {ownership.Descriptor.Index}");
+        return result;
     }
 
     private void AddCharacterToGPose(Character* character)
@@ -243,34 +521,21 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         try
         {
-            var com = ClientObjectManager.Instance();
-            if (com == null)
+            if (!_ownership.TryGetBound(actor, out var ownership))
                 return false;
 
-            var native = (GameObject*)actor.Address;
-            var idx = com->GetIndexByObject(native);
-
-            if (idx == 0xFFFFFFFF)
-                return false;
-
-            // Only destroy actors we spawned
-            if (!_spawnedIndexes.Contains((ushort)idx))
+            var current = _native.ResolveActor(actor.Address);
+            if (current is not null && !_ownership.TryGetExact(actor, current.Value, out _))
             {
-                _log.Warning($"ActorSpawnService: Cannot destroy actor at index {idx} - not spawned by us");
+                _log.Warning("ActorSpawnService: Cannot destroy actor - identity mismatch");
                 return false;
             }
 
-            _visibilityOverrides.Remove(actor.Address);
+            if (!TryDelete(ownership))
+                return false;
 
-            com->DeleteObjectByIndex((ushort)idx, 0);
-            _spawnedIndexes.Remove((ushort)idx);
-            _spawnedKinds.Remove((ushort)idx);
-
-            _log.Debug($"ActorSpawnService: Destroyed actor at index {idx}");
-
-            // Refresh actor list
+            _log.Debug($"ActorSpawnService: Destroyed actor at index {ownership.Descriptor.Index}");
             _actorManager.RefreshActors();
-
             return true;
         }
         catch (Exception ex)
@@ -285,11 +550,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (actor.Address == nint.Zero)
             return;
 
-        _visibilityOverrides[actor.Address] = visible;
-
         try
         {
-            var gameObject = (GameObject*)actor.Address;
+            if (!TryResolveActorForOperation(actor, out var current))
+                return;
+
+            _ownership.TryGetExact(actor, current, out var ownership);
+            var gameObject = (GameObject*)current.Address;
             if (visible)
             {
                 gameObject->EnableDraw();
@@ -298,6 +565,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             {
                 gameObject->DisableDraw();
             }
+            if (ownership is not null)
+                ownership.SetVisibility(visible);
         }
         catch (Exception ex)
         {
@@ -331,14 +600,14 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (actor.Address == nint.Zero)
             return false;
 
-        // Check override first
-        if (_visibilityOverrides.TryGetValue(actor.Address, out var overrideValue))
-            return overrideValue;
-
-        // Check actual state
         try
         {
-            var gameObject = (GameObject*)actor.Address;
+            if (!TryResolveActorForOperation(actor, out var current))
+                return false;
+            if (_ownership.TryGetExact(actor, current, out var ownership))
+                return ownership.Visible;
+
+            var gameObject = (GameObject*)current.Address;
             return gameObject->IsReadyToDraw();
         }
         catch
@@ -349,6 +618,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     public bool SetCompanion(IActor owner, CompanionAttachment container)
     {
+        if (!TryResolveActorForOperation(owner, out _))
+            return false;
         var character = (Character*)owner.Address;
         if (character == null)
             return false;
@@ -403,6 +674,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     public void DestroyCompanion(IActor owner)
     {
+        if (!TryResolveActorForOperation(owner, out _))
+            return;
         var character = (Character*)owner.Address;
         if (character == null || character->ChildObject == null)
             return;
@@ -424,6 +697,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     public CompanionAttachment GetCompanionInfo(IActor owner)
     {
+        if (!TryResolveActorForOperation(owner, out _))
+            return CompanionAttachment.None;
         var character = (Character*)owner.Address;
         if (character == null)
             return CompanionAttachment.None;
@@ -432,18 +707,28 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     public bool HasCompanionSlot(IActor actor)
     {
+        if (!TryResolveActorForOperation(actor, out var current)
+            || !_ownership.TryGetBound(actor, out var ownership)
+            || !_ownership.TryGetExact(actor, current, out _))
+            return false;
         var character = (Character*)actor.Address;
-        return character != null && character->ChildObject != null;
+        return character != null
+            && ownership.HasCompanionSlot
+            && character->ChildObject != null;
     }
 
     public int GetModelCharaId(IActor actor)
     {
+        if (!TryResolveActorForOperation(actor, out _))
+            return 0;
         var character = (Character*)actor.Address;
         return character == null ? 0 : character->ModelContainer.ModelCharaId;
     }
 
     public void SetModelCharaId(IActor actor, int modelCharaId)
     {
+        if (!TryResolveActorForOperation(actor, out _))
+            return;
         var character = (Character*)actor.Address;
         if (character == null
             || character->ModelContainer.ModelCharaId == modelCharaId)
@@ -522,14 +807,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         try
         {
-            var com = ClientObjectManager.Instance();
-            if (com == null)
-                return false;
-
-            var native = (GameObject*)actor.Address;
-            var idx = com->GetIndexByObject(native);
-
-            return idx != 0xFFFFFFFF && _spawnedIndexes.Contains((ushort)idx);
+            var current = _native.ResolveActor(actor.Address);
+            return current is { } descriptor
+                && _ownership.TryGetExact(actor, descriptor, out _);
         }
         catch
         {
@@ -550,37 +830,17 @@ public unsafe class ActorSpawnService : IActorSpawnService
     {
         _log.Debug("ActorSpawnService: Destroying all spawned actors");
 
-        var com = ClientObjectManager.Instance();
-        if (com == null)
+        var deleted = false;
+        foreach (var ownership in _ownership.Snapshot)
         {
-            _spawnedIndexes.Clear();
-            _spawnedKinds.Clear();
-            _visibilityOverrides.Clear();
-            return;
+            if (TryDelete(ownership))
+                deleted = true;
+            else
+                _log.Warning($"ActorSpawnService: Retaining pending actor at index {ownership.Descriptor.Index}");
         }
 
-        var failedIndexes = new List<ushort>();
-        foreach (var idx in _spawnedIndexes)
-        {
-            try
-            {
-                com->DeleteObjectByIndex(idx, 0);
-            }
-            catch (Exception ex)
-            {
-                _log.Warning($"ActorSpawnService: Failed to destroy actor at index {idx}: {ex.Message}");
-                failedIndexes.Add(idx);
-            }
-        }
-
-        if (failedIndexes.Count > 0)
-        {
-            _log.Error($"ActorSpawnService: Failed to destroy {failedIndexes.Count} actors");
-        }
-
-        _spawnedIndexes.Clear();
-        _spawnedKinds.Clear();
-        _visibilityOverrides.Clear();
+        if (deleted)
+            _actorManager.RefreshActors();
     }
 
     public void Dispose()
