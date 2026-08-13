@@ -46,19 +46,28 @@ callbacks or hidden state. File and MCDF transaction details live in
 This slice gives `SessionLifecycleCoordinator` one idempotent normal-exit and
 plugin-unload edge. It does not yet own startup or the complete session phase
 machine; those remain deferred to Slice 3. Event-subscription or
-dependency-construction order is not a lifecycle contract. On the implemented
-exit edge it:
+dependency-construction order is not a lifecycle contract. On a successfully
+dispatched framework-thread exit edge it attempts/reserves the immutable final
+autosave capture when applicable, while the graph and session are still
+readable. Disabled autosave or no eligible actors may return `NotCaptured`;
+`CleanOnExit` instead closes periodic admission and drains the owned worker
+without reserving a final pose. The edge then drains and joins the owned worker
+to a terminal result, deletes only after that drain for `CleanOnExit`, and
+publishes the existing legacy false-GPose event exactly once.
 
-1. reserves and captures the immutable final autosave snapshot while the graph
-   and session are still readable;
-2. drains and joins the owned autosave worker to a terminal result; then
-3. publishes the existing legacy false-GPose event exactly once.
+This ordering is conditional on successful framework-thread lifecycle
+dispatch. If dispatch faults or is canceled, the host logs the failure and
+guarantees provider disposal; this slice does not claim that final capture,
+worker drain/join, or the legacy false event completed before provider
+disposal begins.
 
-The worker receives immutable snapshots only, never reads live Game/runtime
-state, and is joined before unload/provider disposal. Capture and worker
-failures are typed; a final snapshot is not successful merely because capture
-returned. Operation-epoch invalidation, Poser-owned restoration, native/resource
-teardown, and binding clearing remain with the current legacy subscribers and
-are deferred migration work for Slice 3.
+The worker receives immutable snapshots only and never reads live Game/runtime
+state. On the successfully dispatched edge it is joined before
+unload/provider disposal; a dispatch fault or cancellation does not claim that
+join occurred. Capture and worker failures are typed; a final snapshot is not
+successful merely because capture returned. Operation-epoch invalidation,
+Poser-owned restoration, native/resource teardown, and binding clearing remain
+with the current legacy subscribers and are deferred migration work for Slice
+3.
 Autosave file layout, retention, and autosave storage rules are normative in
 [files-and-transfer.md](../features/files-and-transfer.md).

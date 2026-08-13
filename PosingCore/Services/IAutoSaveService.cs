@@ -94,9 +94,13 @@ public readonly record struct AutoSaveCaptureResult(
 /// Poser-authored (unnamed-layer) edits is synchronously detached through
 /// <see cref="IPoseFileService.CreatePoseFile"/> into immutable pose data. An
 /// owned worker serializes and writes that data into a timestamped folder under
-/// <see cref="RootDirectory"/> on the configured interval, plus once when GPose
-/// is left through the application lifecycle coordinator. The exit operation is
-/// one final capture and worker-drain edge; capture or dispatch acceptance is
+/// <see cref="RootDirectory"/> on the configured interval, plus an applicable
+/// final capture when GPose is left through the application lifecycle
+/// coordinator. Disabled auto-save or no eligible actors may return
+/// <see cref="AutoSaveCaptureStatus.NotCaptured"/>; <c>CleanOnExit</c>
+/// drains and joins owned work before deleting without reserving a final pose.
+/// The exit operation therefore attempts/reserves one final capture and
+/// worker-drain edge only when applicable; capture or dispatch acceptance is
 /// not a durable-write acknowledgement.
 ///
 /// Snapshot folders older than <c>AutoSave.MaxAutoSaves</c> are pruned from disk
@@ -137,11 +141,14 @@ public interface IAutoSaveService : IDisposable
     int SaveNow(string reason);
 
     /// <summary>
-    /// Attempts exactly one synchronous final capture for a GPose exit edge.
-    /// Authored state is read and detached synchronously before this method
-    /// returns. The final reservation remains independent of an active periodic
-    /// write; its immutable job is serialized behind that write. A duplicate
-    /// call returns the original compatibility result without recapturing.
+    /// Attempts exactly one synchronous final capture when applicable for a
+    /// GPose exit edge. Authored state is read and detached synchronously
+    /// before this method returns. Disabled auto-save or no eligible actors
+    /// may return NotCaptured. With CleanOnExit, cleanup is selected instead
+    /// and no final pose is reserved. Otherwise the final reservation remains
+    /// independent of an active periodic write; its immutable job is
+    /// serialized behind that write. A duplicate call returns the original
+    /// compatibility result without recapturing live state.
     /// Dispatch acceptance is not a write acknowledgement; call
     /// <see cref="CompleteForExit"/> for terminal persistence truth.
     /// </summary>
@@ -149,8 +156,9 @@ public interface IAutoSaveService : IDisposable
 
     /// <summary>
     /// Closes periodic admission, joins owned worker work, and completes the
-    /// final or clean-on-exit operation. It never returns while a writer remains
-    /// detached.
+    /// applicable final-write or clean-on-exit operation. Clean-on-exit
+    /// deletes only after the drain and does not reserve a final pose. It
+    /// never returns while a writer remains detached.
     /// </summary>
     AutoSaveTerminalResult CompleteForExit();
 }

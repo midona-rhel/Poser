@@ -51,14 +51,16 @@ interchange with Brio and (via name conversion) Anamnesis.
   folder. First save lands one full interval after entering GPose, then
   every interval.
 - Lifecycle ownership and exit ordering are defined once in
-  [application-state.md](../architecture/application-state.md). The autosave
-  edge reserves/captures while the session is readable, joins its owned worker
-  before the legacy false-GPose notification, and performs clean-on-exit
-  deletion only after that drain; a crash leaves snapshots for recovery.
+  [application-state.md](../architecture/application-state.md). Its successful
+  framework-dispatch qualification, applicable final-capture versus
+  clean-on-exit behavior, and dispatch-failure/provider-disposal fallback
+  apply here; this file does not restate those lifecycle phases. A crash
+  leaves snapshots for recovery.
 - Capture produces an immutable snapshot. The persistence worker receives only
-  that snapshot, serializes/writes it, and is joined by final exit. It never
-  reads live runtime state and is never detached as best-effort work. A final
-  snapshot is not successful merely because capture occurred: capture or
+  that snapshot, serializes/writes it, and is never detached as best-effort
+  work. Applicability, join ordering, and dispatch-failure semantics are
+  defined in [application-state.md](../architecture/application-state.md). A
+  final snapshot is not successful merely because capture occurred: capture or
   persistence failure, and final worker join/drain failure, produce typed
   failure or `RecoveryRequired` evidence. Lifecycle ownership and receipt
   semantics are defined once in
