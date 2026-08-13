@@ -43,7 +43,7 @@ public sealed class PoseFilePersistenceTests
     [Fact]
     public void Emitted_wire_golden_uses_the_accepted_Brio_conventions()
     {
-        const string expected = """
+        var expected = """
         {
           "TypeName": "Brio Pose",
           "Author": null,
@@ -78,7 +78,7 @@ public sealed class PoseFilePersistenceTests
           "Rotation": "0, 0, 0, 0",
           "Scale": "0, 0, 0"
         }
-        """;
+        """.Replace("\r\n", "\n", StringComparison.Ordinal);
         const string input = """
         {
           "Description": "<current & compatible>",
