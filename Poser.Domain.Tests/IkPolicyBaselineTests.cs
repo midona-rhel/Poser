@@ -9,29 +9,35 @@ public sealed class IkPolicyBaselineTests
     [InlineData("j_te_r")]
     [InlineData("j_asi_d_l")]
     [InlineData("j_asi_d_r")]
-    public void Current_fixed_ik_policy_exposes_the_four_supported_endpoints(
+    public void Fixed_presets_are_available_only_for_supported_endpoints(
         string endpoint)
     {
-        var definition = IkChains.ForEndpoint(endpoint);
+        var result = IkPolicy.Resolve(endpoint, IkPreset.Defaults);
 
-        Assert.NotNull(definition);
-        Assert.True(IkChains.IsSupportedEndpoint(endpoint));
-        Assert.Null(IkChainConfig.DefaultsFor(definition!.IsArm).Validate());
+        Assert.True(result.Success);
+        Assert.Equal(IkPolicyOutcome.Supported, result.Outcome);
+        Assert.NotNull(result.Definition);
+        Assert.NotNull(result.Configuration);
+        Assert.Null(result.Configuration!.Validate());
     }
 
     [Theory]
     [InlineData("j_kao")]
     [InlineData("j_te_x")]
     [InlineData("")]
-    public void Unsupported_endpoints_currently_return_no_chain_definition(
+    public void Unsupported_endpoint_preset_is_a_typed_refusal(
         string endpoint)
     {
-        Assert.Null(IkChains.ForEndpoint(endpoint));
-        Assert.False(IkChains.IsSupportedEndpoint(endpoint));
+        var result = IkPolicy.Resolve(endpoint, IkPreset.Defaults);
+
+        Assert.False(result.Success);
+        Assert.Equal(IkPolicyOutcome.UnsupportedEndpoint, result.Outcome);
+        Assert.Null(result.Configuration);
+        Assert.Contains("supported IK endpoint", result.Detail!);
     }
 
     [Fact]
-    public void Invalid_ik_configuration_is_rejected_by_the_current_pure_validator()
+    public void Invalid_configuration_is_rejected_without_changing_the_fixed_policy()
     {
         var invalid = IkChainConfig.DefaultsFor(isArm: true) with
         {
@@ -39,12 +45,30 @@ public sealed class IkPolicyBaselineTests
             HingeAxis = default,
         };
 
-        Assert.NotNull(invalid.Validate());
+        var result = IkPolicy.Validate("j_te_l", invalid);
+
+        Assert.False(result.Success);
+        Assert.Equal(IkPolicyOutcome.InvalidConfiguration, result.Outcome);
+        Assert.Null(result.Configuration);
+        Assert.NotNull(result.Detail);
+        Assert.Equal(
+            IkSolver.TwoJoint,
+            IkPolicy.Resolve("j_te_l", IkPreset.Defaults).Configuration!.Solver);
     }
 
-    [Fact(Skip = "Slice 1 characterization: fixed preset outcomes need a typed unsupported-endpoint result API.")]
-    public void Slice1_typed_ik_preset_outcome_characterization()
+    [Fact]
+    public void Valid_configuration_result_is_normalized_without_mutating_the_input()
     {
-        Assert.True(false);
+        var input = IkChainConfig.DefaultsFor(isArm: true) with
+        {
+            HingeAxis = new System.Numerics.Vector3(0, 0, 3),
+        };
+
+        var result = IkPolicy.Validate("j_te_l", input);
+
+        Assert.True(result.Success);
+        Assert.Equal(3f, input.HingeAxis.Z);
+        Assert.Equal(1f, result.Configuration!.HingeAxis.Length(), 5);
+        Assert.Equal(0.5f, result.Configuration.CcdGain);
     }
 }

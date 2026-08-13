@@ -20,9 +20,9 @@ public enum IkTargetMode
 }
 
 /// <summary>
-/// One validated per-chain IK configuration carrying BOTH solver settings so
-/// switching solver never discards tuning. Session-only: never exported,
-/// stashed, or recorded in transform history.
+/// Per-chain IK configuration carrying both solver settings so switching
+/// solver never discards tuning. Validation is explicit; this is session-only
+/// and is never exported, stashed, or recorded in transform history.
 /// </summary>
 public sealed record IkChainConfig(
     bool Enabled,
@@ -60,22 +60,52 @@ public sealed record IkChainConfig(
             return "Hinge angles must be finite values in 0..180.";
         if (HingeMinDegrees > HingeMaxDegrees)
             return "Hinge minimum cannot exceed the maximum.";
-        if (!float.IsFinite(HingeAxis.X) || !float.IsFinite(HingeAxis.Y) ||
-            !float.IsFinite(HingeAxis.Z) ||
-            HingeAxis.LengthSquared() < 1e-6f)
+        if (!IsValidHingeAxis(HingeAxis))
             return "Hinge axis must be a non-zero finite vector.";
         return null;
     }
 
-    /// <summary>The same configuration with a normalized hinge axis.</summary>
-    public IkChainConfig Normalized() =>
-        this with { HingeAxis = Vector3.Normalize(HingeAxis) };
+    /// <summary>The same valid configuration with a normalized hinge axis.</summary>
+    public IkChainConfig Normalized()
+    {
+        if (Validate() is { } error)
+            throw new ArgumentOutOfRangeException(nameof(HingeAxis), error);
+        return this with { HingeAxis = NormalizeHingeAxis(HingeAxis) };
+    }
 
     private static bool IsUnit(float value) =>
         float.IsFinite(value) && value is >= 0f and <= 1f;
 
     private static bool IsDegrees(float value) =>
         float.IsFinite(value) && value is >= 0f and <= 180f;
+
+    private static bool IsValidHingeAxis(Vector3 value)
+    {
+        if (!Transforms.TransformMath.IsFinite(value))
+            return false;
+
+        var largest = MathF.Max(
+            MathF.Abs(value.X),
+            MathF.Max(MathF.Abs(value.Y), MathF.Abs(value.Z)));
+        if (largest <= 0f)
+            return false;
+
+        var scaled = value / largest;
+        var scaledLength = MathF.Sqrt(scaled.LengthSquared());
+        return float.IsFinite(scaledLength) &&
+            scaledLength > 0f &&
+            largest >= 0.001f / scaledLength;
+    }
+
+    private static Vector3 NormalizeHingeAxis(Vector3 value)
+    {
+        var largest = MathF.Max(
+            MathF.Abs(value.X),
+            MathF.Max(MathF.Abs(value.Y), MathF.Abs(value.Z)));
+        var scaled = value / largest;
+        var scaledLength = MathF.Sqrt(scaled.LengthSquared());
+        return scaled / scaledLength;
+    }
 
     /// <summary>Defaults preserving current Live IK behavior: Two Joint,
     /// Relative, constraints on, unit gains, full hinge range, end rotation
@@ -156,6 +186,105 @@ public static class IkChains
 
     public static bool IsSupportedEndpoint(string boneName) =>
         ForEndpoint(boneName) != null;
+}
+
+public enum IkPreset
+{
+    Defaults,
+}
+
+public enum IkPolicyOutcome
+{
+    Supported,
+    UnsupportedEndpoint,
+    UnsupportedPreset,
+    InvalidConfiguration,
+}
+
+/// <summary>Pure fixed-preset/configuration decision with no native effects.</summary>
+public readonly record struct IkPolicyResult(
+    IkPolicyOutcome Outcome,
+    IkChainDefinition? Definition,
+    IkChainConfig? Configuration,
+    string? Detail)
+{
+    public bool Success => Outcome == IkPolicyOutcome.Supported;
+}
+
+/// <summary>Owns endpoint and configuration acceptance for fixed IK policy.</summary>
+public static class IkPolicy
+{
+    public static IkPolicyResult Resolve(
+        string? endpoint,
+        IkPreset preset)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint) ||
+            IkChains.ForEndpoint(endpoint) is not { } definition)
+        {
+            return new(
+                IkPolicyOutcome.UnsupportedEndpoint,
+                null,
+                null,
+                "IK requires a supported IK endpoint.");
+        }
+
+        if (preset != IkPreset.Defaults)
+        {
+            return new(
+                IkPolicyOutcome.UnsupportedPreset,
+                definition,
+                null,
+                "Only the fixed default IK preset is supported.");
+        }
+
+        var configuration = IkChainConfig.DefaultsFor(definition.IsArm);
+        var error = configuration.Validate();
+        if (error is not null)
+        {
+            return new(
+                IkPolicyOutcome.InvalidConfiguration,
+                definition,
+                null,
+                error);
+        }
+
+        return new(
+            IkPolicyOutcome.Supported,
+            definition,
+            configuration.Normalized(),
+            null);
+    }
+
+    public static IkPolicyResult Validate(
+        string? endpoint,
+        IkChainConfig configuration)
+    {
+        if (string.IsNullOrWhiteSpace(endpoint) ||
+            IkChains.ForEndpoint(endpoint) is not { } definition)
+        {
+            return new(
+                IkPolicyOutcome.UnsupportedEndpoint,
+                null,
+                null,
+                "IK requires a supported IK endpoint.");
+        }
+
+        var error = configuration.Validate();
+        if (error is not null)
+        {
+            return new(
+                IkPolicyOutcome.InvalidConfiguration,
+                definition,
+                null,
+                error);
+        }
+
+        return new(
+            IkPolicyOutcome.Supported,
+            definition,
+            configuration.Normalized(),
+            null);
+    }
 }
 
 /// <summary>One immutable solve request: target, optional end rotation,

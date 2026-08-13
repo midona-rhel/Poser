@@ -11,6 +11,23 @@ public enum TransformComponents
     Scale = 1 << 2,
     All = Position | Rotation | Scale,
 }
+
+/// <summary>Validation vocabulary for the three transform propagation bits.</summary>
+public static class TransformComponentsPolicy
+{
+    public static bool IsDefined(TransformComponents value) =>
+        (value & ~TransformComponents.All) == TransformComponents.None;
+
+    public static void Validate(TransformComponents value)
+    {
+        if (!IsDefined(value))
+            throw new ArgumentOutOfRangeException(
+                nameof(value),
+                value,
+                "Transform components contain unknown bits.");
+    }
+}
+
 public enum PoseLayerKind
 {
     Imported,
@@ -38,18 +55,36 @@ public readonly record struct PoseDelta(
 
     public bool IsValid =>
         Transforms.TransformMath.IsFinite(Position) &&
-        Transforms.TransformMath.IsFinite(Rotation) &&
-        Rotation.LengthSquared() >= 0.000001f &&
+        Transforms.TransformMath.IsValidRotation(Rotation) &&
         Transforms.TransformMath.IsFinite(Scale);
 
-    public PoseDelta Normalized() =>
-        this with { Rotation = Quaternion.Normalize(Rotation) };
+    public PoseDelta Normalized()
+    {
+        if (!IsValid)
+            throw new ArgumentOutOfRangeException(
+                nameof(Rotation),
+                "Pose delta is outside the finite domain.");
+        return this with
+        {
+            Rotation = Transforms.TransformMath.NormalizeRotation(Rotation),
+        };
+    }
 
-    public static PoseDelta Combine(PoseDelta left, PoseDelta right) =>
-        new(
+    public static PoseDelta Combine(PoseDelta left, PoseDelta right)
+    {
+        left = left.Normalized();
+        right = right.Normalized();
+        var combined = new PoseDelta(
             left.Position + right.Position,
-            Quaternion.Normalize(left.Rotation * right.Rotation),
+            Transforms.TransformMath.NormalizeRotation(
+                left.Rotation * right.Rotation),
             left.Scale + right.Scale);
+        if (!combined.IsValid)
+            throw new ArgumentOutOfRangeException(
+                nameof(right),
+                "Combined pose delta is outside the finite domain.");
+        return combined;
+    }
 }
 
 public readonly record struct PoseLayer(
@@ -59,25 +94,36 @@ public readonly record struct PoseLayer(
 {
     public bool IsValid =>
         Id.IsValid &&
-        Propagation != TransformComponents.None &&
+        TransformComponentsPolicy.IsDefined(Propagation) &&
         Delta.IsValid;
+
+    public PoseLayer Normalized()
+    {
+        TransformComponentsPolicy.Validate(Propagation);
+        if (!Id.IsValid || !Delta.IsValid)
+            throw new ArgumentException("Layer is invalid.", nameof(Delta));
+        return this with { Delta = Delta.Normalized() };
+    }
 }
 
 /// <summary>Immutable, ordered pose layers for one bone.</summary>
 public sealed record BonePose
 {
     private readonly PoseLayer[] _layers;
+    private readonly IReadOnlyList<PoseLayer> _readOnlyLayers;
 
     public BonePose(IEnumerable<PoseLayer>? layers = null, ulong version = 0)
     {
-        _layers = layers?.ToArray() ?? Array.Empty<PoseLayer>();
-        if (_layers.Any(layer => !layer.IsValid))
+        var input = layers?.ToArray() ?? Array.Empty<PoseLayer>();
+        if (input.Any(layer => !layer.IsValid))
             throw new ArgumentException("Pose contains an invalid layer.", nameof(layers));
+        _layers = input.Select(static layer => layer.Normalized()).ToArray();
+        _readOnlyLayers = Array.AsReadOnly(_layers);
         Version = version;
     }
 
     public ulong Version { get; }
-    public IReadOnlyList<PoseLayer> Layers => _layers;
+    public IReadOnlyList<PoseLayer> Layers => _readOnlyLayers;
 
     public PoseDelta Evaluate() =>
         _layers.Aggregate(
