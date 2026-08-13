@@ -17,7 +17,7 @@ namespace Poser.Files;
 /// Timed pose auto-save (GAP 4). Exports every actor with Poser-authored edits
 /// into
 /// <c>&lt;pluginConfigDir&gt;/AutoSaves/&lt;local day&gt;/&lt;HH-mm-ss&gt; &lt;actor&gt;.pose</c>
-/// while in GPose, and once on GPose exit.
+/// while in GPose, and requests one final capture attempt on GPose exit.
 ///
 /// <para>SPLIT ACROSS TWO THREADS. <see cref="SaveNow"/> runs on the framework
 /// tick and does only what needs live game state: the authored-edit scan and
@@ -47,10 +47,10 @@ namespace Poser.Files;
 /// folders accumulate (Ktisis leaves them).</item>
 /// </list>
 ///
-/// <para>The application lifecycle coordinator requests the final capture
-/// explicitly before publishing the legacy GPose exit event. The scene services
-/// remain factories so the capture reads their current state without making
-/// composition depend on an event-subscriber order.</para>
+/// <para>The application lifecycle coordinator requests exactly one final
+/// capture attempt before publishing the legacy GPose exit event. The scene
+/// services remain factories so the capture reads their current state without
+/// making composition depend on an event-subscriber order.</para>
 /// </summary>
 public class AutoSaveService : IAutoSaveService
 {
@@ -189,9 +189,11 @@ public class AutoSaveService : IAutoSaveService
     }
 
     /// <summary>
-    /// Explicit final-capture boundary. GPoseService calls this before it
-    /// publishes the legacy exit event, so the capture does not depend on
-    /// EventBus subscription order.
+    /// Exactly one final-capture attempt for this call. GPoseService calls this
+    /// before it publishes the legacy exit event, so the attempt does not
+    /// depend on EventBus subscription order. If an earlier worker dispatch is
+    /// still in flight, the latch returns NotCaptured without reading actor
+    /// state or claiming immutable capture occurred.
     /// </summary>
     public AutoSaveCaptureResult CaptureForExit()
     {

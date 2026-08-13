@@ -173,9 +173,8 @@ internal static class ServiceRegistration
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
         services.AddSingleton<ICameraFileService, CameraFileService>();
-        // The final exit capture resolves this service lazily through the
-        // lifecycle port, keeping composition acyclic while the legacy event
-        // subscribers remain independent teardown owners.
+        // The lazy final-capture port breaks the eager construction cycle while
+        // the legacy event subscribers remain independent teardown owners.
         services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<IFramework>(),

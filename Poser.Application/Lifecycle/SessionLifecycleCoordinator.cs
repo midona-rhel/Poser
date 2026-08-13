@@ -2,26 +2,46 @@ namespace Poser.Application.Lifecycle;
 
 /// <summary>
 /// Host-provided bridge for the one lifecycle operation currently migrated:
-/// detach the final immutable capture before legacy GPose teardown runs.
+/// synchronously attempt one final immutable capture before legacy GPose teardown
+/// runs. An implementation may return <see cref="FinalCaptureStatus.NotCaptured"/>
+/// when an earlier dispatch is in flight; the result never acknowledges worker
+/// completion or a durable write.
 /// </summary>
 public interface IFinalCapturePort
 {
+    /// <summary>Attempts exactly one synchronous final capture.</summary>
     FinalCaptureResult CaptureForExit();
 }
 
 /// <summary>
 /// Coordinates the pre-publish capture edge. Legacy teardown remains behind
-/// the existing GPose event and is reported as pending here.
+/// the existing GPose event and is reported as pending here. The host invokes
+/// this synchronously from its framework update callback; no cross-thread
+/// scheduling is performed by this coordinator.
 /// </summary>
 public interface ISessionLifecycleCoordinator
 {
+    /// <summary>
+    /// Latest point-in-time exit result, or null before an exit edge. This is a
+    /// diagnostic phase snapshot, not a completion claim for legacy teardown.
+    /// </summary>
     SessionExitResult? LastExit { get; }
 
+    /// <summary>Marks the start of a new GPose session for this coordinator.</summary>
     void OnGposeEntered();
 
+    /// <summary>
+    /// Attempts the final capture for the current exit edge at most once and
+    /// returns before the caller publishes the legacy exit event.
+    /// </summary>
     SessionExitResult OnGposeExit();
 }
 
+/// <summary>
+/// Point-in-time result for the pre-publish phase. Legacy teardown remains
+/// owned by the existing GPose event subscribers; <see
+/// cref="LegacyTeardownPending"/> is a phase snapshot, not teardown completion.
+/// </summary>
 public readonly record struct SessionExitResult(
     FinalCaptureResult Capture,
     bool LegacyTeardownPending,
@@ -34,9 +54,10 @@ public readonly record struct SessionExitResult(
 }
 
 /// <summary>
-/// Exactly-once, reentrancy-safe owner of the pre-publish capture phase. It
-/// deliberately does not own cancellation, restoration, native teardown,
-/// persistence joining, or detached-fact publication yet.
+/// Exactly-once, reentrancy-safe owner of one final-capture attempt per
+/// accepted GPose exit edge. It deliberately does not own cancellation,
+/// restoration, native teardown, persistence joining, or detached-fact
+/// publication yet.
 /// </summary>
 public sealed class SessionLifecycleCoordinator : ISessionLifecycleCoordinator
 {

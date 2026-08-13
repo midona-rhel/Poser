@@ -52,6 +52,23 @@ public class AutoSaveServiceSnapshotTests
     }
 
     [Fact]
+    public void Partial_capture_failure_is_not_reported_as_completed()
+    {
+        using var h = new AutoSaveHarness();
+        h.AddActor("Good");
+        var broken = h.AddActor("Broken");
+        h.FailCaptureFor(broken, new IOException("skeleton copy failed"));
+
+        var result = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.Failure, result.Status);
+        Assert.Equal(1, result.CapturedActors);
+        Assert.True(result.DispatchAccepted);
+        Assert.False(result.CaptureCompleted);
+        h.WaitForWrite();
+    }
+
+    [Fact]
     public void SaveNow_captures_only_actors_with_authored_edits()
     {
         using var h = new AutoSaveHarness();
@@ -67,7 +84,8 @@ public class AutoSaveServiceSnapshotTests
         h.PoseFiles.Received(1).CreatePoseFile(beta.Skeletons);
         h.PoseFiles.DidNotReceive().CreatePoseFile(gamma.Skeletons);
 
-        // LastSaveUtc is stamped by the capture half, before the write.
+        // LastSaveUtc is stamped only after detached data is accepted for
+        // dispatch; it does not acknowledge the worker or disk write.
         Assert.Equal(h.NowUtc, h.Service.LastSaveUtc);
 
         h.WaitForWrite();

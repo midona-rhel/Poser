@@ -30,6 +30,9 @@
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
     <ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
     <ProjectReference Include="..\Poser.Game\Poser.Game.csproj" />
+    <ProjectReference Include="..\Poser\Poser.csproj">
+      <Aliases>ProductionPoser</Aliases>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>

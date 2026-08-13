@@ -211,6 +211,38 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
+    public void Final_capture_attempt_reports_not_captured_when_prior_dispatch_is_in_flight()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+
+        Action? queuedWorker = null;
+        h.Dispatch = work =>
+        {
+            queuedWorker = work;
+            return true;
+        };
+
+        var first = h.Service.CaptureForExit();
+        var second = h.Service.CaptureForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, first.Status);
+        Assert.True(first.DispatchAccepted);
+        Assert.True(first.CaptureCompleted);
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, second.Status);
+        Assert.False(second.DispatchAccepted);
+        Assert.False(second.CaptureCompleted);
+        Assert.Contains("in flight", second.Detail);
+        Assert.Equal(1, h.CaptureCallCount);
+        Assert.Equal(h.NowUtc, h.Service.LastSaveUtc);
+
+        queuedWorker!();
+        h.WaitForWrite();
+    }
+
+    [Fact]
     public void Construction_does_not_snapshot_or_clean()
     {
         using var h = new AutoSaveHarness();
