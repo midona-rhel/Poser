@@ -157,6 +157,100 @@ public sealed class PoseFilePersistenceTests
             Assert.InRange(size, 1, AtomicPoseFileStore.MetadataBufferSize));
     }
 
+    [Theory]
+    [InlineData("whitespace")]
+    [InlineData("leading-zero")]
+    public void Read_and_ReadMetadata_accept_long_numeric_strings_identically(
+        string componentKind)
+    {
+        var component = componentKind == "whitespace"
+            ? new string(' ', 2048) + "1" + new string(' ', 2048)
+            : new string('0', 2048) + "1";
+        var json = NumericPoseJson($"{component}, 2, 3");
+
+        var ordinary = AtomicPoseFileStore.Default.Parse(json);
+        using var fixture = new StoreFixture();
+        File.WriteAllText(fixture.Destination, json);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Destination);
+
+        Assert.True(ordinary.Succeeded, ordinary.Failure?.Detail);
+        Assert.True(metadata.Succeeded, metadata.Failure?.Detail);
+    }
+
+    [Fact]
+    public void Read_and_ReadMetadata_accept_the_converter_numeric_culture_identically()
+    {
+        var json = NumericPoseJson("1,234, 2, 3");
+
+        var ordinary = AtomicPoseFileStore.Default.Parse(json);
+        using var fixture = new StoreFixture();
+        File.WriteAllText(fixture.Destination, json);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Destination);
+
+        Assert.True(ordinary.Succeeded, ordinary.Failure?.Detail);
+        Assert.True(metadata.Succeeded, metadata.Failure?.Detail);
+    }
+
+    [Fact]
+    public void Read_and_ReadMetadata_accept_a_numeric_string_split_at_the_stream_buffer_boundary()
+    {
+        var component = new string('0', AtomicPoseFileStore.MetadataBufferSize + 17) + "1";
+        var json = NumericPoseJson($"{component}, 2, 3");
+        var bytes = Encoding.UTF8.GetBytes(json);
+
+        var ordinary = AtomicPoseFileStore.Default.Parse(json);
+        var fileSystem = new BoundedReadPoseFileSystem(bytes);
+        var metadata = new AtomicPoseFileStore(fileSystem).ReadMetadata("boundary.pose");
+
+        Assert.True(ordinary.Succeeded, ordinary.Failure?.Detail);
+        Assert.True(metadata.Succeeded, metadata.Failure?.Detail);
+        Assert.True(fileSystem.ReadCount > 1);
+        Assert.All(fileSystem.ReadSizes, size =>
+            Assert.InRange(size, 1, AtomicPoseFileStore.MetadataBufferSize));
+    }
+
+    [Theory]
+    [InlineData("1x, 2, 3", PoseFileStoreFailureKind.Json, null)]
+    [InlineData("1e999, 2, 3", PoseFileStoreFailureKind.Json, null)]
+    [InlineData("NaN, 2, 3", PoseFileStoreFailureKind.Json, null)]
+    [InlineData("0, 0, 0, 0", PoseFileStoreFailureKind.Validation,
+        PoseFileValidationFailureKind.DegenerateQuaternion)]
+    public void Read_and_ReadMetadata_reject_invalid_numeric_strings_identically(
+        string numeric,
+        PoseFileStoreFailureKind expectedFailureKind,
+        PoseFileValidationFailureKind? expectedValidationKind)
+    {
+        var json = NumericPoseJson(
+            position: "1, 2, 3",
+            rotation: numeric);
+        var ordinary = AtomicPoseFileStore.Default.Parse(json);
+        using var fixture = new StoreFixture();
+        File.WriteAllText(fixture.Destination, json);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Destination);
+
+        Assert.False(ordinary.Succeeded);
+        Assert.False(metadata.Succeeded);
+        Assert.Equal(expectedFailureKind, ordinary.Failure?.Kind);
+        Assert.Equal(expectedFailureKind, metadata.Failure?.Kind);
+        Assert.Equal(expectedValidationKind, ordinary.Failure?.ValidationFailure?.Kind);
+        Assert.Equal(expectedValidationKind, metadata.Failure?.ValidationFailure?.Kind);
+    }
+
+    private static string NumericPoseJson(
+        string position,
+        string? rotation = null) =>
+        $$"""
+        {
+          "Bones": {
+            "j_kao": {
+              "Position": "{{position}}",
+              "Rotation": "{{rotation ?? "0, 0, 0, 1"}}",
+              "Scale": "1, 1, 1"
+            }
+          }
+        }
+        """;
+
     [Fact]
     public void Read_rejects_an_empty_file_before_decoding()
     {

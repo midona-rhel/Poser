@@ -1,12 +1,12 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using Poser.Files.Converters;
 
 namespace Poser.Files;
 
@@ -1064,27 +1064,9 @@ public sealed class AtomicPoseFileStore
         {
             if (Peek() != '"')
                 throw new JsonException($"{typeName} must be a string.");
-            var value = ReadString(true, 1024).Text
-                ?? throw new JsonException($"{typeName} cannot be null.");
-            var parts = value.Split(", ", StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != count)
-                throw new JsonException(
-                    $"Expected {count} components for {typeName}, got {parts.Length}.");
-
-            var values = new float[count];
-            for (var i = 0; i < count; i++)
-            {
-                if (!float.TryParse(
-                        parts[i],
-                        NumberStyles.Float,
-                        CultureInfo.InvariantCulture,
-                        out values[i]) ||
-                    !float.IsFinite(values[i]))
-                {
-                    throw new JsonException($"{typeName} contains an invalid numeric value.");
-                }
-            }
-            return values;
+            var parser = new NumericComponentsParser(count, typeName);
+            ReadString(false, -1, parser.Append);
+            return parser.Complete();
         }
 
         private string? ParseNullableString()
@@ -1213,7 +1195,10 @@ public sealed class AtomicPoseFileStore
             }
         }
 
-        private StringValue ReadString(bool capture, int maxCapture)
+        private StringValue ReadString(
+            bool capture,
+            int maxCapture,
+            Action<char>? onCharacter = null)
         {
             Expect('"');
             var builder = capture ? new StringBuilder() : null;
@@ -1243,7 +1228,13 @@ public sealed class AtomicPoseFileStore
                                 throw new JsonException("A JSON unicode escape is invalid.");
                             codeUnit = (codeUnit << 4) | digit;
                         }
-                        Append(codeUnit, builder, maxCapture, ref characterCount, ref truncated);
+                        Append(
+                            codeUnit,
+                            builder,
+                            maxCapture,
+                            ref characterCount,
+                            ref truncated,
+                            onCharacter);
                         continue;
                     }
 
@@ -1262,13 +1253,20 @@ public sealed class AtomicPoseFileStore
                         builder,
                         maxCapture,
                         ref characterCount,
-                        ref truncated);
+                        ref truncated,
+                        onCharacter);
                     continue;
                 }
 
                 if (value < 0x80)
                 {
-                    Append(value, builder, maxCapture, ref characterCount, ref truncated);
+                    Append(
+                        value,
+                        builder,
+                        maxCapture,
+                        ref characterCount,
+                        ref truncated,
+                        onCharacter);
                     continue;
                 }
 
@@ -1277,6 +1275,9 @@ public sealed class AtomicPoseFileStore
                     ? char.ConvertFromUtf32(scalar)
                     : ((char)scalar).ToString();
                 characterCount += chars.Length;
+                if (onCharacter is not null)
+                    foreach (var character in chars)
+                        onCharacter(character);
                 if (builder is not null && !truncated)
                 {
                     if (maxCapture >= 0 && builder.Length + chars.Length > maxCapture)
@@ -1292,9 +1293,11 @@ public sealed class AtomicPoseFileStore
             StringBuilder? builder,
             int maxCapture,
             ref int characterCount,
-            ref bool truncated)
+            ref bool truncated,
+            Action<char>? onCharacter)
         {
             characterCount++;
+            onCharacter?.Invoke((char)value);
             if (builder is null || truncated)
                 return;
             if (maxCapture >= 0 && builder.Length + 1 > maxCapture)
