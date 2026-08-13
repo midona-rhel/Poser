@@ -200,7 +200,9 @@ public sealed class SceneSession
     /// <summary>
     /// Reconciles a selection id to the current exact generation. A bone
     /// selection survives only while its exact BoneId is present; a missing
-    /// bone may fall back to its current actor, never another bone.
+    /// bone may fall back to its current actor, never another bone. A
+    /// GazeTarget survives only for the current actor's Position-mode gaze
+    /// descriptor and an enabled selected part.
     /// </summary>
     public SelectionId? Resolve(SelectionId id)
     {
@@ -210,11 +212,17 @@ public sealed class SceneSession
                 : null;
 
         if (id.Kind == SceneEntityKind.GazeTarget && id.Actor is { } gazeActor)
-            return TryFindActor(gazeActor.LogicalId, out var gazeOwner)
-                ? SelectionId.ForGazeTarget(
-                    gazeOwner.Id,
-                    id.Gaze ?? GazePart.Anchor)
+        {
+            if (!TryFindActor(gazeActor.LogicalId, out var gazeOwner) ||
+                !TryFindGaze(gazeOwner.Id, out var gaze) ||
+                gaze.Mode != GazeMode.Position)
+                return null;
+
+            var part = id.Gaze ?? GazePart.Anchor;
+            return IsValidGazePart(gaze, part)
+                ? SelectionId.ForGazeTarget(gazeOwner.Id, part)
                 : null;
+        }
 
         if (id.Kind == SceneEntityKind.Bone)
         {
@@ -560,6 +568,8 @@ public sealed class SceneSession
     {
         var lineages = new HashSet<Guid>();
         var liveCount = 0;
+        var defaultCount = 0;
+        CameraDescriptor? defaultCamera = null;
         foreach (var camera in snapshot.Cameras)
         {
             if (camera is null)
@@ -574,8 +584,13 @@ public sealed class SceneSession
                 return Fail(
                     $"Camera {camera.Id} has an unknown kind.",
                     out validationError);
-            if (camera.IsLive && ++liveCount > 1)
-                return Fail("Scene contains more than one live camera.", out validationError);
+            if (camera.IsLive)
+                liveCount++;
+            if (camera.IsDefault)
+            {
+                defaultCount++;
+                defaultCamera = camera;
+            }
             if (!IsFinite(camera.TargetOffset))
                 return Fail(
                     $"Camera {camera.Id} contains a non-finite target offset.",
@@ -608,6 +623,22 @@ public sealed class SceneSession
                             out validationError);
                 }
             }
+        }
+
+        if (snapshot.Cameras.Count > 0)
+        {
+            if (liveCount != 1)
+                return Fail(
+                    "A non-empty camera set must contain exactly one live camera.",
+                    out validationError);
+            if (defaultCount != 1)
+                return Fail(
+                    "A non-empty camera set must contain exactly one default camera.",
+                    out validationError);
+            if (defaultCamera!.Kind != CameraKind.Game)
+                return Fail(
+                    "The default camera must use the Game camera kind.",
+                    out validationError);
         }
 
         validationError = null;
@@ -904,4 +935,31 @@ public sealed class SceneSession
         prop = null!;
         return false;
     }
+
+    private bool TryFindGaze(ActorId actor, out GazeDescriptor gaze)
+    {
+        foreach (var candidate in _snapshot.GazeStates)
+        {
+            if (candidate.Actor == actor)
+            {
+                gaze = candidate;
+                return true;
+            }
+        }
+
+        gaze = null!;
+        return false;
+    }
+
+    private static bool IsValidGazePart(GazeDescriptor gaze, GazePart part) =>
+        part switch
+        {
+            // The anchor is the shared Position-mode point and has no
+            // corresponding per-part flag in the current service contract.
+            GazePart.Anchor => true,
+            GazePart.Eyes => (gaze.Parts & GazeParts.Eyes) != GazeParts.None,
+            GazePart.Head => (gaze.Parts & GazeParts.Head) != GazeParts.None,
+            GazePart.Body => (gaze.Parts & GazeParts.Body) != GazeParts.None,
+            _ => false,
+        };
 }
