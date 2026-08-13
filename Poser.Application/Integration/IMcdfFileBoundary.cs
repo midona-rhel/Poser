@@ -21,7 +21,8 @@ public interface IMcdfFileBoundary
     /// is completed before observations cross into the application.</summary>
     IntegrationValue<McdfExportInspection> InspectExportCandidates(
         string modRoot,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> resources);
+        IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
+        CancellationToken cancellation);
 
     /// <summary>
     /// Reads, validates, and extracts a complete package into the
@@ -38,10 +39,10 @@ public interface IMcdfFileBoundary
         CancellationToken cancellation);
 
     /// <summary>
-    /// Writes the complete package to <c>destination + ".tmp"</c>, flushes
-    /// and closes the LZ4 stream, then atomically replaces the destination.
-    /// Failure or cancellation removes the temporary output and leaves an
-    /// existing destination untouched.
+    /// Writes the complete package to a unique same-directory temporary file,
+    /// flushes and closes the LZ4 stream, then atomically replaces the
+    /// destination. Failure or cancellation removes only that owned temporary
+    /// output and leaves an existing destination untouched.
     /// </summary>
     Task<IntegrationValue<McdfWriteStats>> WritePackage(
         string destination,

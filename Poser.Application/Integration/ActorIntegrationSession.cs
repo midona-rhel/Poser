@@ -1439,18 +1439,23 @@ public sealed class ActorIntegrationSession
             }
         }
 
-        var inspected = _files.InspectExportCandidates(root, tree);
+        // Cancellation exists before boundary inspection: the resource tree
+        // can contain many files and the boundary hashes each accepted source
+        // before returning an immutable observation.
+        _mcdfCancellation?.Dispose();
+        _mcdfCancellation = new CancellationTokenSource();
+        var cancellation = _mcdfCancellation.Token;
+        var inspected = _files.InspectExportCandidates(root, tree, cancellation);
         if (!inspected.Success || inspected.Value is not { } observation)
             return IntegrationResult.Fail(
                 inspected.Detail ?? "The export resources could not be inspected.");
+        if (cancellation.IsCancellationRequested)
+            return IntegrationResult.Fail("The export was cancelled.");
         var (content, skipped, contentError) = BuildExportContent(
             description, glamourerState, customizeData, manipulationData, observation);
         if (contentError != null || content == null)
             return IntegrationResult.Fail(contentError ?? "The export content could not be built.");
 
-        _mcdfCancellation?.Dispose();
-        _mcdfCancellation = new CancellationTokenSource();
-        var cancellation = _mcdfCancellation.Token;
         string fileName = _files.GetFileName(path);
         _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
             McdfPhase.WritingPackage, 0, content.Files.Count, 0, 0, true, null);
@@ -1591,7 +1596,7 @@ public sealed class ActorIntegrationSession
                 continue;
 
             if (isLocalFile)
-                files.Add(new McdfExportFile(replaced, localFull!));
+                files.Add(new McdfExportFile(replaced, localFull!, candidate.Source));
             else
                 foreach (var gamePath in replaced)
                     swaps[gamePath] = swapTarget;

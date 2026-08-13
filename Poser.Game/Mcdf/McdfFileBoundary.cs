@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using K4os.Compression.LZ4.Legacy;
+using Microsoft.Win32.SafeHandles;
 using Poser.Application.Integration;
 using Poser.Domain.Integration;
 
@@ -31,6 +33,19 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         AllowTrailingCommas = true,
     };
 
+    private readonly Func<Guid> _newGuid;
+    private readonly Action? _inspectionChunk;
+
+    public McdfFileBoundary() : this(Guid.NewGuid, null)
+    {
+    }
+
+    internal McdfFileBoundary(Func<Guid>? newGuid = null, Action? inspectChunk = null)
+    {
+        _newGuid = newGuid ?? Guid.NewGuid;
+        _inspectionChunk = inspectChunk;
+    }
+
     public string GetFileName(string path)
     {
         try
@@ -51,16 +66,40 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             Directory.CreateDirectory(root);
             for (int attempt = 0; attempt < 8; attempt++)
             {
-                string directory = Path.Combine(root, $"mcdf-{Guid.NewGuid():N}");
+                string id = _newGuid().ToString("N");
+                string staging = Path.Combine(root, $".mcdf-staging-{id}");
+                string directory = Path.Combine(root, $"mcdf-{id}");
+                string marker = Path.Combine(staging, ".owner");
+                bool owned = false;
                 try
                 {
-                    Directory.CreateDirectory(directory);
+                    Directory.CreateDirectory(staging);
+                    using (new FileStream(
+                        marker, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        owned = true;
+                    }
+                    Directory.Move(staging, directory);
                     return IntegrationValue<string>.Ok(directory);
                 }
                 catch (IOException) when (attempt < 7)
                 {
-                    // A GUID collision is exceptionally unlikely, but the
-                    // allocation contract remains deterministic and bounded.
+                    if (owned)
+                    {
+                        try { Directory.Delete(staging, recursive: true); }
+                        catch { }
+                    }
+                    // Both the marker and the final directory are exclusive:
+                    // a stale collision is never claimed or cleaned here.
+                }
+                catch
+                {
+                    if (owned)
+                    {
+                        try { Directory.Delete(staging, recursive: true); }
+                        catch { }
+                    }
+                    throw;
                 }
             }
             return IntegrationValue<string>.Fail(
@@ -75,11 +114,13 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
     public IntegrationValue<McdfExportInspection> InspectExportCandidates(
         string modRoot,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> resources)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
+        CancellationToken cancellation)
     {
         string realRoot;
         try
         {
+            cancellation.ThrowIfCancellationRequested();
             string fullRoot = Path.GetFullPath(modRoot);
             if (!Directory.Exists(fullRoot))
                 return IntegrationValue<McdfExportInspection>.Fail(
@@ -92,6 +133,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 return IntegrationValue<McdfExportInspection>.Fail(
                     "Penumbra's mod directory could not be resolved to a real path.");
         }
+        catch (OperationCanceledException)
+        {
+            return IntegrationValue<McdfExportInspection>.Fail(
+                "The export inspection was cancelled.");
+        }
         catch (Exception)
         {
             return IntegrationValue<McdfExportInspection>.Fail(
@@ -102,6 +148,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         var skipped = new List<string>();
         foreach (var (actualRaw, gamePathsRaw) in resources)
         {
+            if (cancellation.IsCancellationRequested)
+                return IntegrationValue<McdfExportInspection>.Fail(
+                    "The export inspection was cancelled.");
             if (actualRaw.Length > 1 && actualRaw[1] == ':')
             {
                 string fullPath;
@@ -134,9 +183,18 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                         realFile, FileMode.Open, FileAccess.Read,
                         FileShare.ReadWrite | FileShare.Delete);
                     long length = stream.Length;
+                    string hash = HashStream(stream, cancellation, _inspectionChunk);
+                    string? identity = TryGetFileIdentity(stream.SafeFileHandle);
+                    var source = new McdfExportSourceObservation(
+                        realFile, realRoot, length, hash, identity);
                     candidates.Add(new McdfExportCandidate(
                         actualRaw, gamePathsRaw.ToArray(),
-                        McdfExportCandidateKind.LocalFile, realFile, length));
+                        McdfExportCandidateKind.LocalFile, realFile, length, source));
+                }
+                catch (OperationCanceledException)
+                {
+                    return IntegrationValue<McdfExportInspection>.Fail(
+                        "The export inspection was cancelled.");
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -440,65 +498,76 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         Action<McdfProgressStep> progress,
         CancellationToken cancellation)
     {
-        string temporary = destination + ".tmp";
+        string temporary = string.Empty;
         bool moved = false;
+        string fullDestination = string.Empty;
+        bool destinationExisted = false;
         try
         {
+            fullDestination = Path.GetFullPath(destination);
+            destinationExisted = File.Exists(fullDestination);
             // Pass 1 — hash and measure every local file so the header can
             // precede the payloads, deduplicating identical content by
             // SHA-1 while every game path is preserved.
-            var byHash = new Dictionary<string, (WireFile Entry, string LocalPath)>(
+            var byHash = new Dictionary<string, (
+                WireFile Entry, string LocalPath, McdfExportSourceObservation Source)>(
                 StringComparer.OrdinalIgnoreCase);
             var order = new List<string>();
             long totalBytes = 0;
             long hashedBytes = 0;
             long toHash = 0;
             foreach (var file in content.Files)
-                toHash += new FileInfo(file.LocalPath).Length;
+            {
+                if (file.Source is { } source)
+                    toHash += source.Length;
+                else
+                    toHash += new FileInfo(file.LocalPath).Length;
+            }
 
             foreach (var file in content.Files)
             {
                 if (cancellation.IsCancellationRequested)
                     return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
-                long length = 0;
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-                using (var input = new FileStream(
-                    file.LocalPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                var source = file.Source ?? CaptureSource(file.LocalPath, cancellation);
+                using (var input = OpenValidatedSource(file.LocalPath, source, cancellation,
+                    out string? sourceError))
                 {
-                    var chunk = new byte[ChunkSize];
-                    int got;
-                    while ((got = input.Read(chunk, 0, chunk.Length)) > 0)
-                    {
-                        if (cancellation.IsCancellationRequested)
-                            return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
-                        hash.AppendData(chunk, 0, got);
-                        length += got;
-                        hashedBytes += got;
-                        progress(new McdfProgressStep(
-                            McdfPhase.WritingPackage, 0, content.Files.Count, hashedBytes, toHash));
-                    }
-                }
-                if (length > int.MaxValue)
-                    return IntegrationValue<McdfWriteStats>.Fail(
-                        $"{file.LocalPath} is too large for the MCDF format.");
+                    if (input == null)
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            sourceError ?? $"{file.LocalPath} changed while exporting.");
+                    string digest = HashStream(input, cancellation, null,
+                        bytes =>
+                        {
+                            hashedBytes += bytes;
+                            progress(new McdfProgressStep(
+                                McdfPhase.WritingPackage, 0, content.Files.Count,
+                                hashedBytes, toHash));
+                        });
+                    if (!string.Equals(digest, source.ContentHash, StringComparison.OrdinalIgnoreCase))
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            $"{file.LocalPath} changed while exporting; its declared hash would be false.");
+                    long length = input.Length;
+                    if (length > int.MaxValue)
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            $"{file.LocalPath} is too large for the MCDF format.");
 
-                string digest = Convert.ToHexString(hash.GetHashAndReset());
-                if (byHash.TryGetValue(digest, out var existing))
-                {
-                    foreach (var gamePath in file.GamePaths)
-                        if (!existing.Entry.GamePaths.Contains(gamePath))
-                            existing.Entry.GamePaths.Add(gamePath);
-                }
-                else
-                {
-                    byHash[digest] = (new WireFile
+                    if (byHash.TryGetValue(digest, out var existing))
                     {
+                        foreach (var gamePath in file.GamePaths)
+                            if (!existing.Entry.GamePaths.Contains(gamePath))
+                                existing.Entry.GamePaths.Add(gamePath);
+                    }
+                    else
+                    {
+                        byHash[digest] = (new WireFile
+                        {
                         GamePaths = file.GamePaths.ToList(),
                         Length = (int)length,
                         Hash = digest,
-                    }, file.LocalPath);
-                    order.Add(digest);
-                    totalBytes += length;
+                        }, file.LocalPath, source);
+                        order.Add(digest);
+                        totalBytes += length;
+                    }
                 }
             }
 
@@ -522,10 +591,10 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             };
             var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(data, JsonOptions);
 
-            // Pass 2 — write header + payloads to the temporary path, then
-            // replace the destination atomically.
-            using (var output = new FileStream(
-                temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            // Pass 2 — claim a unique same-directory temp path exclusively,
+            // then write header + payloads before the atomic destination step.
+            using (var output = CreateOwnedTemporary(
+                Path.GetFullPath(destination), out temporary))
             using (var lz4 = LZ4Legacy.Encode(
                 output, highCompression: true, blockSize: 1024 * 1024, leaveOpen: true))
             using (var writer = new BinaryWriter(lz4, Encoding.UTF8, leaveOpen: true))
@@ -545,34 +614,35 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 {
                     if (cancellation.IsCancellationRequested)
                         return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
-                    using var input = new FileStream(
-                        byHash[digest].LocalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    using var rehash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-                    int got;
+                    var source = byHash[digest].Source;
+                    using var input = OpenValidatedSource(
+                        byHash[digest].LocalPath, source, cancellation, out string? sourceError);
+                    if (input == null)
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            sourceError ?? $"{byHash[digest].LocalPath} changed while exporting.");
+                    string digestBeforeCopy = HashStream(input, cancellation, null);
+                    if (!string.Equals(digestBeforeCopy, source.ContentHash,
+                            StringComparison.OrdinalIgnoreCase)
+                        || !string.Equals(digestBeforeCopy, digest,
+                            StringComparison.OrdinalIgnoreCase))
+                        return IntegrationValue<McdfWriteStats>.Fail(
+                            $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
+                    input.Position = 0;
                     long fileWritten = 0;
+                    int got;
                     while ((got = input.Read(chunk, 0, chunk.Length)) > 0)
                     {
                         if (cancellation.IsCancellationRequested)
                             return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
                         writer.Write(chunk, 0, got);
-                        rehash.AppendData(chunk, 0, got);
                         written += got;
                         fileWritten += got;
                         progress(new McdfProgressStep(
                             McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
                     }
-                    // A file that changed since pass 1 — by size OR by a
-                    // same-length modification — would make the declared
-                    // SHA-1 false and corrupt payload alignment; fail
-                    // before the destination is ever replaced.
                     if (fileWritten != byHash[digest].Entry.Length)
                         return IntegrationValue<McdfWriteStats>.Fail(
                             $"{byHash[digest].LocalPath} changed while exporting.");
-                    if (!string.Equals(
-                            Convert.ToHexString(rehash.GetHashAndReset()),
-                            digest, StringComparison.OrdinalIgnoreCase))
-                        return IntegrationValue<McdfWriteStats>.Fail(
-                            $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
                     done++;
                     progress(new McdfProgressStep(
                         McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
@@ -581,13 +651,21 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 writer.Flush();
             }
 
-            if (File.Exists(destination))
-                File.Replace(temporary, destination, destinationBackupFileName: null);
+            // Decide the replacement mode before any lengthy source work. If
+            // an absent destination appears concurrently, Move fails without
+            // overwriting it; if an existing destination disappears, Replace
+            // fails without silently switching to create semantics.
+            if (destinationExisted)
+                File.Replace(temporary, fullDestination, destinationBackupFileName: null);
             else
-                File.Move(temporary, destination);
+                File.Move(temporary, fullDestination);
             moved = true;
             return IntegrationValue<McdfWriteStats>.Ok(
                 new McdfWriteStats(order.Count, totalBytes));
+        }
+        catch (OperationCanceledException)
+        {
+            return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
         }
         catch (Exception ex)
         {
@@ -600,13 +678,13 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             {
                 try
                 {
-                    if (File.Exists(temporary))
+                    if (temporary.Length > 0)
                         File.Delete(temporary);
                 }
                 catch
                 {
-                    // Leaving a .tmp behind is preferable to masking the
-                    // original failure; the destination itself is untouched.
+                    // The exact owned temp is best-effort cleanup; never
+                    // mask the original failure or touch the destination.
                 }
             }
         }
@@ -622,6 +700,182 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 throw new EndOfStreamException($"The {what} is truncated.");
             offset += got;
         }
+    }
+
+    private FileStream CreateOwnedTemporary(string destination, out string temporary)
+    {
+        string directory = Path.GetDirectoryName(destination)
+            ?? throw new IOException("The destination directory could not be resolved.");
+        string name = Path.GetFileName(destination);
+        for (int attempt = 0; attempt < 8; attempt++)
+        {
+            temporary = Path.Combine(
+                directory, $".{name}.{_newGuid():N}.tmp");
+            try
+            {
+                return new FileStream(
+                    temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            }
+            catch (IOException) when (attempt < 7)
+            {
+                // CreateNew is the ownership proof. A stale or concurrent
+                // same-name temp is never opened, overwritten, or deleted.
+            }
+        }
+
+        temporary = string.Empty;
+        throw new IOException("A unique temporary export file could not be allocated.");
+    }
+
+    private static FileStream? OpenValidatedSource(
+        string localPath,
+        McdfExportSourceObservation expected,
+        CancellationToken cancellation,
+        out string? error)
+    {
+        error = null;
+        try
+        {
+            cancellation.ThrowIfCancellationRequested();
+            string fullPath = Path.GetFullPath(localPath);
+            string? realPath = ResolveRealPath(fullPath);
+            if (realPath == null || !PathsEqual(realPath, expected.CanonicalPath))
+            {
+                error = $"{localPath} changed its canonical path while exporting.";
+                return null;
+            }
+            if (expected.CanonicalRoot.Length > 0
+                && EscapesRoot(Path.GetRelativePath(expected.CanonicalRoot, realPath)))
+            {
+                error = $"{localPath} is outside the inspected mod directory.";
+                return null;
+            }
+
+            var input = new FileStream(
+                realPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            string? finalPath = TryGetFinalPath(input.SafeFileHandle);
+            if (finalPath != null && !PathsEqual(finalPath, expected.CanonicalPath))
+            {
+                input.Dispose();
+                error = $"{localPath} changed its canonical handle path while exporting.";
+                return null;
+            }
+            string? identity = TryGetFileIdentity(input.SafeFileHandle);
+            if (expected.Identity != null && identity != null
+                && !string.Equals(expected.Identity, identity, StringComparison.Ordinal))
+            {
+                input.Dispose();
+                error = $"{localPath} changed its file identity while exporting.";
+                return null;
+            }
+            if (input.Length != expected.Length)
+            {
+                input.Dispose();
+                error = $"{localPath} changed while exporting.";
+                return null;
+            }
+            return input;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            error = $"{localPath} could not be opened for export: {ex.Message}";
+            return null;
+        }
+    }
+
+    private static McdfExportSourceObservation CaptureSource(
+        string localPath, CancellationToken cancellation)
+    {
+        string fullPath = Path.GetFullPath(localPath);
+        string realPath = ResolveRealPath(fullPath)
+            ?? throw new IOException($"{localPath} could not be resolved for export.");
+        using var input = new FileStream(
+            realPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        long length = input.Length;
+        string hash = HashStream(input, cancellation, null);
+        return new McdfExportSourceObservation(
+            realPath, string.Empty, length, hash,
+            TryGetFileIdentity(input.SafeFileHandle));
+    }
+
+    private static string HashStream(
+        Stream stream,
+        CancellationToken cancellation,
+        Action? chunkHook,
+        Action<int>? bytesRead = null)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        var chunk = new byte[ChunkSize];
+        int got;
+        while ((got = stream.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            hash.AppendData(chunk, 0, got);
+            bytesRead?.Invoke(got);
+            chunkHook?.Invoke();
+        }
+        cancellation.ThrowIfCancellationRequested();
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal);
+
+    private static string? TryGetFinalPath(SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsWindows() || handle.IsInvalid)
+            return null;
+        var buffer = new StringBuilder(512);
+        uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
+        if (length == 0 || length >= buffer.Capacity)
+            return null;
+        string path = buffer.ToString();
+        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            path = @"\" + path[7..];
+        else if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
+            path = path[4..];
+        return Path.GetFullPath(path);
+    }
+
+    private static string? TryGetFileIdentity(SafeFileHandle handle)
+    {
+        if (!OperatingSystem.IsWindows() || handle.IsInvalid
+            || !GetFileInformationByHandle(handle, out var info))
+            return null;
+        return $"{info.VolumeSerialNumber:X8}:{info.FileIndexHigh:X8}{info.FileIndexLow:X8}";
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle hFile, StringBuilder lpszFilePath, uint cchFilePath, uint dwFlags);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle hFile, out ByHandleFileInformation lpFileInformation);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
     }
 
     /// <summary>Resolves every reparse point in a path, including

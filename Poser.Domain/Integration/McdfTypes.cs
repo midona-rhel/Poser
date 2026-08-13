@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using Poser.Domain.Identity;
 
 namespace Poser.Domain.Integration;
@@ -103,8 +104,52 @@ public sealed record McdfPackage(
         || ManipulationData.Length > 0;
 }
 
+/// <summary>
+/// Immutable source observation captured by the file boundary. The
+/// application carries this through unchanged; it never reopens or validates
+/// the source path itself.
+/// </summary>
+public sealed record McdfExportSourceObservation
+{
+    public string CanonicalPath { get; }
+    public string CanonicalRoot { get; }
+    public long Length { get; }
+    public string ContentHash { get; }
+    public string? Identity { get; }
+
+    public McdfExportSourceObservation(
+        string canonicalPath,
+        string canonicalRoot,
+        long length,
+        string contentHash,
+        string? identity = null)
+    {
+        CanonicalPath = canonicalPath ?? throw new ArgumentNullException(nameof(canonicalPath));
+        CanonicalRoot = canonicalRoot ?? throw new ArgumentNullException(nameof(canonicalRoot));
+        ContentHash = contentHash ?? throw new ArgumentNullException(nameof(contentHash));
+        Length = length;
+        Identity = identity;
+    }
+}
+
 /// <summary>One local file to embed on export, with every game path it replaces.</summary>
-public sealed record McdfExportFile(IReadOnlyList<string> GamePaths, string LocalPath);
+public sealed record McdfExportFile
+{
+    public IReadOnlyList<string> GamePaths { get; }
+    public string LocalPath { get; }
+    public McdfExportSourceObservation? Source { get; }
+
+    public McdfExportFile(
+        IReadOnlyList<string> gamePaths,
+        string localPath,
+        McdfExportSourceObservation? source = null)
+    {
+        GamePaths = new ReadOnlyCollection<string>(
+            new List<string>(gamePaths ?? throw new ArgumentNullException(nameof(gamePaths))));
+        LocalPath = localPath ?? throw new ArgumentNullException(nameof(localPath));
+        Source = source;
+    }
+}
 
 public enum McdfExportCandidateKind
 {
@@ -118,27 +163,81 @@ public enum McdfExportCandidateKind
 /// root; game-path observations retain their source text for application
 /// semantic filtering and swap decisions.
 /// </summary>
-public sealed record McdfExportCandidate(
-    string ActualPath,
-    IReadOnlyList<string> GamePaths,
-    McdfExportCandidateKind Kind,
-    string? LocalPath,
-    long Length);
+public sealed record McdfExportCandidate
+{
+    public string ActualPath { get; }
+    public IReadOnlyList<string> GamePaths { get; }
+    public McdfExportCandidateKind Kind { get; }
+    public string? LocalPath { get; }
+    public long Length { get; }
+    public McdfExportSourceObservation? Source { get; }
+
+    public McdfExportCandidate(
+        string actualPath,
+        IReadOnlyList<string> gamePaths,
+        McdfExportCandidateKind kind,
+        string? localPath,
+        long length,
+        McdfExportSourceObservation? source = null)
+    {
+        ActualPath = actualPath ?? throw new ArgumentNullException(nameof(actualPath));
+        GamePaths = new ReadOnlyCollection<string>(
+            new List<string>(gamePaths ?? throw new ArgumentNullException(nameof(gamePaths))));
+        Kind = kind;
+        LocalPath = localPath;
+        Length = length;
+        Source = source;
+    }
+}
 
 /// <summary>Validated export candidates plus deterministic per-resource
 /// skips. The application owns only MCDF path semantics after this point.</summary>
-public sealed record McdfExportInspection(
-    IReadOnlyList<McdfExportCandidate> Candidates,
-    IReadOnlyList<string> Skipped);
+public sealed record McdfExportInspection
+{
+    public IReadOnlyList<McdfExportCandidate> Candidates { get; }
+    public IReadOnlyList<string> Skipped { get; }
+
+    public McdfExportInspection(
+        IReadOnlyList<McdfExportCandidate> candidates,
+        IReadOnlyList<string> skipped)
+    {
+        Candidates = new ReadOnlyCollection<McdfExportCandidate>(
+            new List<McdfExportCandidate>(candidates ?? throw new ArgumentNullException(nameof(candidates))));
+        Skipped = new ReadOnlyCollection<string>(
+            new List<string>(skipped ?? throw new ArgumentNullException(nameof(skipped))));
+    }
+}
 
 /// <summary>Everything an MCDF export writes. Capture is complete before
 /// writing starts; writing never touches the actor.</summary>
-public sealed record McdfExportContent(
-    string Description,
-    string GlamourerData,
-    string CustomizePlusData,
-    string ManipulationData,
-    IReadOnlyList<McdfExportFile> Files,
-    IReadOnlyDictionary<string, string> Swaps);
+public sealed record McdfExportContent
+{
+    public string Description { get; }
+    public string GlamourerData { get; }
+    public string CustomizePlusData { get; }
+    public string ManipulationData { get; }
+    public IReadOnlyList<McdfExportFile> Files { get; }
+    public IReadOnlyDictionary<string, string> Swaps { get; }
+
+    public McdfExportContent(
+        string description,
+        string glamourerData,
+        string customizePlusData,
+        string manipulationData,
+        IReadOnlyList<McdfExportFile> files,
+        IReadOnlyDictionary<string, string> swaps)
+    {
+        Description = description ?? throw new ArgumentNullException(nameof(description));
+        GlamourerData = glamourerData ?? throw new ArgumentNullException(nameof(glamourerData));
+        CustomizePlusData = customizePlusData ?? throw new ArgumentNullException(nameof(customizePlusData));
+        ManipulationData = manipulationData ?? throw new ArgumentNullException(nameof(manipulationData));
+        Files = new ReadOnlyCollection<McdfExportFile>(
+            new List<McdfExportFile>(files ?? throw new ArgumentNullException(nameof(files))));
+        Swaps = new ReadOnlyDictionary<string, string>(
+            new Dictionary<string, string>(
+                swaps ?? throw new ArgumentNullException(nameof(swaps)),
+                StringComparer.Ordinal));
+    }
+}
 
 public sealed record McdfWriteStats(int Files, long UncompressedBytes);
