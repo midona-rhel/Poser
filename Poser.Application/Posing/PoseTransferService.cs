@@ -41,7 +41,10 @@ public sealed class PoseTransferService
         var captured = Capture(targets);
         if (!captured.Success || captured.Pose == null)
             return PoseEditResult.Fail(
-                captured.Detail ?? "Could not capture pose.");
+                captured.Detail ?? "Could not capture pose.") with
+            {
+                Recovery = captured.Recovery,
+            };
         _stashedPose = captured.Pose;
         StashedAt = DateTimeOffset.UtcNow;
         StashedFrom = sourceLabel;
@@ -49,8 +52,12 @@ public sealed class PoseTransferService
     }
 
     public PoseEditResult ApplyStash(
-        IReadOnlyList<TransformTargetId> targets) =>
-        _stashedPose == null
+        IReadOnlyList<TransformTargetId> targets)
+    {
+        if (_edits.RecoveryBarrier() is { } recoveryBarrier)
+            return recoveryBarrier;
+        return _stashedPose == null
             ? PoseEditResult.Fail("No pose has been stashed.")
             : Apply(targets, _stashedPose, "Apply stashed pose");
+    }
 }

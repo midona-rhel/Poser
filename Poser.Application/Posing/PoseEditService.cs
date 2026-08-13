@@ -421,7 +421,11 @@ public sealed class PoseEditService
         return PoseEditResult.Ok(desired.Count);
     }
 
-    private PoseEditResult? RecoveryBarrier() =>
+    /// <summary>
+    /// Read-only barrier projection for Application-owned pose workflows that
+    /// must reject before inspecting their own local state.
+    /// </summary>
+    internal PoseEditResult? RecoveryBarrier() =>
         _gestures.PendingRecovery is { } recovery
             ? PoseEditResult.Fail(
                 "Transform recovery must complete before another mutation.") with

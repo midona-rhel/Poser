@@ -589,6 +589,76 @@ public sealed class TransactionContractTests
         Assert.False(app.History.CanUndo);
     }
 
+    [Fact]
+    public void Stash_failure_preserves_current_recovery_without_port_calls()
+    {
+        var bone = TestIds.BoneTarget();
+        using var app = BoneHarness(bone);
+        var pending = CreatePendingPoseRecovery(app, bone);
+        var transfers = new PoseTransferService(app.PoseEdits);
+        var captureCount = app.Runtime.CaptureCalls.Count;
+        var applyCount = app.Runtime.ApplyCalls.Count;
+        var restoreCount = app.Runtime.RestoreCalls.Count;
+
+        var result = transfers.Stash(
+            Array.Empty<TransformTargetId>(),
+            "blocked stash");
+
+        AssertBarrier(result, pending);
+        Assert.False(transfers.HasStash);
+        Assert.Null(transfers.StashedAt);
+        Assert.Null(transfers.StashedFrom);
+        Assert.Equal(captureCount, app.Runtime.CaptureCalls.Count);
+        Assert.Equal(applyCount, app.Runtime.ApplyCalls.Count);
+        Assert.Equal(restoreCount, app.Runtime.RestoreCalls.Count);
+    }
+
+    [Fact]
+    public void Apply_stash_checks_current_recovery_before_missing_stash_without_port_calls()
+    {
+        var bone = TestIds.BoneTarget();
+        using var app = BoneHarness(bone);
+        var pending = CreatePendingPoseRecovery(app, bone);
+        var transfers = new PoseTransferService(app.PoseEdits);
+        var captureCount = app.Runtime.CaptureCalls.Count;
+        var applyCount = app.Runtime.ApplyCalls.Count;
+        var restoreCount = app.Runtime.RestoreCalls.Count;
+
+        var result = transfers.ApplyStash(Array.Empty<TransformTargetId>());
+
+        AssertBarrier(result, pending);
+        Assert.Contains("recovery", result.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("No pose", result.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.False(transfers.HasStash);
+        Assert.Equal(captureCount, app.Runtime.CaptureCalls.Count);
+        Assert.Equal(applyCount, app.Runtime.ApplyCalls.Count);
+        Assert.Equal(restoreCount, app.Runtime.RestoreCalls.Count);
+    }
+
+    [Fact]
+    public void Successful_stash_and_apply_semantics_remain_unchanged()
+    {
+        var bone = TestIds.BoneTarget();
+        using var app = BoneHarness(bone);
+        var transfers = new PoseTransferService(app.PoseEdits);
+
+        var stashed = transfers.Stash(new[] { bone }, "source actor");
+
+        Assert.True(stashed.Success);
+        Assert.Equal(1, stashed.Affected);
+        Assert.True(transfers.HasStash);
+        Assert.Equal("source actor", transfers.StashedFrom);
+        Assert.NotNull(transfers.StashedAt);
+        Assert.False(app.History.CanUndo);
+
+        var applied = transfers.ApplyStash(new[] { bone });
+
+        Assert.True(applied.Success);
+        Assert.Equal(1, applied.Affected);
+        Assert.True(app.History.CanUndo);
+        Assert.Equal("Apply stashed pose", app.History.UndoDescription);
+    }
+
     private static TransformApplicationHarness ActorHarness(
         TransformTargetId target,
         TransformTargetState initial)
@@ -639,6 +709,19 @@ public sealed class TransactionContractTests
                             Vector3.Zero)),
                 })),
         });
+
+    private static TransformRecoveryReceipt CreatePendingPoseRecovery(
+        TransformApplicationHarness app,
+        TransformTargetId bone)
+    {
+        app.Runtime.FailRestoreCalls.UnionWith(new[] { 1, 2 });
+        app.Runtime.MutateBeforeRestoreFailureCalls.Add(1);
+        var failed = app.PoseEdits.ApplyPortable(
+            new[] { bone },
+            Portable(bone, 4),
+            "create pending recovery");
+        return Assert.IsType<TransformRecoveryReceipt>(failed.Recovery);
+    }
 
     private static void AssertBarrier(
         GestureResult result,
