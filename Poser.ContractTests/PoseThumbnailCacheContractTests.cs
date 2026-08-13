@@ -90,6 +90,29 @@ public sealed class PoseThumbnailCacheContractTests
         disposedWrap.Received(1).Dispose();
     }
 
+    [Fact]
+    public void Clear_disposes_a_delayed_wrap_without_a_future_tick()
+    {
+        var provider = Substitute.For<ITextureProvider>();
+        var pending = new TaskCompletionSource<IDalamudTextureWrap>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        provider.CreateFromImageAsync(
+                Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(pending.Task);
+        using var fixture = new ImageFixture();
+        var delayedWrap = Substitute.For<IDalamudTextureWrap>();
+
+        using var cache = new PoseThumbnailCache(provider);
+        cache.Get(fixture.WriteValid("clear-without-tick.pose"));
+        WaitUntil(() => provider.ReceivedCalls().GetEnumerator().MoveNext());
+        cache.Clear();
+        pending.SetResult(delayedWrap);
+
+        WaitUntil(() => delayedWrap.ReceivedCalls().Any());
+
+        delayedWrap.Received(1).Dispose();
+    }
+
     private static void WaitUntil(Func<bool> predicate)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);

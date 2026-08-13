@@ -81,6 +81,7 @@ public sealed class PoseThumbnailCache : IDisposable
     /// <summary>The only cross-thread channel. A null wrap means "no usable image".</summary>
     private readonly ConcurrentQueue<(string Path, int Generation, IDalamudTextureWrap? Wrap)>
         _completed = new();
+    private readonly object _completionSync = new();
 
     /// <summary>Never disposed: workers may be parked on it long after
     /// <see cref="Dispose"/>, and a <see cref="SemaphoreSlim"/> whose
@@ -196,7 +197,7 @@ public sealed class PoseThumbnailCache : IDisposable
     public void Clear()
     {
         // Bump first: anything a worker enqueues from here on is already stale.
-        _generation++;
+        Interlocked.Increment(ref _generation);
 
         foreach (var slot in _slots.Values)
             slot.Wrap?.Dispose();
@@ -319,13 +320,33 @@ public sealed class PoseThumbnailCache : IDisposable
         }
     }
 
-    /// <summary>Disposes anything sitting in the completion queue. Safe to
-    /// call from either thread: each queued item is handed to exactly one
-    /// dequeuer.</summary>
+    /// <summary>Disposes anything sitting in the completion queue. Enqueue and
+    /// drain share a lock so Clear cannot leave a just-enqueued stale wrap
+    /// ownerless when no later Tick runs.</summary>
     private void DrainAndDiscard()
     {
-        while (_completed.TryDequeue(out var done))
-            done.Wrap?.Dispose();
+        lock (_completionSync)
+        {
+            while (_completed.TryDequeue(out var done))
+                done.Wrap?.Dispose();
+        }
+    }
+
+    private void EnqueueCompleted(
+        string filePath,
+        int generation,
+        IDalamudTextureWrap? wrap)
+    {
+        lock (_completionSync)
+        {
+            if (_disposed || generation != Volatile.Read(ref _generation))
+            {
+                wrap?.Dispose();
+                return;
+            }
+
+            _completed.Enqueue((filePath, generation, wrap));
+        }
     }
 
     /// <summary>
@@ -416,17 +437,6 @@ public sealed class PoseThumbnailCache : IDisposable
             _decodeGate.Release();
         }
 
-        if (_disposed)
-        {
-            wrap?.Dispose();
-            return;
-        }
-
-        _completed.Enqueue((filePath, generation, wrap));
-
-        // Closes the other ordering of the same race: disposal may have run
-        // between the check above and the enqueue, leaving nobody to drain.
-        if (_disposed)
-            DrainAndDiscard();
+        EnqueueCompleted(filePath, generation, wrap);
     }
 }

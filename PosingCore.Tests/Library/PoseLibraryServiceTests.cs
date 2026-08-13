@@ -111,6 +111,40 @@ public sealed class PoseLibraryServiceTests
     }
 
     [Fact]
+    public void Missing_configured_root_aborts_without_publishing_a_partial_snapshot()
+    {
+        using var fixture = new LibraryFixture();
+        fixture.WritePose("before", PoseFilePersistenceTests.ValidPose());
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        var before = service.Snapshot;
+        fixture.AddMissingSource();
+
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        Assert.Same(before, service.Snapshot);
+    }
+
+    [Fact]
+    public void Configured_root_preflight_failure_aborts_without_publishing_a_partial_snapshot()
+    {
+        using var fixture = new LibraryFixture();
+        fixture.WritePose("before", PoseFilePersistenceTests.ValidPose());
+        using var service = fixture.CreateService(path => path == fixture.Root);
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+        var before = service.Snapshot;
+        fixture.AddObservationFailureSource();
+
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        Assert.Same(before, service.Snapshot);
+    }
+
+    [Fact]
     public void Cancellation_dispose_and_stale_generation_never_publish_after_their_pass()
     {
         using var fixture = new LibraryFixture();
@@ -140,6 +174,8 @@ public sealed class PoseLibraryServiceTests
 
     private sealed class LibraryFixture : IDisposable
     {
+        private ConfigurationService? _config;
+
         public string Root { get; } = Path.Combine(
             Path.GetTempPath(), "poser-library-tests", Guid.NewGuid().ToString("N"));
 
@@ -162,10 +198,11 @@ public sealed class PoseLibraryServiceTests
             stream.SetLength(PoseFileLimits.MaxFileBytes + 1);
         }
 
-        public PoseLibraryService CreateService()
+        public PoseLibraryService CreateService(Func<string, bool>? observeDirectory = null)
         {
             var plugin = Substitute.For<IDalamudPluginInterface>();
             var config = new ConfigurationService(plugin);
+            _config = config;
             config.Config.Library.Sources.Clear();
             config.Config.Library.Sources.Add(new LibrarySourceConfig
             {
@@ -173,7 +210,27 @@ public sealed class PoseLibraryServiceTests
                 Path = Root,
                 Enabled = true,
             });
-            return new PoseLibraryService(config);
+            return new PoseLibraryService(config, AtomicPoseFileStore.Default, observeDirectory);
+        }
+
+        public void AddMissingSource() =>
+            _config!.Config.Library.Sources.Add(new LibrarySourceConfig
+            {
+                Name = "Missing",
+                Path = Path.Combine(Root, "missing"),
+                Enabled = true,
+            });
+
+        public void AddObservationFailureSource()
+        {
+            var path = Path.Combine(Root, "not-a-directory");
+            File.WriteAllText(path, "not a directory");
+            _config!.Config.Library.Sources.Add(new LibrarySourceConfig
+            {
+                Name = "Inaccessible",
+                Path = path,
+                Enabled = true,
+            });
         }
 
         public void Dispose()

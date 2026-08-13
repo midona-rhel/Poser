@@ -132,6 +132,32 @@ public sealed class PoseFilePersistenceTests
     }
 
     [Fact]
+    public void ReadMetadata_streams_large_image_payload_with_a_bounded_read_buffer()
+    {
+        var image = new string('A', 8 * 1024 * 1024);
+        var bones = string.Join(
+            ",",
+            Enumerable.Range(0, PoseFileLimits.MaxEntriesPerCollection)
+                .Select(i =>
+                    $"\"bone-{i}\":{{\"Position\":\"1, 2, 3\"," +
+                    "\"Rotation\":\"0, 0, 0, 1\",\"Scale\":\"1, 1, 1\"}"));
+        var json = Encoding.UTF8.GetBytes(
+            "{\"Author\":\"streamed\",\"Base64Image\":\"" + image +
+            "\",\"Bones\":{" + bones + "}}");
+        var fileSystem = new BoundedReadPoseFileSystem(json);
+        var store = new AtomicPoseFileStore(fileSystem);
+
+        var result = store.ReadMetadata("large.pose");
+
+        Assert.True(result.Succeeded, result.Failure?.Detail);
+        Assert.Equal("streamed", result.Author);
+        Assert.True(result.HasThumbnail);
+        Assert.True(fileSystem.ReadCount > 1);
+        Assert.All(fileSystem.ReadSizes, size =>
+            Assert.InRange(size, 1, AtomicPoseFileStore.MetadataBufferSize));
+    }
+
+    [Fact]
     public void Read_rejects_an_empty_file_before_decoding()
     {
         using var fixture = new StoreFixture();
@@ -184,6 +210,20 @@ public sealed class PoseFilePersistenceTests
         Assert.Equal(accepted, result.Succeeded);
         if (!accepted)
             Assert.Equal(PoseFileStoreFailureKind.Json, result.Failure?.Kind);
+    }
+
+    [Fact]
+    public void ReadMetadata_reuses_the_shared_json_depth_limit()
+    {
+        using var fixture = new StoreFixture();
+        File.WriteAllText(
+            fixture.Destination,
+            NestedUnknownJson(PoseFileLimits.MaxJsonDepth));
+
+        var result = AtomicPoseFileStore.Default.ReadMetadata(fixture.Destination);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.Json, result.Failure?.Kind);
     }
 
     [Fact]
@@ -776,6 +816,54 @@ internal sealed class EmulatedPoseFileSystem : IPoseFileStoreFileSystem
             behavior(path);
         else
             File.Delete(path);
+    }
+}
+
+internal sealed class BoundedReadPoseFileSystem : IPoseFileStoreFileSystem
+{
+    private readonly byte[] _bytes;
+
+    public BoundedReadPoseFileSystem(byte[] bytes) => _bytes = bytes;
+
+    public List<int> ReadSizes { get; } = [];
+    public int ReadCount => ReadSizes.Count;
+
+    public Stream OpenRead(string path) => new BoundedReadStream(_bytes, ReadSizes);
+    public Stream CreateNew(string path) => throw new NotSupportedException();
+    public void FlushToDisk(Stream stream) => throw new NotSupportedException();
+    public bool Exists(string path) => false;
+    public void Replace(string source, string destination, string backup) => throw new NotSupportedException();
+    public void Move(string source, string destination) => throw new NotSupportedException();
+    public void Delete(string path) => throw new NotSupportedException();
+
+    private sealed class BoundedReadStream : MemoryStream
+    {
+        private readonly List<int> _readSizes;
+
+        public BoundedReadStream(byte[] bytes, List<int> readSizes)
+            : base(bytes, writable: false)
+        {
+            _readSizes = readSizes;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            EnsureBound(count);
+            return base.Read(buffer, offset, count);
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            EnsureBound(buffer.Length);
+            return base.Read(buffer);
+        }
+
+        private void EnsureBound(int count)
+        {
+            _readSizes.Add(count);
+            if (count > AtomicPoseFileStore.MetadataBufferSize)
+                throw new InvalidOperationException("The metadata probe requested an unbounded read.");
+        }
     }
 }
 

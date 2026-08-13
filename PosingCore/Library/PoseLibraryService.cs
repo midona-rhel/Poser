@@ -27,6 +27,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     private readonly ConfigurationService _config;
     private readonly AtomicPoseFileStore _poseStore;
+    private readonly Func<string, bool>? _observeDirectory;
     private readonly object _sync = new();
 
     private PoseLibrarySnapshot _snapshot = EmptySnapshot;
@@ -44,10 +45,12 @@ public sealed class PoseLibraryService : IPoseLibraryService
 
     internal PoseLibraryService(
         ConfigurationService config,
-        AtomicPoseFileStore poseStore)
+        AtomicPoseFileStore poseStore,
+        Func<string, bool>? observeDirectory = null)
     {
         _config = config;
         _poseStore = poseStore;
+        _observeDirectory = observeDirectory;
         _sourceSignature = BuildSourceSignature();
         _config.OnConfigurationChanged += OnConfigurationChanged;
     }
@@ -213,8 +216,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
             if (!source.Enabled || string.IsNullOrWhiteSpace(source.Path))
                 continue;
 
-            if (!SafeDirectoryExists(source.Path))
-                continue;
+            if (!ObserveDirectory(source.Path))
+            {
+                throw new ScanAbortException(
+                    $"The configured pose library root could not be observed: {source.Path}");
+            }
 
             var root = BuildNode(
                 i,
@@ -495,8 +501,22 @@ public sealed class PoseLibraryService : IPoseLibraryService
             ? PoseLibraryEntryKind.Mcdf
             : PoseLibraryEntryKind.Pose;
 
-    private static bool SafeDirectoryExists(string path)
+    private bool ObserveDirectory(string path)
     {
+        if (_observeDirectory is not null)
+        {
+            try
+            {
+                return _observeDirectory(path);
+            }
+            catch (Exception ex)
+            {
+                throw new ScanAbortException(
+                    $"Observing the configured pose library root failed: {ex.Message}",
+                    ex);
+            }
+        }
+
         try
         {
             return Directory.Exists(path);

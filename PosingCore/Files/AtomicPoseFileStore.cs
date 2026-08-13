@@ -1,7 +1,10 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Text.Json;
 
@@ -101,11 +104,16 @@ public sealed class PoseFileMetadataReadOutcome
     }
 
     internal static PoseFileMetadataReadOutcome Success(PoseFile pose) =>
+        Success(pose, !string.IsNullOrEmpty(pose.Base64Image));
+
+    internal static PoseFileMetadataReadOutcome Success(
+        PoseFile pose,
+        bool hasThumbnail) =>
         new(
             pose.Author,
             pose.Version,
             Array.AsReadOnly((pose.Tags ?? []).ToArray()),
-            !string.IsNullOrEmpty(pose.Base64Image),
+            hasThumbnail,
             null);
 
     internal static PoseFileMetadataReadOutcome Failed(PoseFileStoreFailure failure) =>
@@ -204,6 +212,8 @@ internal sealed class SystemPoseFileStoreFileSystem : IPoseFileStoreFileSystem
 /// </summary>
 public sealed class AtomicPoseFileStore
 {
+    internal const int MetadataBufferSize = 64 * 1024;
+
     public static AtomicPoseFileStore Default { get; } = new();
 
     private readonly IPoseFileStoreFileSystem _fileSystem;
@@ -299,18 +309,7 @@ public sealed class AtomicPoseFileStore
                         path));
             }
 
-            var bytes = new byte[(int)stream.Length];
-            stream.ReadExactly(bytes);
-            if (stream.ReadByte() != -1)
-            {
-                return PoseFileMetadataReadOutcome.Failed(
-                    PoseFileStoreFailure.Create(
-                        PoseFileStoreFailureKind.SizeLimit,
-                        "The pose file changed while it was being read.",
-                        path));
-            }
-
-            return DecodeMetadata(bytes, path);
+            return DecodeMetadata(stream, stream.Length, path);
         }
         catch (Exception ex)
         {
@@ -692,27 +691,44 @@ public sealed class AtomicPoseFileStore
     }
 
     private PoseFileMetadataReadOutcome DecodeMetadata(
-        ReadOnlySpan<byte> bytes,
+        Stream stream,
+        long expectedLength,
         string path)
     {
         try
         {
-            var preflight = PoseFileValidation.Preflight(bytes);
-            if (!preflight.Succeeded)
+            var projection = new StreamingMetadataProjection(stream).Read();
+            if (projection.BytesRead != expectedLength)
             {
                 return PoseFileMetadataReadOutcome.Failed(
-                    ValidationReadFailure(preflight.Failure!, path).Failure!);
+                    PoseFileStoreFailure.Create(
+                        PoseFileStoreFailureKind.SizeLimit,
+                        "The pose file changed while it was being read.",
+                        path));
             }
-
-            var pose = JsonSerializer.Deserialize<PoseFile>(bytes, PoseFile.JsonOptions);
-            var validation = PoseFileValidation.Validate(pose);
+            var validation = PoseFileValidation.Validate(projection.Pose);
             if (!validation.Succeeded)
             {
                 return PoseFileMetadataReadOutcome.Failed(
                     ValidationReadFailure(validation.Failure!, path).Failure!);
             }
 
-            return PoseFileMetadataReadOutcome.Success(pose!);
+            return PoseFileMetadataReadOutcome.Success(
+                projection.Pose,
+                projection.HasThumbnail);
+        }
+        catch (MetadataValidationException ex)
+        {
+            return PoseFileMetadataReadOutcome.Failed(
+                ValidationReadFailure(ex.Failure, path).Failure!);
+        }
+        catch (InvalidDataException ex)
+        {
+            return PoseFileMetadataReadOutcome.Failed(
+                PoseFileStoreFailure.Create(
+                    PoseFileStoreFailureKind.SizeLimit,
+                    ex.Message,
+                    path));
         }
         catch (JsonException ex)
         {
@@ -731,6 +747,718 @@ public sealed class AtomicPoseFileStore
                     path));
         }
     }
+
+    private sealed class MetadataValidationException : Exception
+    {
+        public MetadataValidationException(PoseFileValidationFailure failure)
+            : base(failure.Detail)
+        {
+            Failure = failure;
+        }
+
+        public PoseFileValidationFailure Failure { get; }
+    }
+
+    private sealed class StreamingMetadataProjection
+    {
+        // The metadata path is intentionally a forward-only projection:
+        // retaining the document or its image string would recreate the
+        // allocation that indexing is meant to avoid.
+        private readonly Stream _stream;
+        private readonly byte[] _buffer =
+            ArrayPool<byte>.Shared.Rent(MetadataBufferSize);
+        private int _offset;
+        private int _count;
+        private int _peeked = -2;
+        private long _totalBytes;
+        private long _collectionEntries;
+        private readonly PoseFile _pose = new();
+        private bool _hasThumbnail;
+
+        public StreamingMetadataProjection(Stream stream) => _stream = stream;
+
+        public MetadataProjection Read()
+        {
+            try
+            {
+                SkipWhitespace();
+                ReadObject(ParseTopProperty, 1);
+                SkipWhitespace();
+                if (Peek() != -1)
+                    throw new JsonException("Trailing content follows the pose document.");
+                return new MetadataProjection(_pose, _hasThumbnail, _totalBytes);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(_buffer);
+            }
+        }
+
+        private void ParseTopProperty(StringValue property)
+        {
+            switch (property.Text)
+            {
+                case nameof(PoseFile.TypeName):
+                    ParseNullableStringLength();
+                    break;
+                case nameof(PoseFile.Author):
+                    _pose.Author = ParseNullableString();
+                    break;
+                case nameof(PoseFile.Description):
+                    ParseNullableStringLength();
+                    break;
+                case nameof(PoseFile.Version):
+                    _pose.Version = ParseNullableString();
+                    break;
+                case nameof(PoseFile.Base64Image):
+                    _hasThumbnail = ParseNullableStringLength() > 0;
+                    break;
+                case nameof(PoseFile.Tags):
+                    ParseTags(2);
+                    break;
+                case nameof(PoseFile.ModelDifference):
+                    _pose.ModelDifference = ParseBoneData(2);
+                    break;
+                case nameof(PoseFile.ModelAbsoluteValues):
+                    _pose.ModelAbsoluteValues = ParseBoneData(2);
+                    break;
+                case nameof(PoseFile.Bones):
+                    ParseCollection(nameof(PoseFile.Bones), 2);
+                    break;
+                case nameof(PoseFile.MainHand):
+                    ParseCollection(nameof(PoseFile.MainHand), 2);
+                    break;
+                case nameof(PoseFile.OffHand):
+                    ParseCollection(nameof(PoseFile.OffHand), 2);
+                    break;
+                case nameof(PoseFile.Prop):
+                    ParseCollection(nameof(PoseFile.Prop), 2);
+                    break;
+                case nameof(PoseFile.Ornament):
+                    ParseCollection(nameof(PoseFile.Ornament), 2);
+                    break;
+                case nameof(PoseFile.Position):
+                    _pose.Position = ParseVector3();
+                    break;
+                case nameof(PoseFile.Rotation):
+                    _pose.Rotation = ParseQuaternion();
+                    break;
+                case nameof(PoseFile.Scale):
+                    _pose.Scale = ParseVector3();
+                    break;
+                default:
+                    ParseValue(2);
+                    break;
+            }
+        }
+
+        private void ParseTags(int depth)
+        {
+            if (Peek() == 'n')
+            {
+                ReadLiteral("null");
+                _pose.Tags = null;
+                return;
+            }
+
+            _pose.Tags = [];
+            ReadArray(index =>
+            {
+                if (index >= PoseFileLimits.MaxTags)
+                {
+                    throw Validation(
+                        PoseFileValidationFailureKind.TagCount,
+                        $"Tags contains more than {PoseFileLimits.MaxTags} raw entries.");
+                }
+
+                if (Peek() == '"')
+                {
+                    var tag = ReadString(true, PoseFileLimits.MaxTagCharacters + 1);
+                    EnsureTagLength(tag, index);
+                    if (tag.Text is not null)
+                        _pose.Tags.Add(tag.Text);
+                }
+                else if (Peek() == '{')
+                {
+                    ParseTagObject(index, depth + 1);
+                }
+                else if (Peek() == 'n')
+                {
+                    ReadLiteral("null");
+                }
+                else
+                {
+                    ParseValue(depth + 1);
+                }
+            }, depth);
+        }
+
+        private void ParseTagObject(int tagIndex, int depth)
+        {
+            string? name = null;
+            string? displayName = null;
+            ReadObject(property =>
+            {
+                if (string.Equals(property.Text, "Name", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (Peek() == '"')
+                    {
+                        var value = ReadString(true, PoseFileLimits.MaxTagCharacters + 1);
+                        EnsureTagLength(value, tagIndex);
+                        name = value.Text;
+                    }
+                    else
+                    {
+                        ParseValue(depth + 1);
+                    }
+                }
+                else if (string.Equals(property.Text, "DisplayName", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (Peek() == '"')
+                    {
+                        var value = ReadString(true, PoseFileLimits.MaxTagCharacters + 1);
+                        EnsureTagLength(value, tagIndex);
+                        displayName = value.Text;
+                    }
+                    else
+                    {
+                        ParseValue(depth + 1);
+                    }
+                }
+                else
+                {
+                    ParseValue(depth + 1);
+                }
+            }, depth);
+            if (name is not null || displayName is not null)
+                _pose.Tags!.Add(name ?? displayName!);
+        }
+
+        private readonly Dictionary<string, string> _boneAliases = new();
+
+        private void ParseCollection(string collectionName, int depth)
+        {
+            if (Peek() == 'n')
+                throw Validation(PoseFileValidationFailureKind.Document, $"{collectionName} must be an object.");
+
+            ReadObject(property =>
+            {
+                if (property.CharacterCount > PoseFileLimits.MaxBoneNameCharacters)
+                {
+                    throw Validation(
+                        PoseFileValidationFailureKind.BoneName,
+                        $"{collectionName} bone name exceeds " +
+                        $"{PoseFileLimits.MaxBoneNameCharacters} characters.");
+                }
+
+                _collectionEntries++;
+                if (_collectionEntries > PoseFileLimits.MaxTotalEntries)
+                {
+                    throw Validation(
+                        PoseFileValidationFailureKind.TotalEntries,
+                        "Pose collections contain more than " +
+                        $"{PoseFileLimits.MaxTotalEntries} raw entries.");
+                }
+
+                if (++_currentCollectionEntries > PoseFileLimits.MaxEntriesPerCollection)
+                {
+                    throw Validation(
+                        PoseFileValidationFailureKind.CollectionSize,
+                        $"{collectionName} contains more than " +
+                        $"{PoseFileLimits.MaxEntriesPerCollection} raw entries.");
+                }
+
+                var bone = ParseBoneData(depth + 1);
+                if (property.Text is not null)
+                {
+                    ValidateBoneData(collectionName, property.Text, bone);
+                    if (collectionName == nameof(PoseFile.Bones))
+                    {
+                        var target = AnamnesisBoneNameConverter.ToGame(property.Text);
+                        if (_boneAliases.TryGetValue(target, out var previous) &&
+                            !string.Equals(previous, property.Text, StringComparison.Ordinal))
+                        {
+                            throw Validation(
+                                PoseFileValidationFailureKind.AliasCollision,
+                                $"Bones '{previous}' and '{property.Text}' both map to '{target}'.");
+                        }
+                        _boneAliases[target] = property.Text;
+                    }
+                }
+            }, depth, before: () => _currentCollectionEntries = 0);
+        }
+
+        private int _currentCollectionEntries;
+
+        private PoseFile.BoneData ParseBoneData(int depth)
+        {
+            if (Peek() == 'n')
+                throw Validation(
+                    PoseFileValidationFailureKind.Document,
+                    "A pose transform has no value.");
+
+            var bone = new PoseFile.BoneData();
+            ReadObject(property =>
+            {
+                switch (property.Text)
+                {
+                    case nameof(PoseFile.BoneData.Position):
+                        bone.Position = ParseVector3();
+                        break;
+                    case nameof(PoseFile.BoneData.Rotation):
+                        bone.Rotation = ParseQuaternion();
+                        break;
+                    case nameof(PoseFile.BoneData.Scale):
+                        bone.Scale = ParseVector3();
+                        break;
+                    default:
+                        ParseValue(depth + 1);
+                        break;
+                }
+            }, depth);
+            return bone;
+        }
+
+        private static void ValidateBoneData(
+            string collectionName,
+            string boneName,
+            PoseFile.BoneData bone)
+        {
+            if (!float.IsFinite(bone.Position.X) ||
+                !float.IsFinite(bone.Position.Y) ||
+                !float.IsFinite(bone.Position.Z) ||
+                !float.IsFinite(bone.Rotation.X) ||
+                !float.IsFinite(bone.Rotation.Y) ||
+                !float.IsFinite(bone.Rotation.Z) ||
+                !float.IsFinite(bone.Rotation.W) ||
+                !float.IsFinite(bone.Scale.X) ||
+                !float.IsFinite(bone.Scale.Y) ||
+                !float.IsFinite(bone.Scale.Z))
+            {
+                throw Validation(
+                    PoseFileValidationFailureKind.NonFiniteNumeric,
+                    $"{collectionName} '{boneName}' contains NaN or infinity.");
+            }
+
+            if (bone.Rotation.LengthSquared() < PoseFileLimits.MinQuaternionLengthSquared)
+            {
+                throw Validation(
+                    PoseFileValidationFailureKind.DegenerateQuaternion,
+                    $"{collectionName} '{boneName}' rotation is degenerate.");
+            }
+        }
+
+        private Vector3 ParseVector3()
+        {
+            var values = ParseNumericComponents(3, nameof(Vector3));
+            return new Vector3(values[0], values[1], values[2]);
+        }
+
+        private Quaternion ParseQuaternion()
+        {
+            var values = ParseNumericComponents(4, nameof(Quaternion));
+            return new Quaternion(values[0], values[1], values[2], values[3]);
+        }
+
+        private float[] ParseNumericComponents(int count, string typeName)
+        {
+            if (Peek() != '"')
+                throw new JsonException($"{typeName} must be a string.");
+            var value = ReadString(true, 1024).Text
+                ?? throw new JsonException($"{typeName} cannot be null.");
+            var parts = value.Split(", ", StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != count)
+                throw new JsonException(
+                    $"Expected {count} components for {typeName}, got {parts.Length}.");
+
+            var values = new float[count];
+            for (var i = 0; i < count; i++)
+            {
+                if (!float.TryParse(
+                        parts[i],
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out values[i]) ||
+                    !float.IsFinite(values[i]))
+                {
+                    throw new JsonException($"{typeName} contains an invalid numeric value.");
+                }
+            }
+            return values;
+        }
+
+        private string? ParseNullableString()
+        {
+            if (Peek() == 'n')
+            {
+                ReadLiteral("null");
+                return null;
+            }
+            if (Peek() != '"')
+                throw new JsonException(
+                    "A pose string property must be a string or null.");
+            return ReadString(true, -1).Text;
+        }
+
+        private int ParseNullableStringLength()
+        {
+            if (Peek() == 'n')
+            {
+                ReadLiteral("null");
+                return 0;
+            }
+            if (Peek() != '"')
+                throw new JsonException(
+                    "A pose string property must be a string or null.");
+            return ReadString(false, -1).CharacterCount;
+        }
+
+        private void ParseValue(int depth)
+        {
+            switch (Peek())
+            {
+                case '{':
+                    ReadObject(_ => ParseValue(depth + 1), depth);
+                    break;
+                case '[':
+                    ReadArray(_ => ParseValue(depth + 1), depth);
+                    break;
+                case '"':
+                    ReadString(false, -1);
+                    break;
+                case 't':
+                    ReadLiteral("true");
+                    break;
+                case 'f':
+                    ReadLiteral("false");
+                    break;
+                case 'n':
+                    ReadLiteral("null");
+                    break;
+                default:
+                    ParseNumber();
+                    break;
+            }
+        }
+
+        private void ReadObject(
+            Action<StringValue> propertyHandler,
+            int depth,
+            Action? before = null)
+        {
+            EnsureDepth(depth);
+            Expect('{');
+            before?.Invoke();
+            if (Peek() == '}')
+            {
+                ReadByte();
+                return;
+            }
+
+            while (true)
+            {
+                SkipWhitespace();
+                var property = ReadString(true, 512);
+                Expect(':');
+                SkipWhitespace();
+                propertyHandler(property);
+                SkipWhitespace();
+                var next = Peek();
+                if (next == '}')
+                {
+                    ReadByte();
+                    return;
+                }
+                if (next != ',')
+                    throw new JsonException("A JSON object requires commas between properties.");
+                ReadByte();
+                if (Peek() == '}')
+                {
+                    ReadByte();
+                    return;
+                }
+            }
+        }
+
+        private void ReadArray(Action<int> itemHandler, int depth)
+        {
+            EnsureDepth(depth);
+            Expect('[');
+            if (Peek() == ']')
+            {
+                ReadByte();
+                return;
+            }
+
+            var index = 0;
+            while (true)
+            {
+                SkipWhitespace();
+                itemHandler(index++);
+                SkipWhitespace();
+                var next = Peek();
+                if (next == ']')
+                {
+                    ReadByte();
+                    return;
+                }
+                if (next != ',')
+                    throw new JsonException("A JSON array requires commas between values.");
+                ReadByte();
+                if (Peek() == ']')
+                {
+                    ReadByte();
+                    return;
+                }
+            }
+        }
+
+        private StringValue ReadString(bool capture, int maxCapture)
+        {
+            Expect('"');
+            var builder = capture ? new StringBuilder() : null;
+            var characterCount = 0;
+            var truncated = false;
+            while (true)
+            {
+                var value = ReadRequired();
+                if (value == '"')
+                    return new StringValue(
+                        truncated ? null : builder?.ToString(),
+                        characterCount);
+                if (value < 0x20)
+                    throw new JsonException("A JSON string contains a control character.");
+
+                if (value == '\\')
+                {
+                    var escaped = ReadRequired();
+                    if (escaped == 'u')
+                    {
+                        var codeUnit = 0;
+                        for (var i = 0; i < 4; i++)
+                        {
+                            var hex = ReadRequired();
+                            var digit = UriHexValue(hex);
+                            if (digit < 0)
+                                throw new JsonException("A JSON unicode escape is invalid.");
+                            codeUnit = (codeUnit << 4) | digit;
+                        }
+                        Append(codeUnit, builder, maxCapture, ref characterCount, ref truncated);
+                        continue;
+                    }
+
+                    var escapedCharacter = escaped switch
+                    {
+                        '"' or '\\' or '/' => escaped,
+                        'b' => '\b',
+                        'f' => '\f',
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        _ => throw new JsonException("A JSON string escape is invalid."),
+                    };
+                    Append(
+                        escapedCharacter,
+                        builder,
+                        maxCapture,
+                        ref characterCount,
+                        ref truncated);
+                    continue;
+                }
+
+                if (value < 0x80)
+                {
+                    Append(value, builder, maxCapture, ref characterCount, ref truncated);
+                    continue;
+                }
+
+                var scalar = ReadUtf8Scalar(value);
+                var chars = scalar > 0xffff
+                    ? char.ConvertFromUtf32(scalar)
+                    : ((char)scalar).ToString();
+                characterCount += chars.Length;
+                if (builder is not null && !truncated)
+                {
+                    if (maxCapture >= 0 && builder.Length + chars.Length > maxCapture)
+                        truncated = true;
+                    else
+                        builder.Append(chars);
+                }
+            }
+        }
+
+        private static void Append(
+            int value,
+            StringBuilder? builder,
+            int maxCapture,
+            ref int characterCount,
+            ref bool truncated)
+        {
+            characterCount++;
+            if (builder is null || truncated)
+                return;
+            if (maxCapture >= 0 && builder.Length + 1 > maxCapture)
+            {
+                truncated = true;
+                return;
+            }
+            builder.Append((char)value);
+        }
+
+        private void ParseNumber()
+        {
+            if (Peek() == '-')
+                ReadByte();
+            if (Peek() == '0')
+                ReadByte();
+            else
+            {
+                RequireDigit();
+                while (IsDigit(Peek()))
+                    ReadByte();
+            }
+            if (Peek() == '.')
+            {
+                ReadByte();
+                RequireDigit();
+                while (IsDigit(Peek()))
+                    ReadByte();
+            }
+            if (Peek() is 'e' or 'E')
+            {
+                ReadByte();
+                if (Peek() is '+' or '-')
+                    ReadByte();
+                RequireDigit();
+                while (IsDigit(Peek()))
+                    ReadByte();
+            }
+        }
+
+        private void ReadLiteral(string literal)
+        {
+            foreach (var expected in literal)
+                if (ReadRequired() != expected)
+                    throw new JsonException("A JSON literal is invalid.");
+        }
+
+        private void SkipWhitespace()
+        {
+            while (Peek() is 0x20 or 0x09 or 0x0a or 0x0d)
+                ReadByte();
+        }
+
+        private void Expect(int expected)
+        {
+            SkipWhitespace();
+            if (ReadRequired() != expected)
+                throw new JsonException($"Expected JSON character '{(char)expected}'.");
+        }
+
+        private int Peek()
+        {
+            if (_peeked == -2)
+                _peeked = ReadRaw();
+            return _peeked;
+        }
+
+        private int ReadByte()
+        {
+            var value = Peek();
+            _peeked = -2;
+            return value;
+        }
+
+        private int ReadRequired()
+        {
+            var value = ReadByte();
+            if (value < 0)
+                throw new JsonException("The pose JSON ended unexpectedly.");
+            return value;
+        }
+
+        private int ReadRaw()
+        {
+            if (_offset == _count)
+            {
+                _count = _stream.Read(_buffer, 0, _buffer.Length);
+                _offset = 0;
+                if (_count == 0)
+                    return -1;
+                _totalBytes += _count;
+                if (_totalBytes > PoseFileLimits.MaxFileBytes)
+                    throw new InvalidDataException("The pose file exceeded its size limit while being read.");
+            }
+            return _buffer[_offset++];
+        }
+
+        private int ReadUtf8Scalar(int first)
+        {
+            var length = first switch
+            {
+                >= 0xc2 and <= 0xdf => 1,
+                >= 0xe0 and <= 0xef => 2,
+                >= 0xf0 and <= 0xf4 => 3,
+                _ => throw new JsonException("A JSON string contains invalid UTF-8."),
+            };
+            var scalar = first & ((1 << (7 - length)) - 1);
+            for (var i = 0; i < length; i++)
+            {
+                var next = ReadRequired();
+                if (next is < 0x80 or > 0xbf)
+                    throw new JsonException("A JSON string contains invalid UTF-8.");
+                scalar = (scalar << 6) | (next & 0x3f);
+            }
+            if ((length == 2 && scalar < 0x800) ||
+                (length == 3 && scalar < 0x10000) ||
+                scalar is > 0x10ffff or >= 0xd800 and <= 0xdfff)
+            {
+                throw new JsonException("A JSON string contains invalid UTF-8.");
+            }
+            return scalar;
+        }
+
+        private static int UriHexValue(int value) =>
+            value is >= '0' and <= '9' ? value - '0' :
+            value is >= 'a' and <= 'f' ? value - 'a' + 10 :
+            value is >= 'A' and <= 'F' ? value - 'A' + 10 :
+            -1;
+
+        private static bool IsDigit(int value) => value is >= '0' and <= '9';
+
+        private void RequireDigit()
+        {
+            if (!IsDigit(Peek()))
+                throw new JsonException("A JSON number is invalid.");
+        }
+
+        private static void EnsureDepth(int depth)
+        {
+            if (depth > PoseFileLimits.MaxJsonDepth)
+                throw new JsonException(
+                    $"The pose JSON exceeds depth {PoseFileLimits.MaxJsonDepth}.");
+        }
+
+        private static void EnsureTagLength(StringValue value, int tagIndex)
+        {
+            if (value.CharacterCount > PoseFileLimits.MaxTagCharacters)
+                throw Validation(
+                    PoseFileValidationFailureKind.TagLength,
+                    $"Tag {tagIndex + 1} exceeds {PoseFileLimits.MaxTagCharacters} characters.");
+        }
+
+        private static MetadataValidationException Validation(
+            PoseFileValidationFailureKind kind,
+            string detail) =>
+            new(PoseFileValidationFailure.Create(kind, detail));
+
+        private readonly record struct StringValue(string? Text, int CharacterCount);
+    }
+
+    private readonly record struct MetadataProjection(
+        PoseFile Pose,
+        bool HasThumbnail,
+        long BytesRead);
 
     private void Before(PoseFileStorePhase phase, string? path) =>
         _beforePhase?.Invoke(phase, path);
