@@ -405,6 +405,91 @@ public class AutoSaveServiceTriggerTests
     }
 
     [Fact]
+    public void New_disabled_gpose_session_does_not_reuse_completed_exit_evidence()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+
+        var firstCapture = h.Service.CaptureForExit();
+        var firstTerminal = h.Service.CompleteForExit();
+        var firstHealth = h.Service.LastHealthRecord;
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, firstCapture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, firstTerminal.Status);
+        Assert.NotNull(firstHealth);
+        Assert.Equal(1, h.CaptureCallCount);
+
+        h.GPose.IsGPosing.Returns(false);
+        h.TickAt(At(1));
+        h.Settings.Enabled = false;
+        h.GPose.IsGPosing.Returns(true);
+        h.TickAt(At(2));
+        h.TickAt(At(3));
+        h.TickAt(At(4));
+
+        var secondCapture = h.Service.CaptureForExit();
+        var secondTerminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, secondCapture.Status);
+        Assert.Contains("disabled", secondCapture.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AutoSaveTerminalStatus.NotAttempted, secondTerminal.Status);
+        Assert.Equal(AutoSaveTerminalStatus.NotAttempted,
+            h.Service.LastTerminalResult.Status);
+        Assert.Equal(1, h.CaptureCallCount);
+        Assert.Null(h.Service.LastSaveUtc);
+        Assert.Equal(firstHealth!.OperationId, h.Service.LastHealthRecord!.OperationId);
+        Assert.Single(h.SnapshotFolders());
+    }
+
+    [Fact]
+    public void Reenabling_same_session_is_idempotent_but_reentry_starts_a_fresh_session()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted,
+            h.Service.CaptureForExit().Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written,
+            h.Service.CompleteForExit().Status);
+
+        h.GPose.IsGPosing.Returns(false);
+        h.Settings.Enabled = false;
+        h.TickAt(At(1));
+        h.GPose.IsGPosing.Returns(true);
+        h.TickAt(At(2));
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured,
+            h.Service.CaptureForExit().Status);
+        Assert.Equal(AutoSaveTerminalStatus.NotAttempted,
+            h.Service.CompleteForExit().Status);
+
+        // Toggling the setting does not create a new GPose session. The
+        // completed disabled exit therefore remains idempotent.
+        h.Settings.Enabled = true;
+        h.TickAt(At(3));
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured,
+            h.Service.CaptureForExit().Status);
+        Assert.Equal(AutoSaveTerminalStatus.NotAttempted,
+            h.Service.CompleteForExit().Status);
+        Assert.Equal(1, h.CaptureCallCount);
+
+        h.GPose.IsGPosing.Returns(false);
+        h.TickAt(At(4));
+        h.GPose.IsGPosing.Returns(true);
+        h.TickAt(At(5));
+
+        var freshCapture = h.Service.CaptureForExit();
+        var freshTerminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, freshCapture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, freshTerminal.Status);
+        Assert.Equal(2, h.CaptureCallCount);
+    }
+
+    [Fact]
     public void Constructor_does_not_subscribe_to_the_gpose_exit_event()
     {
         using var h = new AutoSaveHarness();

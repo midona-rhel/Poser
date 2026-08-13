@@ -92,8 +92,11 @@ interchange with Brio and (via name conversion) Anamnesis.
   in an explicit overflow count. Pending,
   queued, or dispatch-accepted records found at startup are promoted to
   `RecoveryRequired` with an `Interrupted` phase; failure to update the record
-  is itself a recovery failure and never implies durable success. The health
-  file is not a snapshot folder and is excluded from retention enumeration.
+  is itself a recovery failure, blocks new admissions, and never implies durable
+  success. Existing terminal observations (`Written`, `Cleaned`,
+  `RecoveryRequired`, or `Cancelled`) are preserved as evidence without a
+  promotion attempt and do not block new admissions. The health file is not a
+  snapshot folder and is excluded from retention enumeration.
 - Retention prunes from DISK to the configured count of SAVE EVENTS —
   the files sharing one time prefix in a day folder, or one whole folder
   of the pre-2026-08-08 folder-per-save layout, which ages out through

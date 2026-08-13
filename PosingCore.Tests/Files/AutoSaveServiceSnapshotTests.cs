@@ -395,6 +395,141 @@ public class AutoSaveServiceSnapshotTests
         Assert.True(h.ErrorCount >= 1);
     }
 
+    [Theory]
+    [InlineData(AutoSaveHealthStatus.Written)]
+    [InlineData(AutoSaveHealthStatus.Cleaned)]
+    [InlineData(AutoSaveHealthStatus.RecoveryRequired)]
+    [InlineData(AutoSaveHealthStatus.Cancelled)]
+    public void Restart_preserves_terminal_health_observation_and_allows_fresh_admission(
+        AutoSaveHealthStatus status)
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        var prior = AutoSaveHealthRecord.Create(
+            "prior", "previous", status,
+            DateTime.UtcNow, DateTime.UtcNow,
+            intendedActors: 1,
+            writtenActors: status == AutoSaveHealthStatus.Written ? 1 : 0);
+        Assert.True(new AutoSaveHealthStore(h.Root).Write(prior).Succeeded);
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root);
+
+        var observed = h.Service.LastHealthRecord;
+        Assert.NotNull(observed);
+        Assert.Equal(status, observed!.Status);
+
+        var capture = h.Service.CaptureForExit();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, capture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, terminal.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, h.Service.LastTerminalResult.Status);
+        Assert.Equal(AutoSaveHealthStatus.Written, h.Service.LastHealthRecord!.Status);
+        Assert.Equal(1, h.CaptureCallCount);
+    }
+
+    [Theory]
+    [InlineData(AutoSaveHealthStatus.Pending)]
+    [InlineData(AutoSaveHealthStatus.Queued)]
+    [InlineData(AutoSaveHealthStatus.DispatchAccepted)]
+    public void Restart_successfully_promotes_each_nonterminal_and_allows_fresh_admission(
+        AutoSaveHealthStatus status)
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        Assert.True(new AutoSaveHealthStore(h.Root).Write(AutoSaveHealthRecord.Create(
+            "stale", "previous", status,
+            DateTime.UtcNow, DateTime.UtcNow,
+            intendedActors: 1)).Succeeded);
+        h.HealthStoreOverride = new AutoSaveHealthStore(h.Root);
+
+        var observed = h.Service.LastHealthRecord;
+        Assert.NotNull(observed);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, observed!.Status);
+        Assert.Equal("Interrupted", observed.FailurePhase);
+
+        var capture = h.Service.CaptureForExit();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.DispatchStarted, capture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.Written, terminal.Status);
+        Assert.Equal(AutoSaveHealthStatus.Written, h.Service.LastHealthRecord!.Status);
+        Assert.Equal(1, h.CaptureCallCount);
+    }
+
+    [Theory]
+    [InlineData(AutoSaveHealthStatus.Pending)]
+    [InlineData(AutoSaveHealthStatus.Queued)]
+    [InlineData(AutoSaveHealthStatus.DispatchAccepted)]
+    public void Restart_failed_nonterminal_promotion_blocks_fresh_admission(
+        AutoSaveHealthStatus status)
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = true;
+        h.Settings.CleanOnExit = false;
+        h.AddActor("Alpha");
+        Assert.True(new AutoSaveHealthStore(h.Root).Write(AutoSaveHealthRecord.Create(
+            "stale", "previous", status,
+            DateTime.UtcNow, DateTime.UtcNow,
+            intendedActors: 1)).Succeeded);
+        h.HealthStoreOverride = new AutoSaveHealthStore(
+            h.Root, new FailingHealthFileSystem());
+
+        var capture = h.Service.CaptureForExit();
+        var terminal = h.Service.CompleteForExit();
+
+        Assert.Equal(AutoSaveCaptureStatus.NotCaptured, capture.Status);
+        Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired, terminal.Status);
+        Assert.Equal(0, h.CaptureCallCount);
+        Assert.Equal(AutoSaveHealthStatus.RecoveryRequired,
+            h.Service.LastHealthRecord!.Status);
+        Assert.Equal("HealthTransition", h.Service.LastHealthRecord.FailurePhase);
+        Assert.Equal(status, new AutoSaveHealthStore(h.Root).Read()!.Status);
+    }
+
+    [Fact]
+    public void Recovery_merge_saturates_existing_and_pending_overflow_counts()
+    {
+        using var h = new AutoSaveHarness();
+        h.Settings.Enabled = false;
+        h.Settings.CleanOnExit = false;
+        var entries = Enumerable.Range(1, 4)
+            .Select(index => AutoSaveHealthRecoveryEntry.Create(
+                $"seed-{index}", "previous", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow))
+            .ToArray();
+        Assert.True(new AutoSaveHealthStore(h.Root).Write(AutoSaveHealthRecord.Create(
+            "seed", "previous", AutoSaveHealthStatus.RecoveryRequired,
+            DateTime.UtcNow, DateTime.UtcNow,
+            recoveryEntries: entries,
+            recoveryOverflowCount: int.MaxValue)).Succeeded);
+        h.HealthStoreOverride = new AutoSaveHealthStore(
+            h.Root, new FailingHealthFileSystem());
+
+        var t0 = new DateTime(2026, 3, 4, 6, 0, 0, DateTimeKind.Utc);
+        for (var session = 0; session < 6; session++)
+        {
+            if (session > 0)
+            {
+                h.GPose.IsGPosing.Returns(false);
+                h.TickAt(t0.AddSeconds(session * 2));
+                h.GPose.IsGPosing.Returns(true);
+                h.TickAt(t0.AddSeconds(session * 2 + 1));
+            }
+
+            Assert.Equal(AutoSaveCaptureStatus.NotCaptured,
+                h.Service.CaptureForExit().Status);
+            Assert.Equal(AutoSaveTerminalStatus.RecoveryRequired,
+                h.Service.CompleteForExit().Status);
+        }
+
+        Assert.Equal(int.MaxValue, h.Service.LastHealthRecord!.RecoveryOverflowCount);
+        Assert.True(h.Service.LastHealthRecord.RecoveryOverflowCount >= 0);
+    }
+
     [Fact]
     public void Older_periodic_terminal_health_cannot_overwrite_final_queued_admission()
     {

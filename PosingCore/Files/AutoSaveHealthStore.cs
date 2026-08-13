@@ -121,8 +121,11 @@ public sealed class AutoSaveHealthRecord
         RecoveryEvidencePaths = Freeze(recoveryEvidencePaths);
         var incomingRecoveryEntries = recoveryEntries?.ToArray() ?? Array.Empty<AutoSaveHealthRecoveryEntry>();
         RecoveryEntries = FreezeEntries(incomingRecoveryEntries);
-        RecoveryOverflowCount = Math.Max(0, recoveryOverflowCount) +
-            Math.Max(0, incomingRecoveryEntries.Length - MaxRecoveryEntries);
+        var discardedRecoveryEntries = Math.Max(
+            0, incomingRecoveryEntries.Length - MaxRecoveryEntries);
+        var overflow = Math.Max(0L, (long)recoveryOverflowCount) +
+            Math.Max(0L, (long)discardedRecoveryEntries);
+        RecoveryOverflowCount = (int)Math.Min((long)int.MaxValue, overflow);
     }
 
     public string OperationId { get; }
@@ -249,7 +252,16 @@ public sealed class AutoSaveHealthRecoveryResult
 
     public AutoSaveHealthRecord? Record { get; }
     public AutoSaveHealthWriteResult? Write { get; }
-    public bool Succeeded => Record is null || Write?.Succeeded == true;
+
+    /// <summary>True when startup found a non-terminal record and attempted promotion.</summary>
+    public bool PromotionAttempted => Write is not null;
+
+    /// <summary>
+    /// True for a successful observation, including a record that needed no
+    /// promotion. A failed promotion remains distinguishable through
+    /// <see cref="PromotionAttempted"/> and <see cref="Write"/>.
+    /// </summary>
+    public bool Succeeded => !PromotionAttempted || Write!.Succeeded;
 }
 
 internal interface IAutoSaveHealthFileSystem

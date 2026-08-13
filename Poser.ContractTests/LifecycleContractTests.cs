@@ -528,6 +528,25 @@ public sealed class LifecycleContractTests
     }
 
     [Fact]
+    public void Application_projection_saturates_existing_overflow_plus_discarded_entries()
+    {
+        var entries = Enumerable.Range(1, 6).Select(index =>
+            new FinalPersistenceRecoveryEntry(
+                $"op-{index}", "final", FinalPersistenceStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow, 0, 0,
+                null, null, null, null))
+            .ToArray();
+
+        var evidence = new FinalPersistenceEvidence(
+            "op", "final", FinalPersistenceStatus.RecoveryRequired,
+            DateTime.UtcNow, DateTime.UtcNow, 0, 0, null, null, null, null,
+            entries, int.MaxValue);
+
+        Assert.Equal(4, evidence.RecoveryEntries.Count);
+        Assert.Equal(int.MaxValue, evidence.RecoveryOverflowCount);
+    }
+
+    [Fact]
     public void Adapter_maps_every_health_status_to_an_explicit_application_status()
     {
         foreach (var status in Enum.GetValues<AutoSaveHealthStatus>())

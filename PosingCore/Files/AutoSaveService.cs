@@ -92,6 +92,9 @@ public class AutoSaveService : IAutoSaveService
     private bool _finalCaptureStarted;
     private AutoSaveCaptureResult _finalCapture;
     private bool _hasFinalCapture;
+    private bool _wasGPosing;
+    private bool _exitCompletedWhileDisabled;
+    private bool _sessionReopenedAfterCompletedExit;
     private string? _workerFailure;
     private string? _startupHealthFailure;
     private AutoSaveHealthRecord? _lastHealthRecord;
@@ -207,6 +210,8 @@ public class AutoSaveService : IAutoSaveService
         RootDirectory = rootDirectory;
         _health = healthStore ?? new AutoSaveHealthStore(rootDirectory);
         var stale = _health.RecoverStale();
+        // A terminal record (or no record) is a successful observation: only
+        // an attempted promotion whose write failed closes new admissions.
         if (!stale.Succeeded)
         {
             _startupHealthFailure = stale.Write?.Detail ??
@@ -376,10 +381,14 @@ public class AutoSaveService : IAutoSaveService
                 unique.Add(entry);
         }
 
-        var overflow = Math.Max(0, firstOverflow) + Math.Max(0, secondOverflow);
-        overflow = (int)Math.Min(int.MaxValue,
-            (long)overflow + Math.Max(0, unique.Count - AutoSaveHealthRecord.MaxRecoveryEntries));
-        return (unique.Take(AutoSaveHealthRecord.MaxRecoveryEntries).ToArray(), overflow);
+        var discardedRecoveryEntries = Math.Max(
+            0, unique.Count - AutoSaveHealthRecord.MaxRecoveryEntries);
+        var overflow = Math.Max(0L, (long)firstOverflow) +
+            Math.Max(0L, (long)secondOverflow) +
+            Math.Max(0L, (long)discardedRecoveryEntries);
+        return (
+            unique.Take(AutoSaveHealthRecord.MaxRecoveryEntries).ToArray(),
+            (int)Math.Min((long)int.MaxValue, overflow));
     }
 
     private static string LimitHealthText(string value, int max) =>
@@ -428,9 +437,13 @@ public class AutoSaveService : IAutoSaveService
             _exitCompleted = false;
             _cleanOnExit = false;
             _finalCaptureStarted = false;
+            _finalCapture = default;
             _hasFinalCapture = false;
+            _exitCompletedWhileDisabled = false;
             _workerFailure = null;
             _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
+            _nextDueUtc = null;
+            LastSaveUtc = null;
         }
     }
 
@@ -443,14 +456,34 @@ public class AutoSaveService : IAutoSaveService
     /// </summary>
     internal void Tick(DateTime nowUtc)
     {
+        var isGposing = _gpose.IsGPosing;
         var settings = Settings;
-        if (!settings.Enabled || !_gpose.IsGPosing)
+        if (isGposing && !_wasGPosing)
+        {
+            var reopenedAfterCompletedExit = false;
+            lock (_queueGate)
+                reopenedAfterCompletedExit = _exitCompleted && !_writerRunning;
+
+            ResetCompletedExitForNewSession();
+            if (reopenedAfterCompletedExit)
+                _sessionReopenedAfterCompletedExit = true;
+        }
+        else if (isGposing && settings.Enabled && _exitCompletedWhileDisabled &&
+            !_sessionReopenedAfterCompletedExit)
+        {
+            // A direct disabled exit can arrive before the framework reports the
+            // false GPose edge. Preserve the legacy re-enable boundary in that
+            // case, while a genuinely re-entered session remains idempotent.
+            ResetCompletedExitForNewSession();
+        }
+        _wasGPosing = isGposing;
+
+        if (!settings.Enabled || !isGposing)
         {
             _nextDueUtc = null;
             return;
         }
 
-        ResetCompletedExitForNewSession();
         var interval = TimeSpan.FromSeconds(Math.Max(1, settings.IntervalSeconds));
 
         if (_nextDueUtc is null)
@@ -531,6 +564,7 @@ public class AutoSaveService : IAutoSaveService
         {
             _finalCapture = result;
             _hasFinalCapture = true;
+            _exitCompletedWhileDisabled = !settings.Enabled;
             _lastTerminalResult = AutoSaveTerminalResult.PendingResult;
         }
 

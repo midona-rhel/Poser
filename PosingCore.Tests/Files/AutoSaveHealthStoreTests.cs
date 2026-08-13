@@ -32,11 +32,37 @@ public sealed class AutoSaveHealthStoreTests
             "stale", "final", AutoSaveHealthStatus.Queued,
             DateTime.UtcNow, DateTime.UtcNow, intendedActors: 1)).Succeeded);
 
-        var recovered = store.RecoverStale().Record;
+        var recovery = store.RecoverStale();
+        var recovered = recovery.Record;
 
+        Assert.True(recovery.Succeeded);
+        Assert.True(recovery.PromotionAttempted);
         Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, recovered!.Status);
         Assert.Equal("Interrupted", recovered.FailurePhase);
         Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, store.Read()!.Status);
+    }
+
+    [Theory]
+    [InlineData(AutoSaveHealthStatus.Written)]
+    [InlineData(AutoSaveHealthStatus.Cleaned)]
+    [InlineData(AutoSaveHealthStatus.RecoveryRequired)]
+    [InlineData(AutoSaveHealthStatus.Cancelled)]
+    public void Terminal_record_is_observed_without_a_promotion_attempt(
+        AutoSaveHealthStatus status)
+    {
+        using var root = new TempRoot();
+        var store = new AutoSaveHealthStore(root.Path);
+        Assert.True(store.Write(AutoSaveHealthRecord.Create(
+            "terminal", "final", status,
+            DateTime.UtcNow, DateTime.UtcNow)).Succeeded);
+
+        var recovery = store.RecoverStale();
+
+        Assert.True(recovery.Succeeded);
+        Assert.False(recovery.PromotionAttempted);
+        Assert.Null(recovery.Write);
+        Assert.Equal(status, recovery.Record!.Status);
+        Assert.Equal(status, store.Read()!.Status);
     }
 
     [Fact]
@@ -128,6 +154,28 @@ public sealed class AutoSaveHealthStoreTests
     }
 
     [Fact]
+    public void Health_record_saturates_existing_overflow_plus_discarded_entries()
+    {
+        using var root = new TempRoot();
+        var store = new AutoSaveHealthStore(root.Path);
+        var entries = Enumerable.Range(1, 6)
+            .Select(index => AutoSaveHealthRecoveryEntry.Create(
+                $"overflow-{index}", "final", AutoSaveHealthStatus.RecoveryRequired,
+                DateTime.UtcNow, DateTime.UtcNow))
+            .ToArray();
+
+        var record = AutoSaveHealthRecord.Create(
+            "overflow", "final", AutoSaveHealthStatus.RecoveryRequired,
+            DateTime.UtcNow, DateTime.UtcNow,
+            recoveryEntries: entries,
+            recoveryOverflowCount: int.MaxValue);
+
+        Assert.Equal(int.MaxValue, record.RecoveryOverflowCount);
+        Assert.True(store.Write(record).Succeeded);
+        Assert.Equal(int.MaxValue, store.Read()!.RecoveryOverflowCount);
+    }
+
+    [Fact]
     public void Partial_replace_retains_old_record_and_recovery_evidence()
     {
         using var root = new TempRoot();
@@ -207,6 +255,7 @@ public sealed class AutoSaveHealthStoreTests
         var recovery = failing.RecoverStale();
 
         Assert.False(recovery.Succeeded);
+        Assert.True(recovery.PromotionAttempted);
         Assert.Equal(AutoSaveHealthStatus.RecoveryRequired, recovery.Record!.Status);
         Assert.Equal("Interrupted", recovery.Record.FailurePhase);
         Assert.False(recovery.Write!.Succeeded);
