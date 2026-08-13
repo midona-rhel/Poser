@@ -82,6 +82,13 @@ public sealed record McdfProgress(
 public readonly record struct McdfProgressStep(
     McdfPhase Phase, int FilesDone, int FilesTotal, long BytesDone, long BytesTotal);
 
+/// <summary>An extraction directory together with the immutable proof that
+/// this boundary exclusively created that exact directory.</summary>
+public sealed record McdfOperationDirectory(
+    string Path,
+    string OwnerToken,
+    string? Identity);
+
 /// <summary>
 /// A validated, fully extracted MCDF package. Payloads live as generated
 /// file names inside <see cref="OperationDirectory"/>; game paths are
@@ -149,6 +156,17 @@ public sealed record McdfExportFile
         LocalPath = localPath ?? throw new ArgumentNullException(nameof(localPath));
         Source = source;
     }
+
+    public void Deconstruct(
+        out IReadOnlyList<string> gamePaths,
+        out string localPath) =>
+        (gamePaths, localPath) = (GamePaths, LocalPath);
+
+    public void Deconstruct(
+        out IReadOnlyList<string> gamePaths,
+        out string localPath,
+        out McdfExportSourceObservation? source) =>
+        (gamePaths, localPath, source) = (GamePaths, LocalPath, Source);
 }
 
 public enum McdfExportCandidateKind
@@ -238,6 +256,16 @@ public sealed record McdfExportContent
                 swaps ?? throw new ArgumentNullException(nameof(swaps)),
                 StringComparer.Ordinal));
     }
+
+    public void Deconstruct(
+        out string description,
+        out string glamourerData,
+        out string customizePlusData,
+        out string manipulationData,
+        out IReadOnlyList<McdfExportFile> files,
+        out IReadOnlyDictionary<string, string> swaps) =>
+        (description, glamourerData, customizePlusData, manipulationData, files, swaps) =
+        (Description, GlamourerData, CustomizePlusData, ManipulationData, Files, Swaps);
 }
 
 public sealed record McdfWriteStats(int Files, long UncompressedBytes);

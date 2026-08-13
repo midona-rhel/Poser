@@ -14,7 +14,7 @@ public interface IMcdfFileBoundary
 
     /// <summary>Allocates and creates one unique caller-owned extraction
     /// directory. The caller registers the returned path before reading.</summary>
-    IntegrationValue<string> CreateOperationDirectory();
+    IntegrationValue<McdfOperationDirectory> CreateOperationDirectory();
 
     /// <summary>Inspects Penumbra's raw resource map. All filesystem policy
     /// (canonicalization, readability, metadata, and real-root containment)
@@ -34,7 +34,7 @@ public interface IMcdfFileBoundary
     Task<IntegrationValue<McdfPackage>> ReadPackage(
         string path,
         McdfLimits limits,
-        string operationDirectory,
+        McdfOperationDirectory operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation);
 
@@ -54,5 +54,5 @@ public interface IMcdfFileBoundary
     /// already-deleted directories; a failure is RETURNED so the caller
     /// keeps directory ownership and can retry — extracted payloads must
     /// never be released while something might still reference them.</summary>
-    IntegrationPortResult DeleteOperationDirectory(string operationDirectory);
+    IntegrationPortResult DeleteOperationDirectory(McdfOperationDirectory operationDirectory);
 }

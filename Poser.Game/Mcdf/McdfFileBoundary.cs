@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -35,15 +36,40 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
     private readonly Func<Guid> _newGuid;
     private readonly Action? _inspectionChunk;
+    private readonly Action<string>? _beforeCommit;
+    private readonly Func<SafeFileHandle, string> _getFinalPath;
+    private readonly Func<SafeFileHandle, string?> _getIdentity;
+    private readonly Func<SafeFileHandle, string> _getOperationFinalPath;
+    private readonly Func<SafeFileHandle, string?> _getOperationIdentity;
+    private readonly Action<SafeFileHandle> _markDeleteOnClose;
 
-    public McdfFileBoundary() : this(Guid.NewGuid, null)
+    public McdfFileBoundary() : this(Guid.NewGuid, null, null)
     {
     }
 
-    internal McdfFileBoundary(Func<Guid>? newGuid = null, Action? inspectChunk = null)
+    internal McdfFileBoundary(
+        Func<Guid>? newGuid = null,
+        Action? inspectChunk = null,
+        Action<string>? beforeCommit = null,
+        Func<SafeFileHandle, string>? getFinalPath = null,
+        Func<SafeFileHandle, string?>? getIdentity = null,
+        Func<SafeFileHandle, string>? getOperationFinalPath = null,
+        Func<SafeFileHandle, string?>? getOperationIdentity = null,
+        Action<SafeFileHandle>? markDeleteOnClose = null)
     {
         _newGuid = newGuid ?? Guid.NewGuid;
         _inspectionChunk = inspectChunk;
+        _beforeCommit = beforeCommit;
+        _getFinalPath =
+            getFinalPath ?? McdfPlatformFileOwnership.GetRequiredFinalPath;
+        _getIdentity =
+            getIdentity ?? McdfPlatformFileOwnership.TryGetIdentity;
+        _getOperationFinalPath =
+            getOperationFinalPath ?? McdfPlatformFileOwnership.GetRequiredFinalPath;
+        _getOperationIdentity =
+            getOperationIdentity ?? McdfPlatformFileOwnership.TryGetIdentity;
+        _markDeleteOnClose =
+            markDeleteOnClose ?? McdfPlatformFileOwnership.MarkDeleteOnClose;
     }
 
     public string GetFileName(string path)
@@ -58,7 +84,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         }
     }
 
-    public IntegrationValue<string> CreateOperationDirectory()
+    public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory()
     {
         try
         {
@@ -66,48 +92,126 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             Directory.CreateDirectory(root);
             for (int attempt = 0; attempt < 8; attempt++)
             {
+                string allocationStep = "claiming the staging name";
                 string id = _newGuid().ToString("N");
                 string staging = Path.Combine(root, $".mcdf-staging-{id}");
                 string directory = Path.Combine(root, $"mcdf-{id}");
-                string marker = Path.Combine(staging, ".owner");
-                bool owned = false;
+                SafeFileHandle? directoryHandle = null;
+                FileStream? markerStream = null;
+                bool renamed = false;
+                bool ownerVerified = false;
+                bool markerAuthoritative = false;
+                string? markerIdentity = null;
+                string token = Convert.ToHexString(
+                    RandomNumberGenerator.GetBytes(32));
                 try
                 {
-                    Directory.CreateDirectory(staging);
-                    using (new FileStream(
-                        marker, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    {
-                        owned = true;
-                    }
-                    Directory.Move(staging, directory);
-                    return IntegrationValue<string>.Ok(directory);
+                    if (!McdfPlatformFileOwnership.TryCreateDirectoryExclusive(staging))
+                        continue;
+                    allocationStep = "opening the fenced staging directory";
+                    directoryHandle =
+                        McdfPlatformFileOwnership.OpenFencedDirectory(staging);
+                    allocationStep = "creating the owner marker";
+                    markerStream =
+                        McdfPlatformFileOwnership.CreateExclusiveOwnedMarker(
+                            Path.Combine(staging, ".owner"));
+                    markerAuthoritative = true;
+                    markerStream.Write(Encoding.UTF8.GetBytes(token));
+                    markerStream.Flush(flushToDisk: true);
+                    markerIdentity =
+                        McdfPlatformFileOwnership.TryGetIdentity(
+                            markerStream.SafeFileHandle);
+                    if (markerIdentity == null)
+                        throw new IOException(
+                            "The MCDF owner marker identity could not be verified.");
+                    markerStream.Dispose();
+                    markerStream = null;
+                    markerAuthoritative = false;
+                    allocationStep = "renaming the fenced directory";
+                    McdfPlatformFileOwnership.CommitExactHandle(
+                        directoryHandle, directory, replaceExisting: false);
+                    renamed = true;
+                    allocationStep = "reopening the owner marker";
+                    markerStream = ReopenAndVerifyOwnerMarker(
+                        Path.Combine(directory, ".owner"),
+                        markerIdentity, token);
+                    if (markerStream == null)
+                        throw new IOException(
+                            "The MCDF owner marker changed during allocation.");
+                    ownerVerified = true;
+                    markerAuthoritative = true;
+                    allocationStep = "verifying the renamed directory";
+                    string finalPath = _getOperationFinalPath(directoryHandle);
+                    if (!PathsEqual(finalPath, directory))
+                        throw new IOException(
+                            $"The MCDF operation directory rename could not be verified ({finalPath} != {directory}).");
+                    string? identity = _getOperationIdentity(directoryHandle);
+                    if (identity == null)
+                        throw new IOException(
+                            "The MCDF operation directory identity could not be verified.");
+                    markerStream.Dispose();
+                    markerStream = null;
+                    return IntegrationValue<McdfOperationDirectory>.Ok(
+                        new McdfOperationDirectory(
+                            finalPath, token, identity));
                 }
-                catch (IOException) when (attempt < 7)
+                catch (Exception) when (attempt < 7 && (!renamed || ownerVerified))
                 {
-                    if (owned)
+                    if (markerStream == null && directoryHandle != null)
                     {
-                        try { Directory.Delete(staging, recursive: true); }
+                        try
+                        {
+                            markerStream = ReopenAndVerifyOwnerMarker(
+                                Path.Combine(renamed ? directory : staging, ".owner"),
+                                markerIdentity, token);
+                            ownerVerified = markerStream != null;
+                            markerAuthoritative = ownerVerified;
+                        }
                         catch { }
                     }
-                    // Both the marker and the final directory are exclusive:
-                    // a stale collision is never claimed or cleaned here.
+                    if (markerAuthoritative)
+                        DeleteAllocatedDirectoryWithHandles(
+                            directoryHandle, markerStream);
+                    else
+                        markerStream?.Dispose();
+                    markerStream = null;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    if (owned)
+                    if (markerStream == null && directoryHandle != null)
                     {
-                        try { Directory.Delete(staging, recursive: true); }
+                        try
+                        {
+                            markerStream = ReopenAndVerifyOwnerMarker(
+                                Path.Combine(renamed ? directory : staging, ".owner"),
+                                markerIdentity, token);
+                            ownerVerified = markerStream != null;
+                            markerAuthoritative = ownerVerified;
+                        }
                         catch { }
                     }
-                    throw;
+                    if (markerAuthoritative)
+                        DeleteAllocatedDirectoryWithHandles(
+                            directoryHandle, markerStream);
+                    else
+                        markerStream?.Dispose();
+                    markerStream = null;
+                    throw new IOException(
+                        $"Operation directory allocation failed while {allocationStep}: {ex.Message}",
+                        ex);
+                }
+                finally
+                {
+                    markerStream?.Dispose();
+                    directoryHandle?.Dispose();
                 }
             }
-            return IntegrationValue<string>.Fail(
+            return IntegrationValue<McdfOperationDirectory>.Fail(
                 "The MCDF operation directory could not be allocated.");
         }
         catch (Exception ex)
         {
-            return IntegrationValue<string>.Fail(
+            return IntegrationValue<McdfOperationDirectory>.Fail(
                 $"The MCDF operation directory could not be allocated: {ex.Message}");
         }
     }
@@ -128,7 +232,10 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             using var entries = Directory.EnumerateFileSystemEntries(fullRoot).GetEnumerator();
             // Advance once so an ACL failure is observed by the boundary.
             _ = entries.MoveNext();
-            realRoot = ResolveRealPath(fullRoot) ?? string.Empty;
+            using var rootHandle =
+                McdfPlatformFileOwnership.OpenDirectoryForInspection(fullRoot);
+            realRoot =
+                McdfPlatformFileOwnership.GetRequiredFinalPath(rootHandle);
             if (realRoot.Length == 0 || !Directory.Exists(realRoot))
                 return IntegrationValue<McdfExportInspection>.Fail(
                     "Penumbra's mod directory could not be resolved to a real path.");
@@ -164,32 +271,26 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                     continue;
                 }
 
-                string? realFile;
                 try
                 {
-                    realFile = ResolveRealPath(fullPath);
-                    if (realFile == null)
-                    {
-                        skipped.Add($"{actualRaw} (could not resolve the real path)");
-                        continue;
-                    }
-                    if (EscapesRoot(Path.GetRelativePath(realRoot, realFile)))
-                    {
-                        skipped.Add($"{actualRaw} (outside the Penumbra mod directory)");
-                        continue;
-                    }
-
                     using var stream = new FileStream(
-                        realFile, FileMode.Open, FileAccess.Read,
+                        fullPath, FileMode.Open, FileAccess.Read,
                         FileShare.ReadWrite | FileShare.Delete);
+                    string finalPath = _getFinalPath(stream.SafeFileHandle);
+                    if (EscapesRoot(Path.GetRelativePath(realRoot, finalPath)))
+                    {
+                        skipped.Add($"{actualRaw} (changed or outside the Penumbra mod directory)");
+                        continue;
+                    }
                     long length = stream.Length;
-                    string hash = HashStream(stream, cancellation, _inspectionChunk);
-                    string? identity = TryGetFileIdentity(stream.SafeFileHandle);
+                    string hash = HashStream(
+                        stream, HashAlgorithmName.SHA256, cancellation, _inspectionChunk);
+                    string? identity = _getIdentity(stream.SafeFileHandle);
                     var source = new McdfExportSourceObservation(
-                        realFile, realRoot, length, hash, identity);
+                        finalPath, realRoot, length, hash, identity);
                     candidates.Add(new McdfExportCandidate(
                         actualRaw, gamePathsRaw.ToArray(),
-                        McdfExportCandidateKind.LocalFile, realFile, length, source));
+                        McdfExportCandidateKind.LocalFile, finalPath, length, source));
                 }
                 catch (OperationCanceledException)
                 {
@@ -207,6 +308,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 catch (DirectoryNotFoundException)
                 {
                     skipped.Add($"{actualRaw} (missing on disk)");
+                }
+                catch (Win32Exception)
+                {
+                    return IntegrationValue<McdfExportInspection>.Fail(
+                        "A source file's final handle path or identity could not be verified.");
                 }
                 catch (IOException)
                 {
@@ -255,7 +361,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     public Task<IntegrationValue<McdfPackage>> ReadPackage(
         string path,
         McdfLimits limits,
-        string operationDirectory,
+        McdfOperationDirectory operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation) =>
         Task.Run(
@@ -269,12 +375,20 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         CancellationToken cancellation) =>
         Task.Run(() => WriteCore(destination, content, progress, cancellation), CancellationToken.None);
 
-    public IntegrationPortResult DeleteOperationDirectory(string operationDirectory)
+    public IntegrationPortResult DeleteOperationDirectory(
+        McdfOperationDirectory operationDirectory)
     {
         try
         {
-            if (Directory.Exists(operationDirectory))
-                Directory.Delete(operationDirectory, recursive: true);
+            if (!Directory.Exists(operationDirectory.Path))
+                return IntegrationPortResult.Ok();
+            using var root =
+                McdfPlatformFileOwnership.OpenFencedDirectory(operationDirectory.Path);
+            if (!OwnedDirectoryMatches(operationDirectory, root))
+                return IntegrationPortResult.Fail(
+                    "The extraction directory ownership changed; cleanup was refused.");
+            DeleteOwnedChildren(operationDirectory, root);
+            McdfPlatformFileOwnership.MarkDeleteOnClose(root);
             return IntegrationPortResult.Ok();
         }
         catch (Exception ex)
@@ -288,12 +402,122 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         }
     }
 
+    private static FileStream? ReopenAndVerifyOwnerMarker(
+        string path,
+        string? expectedIdentity,
+        string expectedToken)
+    {
+        if (expectedIdentity == null)
+            return null;
+        FileStream? marker = null;
+        try
+        {
+            marker = McdfPlatformFileOwnership.OpenOwnedMarker(path);
+            string? currentIdentity =
+                McdfPlatformFileOwnership.TryGetIdentity(marker.SafeFileHandle);
+            if (currentIdentity == null
+                || !string.Equals(
+                    currentIdentity, expectedIdentity, StringComparison.Ordinal))
+                return null;
+            using var reader = new StreamReader(
+                marker, Encoding.UTF8, leaveOpen: true);
+            if (!string.Equals(
+                    reader.ReadToEnd(), expectedToken, StringComparison.Ordinal))
+                return null;
+            marker.Position = 0;
+            var verified = marker;
+            marker = null;
+            return verified;
+        }
+        finally
+        {
+            marker?.Dispose();
+        }
+    }
+
+    private static bool OwnedDirectoryMatches(
+        McdfOperationDirectory ownership,
+        SafeFileHandle? existingHandle = null)
+    {
+        try
+        {
+            using var opened = existingHandle == null
+                ? McdfPlatformFileOwnership.OpenFencedDirectory(ownership.Path)
+                : null;
+            var handle = existingHandle ?? opened!;
+            string finalPath = McdfPlatformFileOwnership.GetRequiredFinalPath(handle);
+            string? identity = McdfPlatformFileOwnership.TryGetIdentity(handle);
+            if (!PathsEqual(finalPath, ownership.Path)
+                || ownership.Identity == null
+                || identity == null
+                || !string.Equals(identity, ownership.Identity, StringComparison.Ordinal))
+                return false;
+            string marker = Path.Combine(ownership.Path, ".owner");
+            return File.Exists(marker)
+                && string.Equals(
+                    File.ReadAllText(marker, Encoding.UTF8),
+                    ownership.OwnerToken,
+                    StringComparison.Ordinal);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void DeleteOwnedChildren(
+        McdfOperationDirectory ownership,
+        SafeFileHandle rootHandle)
+    {
+        string marker = Path.Combine(ownership.Path, ".owner");
+        foreach (string child in Directory.EnumerateFileSystemEntries(ownership.Path)
+                     .Where(child => !PathsEqual(child, marker)))
+        {
+            if (!OwnedDirectoryMatches(ownership, rootHandle))
+                throw new IOException(
+                    "The extraction directory ownership changed during cleanup.");
+            var attributes = File.GetAttributes(child);
+            if ((attributes & FileAttributes.ReparsePoint) != 0)
+                throw new IOException(
+                    "A reparse point appeared in the extraction directory; cleanup was refused.");
+            if ((attributes & FileAttributes.Directory) != 0)
+                Directory.Delete(child, recursive: false);
+            else
+                File.Delete(child);
+        }
+        if (!OwnedDirectoryMatches(ownership, rootHandle))
+            throw new IOException(
+                "The extraction directory ownership changed during cleanup.");
+        File.Delete(marker);
+    }
+
+    private static void DeleteAllocatedDirectoryWithHandles(
+        SafeFileHandle? directoryHandle,
+        FileStream? markerStream)
+    {
+        try
+        {
+            if (directoryHandle == null || directoryHandle.IsInvalid)
+                return;
+            if (markerStream != null)
+            {
+                McdfPlatformFileOwnership.MarkDeleteOnClose(
+                    markerStream.SafeFileHandle);
+                markerStream.Dispose();
+            }
+            McdfPlatformFileOwnership.MarkDeleteOnClose(directoryHandle);
+        }
+        catch
+        {
+        }
+    }
+
     // ── Read ─────────────────────────────────────────────────────────────
 
     private IntegrationValue<McdfPackage> ReadCore(
         string path,
         McdfLimits limits,
-        string operationDirectory,
+        McdfOperationDirectory operationDirectory,
         Action<McdfProgressStep> progress,
         CancellationToken cancellation)
     {
@@ -302,6 +526,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         // caller's visible, retryable cleanup.
         try
         {
+            using var operationRoot =
+                McdfPlatformFileOwnership.OpenFencedDirectory(operationDirectory.Path);
+            if (!OwnedDirectoryMatches(operationDirectory, operationRoot))
+                return IntegrationValue<McdfPackage>.Fail(
+                    "The extraction directory ownership changed; extraction was refused.");
             progress(new McdfProgressStep(McdfPhase.Reading, 0, 0, 0, 0));
             using var file = new FileStream(
                 path, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -345,7 +574,9 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
             // Extraction: generated file names inside a unique operation
             // directory; archive-declared names are never used on disk.
-            Directory.CreateDirectory(operationDirectory);
+            if (!OwnedDirectoryMatches(operationDirectory, operationRoot))
+                return IntegrationValue<McdfPackage>.Fail(
+                    "The extraction directory ownership changed; extraction was refused.");
             var replaced = new Dictionary<string, string>(StringComparer.Ordinal);
             long bytesDone = 0;
             var chunk = new byte[ChunkSize];
@@ -354,7 +585,11 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 if (cancellation.IsCancellationRequested)
                     return IntegrationValue<McdfPackage>.Fail("The import was cancelled.");
                 var entry = data.Files[i];
-                string extracted = Path.Combine(operationDirectory, $"p{i:D4}.dat");
+                if (!OwnedDirectoryMatches(operationDirectory, operationRoot))
+                    return IntegrationValue<McdfPackage>.Fail(
+                        "The extraction directory ownership changed; extraction was refused.");
+                string extracted = Path.Combine(
+                    operationDirectory.Path, $"p{i:D4}.dat");
                 using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
                 using (var output = new FileStream(
                     extracted, FileMode.CreateNew, FileAccess.Write, FileShare.None))
@@ -410,7 +645,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 data.ManipulationData,
                 replaced,
                 swaps,
-                operationDirectory,
+                operationDirectory.Path,
                 data.Files.Count,
                 totalBytes));
         }
@@ -500,6 +735,10 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
     {
         string temporary = string.Empty;
         bool moved = false;
+        FileStream? ownedOutput = null;
+        IntegrationValue<McdfWriteStats> result =
+            IntegrationValue<McdfWriteStats>.Fail(
+                "Writing the package failed unexpectedly.");
         string fullDestination = string.Empty;
         bool destinationExisted = false;
         try
@@ -527,15 +766,16 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             foreach (var file in content.Files)
             {
                 if (cancellation.IsCancellationRequested)
-                    return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
+                    throw new WriteFailureException("The export was cancelled.");
                 var source = file.Source ?? CaptureSource(file.LocalPath, cancellation);
                 using (var input = OpenValidatedSource(file.LocalPath, source, cancellation,
                     out string? sourceError))
                 {
                     if (input == null)
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                        throw new WriteFailureException(
                             sourceError ?? $"{file.LocalPath} changed while exporting.");
-                    string digest = HashStream(input, cancellation, null,
+                    string localDigest = HashStream(
+                        input, HashAlgorithmName.SHA256, cancellation, null,
                         bytes =>
                         {
                             hashedBytes += bytes;
@@ -543,12 +783,15 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                                 McdfPhase.WritingPackage, 0, content.Files.Count,
                                 hashedBytes, toHash));
                         });
-                    if (!string.Equals(digest, source.ContentHash, StringComparison.OrdinalIgnoreCase))
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                    if (!string.Equals(localDigest, source.ContentHash, StringComparison.OrdinalIgnoreCase))
+                        throw new WriteFailureException(
                             $"{file.LocalPath} changed while exporting; its declared hash would be false.");
+                    input.Position = 0;
+                    string digest = HashStream(
+                        input, HashAlgorithmName.SHA1, cancellation, null);
                     long length = input.Length;
                     if (length > int.MaxValue)
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                        throw new WriteFailureException(
                             $"{file.LocalPath} is too large for the MCDF format.");
 
                     if (byHash.TryGetValue(digest, out var existing))
@@ -593,10 +836,10 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
             // Pass 2 — claim a unique same-directory temp path exclusively,
             // then write header + payloads before the atomic destination step.
-            using (var output = CreateOwnedTemporary(
-                Path.GetFullPath(destination), out temporary))
+            ownedOutput = CreateOwnedTemporary(
+                Path.GetFullPath(destination), out temporary);
             using (var lz4 = LZ4Legacy.Encode(
-                output, highCompression: true, blockSize: 1024 * 1024, leaveOpen: true))
+                ownedOutput, highCompression: true, blockSize: 1024 * 1024, leaveOpen: true))
             using (var writer = new BinaryWriter(lz4, Encoding.UTF8, leaveOpen: true))
             {
                 writer.Write((byte)'M');
@@ -613,27 +856,33 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 foreach (var digest in order)
                 {
                     if (cancellation.IsCancellationRequested)
-                        return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
+                        throw new WriteFailureException("The export was cancelled.");
                     var source = byHash[digest].Source;
                     using var input = OpenValidatedSource(
                         byHash[digest].LocalPath, source, cancellation, out string? sourceError);
                     if (input == null)
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                        throw new WriteFailureException(
                             sourceError ?? $"{byHash[digest].LocalPath} changed while exporting.");
-                    string digestBeforeCopy = HashStream(input, cancellation, null);
-                    if (!string.Equals(digestBeforeCopy, source.ContentHash,
-                            StringComparison.OrdinalIgnoreCase)
-                        || !string.Equals(digestBeforeCopy, digest,
+                    string localDigestBeforeCopy = HashStream(
+                        input, HashAlgorithmName.SHA256, cancellation, null);
+                    if (!string.Equals(localDigestBeforeCopy, source.ContentHash,
                             StringComparison.OrdinalIgnoreCase))
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                        throw new WriteFailureException(
                             $"{byHash[digest].LocalPath} changed while exporting; its declared hash would be false.");
+                    input.Position = 0;
+                    string wireDigestBeforeCopy = HashStream(
+                        input, HashAlgorithmName.SHA1, cancellation, null);
+                    if (!string.Equals(wireDigestBeforeCopy, digest,
+                            StringComparison.OrdinalIgnoreCase))
+                        throw new WriteFailureException(
+                            $"{byHash[digest].LocalPath} changed while exporting.");
                     input.Position = 0;
                     long fileWritten = 0;
                     int got;
                     while ((got = input.Read(chunk, 0, chunk.Length)) > 0)
                     {
                         if (cancellation.IsCancellationRequested)
-                            return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
+                            throw new WriteFailureException("The export was cancelled.");
                         writer.Write(chunk, 0, got);
                         written += got;
                         fileWritten += got;
@@ -641,7 +890,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                             McdfPhase.WritingPackage, done, order.Count, written, totalBytes));
                     }
                     if (fileWritten != byHash[digest].Entry.Length)
-                        return IntegrationValue<McdfWriteStats>.Fail(
+                        throw new WriteFailureException(
                             $"{byHash[digest].LocalPath} changed while exporting.");
                     done++;
                     progress(new McdfProgressStep(
@@ -651,44 +900,56 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 writer.Flush();
             }
 
-            // Decide the replacement mode before any lengthy source work. If
-            // an absent destination appears concurrently, Move fails without
-            // overwriting it; if an existing destination disappears, Replace
-            // fails without silently switching to create semantics.
-            if (destinationExisted)
-                File.Replace(temporary, fullDestination, destinationBackupFileName: null);
-            else
-                File.Move(temporary, fullDestination);
+            ownedOutput.Flush(flushToDisk: true);
+            _beforeCommit?.Invoke(temporary);
+            cancellation.ThrowIfCancellationRequested();
+            McdfPlatformFileOwnership.CommitExactHandle(
+                ownedOutput.SafeFileHandle, fullDestination, destinationExisted);
             moved = true;
-            return IntegrationValue<McdfWriteStats>.Ok(
+            ownedOutput.Dispose();
+            ownedOutput = null;
+            result = IntegrationValue<McdfWriteStats>.Ok(
                 new McdfWriteStats(order.Count, totalBytes));
         }
         catch (OperationCanceledException)
         {
-            return IntegrationValue<McdfWriteStats>.Fail("The export was cancelled.");
+            result = IntegrationValue<McdfWriteStats>.Fail(
+                "The export was cancelled.");
+        }
+        catch (WriteFailureException ex)
+        {
+            result = IntegrationValue<McdfWriteStats>.Fail(ex.Message);
         }
         catch (Exception ex)
         {
-            return IntegrationValue<McdfWriteStats>.Fail(
+            result = IntegrationValue<McdfWriteStats>.Fail(
                 $"Writing the package failed: {ex.Message}");
         }
         finally
         {
-            if (!moved)
+            if (!moved && ownedOutput != null)
             {
                 try
                 {
-                    if (temporary.Length > 0)
-                        File.Delete(temporary);
+                    _markDeleteOnClose(ownedOutput.SafeFileHandle);
                 }
-                catch
+                catch (Exception cleanupError)
                 {
-                    // The exact owned temp is best-effort cleanup; never
-                    // mask the original failure or touch the destination.
+                    string original = result.Detail
+                        ?? "Writing the package failed.";
+                    result = IntegrationValue<McdfWriteStats>.Fail(
+                        $"{original} Exact temporary cleanup also failed: "
+                        + $"{cleanupError.Message} The owned temporary file "
+                        + $"was retained at {temporary} for manual cleanup.");
                 }
             }
+            ownedOutput?.Dispose();
         }
+        return result;
     }
+
+    private sealed class WriteFailureException(string message)
+        : IOException(message);
 
     private static void ReadExact(Stream stream, byte[] buffer, string what)
     {
@@ -713,8 +974,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
                 directory, $".{name}.{_newGuid():N}.tmp");
             try
             {
-                return new FileStream(
-                    temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                return McdfPlatformFileOwnership.CreateExclusiveTemporary(temporary);
             }
             catch (IOException) when (attempt < 7)
             {
@@ -727,7 +987,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         throw new IOException("A unique temporary export file could not be allocated.");
     }
 
-    private static FileStream? OpenValidatedSource(
+    private FileStream? OpenValidatedSource(
         string localPath,
         McdfExportSourceObservation expected,
         CancellationToken cancellation,
@@ -753,16 +1013,18 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
 
             var input = new FileStream(
                 realPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            string? finalPath = TryGetFinalPath(input.SafeFileHandle);
-            if (finalPath != null && !PathsEqual(finalPath, expected.CanonicalPath))
+            string finalPath = _getFinalPath(input.SafeFileHandle);
+            if (!PathsEqual(finalPath, expected.CanonicalPath))
             {
                 input.Dispose();
                 error = $"{localPath} changed its canonical handle path while exporting.";
                 return null;
             }
-            string? identity = TryGetFileIdentity(input.SafeFileHandle);
-            if (expected.Identity != null && identity != null
-                && !string.Equals(expected.Identity, identity, StringComparison.Ordinal))
+            string? identity = _getIdentity(input.SafeFileHandle);
+            if (expected.Identity != null
+                && (identity == null
+                    || !string.Equals(
+                        expected.Identity, identity, StringComparison.Ordinal)))
             {
                 input.Dispose();
                 error = $"{localPath} changed its file identity while exporting.";
@@ -787,7 +1049,7 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         }
     }
 
-    private static McdfExportSourceObservation CaptureSource(
+    private McdfExportSourceObservation CaptureSource(
         string localPath, CancellationToken cancellation)
     {
         string fullPath = Path.GetFullPath(localPath);
@@ -795,20 +1057,25 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             ?? throw new IOException($"{localPath} could not be resolved for export.");
         using var input = new FileStream(
             realPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        string finalPath = _getFinalPath(input.SafeFileHandle);
+        if (!PathsEqual(finalPath, realPath))
+            throw new IOException($"{localPath} changed while being opened.");
         long length = input.Length;
-        string hash = HashStream(input, cancellation, null);
+        string hash = HashStream(
+            input, HashAlgorithmName.SHA256, cancellation, null);
         return new McdfExportSourceObservation(
-            realPath, string.Empty, length, hash,
-            TryGetFileIdentity(input.SafeFileHandle));
+            finalPath, string.Empty, length, hash,
+            _getIdentity(input.SafeFileHandle));
     }
 
     private static string HashStream(
         Stream stream,
+        HashAlgorithmName algorithm,
         CancellationToken cancellation,
         Action? chunkHook,
         Action<int>? bytesRead = null)
     {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        using var hash = IncrementalHash.CreateHash(algorithm);
         var chunk = new byte[ChunkSize];
         int got;
         while ((got = stream.Read(chunk, 0, chunk.Length)) > 0)
@@ -829,54 +1096,6 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             OperatingSystem.IsWindows()
                 ? StringComparison.OrdinalIgnoreCase
                 : StringComparison.Ordinal);
-
-    private static string? TryGetFinalPath(SafeFileHandle handle)
-    {
-        if (!OperatingSystem.IsWindows() || handle.IsInvalid)
-            return null;
-        var buffer = new StringBuilder(512);
-        uint length = GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Capacity, 0);
-        if (length == 0 || length >= buffer.Capacity)
-            return null;
-        string path = buffer.ToString();
-        if (path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-            path = @"\" + path[7..];
-        else if (path.StartsWith(@"\\?\", StringComparison.Ordinal))
-            path = path[4..];
-        return Path.GetFullPath(path);
-    }
-
-    private static string? TryGetFileIdentity(SafeFileHandle handle)
-    {
-        if (!OperatingSystem.IsWindows() || handle.IsInvalid
-            || !GetFileInformationByHandle(handle, out var info))
-            return null;
-        return $"{info.VolumeSerialNumber:X8}:{info.FileIndexHigh:X8}{info.FileIndexLow:X8}";
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern uint GetFinalPathNameByHandle(
-        SafeFileHandle hFile, StringBuilder lpszFilePath, uint cchFilePath, uint dwFlags);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetFileInformationByHandle(
-        SafeFileHandle hFile, out ByHandleFileInformation lpFileInformation);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ByHandleFileInformation
-    {
-        public uint FileAttributes;
-        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
-        public uint VolumeSerialNumber;
-        public uint FileSizeHigh;
-        public uint FileSizeLow;
-        public uint NumberOfLinks;
-        public uint FileIndexHigh;
-        public uint FileIndexLow;
-    }
 
     /// <summary>Resolves every reparse point in a path, including
     /// intermediate directories, and restarts from each final target.</summary>

@@ -24,6 +24,8 @@ public sealed class ActorIntegrationSession
     private readonly IIntegrationRuntimePort _port;
     private readonly IMcdfFileBoundary _files;
     private readonly Dictionary<ActorId, IntegrationOverrides> _overrides = new();
+    private readonly Dictionary<string, McdfOperationDirectory> _mcdfDirectories =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public ActorIntegrationSession(IIntegrationRuntimePort port, IMcdfFileBoundary files)
     {
@@ -565,7 +567,7 @@ public sealed class ActorIntegrationSession
         string? operationDirectory = mcdf.OperationDirectory;
         if (temporaryCollection == null && operationDirectory != null)
         {
-            var directoryDeleted = _files.DeleteOperationDirectory(operationDirectory);
+            var directoryDeleted = DeleteOperationDirectory(operationDirectory);
             if (directoryDeleted.Success)
                 operationDirectory = null;
             else
@@ -659,7 +661,7 @@ public sealed class ActorIntegrationSession
         public required ActorId Target { get; init; }
         public required string FileName { get; init; }
         public bool Invalidated;
-        public string? OperationDirectory;
+        public McdfOperationDirectory? OperationDirectory;
         public Guid? TemporaryCollection;
         public bool GlamourerLocked;
         public Guid? TemporaryProfile;
@@ -800,6 +802,7 @@ public sealed class ActorIntegrationSession
             await _port.OnFrameworkThread(() =>
             {
                 operation.OperationDirectory = operationDirectory;
+                _mcdfDirectories[operationDirectory.Path] = operationDirectory;
                 return true;
             });
             var read = await _files.ReadPackage(path, Limits, operationDirectory, step =>
@@ -983,7 +986,7 @@ public sealed class ActorIntegrationSession
                     Baseline = operation.Baseline,
                     Mcdf = new McdfOwnership(
                         fileName, operation.TemporaryCollection,
-                        operation.OperationDirectory, operation.GlamourerLocked,
+                        operation.OperationDirectory?.Path, operation.GlamourerLocked,
                         operation.TemporaryProfile, operation.BodyJson),
                     DesignOwned = !replacedGlamourer && current.DesignOwned,
                     DesignName = replacedGlamourer ? null : current.DesignName,
@@ -1235,7 +1238,7 @@ public sealed class ActorIntegrationSession
         if (operation.TemporaryCollection == null
             && operation.OperationDirectory is { } directory)
         {
-            var deletedDirectory = _files.DeleteOperationDirectory(directory);
+            var deletedDirectory = DeleteOperationDirectory(directory.Path);
             if (deletedDirectory.Success)
                 operation.OperationDirectory = null;
             else
@@ -1284,11 +1287,11 @@ public sealed class ActorIntegrationSession
                 // second rollback pass idempotent, and the dedupe keeps a
                 // repeated transfer from appending the same path twice.
                 operation.OperationDirectory = null;
-                if (!current.PendingDirectories.Contains(orphan))
+                if (!current.PendingDirectories.Contains(orphan.Path))
                     Mutate(actor, current with
                     {
                         PendingDirectories =
-                            current.PendingDirectories.Append(orphan).ToList(),
+                            current.PendingDirectories.Append(orphan.Path).ToList(),
                     });
             }
             return failures.Count == 0 ? null : string.Join("; ", failures);
@@ -1304,7 +1307,7 @@ public sealed class ActorIntegrationSession
             Mcdf = new McdfOwnership(
                 operation.FileName,
                 operation.TemporaryCollection,
-                operation.OperationDirectory,
+                operation.OperationDirectory?.Path,
                 operation.GlamourerLocked,
                 operation.TemporaryProfile,
                 operation.BodyJson,
@@ -1317,6 +1320,17 @@ public sealed class ActorIntegrationSession
 
     /// <summary>Retries deletion of extraction directories orphaned by
     /// pre-mutation import failures; whatever still fails stays owned.</summary>
+    private IntegrationPortResult DeleteOperationDirectory(string path)
+    {
+        if (!_mcdfDirectories.TryGetValue(path, out var ownership))
+            return IntegrationPortResult.Fail(
+                "The extraction directory ownership proof is unavailable; cleanup was refused.");
+        var result = _files.DeleteOperationDirectory(ownership);
+        if (result.Success)
+            _mcdfDirectories.Remove(path);
+        return result;
+    }
+
     private IntegrationOverrides RetryPendingDirectories(
         IntegrationOverrides current, List<string> failures)
     {
@@ -1325,7 +1339,7 @@ public sealed class ActorIntegrationSession
         var remaining = new List<string>();
         foreach (var directory in current.PendingDirectories)
         {
-            var deleted = _files.DeleteOperationDirectory(directory);
+            var deleted = DeleteOperationDirectory(directory);
             if (!deleted.Success)
             {
                 failures.Add(deleted.Detail!);
@@ -1439,29 +1453,20 @@ public sealed class ActorIntegrationSession
             }
         }
 
-        // Cancellation exists before boundary inspection: the resource tree
-        // can contain many files and the boundary hashes each accepted source
-        // before returning an immutable observation.
+        // Every vendor read above is frozen synchronously on the framework
+        // thread. Inspection, hashing, semantic filtering, and package
+        // writing begin only after the cancellable operation is published.
         _mcdfCancellation?.Dispose();
         _mcdfCancellation = new CancellationTokenSource();
         var cancellation = _mcdfCancellation.Token;
-        var inspected = _files.InspectExportCandidates(root, tree, cancellation);
-        if (!inspected.Success || inspected.Value is not { } observation)
-            return IntegrationResult.Fail(
-                inspected.Detail ?? "The export resources could not be inspected.");
-        if (cancellation.IsCancellationRequested)
-            return IntegrationResult.Fail("The export was cancelled.");
-        var (content, skipped, contentError) = BuildExportContent(
-            description, glamourerState, customizeData, manipulationData, observation);
-        if (contentError != null || content == null)
-            return IntegrationResult.Fail(contentError ?? "The export content could not be built.");
-
         string fileName = _files.GetFileName(path);
         _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
-            McdfPhase.WritingPackage, 0, content.Files.Count, 0, 0, true, null);
+            McdfPhase.CapturingExport, 0, 0, 0, 0, true, null);
         Changed?.Invoke();
         _mcdfTask = Task.Run(
-            () => RunExport(actor, path, content, skipped, cancellation),
+            () => RunExport(
+                actor, path, description, glamourerState, customizeData,
+                manipulationData, root, tree, cancellation),
             CancellationToken.None);
         return IntegrationResult.Ok();
     }
@@ -1469,15 +1474,42 @@ public sealed class ActorIntegrationSession
     private async Task RunExport(
         ActorId actor,
         string path,
-        McdfExportContent content,
-        List<string> skipped,
+        string description,
+        string glamourerState,
+        string customizeData,
+        string manipulationData,
+        string root,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> tree,
         CancellationToken cancellation)
     {
         string fileName = _files.GetFileName(path);
-        int filesTotal = content.Files.Count;
+        int filesTotal = 0;
         long bytesTotal = 0;
+        var skipped = new List<string>();
         try
         {
+            var inspected = _files.InspectExportCandidates(root, tree, cancellation);
+            if (!inspected.Success || inspected.Value is not { } observation)
+            {
+                FinishExportFailure(
+                    actor, fileName, inspected.Detail
+                        ?? "The export resources could not be inspected.",
+                    filesTotal, bytesTotal, skipped, cancellation);
+                return;
+            }
+            cancellation.ThrowIfCancellationRequested();
+            var (content, contentSkipped, contentError) = BuildExportContent(
+                description, glamourerState, customizeData, manipulationData, observation);
+            skipped = contentSkipped;
+            if (contentError != null || content == null)
+            {
+                FinishExportFailure(
+                    actor, fileName, contentError
+                        ?? "The export content could not be built.",
+                    filesTotal, bytesTotal, skipped, cancellation);
+                return;
+            }
+            filesTotal = content.Files.Count;
             var written = await _files.WritePackage(path, content, step =>
             {
                 bytesTotal = step.BytesTotal;
@@ -1504,6 +1536,12 @@ public sealed class ActorIntegrationSession
                 new McdfOutcome(true, false, detail,
                     stats.Files, stats.UncompressedBytes, skipped));
         }
+        catch (OperationCanceledException)
+        {
+            FinishExportFailure(
+                actor, fileName, "The export was cancelled.",
+                filesTotal, bytesTotal, skipped, cancellation);
+        }
         catch (Exception ex)
         {
             _mcdfProgress = new McdfProgress(actor, fileName, McdfOperationKind.Export,
@@ -1512,6 +1550,22 @@ public sealed class ActorIntegrationSession
                     $"The export failed unexpectedly: {ex.Message}", 0, 0, skipped));
         }
     }
+
+    private void FinishExportFailure(
+        ActorId actor,
+        string fileName,
+        string detail,
+        int filesTotal,
+        long bytesTotal,
+        IReadOnlyList<string> skipped,
+        CancellationToken cancellation) =>
+        _mcdfProgress = new McdfProgress(
+            actor, fileName, McdfOperationKind.Export,
+            cancellation.IsCancellationRequested ? McdfPhase.Cancelled : McdfPhase.Failed,
+            0, filesTotal, 0, bytesTotal, false,
+            new McdfOutcome(
+                false, cancellation.IsCancellationRequested, detail,
+                0, 0, skipped));
 
     /// <summary>
     /// Turns Penumbra's actual-path → game-paths tree into MCDF content:

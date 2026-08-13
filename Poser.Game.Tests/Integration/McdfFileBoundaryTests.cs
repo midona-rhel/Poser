@@ -1,3 +1,8 @@
+using System.ComponentModel;
+using System.Reflection;
+using Microsoft.Win32.SafeHandles;
+using Poser.Application.Integration;
+using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Game.Mcdf;
 
@@ -113,7 +118,10 @@ public sealed class McdfFileBoundaryTests
             Directory.CreateSymbolicLink(link, outside);
         }
         catch (UnauthorizedAccessException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
-        catch (IOException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) == 1314)
+        { Assert.Skip($"Symlink privilege unavailable: {ex.Message}"); }
+        catch (PlatformNotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (NotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
 
         var result = files.Boundary.InspectExportCandidates(
             mod,
@@ -142,7 +150,10 @@ public sealed class McdfFileBoundaryTests
             Directory.CreateSymbolicLink(alias, real);
         }
         catch (UnauthorizedAccessException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
-        catch (IOException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) == 1314)
+        { Assert.Skip($"Symlink privilege unavailable: {ex.Message}"); }
+        catch (PlatformNotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (NotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
 
         var result = files.Boundary.InspectExportCandidates(
             mod,
@@ -178,7 +189,10 @@ public sealed class McdfFileBoundaryTests
             Directory.CreateSymbolicLink(link, original);
         }
         catch (UnauthorizedAccessException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
-        catch (IOException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) == 1314)
+        { Assert.Skip($"Symlink privilege unavailable: {ex.Message}"); }
+        catch (PlatformNotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
+        catch (NotSupportedException ex) { Assert.Skip($"Symlink capability unavailable: {ex.Message}"); }
 
         string selected = Path.Combine(link, "body.mdl");
         var inspection = files.Boundary.InspectExportCandidates(
@@ -268,10 +282,10 @@ public sealed class McdfFileBoundaryTests
         using var files = new TempFiles();
         var first = files.Boundary.CreateOperationDirectory();
         var second = files.Boundary.CreateOperationDirectory();
-        Assert.True(first.Success && second.Success);
+        Assert.True(first.Success && second.Success, $"{first.Detail} | {second.Detail}");
         Assert.NotEqual(first.Value, second.Value);
-        Assert.True(Directory.Exists(first.Value));
-        Assert.True(Directory.Exists(second.Value));
+        Assert.True(Directory.Exists(first.Value!.Path));
+        Assert.True(Directory.Exists(second.Value!.Path));
 
         Assert.True(files.Boundary.DeleteOperationDirectory(first.Value!).Success);
         Assert.True(files.Boundary.DeleteOperationDirectory(first.Value!).Success);
@@ -282,8 +296,8 @@ public sealed class McdfFileBoundaryTests
     public void Operation_directory_collision_does_not_claim_preexisting_directory()
     {
         using var files = new TempFiles();
-        Guid collision = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        Guid success = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        Guid collision = Guid.NewGuid();
+        Guid success = Guid.NewGuid();
         string root = Path.Combine(Path.GetTempPath(), "Poser");
         string occupied = Path.Combine(root, $"mcdf-{collision:N}");
         Directory.CreateDirectory(occupied);
@@ -293,11 +307,68 @@ public sealed class McdfFileBoundaryTests
 
         var result = boundary.CreateOperationDirectory();
 
-        Assert.True(result.Success);
-        Assert.NotEqual(occupied, result.Value);
+        Assert.True(result.Success, result.Detail);
+        Assert.NotEqual(occupied, result.Value!.Path);
         Assert.Equal("keep", File.ReadAllText(Path.Combine(occupied, "keep.txt")));
         Assert.True(boundary.DeleteOperationDirectory(result.Value!).Success);
         Directory.Delete(occupied, recursive: true);
+    }
+
+    [Fact]
+    public void Operation_staging_collision_is_never_adopted_or_deleted()
+    {
+        Guid collision = Guid.NewGuid();
+        Guid success = Guid.NewGuid();
+        string root = Path.Combine(Path.GetTempPath(), "Poser");
+        string staging = Path.Combine(root, $".mcdf-staging-{collision:N}");
+        Directory.CreateDirectory(staging);
+        string foreign = Path.Combine(staging, "foreign.txt");
+        File.WriteAllText(foreign, "foreign");
+        var ids = new Queue<Guid>([collision, success]);
+        var boundary = new McdfFileBoundary(() => ids.Dequeue());
+
+        var result = boundary.CreateOperationDirectory();
+
+        Assert.True(result.Success, result.Detail);
+        Assert.Equal("foreign", File.ReadAllText(foreign));
+        Assert.True(boundary.DeleteOperationDirectory(result.Value!).Success);
+        Directory.Delete(staging, recursive: true);
+    }
+
+    [Fact]
+    public void Operation_cleanup_refuses_owner_token_mismatch()
+    {
+        var boundary = new McdfFileBoundary();
+        var allocated = boundary.CreateOperationDirectory();
+        Assert.True(allocated.Success, allocated.Detail);
+        var ownership = allocated.Value!;
+        File.WriteAllText(Path.Combine(ownership.Path, ".owner"), "foreign-token");
+        File.WriteAllText(Path.Combine(ownership.Path, "foreign.txt"), "foreign");
+
+        var deleted = boundary.DeleteOperationDirectory(ownership);
+
+        Assert.False(deleted.Success);
+        Assert.Equal("foreign", File.ReadAllText(Path.Combine(ownership.Path, "foreign.txt")));
+        Directory.Delete(ownership.Path, recursive: true);
+    }
+
+    [Fact]
+    public void Operation_cleanup_refuses_identity_mismatch_and_preserves_foreign_replacement()
+    {
+        var boundary = new McdfFileBoundary();
+        var allocated = boundary.CreateOperationDirectory();
+        Assert.True(allocated.Success, allocated.Detail);
+        var ownership = allocated.Value!;
+        Directory.Delete(ownership.Path, recursive: true);
+        Directory.CreateDirectory(ownership.Path);
+        File.WriteAllText(Path.Combine(ownership.Path, ".owner"), ownership.OwnerToken);
+        File.WriteAllText(Path.Combine(ownership.Path, "foreign.txt"), "foreign");
+
+        var deleted = boundary.DeleteOperationDirectory(ownership);
+
+        Assert.False(deleted.Success);
+        Assert.Equal("foreign", File.ReadAllText(Path.Combine(ownership.Path, "foreign.txt")));
+        Directory.Delete(ownership.Path, recursive: true);
     }
 
     [Fact]
@@ -410,6 +481,95 @@ public sealed class McdfFileBoundaryTests
     }
 
     [Fact]
+    public async Task Cancellation_after_finalization_prevents_commit_and_preserves_destination()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        File.WriteAllText(source, "payload");
+        File.WriteAllText(destination, "old destination");
+        using var cancellation = new CancellationTokenSource();
+        var boundary = new McdfFileBoundary(
+            beforeCommit: _ => cancellation.Cancel());
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, cancellation.Token);
+
+        Assert.False(result.Success);
+        Assert.Contains("cancelled", result.Detail!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("old destination", File.ReadAllText(destination));
+    }
+
+    [Fact]
+    public async Task Exact_temp_cleanup_failure_retains_path_evidence_and_destination()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        File.WriteAllText(source, "payload");
+        File.WriteAllText(destination, "old destination");
+        string? ownedTemporary = null;
+        var boundary = new McdfFileBoundary(
+            beforeCommit: temporary =>
+            {
+                ownedTemporary = temporary;
+                throw new IOException("injected commit refusal");
+            },
+            markDeleteOnClose: _ =>
+                throw new IOException("injected disposition refusal"));
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("old destination", File.ReadAllText(destination));
+        Assert.NotNull(ownedTemporary);
+        Assert.True(File.Exists(ownedTemporary));
+        Assert.Contains("injected commit refusal", result.Detail!);
+        Assert.Contains("injected disposition refusal", result.Detail!);
+        Assert.Contains(ownedTemporary, result.Detail!);
+        Assert.Contains("manual cleanup", result.Detail!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Commit_renames_the_exact_owned_temp_handle_not_a_path_replacement()
+    {
+        if (!OperatingSystem.IsWindows())
+            Assert.Skip("Exact open-handle rename is a Windows boundary contract.");
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        string destination = Path.Combine(files.Root, "export.mcdf");
+        File.WriteAllText(source, "payload");
+        string? foreignTemp = null;
+        var boundary = new McdfFileBoundary(beforeCommit: temporary =>
+        {
+            string displaced = temporary + ".displaced";
+            File.Move(temporary, displaced);
+            File.WriteAllText(temporary, "foreign replacement");
+            foreignTemp = temporary;
+        });
+
+        var result = await boundary.WritePackage(
+            destination,
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(["a/body.mdl"], source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.True(result.Success, result.Detail);
+        Assert.True(File.Exists(destination));
+        Assert.Equal("foreign replacement", File.ReadAllText(foreignTemp!));
+    }
+
+    [Fact]
     public void Export_dtos_copy_nested_inputs()
     {
         var gamePaths = new List<string> { "a/body.mdl" };
@@ -429,7 +589,239 @@ public sealed class McdfFileBoundaryTests
         Assert.Single(inspection.Skipped);
     }
 
+    [Fact]
+    public void Export_dto_deconstruction_and_reference_equality_are_explicit()
+    {
+        var firstFile = new McdfExportFile(["a/body.mdl"], "body.mdl");
+        var equivalentFile = new McdfExportFile(["a/body.mdl"], "body.mdl");
+        var content = new McdfExportContent(
+            "description", "glamourer", "customize", "manipulations",
+            [firstFile], new Dictionary<string, string> { ["a"] = "b" });
+
+        var (paths, localPath, source) = firstFile;
+        var (description, glamourer, customize, manipulations, files, swaps) = content;
+
+        Assert.Equal(["a/body.mdl"], paths);
+        Assert.Equal("body.mdl", localPath);
+        Assert.Null(source);
+        Assert.Equal("description", description);
+        Assert.Equal("glamourer", glamourer);
+        Assert.Equal("customize", customize);
+        Assert.Equal("manipulations", manipulations);
+        Assert.Single(files);
+        Assert.Single(swaps);
+        Assert.NotEqual(firstFile, equivalentFile);
+    }
+
+    [Fact]
+    public async Task Begin_export_freezes_vendor_state_then_inspects_off_thread_cancellably()
+    {
+        int callerThread = System.Environment.CurrentManagedThreadId;
+        var runtime = DispatchProxy.Create<IIntegrationRuntimePort, ExportRuntimeProxy>();
+        var runtimeProxy = (ExportRuntimeProxy)(object)runtime;
+        runtimeProxy.CallerThread = callerThread;
+        var boundary = new ExportBoundaryFake();
+        var session = new ActorIntegrationSession(runtime, boundary);
+        var actor = new ActorId(Guid.NewGuid(), 1);
+
+        var started = session.BeginExport(actor, "export.mcdf", "description");
+
+        Assert.True(started.Success, started.Detail);
+        Assert.All(runtimeProxy.VendorReadThreads, thread => Assert.Equal(callerThread, thread));
+        Assert.True(session.McdfBusy);
+        Assert.True(session.Mcdf!.Cancellable);
+        Assert.Equal(McdfPhase.CapturingExport, session.Mcdf.Phase);
+        Assert.False(boundary.InspectionEntered.IsSet);
+
+        session.CancelMcdf();
+        boundary.AllowInspection.Set();
+        Assert.True(boundary.InspectionEntered.Wait(
+            TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        await WaitUntilAsync(() => !session.McdfBusy);
+
+        Assert.NotEqual(callerThread, boundary.InspectionThread);
+        Assert.True(boundary.InspectionCancellation.CanBeCanceled);
+        Assert.True(boundary.InspectionCancellation.IsCancellationRequested);
+        Assert.True(session.Mcdf!.Outcome!.Cancelled);
+    }
+
+    [Fact]
+    public void Operation_post_rename_verification_failure_cleans_exact_directory()
+    {
+        Guid id = Guid.NewGuid();
+        string root = Path.Combine(Path.GetTempPath(), "Poser");
+        string staging = Path.Combine(root, $".mcdf-staging-{id:N}");
+        string directory = Path.Combine(root, $"mcdf-{id:N}");
+        var boundary = new McdfFileBoundary(
+            newGuid: () => id,
+            getOperationFinalPath: _ => throw new IOException("injected postcondition failure"));
+
+        var result = boundary.CreateOperationDirectory();
+
+        Assert.False(result.Success);
+        Assert.False(Directory.Exists(staging));
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public void Required_handle_path_retrieval_failure_fails_closed()
+    {
+        using var files = new TempFiles();
+        string mod = Path.Combine(files.Root, "mod");
+        string local = Path.Combine(mod, "body.mdl");
+        Directory.CreateDirectory(mod);
+        File.WriteAllText(local, "payload");
+        var boundary = new McdfFileBoundary(
+            getFinalPath: _ => throw new Win32Exception(5));
+
+        var result = boundary.InspectExportCandidates(
+            mod,
+            new Dictionary<string, IReadOnlyList<string>>
+            {
+                [local] = ["a/body.mdl"],
+            },
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+    }
+
+    [Fact]
+    public void Long_final_handle_path_is_captured_without_a_fixed_buffer()
+    {
+        using var files = new TempFiles();
+        string mod = Path.Combine(files.Root, "mod");
+        string nested = mod;
+        try
+        {
+            while (nested.Length < 620)
+                nested = Path.Combine(nested, new string('d', 40));
+            Directory.CreateDirectory(nested);
+            string local = Path.Combine(nested, "body.mdl");
+            File.WriteAllText(local, "payload");
+
+            var result = files.Boundary.InspectExportCandidates(
+                mod,
+                new Dictionary<string, IReadOnlyList<string>>
+                {
+                    [local] = ["a/body.mdl"],
+                },
+                CancellationToken.None);
+
+            Assert.True(result.Success, result.Detail);
+            Assert.Equal(
+                Path.GetFullPath(local),
+                Assert.Single(result.Value!.Candidates).Source!.CanonicalPath);
+        }
+        catch (PathTooLongException ex)
+        {
+            Assert.Skip($"Long paths are not enabled on this Windows installation: {ex.Message}");
+        }
+    }
+
+    [Fact]
+    public async Task Missing_current_identity_fails_when_inspection_expected_one()
+    {
+        using var files = new TempFiles();
+        string source = Path.Combine(files.Root, "body.mdl");
+        File.WriteAllText(source, "payload");
+        var inspection = files.Boundary.InspectExportCandidates(
+            files.Root,
+            new Dictionary<string, IReadOnlyList<string>>
+            {
+                [source] = ["a/body.mdl"],
+            },
+            CancellationToken.None);
+        var candidate = Assert.Single(inspection.Value!.Candidates);
+        if (candidate.Source!.Identity == null)
+            Assert.Skip("The platform did not expose a stable file identity.");
+        var boundary = new McdfFileBoundary(getIdentity: _ => null);
+
+        var result = await boundary.WritePackage(
+            Path.Combine(files.Root, "export.mcdf"),
+            new McdfExportContent("", "", "", "",
+                [new McdfExportFile(candidate.GamePaths, candidate.LocalPath!, candidate.Source)],
+                new Dictionary<string, string>()),
+            _ => { }, CancellationToken.None);
+
+        Assert.False(result.Success);
+    }
+
     private const int ChunkSizeForTest = 81920;
+
+    private static async Task WaitUntilAsync(Func<bool> predicate)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (!predicate())
+            await Task.Delay(10, timeout.Token);
+    }
+
+    private class ExportRuntimeProxy : DispatchProxy
+    {
+        public int CallerThread { get; set; }
+        public List<int> VendorReadThreads { get; } = new();
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            Assert.NotNull(targetMethod);
+            string name = targetMethod.Name;
+            if (name is "get_Penumbra" or "get_Glamourer")
+                return new IntegrationAvailability(true, "available");
+            if (name == "get_CustomizePlus")
+                return new IntegrationAvailability(false, "unavailable");
+            VendorReadThreads.Add(System.Environment.CurrentManagedThreadId);
+            Assert.Equal(CallerThread, System.Environment.CurrentManagedThreadId);
+            return name switch
+            {
+                nameof(IIntegrationRuntimePort.CaptureGlamourerState) =>
+                    IntegrationValue<string>.Ok("glamourer"),
+                nameof(IIntegrationRuntimePort.GetActorMetaManipulations) =>
+                    IntegrationValue<string>.Ok("manipulations"),
+                nameof(IIntegrationRuntimePort.GetActorResourcePaths) =>
+                    IntegrationValue<IReadOnlyDictionary<string, IReadOnlyList<string>>>.Ok(
+                        new Dictionary<string, IReadOnlyList<string>>()),
+                nameof(IIntegrationRuntimePort.GetModDirectory) =>
+                    IntegrationValue<string>.Ok("mod-root"),
+                _ => throw new NotSupportedException(name),
+            };
+        }
+    }
+
+    private sealed class ExportBoundaryFake : IMcdfFileBoundary
+    {
+        public ManualResetEventSlim AllowInspection { get; } = new(false);
+        public ManualResetEventSlim InspectionEntered { get; } = new(false);
+        public int InspectionThread { get; private set; }
+        public CancellationToken InspectionCancellation { get; private set; }
+
+        public string GetFileName(string path) => Path.GetFileName(path);
+        public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory() =>
+            throw new NotSupportedException();
+        public IntegrationValue<McdfExportInspection> InspectExportCandidates(
+            string modRoot,
+            IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
+            CancellationToken cancellation)
+        {
+            AllowInspection.Wait(TimeSpan.FromSeconds(5), cancellation);
+            InspectionThread = System.Environment.CurrentManagedThreadId;
+            InspectionCancellation = cancellation;
+            InspectionEntered.Set();
+            cancellation.ThrowIfCancellationRequested();
+            return IntegrationValue<McdfExportInspection>.Ok(
+                new McdfExportInspection([], []));
+        }
+        public Task<IntegrationValue<McdfPackage>> ReadPackage(
+            string path, McdfLimits limits, McdfOperationDirectory operationDirectory,
+            Action<McdfProgressStep> progress, CancellationToken cancellation) =>
+            throw new NotSupportedException();
+        public Task<IntegrationValue<McdfWriteStats>> WritePackage(
+            string destination, McdfExportContent content,
+            Action<McdfProgressStep> progress, CancellationToken cancellation) =>
+            Task.FromResult(IntegrationValue<McdfWriteStats>.Ok(
+                new McdfWriteStats(0, 0)));
+        public IntegrationPortResult DeleteOperationDirectory(
+            McdfOperationDirectory operationDirectory) =>
+            throw new NotSupportedException();
+    }
 
     private sealed class TempFiles : IDisposable
     {
