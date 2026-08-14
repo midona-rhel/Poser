@@ -549,6 +549,9 @@ public class MainWindow : Window
                 // nothing here: the header is a plain Select, never a modified
                 // one.
                 _selection.Select(EnvironmentSelection);
+                // Same frame, same reason as a row click: the environment's
+                // strip is not the strip this frame was laid out for.
+                ResyncTabLayout();
             }
         };
         _vm.OnSpawn = anchor =>
@@ -998,7 +1001,7 @@ public class MainWindow : Window
         // AppShellView is already drawing: the viewport contract moves in the
         // same breath as the content selection, so the remainder of the frame
         // cannot render one mode through the other mode's layout path.
-        ApplyTabLayout("Library");
+        ResyncTabLayout();
     }
 
     private void ExitLibraryMode()
@@ -1007,7 +1010,7 @@ public class MainWindow : Window
             return;
         _libraryMode = false;
         _libraryPane.OnHidden();
-        ApplyTabLayout(_activeTab);
+        ResyncTabLayout();
     }
 
     /// <summary>Puts the workspace into shot mode. Openers only, exactly like
@@ -1019,7 +1022,7 @@ public class MainWindow : Window
         ExitLibraryMode();
         _sceneMode = true;
         _scenePane.OnShown();
-        ApplyTabLayout(SceneTabLabel);
+        ResyncTabLayout();
     }
 
     private void ExitSceneMode()
@@ -1027,7 +1030,7 @@ public class MainWindow : Window
         if (!_sceneMode)
             return;
         _sceneMode = false;
-        ApplyTabLayout(_activeTab);
+        ResyncTabLayout();
     }
 
     public override void PostDraw()
@@ -2178,6 +2181,7 @@ public class MainWindow : Window
         {
             // The library types are the tabs; _activeTab is left untouched,
             // so leaving the library returns the tab the user was on.
+            _activeStrip = LibraryStrip;
             int type = _libraryPane.SelectedType;
             for (int i = 0; i < _libraryTabs.Length; i++)
             {
@@ -2190,10 +2194,29 @@ public class MainWindow : Window
         {
             // One tab: the shot workspace is a single page, and the strip is
             // what states the mode the user is in.
+            _activeStrip = ShotStrip;
             _sceneTabs[0].Active = true;
             _vm.Tabs.Add(_sceneTabs[0]);
             return;
         }
+        var tabs = SyncStripAndTab(primary);
+        for (int i = 0; i < tabs.Length; i++)
+        {
+            tabs[i].Active = tabs[i].Label == _activeTab;
+            _vm.Tabs.Add(tabs[i]);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the strip a selection answers for and settles
+    /// <see cref="_activeStrip"/> and <see cref="_activeTab"/> onto it,
+    /// returning that strip's tabs. Separated from <see cref="BuildTabs"/>
+    /// because a selection can also change MID-FRAME, from a sidebar row the
+    /// shell is already drawing, and the viewport contract has to move with
+    /// it (see <see cref="ResyncTabLayout"/>).
+    /// </summary>
+    private ShellTab[] SyncStripAndTab(SelectionId? primary)
+    {
         // The strip is a function of the SELECTION TYPE: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -2209,8 +2232,7 @@ public class MainWindow : Window
             _ => (_selectionTabs, "actor"),
         };
         // Same-labeled tabs on DIFFERENT strips are different places: the
-        // strip key joins the scroll identity in ApplyTabLayout, which runs
-        // right after this method on the per-frame path.
+        // strip key joins the scroll identity in ApplyTabLayout.
         _activeStrip = strip;
         // The active tab is preserved WITHIN a strip, so a selection change
         // inside the actor set cannot silently throw the user back to Pose; a
@@ -2220,12 +2242,50 @@ public class MainWindow : Window
             carried |= tabs[i].Label == _activeTab;
         if (!carried)
             _activeTab = tabs[0].Label;
-        for (int i = 0; i < tabs.Length; i++)
-        {
-            tabs[i].Active = tabs[i].Label == _activeTab;
-            _vm.Tabs.Add(tabs[i]);
-        }
+        return tabs;
     }
+
+    /// <summary>
+    /// Restates the viewport contract from the LIVE selection, mid-frame.
+    ///
+    /// <para>The shell decides the content viewport ONCE per frame, before it
+    /// draws: whether the pane owns the viewport, hosts a page, or runs
+    /// wall-to-wall, and under which scroll identity. A sidebar row or a
+    /// section header changes the selection while that same frame is being
+    /// drawn, and the tab strip a selection answers for is a function of the
+    /// selection's TYPE — so an actor→environment→library move rendered the
+    /// incoming pane through the OUTGOING strip's contract for the rest of
+    /// the frame, and only <see cref="BuildTabs"/> on the next frame put the
+    /// insets right. That one frame is the padding that "arrives late" (user
+    /// 2026-08-14). Re-resolving the strip and tab here — from the selection
+    /// as it now stands, never from the tab the previous strip remembered —
+    /// is what closes it.</para>
+    /// </summary>
+    private void ResyncTabLayout()
+    {
+        if (_libraryMode)
+        {
+            _activeStrip = LibraryStrip;
+            ApplyTabLayout("Library");
+            return;
+        }
+        if (_sceneMode)
+        {
+            _activeStrip = ShotStrip;
+            ApplyTabLayout(SceneTabLabel);
+            return;
+        }
+        SyncStripAndTab(_selection.Primary);
+        ApplyTabLayout(_activeTab);
+    }
+
+    /// <summary>The two MODE strips. A mode is a strip like an entity type is
+    /// — it has its own tabs — so it owns its own scroll identity: entering
+    /// the library from an actor and from a light must land on one library,
+    /// not on two with separate scroll memories.</summary>
+    private const string LibraryStrip = "library";
+
+    private const string ShotStrip = "shot";
 
     // ── status bar, restated only when its numbers move ─────────────────
     private int _statusActorCount = -1;
@@ -2406,6 +2466,12 @@ public class MainWindow : Window
         {
             _selection.Select(id);
         }
+
+        // The row was clicked while the shell is already drawing, and the tab
+        // strip is a function of the selection's TYPE: without this the rest
+        // of the frame renders the incoming pane through the outgoing strip's
+        // viewport contract.
+        ResyncTabLayout();
     }
 
     private IActor? ResolveActorRow(ShellSidebarRow row)
