@@ -122,9 +122,9 @@ public class MainWindow : Window
     /// whatever actor was selected before the mode was entered.</summary>
     private bool _libraryMode;
 
-    /// <summary>The workspace is showing the WHOLE SHOT — save, load, progress
+    /// <summary>The workspace is showing the WHOLE SCENE — save, load, progress
     /// and recovery — instead of the selection's tabs. A mode exactly like the
-    /// library's, and its alternative: a shot is not a property of whatever
+    /// library's, and its alternative: a scene is not a property of whatever
     /// happens to be selected.</summary>
     private bool _sceneMode;
 
@@ -238,17 +238,17 @@ public class MainWindow : Window
         new() { Label = "MCDF" },
     ];
 
-    /// <summary>The shot workspace's one tab, retained like every other
-    /// strip. Whole-shot save/load is a MODE, not a property of a selection,
+    /// <summary>The scene workspace's one tab, retained like every other
+    /// strip. Whole-scene save/load is a MODE, not a property of a selection,
     /// so it has its own strip rather than a tab on someone else's.</summary>
     private readonly ShellTab[] _sceneTabs =
     [
         new() { Label = SceneTabLabel },
     ];
 
-    /// <summary>The shot strip's one label, and the tab-layout identity that
+    /// <summary>The scene strip's one label, and the tab-layout identity that
     /// goes with it.</summary>
-    private const string SceneTabLabel = "Shot";
+    private const string SceneTabLabel = "Scene";
 
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
@@ -700,7 +700,7 @@ public class MainWindow : Window
             row.CameraLive = camera.IsLive;
         };
         // The lock's inline seat, the live toggle's neighbour: protect or
-        // release the shot without selecting the camera first.
+        // release the camera without selecting it first.
         _vm.OnCameraLock = row =>
         {
             if (row.Tag is not SelectionId
@@ -917,7 +917,7 @@ public class MainWindow : Window
         if (_libraryMode)
             return "Library";
         if (_sceneMode)
-            return "Shot";
+            return "Scene";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -1024,8 +1024,8 @@ public class MainWindow : Window
         _libraryPane.OnHidden();
     }
 
-    /// <summary>Puts the workspace into shot mode. Openers only, exactly like
-    /// the library's: a second request must not toggle a shot workspace the
+    /// <summary>Puts the workspace into scene mode. Openers only, exactly like
+    /// the library's: a second request must not toggle a scene workspace the
     /// user is already looking at. The two modes are alternatives, so entering
     /// this one leaves the library.</summary>
     public void ShowSceneFiles()
@@ -2201,7 +2201,7 @@ public class MainWindow : Window
         }
         if (_sceneMode)
         {
-            // One tab: the shot workspace is a single page, and the strip is
+            // One tab: the scene workspace is a single page, and the strip is
             // what states the mode the user is in.
             _activeStrip = ShotStrip;
             _sceneTabs[0].Active = true;
@@ -2384,7 +2384,7 @@ public class MainWindow : Window
             _libraryPane.SelectType(index);
             return;
         }
-        // The shot workspace has one tab: clicking it is already where it goes.
+        // The scene workspace has one tab: clicking it is already where it goes.
         if (_sceneMode)
             return;
         if (index < 0 || index >= _vm.Tabs.Count) return;
@@ -2460,7 +2460,7 @@ public class MainWindow : Window
 
     private void ApplyRowClick(ShellSidebarRow row)
     {
-        // Selecting anything in the scene is leaving the library or the shot
+        // Selecting anything in the scene is leaving the library or the scene
         // workspace: they are alternatives in one workspace.
         ExitLibraryMode();
         ExitSceneMode();
@@ -2516,8 +2516,8 @@ public class MainWindow : Window
             return;
         }
 
-        // The shot workspace precedes the GPose gate for the same reason the
-        // library does: recovering a shot file is browsable out of GPose, and
+        // The scene workspace precedes the GPose gate for the same reason the
+        // library does: recovering a scene file is browsable out of GPose, and
         // the workflow itself refuses the operation without a live session.
         if (_sceneMode)
         {
@@ -2695,10 +2695,10 @@ public class MainWindow : Window
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
-        // The whole shot: one command, because save, load, progress and
+        // The whole scene: one command, because save, load, progress and
         // recovery all live on the one page it opens.
         _shellMenuItems[(int)ShellCommand.ShowShot] =
-            new ContextMenuItem("Save or load a shot", TablerIcon.Movie);
+            new ContextMenuItem("Save or load a scene", TablerIcon.Movie);
         _shellMenuItems[(int)ShellCommand.SpawnActor] =
             new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
         _shellMenuItems[(int)ShellCommand.ImportPose] =

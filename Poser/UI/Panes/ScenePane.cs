@@ -13,7 +13,7 @@ using Poser.Library;
 namespace Poser.UI;
 
 /// <summary>
-/// The whole-shot workspace: the ONE surface that saves a shot, loads one,
+/// The scene workspace: the ONE surface that saves a scene, loads one,
 /// states what a running load is doing, and states what a finished one left
 /// behind — every named refusal and every recovered file.
 ///
@@ -30,18 +30,18 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ScenePane
 {
-    /// <summary>How many recent shots the page lists. The list is a shortcut
+    /// <summary>How many recent scenes the page lists. The list is a shortcut
     /// to the last few, not a browser — the browser is the load dialog.</summary>
-    private const int RecentShotCount = 8;
+    private const int RecentSceneCount = 8;
 
     private readonly SceneWorkflow _workflow;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
 
     private readonly Crystarium.FileDialog _saveBrowser =
-        new("Save Shot", new[] { SceneFile.Extension }, isSaveMode: true);
+        new("Save Scene", new[] { SceneFile.Extension }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
-        new("Load Shot", new[] { SceneFile.Extension });
+        new("Load Scene", new[] { SceneFile.Extension });
     private readonly Crystarium.FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
 
@@ -102,8 +102,8 @@ public sealed class ScenePane
         _snapshotBrowser.Draw();
     }
 
-    /// <summary>Refreshes the library scan when the shot workspace is opened:
-    /// the recent list is read from the shared snapshot, and a shot saved
+    /// <summary>Refreshes the library scan when the scene workspace is opened:
+    /// the recent list is read from the shared snapshot, and a scene saved
     /// since the last pass is exactly what the user is looking for.</summary>
     public void OnShown() => _library.RequestScan();
 
@@ -113,15 +113,15 @@ public sealed class ScenePane
         var receipt = _workflow.Receipt;
         bool busy = _workflow.Busy;
 
-        Crystarium.Page("scene-shot", origin, size, page =>
+        Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("Shot", form =>
+            page.Section("Scene", form =>
             {
                 form.TextInput(
                     "Description",
                     _description,
                     value => _description = value,
-                    placeholder: "What this shot is",
+                    placeholder: "What this scene is",
                     disabled: busy,
                     help: "Saved into the file and shown beside it in every listing.");
                 form.Actions(
@@ -129,7 +129,7 @@ public sealed class ScenePane
                     actions =>
                     {
                         actions.Button(
-                            "Save the shot…",
+                            "Save the scene…",
                             OpenSave,
                             disabled: busy,
                             help: busy
@@ -137,12 +137,12 @@ public sealed class ScenePane
                                 : "Capture every actor, prop, light, camera and the environment into one file.",
                             variant: ButtonVariant.Primary);
                         actions.Button(
-                            "Load a shot…",
+                            "Load a scene…",
                             OpenLoad,
                             disabled: busy,
                             help: busy
                                 ? "A scene operation is already running."
-                                : "Validate a whole shot file, then restore it into this session.");
+                                : "Validate a whole scene file, then restore it into this session.");
                     },
                     fullWidth: true);
                 form.Status(_note);
@@ -193,7 +193,7 @@ public sealed class ScenePane
     /// </summary>
     private static string PhaseLabel(ScenePhase phase) => phase switch
     {
-        ScenePhase.Capturing => "Capturing the shot",
+        ScenePhase.Capturing => "Capturing the scene",
         ScenePhase.Writing => "Writing the file",
         ScenePhase.Reading => "Reading and validating the file",
         ScenePhase.SpawningEntities => "Spawning actors and props",
@@ -264,7 +264,7 @@ public sealed class ScenePane
             {
                 form.Status(
                     "Everything that did restore was kept. Remove what you do " +
-                    "not want, or load the shot again.");
+                    "not want, or load the scene again.");
             }
         });
     }
@@ -278,22 +278,22 @@ public sealed class ScenePane
         _ => state.ToString(),
     };
 
-    // ── recent shots ─────────────────────────────────────────────────────
+    // ── recent scenes ────────────────────────────────────────────────────
 
     private void DrawRecent(Crystarium.PageScope page, bool busy)
     {
         var recent = _library.Snapshot.Entries
             .Where(entry => entry.Kind == PoseLibraryEntryKind.Scene)
             .OrderByDescending(entry => entry.Modified)
-            .Take(RecentShotCount)
+            .Take(RecentSceneCount)
             .ToList();
 
-        page.Section("Recent shots", form =>
+        page.Section("Recent scenes", form =>
         {
             if (recent.Count == 0)
             {
                 form.Status(
-                    "No shots in the pose library folders yet. A shot saved " +
+                    "No scenes in the pose library folders yet. A scene saved " +
                     "into one shows up here.");
                 return;
             }
@@ -340,7 +340,7 @@ public sealed class ScenePane
         page.Section("Automatic snapshots", form =>
         {
             form.ReadOnly(
-                "Last snapshot",
+                "Status",
                 last.Status switch
                 {
                     SceneAutoSaveStatus.Written => "Taken",
@@ -384,7 +384,7 @@ public sealed class ScenePane
 
     /// <summary>
     /// The highlighted file, read through the SAME codec the load uses. A
-    /// listing can therefore never offer a shot the load would reject without
+    /// listing can therefore never offer a scene the load would reject without
     /// saying so first.
     ///
     /// <para>The dialog hands a side panel its ORIGIN and its SIZE — never two
@@ -434,14 +434,14 @@ public sealed class ScenePane
 
         bool valid = metadata.Status == SceneEntryStatus.Valid;
         Line(
-            valid ? "Valid shot" : StatusWordFor(metadata.Status),
+            valid ? "Valid scene" : StatusWordFor(metadata.Status),
             valid ? theme.Text : theme.TextDim,
             theme.Typography.LabelSize);
 
         if (!valid)
         {
             Line(
-                metadata.Failure?.Detail ?? "The shot could not be read.",
+                metadata.Failure?.Detail ?? "The scene could not be read.",
                 theme.FormHint,
                 theme.Typography.CaptionSize);
             return;

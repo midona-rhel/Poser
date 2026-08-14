@@ -14,7 +14,7 @@ XML comments carry implementation detail.
 | Expression, gaze, IK | [features/expression-gaze-and-ik.md](features/expression-gaze-and-ik.md) |
 | Animation playback and blending | [features/animation.md](features/animation.md) |
 | Pose files and transfer | [features/files-and-transfer.md](features/files-and-transfer.md) |
-| Whole-shot scenes (save/restore) | [features/whole-shot-scenes.md](features/whole-shot-scenes.md) |
+| Scenes (save/restore) | [features/scenes.md](features/scenes.md) |
 | Runtime appearance and Glamourer handoff | [features/runtime-appearance.md](features/runtime-appearance.md) |
 | Implementation/review loop | [process/external-implementation-review-loop.md](process/external-implementation-review-loop.md) |
 | Live testing gate | [process/testing.md](process/testing.md) |

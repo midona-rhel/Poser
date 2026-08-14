@@ -295,7 +295,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public void ApplyEnvironment(SceneEnvironment target)
     {
         // Writing the clock forces the freeze on; releasing it afterwards is
-        // the deliberate order for a shot saved with a running clock.
+        // the deliberate order for a scene saved with a running clock.
         _environment.MinuteOfDay = target.MinuteOfDay;
         _environment.DayOfMonth = target.DayOfMonth;
         _environment.IsTimeFrozen = target.IsTimeFrozen;

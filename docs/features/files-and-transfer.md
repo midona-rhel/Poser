@@ -83,11 +83,11 @@ interchange with Brio and (via name conversion) Anamnesis.
   warning badge and the info strip states the typed diagnosis. A
   `.poserscene` is a different document read by its own codec and classified
   by the matching `Classify` overload — the scan and the probe BOTH dispatch
-  on extension, because a shot re-read with the pose codec would answer
+  on extension, because a scene re-read with the pose codec would answer
   Corrupt however healthy it is.
 - Search matches the entry's name, author, and tags (substring, against runs
   lowercased at scan time); the tag chip remains an exact filter. `Author` is
-  always the document's own author member — a shot whose document names
+  always the document's own author member — a scene whose document names
   nobody carries no author rather than borrowing its description, so no entry
   answers an author search with prose it did not author. Folders are
   the on-disk tree, bounded by the traversal limits, with per-kind recursive
@@ -179,8 +179,8 @@ interchange with Brio and (via name conversion) Anamnesis.
   last-accepted-save stamp (which claims dispatch acceptance only, exactly
   what `LastSaveUtc` claims), then "Auto-save is off." / "No auto-save yet
   this session." — the typed status is never hidden behind an empty caption.
-- The WHOLE SHOT has its own snapshot on the same cadence and its own root;
-  see [whole-shot-scenes.md](whole-shot-scenes.md).
+- The WHOLE SCENE has its own snapshot on the same cadence and its own root;
+  see [scenes.md](scenes.md).
 
 The storage boundary is intentionally narrow. Versioned codecs, finite-value
 validation, same-directory atomic replacement, autosave queue/join, library

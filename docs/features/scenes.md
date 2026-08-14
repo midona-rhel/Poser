@@ -1,10 +1,10 @@
-# Whole-shot scenes
+# Scenes
 
-`.poserscene` saves and restores an entire shot — actors, props, lights,
+`.poserscene` saves and restores an entire scene — actors, props, lights,
 cameras, the environment, and the relationships between them. Per-entity file
 formats, the atomic-write discipline they share, and per-actor pose auto-save
 are defined once in [files-and-transfer.md](files-and-transfer.md); this file
-states only what is durable about the WHOLE-SHOT layer.
+states only what is durable about the WHOLE-SCENE layer.
 
 - The document EMBEDS the existing per-entity codecs — a full `PoseFile` per
   actor, `LightFile` per light, `CameraFile` per camera — rather than restating
@@ -20,7 +20,7 @@ states only what is durable about the WHOLE-SHOT layer.
   slot writes no companion kind at all, matching the Domain rule that nothing
   attached is the absence of a `CompanionAttachment` rather than a fourth kind.
 - `SceneId` is the document's stable identity across re-saves and is the exact
-  identity a scene operation's `OperationReceipt` targets: a whole-shot
+  identity a scene operation's `OperationReceipt` targets: a whole-scene
   operation has no single target actor. Receipts, epochs and session
   generations are the ordinary Application types — there is no scene-specific
   receipt.
@@ -46,17 +46,17 @@ states only what is durable about the WHOLE-SHOT layer.
   refusal named in the outcome — a light whose attachment bone is missing
   spawns NOTHING rather than detaching into world space. `RecoveryRequired` is
   not used here: its contract requires transform recovery evidence.
-- Whole-shot auto-save rides the same cadence and settings as the pose
+- Whole-scene auto-save rides the same cadence and settings as the pose
   auto-save but writes to its own `SceneAutoSaves/<local day>/` root with its
   own retention count, since one snapshot is one large document rather than a
   file per actor. It deliberately bypasses the scene transaction: an unattended
   snapshot must never occupy the single-flight slot or overwrite the progress a
   user is reading, and it skips by name while a scene operation runs so it can
-  never capture a half-restored shot.
-- UI: the shot is a workspace MODE beside the library (burger menu → "Save or
-  load a shot"), never a property of the current selection. The page carries
+  never capture a half-restored scene.
+- UI: the scene is a workspace MODE beside the library (burger menu → "Save or
+  load a scene"), never a property of the current selection. The page carries
   save, load, live progress with cancel, the terminal outcome with every named
-  refusal and surviving recovery file, recent shots, and the automatic
+  refusal and surviving recovery file, recent scenes, and the automatic
   snapshots. The load dialog's side panel runs the highlighted file through the
   same codec the load runs, so corrupt and future files are visible before
   opening.

@@ -42,7 +42,7 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
-    /// <summary>A camera row's action slots: a lock protecting the shot,
+    /// <summary>A camera row's action slots: a lock protecting the framing,
     /// then the video mark making this the LIVE camera — the light eye's
     /// twin, except exactly one camera wears it at a time.</summary>
     public bool CameraActions;

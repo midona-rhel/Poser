@@ -10,8 +10,8 @@ using Poser.Services;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser whole-shot scene file format (.poserscene): one versioned JSON
-/// document carrying every entity of a shot — actors with their complete
+/// Poser scene file format (.poserscene): one versioned JSON
+/// document carrying every entity of a scene — actors with their complete
 /// embedded Brio-format <see cref="PoseFile"/>, props, lights and cameras as
 /// their existing per-entity documents (<see cref="LightFile"/>,
 /// <see cref="CameraFile"/>), the environment, and the explicit relationships
@@ -24,7 +24,7 @@ namespace Poser.Files;
 ///
 /// <see cref="SceneId"/> is the document's stable logical identity. It
 /// persists across saves of the same scene and is the exact identity a scene
-/// operation's <c>OperationReceipt</c> targets, since a whole-shot operation
+/// operation's <c>OperationReceipt</c> targets, since a whole-scene operation
 /// has no single target actor.
 /// </summary>
 [Serializable]
@@ -129,7 +129,7 @@ public class SceneActor
 
     /// <summary>The complete Brio-format pose document, validated by the
     /// ordinary pose codec rules. Required — a scene actor without a pose is
-    /// not a saved shot.</summary>
+    /// not a saved scene.</summary>
     public PoseFile? Pose { get; set; }
 }
 

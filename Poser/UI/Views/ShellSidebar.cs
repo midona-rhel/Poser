@@ -716,7 +716,7 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Two slots: the lock protecting the shot, then the camera's
+            // Two slots: the lock protecting the framing, then the camera's
             // inline verb — "look through me". Both fade when off rather
             // than wearing a slash: an unlocked camera and a parked camera
             // both still work, they are just not in that state.
@@ -731,7 +731,7 @@ public sealed class ShellSidebar
                         style: square,
                         help: row.CameraLocked
                             ? "Unlock this camera"
-                            : "Lock this camera: keep its shot exactly as "
+                            : "Lock this camera: keep it exactly as "
                                 + "framed",
                         id: "##camera-lock",
                         dimmed: !row.CameraLocked))

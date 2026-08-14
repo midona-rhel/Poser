@@ -6,7 +6,7 @@ using Poser.Files;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Which whole-shot operation a progress/receipt pair describes.</summary>
+/// <summary>Which whole-scene operation a progress/receipt pair describes.</summary>
 public enum SceneOperationKind
 {
     Save,

@@ -11,7 +11,7 @@ using Poser.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>What the last whole-shot snapshot attempt did.</summary>
+/// <summary>What the last whole-scene snapshot attempt did.</summary>
 public enum SceneAutoSaveStatus
 {
     /// <summary>Nothing has been attempted this session.</summary>
@@ -21,7 +21,7 @@ public enum SceneAutoSaveStatus
     Written,
 
     /// <summary>The tick deliberately did nothing, with a stated reason —
-    /// an empty shot, a running scene operation, a busy pose import.</summary>
+    /// an empty scene, a running scene operation, a busy pose import.</summary>
     Skipped,
 
     /// <summary>Capture or the write refused; nothing new is on disk.</summary>
@@ -40,14 +40,14 @@ public sealed record SceneAutoSaveResult(
     IReadOnlyList<string>? RecoveryEvidencePaths = null)
 {
     public static readonly SceneAutoSaveResult Idle =
-        new(SceneAutoSaveStatus.Idle, "No whole-shot snapshot has been taken yet.");
+        new(SceneAutoSaveStatus.Idle, "No whole-scene snapshot has been taken yet.");
 
     public IReadOnlyList<string> Evidence =>
         RecoveryEvidencePaths ?? Array.Empty<string>();
 }
 
 /// <summary>
-/// Whole-shot crash insurance: on the ordinary auto-save cadence, the complete
+/// Whole-scene crash insurance: on the ordinary auto-save cadence, the complete
 /// scene is captured (read-only, pointer-free, on the framework thread) and
 /// written to its OWN root, separate from the per-actor pose auto-saves,
 /// through the same bounded atomic store the user-driven save uses.
@@ -56,7 +56,7 @@ public sealed record SceneAutoSaveResult(
 /// snapshot must never occupy that single-flight slot, clobber the progress a
 /// user is reading, or publish a receipt for something the user did not ask
 /// for. It instead SKIPS whenever a scene operation is running, so it can
-/// never snapshot a half-restored shot.
+/// never snapshot a half-restored scene.
 ///
 /// Layout mirrors the pose auto-saves' user-decided shape:
 /// <c>&lt;pluginConfigDir&gt;/SceneAutoSaves/&lt;yyyy-MM-dd&gt;/&lt;HH-mm-ss&gt; Scene.poserscene</c>
@@ -200,7 +200,7 @@ public sealed class SceneAutoSaveService : IDisposable
     }
 
     /// <summary>
-    /// Captures the shot inline (this runs on the framework thread) and hands
+    /// Captures the scene inline (this runs on the framework thread) and hands
     /// the immutable document to the writer. Only one write is in flight: a
     /// tick arriving over a running write is skipped by name rather than
     /// queued, so a slow disk can never grow an unbounded backlog.
@@ -213,7 +213,7 @@ public sealed class SceneAutoSaveService : IDisposable
             {
                 Publish(new SceneAutoSaveResult(
                     SceneAutoSaveStatus.Skipped,
-                    "The previous whole-shot snapshot is still being written."));
+                    "The previous whole-scene snapshot is still being written."));
                 return;
             }
         }
@@ -222,20 +222,20 @@ public sealed class SceneAutoSaveService : IDisposable
         {
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Skipped,
-                "A scene save or load is running; a snapshot now could capture a half-restored shot."));
+                "A scene save or load is running; a snapshot now could capture a half-restored scene."));
             return;
         }
 
-        var captured = _capture(_sceneId, "Automatic whole-shot snapshot");
+        var captured = _capture(_sceneId, "Automatic whole-scene snapshot");
         if (!captured.Success || captured.Scene is not { } scene)
         {
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Failed,
-                captured.Detail ?? "The shot could not be captured."));
+                captured.Detail ?? "The scene could not be captured."));
             return;
         }
 
-        // Nothing to insure against: an empty shot writes no file and leaves
+        // Nothing to insure against: an empty scene writes no file and leaves
         // no folder behind, exactly as the pose auto-save does with no
         // qualifying actor.
         if (scene.Actors.Count == 0 && scene.Props.Count == 0 &&
@@ -243,7 +243,7 @@ public sealed class SceneAutoSaveService : IDisposable
         {
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Skipped,
-                "The shot is empty; there is nothing to snapshot."));
+                "The scene is empty; there is nothing to snapshot."));
             return;
         }
 
@@ -278,7 +278,7 @@ public sealed class SceneAutoSaveService : IDisposable
                     evidence.Count > 0
                         ? SceneAutoSaveStatus.RecoveryRequired
                         : SceneAutoSaveStatus.Failed,
-                    $"The whole-shot snapshot could not be written: " +
+                    $"The whole-scene snapshot could not be written: " +
                     $"{written.Failure!.Detail}",
                     path,
                     evidence));
@@ -296,7 +296,7 @@ public sealed class SceneAutoSaveService : IDisposable
         {
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Failed,
-                $"The whole-shot snapshot failed unexpectedly: {ex.Message}"));
+                $"The whole-scene snapshot failed unexpectedly: {ex.Message}"));
         }
         finally
         {

@@ -10,7 +10,7 @@ using Poser.Files;
 namespace Poser.Game.Scene;
 
 /// <summary>
-/// The single-flight owner of the whole-shot scene workflow: admission
+/// The single-flight owner of the whole-scene workflow: admission
 /// (exact session generation, owner-local operation epoch, operation id),
 /// the save capture/write pipeline, the load transaction's ordered phases
 /// with reverse-order rollback, and the bounded cancel/drain that runs
@@ -18,7 +18,7 @@ namespace Poser.Game.Scene;
 /// <see cref="OperationEpoch"/> and <see cref="SessionGeneration"/> wholesale —
 /// there is no scene-specific receipt or epoch type.
 ///
-/// A whole-shot operation has no single target actor, so its receipts target
+/// A whole-scene operation has no single target actor, so its receipts target
 /// the scene's own logical identity: <c>new ActorId(SceneScopeId, 0)</c>,
 /// where the scope id is the document's SceneId for a save and a minted
 /// load-scope identity for a load (the file's id is unknown at admission and
@@ -207,7 +207,7 @@ public sealed class SceneWorkflow : IDisposable
         return operation;
     }
 
-    /// <summary>Starts the whole-shot save: framework-thread pointer-free
+    /// <summary>Starts the whole-scene save: framework-thread pointer-free
     /// capture first, then off-thread validation and the atomic write.</summary>
     public SceneActionResult BeginSave(string path, string? description = null)
     {
@@ -231,7 +231,7 @@ public sealed class SceneWorkflow : IDisposable
         return SceneActionResult.Ok();
     }
 
-    /// <summary>Starts the whole-shot load transaction.</summary>
+    /// <summary>Starts the whole-scene load transaction.</summary>
     public SceneActionResult BeginLoad(string path)
     {
         if (AdmissionGate() is { } refused)

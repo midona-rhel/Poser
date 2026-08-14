@@ -92,7 +92,7 @@ public sealed class SceneMetadataReadOutcome
     public bool Succeeded => Status == SceneEntryStatus.Valid;
     public Guid SceneId { get; }
 
-    /// <summary>Who authored the shot, when the document names anyone. Poser's
+    /// <summary>Who authored the scene, when the document names anyone. Poser's
     /// own capture names nobody, so this is normally absent — it is NOT the
     /// description under another name.</summary>
     public string? Author { get; }
@@ -174,7 +174,7 @@ public sealed class SceneWriteOutcome
 
 /// <summary>
 /// Typed scene codec and same-directory atomic store — the ordinary pose
-/// store's discipline applied to the whole-shot document. Operations are
+/// store's discipline applied to the whole-scene document. Operations are
 /// synchronous and stateless; callers must not mutate a scene during
 /// <see cref="Write"/>, and concurrent writers get last-successful-writer
 /// filesystem semantics. Every read validates the complete bounded document;

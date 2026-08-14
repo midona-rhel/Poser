@@ -32,7 +32,7 @@ public class AutoSaveConfiguration
     public bool CleanOnExit { get; set; } = false;
 
     /// <summary>
-    /// Whether the same timer also snapshots the WHOLE shot — actors, props,
+    /// Whether the same timer also snapshots the WHOLE scene — actors, props,
     /// lights, cameras and environment — beside the per-actor poses. A scene
     /// snapshot is one large document rather than a file per actor, so it
     /// keeps its own retention count; it shares <see cref="Enabled"/> and
@@ -41,7 +41,7 @@ public class AutoSaveConfiguration
     /// </summary>
     public bool SceneSnapshots { get; set; } = true;
 
-    /// <summary>How many whole-shot snapshots are retained on disk. Floored
+    /// <summary>How many whole-scene snapshots are retained on disk. Floored
     /// at 1 by the service.</summary>
     public int MaxSceneSnapshots { get; set; } = 5;
 }

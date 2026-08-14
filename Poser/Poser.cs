@@ -75,7 +75,7 @@ public class Poser : IDalamudPlugin
         // lifecycle coordinator before the legacy exit event is published.
         _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
 
-        // The whole-shot snapshot has framework subscriptions as its only
+        // The whole-scene snapshot has framework subscriptions as its only
         // activity — the same lazy-singleton hazard: resolve it or it never
         // ticks.
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();

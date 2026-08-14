@@ -364,7 +364,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<ConfigurationService>(),
             sp.GetRequiredService<IDalamudPluginInterface>()));
 
-        // The whole-shot vertical. The workflow owns the ONE scene
+        // The whole-scene vertical. The workflow owns the ONE scene
         // transaction and takes its native/persistence seam as the adapter;
         // the snapshot service is a separate cadence over the same capture and
         // store, so it is constructed after the workflow it defers to.

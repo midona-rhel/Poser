@@ -11,7 +11,7 @@ using Poser.Services;
 
 namespace Poser.Game.Scene;
 
-/// <summary>Typed result of one whole-shot capture. Notes are per-entity
+/// <summary>Typed result of one whole-scene capture. Notes are per-entity
 /// observations about state the capture could not represent (an actor with
 /// no skeleton, a camera target that no longer resolves) — they are part of
 /// the read model, never silently dropped facts.</summary>
@@ -39,7 +39,7 @@ public sealed class SceneCaptureOutcome
 }
 
 /// <summary>
-/// Read-only, pointer-free whole-shot capture. Runs synchronously on the
+/// Read-only, pointer-free whole-scene capture. Runs synchronously on the
 /// framework thread and produces the complete <see cref="SceneFile"/> in
 /// memory BEFORE any file work — no native handle, address, or entity
 /// reference survives into the document. Entity keys are the stable binding
@@ -91,7 +91,7 @@ public sealed class SceneCaptureService
         _poses = poses;
     }
 
-    /// <summary>Captures the current shot. Framework thread only; the
+    /// <summary>Captures the current scene. Framework thread only; the
     /// workflow owns the marshal. <paramref name="sceneId"/> keeps a
     /// re-saved scene's identity stable across saves.</summary>
     public SceneCaptureOutcome Capture(Guid sceneId, string? description)

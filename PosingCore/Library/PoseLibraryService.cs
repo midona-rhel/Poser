@@ -473,7 +473,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 // The document's OWN author, which Poser's capture never sets,
                 // so this is normally empty. It is emphatically not the
                 // description: Author is what the search box's author term
-                // matches, and a shot must not answer an author search with
+                // matches, and a scene must not answer an author search with
                 // words from its description.
                 author = metadata.Author;
                 sceneContents = DescribeScene(metadata);
@@ -533,7 +533,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             parts.Add($"{metadata.LightCount} light{(metadata.LightCount == 1 ? "" : "s")}");
         if (metadata.CameraCount > 0)
             parts.Add($"{metadata.CameraCount} camera{(metadata.CameraCount == 1 ? "" : "s")}");
-        return parts.Count == 0 ? "Empty shot" : string.Join(", ", parts);
+        return parts.Count == 0 ? "Empty scene" : string.Join(", ", parts);
     }
 
     private static bool IsLibraryFile(string path)

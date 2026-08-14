@@ -107,7 +107,7 @@ public sealed class PoseLibraryFileActions
             metadata.Failure?.Detail ?? "The pose metadata could not be read.");
     }
 
-    /// <summary>The same mapping for a SHOT, which is a different document
+    /// <summary>The same mapping for a SCENE, which is a different document
     /// read by a different codec — the ONE mapping the scan and the retry
     /// probe both answer a <c>.poserscene</c> with.</summary>
     internal static (PoseLibraryMetadataStatus Status, string Detail) Classify(
@@ -122,10 +122,10 @@ public sealed class PoseLibraryFileActions
             SceneEntryStatus.Oversized => PoseLibraryMetadataStatus.Oversized,
             _ => PoseLibraryMetadataStatus.Corrupt,
         };
-        return (status, metadata.Failure?.Detail ?? "The shot could not be read.");
+        return (status, metadata.Failure?.Detail ?? "The scene could not be read.");
     }
 
-    /// <summary>Whether the path names a whole shot rather than a pose. The
+    /// <summary>Whether the path names a whole scene rather than a pose. The
     /// two are different documents with different codecs, so every read the
     /// library performs has to pick one.</summary>
     private static bool IsScene(string path) =>
@@ -290,7 +290,7 @@ public sealed class PoseLibraryFileActions
     /// it is.
     ///
     /// <para>The retry answers exactly what the next SCAN would answer, which
-    /// means it must read each kind through that kind's own codec: a shot
+    /// means it must read each kind through that kind's own codec: a scene
     /// re-read with the pose codec would answer Corrupt however healthy it is,
     /// which is the one answer a retry must never invent.</para>
     /// </summary>
