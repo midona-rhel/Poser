@@ -448,11 +448,11 @@ public class MainWindow : Window
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
 
-    /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
-    public Func<bool>? GetSkeletonOverlayOn { get; set; }
-
-    /// <summary>Raised when the titlebar skeleton-overlay toggle is clicked.</summary>
-    public event Action<bool>? OnSkeletonOverlayToggled;
+    // The shell has no overlay controls at all any more (user 2026-08-14):
+    // the armature's shape and the selected-bones-only filter are settings
+    // rows, and the master switch is not a control — bone visibility is
+    // per-actor, and the chord in the keybind registry writes the overlay
+    // window's own flag without passing through here.
 
     public event Action? OnSettingsRequested;
 
@@ -644,20 +644,6 @@ public class MainWindow : Window
         _vm.OnWorldClassToggle = ToggleWorldClass;
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
-        _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
-        // The overlay's two display modes were implemented end to end and
-        // never written; these are their writers. Both are editor state, not
-        // config — they are how the armature is being LOOKED at right now, and
-        // the keybind registry already binds the same two commands.
-        _vm.OnSkeletonViewMode = index => _editorState.SkeletonViewMode =
-            index switch
-            {
-                1 => SkeletonViewMode.Octahedra,
-                2 => SkeletonViewMode.Joints,
-                _ => SkeletonViewMode.Default,
-            };
-        _vm.OnSelectedBonesOnly =
-            on => _editorState.ShowSelectedBonesOnly = on;
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnBurger = anchor =>
         {
@@ -1297,14 +1283,6 @@ public class MainWindow : Window
         // the switch shows the global state and is live under EVERY selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
-        _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
-        _vm.SkeletonViewMode = _editorState.SkeletonViewMode switch
-        {
-            SkeletonViewMode.Octahedra => 1,
-            SkeletonViewMode.Joints => 2,
-            _ => 0,
-        };
-        _vm.SelectedBonesOnly = _editorState.ShowSelectedBonesOnly;
         // The sibling-link mode's second half. Co-selection reaches every
         // _l/_r pair; the same-delta CATALOG (both eyes, the Viera ear-variant
         // chains) pairs bones that are not _l/_r counterparts and cannot be

@@ -78,6 +78,12 @@ public sealed class SettingsViewModel
     /// Empty when the binder has no auto-save service to ask.</summary>
     public string AutoSaveFolder = "";
 
+    /// <summary>Index into <c>SkeletonShapeLabels</c>, matching
+    /// <c>SkeletonViewMode</c>'s declaration order.</summary>
+    public int SkeletonShape;
+
+    public bool SelectedBonesOnly;
+
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
@@ -741,6 +747,26 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
+        // The armature's own two display options. They stood on the toolbar
+        // for one round and came off it on the user's call (2026-08-14): a
+        // standing preference about how the overlay LOOKS belongs in Settings,
+        // and the master overlay switch that stood beside them is gone
+        // entirely — bone visibility is decided per actor.
+        page.Section("ARMATURE", form =>
+        {
+            form.Dropdown(
+                "Bone shape",
+                SkeletonShapeLabels,
+                vm.SkeletonShape,
+                next => vm.SkeletonShape = next,
+                "How each bone is drawn: a plain dot, a solid pointing at its "
+                    + "child, or a large joint");
+            form.Switch(
+                "Only selected bones",
+                vm.SelectedBonesOnly,
+                next => vm.SelectedBonesOnly = next,
+                "Draw the bones that are selected and nothing else");
+        }, divider: false);
         page.Section("SKELETON LINES", form =>
         {
             form.Switch(
@@ -781,7 +807,7 @@ public static class SettingsView
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Take the dots and lines away for the length of a gizmo drag");
-        }, divider: false);
+        });
         page.Section("INACTIVE ACTORS", form =>
         {
             form.Switch(
@@ -825,6 +851,11 @@ public static class SettingsView
             "Skeleton settings",
             "Put the bone dot, line and color settings back to their defaults"));
     }
+
+    /// <summary>Labels for <c>SkeletonViewMode</c>, in its declaration
+    /// order.</summary>
+    private static readonly string[] SkeletonShapeLabels =
+        ["Dots", "Octahedra", "Joints"];
 
     /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
     /// order.</summary>

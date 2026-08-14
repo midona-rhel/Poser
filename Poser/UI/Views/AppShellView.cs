@@ -136,11 +136,6 @@ public sealed class AppShellViewModel
     /// under none.</summary>
     public bool PhysicsOn;
 
-    public bool SkeletonOverlayOn;
-    /// <summary>0 dots, 1 octahedra, 2 joints — <c>SkeletonViewMode</c>'s
-    /// declaration order.</summary>
-    public int SkeletonViewMode;
-    public bool SelectedBonesOnly;
     public bool CanUndo = true;
     public bool CanRedo;
 
@@ -251,9 +246,6 @@ public sealed class AppShellViewModel
     /// <summary>The titlebar plus, anchored under itself exactly as
     /// <see cref="OnBurger"/> is.</summary>
     public Action<Vector2>? OnSpawn;
-    public Action<bool>? OnSkeletonOverlay;
-    public Action<int>? OnSkeletonViewMode;
-    public Action<bool>? OnSelectedBonesOnly;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
@@ -294,9 +286,6 @@ public sealed class AppShellViewModel
     internal Action<int>? RotationPivotChosen;
     internal Func<int, bool>? RotationPivotDisabled;
     internal Action<int>? SymmetryChosen;
-    internal Action<int>? SkeletonViewModeChosen;
-    internal Action? SkeletonOverlayToggled;
-    internal Action? SelectedBonesOnlyToggled;
     internal Action<bool>? AnimationToggled;
     internal Action<bool>? PhysicsToggled;
     internal Action? CollapseToggled;
@@ -346,15 +335,6 @@ public static class AppShellView
         TablerIcon.ArrowsMaximize,
     ];
 
-    /// <summary>Dots, octahedra, joints — <c>SkeletonViewMode</c>'s
-    /// order.</summary>
-    private static readonly TablerIcon[] SkeletonViewIcons =
-    [
-        TablerIcon.Circle,
-        TablerIcon.Diamond,
-        TablerIcon.TopologyStar,
-    ];
-
     private static readonly string[] SpaceItems = ["Local", "World"];
     private static readonly string[] PivotItems = ["Self", "Parent"];
     private static readonly string[] SymmetryItems = ["Off", "Link", "Mirror"];
@@ -376,11 +356,6 @@ public static class AppShellView
     private static string _undoEmptyHelp = string.Empty;
     private static string _redoHelp = string.Empty;
     private static string _redoEmptyHelp = string.Empty;
-    /// <summary>The overlay switch's chord, shown on its card. Unlike undo and
-    /// redo the card says the same words in both states, so the chord alone is
-    /// cached and the two sentences are composed at the seat.</summary>
-    private static string _overlayShortcut = string.Empty;
-
     /// <summary>The burger's press, reported by a hoisted callback that closes
     /// over nothing and is consumed inside the same seat.</summary>
     private static bool _burgerPressed;
@@ -449,12 +424,6 @@ public static class AppShellView
         vm.RotationPivotDisabled ??= index => !vm.RotationPivotEnabled
             || (index == 1 && !vm.RotationPivotParentAvailable);
         vm.SymmetryChosen ??= index => vm.OnSymmetry?.Invoke(index);
-        vm.SkeletonViewModeChosen ??=
-            index => vm.OnSkeletonViewMode?.Invoke(index);
-        vm.SkeletonOverlayToggled ??=
-            () => vm.OnSkeletonOverlay?.Invoke(!vm.SkeletonOverlayOn);
-        vm.SelectedBonesOnlyToggled ??=
-            () => vm.OnSelectedBonesOnly?.Invoke(!vm.SelectedBonesOnly);
         vm.AnimationToggled ??= next => vm.OnAnimation?.Invoke(next);
         vm.PhysicsToggled ??= next => vm.OnPhysics?.Invoke(next);
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
@@ -866,7 +835,7 @@ public static class AppShellView
     /// symmetry — drawn once per frame from exactly one host: the titlebar
     /// centre, or the floating toolbar when the toolbar is split. One set of
     /// ids, so hover and motion state survive the move between hosts.</summary>
-    private static float DrawGizmoCluster(
+    private static void DrawGizmoCluster(
         AppShellViewModel vm, float x, float top, float height, float s)
     {
         float gap = Crystarium.ActiveTheme.Page.ActionGap * s;
@@ -905,7 +874,7 @@ public static class AppShellView
             itemHelp: static index => index == 0
                 ? "Rotate each selected bone in place"
                 : "Rotate the selected bone around its parent bone") + gap;
-        x = Segments(
+        Segments(
             x, top, height,
             "##shell-symmetry",
             SymmetryItems,
@@ -916,61 +885,15 @@ public static class AppShellView
                 0 => "Edit only the current selection",
                 1 => "Also apply the same edit to the opposite-side bone",
                 _ => "Also apply a mirrored edit to the opposite-side bone",
-            }) + gap;
-        return DrawOverlayCluster(vm, x, top, height, s);
-    }
-
-    /// <summary>
-    /// The overlay's own three controls, next to the gizmo's: the master
-    /// switch, the shape the armature is drawn in, and whether it is drawn for
-    /// anything but the selection. They sit on the SAME bar as the gizmo
-    /// segments — both references keep their overlay switch beside their
-    /// posing controls (Brio's widget eye, Ktisis' workspace state row) — and
-    /// therefore appear in the titlebar centre and the floating toolbar alike,
-    /// under one set of ids.
-    /// </summary>
-    private static float DrawOverlayCluster(
-        AppShellViewModel vm, float x, float top, float height, float s)
-    {
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float gap = theme.Page.ActionGap * s;
-        float y = top + (height - side * s) * 0.5f;
-
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.IconButton(
-            TablerIcon.Armature,
-            vm.SkeletonOverlayToggled,
-            ControlStyle.Square(side) with { Selected = vm.SkeletonOverlayOn },
-            help: vm.SkeletonOverlayOn
-                ? $"Hide the bone overlay · {_overlayShortcut}"
-                : $"Show the bone overlay · {_overlayShortcut}",
-            id: "##shell-overlay");
-        x += side * s + gap;
-
-        x = Segments(
-            x, top, height,
-            "##shell-skeleton-view",
-            SkeletonViewIcons,
-            vm.SkeletonViewMode,
-            vm.SkeletonViewModeChosen!,
-            itemHelp: static index => index switch
-            {
-                0 => "Draw each bone as a dot",
-                1 => "Draw each bone as a solid pointing at its child",
-                _ => "Draw each bone as a large joint",
-            }) + gap;
-
-        ImGui.SetCursorScreenPos(new Vector2(x, y));
-        Crystarium.IconButton(
-            TablerIcon.Crosshair,
-            vm.SelectedBonesOnlyToggled,
-            ControlStyle.Square(side) with { Selected = vm.SelectedBonesOnly },
-            help: vm.SelectedBonesOnly
-                ? "Draw the whole armature again"
-                : "Draw only the bones that are selected",
-            id: "##shell-selected-only");
-        return x + side * s;
+            });
+        // NOTHING overlay-shaped follows the gizmo segments. The cluster that
+        // briefly stood here (master switch, view-mode picker,
+        // selected-bones-only) left on the user's call, 2026-08-14: the two
+        // display options are standing preferences and now read as ordinary
+        // rows under Settings ▸ Skeleton, and the master switch is not a UI
+        // control at all — bone visibility is decided PER ACTOR, by the
+        // sidebar's eyes and the bone presets. Its chord survives in the
+        // keybind registry, which writes the overlay window's own flag.
     }
 
     /// <summary>Rightmost is the collapse chevron, then the close X.
@@ -1483,8 +1406,6 @@ public static class AppShellView
             _redoHelp = $"Reapply the change you undid · {redo}";
             _redoEmptyHelp = $"Nothing to redo · {redo}";
         }
-
-        _overlayShortcut = PoserKeybinds.Effective("Toggle bone overlay");
     }
 
     /// <summary>
@@ -1606,11 +1527,6 @@ public static class AppShellView
             + Crystarium.MeasureSegmentedControl(GizmoIcons).X + gap
             + Crystarium.MeasureSegmentedControl(SpaceItems).X + gap
             + Crystarium.MeasureSegmentedControl(PivotItems).X + gap
-            + Crystarium.MeasureSegmentedControl(SymmetryItems).X + gap
-            // The overlay cluster: master switch, view-mode segments,
-            // selected-only switch.
-            + side * s + gap
-            + Crystarium.MeasureSegmentedControl(SkeletonViewIcons).X + gap
-            + side * s;
+            + Crystarium.MeasureSegmentedControl(SymmetryItems).X;
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Poser.Services;
 
 namespace Poser.Config;
 
@@ -47,6 +48,23 @@ public class SkeletonConfiguration
 
     // Display options
     public bool ShowSkeletonLines { get; set; } = true;
+
+    /// <summary>
+    /// The shape the whole armature is drawn in. It lives HERE, and
+    /// <c>EditorState</c> reads and writes it rather than holding its own copy,
+    /// because it is a standing preference about how the overlay LOOKS — not
+    /// about what is being edited right now — and the user put it in Settings
+    /// rather than on the toolbar (user 2026-08-14). The default is the value
+    /// the editor carried while it was session state, so an existing config
+    /// keeps drawing exactly what it drew.
+    /// </summary>
+    public SkeletonViewMode SkeletonViewMode { get; set; } =
+        SkeletonViewMode.Default;
+
+    /// <summary>Draw only the bones that are selected. Persisted beside
+    /// <see cref="SkeletonViewMode"/>, for the same reason and under the same
+    /// default rule.</summary>
+    public bool ShowSelectedBonesOnly { get; set; } = false;
 
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>

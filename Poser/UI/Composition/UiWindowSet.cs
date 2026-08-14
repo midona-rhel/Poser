@@ -89,8 +89,6 @@ public sealed class UiWindowSet : IDisposable
         SpawnBrowser = spawnBrowser;
         System.AddWindow(SpawnBrowser);
 
-        Main.GetSkeletonOverlayOn = () => SkeletonOverlay.UserVisible;
-        Main.OnSkeletonOverlayToggled += SetSkeletonOverlayOpen;
         Main.OnPopOutRequested += CreatePopOut;
 
         // Split flags change through ApplyChange (the burger menu, the
@@ -267,9 +265,6 @@ public sealed class UiWindowSet : IDisposable
         _dismissedReference.Clear();
     }
 
-    private void SetSkeletonOverlayOpen(bool isOpen)
-        => SkeletonOverlay.UserVisible = isOpen;
-
     public void Dispose()
     {
         _referenceImages.OnAdded -= AddReferenceWindow;
@@ -277,7 +272,6 @@ public sealed class UiWindowSet : IDisposable
         _referenceWindows.Clear();
         _dismissedReference.Clear();
         _configService.OnConfigurationChanged -= SyncSplitWindows;
-        Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
         Main.OnPopOutRequested -= CreatePopOut;
         Main.OnDetachToggleRequested -= ToggleDetached;
         Main.OnSceneWindowToggleRequested -= ToggleSceneWindow;
