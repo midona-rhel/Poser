@@ -87,8 +87,26 @@ public static partial class Crystarium
 
         bool closedThisFrame = false;
         bool keepOpen = open;
-        if (ImGui.BeginPopupModal(popupId, ref keepOpen,
-            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar))
+        bool visible = ImGui.BeginPopupModal(popupId, ref keepOpen,
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoScrollbar);
+        // The unwind is unconditional (PBI-013 class): a throw in the body
+        // or footer callback must not skip EndPopup or strand the five
+        // style entries on the global stack for every window drawn after.
+        try
+        {
+            if (visible)
+                DrawOpenModal();
+        }
+        finally
+        {
+            if (visible)
+                ImGui.EndPopup();
+            ImGui.PopStyleVar(4);
+            ImGui.PopStyleColor(1);
+        }
+        return closedThisFrame;
+
+        void DrawOpenModal()
         {
             var dl = ImGui.GetWindowDrawList();
             var winMin = ImGui.GetWindowPos();
@@ -98,7 +116,19 @@ public static partial class Crystarium
                 InteractionLayer.Modal,
                 Vector2.Zero,
                 ImGui.GetIO().DisplaySize);
+            try
+            {
+                DrawModalContent(dl, winMin, winMax);
+            }
+            finally
+            {
+                Interactive.EndOwner(modalOwner);
+            }
+        }
 
+        void DrawModalContent(
+            ImDrawListPtr dl, Vector2 winMin, Vector2 winMax)
+        {
             FloatingSurface.DrawChrome(
                 dl,
                 winMin,
@@ -156,13 +186,19 @@ public static partial class Crystarium
                     Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale,
                     Crystarium.ActiveTheme.Floating.ModalBodyPadding * scale));
             // AlwaysUseWindowPadding: borderless children ignore WindowPadding otherwise.
-            if (ImGui.BeginChild($"{id}##body", new Vector2(width, bodyHeight), false,
-                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysUseWindowPadding))
+            bool bodyVisible = ImGui.BeginChild(
+                $"{id}##body", new Vector2(width, bodyHeight), false,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.AlwaysUseWindowPadding);
+            try
             {
-                body();
+                if (bodyVisible)
+                    body();
             }
-            ImGui.EndChild();
-            ImGui.PopStyleVar();
+            finally
+            {
+                ImGui.EndChild();
+                ImGui.PopStyleVar();
+            }
 
             // ── Footer content: right-aligned via last frame's measured width.
             if (footer != null)
@@ -190,12 +226,6 @@ public static partial class Crystarium
                 Interactive.ReleaseExclusive(popupId);
                 closedThisFrame = true;
             }
-            Interactive.EndOwner(modalOwner);
-            ImGui.EndPopup();
         }
-
-        ImGui.PopStyleVar(4);
-        ImGui.PopStyleColor(1);
-        return closedThisFrame;
     }
 }

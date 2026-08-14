@@ -134,43 +134,52 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoResize
                 | ImGuiWindowFlags.NoScrollbar
                 | ImGuiWindowFlags.NoSavedSettings);
-            if (open)
+            // The unwind is unconditional (PBI-013 class): a throwing body
+            // must not skip EndPopup or strand the four style entries on the
+            // global stack for every window drawn after.
+            try
             {
-                bool owns = SyncExclusive(id);
-                var min = ImGui.GetWindowPos();
-                var max = min + ImGui.GetWindowSize();
-                if (!owns)
+                if (open)
                 {
-                    ImGui.CloseCurrentPopup();
-                }
-                else
-                {
-                    var owner = Interactive.BeginOwner(
-                        id, InteractionLayer.Popup, min, max);
-                    try
+                    bool owns = SyncExclusive(id);
+                    var min = ImGui.GetWindowPos();
+                    var max = min + ImGui.GetWindowSize();
+                    if (!owns)
                     {
-                        if (props.Treatment == FloatingSurfaceTreatment.Glass)
-                            DrawChrome(
-                                ImGui.GetWindowDrawList(),
-                                min,
-                                max,
-                                Crystarium.ActiveTheme.Radii.Surface);
-                        body();
+                        ImGui.CloseCurrentPopup();
                     }
-                    finally
+                    else
                     {
-                        // Balanced under finally: a throwing body must not
-                        // strand the popup's owner for every enclosing
-                        // surface to trip over.
-                        Interactive.EndOwner(owner);
+                        var owner = Interactive.BeginOwner(
+                            id, InteractionLayer.Popup, min, max);
+                        try
+                        {
+                            if (props.Treatment == FloatingSurfaceTreatment.Glass)
+                                DrawChrome(
+                                    ImGui.GetWindowDrawList(),
+                                    min,
+                                    max,
+                                    Crystarium.ActiveTheme.Radii.Surface);
+                            body();
+                        }
+                        finally
+                        {
+                            // Balanced under finally: a throwing body must not
+                            // strand the popup's owner for every enclosing
+                            // surface to trip over.
+                            Interactive.EndOwner(owner);
+                        }
                     }
                 }
-                ImGui.EndPopup();
             }
-            ReleaseWhenClosed(id, ImGui.IsPopupOpen(id));
-
-            ImGui.PopStyleColor();
-            ImGui.PopStyleVar(3);
+            finally
+            {
+                if (open)
+                    ImGui.EndPopup();
+                ReleaseWhenClosed(id, ImGui.IsPopupOpen(id));
+                ImGui.PopStyleColor();
+                ImGui.PopStyleVar(3);
+            }
             return open;
         }
 
@@ -206,22 +215,37 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoBackground
                 | ImGuiWindowFlags.NoSavedSettings
                 | ImGuiWindowFlags.NoResize);
-            if (visible)
+            // Same unconditional unwind as Popup: End pairs with Begin no
+            // matter what the body throws, and the two style vars come off
+            // the global stack.
+            try
             {
-                var min = ImGui.GetWindowPos();
-                var max = min + ImGui.GetWindowSize();
-                var owner = Interactive.BeginOwner(
-                    id, InteractionLayer.FloatingWindow, min, max);
-                DrawChrome(
-                    ImGui.GetWindowDrawList(),
-                    min,
-                    max,
-                    Crystarium.ActiveTheme.Radii.Window);
-                body(new FloatingSurfaceFrame(min, max, scale));
-                Interactive.EndOwner(owner);
+                if (visible)
+                {
+                    var min = ImGui.GetWindowPos();
+                    var max = min + ImGui.GetWindowSize();
+                    var owner = Interactive.BeginOwner(
+                        id, InteractionLayer.FloatingWindow, min, max);
+                    try
+                    {
+                        DrawChrome(
+                            ImGui.GetWindowDrawList(),
+                            min,
+                            max,
+                            Crystarium.ActiveTheme.Radii.Window);
+                        body(new FloatingSurfaceFrame(min, max, scale));
+                    }
+                    finally
+                    {
+                        Interactive.EndOwner(owner);
+                    }
+                }
             }
-            ImGui.End();
-            ImGui.PopStyleVar(2);
+            finally
+            {
+                ImGui.End();
+                ImGui.PopStyleVar(2);
+            }
             // The window's own close button clears `open` mid-frame.
             ReleaseWhenClosed(id, open);
             return visible;

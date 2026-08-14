@@ -35,15 +35,25 @@ public static partial class Crystarium
         // rewrite below to those few vertices instead of the whole child (a
         // library grid runs to thousands, every frame).
         int decorationVertices = CurrentVertexCount();
-        if (visible)
+        // The unwind is unconditional: this child hosts every shell tab's
+        // content, so a throw inside any pane must still end the child and
+        // pop all seven style entries — a skipped pop here corrupts the
+        // global style stack for every window drawn after (PBI-013 class).
+        try
         {
-            float contentWidth = MathF.Max(0f, width - gutter);
-            content(new ScrollRegionScope(contentWidth, scale));
+            if (visible)
+            {
+                float contentWidth = MathF.Max(0f, width - gutter);
+                content(new ScrollRegionScope(contentWidth, scale));
+            }
         }
-        NarrowVisibleScrollbarThumb(decorationVertices);
-        ImGui.EndChild();
-        ImGui.PopStyleVar();
-        PopScrollbarStyle();
+        finally
+        {
+            NarrowVisibleScrollbarThumb(decorationVertices);
+            ImGui.EndChild();
+            ImGui.PopStyleVar();
+            PopScrollbarStyle();
+        }
     }
 
     public sealed class ScrollRegionScope
