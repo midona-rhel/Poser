@@ -2541,6 +2541,31 @@ public class MainWindow : Window
 
     // ── shell callbacks ──────────────────────────────────────────────────
 
+    /// <summary>
+    /// Steps the tab strip by <paramref name="delta"/>, wrapping. It goes
+    /// through the CLICK path rather than moving <see cref="_activeTab"/>
+    /// itself: the click is what also settles the viewport contract, and a
+    /// keyboard step that skipped it would render one tab through another
+    /// tab's layout for a frame. Whatever the strip currently holds is what
+    /// steps — the library's types in library mode, the selection's tabs
+    /// otherwise.
+    /// </summary>
+    public void CycleTab(int delta)
+    {
+        int count = _vm.Tabs.Count;
+        if (count == 0)
+            return;
+        int active = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (!_vm.Tabs[i].Active)
+                continue;
+            active = i;
+            break;
+        }
+        OnTabClicked(((active + delta) % count + count) % count);
+    }
+
     private void OnTabClicked(int index)
     {
         // In library mode the tabs are the library types; the selection-typed

@@ -2,6 +2,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Poser.Application.Animation;
 using Poser.Config;
 using Poser.Core;
 using Poser.Game;
@@ -29,6 +30,8 @@ public sealed class UIManager : IUIManager
     private readonly ConfigurationService _configService;
     private readonly UiWindowSet _windows;
     private readonly PoseFileInspectorSection _poseFileSection;
+    private readonly IVirtualCameraService _cameras;
+    private readonly AnimationSceneActions _sceneActions;
     private readonly Keybind[] _keybinds;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
 
@@ -41,7 +44,9 @@ public sealed class UIManager : IUIManager
         IEditorState editorState,
         ConfigurationService configService,
         UiWindowSet windows,
-        PoseFileInspectorSection poseFileSection)
+        PoseFileInspectorSection poseFileSection,
+        IVirtualCameraService cameras,
+        AnimationSceneActions sceneActions)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -52,36 +57,16 @@ public sealed class UIManager : IUIManager
         _configService = configService;
         _windows = windows;
         _poseFileSection = poseFileSection;
+        _cameras = cameras;
+        _sceneActions = sceneActions;
 
-        // Bound ONCE: the seven delegates and their parsed chords are the whole
-        // per-frame keybind state, so a frame that fires nothing allocates
-        // nothing.
-        _keybinds =
-        [
-            new Keybind("Undo", () =>
-            {
-                if (_cleanTransforms.CanUndo)
-                    _cleanTransforms.Undo();
-            }),
-            new Keybind("Redo", () =>
-            {
-                if (_cleanTransforms.CanRedo)
-                    _cleanTransforms.Redo();
-            }),
-            new Keybind(
-                "Translate mode",
-                () => _editorState.TransformTool = TransformTool.Move),
-            new Keybind(
-                "Rotate mode",
-                () => _editorState.TransformTool = TransformTool.Rotate),
-            new Keybind(
-                "Scale mode",
-                () => _editorState.TransformTool = TransformTool.Scale),
-            new Keybind(
-                "Universal mode",
-                () => _editorState.TransformTool = TransformTool.Universal),
-            new Keybind("Hide UI", ToggleAllUi),
-        ];
+        // Bound ONCE, in registry order: the delegates and their parsed
+        // chords are the whole per-frame keybind state, so a frame that fires
+        // nothing allocates nothing. Every registered action is bound here —
+        // the registry is the list, and an id it names with no handler is a
+        // build-time hole, which is why the lookup throws rather than
+        // skipping.
+        _keybinds = BuildKeybinds();
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
@@ -129,6 +114,116 @@ public sealed class UIManager : IUIManager
     }
 
     /// <summary>
+    /// The delegate behind every registered action. Each one is a call the UI
+    /// already makes from a button, a menu row or a strip — a chord binds an
+    /// existing command, it never becomes the only way to reach one.
+    /// </summary>
+    private Keybind[] BuildKeybinds()
+    {
+        var handlers = new Dictionary<string, Action>(StringComparer.Ordinal)
+        {
+            ["Undo"] = () =>
+            {
+                if (_cleanTransforms.CanUndo)
+                    _cleanTransforms.Undo();
+            },
+            ["Redo"] = () =>
+            {
+                if (_cleanTransforms.CanRedo)
+                    _cleanTransforms.Redo();
+            },
+            ["Translate mode"] =
+                () => _editorState.TransformTool = TransformTool.Move,
+            ["Rotate mode"] =
+                () => _editorState.TransformTool = TransformTool.Rotate,
+            ["Scale mode"] =
+                () => _editorState.TransformTool = TransformTool.Scale,
+            ["Universal mode"] =
+                () => _editorState.TransformTool = TransformTool.Universal,
+            ["Cycle gizmo mode"] = () => _editorState.TransformTool =
+                _editorState.TransformTool switch
+                {
+                    TransformTool.Move => TransformTool.Rotate,
+                    TransformTool.Rotate => TransformTool.Scale,
+                    TransformTool.Scale => TransformTool.Universal,
+                    _ => TransformTool.Move,
+                },
+            ["Toggle transform space"] = () =>
+                _editorState.TransformOrientation =
+                    _editorState.TransformOrientation
+                        == TransformOrientation.Local
+                        ? TransformOrientation.Global
+                        : TransformOrientation.Local,
+            ["Cycle rotation pivot"] = () => _editorState.RotationPivot =
+                _editorState.RotationPivot == RotationPivot.Self
+                    ? RotationPivot.Parent
+                    : RotationPivot.Self,
+            ["Cycle symmetry"] = () => _editorState.SymmetryMode =
+                _editorState.SymmetryMode switch
+                {
+                    SymmetryMode.Off => SymmetryMode.Copy,
+                    SymmetryMode.Copy => SymmetryMode.Mirror,
+                    _ => SymmetryMode.Off,
+                },
+            ["Toggle bone overlay"] = () =>
+                _windows.SkeletonOverlay.UserVisible =
+                    !_windows.SkeletonOverlay.UserVisible,
+            ["Selected bones only"] = () =>
+                _editorState.ShowSelectedBonesOnly =
+                    !_editorState.ShowSelectedBonesOnly,
+            ["Cycle skeleton view"] = () => _editorState.SkeletonViewMode =
+                _editorState.SkeletonViewMode switch
+                {
+                    SkeletonViewMode.Default => SkeletonViewMode.Octahedra,
+                    SkeletonViewMode.Octahedra => SkeletonViewMode.Joints,
+                    _ => SkeletonViewMode.Default,
+                },
+            ["Hide UI"] = ToggleAllUi,
+            ["Toggle workspace"] = ToggleMainWindow,
+            ["Toggle settings"] = ToggleSettingsWindow,
+            ["Toggle scene panel"] = _windows.ToggleSceneWindow,
+            ["Open pose library"] = OpenPoseLibrary,
+            ["Next tab"] = () => _windows.Main.CycleTab(1),
+            ["Previous tab"] = () => _windows.Main.CycleTab(-1),
+            ["Next camera"] = () => CycleCamera(1),
+            ["Previous camera"] = () => CycleCamera(-1),
+            ["Freeze all actors"] = () => _sceneActions.FreezeAll(),
+            ["Resume all actors"] = () => _sceneActions.ResumeAll(),
+        };
+
+        var binds = new Keybind[KeybindRegistry.Actions.Count];
+        for (int i = 0; i < binds.Length; i++)
+        {
+            string id = KeybindRegistry.Actions[i].Id;
+            binds[i] = new Keybind(id, handlers[id]);
+        }
+        return binds;
+    }
+
+    /// <summary>Steps the live camera, wrapping. The list is default-first
+    /// then creation order, so stepping it is stepping the camera rail the
+    /// user already reads.</summary>
+    private void CycleCamera(int delta)
+    {
+        var cameras = _cameras.Cameras;
+        if (cameras.Count < 2 || _cameras.LiveCamera is not { } live)
+            return;
+        int index = -1;
+        for (int i = 0; i < cameras.Count; i++)
+        {
+            if (!ReferenceEquals(cameras[i], live))
+                continue;
+            index = i;
+            break;
+        }
+        if (index < 0)
+            return;
+        int next = ((index + delta) % cameras.Count + cameras.Count)
+            % cameras.Count;
+        _cameras.SetLive(cameras[next]);
+    }
+
+    /// <summary>
     /// Settings-configured keybinds. They are edge-triggered, GPose-only, and
     /// suppressed while an ImGui text field owns the keyboard.
     /// </summary>
@@ -143,16 +238,14 @@ public sealed class UIManager : IUIManager
 
         foreach (var bind in _keybinds)
         {
-            // The SAME resolver the hover badges display, so a shown
-            // chord always matches the one that fires. The resolver hands back
-            // the stored string, so an unchanged binding compares equal and the
-            // chord is never re-parsed.
-            string chord = PoserKeybinds.Effective(bind.Name);
-            if (!ReferenceEquals(chord, bind.Chord) &&
-                !string.Equals(chord, bind.Chord, StringComparison.Ordinal))
-                bind.Parse(chord);
+            // The SAME resolver the hover badges display, so a shown chord
+            // always matches one that fires. The resolver hands back the
+            // stored strings, so unchanged bindings compare equal and neither
+            // chord is re-parsed.
+            var slots = PoserKeybinds.Slots(bind.Name);
+            bind.Sync(slots);
 
-            bool active = ChordDown(bind);
+            bool active = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
             if (active && !bind.Down)
             {
                 bind.Down = true;
@@ -165,69 +258,52 @@ public sealed class UIManager : IUIManager
         }
     }
 
-    private bool ChordDown(Keybind bind)
+    private bool ChordDown(KeyChord chord)
     {
-        if (bind.Key == VirtualKey.NO_KEY)
+        if (!chord.IsBound)
             return false;
-        if (bind.Ctrl != _keyState[VirtualKey.CONTROL])
+        if (chord.Ctrl != _keyState[VirtualKey.CONTROL])
             return false;
-        if (bind.Shift != _keyState[VirtualKey.SHIFT])
+        if (chord.Shift != _keyState[VirtualKey.SHIFT])
             return false;
-        if (bind.Alt != _keyState[VirtualKey.MENU])
+        if (chord.Alt != _keyState[VirtualKey.MENU])
             return false;
-        return _keyState[bind.Key];
+        return _keyState[chord.Key];
     }
 
     /// <summary>
-    /// One configured keybind: the action name the resolver and the hover
-    /// badges key on, the delegate it runs, and its chord PARSED — string work
-    /// happens only when the configured chord text actually changes.
+    /// One configured keybind: the action id the resolver and the hover
+    /// badges key on, the delegate it runs, and its TWO chords parsed —
+    /// string work happens only when the configured text actually changes.
+    ///
+    /// <para>The edge is the action's, not the slot's: both chords are the
+    /// same command, so holding one while tapping the other must not fire
+    /// twice.</para>
     /// </summary>
     private sealed class Keybind(string name, Action run)
     {
         public string Name { get; } = name;
         public Action Run { get; } = run;
-        public string Chord { get; private set; } = "";
-        public bool Ctrl { get; private set; }
-        public bool Shift { get; private set; }
-        public bool Alt { get; private set; }
-        public VirtualKey Key { get; private set; } = VirtualKey.NO_KEY;
+        public KeyChord Primary { get; private set; }
+        public KeyChord Secondary { get; private set; }
 
-        /// <summary>Edge state: the chord was down on the previous frame.</summary>
+        private string _primaryText = string.Empty;
+        private string _secondaryText = string.Empty;
+
+        /// <summary>Edge state: the action was down on the previous frame.</summary>
         public bool Down { get; set; }
 
-        public void Parse(string chord)
+        public void Sync(KeybindSlots slots)
         {
-            Chord = chord;
-            Ctrl = false;
-            Shift = false;
-            Alt = false;
-            Key = VirtualKey.NO_KEY;
-
-            foreach (var part in chord.Split('+'))
+            if (!string.Equals(slots.Primary, _primaryText, StringComparison.Ordinal))
             {
-                switch (part.Trim().ToUpperInvariant())
-                {
-                    case "CTRL":
-                        Ctrl = true;
-                        break;
-                    case "SHIFT":
-                        Shift = true;
-                        break;
-                    case "ALT":
-                        Alt = true;
-                        break;
-                    case { Length: 1 } token when token[0] is >= 'A' and <= 'Z':
-                        Key = (VirtualKey)((int)VirtualKey.A + (token[0] - 'A'));
-                        break;
-                    case { Length: 1 } token when token[0] is >= '0' and <= '9':
-                        Key = (VirtualKey)((int)VirtualKey.KEY_0 + (token[0] - '0'));
-                        break;
-                    default:
-                        if (Enum.TryParse<VirtualKey>(part.Trim(), true, out var parsed))
-                            Key = parsed;
-                        break;
-                }
+                _primaryText = slots.Primary;
+                Primary = KeyChord.Parse(slots.Primary);
+            }
+            if (!string.Equals(slots.Secondary, _secondaryText, StringComparison.Ordinal))
+            {
+                _secondaryText = slots.Secondary;
+                Secondary = KeyChord.Parse(slots.Secondary);
             }
         }
     }

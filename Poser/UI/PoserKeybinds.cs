@@ -3,28 +3,30 @@ using Poser.Config;
 namespace Poser.UI;
 
 /// <summary>
-/// The ONE keybind resolution — configured override or built-in
-/// fallback — used identically by keybind EXECUTION (UIManager) and
-/// shortcut-badge DISPLAY (hover help), so a card can never advertise a
-/// chord that would not fire.
+/// The ONE keybind resolution — configured slots over
+/// <see cref="KeybindRegistry"/>'s defaults — used identically by keybind
+/// EXECUTION (UIManager) and shortcut-badge DISPLAY (hover help), so a card
+/// can never advertise a chord that would not fire.
 /// </summary>
 internal static class PoserKeybinds
 {
-    private static readonly System.Collections.Generic.Dictionary<string, string> Fallbacks = new()
+    /// <summary>Both of an action's chords, defaults filled in.</summary>
+    public static KeybindSlots Slots(string action)
     {
-        ["Undo"] = "Ctrl+Z",
-        ["Redo"] = "Ctrl+Y",
-        ["Translate mode"] = "Ctrl+1",
-        ["Rotate mode"] = "Ctrl+2",
-        ["Scale mode"] = "Ctrl+3",
-        ["Universal mode"] = "Ctrl+4",
-        ["Hide UI"] = "Ctrl+H",
-    };
+        var bindings = ConfigurationService.Instance.Config.UI.Bindings;
+        return bindings.TryGetValue(action, out var slots)
+            ? slots
+            : KeybindRegistry.Default(action);
+    }
 
-    /// <summary>The chord that will actually fire for an action.</summary>
+    /// <summary>
+    /// The chord a badge shows: the primary, or the secondary when the
+    /// primary is unbound. A badge states ONE chord, and the one worth
+    /// stating is the one that will actually fire.
+    /// </summary>
     public static string Effective(string action)
     {
-        var overrides = ConfigurationService.Instance.Config.UI.Keybinds;
-        return overrides.TryGetValue(action, out var bound) ? bound : Fallbacks[action];
+        var slots = Slots(action);
+        return slots.Primary.Length > 0 ? slots.Primary : slots.Secondary;
     }
 }

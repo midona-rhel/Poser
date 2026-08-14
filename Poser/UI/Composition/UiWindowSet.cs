@@ -125,7 +125,9 @@ public sealed class UiWindowSet : IDisposable
             Main.ContentHidden = false;
     }
 
-    private void ToggleSceneWindow() =>
+    /// <summary>Public for the keybind: the strip's roster button and the
+    /// chord are the same act, so they go through the same call.</summary>
+    public void ToggleSceneWindow() =>
         SidebarPart.IsOpen = !SidebarPart.IsOpen;
 
     /// <summary>THE layout toggle. Detaching seats the sidebar window where
