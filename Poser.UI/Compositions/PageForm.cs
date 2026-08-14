@@ -96,6 +96,20 @@ public static partial class Crystarium
         TablerIcon? Icon = null,
         string? Id = null);
 
+    /// <summary>One toggle inside an inline cluster
+    /// (<see cref="FormScope.Checkboxes(string, CheckItem[])"/>): its caption,
+    /// its state, and the reason it alone may be dead. The per-item flag is
+    /// what lets a whole family stand as ONE labelled row — "Apply: position,
+    /// rotation, scale, model" gates the three bone components on the import
+    /// type and the model transform on something else entirely, and a
+    /// row-level flag would force them back into separate rows.</summary>
+    public readonly record struct CheckItem(
+        string Caption,
+        bool Value,
+        Action<bool> OnChange,
+        string? Help = null,
+        bool Disabled = false);
+
     public sealed class ActionScope
     {
         private readonly List<ActionItem> _items = new();
@@ -488,21 +502,16 @@ public static partial class Crystarium
         /// <summary>Several checkbox+caption groups sharing ONE row — for
         /// short component flags that would each waste a full row alone.
         /// Help rides per box.</summary>
-        public void Checkboxes(
-            string label,
-            params (string Caption, bool Value, Action<bool> OnChange,
-                string? Help)[] items) =>
+        public void Checkboxes(string label, params CheckItem[] items) =>
             Checkboxes(label, disabled: false, items);
 
         /// <summary>Row-level disabled — Brio disables its whole transform
-        /// icon row at once, and a per-item flag would let the row half-die.
+        /// icon row at once. It ORs with each item's own flag: the row states
+        /// what kills every member, the item what kills only itself.
         /// Disabled boxes fade through the control's own idiom; the captions
         /// fade with them; the help still explains on hover.</summary>
         public void Checkboxes(
-            string label,
-            bool disabled,
-            params (string Caption, bool Value, Action<bool> OnChange,
-                string? Help)[] items) =>
+            string label, bool disabled, params CheckItem[] items) =>
             Checkboxes(label, disabled, fullWidth: false, items);
 
         /// <summary>Full-width variant: the boxes start at the row's LEFT
@@ -512,58 +521,77 @@ public static partial class Crystarium
             string label,
             bool disabled,
             bool fullWidth,
-            params (string Caption, bool Value, Action<bool> OnChange,
-                string? Help)[] items) =>
+            params CheckItem[] items) =>
             Checkboxes(label, disabled, fullWidth, 0f, items);
 
         /// <summary><paramref name="columnWidth"/> (logical, &gt; 0) tiles the
         /// items on a FIXED grid instead of packing by caption width, so item
         /// N of one row sits exactly under item N of the next — stacked pairs
         /// (Freeze/Smart over Body/Expression) read as a grid, not a ragged
-        /// flow.</summary>
+        /// flow.
+        ///
+        /// <para>A cluster that outgrows its row WRAPS to the next line at the
+        /// same start x and the row reports the taller pitch, so the same
+        /// cluster stands on one line in a wide band and folds in a narrow
+        /// rail without ever running under the scroll gutter. Wrapping is what
+        /// lets a whole toggle family be stated as ONE labelled row at every
+        /// width instead of one row per pair.</para></summary>
         public void Checkboxes(
             string label,
             bool disabled,
             bool fullWidth,
             float columnWidth,
-            params (string Caption, bool Value, Action<bool> OnChange,
-                string? Help)[] items)
+            params CheckItem[] items)
         {
             string id = Id(string.IsNullOrEmpty(label) ? "checkboxes" : label);
             var row = _page.BeginRow(label);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
             float rowHeight = row.RowHeight * row.Scale;
-            var captionStyle = new TextStyle
-            {
-                Size = ActiveTheme.Typography.LabelSize,
-                Color = FormLabelColor,
-                Disabled = disabled,
-            };
             float originX = fullWidth ? row.Origin.X : row.ControlOrigin.X;
+            float right = row.Origin.X + row.Width;
             float pitch = columnWidth * row.Scale;
             float x = originX;
             int column = 0;
-            foreach (var (caption, value, onChange, help) in items)
+            int line = 0;
+            foreach (var item in items)
             {
-                float itemX = pitch > 0f ? originX + column * pitch : x;
-                ImGui.SetCursorScreenPos(new(
-                    itemX, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
-                Crystarium.Checkbox(
-                    Ids.Join(id, "-", caption), value, onChange, default,
-                    disabled, help);
-                float captionX = itemX + boxSide + gap * 0.75f;
+                bool itemDisabled = disabled || item.Disabled;
+                var captionStyle = new TextStyle
+                {
+                    Size = ActiveTheme.Typography.LabelSize,
+                    Color = FormLabelColor,
+                    Disabled = itemDisabled,
+                };
                 float captionWidth =
-                    Crystarium.MeasureText(caption, captionStyle).X;
+                    Crystarium.MeasureText(item.Caption, captionStyle).X;
+                float itemX = pitch > 0f ? originX + column * pitch : x;
+                float itemWidth = boxSide + gap * 0.75f + captionWidth;
+                // The first item of a line always draws, however wide: a
+                // caption with nowhere to wrap to must overflow visibly
+                // rather than start an empty line above itself.
+                if (itemX > originX && itemX + itemWidth > right)
+                {
+                    line++;
+                    column = 0;
+                    itemX = originX;
+                }
+                float top = row.Origin.Y + line * rowHeight;
+                ImGui.SetCursorScreenPos(new(
+                    itemX, top + (rowHeight - boxSide) * 0.5f));
+                Crystarium.Checkbox(
+                    Ids.Join(id, "-", item.Caption), item.Value, item.OnChange,
+                    default, itemDisabled, item.Help);
+                float captionX = itemX + boxSide + gap * 0.75f;
                 LabelInBand(
-                    new(captionX, row.Origin.Y),
+                    new(captionX, top),
                     new(captionWidth, rowHeight),
-                    caption,
+                    item.Caption,
                     captionStyle);
                 x = captionX + captionWidth + gap * 2f;
                 column++;
             }
-            _page.EndRow(row, id, null);
+            _page.EndRow(row, id, null, row.RowHeight * (line + 1));
         }
 
         /// <summary>

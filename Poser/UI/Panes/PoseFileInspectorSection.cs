@@ -560,15 +560,24 @@ public sealed class PoseFileInspectorSection
             DrawBoneFilterBody);
 
     /// <summary>The library-mode inspector rail: the SAME option sections
-    /// the import menu shows, hosted where the rail's selection sections
-    /// would be — the user's placement. Presets stay actor-side; the bone
-    /// filter button opens through the root pump since no menu popup hosts
-    /// a nested one here.</summary>
+    /// the import menu shows, in the band's DENSE form — headerless, checklist
+    /// pitch, one labelled cluster per family — because this mount stands
+    /// under the preview and every row it spends is a row the render does not
+    /// get. Presets stay actor-side; the bone filter button opens through the
+    /// root pump since no menu popup hosts a nested one here.</summary>
     public void DrawOptionsRail(Vector2 origin, Vector2 size)
     {
+        // The preview's box is reserved FIRST and the options take what is
+        // left, scrolling inside the rail when that is nothing (user
+        // 2026-08-14: the options block was shrinking the render above it).
+        // The cap is therefore the whole rail, not a share of it: at this
+        // width the portrait aspect asks for less than the rail has on any
+        // ordinary window, so the cap only ever bites on a rail shorter than
+        // one preview — where there is nothing left to give.
         DrawOptionsSections(
             origin, size.X, withPresets: false,
-            previewCap: size.Y * PreviewRailShare);
+            previewCap: size.Y,
+            dense: true);
     }
 
     // ── the import dialog's two panels ───────────────────────────────────
@@ -600,11 +609,12 @@ public sealed class PoseFileInspectorSection
 
     /// <summary>The band's logical height: the tallest option column as last
     /// measured, plus the band's two vertical insets, capped. Seeded with the
-    /// DENSE column arithmetic (two checklist rows at 26 + the two insets —
-    /// the columns are headerless, user 2026-08-10) and corrected by the
-    /// first draw — the popup stack's own self-measure idiom, so every open
-    /// after the first fits exactly.</summary>
-    private float _importBandHeight = 78f;
+    /// DENSE column arithmetic (three checklist rows at 26 + the two insets —
+    /// the columns are headerless, user 2026-08-10, and the Scope column's
+    /// cluster wraps to two lines above its filter button at this width) and
+    /// corrected by the first draw — the popup stack's own self-measure
+    /// idiom, so every open after the first fits exactly.</summary>
+    private float _importBandHeight = 104f;
 
     /// <summary>Shown in the empty well before any file is highlighted.
     /// </summary>
@@ -868,13 +878,6 @@ public sealed class PoseFileInspectorSection
     /// <see cref="DrawPreviewInput"/>.</summary>
     private bool _previewDragging;
 
-    /// <summary>The most of the RAIL the preview's image may take, so the
-    /// import options under it stay usable at any window height. Raised from
-    /// 0.45 on user request (2026-08-09, "a tiny bit bigger"): at 0.45 the cap
-    /// bit on typical rail heights and narrowed the box off its full width.
-    /// </summary>
-    private const float PreviewRailShare = 0.58f;
-
     /// <summary>Ktisis' preview node, and so the image box's ASPECT: the whole
     /// render is stretched into a 192x320 portrait there, which is why the box
     /// never letterboxes and never consults the render's own size.</summary>
@@ -998,7 +1001,7 @@ public sealed class PoseFileInspectorSection
     /// a way out of the dialog it is standing in.</param>
     private float DrawOptionsSections(
         Vector2 origin, float width, bool withPresets, float previewCap = 0f,
-        bool withActions = true)
+        bool withActions = true, bool dense = false)
     {
         float y = origin.Y;
 
@@ -1011,13 +1014,16 @@ public sealed class PoseFileInspectorSection
                 divider: false);
 
         // The rule is a divider BETWEEN sections: the first one leads the
-        // stack only when the preview does not.
+        // stack only when the preview does not. A DENSE stack has no headers
+        // to separate, so its three groups read as one block behind a single
+        // leading rule — three rules around four rows is a striped list, not a
+        // form.
         y += DrawImportTypeSection(
-            new Vector2(origin.X, y), width, divider: preview);
+            new Vector2(origin.X, y), width, divider: preview, dense: dense);
         y += DrawTransformSection(
-            new Vector2(origin.X, y), width, divider: true);
+            new Vector2(origin.X, y), width, divider: !dense, dense: dense);
         y += DrawScopeSection(
-            new Vector2(origin.X, y), width, divider: true);
+            new Vector2(origin.X, y), width, divider: !dense, dense: dense);
 
         if (!withActions)
             return y;
@@ -1127,13 +1133,14 @@ public sealed class PoseFileInspectorSection
                     disabled: false,
                     fullWidth: false,
                     CheckColumnPitch,
-                    ("Freeze", _freeze, next =>
+                    new Crystarium.CheckItem("Freeze", _freeze, next =>
                     {
                         _freeze = next;
                         _config.Config.FreezeActorOnPoseImport = next;
                         _config.Save();
                     }, "Keep the actor paused after the import"),
-                    ("Smart", _smartImport, next => _smartImport = next,
+                    new Crystarium.CheckItem(
+                        "Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
                 // Ktisis hides the mode checkboxes during selective import
                 // without descendants (PoseImportDialog.cs:158): directly
@@ -1152,13 +1159,15 @@ public sealed class PoseFileInspectorSection
                     disabled: typeLocked,
                     fullWidth: false,
                     CheckColumnPitch,
-                    ("Body", _typeBody,
+                    new Crystarium.CheckItem(
+                        "Body", _typeBody,
                         next => _typeBody = next,
                         typeLocked
                             ? typeLockedWhy
                             : "Import the body. With Expression too, everything "
                                 + "imports with every component"),
-                    ("Expression", _typeExpression,
+                    new Crystarium.CheckItem(
+                        "Expression", _typeExpression,
                         next => _typeExpression = next,
                         typeLocked
                             ? typeLockedWhy
@@ -1168,11 +1177,16 @@ public sealed class PoseFileInspectorSection
             divider: divider,
             dense: dense);
 
-    /// <summary>The Transform group. Returns the section's height, px.
-    /// </summary>
-    /// <param name="dense">The band form: headerless (the trio says it all)
-    /// and the "Apply" label row dropped — the column is two tight rows, the
-    /// trio and Model.</param>
+    /// <summary>The Transform group — ONE labelled cluster, the four things an
+    /// import applies. Returns the section's height, px.
+    ///
+    /// <para>Model rides the same row as the bone trio because it is the same
+    /// question (what does this import write?) and because Brio states it in
+    /// the same icon row; it is here rather than under Scope because a model
+    /// transform is a component, not a filter. The cluster wraps at narrow
+    /// widths, which is what let the standalone "Apply" label row and the
+    /// standalone Model row go (user 2026-08-14: the block was crushing the
+    /// preview above it).</para></summary>
     private float DrawTransformSection(
         Vector2 origin, float width, bool divider, bool dense = false) =>
         MenuSection(
@@ -1184,35 +1198,41 @@ public sealed class PoseFileInspectorSection
                 // Expression is checked (FileUIHelpers.cs:514-516) — the
                 // engine forces every component on those paths. The Model
                 // toggle sits only under the OUTER Smart disable, like
-                // Brio's model-transform icon.
+                // Brio's model-transform icon, which is exactly the per-item
+                // disable Crystarium.CheckItem carries.
                 bool locked = _typeExpression || _smartImport;
                 string? why = locked
                     ? "Expression imports always apply every component"
                     : null;
-                // The POPUP keeps the trio on its own full-width row under
-                // a label row (user placement, e05915c); the BAND labels
-                // the row inline (user 2026-08-11: labels stay).
-                if (!dense)
-                    form.Label("Apply");
+                // The row itself is never dead: the trio and Model die on
+                // different facts, which is the whole reason they can share
+                // one row at all.
                 form.Checkboxes(
-                    dense ? "Apply" : string.Empty,
-                    locked,
-                    fullWidth: !dense,
-                    ("Position", _position, next => _position = next, why),
-                    ("Rotation", _rotation, next => _rotation = next, why),
-                    ("Scale", _scale, next => _scale = next, why));
-                form.Checkbox(
-                    "Model", _modelTransform,
-                    next => _modelTransform = next,
-                    help: "Also move the actor to the file's placement "
-                        + "(model transform)",
-                    disabled: _smartImport);
+                    "Apply",
+                    disabled: false,
+                    fullWidth: false,
+                    new Crystarium.CheckItem(
+                        "Position", _position, next => _position = next, why,
+                        Disabled: locked),
+                    new Crystarium.CheckItem(
+                        "Rotation", _rotation, next => _rotation = next, why,
+                        Disabled: locked),
+                    new Crystarium.CheckItem(
+                        "Scale", _scale, next => _scale = next, why,
+                        Disabled: locked),
+                    new Crystarium.CheckItem(
+                        "Model", _modelTransform,
+                        next => _modelTransform = next,
+                        "Also move the actor to the file's placement "
+                            + "(model transform)",
+                        Disabled: _smartImport));
             },
             divider: divider,
             dense: dense);
 
-    /// <summary>The Scope group — Reset first, then the bone filter. Returns
-    /// the section's height, px.</summary>
+    /// <summary>The Scope group — one labelled cluster of everything that
+    /// narrows what an import touches, then the bone filter. Returns the
+    /// section's height, px.</summary>
     /// <param name="dense">The band form: headerless, checklist pitch, the
     /// "Filter" label dropped — the button already says Bone filter — and
     /// the button flush to the column's content right edge (user
@@ -1231,35 +1251,35 @@ public sealed class PoseFileInspectorSection
                 // surface (PoseImportDialog.cs:141-158): only it mounts the
                 // selective rows, and its confirm freezes the live bone
                 // selection into exact BoneIds.
+                var scope = new List<Crystarium.CheckItem>(4);
                 if (selective)
                 {
-                    bool hasSelection = HasSelectedBonesForImportTarget();
-                    form.Checkbox(
-                        "Selected bones", _selectiveImport,
-                        next => _selectiveImport = next,
-                        disabled: !hasSelection && !_selectiveImport,
-                        help: hasSelection || _selectiveImport
-                            ? "Apply the pose only to the bones currently "
-                                + "selected on this actor"
-                            : "Select bones on the target actor first");
-                    form.Checkbox(
-                        "Include descendants", _selectiveDescendants,
-                        next => _selectiveDescendants = next,
-                        disabled: !_selectiveImport,
-                        help: "Extend the selected-bones scope to every "
-                            + "descendant of the selected bones");
                     // Ktisis' "Anchor group positions"
                     // (PoseImportDialog.cs:151-155): live only while a
                     // position component is importing — Ktisis'
-                    // ImRaii.Disabled(!hasPosition) reads the value its
-                    // apply consumes (:199), so this reads the EFFECTIVE
-                    // component, not the Position widget.
+                    // ImRaii.Disabled(!hasPosition) reads the value its apply
+                    // consumes (:199), so this reads the EFFECTIVE component,
+                    // not the Position widget.
+                    bool hasSelection = HasSelectedBonesForImportTarget();
                     bool anchorable = SelectiveImportAppliesPosition();
-                    form.Checkbox(
+                    scope.Add(new Crystarium.CheckItem(
+                        "Selected bones", _selectiveImport,
+                        next => _selectiveImport = next,
+                        hasSelection || _selectiveImport
+                            ? "Apply the pose only to the bones currently "
+                                + "selected on this actor"
+                            : "Select bones on the target actor first",
+                        Disabled: !hasSelection && !_selectiveImport));
+                    scope.Add(new Crystarium.CheckItem(
+                        "Include descendants", _selectiveDescendants,
+                        next => _selectiveDescendants = next,
+                        "Extend the selected-bones scope to every "
+                            + "descendant of the selected bones",
+                        Disabled: !_selectiveImport));
+                    scope.Add(new Crystarium.CheckItem(
                         "Anchor positions", _selectiveAnchor,
                         next => _selectiveAnchor = next,
-                        disabled: !_selectiveImport || !anchorable,
-                        help: anchorable || !_selectiveImport
+                        anchorable || !_selectiveImport
                             ? "Keep the selected bones (and descendants) "
                                 + "where they stand — the file's rotations "
                                 + "and scales apply, its positions do not"
@@ -1269,12 +1289,19 @@ public sealed class PoseFileInspectorSection
                                     + "components, and there is nothing to "
                                     + "anchor"
                                 : "Turn on the Position component first — "
-                                    + "without it there is nothing to anchor");
+                                    + "without it there is nothing to anchor",
+                        Disabled: !_selectiveImport || !anchorable));
                 }
-                form.Checkbox(
+                scope.Add(new Crystarium.CheckItem(
                     "Reset first", _reset, next => _reset = next,
-                    help: "Clear every bone in scope before importing, "
-                        + "including ones the file does not contain");
+                    "Clear every bone in scope before importing, "
+                        + "including ones the file does not contain"));
+                // ONE labelled cluster, however many of them this mount
+                // carries: four stacked rows here was the tallest column of
+                // the options band and half the rail's option stack.
+                form.Checkboxes(
+                    "Scope", disabled: false, fullWidth: false,
+                    scope.ToArray());
                 // Brio: Custom Import Options is live ONLY when neither
                 // type is checked (FileUIHelpers.cs:504) — the filter
                 // shapes the DEFAULT import path alone.
