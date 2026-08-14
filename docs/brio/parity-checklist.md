@@ -1,4 +1,4 @@
-# Brio/Ktisis parity checklist
+﻿# Brio/Ktisis parity checklist
 
 > **Recreated 2026-08-03.** The previous `docs/brio/` tracking docs (`parity-checklist.md`,
 > `ktisis-audit.md`, `anamnesis-audit.md`, `ui-coverage.md`) are gone — the directory was empty
@@ -48,7 +48,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 9 IK bake | **Implemented, on safety hold** — the convergence brief's standing exclusion governs; not accepted, no live card |
 | 10 Overlay filter wiring | not started |
 | 11 Bone visibility presets | not started |
-| 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix) |
+| 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix); the tab was removed 2026-08-15 and the adoption is the viewport's own handles, marked by the sidebar footer's class glyphs (`58892b3`) |
 | 13A Companion attach UI | **Source-verified; acceptance pending** — gated attach picker + detach live in the actor context menu (user decision 2026-08-14 supersedes the 2026-08-11 "do not re-add") |
 | 13B Actor-to-bone attach | not started |
 | 14 Scene save/load | not started |
@@ -389,8 +389,10 @@ overworld discovery lives outside the 201–439 write gate
 (`Poser.Game/LegacyRuntime/WorldActorDiscovery.cs`, `Poser.Application/Actors/IWorldActorReadPort.cs`,
 integrated `d7603ca`); the spawn browser gained a World tab — nearest-first snapshot rows,
 clone-on-activate through the typed import, stale refusals restate and re-list (`44cb748`),
-structural row refresh deferred to Draw start (`42d41bd`). The clone is the one crossing
-into the scene and enters through the owned spawn transaction. Live check: rides the spawn
+structural row refresh deferred to Draw start (`42d41bd`). **The tab is gone as of
+2026-08-15 (`58892b3`)**: the same clone is reached by clicking a world handle in the
+viewport, and which classes draw handles is the sidebar footer's class glyphs. The clone is
+the one crossing into the scene and enters through the owned spawn transaction. Live check: rides the spawn
 card as an added step.
 
 **Task:** Add "Add overworld actor…" to the `+` add menu: enumerate the non-GPose object
