@@ -116,6 +116,11 @@ public sealed class McdfTransaction
         public required McdfOperationKind Kind { get; init; }
         public bool Invalidated;
         public bool TerminalPublished;
+        /// <summary>Read while the target still resolved. The only handle a
+        /// teardown running after the actor is gone has for the locked
+        /// Glamourer state, which belongs to the character's identity
+        /// rather than to any id Poser created.</summary>
+        public string? ActorName;
         public McdfOperationDirectory? OperationDirectory;
         public Guid? TemporaryCollection;
         public bool GlamourerLocked;
@@ -590,7 +595,8 @@ public sealed class McdfTransaction
                     Mcdf = new McdfOwnership(
                         fileName, operation.TemporaryCollection,
                         operation.OperationDirectory?.Path, operation.GlamourerLocked,
-                        operation.TemporaryProfile, operation.BodyJson),
+                        operation.TemporaryProfile, operation.BodyJson,
+                        ActorName: operation.ActorName),
                     DesignOwned = !replacedGlamourer && current.DesignOwned,
                     DesignName = replacedGlamourer ? null : current.DesignName,
                     TemporaryBodyProfile = replacedBody ? null : current.TemporaryBodyProfile,
@@ -645,6 +651,16 @@ public sealed class McdfTransaction
 
         if (!_port.IsResolvable(actor))
             return (null, "The actor is no longer available.");
+
+        // Captured HERE, while the actor still resolves: a GPose exit
+        // destroys the clone before the teardown runs, and the character
+        // name is the only handle Glamourer's identity-scoped locked state
+        // can still be released through. A name that cannot be read is not
+        // a refusal — the import is still valid, only its post-mortem
+        // release loses its fallback, which the teardown reports.
+        var named = _port.GetActorName(actor);
+        if (named.Success && named.Value is { Length: > 0 } actorName)
+            operation.ActorName = actorName;
 
         // A foreign temporary Penumbra assignment refuses the import
         // before mutation. The later assignment deliberately uses FORCE —
@@ -794,9 +810,23 @@ public sealed class McdfTransaction
         }
         else if (operation.GlamourerLocked)
         {
-            // The lock (and the state to restore into) died with the actor.
-            operation.GlamourerLocked = false;
-            operation.PendingGlamourerRecovery = null;
+            // The state to restore INTO died with the actor, but the lock
+            // did not: Glamourer holds it against the character's identity,
+            // so forgetting it here would weld the imported look on. Release
+            // it by name instead — the same post-mortem revert Brio runs
+            // when the GPose character has left the object table. A failure
+            // keeps the lock owned so a later Reset MCDF retries.
+            var released = _port.ReleaseGlamourerStateByName(
+                operation.ActorName ?? string.Empty);
+            if (released.Success)
+            {
+                operation.GlamourerLocked = false;
+                operation.PendingGlamourerRecovery = null;
+            }
+            else
+            {
+                failures.Add(released.Detail!);
+            }
         }
 
         if (!operation.GlamourerLocked
@@ -919,7 +949,8 @@ public sealed class McdfTransaction
                 operation.BodyJson,
                 operation.RedrawPending,
                 operation.PendingGlamourerRecovery,
-                operation.PendingBodyRecoveryJson),
+                operation.PendingBodyRecoveryJson,
+                operation.ActorName),
         });
         return failures.Count == 0 ? null : string.Join("; ", failures);
     }
@@ -962,8 +993,24 @@ public sealed class McdfTransaction
         }
         else if (locked)
         {
-            // The lock died with the actor's state; nothing left to unlock.
-            locked = false;
+            // THE exit path. Leaving GPose destroys the clone, so the exact
+            // generation stops resolving before this teardown runs — but
+            // Glamourer's locked state is scoped to the character's
+            // IDENTITY, not to the object, and outlives it. Dropping the
+            // flag here is what left an imported character file welded onto
+            // the actor after leaving Poser. Release by name instead
+            // (Brio/Game/Actor/CharacterHandlerService.cs RevertMCDF does
+            // the same once the GPose character has left the object table);
+            // a failure keeps the MCDF owned as retryable evidence.
+            var released = _port.ReleaseGlamourerStateByName(
+                mcdf.ActorName ?? string.Empty);
+            if (released.Success)
+                locked = false;
+            else
+            {
+                failures.Add(released.Detail!);
+                complete = false;
+            }
         }
 
         // A pending working-recipe recovery (left by a failed import

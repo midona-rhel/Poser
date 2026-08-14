@@ -494,10 +494,25 @@ public sealed class ActorIntegrationSession : IDisposable
             : null;
     }
 
-    /// <summary>Bounded cancel/drain of the active MCDF task. Registered
-    /// after the integration port in composition, so container disposal
-    /// runs this BEFORE the port and provider tear down.</summary>
-    public void Dispose() => _mcdf.Drain();
+    /// <summary>
+    /// Unload is an exit edge, not merely a shutdown. The active MCDF task
+    /// drains first — admission closes permanently and the task is joined
+    /// inside its bound — and only then is COMMITTED ownership torn down,
+    /// so no imported character file can survive the plugin going away.
+    /// The drain must precede the teardown: a still-running import would
+    /// otherwise re-register ownership behind it.
+    ///
+    /// This repeats what the scene lifecycle's own exit reset already does
+    /// and is deliberately idempotent, because that reset runs through a
+    /// BOUNDED framework hop that a dead pump can abandon. Registered after
+    /// the integration port in composition, so container disposal runs this
+    /// BEFORE the port and provider tear down.
+    /// </summary>
+    public void Dispose()
+    {
+        _mcdf.Drain();
+        ResetAll();
+    }
 
     // ── Internal seam for the MCDF transaction owner ─────────────────────
 

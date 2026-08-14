@@ -29,6 +29,12 @@ public interface IIntegrationRuntimePort
     /// Poser-created resources by their own ids only".</summary>
     bool IsResolvable(ActorId actor);
 
+    /// <summary>The exact actor's character name, read while it still
+    /// resolves. Captured by an import so a teardown that runs after the
+    /// object is gone still has a Glamourer identity to address; see
+    /// <see cref="ReleaseGlamourerStateByName"/>.</summary>
+    IntegrationValue<string> GetActorName(ActorId actor);
+
     // ── Penumbra ─────────────────────────────────────────────────────────
 
     IntegrationValue<IReadOnlyList<ExternalItem>> GetCollections();
@@ -113,6 +119,18 @@ public interface IIntegrationRuntimePort
     /// <summary>Releases Poser's own lock only. Never touches another
     /// plugin's lock.</summary>
     IntegrationPortResult UnlockGlamourerState(ActorId actor);
+
+    /// <summary>
+    /// Releases a locked MCDF state from a character that no longer
+    /// resolves — the GPose clone is destroyed on the exit edge, but
+    /// Glamourer's state belongs to the character's identity and outlives
+    /// it. Addresses Glamourer BY NAME with Poser's own key: releases the
+    /// lock and reverts the imported equipment/customization, so nothing
+    /// Poser applied survives the exit. Never touches another plugin's
+    /// lock — a foreign key refuses. A character that is not present at
+    /// all is a success: there is no longer anything to release.
+    /// </summary>
+    IntegrationPortResult ReleaseGlamourerStateByName(string name);
 
     /// <summary>Outbound navigation: opens Glamourer's window on the actor.</summary>
     IntegrationPortResult OpenGlamourer(ActorId actor);

@@ -36,7 +36,18 @@
   resets restore exactly that; a failed restore stays owned and retries;
   Reset All, GPose exit, actor removal, and disposal run the same path,
   cleaning Poser-created temporaries by their own ids when the actor is
-  gone. A Glamourer state locked by another plugin and an unreadable
+  gone. The MCDF's LOCKED Glamourer state has no such id — Glamourer
+  scopes it to the character's IDENTITY, so it outlives the GPose clone
+  the exit edge destroys. The import therefore captures the character
+  NAME while the actor still resolves, and a teardown on an unresolvable
+  actor releases the lock and reverts the imported
+  equipment/customization BY NAME with Poser's key (Brio
+  `CharacterHandlerService.RevertMCDF`); a failed release keeps the MCDF
+  owned and retryable, and an absent character is a completed release.
+  Nothing else uses the name. Plugin disposal drains the active
+  transaction and THEN runs this same teardown, so unload cannot leave
+  committed ownership behind either. A Glamourer state locked by another
+  plugin and an unreadable
   foreign temporary Customize+ profile refuse BEFORE mutation and are
   never displaced. While an MCDF owns the actor the selectors disable
   until Reset MCDF ([files-and-transfer.md](files-and-transfer.md)).

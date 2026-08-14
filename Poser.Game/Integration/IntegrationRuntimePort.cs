@@ -43,6 +43,9 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
 
     private const int GlamourerEcSuccess = 0;
     private const int GlamourerEcNothingDone = 1;
+    /// <summary>No actor of that name is present. For a by-name release
+    /// that is a completed release, not a failure.</summary>
+    private const int GlamourerEcActorNotFound = 2;
     private const int GlamourerEcInvalidKey = 6;
 
     private const int PenumbraEcSuccess = 0;
@@ -59,6 +62,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly IActorManager _actors;
+    private readonly IObjectTable _objects;
 
     // Penumbra
     private readonly ICallGateSubscriber<(int Breaking, int Features)> _penumbraVersion;
@@ -81,6 +85,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
     private readonly ICallGateSubscriber<int, uint, (int, string?)> _getStateBase64;
     private readonly ICallGateSubscriber<object, int, uint, ulong, int> _applyState;
     private readonly ICallGateSubscriber<int, uint, int> _unlockState;
+    // By NAME, for the exit edge: the GPose clone is destroyed there, but
+    // Glamourer's locked state belongs to the character's identity and
+    // outlives the object index. Brio releases the same way
+    // (Brio/IPC/GlamourerService.cs UnlockAndRevertCharacterByName).
+    private readonly ICallGateSubscriber<string, uint, int> _unlockStateName;
+    private readonly ICallGateSubscriber<string, uint, ulong, int> _revertStateName;
     private readonly ICallGateSubscriber<int, object?> _openActorIndex;
 
     // Customize+
@@ -102,12 +112,14 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         IDalamudPluginInterface pluginInterface,
         IFramework framework,
         StableBindingRegistry bindings,
-        IActorManager actors)
+        IActorManager actors,
+        IObjectTable objects)
     {
         _pluginInterface = pluginInterface;
         _framework = framework;
         _bindings = bindings;
         _actors = actors;
+        _objects = objects;
 
         _penumbraVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         _getCollections = pluginInterface.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
@@ -128,6 +140,8 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         _getStateBase64 = pluginInterface.GetIpcSubscriber<int, uint, (int, string?)>("Glamourer.GetStateBase64");
         _applyState = pluginInterface.GetIpcSubscriber<object, int, uint, ulong, int>("Glamourer.ApplyState");
         _unlockState = pluginInterface.GetIpcSubscriber<int, uint, int>("Glamourer.UnlockState");
+        _unlockStateName = pluginInterface.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
+        _revertStateName = pluginInterface.GetIpcSubscriber<string, uint, ulong, int>("Glamourer.RevertStateName");
         _openActorIndex = pluginInterface.GetIpcSubscriber<int, object?>("Glamourer.OpenActorIndex");
 
         _customizeVersion = pluginInterface.GetIpcSubscriber<(int, int)>("CustomizePlus.General.GetApiVersion");
@@ -231,6 +245,17 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
             return false;
         var resolved = _bindings.Resolve(actor);
         return resolved.Success && resolved.Value is { } legacy && legacy.Address != nint.Zero;
+    }
+
+    public IntegrationValue<string> GetActorName(ActorId actor)
+    {
+        int index = ResolveIndex(actor, out var detail);
+        if (index < 0)
+            return IntegrationValue<string>.Fail(detail!);
+        string name = _objects[index]?.Name.TextValue ?? string.Empty;
+        return name.Length == 0
+            ? IntegrationValue<string>.Fail("The actor has no readable name.")
+            : IntegrationValue<string>.Ok(name);
     }
 
     private int ResolveIndex(ActorId actor, out string? detail)
@@ -534,6 +559,34 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
             return ec is GlamourerEcSuccess or GlamourerEcNothingDone
                 ? IntegrationPortResult.Ok()
                 : GlamourerResult(ec, "releasing Poser's lock");
+        });
+
+    public IntegrationPortResult ReleaseGlamourerStateByName(string name) =>
+        Guarded(Glamourer, "Release state by name", () =>
+        {
+            if (!_framework.IsInFrameworkUpdateThread)
+                return IntegrationPortResult.Fail(
+                    "External integration calls must run on the framework thread.");
+            if (string.IsNullOrEmpty(name))
+                return IntegrationPortResult.Fail(
+                    "No character name was captured for this import, so its locked Glamourer state cannot be released by name.");
+            // Unlock FIRST — Poser's key is the only thing that may release
+            // this state, and a foreign lock refuses with InvalidKey rather
+            // than being stolen. Then revert what the import applied. An
+            // absent character has nothing left to release, which is a
+            // completed release, not a retryable failure.
+            int unlocked = _unlockStateName.InvokeFunc(name, LockKey);
+            if (unlocked is not (GlamourerEcSuccess or GlamourerEcNothingDone
+                or GlamourerEcActorNotFound))
+                return GlamourerResult(unlocked, "releasing Poser's lock by name");
+            if (unlocked == GlamourerEcActorNotFound)
+                return IntegrationPortResult.Ok();
+            int reverted = _revertStateName.InvokeFunc(
+                name, LockKey, ApplyEquipment | ApplyCustomization);
+            return reverted is GlamourerEcSuccess or GlamourerEcNothingDone
+                or GlamourerEcActorNotFound
+                ? IntegrationPortResult.Ok()
+                : GlamourerResult(reverted, "reverting the imported state by name");
         });
 
     public IntegrationPortResult OpenGlamourer(ActorId actor)

@@ -392,6 +392,70 @@ public sealed class McdfTransactionContractTests
         Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
     }
 
+    // ── Exit: the locked state outlives the actor ────────────────────────
+
+    [Fact]
+    public async Task Import_records_the_actor_name_for_a_post_mortem_release()
+    {
+        using var app = new Harness();
+        app.Port.ActorName = "Aymeric Borel";
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+
+        Assert.Equal("Aymeric Borel", app.Session.OverridesFor(app.Actor).Mcdf!.ActorName);
+    }
+
+    [Fact]
+    public async Task Exit_teardown_releases_the_locked_state_by_name_when_the_actor_is_gone()
+    {
+        using var app = new Harness();
+        app.Port.ActorName = "Aymeric Borel";
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+        Assert.True(app.Session.OverridesFor(app.Actor).Mcdf!.GlamourerLocked);
+
+        // Exactly the GPose exit shape: the clone is destroyed, so the
+        // exact generation stops resolving before the teardown runs.
+        app.Port.Resolvable.Remove(app.Actor);
+        int unlocksBefore = app.Port.CallCount("UnlockGlamourerState");
+
+        var reset = app.Session.ResetAll();
+
+        Assert.True(reset.Success, reset.Detail);
+        // The lock is not forgotten: it is released against the character's
+        // identity, which is all that survives the object.
+        Assert.Equal(new[] { "Aymeric Borel" }, app.Port.ReleasedGlamourerNames);
+        // The by-index unlock is unusable here and is not attempted.
+        Assert.Equal(unlocksBefore, app.Port.CallCount("UnlockGlamourerState"));
+        Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
+    }
+
+    [Fact]
+    public async Task A_failed_by_name_release_keeps_the_mcdf_owned_for_retry()
+    {
+        using var app = new Harness();
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+
+        app.Port.Resolvable.Remove(app.Actor);
+        app.Port.FailReleaseGlamourerByName = "Glamourer is not responding.";
+
+        var reset = app.Session.ResetAll();
+
+        Assert.False(reset.Success);
+        Assert.Contains("Glamourer is not responding.", reset.Detail);
+        var owned = app.Session.OverridesFor(app.Actor).Mcdf;
+        Assert.NotNull(owned);
+        Assert.True(owned!.GlamourerLocked);
+        Assert.Equal("Imported Character", owned.ActorName);
+
+        // The retry succeeds and clears the ownership.
+        app.Port.FailReleaseGlamourerByName = null;
+        var retried = app.Session.ResetMcdf(app.Actor);
+        Assert.True(retried.Success, retried.Detail);
+        Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
+    }
+
     [Fact]
     public async Task Reimport_tears_down_the_prior_transaction_and_releases_its_directory_after_the_barrier()
     {
@@ -484,5 +548,26 @@ public sealed class McdfTransactionContractTests
         Assert.Equal(OperationReceiptState.Cancelled, app.Session.McdfReceipt!.State);
         Assert.False(app.Session.BeginImport(app.Actor, @"X:\in\b.mcdf").Success);
         Assert.False(app.Session.BeginExport(app.Actor, @"X:\out\c.mcdf", "d").Success);
+    }
+
+    [Fact]
+    public async Task Dispose_drains_and_then_tears_down_committed_ownership()
+    {
+        var app = new Harness();
+        app.Files.PackageHasBody = true;
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+        Assert.NotNull(app.Session.OverridesFor(app.Actor).Mcdf);
+
+        // Unload after leaving GPose: the clone is already gone, so every
+        // owned piece must release by its own id or by name.
+        app.Port.Resolvable.Remove(app.Actor);
+        app.Session.Dispose();
+
+        Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
+        Assert.Equal(app.Port.CreatedCollections, app.Port.DeletedCollections);
+        Assert.Equal(app.Port.AppliedProfiles, app.Port.DeletedProfiles);
+        Assert.Equal(new[] { "Imported Character" }, app.Port.ReleasedGlamourerNames);
+        Assert.Equal(app.Files.CreatedDirectories, app.Files.DeletedDirectories);
     }
 }

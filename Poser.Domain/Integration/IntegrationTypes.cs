@@ -85,7 +85,13 @@ public sealed record IntegrationBaseline
 /// temporary collection is null for a package with no embedded resources;
 /// the operation directory is null once its extracted payloads are
 /// actually gone — it outlives the import because the live temporary
-/// collection references the files.</summary>
+/// collection references the files.
+///
+/// <see cref="ActorName"/> is the character name read while the exact
+/// generation still resolved. Every other owned piece releases by its own
+/// id after the actor is gone, but a LOCKED Glamourer state has no id — it
+/// belongs to the character's identity — so the name is the only handle a
+/// teardown that runs after the GPose clone is destroyed can use.</summary>
 public sealed record McdfOwnership(
     string FileName,
     Guid? TemporaryCollection,
@@ -95,7 +101,8 @@ public sealed record McdfOwnership(
     string? AppliedProfileJson,
     bool RedrawPending = false,
     string? PendingGlamourerRecovery = null,
-    string? PendingBodyRecoveryJson = null);
+    string? PendingBodyRecoveryJson = null,
+    string? ActorName = null);
 
 /// <summary>
 /// Poser-owned external state for one exact actor generation. Ownership is

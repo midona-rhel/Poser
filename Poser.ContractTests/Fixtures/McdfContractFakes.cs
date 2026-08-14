@@ -29,7 +29,12 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     public List<Guid> AppliedProfiles { get; } = new();
     public List<Guid> DeletedProfiles { get; } = new();
     public List<string> RestoredGlamourerStates { get; } = new();
+    public List<string> ReleasedGlamourerNames { get; } = new();
     public List<ActorId> RedrawWaitActors { get; } = new();
+
+    /// <summary>What <see cref="GetActorName"/> answers for a resolvable
+    /// actor; an unresolvable one fails, as the real port does.</summary>
+    public string ActorName { get; set; } = "Imported Character";
 
     /// <summary>Pre-queued RedrawAndWait completions; when empty the call
     /// completes immediately with <see cref="DefaultRedrawResult"/>.</summary>
@@ -40,6 +45,7 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     public string? FailAddTemporaryMods { get; set; }
     public string? FailDeleteTemporaryCollection { get; set; }
     public string? FailUnlockGlamourer { get; set; }
+    public string? FailReleaseGlamourerByName { get; set; }
 
     public IntegrationAvailability Penumbra { get; set; } = new(true, "Penumbra is available.");
     public IntegrationAvailability Glamourer { get; set; } = new(true, "Glamourer is available.");
@@ -82,6 +88,14 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     {
         lock (_gate)
             return Resolvable.Contains(actor);
+    }
+
+    public IntegrationValue<string> GetActorName(ActorId actor)
+    {
+        Log("GetActorName");
+        return IsResolvable(actor)
+            ? IntegrationValue<string>.Ok(ActorName)
+            : IntegrationValue<string>.Fail("The actor is no longer available.");
     }
 
     public IntegrationValue<IReadOnlyList<ExternalItem>> GetCollections() =>
@@ -212,6 +226,16 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     {
         Log("UnlockGlamourerState");
         return FailUnlockGlamourer is { } failure
+            ? IntegrationPortResult.Fail(failure)
+            : IntegrationPortResult.Ok();
+    }
+
+    public IntegrationPortResult ReleaseGlamourerStateByName(string name)
+    {
+        lock (_gate)
+            ReleasedGlamourerNames.Add(name);
+        Log("ReleaseGlamourerStateByName");
+        return FailReleaseGlamourerByName is { } failure
             ? IntegrationPortResult.Fail(failure)
             : IntegrationPortResult.Ok();
     }
