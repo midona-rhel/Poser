@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -118,6 +119,16 @@ public static class SceneFileValidation
                 return failure;
         }
 
+        // Gaze references another ACTOR, so it can only be checked once every
+        // actor key is known — a forward reference is as valid as a backward
+        // one.
+        foreach (var actor in scene.Actors)
+        {
+            if (actor!.Gaze is { } gaze &&
+                ValidateGaze(gaze, actorKeys, $"Actor '{actor.Name}' gaze") is { } failure)
+                return failure;
+        }
+
         var keys = new HashSet<Guid>();
         foreach (var prop in scene.Props)
         {
@@ -204,6 +215,76 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' pose: {pose.Failure!.Detail}");
 
+        if (actor.ModelTransform is { } placement &&
+            ValidateTransform(placement, $"Actor '{actor.Name}' placement")
+                is { } placementFailure)
+            return placementFailure;
+
+        if (actor.Animation is { } animation &&
+            ValidateAnimation(animation, $"Actor '{actor.Name}' animation")
+                is { } animationFailure)
+            return animationFailure;
+
+        return null;
+    }
+
+    private static SceneFileValidationOutcome? ValidateAnimation(
+        SceneActorAnimation animation, string label)
+    {
+        if (!float.IsFinite(animation.Speed) || animation.Speed < 0)
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"{label} speed {animation.Speed} is invalid.");
+        if (!Enum.IsDefined(animation.Stance))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"{label} names an unknown stance.");
+        if (animation.Pose < 0)
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"{label} has a negative pose index.");
+        if (animation.Slots is null)
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"{label} slot list is missing.");
+
+        var slots = new HashSet<AnimationSlot>();
+        foreach (var slot in animation.Slots)
+        {
+            if (slot is null)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} contains a null slot entry.");
+            if (!Enum.IsDefined(slot.Slot))
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} names an unknown slot.");
+            if (!slots.Add(slot.Slot))
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} states slot {slot.Slot} twice.");
+            if (slot.Speed is { } speed && (!float.IsFinite(speed) || speed < 0))
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} slot {slot.Slot} speed {speed} is invalid.");
+        }
+        return null;
+    }
+
+    private static SceneFileValidationOutcome? ValidateGaze(
+        SceneActorGaze gaze, HashSet<Guid> actorKeys, string label)
+    {
+        if (!Enum.IsDefined(gaze.Mode))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"{label} names an unknown mode.");
+        if ((gaze.Parts & ~GazeTargetType.All) != 0 ||
+            (gaze.LockedParts & ~GazeTargetType.All) != 0)
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"{label} names an unknown part.");
+        if (!IsFinite(gaze.Position) || !IsFinite(gaze.EyesPosition) ||
+            !IsFinite(gaze.HeadPosition) || !IsFinite(gaze.BodyPosition))
+            return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                $"{label} contains NaN or infinity.");
+        if (gaze.TargetActorKey is { } target && !actorKeys.Contains(target))
+            return Fail(SceneFileValidationFailureKind.Relationship,
+                $"{label} follows missing actor {target:N}.");
+        // A target belongs to Entity mode alone; any other mode carrying one
+        // would restore a follow the file does not describe.
+        if (gaze.TargetActorKey is not null && gaze.Mode != GazeTargetMode.Entity)
+            return Fail(SceneFileValidationFailureKind.Relationship,
+                $"{label} carries a target actor outside Entity mode.");
         return null;
     }
 

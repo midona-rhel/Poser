@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -228,6 +229,232 @@ public sealed class SceneFileStoreTests
         Assert.Equal(scene.SceneId, read.Scene.SceneId);
         Assert.Equal("Lead", Assert.Single(read.Scene.Actors).Name);
         Assert.Equal(720, read.Scene.Environment!.MinuteOfDay);
+    }
+
+    /// <summary>
+    /// Everything the scene layer states about an actor BESIDE its pose: where
+    /// it stands, what it is playing, and where it is looking. Each is a
+    /// separate member with its own absent state, so each has to survive a
+    /// write/read on its own terms.
+    /// </summary>
+    [Fact]
+    public void Placement_animation_and_gaze_round_trip()
+    {
+        using var file = new TempSceneFile();
+        var scene = ValidScene();
+        var actor = scene.Actors[0];
+        actor.ModelTransform = new LightFile.TransformData
+        {
+            Position = new Vector3(12.5f, 1.25f, -30.75f),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.1f),
+            Scale = new Vector3(1.5f, 1.5f, 1.5f),
+        };
+        actor.Animation = new SceneActorAnimation
+        {
+            BaseTimeline = 640,
+            Speed = 0f,
+            Lips = 0x272,
+            WeaponDrawn = true,
+            Stance = AnimationStance.SitGround,
+            Pose = 2,
+            HeldExpression = 611,
+            PositionLock = true,
+            Slots =
+            {
+                new SceneAnimationSlot
+                {
+                    Slot = AnimationSlot.Facial,
+                    Speed = 0f,
+                },
+                new SceneAnimationSlot
+                {
+                    Slot = AnimationSlot.UpperBody,
+                    Loop = 87,
+                },
+            },
+        };
+        actor.Gaze = new SceneActorGaze
+        {
+            Mode = GazeTargetMode.Position,
+            Parts = GazeTargetType.Head | GazeTargetType.Eyes,
+            Position = new Vector3(1, 2, 3),
+            EyesPosition = new Vector3(4, 5, 6),
+            HeadPosition = new Vector3(7, 8, 9),
+            BodyPosition = new Vector3(10, 11, 12),
+            LockedParts = GazeTargetType.Eyes,
+        };
+
+        Assert.True(Store().Write(scene, file.Path).Succeeded);
+        var read = Store().Read(file.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var loaded = Assert.Single(read.Scene!.Actors);
+
+        Assert.Equal(
+            new Vector3(12.5f, 1.25f, -30.75f), loaded.ModelTransform!.Position);
+        Assert.Equal(
+            new Vector3(1.5f, 1.5f, 1.5f), loaded.ModelTransform.Scale);
+        Assert.Equal(
+            actor.ModelTransform.Rotation, loaded.ModelTransform.Rotation);
+
+        var animation = loaded.Animation!;
+        Assert.Equal((ushort)640, animation.BaseTimeline);
+        // Zero speed IS the pause state; it must not be mistaken for unset.
+        Assert.Equal(0f, animation.Speed);
+        Assert.Equal((ushort)0x272, animation.Lips);
+        Assert.True(animation.WeaponDrawn);
+        Assert.Equal(AnimationStance.SitGround, animation.Stance);
+        Assert.Equal(2, animation.Pose);
+        Assert.Equal((ushort)611, animation.HeldExpression);
+        Assert.True(animation.PositionLock);
+        Assert.Equal(2, animation.Slots.Count);
+        Assert.Equal(AnimationSlot.Facial, animation.Slots[0].Slot);
+        Assert.Equal(0f, animation.Slots[0].Speed);
+        Assert.Equal((ushort)0, animation.Slots[0].Loop);
+        Assert.Equal(AnimationSlot.UpperBody, animation.Slots[1].Slot);
+        Assert.Null(animation.Slots[1].Speed);
+        Assert.Equal((ushort)87, animation.Slots[1].Loop);
+
+        var gaze = loaded.Gaze!;
+        Assert.Equal(GazeTargetMode.Position, gaze.Mode);
+        Assert.Equal(GazeTargetType.Head | GazeTargetType.Eyes, gaze.Parts);
+        Assert.Null(gaze.TargetActorKey);
+        Assert.Equal(new Vector3(1, 2, 3), gaze.Position);
+        Assert.Equal(new Vector3(4, 5, 6), gaze.EyesPosition);
+        Assert.Equal(new Vector3(7, 8, 9), gaze.HeadPosition);
+        Assert.Equal(new Vector3(10, 11, 12), gaze.BodyPosition);
+        Assert.Equal(GazeTargetType.Eyes, gaze.LockedParts);
+    }
+
+    /// <summary>An Entity gaze is a RELATIONSHIP: it survives as the followed
+    /// actor's in-document key, which is the only identity a restored scene
+    /// can resolve.</summary>
+    [Fact]
+    public void An_entity_gaze_target_round_trips_as_the_actor_key()
+    {
+        using var file = new TempSceneFile();
+        var scene = ValidScene();
+        var other = new SceneActor
+        {
+            Key = Guid.NewGuid(),
+            Name = "Second",
+            Pose = new PoseFile(),
+        };
+        scene.Actors.Add(other);
+        scene.Actors[0].Gaze = new SceneActorGaze
+        {
+            Mode = GazeTargetMode.Entity,
+            Parts = GazeTargetType.All,
+            TargetActorKey = other.Key,
+        };
+
+        Assert.True(Store().Write(scene, file.Path).Succeeded);
+        var read = Store().Read(file.Path);
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(other.Key, read.Scene!.Actors[0].Gaze!.TargetActorKey);
+    }
+
+    /// <summary>The preservation guarantee for the three new members, stated
+    /// the same way the place members state theirs: a scene that records none
+    /// of them does not carry them as nulls, it does not carry them at all,
+    /// and it loads exactly as it always did.</summary>
+    [Fact]
+    public void A_scene_recording_no_placement_animation_or_gaze_omits_them()
+    {
+        var scene = ValidScene();
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
+
+        Assert.DoesNotContain("ModelTransform", json);
+        Assert.DoesNotContain("\"Animation\"", json);
+        Assert.DoesNotContain("\"Gaze\"", json);
+
+        var read = Store().Parse(json);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var loaded = Assert.Single(read.Scene!.Actors);
+        Assert.Null(loaded.ModelTransform);
+        Assert.Null(loaded.Animation);
+        Assert.Null(loaded.Gaze);
+    }
+
+    [Fact]
+    public void A_gaze_following_a_missing_actor_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Gaze = new SceneActorGaze
+        {
+            Mode = GazeTargetMode.Entity,
+            TargetActorKey = Guid.NewGuid(),
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
+    }
+
+    [Fact]
+    public void A_gaze_target_outside_entity_mode_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Gaze = new SceneActorGaze
+        {
+            Mode = GazeTargetMode.Position,
+            TargetActorKey = scene.Actors[0].Key,
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
+    }
+
+    [Fact]
+    public void A_negative_animation_speed_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneActorAnimation { Speed = -1f };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Range);
+    }
+
+    [Fact]
+    public void A_slot_stated_twice_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneActorAnimation
+        {
+            Slots =
+            {
+                new SceneAnimationSlot { Slot = AnimationSlot.Facial, Speed = 0f },
+                new SceneAnimationSlot { Slot = AnimationSlot.Facial, Loop = 3 },
+            },
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
+    }
+
+    [Fact]
+    public void A_degenerate_placement_rotation_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].ModelTransform = new LightFile.TransformData
+        {
+            Position = Vector3.Zero,
+            Rotation = new Quaternion(0, 0, 0, 0),
+            Scale = Vector3.One,
+        };
+
+        AssertValidationFailure(
+            scene, SceneFileValidationFailureKind.DegenerateQuaternion);
+    }
+
+    [Fact]
+    public void A_non_finite_gaze_position_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Gaze = new SceneActorGaze
+        {
+            Mode = GazeTargetMode.Position,
+            Position = new Vector3(float.NaN, 0, 0),
+        };
+
+        AssertValidationFailure(
+            scene, SceneFileValidationFailureKind.NonFiniteNumeric);
     }
 
     [Fact]

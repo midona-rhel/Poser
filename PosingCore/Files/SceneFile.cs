@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Services;
@@ -107,10 +108,10 @@ public static class SceneFileLimits
 
 /// <summary>
 /// One saved actor: its stable in-document key, respawn facts, companion
-/// attachment, and the complete embedded pose document (which carries the
-/// actor's model transform in its ModelAbsoluteValues/Position fields).
-/// Appearance beyond the Model ID stays with its external owners
-/// (Glamourer/MCDF) and is deliberately not scene data.
+/// attachment, where it stands, what it is playing, where it is looking, and
+/// the complete embedded pose document. Appearance beyond the Model ID stays
+/// with its external owners (Glamourer/MCDF) and is deliberately not scene
+/// data.
 /// </summary>
 [Serializable]
 public class SceneActor
@@ -144,6 +145,125 @@ public class SceneActor
     /// ordinary pose codec rules. Required — a scene actor without a pose is
     /// not a saved scene.</summary>
     public PoseFile? Pose { get; set; }
+
+    /// <summary>
+    /// Where the actor STANDS: the absolute world transform of its draw
+    /// object, stated by the scene layer in its own right.
+    ///
+    /// <para>The embedded pose carries a model transform too, but only as the
+    /// pose codec's <c>ModelAbsoluteValues</c>, whose "nothing was recorded"
+    /// marker is <c>BoneData.Identity</c> — zero position, identity rotation,
+    /// ZERO scale. An actor genuinely standing at the world origin unrotated
+    /// is therefore indistinguishable from an unrecorded one, and the restore
+    /// silently placed nothing. ABSENT here is the only statement of "this
+    /// file records no placement", so present always means place it.</para>
+    ///
+    /// <para>Omitted when unset, so a scene written before placements were
+    /// stated reads back byte-identical and falls back to the embedded pose's
+    /// absolute values exactly as it always did.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public LightFile.TransformData? ModelTransform { get; set; }
+
+    /// <summary>What the actor is PLAYING. Absent when nothing about the
+    /// actor's animation was worth recording — no Poser-owned override and a
+    /// plain idle at ordinary speed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public SceneActorAnimation? Animation { get; set; }
+
+    /// <summary>Where the actor is LOOKING. Absent when no gaze override is
+    /// configured, which is the ordinary case.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public SceneActorGaze? Gaze { get; set; }
+}
+
+/// <summary>
+/// One actor's animation state. Every member here has an APPLY route in
+/// <c>AnimationSession</c> — a scene never records animation facts it cannot
+/// put back. Base timeline, speed, lips, stance/pose and weapon are the LIVE
+/// reading (what the actor is doing); the held expression, the per-slot speeds
+/// and the armed loops are Poser-owned overrides, which have no live field to
+/// read and exist only in the session.
+/// </summary>
+[Serializable]
+public class SceneActorAnimation
+{
+    /// <summary>The base slot's timeline; 0 means the actor was on whatever
+    /// the game gives it and nothing is replayed.</summary>
+    public ushort BaseTimeline { get; set; }
+
+    /// <summary>Overall playback speed. 0 IS the pause state — a paused actor
+    /// is one whose speed override is zero, which is the only pause either
+    /// reference has.</summary>
+    public float Speed { get; set; } = 1f;
+
+    /// <summary>Speech timeline override; 0 means none.</summary>
+    public ushort Lips { get; set; }
+
+    public bool WeaponDrawn { get; set; }
+    public AnimationStance Stance { get; set; } = AnimationStance.Idle;
+    public int Pose { get; set; }
+
+    /// <summary>The expression pinned onto the facial layer; 0 means none.
+    /// Restored through the same hold mechanism that authored it, so the
+    /// facial pin comes back with it rather than as a bare slot speed.
+    /// </summary>
+    public ushort HeldExpression { get; set; }
+
+    public bool PositionLock { get; set; }
+
+    /// <summary>Per-slot overrides, one entry per slot Poser owns something
+    /// on. A list rather than a keyed map: the wire shape then matches
+    /// <see cref="SceneEnvironment.HeldSections"/> and never depends on how a
+    /// serializer chooses to spell an enum used as a dictionary key.</summary>
+    public List<SceneAnimationSlot> Slots { get; set; } = new();
+}
+
+/// <summary>One animation slot's owned state: its pinned speed, its armed
+/// loop, or both.</summary>
+[Serializable]
+public class SceneAnimationSlot
+{
+    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
+
+    /// <summary>The pinned playback speed; absent when Poser owns no speed on
+    /// this slot.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public float? Speed { get; set; }
+
+    /// <summary>The armed loop's timeline; 0 means no loop.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public ushort Loop { get; set; }
+}
+
+/// <summary>
+/// One actor's gaze configuration. The Entity target is stated as the
+/// in-document ACTOR KEY, never the native GameObjectId it is keyed by at
+/// runtime: every actor in a restored scene is freshly spawned, so a saved
+/// object id names nothing. A gaze that followed an actor the capture did not
+/// take records no target at all.
+/// </summary>
+[Serializable]
+public class SceneActorGaze
+{
+    public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
+
+    /// <summary>Which parts participate.</summary>
+    public GazeTargetType Parts { get; set; } = GazeTargetType.All;
+
+    /// <summary>The followed actor's in-document key; null when the gaze
+    /// follows no actor.</summary>
+    public Guid? TargetActorKey { get; set; }
+
+    /// <summary>The shared Position-mode anchor.</summary>
+    public Vector3 Position { get; set; }
+
+    public Vector3 EyesPosition { get; set; }
+    public Vector3 HeadPosition { get; set; }
+    public Vector3 BodyPosition { get; set; }
+
+    /// <summary>The parts frozen at their own target.</summary>
+    public GazeTargetType LockedParts { get; set; } = GazeTargetType.None;
 }
 
 /// <summary>One spawned prop: the weapon-model triple that respawns it and
