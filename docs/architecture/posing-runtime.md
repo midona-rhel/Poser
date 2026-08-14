@@ -25,10 +25,15 @@ returns and the only number `GetObjectByIndex`, `GetIndexByObject`, and
 `DeleteObjectByIndex` accept; it is the sole index used for identity, deletion,
 destruction stamps, and naming. `GameObject.ObjectIndex` is the global
 object-table number — a client object's is its slot plus 200, which is why the
-GPose range starts at 200 — and it is read in exactly one place, the
-ClientObjectManager seam that reports it. Feeding an object-table index back
-into a slot-taking call deletes a foreign object; the seam keeps both numbers
-visible so a test ClientObjectManager reproduces the difference.
+GPose range starts at 200. Within the spawn-ownership path it is read in exactly
+one place, the ClientObjectManager seam that reports it: feeding an object-table
+index back into a slot-taking call deletes a foreign object, and the seam keeps
+both numbers visible so a test ClientObjectManager reproduces the difference.
+Elsewhere the object-table index is the correct number and those readers stand
+as they are — the GPose 201–439 write gates, world-actor discovery, the preview
+slot, and the parent index handed to Penumbra and Glamourer
+(`IntegrationRuntimePort.IndexOf`) all address the object table, not the
+manager.
 
 Spawned actors follow the same boundary: the service owns one private record
 per operation, keyed by a service token plus the exact slot, address,

@@ -568,6 +568,45 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
+    public void A_record_never_adopts_a_descriptor_indexed_in_the_other_space()
+    {
+        // The tripwire behind the live failure: slot 8's occupant carries
+        // object-table index 208, and a record created for slot 8 must not
+        // adopt that descriptor however plausible the rest of it looks.
+        var record = new SpawnOwnershipLedger().AddPending(8, null, false, 0);
+
+        Assert.False(record.TryResolve(new(208, (nint)0x808, 88)));
+        Assert.Null(record.Descriptor);
+        Assert.Equal(SpawnOwnershipState.PendingCreate, record.State);
+        Assert.Throws<InvalidOperationException>(
+            () => record.Resolve(new(208, (nint)0x808, 88)));
+
+        Assert.True(record.TryResolve(new(8, (nint)0x808, 88)));
+        Assert.Equal(SpawnOwnershipState.Live, record.State);
+    }
+
+    [Fact]
+    public void Spawn_names_the_clone_from_its_slot_including_slot_zero()
+    {
+        string? name = null;
+        var actor = Actor(0x800);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0, actor.Address, 80));
+        using var service = NewService(native, manager, (_, _, _, given) => name = given);
+
+        // Slot 0 is a slot the game can hand back now that it picks the slot,
+        // and it is the one with no word.
+        Assert.Same(actor, service.SpawnNewActor(reserveCompanionSlot: false));
+        Assert.Equal("Poser 0", name);
+
+        var third = Actor(0x803);
+        native.Current = new(3, third.Address, 83);
+        manager.Actors = [third];
+        Assert.Same(third, service.SpawnNewActor(reserveCompanionSlot: false));
+        Assert.Equal("Poser Three", name);
+    }
+
+    [Fact]
     public void Source_guard_keeps_the_native_index_spaces_apart_at_their_only_seam()
     {
         // Stopgap for what the type system cannot state: the fake reproduces
