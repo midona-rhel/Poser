@@ -71,12 +71,11 @@ public sealed class UIManager : IUIManager
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested += OpenPoseLibrary;
-        _configService.OnConfigurationChanged += ApplyConfiguredTheme;
+        _configService.OnConfigurationChanged += ApplyConfiguration;
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
-        _pluginInterface.UiBuilder.DisableGposeUiHide = true;
-        _pluginInterface.UiBuilder.DisableCutsceneUiHide = true;
+        ApplyUiHidePolicy();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
     }
@@ -355,10 +354,32 @@ public sealed class UIManager : IUIManager
         _windows.Main.ShowLibrary();
     }
 
-    private void ApplyConfiguredTheme() =>
+    private void ApplyConfiguration()
+    {
         ThemeSelection.Apply(
             _configService.Config.UI.Theme,
             _configService.Config.UI.AccentIndex);
+        ApplyUiHidePolicy();
+    }
+
+    /// <summary>
+    /// The four Dalamud hide flags Poser gets a say in, restated from config
+    /// whenever it changes. Dalamud states them as DISABLE-the-hide, so each
+    /// one is the negation of the setting the user reads: "Show in GPose" ON
+    /// means the GPose hide is disabled. The automatic hide (cutscene, duty)
+    /// and the user's own Scroll Lock hide are one decision here — a
+    /// photographer hiding the HUD wants the same answer either way, and
+    /// splitting them would be two rows nobody could tell apart.
+    /// </summary>
+    private void ApplyUiHidePolicy()
+    {
+        var ui = _configService.Config.UI;
+        var builder = _pluginInterface.UiBuilder;
+        builder.DisableGposeUiHide = ui.ShowInGPose;
+        builder.DisableCutsceneUiHide = ui.ShowInCutscene;
+        builder.DisableAutomaticUiHide = ui.ShowWhenGameUiHidden;
+        builder.DisableUserUiHide = ui.ShowWhenGameUiHidden;
+    }
 
     public void Dispose()
     {
@@ -367,7 +388,7 @@ public sealed class UIManager : IUIManager
         _windows.Main.OnSettingsRequested -= ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested -= OpenSpawnBrowserAt;
         _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
-        _configService.OnConfigurationChanged -= ApplyConfiguredTheme;
+        _configService.OnConfigurationChanged -= ApplyConfiguration;
 
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;

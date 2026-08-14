@@ -131,6 +131,9 @@ public class SettingsWindow : Window
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
+            ShowInGPose = c.UI.ShowInGPose,
+            ShowInCutscene = c.UI.ShowInCutscene,
+            ShowWhenGameUiHidden = c.UI.ShowWhenGameUiHidden,
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
@@ -283,6 +286,9 @@ public class SettingsWindow : Window
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
+        c.UI.ShowInGPose = _vm.ShowInGPose;
+        c.UI.ShowInCutscene = _vm.ShowInCutscene;
+        c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
 
         // Replaced whole, never merged: an action dropped from the registry
         // has no row to clear it from, and a stale entry would keep firing.

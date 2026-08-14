@@ -100,6 +100,13 @@ public sealed class SettingsViewModel
     public bool DetachedShell;
     public bool TreeGuides = true;
 
+    /// <summary>The three Dalamud UI-hide answers. Mirrors
+    /// <c>UIConfiguration</c>'s defaults: the two Poser used to force stay on,
+    /// the new one starts where Poser's behaviour already was.</summary>
+    public bool ShowInGPose = true;
+    public bool ShowInCutscene = true;
+    public bool ShowWhenGameUiHidden;
+
     /// <summary>The EXTRA scanned folders. The Poser homes are edited on their
     /// own rows and are deliberately absent from this list, so each of the four
     /// paths has exactly ONE place it can be changed.</summary>
@@ -755,6 +762,27 @@ public static class SettingsView
                 vm.TreeGuides,
                 next => vm.TreeGuides = next,
                 "Show hierarchy connector lines"));
+        // The three hide decisions the game makes for every plugin. Poser
+        // forced the first two on before they were a choice, so those are the
+        // defaults; the third is new and starts off, which is what Poser did.
+        page.Section("VISIBILITY", form =>
+        {
+            form.Switch(
+                "Show in GPose",
+                vm.ShowInGPose,
+                next => vm.ShowInGPose = next,
+                "Keep Poser on screen while GPose hides the game's UI");
+            form.Switch(
+                "Show in cutscenes",
+                vm.ShowInCutscene,
+                next => vm.ShowInCutscene = next,
+                "Keep Poser on screen during cutscenes");
+            form.Switch(
+                "Show when the game UI is hidden",
+                vm.ShowWhenGameUiHidden,
+                next => vm.ShowWhenGameUiHidden = next,
+                "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
+        });
     }
 
     private static readonly string[] PresetLabels =

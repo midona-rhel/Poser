@@ -28,6 +28,25 @@ public class UIConfiguration
     public bool DetachedShell { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
+
+    /// <summary>
+    /// Keep Poser's windows up while GPose has the game's own UI hidden.
+    /// Defaults ON because that is what the shell forced before the toggle
+    /// existed — a posing tool that vanishes on entering GPose is useless.
+    /// </summary>
+    public bool ShowInGPose { get; set; } = true;
+
+    /// <summary>Keep Poser's windows up during cutscenes. Same history as
+    /// <see cref="ShowInGPose"/>: forced on before it was a choice.</summary>
+    public bool ShowInCutscene { get; set; } = true;
+
+    /// <summary>
+    /// Keep Poser's windows up when the GAME's UI is hidden — the automatic
+    /// hide (a cutscene or a duty starting) and the user's own Scroll Lock
+    /// hide alike. Off is what Poser did before this existed: the photographer
+    /// hides the HUD for the shot and Poser goes with it.
+    /// </summary>
+    public bool ShowWhenGameUiHidden { get; set; }
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by
