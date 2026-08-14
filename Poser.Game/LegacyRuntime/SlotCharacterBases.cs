@@ -48,7 +48,13 @@ public static unsafe class SlotCharacterBases
                 };
                 ref var drawObjectData =
                     ref character->DrawData.Weapon(weaponSlot);
-                return AsCharacterBase(drawObjectData.DrawObject);
+                // DrawData is an INLINE struct at DrawObjectData+0x10 and its
+                // DrawObject sits at +0x08, so this reads the same +0x18 the
+                // obsolete DrawObjectData.DrawObject named: a pure rename, no
+                // behavior change. NOT DrawData.CharacterBase (+0x10) — that is
+                // a different field, and it would skip the GetObjectType()
+                // verification AsCharacterBase performs.
+                return AsCharacterBase(drawObjectData.DrawData.DrawObject);
             }
 
             case PoseSlot.Ornament:
