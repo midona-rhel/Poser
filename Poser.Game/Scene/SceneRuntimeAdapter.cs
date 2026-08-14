@@ -1,12 +1,16 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
+using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
 using Poser.Application.Operations;
+using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Entities;
 using Poser.Files;
+using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Services;
 
@@ -33,6 +37,9 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IEnvironmentService _environment;
+    private readonly StableBindingRegistry _bindings;
+    private readonly AnimationSession _animation;
+    private readonly IGazeService _gaze;
 
     public SceneRuntimeAdapter(
         IFramework framework,
@@ -45,8 +52,14 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         PropSpawnService props,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IEnvironmentService environment)
+        IEnvironmentService environment,
+        StableBindingRegistry bindings,
+        AnimationSession animation,
+        IGazeService gaze)
     {
+        _bindings = bindings;
+        _animation = animation;
+        _gaze = gaze;
         _framework = framework;
         _sessions = sessions;
         _capture = capture;
@@ -126,25 +139,164 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     public string? PlaceActor(object actor, SceneActor data)
     {
-        var absolute = data.Pose!.ModelAbsoluteValues;
-        // BoneData.Identity (zero position, identity rotation, ZERO scale)
-        // is the codec's unset marker — a real capture always carries the
-        // actor's true scale.
-        bool unset = absolute.Position == System.Numerics.Vector3.Zero &&
-            absolute.Rotation == System.Numerics.Quaternion.Identity &&
-            absolute.Scale == System.Numerics.Vector3.Zero;
-        if (unset)
-            return null;
-        if (absolute.Rotation.LengthSquared() <
-            SceneFileLimits.MinQuaternionLengthSquared)
+        // The scene's OWN placement first. The embedded pose's absolute values
+        // remain the fallback for files written before placements were stated,
+        // and only there does the codec's unset marker (BoneData.Identity —
+        // zero position, identity rotation, ZERO scale) have to be guessed at.
+        System.Numerics.Vector3 position;
+        System.Numerics.Quaternion rotation;
+        System.Numerics.Vector3 scale;
+        if (data.ModelTransform is { } stated)
+        {
+            position = stated.Position;
+            rotation = stated.Rotation;
+            scale = stated.Scale;
+        }
+        else
+        {
+            var absolute = data.Pose!.ModelAbsoluteValues;
+            bool unset = absolute.Position == System.Numerics.Vector3.Zero &&
+                absolute.Rotation == System.Numerics.Quaternion.Identity &&
+                absolute.Scale == System.Numerics.Vector3.Zero;
+            if (unset)
+                return null;
+            position = absolute.Position;
+            rotation = absolute.Rotation;
+            scale = absolute.Scale;
+        }
+
+        if (rotation.LengthSquared() < SceneFileLimits.MinQuaternionLengthSquared)
             return "The saved actor placement carries a degenerate rotation.";
 
-        _posing.SetTransformOverride((IActor)actor, new Transform(
-            absolute.Position,
-            System.Numerics.Quaternion.Normalize(absolute.Rotation),
-            absolute.Scale == System.Numerics.Vector3.Zero
+        var placement = new Transform(
+            position,
+            System.Numerics.Quaternion.Normalize(rotation),
+            scale == System.Numerics.Vector3.Zero
                 ? System.Numerics.Vector3.One
-                : absolute.Scale));
+                : scale);
+        var target = (IActor)actor;
+        _posing.SetTransformOverride(target, placement);
+
+        // The override setter REFUSES silently — outside GPose, on an actor
+        // the live set does not yet carry, on a value it cannot sanitize —
+        // and a scene reporting a placement it never made is exactly the
+        // failure the user sees as "it did not restore where they stood".
+        // Ask whether it landed.
+        if (_posing.GetTransformOverride(target) is null)
+            return "The actor's placement was refused by the transform owner.";
+        return null;
+    }
+
+    /// <summary>
+    /// Replays the saved animation in the one order that survives its own
+    /// dependencies: stance and weapon FIRST (a stance transition cancels the
+    /// container's timelines, so anything played before it would be taken
+    /// down), then the base timeline, then the held expression (which pins the
+    /// facial layer itself), then lips, then the explicit slot pins and armed
+    /// loops, then the overall speed LAST — a pause written before the plays
+    /// would be lifted by the very sequencer calls that follow it.
+    /// </summary>
+    public string? ApplyActorAnimation(object actor, SceneActor data)
+    {
+        if (data.Animation is not { } saved)
+            return null;
+        if (_bindings.GetActorId((IActor)actor) is not { } id)
+            return "The actor has no stable identity to own animation state.";
+
+        var failures = new List<string>();
+        void Try(AnimationResult result)
+        {
+            if (!result.Success && result.Detail is { } detail)
+                failures.Add(detail);
+        }
+
+        if (saved.WeaponDrawn)
+            Try(_animation.SetWeaponDrawn(id, true));
+        if (_animation.SupportsStance &&
+            (saved.Stance != AnimationStance.Idle || saved.Pose != 0))
+            Try(_animation.SetStance(id, saved.Stance, saved.Pose));
+
+        if (saved.BaseTimeline != 0)
+            Try(_animation.PlayBase(id, saved.BaseTimeline));
+        if (saved.HeldExpression != 0)
+            Try(_animation.HoldExpression(id, saved.HeldExpression));
+        if (saved.Lips != 0)
+            Try(_animation.SetLips(id, saved.Lips));
+
+        foreach (var slot in saved.Slots)
+        {
+            if (slot.Loop != 0)
+                Try(_animation.SetSlotLoop(id, slot.Slot, slot.Loop, true));
+            // The facial pin belongs to the held expression and is re-applied
+            // by it; re-writing it here would double the ownership.
+            if (slot.Speed is { } speed &&
+                !(slot.Slot == AnimationSlot.Facial && saved.HeldExpression != 0))
+                Try(_animation.SetSlotSpeed(id, slot.Slot, speed));
+        }
+
+        if (saved.PositionLock)
+            Try(_animation.SetPositionLock(id, true));
+        if (saved.Speed != 1f)
+            Try(_animation.SetSpeed(id, saved.Speed));
+
+        return failures.Count == 0 ? null : string.Join("; ", failures);
+    }
+
+    /// <summary>
+    /// Restores the saved gaze in the order the service's own transitions
+    /// require: the mode first (entering a mode with no parts enables all
+    /// three), then the exact participation mask, then the anchor and each
+    /// part's own point, then the locks — a lock freezes a part at the target
+    /// it currently holds, so it must land after that target is written.
+    /// </summary>
+    public string? ApplyActorGaze(object actor, SceneActor data, object? target)
+    {
+        if (data.Gaze is not { } saved || saved.Mode == GazeTargetMode.None)
+            return null;
+        if (!_gaze.IsAvailable)
+            return _gaze.UnavailableDetail ?? "Gaze control is unavailable.";
+
+        var source = (IActor)actor;
+
+        // Entity mode IS its target: SetGazeTarget both chooses the actor and
+        // enters the mode. A saved Entity gaze whose target the file does not
+        // name has nothing to follow, and is refused by name rather than left
+        // pointing at whatever the mode transition would pick.
+        if (saved.Mode == GazeTargetMode.Entity)
+        {
+            if (target is not IActor followed)
+                return "The saved gaze followed an actor the scene does not carry.";
+            var chosen = _gaze.SetGazeTarget(source, followed);
+            if (!chosen.Success)
+                return chosen.Detail ?? "The gaze target was refused.";
+        }
+        else
+        {
+            var mode = _gaze.SetGazeMode(source, saved.Mode);
+            if (!mode.Success)
+                return mode.Detail ?? "The gaze mode was refused.";
+        }
+
+        var parts = _gaze.SetGazeParts(source, saved.Parts);
+        if (!parts.Success)
+            return parts.Detail ?? "The gaze parts were refused.";
+
+        if (saved.Mode == GazeTargetMode.Position)
+        {
+            _gaze.SetGazePosition(source, saved.Position);
+            _gaze.SetPartPosition(source, GazeTargetType.Eyes, saved.EyesPosition);
+            _gaze.SetPartPosition(source, GazeTargetType.Head, saved.HeadPosition);
+            _gaze.SetPartPosition(source, GazeTargetType.Body, saved.BodyPosition);
+        }
+
+        foreach (var part in new[]
+                 {
+                     GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes,
+                 })
+        {
+            if (saved.LockedParts.HasFlag(part))
+                _gaze.SetPartLock(source, part, true);
+        }
         return null;
     }
 

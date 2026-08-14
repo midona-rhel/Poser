@@ -37,6 +37,13 @@ public sealed class SceneWorkflowTests
         public Func<SceneLight, string?>? LightSpawnFailure;
         public Func<SceneActor, string?>? PoseFailure;
         public Func<SceneActor, string?>? CompanionFailure;
+        public Func<SceneActor, string?>? PlacementFailure;
+        public Func<SceneActor, string?>? AnimationFailure;
+        public Func<SceneActor, string?>? GazeFailure;
+
+        /// <summary>The token each actor's gaze was handed, by actor name —
+        /// the assertion surface for Entity-target resolution.</summary>
+        public readonly Dictionary<string, object?> GazeTargets = new();
 
         private void Record(string call)
         {
@@ -109,7 +116,20 @@ public sealed class SceneWorkflowTests
         public string? PlaceActor(object actor, SceneActor data)
         {
             Record($"PlaceActor:{data.Name}");
-            return null;
+            return PlacementFailure?.Invoke(data);
+        }
+
+        public string? ApplyActorAnimation(object actor, SceneActor data)
+        {
+            Record($"ApplyActorAnimation:{data.Name}");
+            return AnimationFailure?.Invoke(data);
+        }
+
+        public string? ApplyActorGaze(object actor, SceneActor data, object? target)
+        {
+            Record($"ApplyActorGaze:{data.Name}");
+            GazeTargets[data.Name] = target;
+            return GazeFailure?.Invoke(data);
         }
 
         public void SetActorVisibility(object actor, bool visible) =>
@@ -364,11 +384,18 @@ public sealed class SceneWorkflowTests
                 "ActorReady",
                 // relationships
                 "AttachCompanion:Lead",
+                // animation BEFORE the pose: the pose is authored on top of
+                // whatever was playing, so a replayed timeline must not land
+                // after it and animate over it
+                "ApplyActorAnimation:Lead",
                 // transforms/pose
                 "ArmPoseImport:Lead",
                 "PlaceActor:Lead",
-                // presentation
+                // presentation — gaze rides here, after the pose, because the
+                // look-at re-drives its channels every frame and its target is
+                // another restored actor
                 "SetActorVisibility",
+                "ApplyActorGaze:Lead",
                 // cameras, lights, environment last
                 "ApplyDefaultCamera",
                 "SetCameraTarget",
@@ -379,6 +406,72 @@ public sealed class SceneWorkflowTests
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    /// <summary>A saved Entity gaze names another actor by in-document key;
+    /// the load hands the runtime the RESTORED actor's token, never the key
+    /// and never the saved object id.</summary>
+    [Fact]
+    public async Task An_entity_gaze_is_handed_the_restored_target_token()
+    {
+        var lead = Actor("Lead", out _);
+        var second = Actor("Second", out var secondKey);
+        lead.Gaze = new SceneActorGaze
+        {
+            Mode = Poser.Services.GazeTargetMode.Entity,
+            TargetActorKey = secondKey,
+        };
+        var scene = SceneWith(lead, second);
+
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        Assert.Equal(
+            new Token("actor:Second"), runtime.GazeTargets["Lead"]);
+        // An actor with no saved gaze is still offered, with no target.
+        Assert.Null(runtime.GazeTargets["Second"]);
+    }
+
+    /// <summary>
+    /// A placement, animation or gaze that cannot land is an ENTITY-level
+    /// refusal: the actor stays restored, the operation lands Failed, and
+    /// every refusal is named. Silently reporting success is the exact
+    /// failure that made a restored scene look like it had forgotten where
+    /// the actor stood.
+    /// </summary>
+    [Fact]
+    public async Task Placement_animation_and_gaze_refusals_are_named_not_swallowed()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            PlacementFailure = _ => "The placement was refused.",
+            AnimationFailure = _ => "The timeline was refused.",
+            GazeFailure = _ => "The gaze was refused.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        // Nothing is rolled back: the actor itself restored.
+        Assert.Empty(runtime.Destroyed);
+        var outcome = workflow.Progress!.Outcome!;
+        Assert.Contains(outcome.Entities, entity =>
+            entity.Kind == "Actor" && !entity.Restored &&
+            entity.Detail == "The placement was refused.");
+        Assert.Contains(outcome.Entities, entity =>
+            entity.Kind == "Animation" && !entity.Restored &&
+            entity.Detail == "The timeline was refused.");
+        Assert.Contains(outcome.Entities, entity =>
+            entity.Kind == "Gaze" && !entity.Restored &&
+            entity.Detail == "The gaze was refused.");
     }
 
     // ── load: structural refusal rolls the whole operation back ──────────

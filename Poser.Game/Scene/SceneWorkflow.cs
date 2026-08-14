@@ -74,10 +74,13 @@ public sealed class SceneWorkflow : IDisposable
         PropSpawnService props,
         Poser.Services.ILightingService lighting,
         Poser.Services.IVirtualCameraService cameras,
-        Poser.Services.IEnvironmentService environment)
+        Poser.Services.IEnvironmentService environment,
+        Bindings.StableBindingRegistry bindings,
+        Poser.Application.Animation.AnimationSession animation,
+        Poser.Services.IGazeService gaze)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
-            props, lighting, cameras, environment))
+            props, lighting, cameras, environment, bindings, animation, gaze))
     {
     }
 
@@ -495,6 +498,33 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
+            // Phase 4b — animation, BEFORE the pose. The saved state is what
+            // the actor was playing when the pose was authored on top of it,
+            // so the pose must land last or the replayed timeline animates
+            // over it. It also lands inside the import's own pause bracket
+            // correctly: a restored pause becomes the import's prior speed and
+            // survives, and a restored rate is what the import hands back.
+            Step(ScenePhase.ApplyingAnimation);
+            var animationFailure = await _runtime.OnFramework(() =>
+            {
+                if (Guard(operation, cancellation) is { } stop)
+                    return stop;
+                foreach (var actor in scene.Actors)
+                {
+                    var detail = _runtime.ApplyActorAnimation(
+                        actorTokens[actor.Key], actor);
+                    if (detail != null)
+                        entities.Add(new SceneEntityOutcome(
+                            "Animation", actor.Name, false, detail));
+                }
+                return null;
+            });
+            if (animationFailure != null)
+            {
+                await Abort(animationFailure);
+                return;
+            }
+
             // Phase 5 — pose. One atomic pose import per actor, strictly
             // sequential (the import engine is single-flight), each awaited
             // to its own terminal receipt within a bound. A pose failure
@@ -530,7 +560,22 @@ public sealed class SceneWorkflow : IDisposable
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
                 foreach (var actor in scene.Actors)
+                {
                     _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
+                    // Gaze comes AFTER the pose: the look-at re-drives its
+                    // channels every frame, and its Entity target is another
+                    // RESTORED actor, so it needs every token to exist. The
+                    // document validated the reference, so a stated key is
+                    // always present here.
+                    var target = actor.Gaze?.TargetActorKey is { } gazeTarget
+                        ? actorTokens[gazeTarget]
+                        : null;
+                    var detail = _runtime.ApplyActorGaze(
+                        actorTokens[actor.Key], actor, target);
+                    if (detail != null)
+                        entities.Add(new SceneEntityOutcome(
+                            "Gaze", actor.Name, false, detail));
+                }
                 return null;
             });
             if (presentationFailure != null)

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
+using Poser.Application.Animation;
+using Poser.Domain.Animation;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
@@ -65,6 +67,9 @@ public sealed class SceneCaptureService
     private readonly StableBindingRegistry _bindings;
     private readonly CleanPoseFacade _poses;
     private readonly IPlaceService _place;
+    private readonly IPosingService _posing;
+    private readonly AnimationSession _animation;
+    private readonly IGazeService _gaze;
 
     public SceneCaptureService(
         IFramework framework,
@@ -78,9 +83,15 @@ public sealed class SceneCaptureService
         IEnvironmentService environment,
         StableBindingRegistry bindings,
         CleanPoseFacade poses,
-        IPlaceService place)
+        IPlaceService place,
+        IPosingService posing,
+        AnimationSession animation,
+        IGazeService gaze)
     {
         _place = place;
+        _posing = posing;
+        _animation = animation;
+        _gaze = gaze;
         _framework = framework;
         _actors = actors;
         _skeletons = skeletons;
@@ -158,6 +169,7 @@ public sealed class SceneCaptureService
         SceneFile scene, List<string> notes)
     {
         var keys = new Dictionary<IActor, Guid>();
+        var captured = new List<(IActor Actor, SceneActor Entry)>();
         foreach (var actor in _actors.Actors)
         {
             if (actor.IsCompanion)
@@ -182,9 +194,10 @@ public sealed class SceneCaptureService
             }
 
             var companion = _spawns.GetCompanionInfo(actor);
-            var key = _bindings.GetActorId(actor)?.LogicalId ?? Guid.NewGuid();
+            var id = _bindings.GetActorId(actor);
+            var key = id?.LogicalId ?? Guid.NewGuid();
             keys[actor] = key;
-            scene.Actors.Add(new SceneActor
+            var entry = new SceneActor
             {
                 Key = key,
                 Name = Bounded(actor.Name, $"Actor {key:N}"),
@@ -197,11 +210,156 @@ public sealed class SceneCaptureService
                 CompanionKind = companion?.Kind,
                 CompanionId = companion?.Id ?? 0,
                 Pose = pose,
+                ModelTransform = NormalizedTransform(
+                    _posing.GetEffectiveTransform(actor),
+                    $"Actor '{actor.Name}' placement", notes),
+                Animation = id is { } actorId ? CaptureAnimation(actorId) : null,
+            };
+            captured.Add((actor, entry));
+            scene.Actors.Add(entry);
+        }
+
+        CaptureGaze(captured, keys, notes);
+        return keys;
+    }
+
+    /// <summary>
+    /// What the actor is playing, as ONE record combining the live native
+    /// reading (base timeline, speed, lips, stance/pose, weapon — the things
+    /// the game itself holds) with the Poser-owned overrides (the held
+    /// expression, the slot pins, the armed loops, the position lock — which
+    /// exist nowhere but the session). Nothing is written that
+    /// <c>AnimationSession</c> has no route to put back.
+    ///
+    /// <para>Null when the actor sits at the defaults: an ordinary idle at
+    /// ordinary speed with nothing owned. A scene then records no animation
+    /// member at all, which is exactly what a scene saved before this said.
+    /// </para>
+    /// </summary>
+    private SceneActorAnimation? CaptureAnimation(Poser.Domain.Identity.ActorId id)
+    {
+        var reading = _animation.Read(id);
+        var owned = _animation.OverridesFor(id);
+        if (reading is null && !owned.HasAny)
+            return null;
+
+        var live = reading ?? ActorAnimationReading.Empty;
+        var animation = new SceneActorAnimation
+        {
+            // The owned base pick outranks the live field: a base override is
+            // the timeline Poser asked for, and it is what a replay reissues.
+            BaseTimeline = owned.BaseTimeline ?? live.BaseTimeline,
+            Speed = float.IsFinite(live.OverallSpeed) && live.OverallSpeed >= 0
+                ? live.OverallSpeed
+                : 1f,
+            Lips = live.LipsOverride,
+            WeaponDrawn = live.WeaponDrawn,
+            Stance = live.Stance,
+            Pose = Math.Max(0, live.Pose),
+            HeldExpression = owned.HeldExpression ?? 0,
+            PositionLock = owned.PositionLock,
+        };
+
+        // One row per slot Poser owns something on, in the display order the
+        // slot catalog states so the file reads the way the transport does.
+        foreach (var slot in AnimationSlots.All)
+        {
+            owned.SlotSpeeds.TryGetValue(slot, out var speed);
+            bool hasSpeed = owned.SlotSpeeds.ContainsKey(slot);
+            owned.LoopedSlots.TryGetValue(slot, out var loop);
+            if (!hasSpeed && loop == 0)
+                continue;
+            animation.Slots.Add(new SceneAnimationSlot
+            {
+                Slot = slot,
+                Speed = hasSpeed && float.IsFinite(speed) && speed >= 0
+                    ? speed
+                    : null,
+                Loop = loop,
             });
         }
 
-        return keys;
+        bool interesting =
+            animation.BaseTimeline != 0 || animation.Speed != 1f ||
+            animation.Lips != 0 || animation.WeaponDrawn ||
+            animation.Stance != AnimationStance.Idle || animation.Pose != 0 ||
+            animation.HeldExpression != 0 || animation.PositionLock ||
+            animation.Slots.Count > 0;
+        return interesting ? animation : null;
     }
+
+    /// <summary>
+    /// Where each captured actor is looking. Runs as a SECOND pass because an
+    /// Entity-mode gaze names another actor: the target is written as that
+    /// actor's in-document key, which only exists once every actor has one.
+    /// A gaze following an actor the capture did not take records no target,
+    /// with a note — a saved GameObjectId would name nothing in a restored
+    /// scene, and following the wrong body is worse than following none.
+    /// </summary>
+    private void CaptureGaze(
+        List<(IActor Actor, SceneActor Entry)> captured,
+        Dictionary<IActor, Guid> keys,
+        List<string> notes)
+    {
+        if (!_gaze.IsAvailable)
+            return;
+
+        foreach (var (actor, entry) in captured)
+        {
+            var state = _gaze.GetGazeState(actor);
+            if (state.Mode == GazeTargetMode.None)
+                continue;
+
+            Guid? target = null;
+            if (state.Mode == GazeTargetMode.Entity)
+            {
+                var address = _gaze.GetGazeTargetAddress(actor);
+                foreach (var (candidate, _) in captured)
+                {
+                    if (candidate.Address == address && address != nint.Zero)
+                    {
+                        target = keys[candidate];
+                        break;
+                    }
+                }
+                if (target is null)
+                    notes.Add(
+                        $"Actor '{actor.Name}' looks at an uncaptured actor; the gaze target was not saved.");
+            }
+
+            var locked = GazeTargetType.None;
+            foreach (var part in new[]
+                     {
+                         GazeTargetType.Body, GazeTargetType.Head,
+                         GazeTargetType.Eyes,
+                     })
+            {
+                if (_gaze.IsPartLocked(actor, part))
+                    locked |= part;
+            }
+
+            entry.Gaze = new SceneActorGaze
+            {
+                // A remembered Entity target that no captured actor answers
+                // for cannot be restored as a follow, so the file states the
+                // mode WITHOUT a target rather than an unfollowable one.
+                Mode = state.Mode,
+                Parts = state.TargetType & GazeTargetType.All,
+                TargetActorKey = target,
+                Position = Finite(state.Position),
+                EyesPosition = Finite(state.EyesPosition),
+                HeadPosition = Finite(state.HeadPosition),
+                BodyPosition = Finite(state.BodyPosition),
+                LockedParts = locked,
+            };
+        }
+    }
+
+    private static System.Numerics.Vector3 Finite(System.Numerics.Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z)
+            ? value
+            : System.Numerics.Vector3.Zero;
 
     private void CaptureProps(SceneFile scene, List<string> notes)
     {

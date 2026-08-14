@@ -22,6 +22,7 @@ public enum ScenePhase
     SpawningEntities,
     AwaitingActors,
     ApplyingRelationships,
+    ApplyingAnimation,
     ApplyingPose,
     ApplyingPresentation,
     ApplyingCameras,
@@ -132,9 +133,23 @@ internal interface ISceneRuntime
         string description,
         Action<OperationReceipt> onReceipt);
 
-    /// <summary>Places the actor at the pose document's absolute model
-    /// transform; null on success or when the document carries none.</summary>
+    /// <summary>Places the actor at the scene's stated placement, falling back
+    /// to the pose document's absolute model transform for files written
+    /// before placements were stated. Null on success or when neither carries
+    /// one; a placement that did not LAND is a named refusal, never a silent
+    /// no-op.</summary>
     string? PlaceActor(object actor, SceneActor data);
+
+    /// <summary>Replays the actor's saved animation state — base timeline,
+    /// speed (zero being the pause), lips, stance, weapon, held expression,
+    /// slot pins, armed loops and the position lock. Null when the file
+    /// records none, else the joined refusal detail.</summary>
+    string? ApplyActorAnimation(object actor, SceneActor data);
+
+    /// <summary>Restores the actor's saved gaze. <paramref name="target"/> is
+    /// the restored actor the saved Entity key resolved to, or null when the
+    /// file names none. Null on success, else the refusal detail.</summary>
+    string? ApplyActorGaze(object actor, SceneActor data, object? target);
 
     void SetActorVisibility(object actor, bool visible);
 
