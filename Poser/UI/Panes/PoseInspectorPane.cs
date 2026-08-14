@@ -887,7 +887,10 @@ public class PoseInspectorPane
             var scrolledOrigin = ImGui.GetCursorScreenPos();
             // The scrolling surfaces (matrix, Expression, Actor) span the
             // pane's scrollbar gutter too, so their scrollbar sits at the
-            // pane edge instead of floating a gutter early.
+            // pane edge instead of floating a gutter early. THIS IS THE ONLY
+            // PLACE that widening happens — it is already in the width every
+            // surface below is handed, and the width of the child they draw
+            // in, so nothing downstream may add it again.
             float surfaceWidth = _poseView switch
             {
                 2 or 4 or 5 => width
@@ -955,17 +958,18 @@ public class PoseInspectorPane
     /// action-gap under the mode strip, one page inset above the footer.
     /// False when the viewport leaves the band no area.
     ///
-    /// <para>The band reaches the workspace's own right edge, not the width
-    /// the shell handed the pane. The Pose tab is
-    /// <c>ContentOwnsViewport</c>: the shell has ALREADY taken the scroll
-    /// gutter and both page insets off that width, and a surface that then
-    /// opens its own <see cref="Crystarium.ScrollRegion"/> inside it pays for
-    /// a second gutter and a second trailing inset — which is why these
-    /// surfaces' sections stopped short of every Page-hosted inspector's.
-    /// Adding the two back makes the region span exactly what the shell's own
-    /// scroll region spans for a Page, so the scrollbar sits where a Page's
-    /// does and one trailing inset inside it lands the content where a Page's
-    /// content lands.</para></summary>
+    /// <para>The band spans the width it is HANDED and adds nothing to it.
+    /// Its callers are the scrolling surfaces, and the host already widened
+    /// their box to the workspace's inner edge — <c>surfaceWidth</c> in
+    /// <see cref="DrawPoseSurface"/> is the pane's width plus the gutter and
+    /// the trailing inset the shell took off, and the child they draw in is
+    /// that same width. Adding those two a SECOND time here put the region
+    /// 24px past its own parent, which clipped the scrollbar out of existence
+    /// and let the content run to the visible edge (user 2026-08-14: the
+    /// Expression and matrix rows with no bar and no trailing room). Spanning
+    /// exactly the child means one gutter and one trailing inset come off
+    /// inside it, which is what a Page keeps, and both edges land on the
+    /// Page-hosted inspectors'.</para></summary>
     private static bool SurfaceBand(
         Vector2 cursor,
         float width,
@@ -976,12 +980,7 @@ public class PoseInspectorPane
     {
         var theme = Crystarium.ActiveTheme;
         min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
-        max = cursor
-            + new Vector2(
-                width
-                    + (AppShellView.ScrollbarWidth
-                        + AppShellView.MainHorizontalPadding) * s,
-                viewportHeight)
+        max = cursor + new Vector2(width, viewportHeight)
             - new Vector2(0f, theme.Page.Inset * s);
         return max.X > min.X && max.Y > min.Y;
     }
