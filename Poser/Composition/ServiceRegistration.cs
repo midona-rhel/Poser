@@ -442,6 +442,9 @@ internal static class ServiceRegistration
         services.AddSingleton<SkeletonOverlayPresentation>();
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<PoseThumbnailCache>();
+        // Owns every reference picture's texture, so the container's own
+        // dispose is what releases them at plugin teardown.
+        services.AddSingleton<ReferenceImageSession>();
         return services;
     }
 

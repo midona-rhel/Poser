@@ -104,6 +104,10 @@ public sealed class UIManager : IUIManager
 
         Interactive.BeginFrame();
         _windows.System.Draw();
+        // Outside the window system's draw pass: a reference picture closed
+        // from its own bar leaves the system here, and the dialog that adds
+        // one belongs to no window.
+        _windows.PumpReferenceImages();
         Crystarium.FloatingMenu.EndFrame();
         // The one hover-help card renders after every window has drawn,
         // so registrations from any pane are complete and the card sits

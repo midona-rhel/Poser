@@ -32,6 +32,14 @@ public sealed class UiWindowSet : IDisposable
     private readonly List<PopOutWindow> _popOuts = new();
     private readonly List<PopOutWindow> _dismissedPopOuts = new();
 
+    private readonly ReferenceImageSession _referenceImages;
+
+    /// <summary>One window per reference picture, plus the ones closed
+    /// mid-draw that still await removal — the same deferral the pop-outs
+    /// need, for the same reason.</summary>
+    private readonly List<ReferenceImageWindow> _referenceWindows = new();
+    private readonly List<ReferenceImageWindow> _dismissedReference = new();
+
     public UiWindowSet(
         IGPoseService gPoseService,
         ConfigurationService configService,
@@ -42,8 +50,12 @@ public sealed class UiWindowSet : IDisposable
         SettingsWindow settings,
         SpawnBrowserWindow spawnBrowser,
         SkeletonOverlayPresentation overlayPresentation,
-        WorldAdoptionSource worldAdoption)
+        WorldAdoptionSource worldAdoption,
+        ReferenceImageSession referenceImages)
     {
+        _referenceImages = referenceImages;
+        _referenceImages.OnAdded += AddReferenceWindow;
+        _referenceImages.OnRemoved += DismissReferenceWindow;
         _overlayPresentation = overlayPresentation;
         _worldAdoption = worldAdoption;
         _configService = configService;
@@ -94,6 +106,14 @@ public sealed class UiWindowSet : IDisposable
 
     public void SetPrimaryOpen(bool isOpen)
     {
+        // The stored roster is rebuilt the first time the workspace is up —
+        // Ktisis rebuilds its own at scene setup. Restoring here rather than
+        // at construction keeps a refusal for a picture whose file has gone
+        // from firing before there is a session to see it in.
+        if (isOpen)
+            _referenceImages.Restore();
+        foreach (var window in _referenceWindows)
+            window.IsOpen = isOpen;
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
         // The window itself follows the session like the gizmo overlay; the
@@ -195,11 +215,65 @@ public sealed class UiWindowSet : IDisposable
         _dismissedPopOuts.Clear();
     }
 
+    /// <summary>
+    /// One frame of reference-image housekeeping, run AFTER the window system
+    /// has drawn: a picture closed from its own title bar leaves the system
+    /// here, outside the draw pass, and the add dialog is pumped from the UI
+    /// root rather than from a window — the surface that opens it (the spawn
+    /// browser) closes on focus loss, and a dialog pumped from a closed window
+    /// is a dead dialog.
+    /// </summary>
+    public void PumpReferenceImages()
+    {
+        FlushDismissedReference();
+        _referenceImages.Tick();
+        _referenceImages.DrawDialogs();
+    }
+
+    private void AddReferenceWindow(ReferenceImageInstance image)
+    {
+        FlushDismissedReference();
+        var window = new ReferenceImageWindow(_referenceImages, image)
+        {
+            // A picture added while the workspace is up appears at once; one
+            // restored before it opens waits for SetPrimaryOpen.
+            IsOpen = Main.IsOpen,
+        };
+        _referenceWindows.Add(window);
+        System.AddWindow(window);
+    }
+
+    private void DismissReferenceWindow(ReferenceImageInstance image)
+    {
+        foreach (var window in _referenceWindows)
+            if (window.Image == image)
+            {
+                window.IsOpen = false;
+                _dismissedReference.Add(window);
+            }
+    }
+
+    private void FlushDismissedReference()
+    {
+        if (_dismissedReference.Count == 0)
+            return;
+        foreach (var window in _dismissedReference)
+        {
+            _referenceWindows.Remove(window);
+            System.RemoveWindow(window);
+        }
+        _dismissedReference.Clear();
+    }
+
     private void SetSkeletonOverlayOpen(bool isOpen)
         => SkeletonOverlay.UserVisible = isOpen;
 
     public void Dispose()
     {
+        _referenceImages.OnAdded -= AddReferenceWindow;
+        _referenceImages.OnRemoved -= DismissReferenceWindow;
+        _referenceWindows.Clear();
+        _dismissedReference.Clear();
         _configService.OnConfigurationChanged -= SyncSplitWindows;
         Main.OnSkeletonOverlayToggled -= SetSkeletonOverlayOpen;
         Main.OnPopOutRequested -= CreatePopOut;
