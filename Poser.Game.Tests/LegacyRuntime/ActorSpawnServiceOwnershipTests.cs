@@ -955,6 +955,44 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.True(service.IsVisible(actor));
     }
 
+    /// <summary>The ownership half of world adoption. Adding something the
+    /// world already holds must never make Poser the owner of THAT thing:
+    /// the import copies the source into a body of Poser's own in the GPose
+    /// band — where the character write gate admits it — and the ledger names
+    /// only that body, so no teardown can reach back to the world source.
+    /// (Ktisis clones overworld actors for the same reason; Brio adopts one by
+    /// reference and correspondingly refuses to delete it,
+    /// ActorLifetimeCapability.cs:92-107.)</summary>
+    [Fact]
+    public void A_world_import_owns_only_the_body_it_made_never_the_source()
+    {
+        var bus = new FakeEventBus();
+        var actor = Actor(0x970);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(970, actor.Address, 970));
+        nint copiedFrom = nint.Zero;
+        using var service = NewService(
+            native, manager, (_, source, _, _) => copiedFrom = source, bus: bus);
+
+        // An overworld source: outside the GPose band, and never a thing this
+        // service may own.
+        const nint worldSource = 0x50;
+        var clone = service.CloneFromWorldSource(worldSource);
+
+        Assert.Same(actor, clone);
+        // The source was READ (its appearance) and nothing more.
+        Assert.Equal(worldSource, copiedFrom);
+        var owned = Assert.Single(service.OwnershipSnapshot);
+        Assert.Equal(actor.Address, owned.Descriptor!.Value.Address);
+        Assert.NotEqual(worldSource, owned.Descriptor!.Value.Address);
+
+        // Teardown deletes the body Poser made, exactly once, and the world
+        // source is not among the deletes because it was never owned.
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Equal(actor.Address, Assert.Single(native.Deleted).Address);
+        Assert.Empty(service.OwnershipSnapshot);
+    }
+
     [Fact]
     public void Gpose_exit_destroys_owned_actors_exactly_and_retains_failed_deletes()
     {

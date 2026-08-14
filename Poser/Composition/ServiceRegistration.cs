@@ -415,6 +415,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
+        services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<PoseThumbnailCache>();
         return services;
     }
