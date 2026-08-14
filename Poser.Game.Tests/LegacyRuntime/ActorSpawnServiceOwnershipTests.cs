@@ -91,6 +91,78 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
+    public void World_source_clone_runs_the_same_owned_spawn_transaction()
+    {
+        var actor = Actor(0x870);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(870, actor.Address, 870));
+        using var service = NewService(native, manager);
+
+        // The source address is an overworld object the COM-based resolver
+        // could never prove; the caller (WorldActorDiscovery) proved it via
+        // its own object-table observation on this same tick.
+        var spawned = service.CloneFromWorldSource((nint)0x777);
+
+        Assert.Same(actor, spawned);
+        Assert.Equal(1, native.CreateCalls);
+        Assert.True(service.IsSpawnedActor(actor));
+        Assert.True(Assert.Single(service.OwnershipSnapshot).HasCompanionSlot);
+    }
+
+    [Fact]
+    public void World_source_clone_refuses_all_spawn_gates_before_any_create()
+    {
+        var actor = Actor(0x871);
+        var manager = new FakeActorManager(actor);
+
+        // No address: refusal before the transaction.
+        var native = new FakeNative(new(871, actor.Address, 871));
+        using (var service = NewService(native, manager))
+        {
+            Assert.Null(service.CloneFromWorldSource(nint.Zero));
+            Assert.Equal(0, native.CreateCalls);
+        }
+
+        // No authoritative lifetime transition: spawning refuses outright.
+        var unhooked = new FakeNative(new(871, actor.Address, 871))
+        {
+            IsLifetimeAuthoritativeValue = false,
+        };
+        using (var service = NewService(unhooked, manager))
+        {
+            Assert.Null(service.CloneFromWorldSource((nint)0x777));
+            Assert.Equal(0, unhooked.CreateCalls);
+        }
+
+        // Off the framework thread: refusal like every public operation.
+        var framework = new FakeFramework { InThread = false };
+        var offThread = new FakeNative(new(871, actor.Address, 871));
+        using (var service = NewService(offThread, manager, framework: framework))
+        {
+            Assert.Null(service.CloneFromWorldSource((nint)0x777));
+            Assert.Equal(0, offThread.CreateCalls);
+        }
+    }
+
+    [Fact]
+    public void World_source_clone_rejects_replacement_seen_after_refresh()
+    {
+        // Revalidation before BIND is the transaction's own: a replacement
+        // observed after the actor-list refresh rolls the spawn back and the
+        // world path inherits it unchanged.
+        var actor = Actor(0x872);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(872, actor.Address, 872));
+        manager.RefreshAction = () => native.Current = new(872, (nint)0x873, 873);
+        using var service = NewService(native, manager);
+
+        Assert.Null(service.CloneFromWorldSource((nint)0x777));
+        var pending = Assert.Single(service.OwnershipSnapshot);
+        Assert.Equal(SpawnOwnershipState.PendingDelete, pending.State);
+        Assert.Empty(native.Deleted);
+    }
+
+    [Fact]
     public void Public_spawn_and_catalog_paths_bind_only_after_exact_refresh_identity()
     {
         var actor = Actor(0x810);

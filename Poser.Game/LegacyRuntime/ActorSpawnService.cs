@@ -792,6 +792,34 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return SpawnCloneFrom(resolvedSource.Value.Address, reserveCompanionSlot: true);
     }
 
+    /// <summary>
+    /// Clones an OVERWORLD source into a Poser-owned GPose actor through the
+    /// same owned spawn transaction as every other clone. Overworld objects
+    /// are not ClientObjectManager-resolvable (both references use
+    /// GetIndexByObject only on client objects they created — Brio
+    /// ActorSpawnService.cs:205, Ktisis ActorModule.cs:140-144), so the COM
+    /// gate <see cref="CloneActor"/> uses cannot prove them; the caller —
+    /// <see cref="WorldActorDiscovery"/>, the only caller — has just proven
+    /// the source's exact (reference, address, index, GameObjectId) identity
+    /// through its own object-table observation on this same framework tick.
+    /// The source is only READ (appearance/position seed copy); the ownership
+    /// record covers the clone alone, so no authority over the source is
+    /// ever taken.
+    /// </summary>
+    internal IActor? CloneFromWorldSource(nint sourceAddress)
+    {
+        if (!OnOwnerThread || !SpawnAuthorityAvailable())
+            return null;
+        if (sourceAddress == nint.Zero)
+        {
+            _log?.Warning(
+                "ActorSpawnService: Cannot clone world source - no address");
+            return null;
+        }
+        // A world clone keeps the companion slot, exactly like CloneActor.
+        return SpawnCloneFrom(sourceAddress, reserveCompanionSlot: true);
+    }
+
     public IActor? SpawnCatalogActor(SpawnCatalogEntry entry)
     {
         if (!OnOwnerThread || !SpawnAuthorityAvailable())

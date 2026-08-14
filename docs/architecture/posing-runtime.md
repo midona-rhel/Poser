@@ -47,6 +47,17 @@ background retry mechanism. This preserves Brio's
 create/copy/model-before-draw/GPose ordering without allowing a stale actor
 wrapper to affect a replacement.
 
+Overworld-actor discovery is a separate READ-ONLY enumeration outside the
+201–439 GPose scan: candidates are pointer-free opaque ids in Application/UI,
+backed by a Game-private (reference, address, index, GameObjectId)
+observation, re-minted per listing pass and revalidated in full immediately
+before use — any drift is a typed stale refusal. No overworld object is ever
+handed to a pose or mutation surface; the single crossing is the world-actor
+clone, which funnels the revalidated source address into the owned spawn
+transaction above, and the clone enters the scene at its own 201–439 index
+through the ordinary registry scan. The source is never adopted, mutated, or
+deleted.
+
 The current Application-facing native transform write/capture path is
 `ITransformRuntimePort`, implemented by Game's `TransformRuntimePort`; it
 captures, applies, and restores transform targets. It resolves exact

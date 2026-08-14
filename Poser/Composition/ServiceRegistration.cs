@@ -172,7 +172,15 @@ internal static class ServiceRegistration
         services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
         services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
         services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
-        services.AddSingleton<IActorSpawnService, ActorSpawnService>();
+        // The concrete spawn service is registered once and forwarded: the
+        // world-actor discovery funnels its clones through the same accepted
+        // ownership transaction (no second spawner).
+        services.AddSingleton<ActorSpawnService>();
+        services.AddSingleton<IActorSpawnService>(
+            sp => sp.GetRequiredService<ActorSpawnService>());
+        services.AddSingleton<WorldActorDiscovery>();
+        services.AddSingleton<Application.Actors.IWorldActorReadPort>(
+            sp => sp.GetRequiredService<WorldActorDiscovery>());
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
         services.AddSingleton<Library.IPoseLibraryService, Library.PoseLibraryService>();
         services.AddSingleton<Game.PropSpawnService>();
