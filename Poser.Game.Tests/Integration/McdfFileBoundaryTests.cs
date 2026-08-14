@@ -717,7 +717,7 @@ public sealed class McdfFileBoundaryTests
         var runtimeProxy = (ExportRuntimeProxy)(object)runtime;
         runtimeProxy.CallerThread = callerThread;
         var boundary = new ExportBoundaryFake();
-        var session = new ActorIntegrationSession(runtime, boundary);
+        var session = new ActorIntegrationSession(runtime, boundary, new ActiveSessionSource());
         var actor = new ActorId(Guid.NewGuid(), 1);
 
         var started = session.BeginExport(actor, "export.mcdf", "description");
@@ -849,6 +849,13 @@ public sealed class McdfFileBoundaryTests
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         while (!predicate())
             await Task.Delay(10, timeout.Token);
+    }
+
+    private sealed class ActiveSessionSource
+        : Poser.Application.Lifecycle.ISessionGenerationSource
+    {
+        public Poser.Application.Operations.SessionGeneration? ActiveSessionGeneration { get; } =
+            Poser.Application.Operations.SessionGeneration.New();
     }
 
     private class ExportRuntimeProxy : DispatchProxy

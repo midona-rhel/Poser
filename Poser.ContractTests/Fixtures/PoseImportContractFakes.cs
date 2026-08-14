@@ -299,7 +299,8 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             Substitute.For<IPresentationRuntimePort>());
         var integration = new ActorIntegrationSession(
             Substitute.For<IIntegrationRuntimePort>(),
-            Substitute.For<IMcdfFileBoundary>());
+            Substitute.For<IMcdfFileBoundary>(),
+            new FakeSessionGenerationSource());
         var pluginInterface = Substitute.For<IDalamudPluginInterface>();
         pluginInterface.GetPluginConfig().Returns((object?)null);
         _configuration = new ConfigurationService(pluginInterface);

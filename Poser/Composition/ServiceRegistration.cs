@@ -127,9 +127,12 @@ internal static class ServiceRegistration
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
         services.AddSingleton<Application.Integration.ActorIntegrationSession>(sp =>
         {
+            // The session owns the concrete McdfTransaction; the session
+            // source gives every MCDF operation its exact GPose identity.
             var session = new Application.Integration.ActorIntegrationSession(
                 sp.GetRequiredService<Application.Integration.IIntegrationRuntimePort>(),
-                sp.GetRequiredService<Application.Integration.IMcdfFileBoundary>());
+                sp.GetRequiredService<Application.Integration.IMcdfFileBoundary>(),
+                sp.GetRequiredService<ISessionGenerationSource>());
             // The MCDF hard limits are config-backed with conservative
             // defaults; read once at composition.
             var limits = sp.GetRequiredService<Config.ConfigurationService>()

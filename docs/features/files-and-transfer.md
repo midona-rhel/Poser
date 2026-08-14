@@ -151,16 +151,33 @@ identity, and receipt semantics stay in Application.
   RETAINS its extracted payloads while owned — the live temporary
   collection references them — and they are deleted on Reset MCDF,
   rollback, teardown, GPose exit, and disposal, only once that
-  collection is definitely gone; a failed deletion stays owned and
-  retryable.
-- One import/export runs at a time with an immutable progress snapshot
-  and cooperative cancellation. Import applies as a transaction
+  collection is definitely gone AND, on a still-resolvable actor whose
+  temporary Penumbra ownership was removed, a bounded exact-actor
+  redraw-complete barrier has passed (the current draw object may read
+  the extracted files until it rebuilds). A failed barrier or deletion
+  keeps the directory owned as retryable evidence for Reset MCDF; an
+  unresolvable actor has no draw object and releases immediately.
+- One import/export/teardown-barrier transaction runs at a time, owned
+  by `McdfTransaction` behind the `ActorIntegrationSession` facade. Each
+  operation carries the exact actor generation, the active
+  `SessionGeneration`, an owner-local `OperationEpoch`, and an operation
+  id, and publishes an immutable progress snapshot plus one
+  `OperationReceipt` (Pending → Applied/Failed/Cancelled — the contract
+  in [application-state.md](../architecture/application-state.md)).
+  Every framework phase re-guards on invalidation, cooperative
+  cancellation, and the exact session token before mutating, and
+  terminal publication is refused for anything but the current
+  operation — a late completion can neither mutate a replacement nor
+  overwrite a newer terminal. Import applies as a transaction
   (temporary collection → temporary mods/manipulations → locked Glamourer
   state → bounded redraw wait with binding refresh → temporary body
   profile) and commits ownership only when complete; failure or
-  cancellation rolls back in reverse order, and a partial rollback stays
-  owned and retryable through **Reset MCDF**. Re-import tears the active
-  MCDF down first. Export is read-only, refuses an MCDF-wearing actor
+  cancellation invalidates FIRST, then rolls back in reverse order, and
+  a partial rollback stays owned and retryable through **Reset MCDF**.
+  Re-import tears the active MCDF down (including its barrier-gated
+  directory release) before applying anything. Disposal cancels and
+  joins the active MCDF task within a bound before the integration port
+  is disposed. Export is read-only, refuses an MCDF-wearing actor
   and foreign Glamourer locks, keeps swaps as swaps, applies Brio's
   compatibility filter, deduplicates payloads by SHA-1, reports every
   skipped resource by name, and replaces the destination atomically via
