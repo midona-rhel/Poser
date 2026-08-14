@@ -54,6 +54,10 @@ public class GizmoOverlayWindow : Window
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
+    // Only for the fly-speed readout: the wheel changes the live free
+    // camera's speed inside the game's input handler, and this overlay is
+    // where that change gets to say so.
+    private readonly IVirtualCameraService _virtualCameras;
     // Selection carries stable descriptors; the gaze service takes a live
     // IActor. The registry is the only sanctioned bridge, and a stale
     // binding means the overlay draws nothing rather than guessing.
@@ -228,6 +232,7 @@ public class GizmoOverlayWindow : Window
         CleanPoseFacade cleanPose,
         IGazeService gazeService,
         Game.Bindings.StableBindingRegistry bindings,
+        IVirtualCameraService virtualCameras,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -249,6 +254,7 @@ public class GizmoOverlayWindow : Window
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _bindings = bindings;
+        _virtualCameras = virtualCameras;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -265,6 +271,12 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
+        // First ink of the frame. The fly-speed readout belongs to the free
+        // camera and not to any selection, so it is drawn ahead of every gate
+        // below — Alt, the gaze takeover, an empty selection — each of which
+        // would otherwise swallow it.
+        DrawFreeCameraSpeed();
+
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
 
@@ -1116,6 +1128,44 @@ public class GizmoOverlayWindow : Window
         ImGui.GetWindowDrawList().AddRectFilled(
             min, max,
             ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Glass.Luminosity),
+            Crystarium.ActiveTheme.Radii.Surface * uiScale);
+        Crystarium.TextAt(min + pad, text, style);
+    }
+
+    /// <summary>
+    /// The free camera's fly-speed readout: the multiple of the default speed
+    /// the last wheel notch produced, held by the cursor for a second and
+    /// gone. Same chip as the drag readout, seated ABOVE the cursor so a
+    /// notch turned mid-drag does not land on the value the drag is showing.
+    /// Nothing is drawn unless a free camera is live and its speed has just
+    /// moved.
+    /// </summary>
+    private void DrawFreeCameraSpeed()
+    {
+        if (_virtualCameras.SpeedNotice is not { } notice)
+            return;
+        float opacity = notice.Opacity(Environment.TickCount64);
+        if (opacity <= 0f)
+            return;
+
+        float uiScale = ImGuiHelpers.GlobalScale;
+        string text = notice.Text;
+        var color = Crystarium.ActiveTheme.Text;
+        var style = new TextStyle
+        {
+            Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+            Family = FontFamily.Mono,
+            Color = new Vector4(color.X, color.Y, color.Z, color.W * opacity),
+        };
+        var pad = new Vector2(6f, 3f) * uiScale;
+        var size = Crystarium.MeasureText(text, style) + pad * 2f;
+        var min = ImGui.GetMousePos() + new Vector2(18f, -14f) * uiScale
+            - new Vector2(0f, size.Y);
+        var glass = Crystarium.ActiveTheme.Glass.Luminosity;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            min, min + size,
+            ImGui.ColorConvertFloat4ToU32(new Vector4(
+                glass.X, glass.Y, glass.Z, glass.W * opacity)),
             Crystarium.ActiveTheme.Radii.Surface * uiScale);
         Crystarium.TextAt(min + pad, text, style);
     }

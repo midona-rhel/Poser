@@ -419,7 +419,8 @@ public sealed class CameraPane
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
                     value => camera.MovementEnabled = value,
                     disabled: locked),
-                help: "Fly with the movement keys while this camera is live");
+                help: "Fly while this camera is live: WASD moves, Q or Space "
+                    + "rises, E or Shift drops");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
@@ -427,12 +428,16 @@ public sealed class CameraPane
                 help: "Keep movement in the horizontal plane instead of "
                     + "along the view");
         });
-        form.Slider("Speed", camera.MovementSpeed, 0.005f, 0.3f,
+        // The slider ends ARE the wheel's clamp: the row and the notch read
+        // the same two numbers, so a scrolled speed can never sit off the end
+        // of the control that shows it.
+        form.Slider("Speed", camera.MovementSpeed,
+            FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
             value => camera.MovementSpeed = value,
             format: "0.000",
             disabled: locked,
-            help: "How fast the camera flies; Ctrl speeds up, Alt slows "
-                + "down");
+            help: "How fast the camera flies; the mouse wheel steps it while "
+                + "flying, Ctrl speeds up, Alt slows down");
         form.Slider("Sensitivity", camera.MouseSensitivity, 0.001f, 0.2f,
             value => camera.MouseSensitivity = value,
             format: "0.000",
