@@ -197,11 +197,24 @@ public static class RotationGizmoRings
             : Vector2.Normalize(tangent);
     }
 
+    /// <summary>No axis is locked. The value a lock is cleared to.</summary>
+    public const int NoLock = -1;
+
     /// <summary>
     /// Nearest visible projected ring segment within tolerance; the outer
     /// roll circle competes last. Exact ties resolve X → Y → Z → Roll.
+    ///
+    /// <para><paramref name="lockedAxis"/> is Brio's ring lock
+    /// (<c>ImBrioGizmo</c>: <c>lockedAxis == null || lockedAxis == axis</c>):
+    /// while one axis is locked, no other ring hit-tests at all, so a drag
+    /// started anywhere near the gizmo turns that one axis and the rings that
+    /// happen to cross under the pointer cannot steal it.</para>
     /// </summary>
-    public static RingHit? HitTest(ProjectedRings rings, Vector2 mouse, float tolerance)
+    public static RingHit? HitTest(
+        ProjectedRings rings,
+        Vector2 mouse,
+        float tolerance,
+        int lockedAxis = NoLock)
     {
         if (!rings.Valid)
             return null;
@@ -211,6 +224,8 @@ public static class RotationGizmoRings
         float best = tolerance;
         for (int a = 0; a < 3; a++)
         {
+            if (lockedAxis != NoLock && lockedAxis != a)
+                continue;
             for (int i = 1; i < RingPoints; i++)
             {
                 if (!rings.Front[a][i])
@@ -229,7 +244,8 @@ public static class RotationGizmoRings
         }
         var radial = mouse - rings.Center;
         float radialLength = radial.Length();
-        if (radialLength > 1e-3f &&
+        if ((lockedAxis == NoLock || lockedAxis == RollAxis) &&
+            radialLength > 1e-3f &&
             MathF.Abs(radialLength - rings.RollRadius) < best)
         {
             axis = RollAxis;
@@ -265,15 +281,24 @@ public static class RotationGizmoRings
         int hoverAxis,
         int dragAxis,
         bool drawRearArcs,
-        float scale)
+        float scale,
+        int lockedAxis = NoLock)
     {
         if (!rings.Valid)
             return;
 
+        // Brio recolours the locked ring and leaves the rest their own colour;
+        // in this palette the equivalent statement is that the OTHERS recede,
+        // because a lock is about what the pointer can still reach.
+        static float LockFade(int axis, int lockedAxis) =>
+            lockedAxis == NoLock || lockedAxis == axis ? 1f : 0.25f;
+
         // Wide outer camera-roll ring first, then rear arcs, then front arcs.
         {
             bool hot = hoverAxis == RollAxis || dragAxis == RollAxis;
-            var rollColor = new Vector4(1f, 1f, 1f, hot ? 0.95f : 0.55f);
+            var rollColor = new Vector4(
+                1f, 1f, 1f,
+                (hot ? 0.95f : 0.55f) * LockFade(RollAxis, lockedAxis));
             dl.AddCircle(rings.Center, rings.RollRadius,
                 ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(rollColor)),
                 0, (hot ? 4.5f : 3.5f) * scale);
@@ -290,7 +315,8 @@ public static class RotationGizmoRings
                     _ => Crystarium.ActiveTheme.Palette.AxisZ,
                 };
                 bool hot = hoverAxis == a || dragAxis == a;
-                float alpha = frontPass ? (hot ? 1f : 0.85f) : 0.12f;
+                float alpha = (frontPass ? (hot ? 1f : 0.85f) : 0.12f)
+                    * LockFade(a, lockedAxis);
                 float thickness = (frontPass && hot ? 3f : 2f) * scale;
                 uint color = ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(axisColor with { W = alpha }));

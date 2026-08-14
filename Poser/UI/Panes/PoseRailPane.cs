@@ -42,6 +42,14 @@ public class PoseRailPane
     private Quaternion _dragFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
 
+    /// <summary>Brio's ring lock (<c>ImBrioGizmo</c>: right-click near a ring
+    /// locks that axis, right-click again releases it). A locked ring is the
+    /// only one the pointer can reach, so a rotation that has to stay on one
+    /// axis cannot be stolen by whichever ring crosses under the cursor. It
+    /// survives selection changes exactly as the tool choice does — it is a
+    /// statement about how the user is working, not about this bone.</summary>
+    private int _lockedAxis = RotationGizmoRings.NoLock;
+
     private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
     private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
     private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
@@ -201,15 +209,29 @@ public class PoseRailPane
         int hoverAxis = -1;
         _hoverHit = null;
         if (hovered &&
-            RotationGizmoRings.HitTest(rings, mouse, pickTolerance) is { } hit)
+            RotationGizmoRings.HitTest(rings, mouse, pickTolerance, _lockedAxis)
+                is { } hit)
         {
             hoverAxis = hit.Axis;
             _hoverHit = hit;
         }
 
+        // Brio's right-click lock. Pressing on the locked ring releases it;
+        // pressing on any other reachable ring locks that one. Right-clicking
+        // off the rings clears the lock, because a lock the user cannot see a
+        // ring for is a gizmo that has stopped answering for no visible
+        // reason.
+        if (hovered && !active
+            && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            _lockedAxis = hoverAxis >= 0 && hoverAxis != _lockedAxis
+                ? hoverAxis
+                : RotationGizmoRings.NoLock;
+        }
+
         RotationGizmoRings.Draw(
             dl, rings, hoverAxis, active ? _dragAxis : -1,
-            drawRearArcs: true, s);
+            drawRearArcs: true, s, _lockedAxis);
 
         if (ImGui.IsItemActivated() && canEdit && hoverAxis >= 0 &&
             _hoverHit is { } grabHit)
@@ -257,7 +279,10 @@ public class PoseRailPane
             var ringMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Explain("rail-gizmo-ring",
                 ringMouse - new Vector2(4f, 4f), ringMouse + new Vector2(4f, 4f),
-                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring to rotate · Shift faster, Ctrl finer");
+                $"{RotationGizmoRings.AxisName(hoverAxis)} · drag along the ring to rotate · Shift faster, Ctrl finer · "
+                + (_lockedAxis == hoverAxis
+                    ? "right-click to unlock this axis"
+                    : "right-click to lock this axis"));
         }
 
         return d + 8f * s;

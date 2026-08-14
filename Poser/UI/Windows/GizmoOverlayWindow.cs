@@ -62,6 +62,21 @@ public class GizmoOverlayWindow : Window
     // IActor. The registry is the only sanctioned bridge, and a stale
     // binding means the overlay draws nothing rather than guessing.
     private readonly Game.Bindings.StableBindingRegistry _bindings;
+    // Only for Brio's GizmoStaysWhenAllBonesAreDisabled: with that switch off,
+    // a bone the overlay is not showing has no gizmo either, and the overlay's
+    // mask is the one place that knows.
+    private readonly SkeletonOverlayPresentation _presentation;
+
+    private static Config.GizmoConfiguration GizmoConfig =>
+        Config.ConfigurationService.Instance.Config.Gizmo;
+
+    /// <summary>The handles' constant perceived span, before UI scale, times
+    /// the configured size (Ktisis' <c>Gizmo.ScaleFactor</c>). 80px is the span
+    /// Poser has always drawn, so a scale of 1 changes nothing. The GAZE gizmo
+    /// takes the same span, exactly as Ktisis' gaze gizmo takes its own scale
+    /// factor from the same setting family.</summary>
+    private static float HandleSpanPixels =>
+        80f * Math.Clamp(GizmoConfig.GizmoScale, 0.5f, 2f);
     // Begin and Update both carry a failure DETAIL that the overlay used to
     // drop on the floor: a refused gesture is indistinguishable in game from
     // a gizmo that simply does nothing. Verbose, so it costs nothing until
@@ -233,6 +248,7 @@ public class GizmoOverlayWindow : Window
         IGazeService gazeService,
         Game.Bindings.StableBindingRegistry bindings,
         IVirtualCameraService virtualCameras,
+        SkeletonOverlayPresentation presentation,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -255,6 +271,7 @@ public class GizmoOverlayWindow : Window
         _gazeService = gazeService;
         _bindings = bindings;
         _virtualCameras = virtualCameras;
+        _presentation = presentation;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -388,7 +405,8 @@ public class GizmoOverlayWindow : Window
     {
         float uiScale = ImGuiHelpers.GlobalScale;
         var projection = WorldGizmoProjection.Create(
-            _cameraService, ImGui.GetIO().DisplaySize, anchor, 80f * uiScale);
+            _cameraService, ImGui.GetIO().DisplaySize, anchor,
+            HandleSpanPixels * uiScale);
         WorldGizmo.Layout? layout = projection != null
             ? WorldGizmo.Build(
                 projection, TransformTool.Move,
@@ -778,6 +796,15 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
                 return;
             primaryBone = primaryBoneId;
+            // Brio's GizmoStaysWhenAllBonesAreDisabled, in its OFF state: a
+            // bone the overlay is not showing loses its gizmo too. Poser's
+            // long-standing behaviour is the ON state, so this returns only
+            // when the user has deliberately asked for the other one — and an
+            // engaged drag is never interrupted, because hiding a bone
+            // mid-gesture would strand the gesture open.
+            if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null
+                && !_presentation.IsVisible(primaryBoneId))
+                return;
             // Skeleton matrix query also refreshes/registers the skeleton
             // caches inside the runtime boundary.
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
@@ -901,7 +928,8 @@ public class GizmoOverlayWindow : Window
 
         float uiScale = ImGuiHelpers.GlobalScale;
         var projection = WorldGizmoProjection.Create(
-            _cameraService, ImGui.GetIO().DisplaySize, pivotWorld, 80f * uiScale);
+            _cameraService, ImGui.GetIO().DisplaySize, pivotWorld,
+            HandleSpanPixels * uiScale);
         WorldGizmo.Layout? layout = projection != null
             ? WorldGizmo.Build(
                 projection, tool, translateFrame, scaleFrame, ringFrame, uiScale,
@@ -915,7 +943,13 @@ public class GizmoOverlayWindow : Window
         // Interface occlusion suppresses hover and Begin, never an active
         // drag: once engaged, the handle keeps the pointer until release
         // even if the cursor crosses a window.
-        if (gesture == null && layout != null && !occluded)
+        // Brio's Posing_DisableGizmo: a held modifier stops the gizmo
+        // answering the pointer so the bone dot behind a handle can be
+        // clicked. It suppresses HOVER and therefore Begin and pointer
+        // ownership, and never an engaged drag — the same shape as occlusion.
+        bool gizmoSuppressed = SkeletonOverlayWindow.HoldModifierDown(
+            GizmoConfig.DisableGizmoModifier);
+        if (gesture == null && layout != null && !occluded && !gizmoSuppressed)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
         // Occlusion suppresses ownership, not presentation. The shell draws
@@ -1312,7 +1346,12 @@ public class GizmoOverlayWindow : Window
         }
         else if (!isBone && targets.Count > 1)
         {
-            cleanPivotMode = PivotMode.Primary;
+            // Brio's group pivot for a multi-entity selection is the CENTROID
+            // (TransformHelper.ApplyDeltaToMultiple(..., centroid, true)), not
+            // whichever entity happens to be primary: rotating three actors
+            // about the middle of the three is what "rotate the group" means,
+            // and pivoting on a corner swings the other two around it.
+            cleanPivotMode = PivotMode.Centroid;
         }
 
         var begin = _cleanTransforms.Begin(
@@ -1383,7 +1422,16 @@ public class GizmoOverlayWindow : Window
         _dragPrevAxisT = initialAxisT;
         _dragLogScale = 0f;
         _dragPrevUniformPixels = 0f;
+        _dragPivotDepth = _cameraService.GetDepthToPosition(pivotWorld);
     }
+
+    /// <summary>The pivot's distance from the camera, frozen at Begin. Ktisis'
+    /// ray-snap asks the game for the world point under the pointer; Poser's
+    /// camera service unprojects at a GIVEN depth, so the snap lands on the
+    /// camera-facing plane the target started on. It is a plane snap, not a
+    /// collision snap — it will not put a foot on the floor — and it is what
+    /// the available primitive can honestly do.</summary>
+    private float _dragPivotDepth;
 
     /// <summary>
     /// One frame of the engaged handle's drag: every kind accumulates
@@ -1401,6 +1449,25 @@ public class GizmoOverlayWindow : Window
         Vector2 mouse)
     {
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
+        // Ktisis' two snap modifiers. Hold-snap quantises the gesture's TOTAL
+        // (Ctrl, and Ctrl+Shift for a tenth of the step); ray-snap replaces a
+        // translate's position outright (Shift). Both are read live, so a
+        // modifier pressed mid-drag takes effect on the next frame exactly as
+        // it does in Ktisis, and released again the drag returns to the
+        // unsnapped total it has been accumulating all along.
+        var gizmoConfig = GizmoConfig;
+        bool holdSnap = gizmoConfig.AllowHoldSnap && io.KeyCtrl;
+        float rotationStep = holdSnap
+            ? GizmoSnap.Increment(gizmoConfig.SnapRotationDegrees, io.KeyShift)
+            : 0f;
+        float linearStep = holdSnap
+            ? GizmoSnap.Increment(gizmoConfig.SnapLinearStep, io.KeyShift)
+            : 0f;
+        // Shift during a translate. When both options are on, Shift wins for
+        // translate — Ktisis runs its raycast AFTER ImGuizmo and overwrites
+        // the translation the snap produced, so this is the same precedence.
+        bool raySnap = gizmoConfig.AllowRaySnap && io.KeyShift;
+
         switch (gesture.Handle.Kind)
         {
             case WorldHandleKind.RotateRing:
@@ -1412,8 +1479,12 @@ public class GizmoOverlayWindow : Window
                 if (delta == 0f)
                     return;
                 _ringAngle += delta / RotationGizmoRings.PixelsPerRadian;
+                // The accumulated angle keeps running unsnapped; only what is
+                // APPLIED lands on the grid, so releasing Ctrl mid-drag
+                // returns the ring to exactly where the pointer has put it.
                 var totalRotation = Quaternion.CreateFromAxisAngle(
-                    _ringAxisModel, _ringAngle);
+                    _ringAxisModel,
+                    GizmoSnap.SnapRadiansToDegrees(_ringAngle, rotationStep));
                 var newTransform = gesture.Start with
                 {
                     Rotation = Quaternion.Normalize(
@@ -1445,14 +1516,27 @@ public class GizmoOverlayWindow : Window
                     : hit - _dragPrevHit;
                 _dragPrevHit = hit;
                 step *= multiplier;
-                if (step == Vector3.Zero)
+                // Ray-snap has to run even on a still frame: the pointer may
+                // be moving over a plane the drag axis cannot follow, and the
+                // snapped position is an absolute, not an accumulation.
+                if (step == Vector3.Zero && !raySnap)
                     return;
                 _dragAccumWorld += step;
-                var newTransform = gesture.Start with
+                Vector3 position;
+                if (raySnap)
                 {
-                    Position = gesture.Start.Position +
-                        Vector3.TransformNormal(_dragAccumWorld, _dragInvModel),
-                };
+                    position = Vector3.Transform(
+                        _cameraService.ScreenToWorld(mouse, _dragPivotDepth),
+                        _dragInvModel);
+                }
+                else
+                {
+                    var offset = Vector3.TransformNormal(
+                        _dragAccumWorld, _dragInvModel);
+                    position = gesture.Start.Position
+                        + GizmoSnap.Snap(offset, linearStep);
+                }
+                var newTransform = gesture.Start with { Position = position };
                 if (DispatchUpdate(gesture, newTransform))
                     gesture.Current = newTransform;
                 return;
@@ -1474,7 +1558,7 @@ public class GizmoOverlayWindow : Window
                     (MathF.Log(MathF.Abs(t)) - MathF.Log(MathF.Abs(_dragPrevAxisT))) *
                     multiplier;
                 _dragPrevAxisT = t;
-                ApplyScale(gesture, gesture.Handle.Axis);
+                ApplyScale(gesture, gesture.Handle.Axis, linearStep);
                 return;
             }
             case WorldHandleKind.ScaleUniform:
@@ -1486,23 +1570,35 @@ public class GizmoOverlayWindow : Window
                 if (step == 0f)
                     return;
                 _dragLogScale += step / 200f;
-                ApplyScale(gesture, axis: -1);
+                ApplyScale(gesture, axis: -1, linearStep);
                 return;
             }
         }
     }
 
-    /// <summary>Applies the accumulated log-space factor to one axis of the
-    /// frozen Start scale, or to all three for the uniform handle.</summary>
-    private void ApplyScale(GizmoGesture gesture, int axis)
+    /// <summary>
+    /// Applies the accumulated log-space factor to one axis of the frozen
+    /// Start scale, or to all three for the uniform handle.
+    ///
+    /// <para>Snapping lands on the value the handle OWNS: an axis handle
+    /// quantises its own component and leaves the other two exactly where the
+    /// pose put them, and the uniform handle quantises the FACTOR, because
+    /// quantising three components independently is what would stop a uniform
+    /// scale being uniform. ImGuizmo, which is what Ktisis hands its snap
+    /// vector to, snaps all three components either way; that is the one place
+    /// this deliberately does not follow it.</para>
+    /// </summary>
+    private void ApplyScale(GizmoGesture gesture, int axis, float snapStep)
     {
         float factor = Math.Clamp(MathF.Exp(_dragLogScale), 0.001f, 1000f);
+        if (axis < 0)
+            factor = GizmoSnap.Snap(factor, snapStep);
         var start = gesture.Start.Scale;
         var scale = axis switch
         {
-            0 => start with { X = start.X * factor },
-            1 => start with { Y = start.Y * factor },
-            2 => start with { Z = start.Z * factor },
+            0 => start with { X = GizmoSnap.Snap(start.X * factor, snapStep) },
+            1 => start with { Y = GizmoSnap.Snap(start.Y * factor, snapStep) },
+            2 => start with { Z = GizmoSnap.Snap(start.Z * factor, snapStep) },
             _ => start * factor,
         };
         var newTransform = gesture.Start with { Scale = scale };
