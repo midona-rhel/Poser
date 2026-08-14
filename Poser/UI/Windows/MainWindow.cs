@@ -45,6 +45,7 @@ public class MainWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly Application.Animation.AnimationSession _animation;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
 
     /// <summary>Every entity the shell adds or removes goes through this, so
@@ -397,6 +398,7 @@ public class MainWindow : Window
         PropsPane propsPane,
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
+        WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         IEventBus eventBus)
@@ -451,6 +453,7 @@ public class MainWindow : Window
                 : null;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
+        _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _lifecycle = lifecycle;
         // A gaze mode flip changes the sidebar's row SET (the gaze anchor row
@@ -511,6 +514,7 @@ public class MainWindow : Window
         // animating actor was selected made a scene-wide control hostage to
         // the selection (user 2026-08-14).
         _vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
+        _vm.OnWorldAdoption = on => _worldAdoption.Enabled = on;
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
@@ -1140,6 +1144,7 @@ public class MainWindow : Window
         // the switch shows the global state and is live under EVERY selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
+        _vm.WorldAdoptionOn = _worldAdoption.Enabled;
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;

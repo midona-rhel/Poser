@@ -31,6 +31,7 @@ public class SkeletonOverlayWindow : Window
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly StableBindingRegistry _bindings;
+    private readonly WorldAdoptionSource _adoption;
 
     // Configuration from settings
     private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
@@ -112,10 +113,25 @@ public class SkeletonOverlayWindow : Window
         public bool IsHovered;
     }
 
+    /// <summary>One thing the world holds that the scene does not. It carries
+    /// no SelectionId because it is not in the scene yet: its click adds it,
+    /// and the ordinary handle it then gets is what selects it.</summary>
+    private struct AdoptDisplayData
+    {
+        public string Name;
+        public WorldAdoptionKind Kind;
+        public int Candidate;
+        public Vector2 ScreenPos;
+        public float CameraDistance;
+        public float Radius;
+        public bool IsHovered;
+    }
+
     private readonly HashSet<SelectionId> _selectedIds = new();
     private readonly List<BoneDisplayData> _bones = new();
     private readonly List<ActorDisplayData> _actors = new();
     private readonly List<LightDisplayData> _lights = new();
+    private readonly List<AdoptDisplayData> _adopts = new();
     private readonly Dictionary<BoneId, Vector2> _boneScreenPositions = new();
     private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
     private readonly List<BoneDisplayData> _hoverCandidates = new();
@@ -132,6 +148,8 @@ public class SkeletonOverlayWindow : Window
     private Vector2 _hoverAnchor;
     private SelectionId? _pressedWorldTarget;
     private PendingSelection? _pendingSelection;
+    private WorldAdoptionCandidate? _pressedAdoptTarget;
+    private PendingAdoption? _pendingAdoption;
     private const string HoverListOwnerId = "##skeleton-overlay-bones";
 
     private readonly record struct PendingSelection(
@@ -139,6 +157,14 @@ public class SkeletonOverlayWindow : Window
         Vector2 ReleasePoint,
         bool Additive,
         InteractionOwner Owner);
+
+    /// <summary>An adoption a release asked for, committed on the NEXT frame
+    /// against a freshly read listing — the selection path's rule, for the
+    /// same reason: a release over something that has since gone must do
+    /// nothing rather than adopt whatever took its place.</summary>
+    private readonly record struct PendingAdoption(
+        WorldAdoptionCandidate Candidate,
+        Vector2 ReleasePoint);
 
     public SkeletonOverlayWindow(
         SceneSession scene,
@@ -148,6 +174,7 @@ public class SkeletonOverlayWindow : Window
         SkeletonOverlayPresentation presentation,
         Application.Posing.IIkConfigurationPort ikPort,
         StableBindingRegistry bindings,
+        WorldAdoptionSource adoption,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -168,6 +195,7 @@ public class SkeletonOverlayWindow : Window
         _presentation = presentation;
         _ikPort = ikPort;
         _bindings = bindings;
+        _adoption = adoption;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -244,10 +272,18 @@ public class SkeletonOverlayWindow : Window
             InteractionOwner.World,
             mousePos);
 
+        // Ahead of the Alt gate: the listing's cadence and the select that
+        // finishes an adoption are bookkeeping, and holding Alt is a request
+        // to see the world, not to suspend the scene.
+        _adoption.Tick();
+
         // Holding Alt temporarily hides the skeleton dots for an unobstructed
         // view; the window stays open and interaction resumes on release.
         if (io.KeyAlt)
+        {
+            _pressedAdoptTarget = null;
             return;
+        }
 
         // The ARMATURE pass answers to the sidebar's opted-in bones (the
         // Skeleton node and the finer eyes) and the selection anchor. The
@@ -264,10 +300,34 @@ public class SkeletonOverlayWindow : Window
         var bones = _bones;
         var actors = _actors;
         var lights = _lights;
+        var adopts = _adopts;
         bones.Clear();
         actors.Clear();
         lights.Clear();
+        adopts.Clear();
         var cameraPosition = _cameraService.GetCameraPosition();
+
+        // Adoption handles: everything the world holds that the scene does
+        // not. They sit UNDER the scene's own handles, in paint and in
+        // pointer priority alike — what the scene already holds is what a
+        // click over both is more likely to mean.
+        var candidates = _adoption.Candidates;
+        for (int i = 0; i < candidates.Count; i++)
+        {
+            var candidate = candidates[i];
+            if (!_cameraService.WorldToScreen(candidate.Position, out var screen))
+                continue;
+            adopts.Add(new AdoptDisplayData
+            {
+                Name = candidate.Name,
+                Kind = candidate.Kind,
+                Candidate = i,
+                ScreenPos = viewportPos + screen,
+                CameraDistance = Vector3.Distance(
+                    cameraPosition, candidate.Position),
+                Radius = AdoptRadius(candidate.DistanceFromPlayer),
+            });
+        }
 
         // Lights are otherwise invisible in the world: without a handle there
         // is no way to select or even find one from the viewport.
@@ -433,6 +493,10 @@ public class SkeletonOverlayWindow : Window
             light.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(light.ScreenPos, actorRadius);
+        foreach (ref var adopt in CollectionsMarshal.AsSpan(adopts))
+            adopt.IsHovered = !pointerBlocked
+                && !listTravel
+                && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
 
         // Update hover state
         if (pointerBlocked)
@@ -447,6 +511,7 @@ public class SkeletonOverlayWindow : Window
         }
 
         CommitPendingSelection(bones, actors, lights);
+        CommitPendingAdoption();
 
         // Filter bones if ShowSelectedBonesOnly is enabled
         if (_editorState.ShowSelectedBonesOnly)
@@ -457,6 +522,9 @@ public class SkeletonOverlayWindow : Window
         // drag, so this single check covers both engagement states.
         var isGizmoActive = Controls.GizmoPointerOwnership.Owned;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
+
+        // Under everything the scene owns; see the collection comment.
+        DrawAdoptionHandles(drawList, adopts);
 
         switch (_editorState.SkeletonViewMode)
         {
@@ -494,6 +562,23 @@ public class SkeletonOverlayWindow : Window
         int hoveredLightIndex = NearestHovered(lights);
         bool hasHoveredActor = hoveredActorIndex >= 0;
         bool hasHoveredLight = hoveredLightIndex >= 0;
+        // An adoption handle answers only where no scene handle does.
+        int hoveredAdoptIndex = hasHoveredActor || hasHoveredLight
+            ? -1
+            : NearestHovered(adopts);
+        bool hasHoveredAdopt = hoveredAdoptIndex >= 0;
+        if (hasHoveredAdopt && !pointerBlocked)
+        {
+            var adopt = adopts[hoveredAdoptIndex];
+            var overlayMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Preview("sow-adopt",
+                overlayMouse - new Vector2(4f, 4f),
+                overlayMouse + new Vector2(4f, 4f),
+                adopt.Kind == WorldAdoptionKind.Light
+                    ? "Add this world light to the scene"
+                    : $"Add {adopt.Name} to the scene",
+                animated: false);
+        }
         if (hasHoveredLight && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
@@ -536,7 +621,11 @@ public class SkeletonOverlayWindow : Window
         // makes a world dot clickable in the first place: the gizmo
         // overlay's exact contract, held through the press so the release
         // edge arrives too.
-        if (worldTarget != null || _pressedWorldTarget != null)
+        var adoptTarget = hasHoveredAdopt
+            ? candidates[adopts[hoveredAdoptIndex].Candidate]
+            : (WorldAdoptionCandidate?)null;
+        if (worldTarget != null || _pressedWorldTarget != null
+            || adoptTarget != null || _pressedAdoptTarget != null)
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
@@ -554,6 +643,7 @@ public class SkeletonOverlayWindow : Window
         UpdateWorldPress(
             worldTarget,
             pointerBlocked || (listTravel && !hasWorldBone));
+        UpdateAdoptPress(adoptTarget, pointerBlocked || listTravel);
         if (_hoveredBones.Count > 0)
             DrawHoverList();
     }
@@ -600,6 +690,24 @@ public class SkeletonOverlayWindow : Window
             {
                 best = i;
                 bestDistance = light.CameraDistance;
+            }
+        }
+        return best;
+    }
+
+    private static int NearestHovered(List<AdoptDisplayData> adopts)
+    {
+        int best = -1;
+        float bestDistance = 0f;
+        for (int i = 0; i < adopts.Count; i++)
+        {
+            var adopt = adopts[i];
+            if (!adopt.IsHovered)
+                continue;
+            if (best < 0 || adopt.CameraDistance < bestDistance)
+            {
+                best = i;
+                bestDistance = adopt.CameraDistance;
             }
         }
         return best;
@@ -796,6 +904,126 @@ public class SkeletonOverlayWindow : Window
         }
         _pressedWorldTarget = null;
     }
+
+    // ── adoption handles ─────────────────────────────────────────────────
+    // Ktisis' world overlay, in Poser's chrome: a hollow polygon for every
+    // world thing the scene has not taken, one shape per class (SceneDraw.cs
+    // draws a pentagon for an actor and a triangle for a light), shrinking
+    // with distance and culled past the listing's range. Hollow and dim is the
+    // whole visual argument — the scene's own handles are filled and accented,
+    // so "not yours yet" reads before any tooltip does.
+
+    /// <summary>The resting handle radius, before UI scale, for something
+    /// standing next to the player; it falls to <see cref="AdoptFarScale"/> of
+    /// that at the listing's range, so the far half of a listing reads as
+    /// marks around whatever is close rather than a field of equal blots.
+    /// </summary>
+    private const float AdoptNearRadius = 7f;
+    private const float AdoptFarScale = 0.6f;
+
+    private static float AdoptRadius(float distanceFromPlayer)
+    {
+        float t = Math.Clamp(
+            distanceFromPlayer / WorldAdoptionSource.RangeYalms, 0f, 1f);
+        return AdoptNearRadius
+            * float.Lerp(1f, AdoptFarScale, t)
+            * ImGuiHelpers.GlobalScale;
+    }
+
+    /// <summary>Sides of the polygon that says which class a handle stands
+    /// for: five for an actor, three for a light — Ktisis' own shapes.</summary>
+    private static int AdoptSides(WorldAdoptionKind kind) =>
+        kind == WorldAdoptionKind.Light ? 3 : 5;
+
+    private static void DrawAdoptionHandles(
+        ImDrawListPtr drawList, List<AdoptDisplayData> adopts)
+    {
+        if (adopts.Count == 0)
+            return;
+        var theme = Crystarium.ActiveTheme;
+        uint resting = ImGui.ColorConvertFloat4ToU32(theme.TextDim);
+        uint engaged = ImGui.ColorConvertFloat4ToU32(theme.Accent);
+
+        foreach (var adopt in adopts)
+        {
+            int sides = AdoptSides(adopt.Kind);
+            float radius = adopt.IsHovered
+                ? adopt.Radius + 2f * ImGuiHelpers.GlobalScale
+                : adopt.Radius;
+            uint stroke = adopt.IsHovered ? engaged : resting;
+            // The fill is a hint of one, so the shape reads against a bright
+            // background without ever looking like a scene handle.
+            uint fill = SetAlpha(stroke, adopt.IsHovered ? 0.45f : 0.15f);
+
+            drawList.AddCircleFilled(adopt.ScreenPos, radius, fill, sides);
+            drawList.AddCircle(
+                adopt.ScreenPos, radius + 1f * ImGuiHelpers.GlobalScale,
+                OutlineColor, sides, 1f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(
+                adopt.ScreenPos, radius, stroke, sides,
+                (adopt.IsHovered ? 2f : 1.5f) * ImGuiHelpers.GlobalScale);
+        }
+    }
+
+    /// <summary>The adoption press, tracked exactly like the world press: a
+    /// click arms a target and only a release over that SAME target asks for
+    /// it, so a drag off a handle cancels.</summary>
+    private void UpdateAdoptPress(
+        WorldAdoptionCandidate? target,
+        bool pointerBlocked)
+    {
+        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+        {
+            _pressedAdoptTarget = null;
+            return;
+        }
+
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _pressedAdoptTarget = target;
+
+        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            return;
+        if (_pressedAdoptTarget is { } pressed
+            && target is { } released
+            && SameCandidate(pressed, released))
+        {
+            _pendingAdoption = new PendingAdoption(
+                released, ImGui.GetMousePos());
+        }
+        _pressedAdoptTarget = null;
+    }
+
+    /// <summary>Commits the release from the previous frame against the
+    /// listing THIS frame read: a candidate that has gone is dropped, not
+    /// adopted, and a release the pointer had already left is refused.</summary>
+    private void CommitPendingAdoption()
+    {
+        if (_pendingAdoption is not { } pending)
+            return;
+        _pendingAdoption = null;
+        bool stillListed = false;
+        var candidates = _adoption.Candidates;
+        for (int i = 0; !stillListed && i < candidates.Count; i++)
+            stillListed = SameCandidate(candidates[i], pending.Candidate);
+        bool releaseOccluded = Interactive.PointerOccluded(
+            InteractionOwner.World, pending.ReleasePoint);
+        _log.Debug(
+            $"[Overlay] adopt {pending.Candidate.Kind} "
+            + $"'{pending.Candidate.Name}' listed={stillListed} "
+            + $"occluded={releaseOccluded}");
+        if (!stillListed || releaseOccluded)
+            return;
+        _adoption.Adopt(pending.Candidate);
+    }
+
+    /// <summary>Identity of an adoption row: the listing key alone. Position
+    /// and distance drift between passes and say nothing about which thing
+    /// this is.</summary>
+    private static bool SameCandidate(
+        in WorldAdoptionCandidate left, in WorldAdoptionCandidate right) =>
+        left.Kind == right.Kind
+        && left.Actor.Equals(right.Actor)
+        && left.Light.Handle == right.Light.Handle;
 
     private void DrawHoverList()
     {

@@ -105,6 +105,12 @@ public sealed class AppShellViewModel
     /// process-global patch, so its switch is live under every selection and
     /// under none.</summary>
     public bool PhysicsOn;
+
+    /// <summary>The world-adoption layer: while it is on, everything the
+    /// world holds that the scene does not draws a hollow handle you can click
+    /// to add it. Session state like Ktisis' own ShowWorldObjects — a mode you
+    /// are in while hunting for something to add, not a preference.</summary>
+    public bool WorldAdoptionOn;
     public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -193,6 +199,7 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
+    public Action<bool>? OnWorldAdoption;
     public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
     /// <summary>
     /// A BUTTON-BORNE surface anchors under the button that opened it, never
@@ -245,6 +252,7 @@ public sealed class AppShellViewModel
     internal Action<int>? SymmetryChosen;
     internal Action<bool>? AnimationToggled;
     internal Action<bool>? PhysicsToggled;
+    internal Action<bool>? WorldAdoptionToggled;
     internal Action? CollapseToggled;
     internal Action<Crystarium.ActionBarScope>? WorkspaceRightActions;
 }
@@ -359,6 +367,7 @@ public static class AppShellView
         vm.SymmetryChosen ??= index => vm.OnSymmetry?.Invoke(index);
         vm.AnimationToggled ??= next => vm.OnAnimation?.Invoke(next);
         vm.PhysicsToggled ??= next => vm.OnPhysics?.Invoke(next);
+        vm.WorldAdoptionToggled ??= next => vm.OnWorldAdoption?.Invoke(next);
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
@@ -382,6 +391,16 @@ public static class AppShellView
                 vm.PhysicsOn
                     ? "Switch off to freeze physics for the whole scene"
                     : "Switch on to resume physics for the whole scene");
+            // Like physics, this is scene-wide and always live, so it holds
+            // its slot under every selection and under none.
+            right.Switch(
+                "World",
+                vm.WorldAdoptionOn,
+                vm.WorldAdoptionToggled!,
+                vm.WorldAdoptionOn
+                    ? "Switch off to hide the world's addable actors and lights"
+                    : "Switch on to mark the world's actors and lights — "
+                        + "click one to add it to the scene");
         };
     }
 

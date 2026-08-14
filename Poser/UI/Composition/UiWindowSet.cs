@@ -22,6 +22,7 @@ public sealed class UiWindowSet : IDisposable
     public SidebarPartWindow SidebarPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
 
@@ -40,9 +41,11 @@ public sealed class UiWindowSet : IDisposable
         GizmoOverlayWindow gizmoOverlay,
         SettingsWindow settings,
         SpawnBrowserWindow spawnBrowser,
-        SkeletonOverlayPresentation overlayPresentation)
+        SkeletonOverlayPresentation overlayPresentation,
+        WorldAdoptionSource worldAdoption)
     {
         _overlayPresentation = overlayPresentation;
+        _worldAdoption = worldAdoption;
         _configService = configService;
         _services = services;
         // Draw order is intentional: overlays first, normal windows after them.
@@ -102,6 +105,10 @@ public sealed class UiWindowSet : IDisposable
         {
             SkeletonOverlay.UserVisible = false;
             _overlayPresentation.Clear();
+            // The adoption layer is session state for the same reason the
+            // Armature toggle is: the next session starts with the world
+            // unmarked.
+            _worldAdoption.Enabled = false;
         }
         SyncSplitWindows();
     }
