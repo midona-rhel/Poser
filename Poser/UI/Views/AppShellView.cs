@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -124,6 +124,13 @@ public sealed class AppShellViewModel
     public bool SelectedBonesOnly;
     public bool CanUndo = true;
     public bool CanRedo;
+
+    /// <summary>What the next undo/redo would actually do. The history has
+    /// carried these all along and the titlebar said "the last move, rotation
+    /// or scale" regardless — which is wrong the moment the entry is a pose
+    /// import, a mirror, or a spawn.</summary>
+    public string? UndoDescription;
+    public string? RedoDescription;
     public bool ShowSpawn;
     public bool ShowProject;
     /// <summary>Whether the active tab has a faithful standalone rendering.</summary>
@@ -787,14 +794,18 @@ public static class AppShellView
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
             "##shell-undo",
             disabled: !vm.CanUndo,
-            help: vm.CanUndo ? _undoHelp : _undoEmptyHelp);
+            help: HistoryHelp(
+                vm.CanUndo, vm.UndoDescription, "Undo", _undoShortcut,
+                _undoHelp, _undoEmptyHelp));
         x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
             "##shell-redo",
             disabled: !vm.CanRedo,
             flipX: true,
-            help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
+            help: HistoryHelp(
+                vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
+                _redoHelp, _redoEmptyHelp));
         if (!vm.ShowSpawn)
             return;
         x += step;
@@ -1412,6 +1423,34 @@ public static class AppShellView
         _overlayShortcut = PoserKeybinds.Effective("Toggle bone overlay");
     }
 
+    /// <summary>
+    /// The tooltip for one history button. The generic line is the FALLBACK,
+    /// not the answer: when the stack knows what its top entry is, the button
+    /// says so, because "the last move, rotation or scale" is simply untrue of
+    /// a pose import or a spawn.
+    ///
+    /// <para>Descriptions are authored as sentence openers ("Transform 2
+    /// bones", "Mirror edits"), so the leading capital is dropped to let them
+    /// sit inside the verb rather than after it.</para>
+    /// </summary>
+    private static string HistoryHelp(
+        bool available,
+        string? description,
+        string verb,
+        string shortcut,
+        string generic,
+        string empty)
+    {
+        if (!available)
+            return empty;
+        if (string.IsNullOrWhiteSpace(description))
+            return generic;
+        string named = char.IsUpper(description[0])
+            ? char.ToLowerInvariant(description[0]) + description[1..]
+            : description;
+        return $"{verb} {named} · {shortcut}";
+    }
+
     /// <summary>Cancels an in-progress numeric axis edit, for example when selection changes.</summary>
     public static void CancelAxisEdit()
     {
@@ -1455,14 +1494,18 @@ public static class AppShellView
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
             "##shell-undo",
             disabled: !vm.CanUndo,
-            help: vm.CanUndo ? _undoHelp : _undoEmptyHelp);
+            help: HistoryHelp(
+                vm.CanUndo, vm.UndoDescription, "Undo", _undoShortcut,
+                _undoHelp, _undoEmptyHelp));
         x += step;
         IconAt(
             new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
             "##shell-redo",
             disabled: !vm.CanRedo,
             flipX: true,
-            help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
+            help: HistoryHelp(
+                vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
+                _redoHelp, _redoEmptyHelp));
         x += step;
         if (vm.ShowSpawn)
         {
