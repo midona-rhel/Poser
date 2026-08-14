@@ -56,7 +56,11 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
     private readonly Dictionary<ActorId, Owned> _owned = new();
     // Derived per-frame index for the tint detour only: the exact model
     // instances whose tint Poser owns right now. Never a source of truth.
-    private readonly HashSet<nint> _ownedTintBases = new();
+    // SWAP-PUBLISHED, never mutated in place: the detour reads it from
+    // whichever thread the game calls the tint vfunc on, and a HashSet being
+    // cleared and refilled underneath that read tears. Writers build a fresh
+    // set and assign; readers take one reference and use it for the call.
+    private volatile HashSet<nint> _ownedTintBases = new();
 
     private delegate nint UpdateTintDelegate(nint characterBase, nint tint);
     private readonly Hook<UpdateTintDelegate>? _updateTintHook;
@@ -98,6 +102,8 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
     {
         // Only the exact instances Poser owns are suppressed; everything
         // else keeps the game's own tinting.
+        // One read of the field, then work off that snapshot: a concurrent
+        // rebuild replaces the reference, it never edits this instance.
         if (_ownedTintBases.Contains(characterBase))
             return 0;
         return _updateTintHook!.Original(characterBase, tint);
@@ -304,7 +310,7 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
         if (_owned.Count == 0)
             return;
 
-        _ownedTintBases.Clear();
+        var rebuilt = new HashSet<nint>();
         foreach (var (actor, owned) in _owned)
         {
             var resolved = _bindings.Resolve(actor);
@@ -318,7 +324,7 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
                 if (characterBase == null)
                     continue;
                 characterBase->Tint = tint;
-                _ownedTintBases.Add((nint)characterBase);
+                rebuilt.Add((nint)characterBase);
             }
 
             if (owned.Wetness is { } wetness)
@@ -328,11 +334,14 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
                     WriteWetness(mainBase, wetness);
             }
         }
+
+        // Publish last: the detour never observes a half-built index.
+        _ownedTintBases = rebuilt;
     }
 
     private void RebuildTintIndex()
     {
-        _ownedTintBases.Clear();
+        var rebuilt = new HashSet<nint>();
         foreach (var (actor, owned) in _owned)
         {
             if (owned.Tints.Count == 0)
@@ -345,16 +354,17 @@ public sealed unsafe class PresentationRuntimePort : IPresentationRuntimePort, I
             {
                 var characterBase = BaseFor(character, model);
                 if (characterBase != null)
-                    _ownedTintBases.Add((nint)characterBase);
+                    rebuilt.Add((nint)characterBase);
             }
         }
+        _ownedTintBases = rebuilt;
     }
 
     public void Dispose()
     {
         _framework.Update -= EnforceOwned;
         _owned.Clear();
-        _ownedTintBases.Clear();
+        _ownedTintBases = new HashSet<nint>();
         _updateTintHook?.Dispose();
         GC.SuppressFinalize(this);
     }

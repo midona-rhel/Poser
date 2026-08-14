@@ -83,6 +83,12 @@ public sealed unsafe class PosePreviewService : IDisposable
     private readonly object _gate = new();
     private nint _requestedSource;
 
+    /// <summary>The object-table index the requested source occupied when the
+    /// request was made. An address alone is a claim; the copy re-proves it by
+    /// checking this slot still holds that exact address (WorldActorDiscovery's
+    /// standard), because ticks pass between Open and the copy.</summary>
+    private ushort _requestedSourceIndex = ushort.MaxValue;
+
     /// <summary>The standing request, in the order it must land: the first
     /// stage alone for a plain <see cref="ShowPose(string, PoseImportOptions)"/>,
     /// both for a <see cref="ShowSequence"/>. The SERIAL is what the framework
@@ -191,9 +197,17 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         }
 
+        var sourceReference = _objectTable.CreateObjectReference(appearanceSource.Address);
+        if (sourceReference is null)
+        {
+            _statusText = "Select an actor to preview.";
+            return;
+        }
+
         lock (_gate)
         {
             _requestedSource = appearanceSource.Address;
+            _requestedSourceIndex = sourceReference.ObjectIndex;
         }
 
         if (_open)
@@ -346,6 +360,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         lock (_gate)
         {
             _requestedSource = nint.Zero;
+            _requestedSourceIndex = ushort.MaxValue;
             _requestedFirst = null;
             _requestedSecond = null;
             _requestSerial++;
@@ -404,12 +419,33 @@ public sealed unsafe class PosePreviewService : IDisposable
     private void CopyAppearance(AgentInspect* agent)
     {
         nint source;
+        ushort sourceIndex;
         lock (_gate)
         {
             source = _requestedSource;
+            sourceIndex = _requestedSourceIndex;
         }
         if (source == nint.Zero || source == _copiedSource)
             return;
+
+        // Deref-time revalidation: the request was made ticks ago, and a source
+        // that despawned since would leave this address pointing at freed or
+        // recycled memory. The slot must still hold the exact address.
+        if (sourceIndex == ushort.MaxValue
+            || _objectTable[sourceIndex] is not { } occupant
+            || occupant.Address != source)
+        {
+            lock (_gate)
+            {
+                if (_requestedSource == source)
+                {
+                    _requestedSource = nint.Zero;
+                    _requestedSourceIndex = ushort.MaxValue;
+                }
+            }
+            _log.Debug("PosePreviewService: appearance source no longer occupies its slot; copy refused");
+            return;
+        }
 
         agent->CharaView.ModelData.CopyFromCharacter((Character*)source);
         _copiedSource = source;

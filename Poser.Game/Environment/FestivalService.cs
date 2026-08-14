@@ -97,8 +97,29 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
 
     // ── Mutations ─────────────────────────────────────────────────────
 
+    /// <summary>Mutations enqueue onto the framework tick's queue and read the
+    /// engine's live slots, so they own both conditions the UI already checks
+    /// before offering them: GPose, and the framework thread. Refusing here
+    /// makes that structural rather than a UI convention.</summary>
+    private bool CanMutate(string operation)
+    {
+        if (!CanModify)
+        {
+            _log.Warning($"FestivalService: {operation} requires GPose");
+            return false;
+        }
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            _log.Warning($"FestivalService: {operation} must run on the framework thread");
+            return false;
+        }
+        return true;
+    }
+
     public bool Add(uint id, ushort phase = 1)
     {
+        if (!CanMutate(nameof(Add)))
+            return false;
         if (!IsAllowedHere(id))
             return false;
 
@@ -118,6 +139,8 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
 
     public bool Remove(uint id)
     {
+        if (!CanMutate(nameof(Remove)))
+            return false;
         if (!IsAllowedHere(id))
             return false;
 
@@ -137,6 +160,9 @@ public sealed unsafe class FestivalService : IFestivalService, IDisposable
 
     public bool ChangePhase(uint id, ushort phase)
     {
+        if (!CanMutate(nameof(ChangePhase)))
+            return false;
+
         var active = EngineFestivals();
         for (var i = 0; i < IFestivalService.MaxFestivals; i++)
         {

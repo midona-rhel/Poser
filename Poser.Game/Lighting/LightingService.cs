@@ -239,6 +239,8 @@ public sealed unsafe class LightingService : ILightingService
     {
         if (light is not Light typed)
             return;
+        if (!OnOwnerThread(nameof(DestroyLight)))
+            return;
 
         // A borrowed native is never destructed: a GPose camera light belongs
         // to the game and an overworld light belongs to the world.
@@ -259,6 +261,8 @@ public sealed unsafe class LightingService : ILightingService
     {
         if (light is not Light typed || typed.Ownership == LightOwnership.Spawned)
             return;
+        if (!OnOwnerThread(nameof(ReleaseLight)))
+            return;
         if (!_lights.Remove(typed))
             return;
 
@@ -267,6 +271,17 @@ public sealed unsafe class LightingService : ILightingService
     }
 
     public void DestroyAllLights()
+    {
+        if (!OnOwnerThread(nameof(DestroyAllLights)))
+            return;
+        DestroyAllLightsCore();
+    }
+
+    /// <summary>The ungated body. Teardown (Dispose, GPose exit) must destroy
+    /// its natives even when it does not run inside a framework update:
+    /// refusing there would leak every spawned light instead of protecting
+    /// anything, so the thread gate lives on the public entry only.</summary>
+    private void DestroyAllLightsCore()
     {
         if (_lights.Count == 0)
             return;
@@ -343,6 +358,17 @@ public sealed unsafe class LightingService : ILightingService
             _log.Error(
                 $"LightingService: failed to restore a suppressed world light: {ex.Message}");
         }
+    }
+
+    /// <summary>The native calls run inline on the caller's thread, so every
+    /// public entry that reaches one refuses off-thread rather than racing the
+    /// game. Teardown paths bypass this deliberately — see DestroyAllLights.</summary>
+    private bool OnOwnerThread(string operation)
+    {
+        if (_framework.IsInFrameworkUpdateThread)
+            return true;
+        _log.Warning($"LightingService: {operation} must run on the framework thread");
+        return false;
     }
 
     private bool CanSpawn()
@@ -1113,7 +1139,7 @@ public sealed unsafe class LightingService : ILightingService
         if (evt.IsGPosing)
             RefreshGPoseLights();
         else
-            DestroyAllLights();
+            DestroyAllLightsCore();
     }
 
     public void Dispose()
@@ -1121,7 +1147,7 @@ public sealed unsafe class LightingService : ILightingService
         _disposed = true;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
         _framework.Update -= OnFrameworkUpdate;
-        DestroyAllLights();
+        DestroyAllLightsCore();
         _toggleGPoseLightHook?.Dispose();
         _lightDtorHook?.Dispose();
         _lightCtorHook?.Dispose();

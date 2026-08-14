@@ -35,13 +35,18 @@ public unsafe class IKService : IIKService
 
     private bool _initialized = false;
 
+    // Per-solve chain scratch; see GetBonesToDepth for the reuse contract.
+    private readonly List<IBone> _chainBuffer = new();
+
     public IKService(ISigScanner scanner, IPluginLog log)
     {
         _log = log;
 
         try
         {
-            // Scan for native Havok IK solver functions
+            // Scan for native Havok IK solver functions. All three patterns are
+            // Brio's verbatim (Brio/Game/Posing/IKService.cs:26-28): the CCD
+            // solver constructor, its solve entry, and the two-joint solve.
             _ccdSolverCtr = (delegate* unmanaged<hkaCCDSolver*, int, float, void>)
                 scanner.ScanText("E8 ?? ?? ?? ?? 48 8D 43 ?? 48 C7 43");
             _ccdSolverSolve = (delegate* unmanaged<hkaCCDSolver*, byte*, hkArray<CCDIKConstraint>*, hkaPose*, byte*>)
@@ -183,9 +188,14 @@ public unsafe class IKService : IIKService
     /// <summary>
     /// Gets a list of bones going up the hierarchy from the given bone.
     /// </summary>
-    private static List<IBone> GetBonesToDepth(IBone bone, int depth, bool includeSelf)
+    private List<IBone> GetBonesToDepth(IBone bone, int depth, bool includeSelf)
     {
-        var result = new List<IBone>();
+        // Reused buffer, not a fresh list: Solve runs per armed chain per
+        // physics tick. Safe because the single caller reads two indices out
+        // of the result and never retains it, and the physics pass is
+        // single-threaded.
+        var result = _chainBuffer;
+        result.Clear();
         if (includeSelf)
             result.Add(bone);
 
@@ -200,7 +210,15 @@ public unsafe class IKService : IIKService
 
     public void Dispose()
     {
-        if (_initialized)
+        // Refuse before freeing. Solve gates on nothing but _initialized, so a
+        // physics-detour tick arriving after the frees — container teardown
+        // order is a convention, not a guarantee — would write through
+        // released aligned memory. Clearing the flag first makes that
+        // structural instead of ordering-dependent.
+        var wasInitialized = _initialized;
+        _initialized = false;
+
+        if (wasInitialized)
         {
             NativeHelpers.FreeAlignedMemory(_solverAddr);
             NativeHelpers.FreeAlignedMemory(_ccdConstraintAddr);
