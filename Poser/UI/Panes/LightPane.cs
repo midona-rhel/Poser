@@ -38,6 +38,10 @@ public sealed class LightPane
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly ILightingService _lighting;
+
+    /// <summary>Adding and removing a light goes through the lifecycle seam,
+    /// so both land in the shell's undo history.</summary>
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly Game.Viewport.ViewportProjection _viewport;
@@ -104,6 +108,7 @@ public sealed class LightPane
         SceneSession scene,
         StableBindingRegistry bindings,
         ILightingService lighting,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
@@ -113,6 +118,7 @@ public sealed class LightPane
         _scene = scene;
         _bindings = bindings;
         _lighting = lighting;
+        _lifecycle = lifecycle;
         _lightFiles = lightFiles;
         _cleanTransforms = cleanTransforms;
         _viewport = viewport;
@@ -154,7 +160,12 @@ public sealed class LightPane
         _loadBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            var imported = _lightFiles.ImportLight(path);
+            // The file service owns the spawn, so the add is RECORDED rather
+            // than issued here: a light that arrives from a file is still a
+            // light the user added, and undo has to know it.
+            var imported = _lifecycle.RecordSpawnedLight(
+                $"Add light from {System.IO.Path.GetFileNameWithoutExtension(path)}",
+                _lightFiles.ImportLight(path));
             if (imported == null)
             {
                 _status = "Load: the light file could not be read.";
@@ -674,7 +685,7 @@ public sealed class LightPane
             actions.Button("Clone",
                 () =>
                 {
-                    var clone = _lighting.CloneLight(light);
+                    var clone = _lifecycle.CloneLight(light);
                     _status = clone == null
                         ? "Clone: the light could not be created."
                         : string.Empty;
@@ -687,7 +698,7 @@ public sealed class LightPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        _lighting.DestroyLight(light);
+                        _lifecycle.DestroyLight(light);
                         _status = string.Empty;
                     },
                     help: "Remove this light from the scene",

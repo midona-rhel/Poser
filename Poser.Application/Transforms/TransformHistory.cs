@@ -1,9 +1,33 @@
 namespace Poser.Application.Transforms;
 
+/// <summary>
+/// One undoable act. There are exactly two shapes, and the difference is not
+/// cosmetic: a transform is undone by RESTORING STATE onto a target that
+/// still exists, while a spawn or a despawn is undone by RUNNING THE OPPOSITE
+/// ACT through the service that owns the entity — there is no "before state"
+/// of an object that did not exist. One stack carries both, because undo is
+/// one ordered story and a spawn interleaves with the transforms around it.
+/// </summary>
+public abstract record HistoryEntry(string Description);
+
 public sealed record TransformPatch(
     string Description,
     IReadOnlyList<TransformTargetState> Before,
-    IReadOnlyList<TransformTargetState> After);
+    IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description);
+
+/// <summary>
+/// A scene-lifecycle act: an entity entered or left the scene. The two
+/// directions are supplied by the service that owns the entity and are
+/// EXACT INVERSES of each other, each answering whether it landed — a
+/// refused spawn is a failed undo, not a silently swallowed one. Each closure
+/// carries the identity of the entity it acts on, so it re-binds across a
+/// destroy/respawn pair rather than holding a native handle that undo itself
+/// invalidated.
+/// </summary>
+public sealed record SceneLifecyclePatch(
+    string Description,
+    Func<bool> Undo,
+    Func<bool> Redo) : HistoryEntry(Description);
 
 /// <summary>
 /// Bounded before/after patch history.
@@ -24,8 +48,8 @@ public sealed class TransformHistory
     private static readonly Func<int> FixedDefault = static () => DefaultCapacity;
 
     private readonly Func<int> _capacity;
-    private readonly List<TransformPatch> _undo = new();
-    private readonly List<TransformPatch> _redo = new();
+    private readonly List<HistoryEntry> _undo = new();
+    private readonly List<HistoryEntry> _redo = new();
 
     public event Action? PatchAppended;
 
@@ -45,7 +69,7 @@ public sealed class TransformHistory
     public string? UndoDescription => CanUndo ? _undo[^1].Description : null;
     public string? RedoDescription => CanRedo ? _redo[^1].Description : null;
 
-    public void Append(TransformPatch patch)
+    public void Append(HistoryEntry patch)
     {
         int capacity = _capacity();
         if (capacity < 1)
@@ -77,10 +101,10 @@ public sealed class TransformHistory
                 }
     }
 
-    public TransformPatch? PeekUndo() =>
+    public HistoryEntry? PeekUndo() =>
         CanUndo ? _undo[^1] : null;
 
-    public void CommitUndo(TransformPatch patch)
+    public void CommitUndo(HistoryEntry patch)
     {
         if (!CanUndo || !ReferenceEquals(_undo[^1], patch))
             throw new InvalidOperationException(
@@ -89,10 +113,10 @@ public sealed class TransformHistory
         _redo.Add(patch);
     }
 
-    public TransformPatch? PeekRedo() =>
+    public HistoryEntry? PeekRedo() =>
         CanRedo ? _redo[^1] : null;
 
-    public void CommitRedo(TransformPatch patch)
+    public void CommitRedo(HistoryEntry patch)
     {
         if (!CanRedo || !ReferenceEquals(_redo[^1], patch))
             throw new InvalidOperationException(
@@ -107,14 +131,21 @@ public sealed class TransformHistory
     /// could never succeed); patches whose targets all remain current
     /// survive, so replacing one slot never discards history that involves
     /// only unaffected slots or actors.
+    ///
+    /// <para>A lifecycle entry is never stale by this rule and is never
+    /// dropped: it holds no target state, and the entity it names is
+    /// deliberately absent for exactly half of its life — an "add light"
+    /// entry whose light has been undone away is precisely the entry that
+    /// must survive to be redone.</para>
     /// </summary>
     public void Reconcile(Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent)
     {
-        bool Stale(TransformPatch patch) =>
-            patch.Before.Any(state => !isCurrent(state.Target)) ||
-            patch.After.Any(state => !isCurrent(state.Target));
-        _undo.RemoveAll(patch => Stale(patch));
-        _redo.RemoveAll(patch => Stale(patch));
+        bool Stale(HistoryEntry entry) =>
+            entry is TransformPatch patch &&
+            (patch.Before.Any(state => !isCurrent(state.Target)) ||
+                patch.After.Any(state => !isCurrent(state.Target)));
+        _undo.RemoveAll(entry => Stale(entry));
+        _redo.RemoveAll(entry => Stale(entry));
     }
 
     public void Clear()

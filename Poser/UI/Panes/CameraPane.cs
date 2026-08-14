@@ -31,6 +31,10 @@ public sealed class CameraPane
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly IVirtualCameraService _cameras;
+
+    /// <summary>Adding and removing a camera goes through the lifecycle seam,
+    /// so both land in the shell's undo history.</summary>
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
 
     private string _status = string.Empty;
@@ -83,11 +87,13 @@ public sealed class CameraPane
         SceneSession scene,
         StableBindingRegistry bindings,
         IVirtualCameraService cameras,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         ICameraFileService cameraFiles)
     {
         _scene = scene;
         _bindings = bindings;
         _cameras = cameras;
+        _lifecycle = lifecycle;
         _cameraFiles = cameraFiles;
     }
 
@@ -117,7 +123,11 @@ public sealed class CameraPane
         _loadBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            var imported = _cameraFiles.ImportCamera(path);
+            // The file service owns the creation, so the add is RECORDED
+            // rather than issued here — the light pane's own rule.
+            var imported = _lifecycle.RecordSpawnedCamera(
+                $"Add camera from {System.IO.Path.GetFileNameWithoutExtension(path)}",
+                _cameraFiles.ImportCamera(path));
             if (imported == null)
             {
                 _status = "Load: the camera file could not be read.";
@@ -555,7 +565,7 @@ public sealed class CameraPane
             actions.Button("Clone",
                 () =>
                 {
-                    var clone = _cameras.CloneCamera(camera);
+                    var clone = _lifecycle.CloneCamera(camera);
                     if (clone == null)
                     {
                         _status = "Clone: the camera could not be created.";
@@ -569,7 +579,7 @@ public sealed class CameraPane
                 actions.Button("Destroy",
                     () =>
                     {
-                        _cameras.DestroyCamera(camera);
+                        _lifecycle.DestroyCamera(camera);
                         _status = string.Empty;
                     },
                     help: "Remove this camera from the scene",

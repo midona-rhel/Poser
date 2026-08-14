@@ -47,6 +47,10 @@ public class MainWindow : Window
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly IGazeService _gazeService;
 
+    /// <summary>Every entity the shell adds or removes goes through this, so
+    /// the act lands in the same history the transforms do.</summary>
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
     // binding registry and the pointer never persists in UI state.
@@ -377,6 +381,7 @@ public class MainWindow : Window
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         IGazeService gazeService,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -426,6 +431,7 @@ public class MainWindow : Window
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _gazeService = gazeService;
+        _lifecycle = lifecycle;
         // A gaze mode flip changes the sidebar's row SET (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
@@ -2549,7 +2555,7 @@ public class MainWindow : Window
     /// </summary>
     private void SpawnLight(LightKind kind)
     {
-        if (_lightingService.SpawnLight(kind) is { } spawned)
+        if (_lifecycle.SpawnLight(kind) is { } spawned)
             _pendingSelectSpawnedLight = spawned;
     }
 
@@ -2633,7 +2639,7 @@ public class MainWindow : Window
     /// selection once the scene refresh has bound it.</summary>
     private void CreateCamera(Domain.Scene.CameraKind kind)
     {
-        if (_cameraService.CreateCamera(kind) is { } created)
+        if (_lifecycle.CreateCamera(kind) is { } created)
             _cameraPane.SelectWhenBound(created);
     }
 
@@ -2908,7 +2914,9 @@ public class MainWindow : Window
             },
             () =>
             {
-                var clone = _spawnService.CloneActor(actor);
+                var clone = _lifecycle.SpawnActor(
+                    $"Clone actor '{DisplayName(actor.Name)}'",
+                    () => _spawnService.CloneActor(actor));
                 if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
@@ -3171,7 +3179,7 @@ public class MainWindow : Window
             () => light.IsOn = !light.IsOn,
             () => OpenEntityRename(
                 "Rename light", light.Name, next => light.Name = next),
-            () => _lightingService.CloneLight(light),
+            () => _lifecycle.CloneLight(light),
             () => _lightPane.OpenSave(light),
             null, // separator
         };
@@ -3181,7 +3189,7 @@ public class MainWindow : Window
                 "Destroy", TablerIcon.Trash, danger: true));
             actions.Add(() =>
             {
-                _lightingService.DestroyLight(light);
+                _lifecycle.DestroyLight(light);
                 _selection.Clear();
             });
         }
@@ -3260,7 +3268,7 @@ public class MainWindow : Window
                 "Rename camera", camera.Name, next => camera.Name = next),
             () =>
             {
-                if (_cameraService.CloneCamera(camera) is { } clone)
+                if (_lifecycle.CloneCamera(camera) is { } clone)
                     _cameraPane.SelectWhenBound(clone);
             },
             () => _cameraPane.OpenSave(camera),
@@ -3274,7 +3282,7 @@ public class MainWindow : Window
             actions.Add(null);
             actions.Add(() =>
             {
-                _cameraService.DestroyCamera(camera);
+                _lifecycle.DestroyCamera(camera);
                 _selection.Clear();
             });
         }

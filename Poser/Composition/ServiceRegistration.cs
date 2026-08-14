@@ -184,6 +184,9 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
         services.AddSingleton<CleanTransformFacade>();
+        // Entity lifecycle lands in the SAME history the transforms do, so
+        // undo stays one ordered story rather than two.
+        services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();

@@ -81,6 +81,10 @@ public sealed class SpawnBrowserWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
+
+    /// <summary>Every entity this browser adds goes through the lifecycle
+    /// seam, so the add lands in the shell's undo history.</summary>
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
 
@@ -167,6 +171,7 @@ public sealed class SpawnBrowserWindow : Window
         StableBindingRegistry bindings,
         AnimationSession animation,
         ConfigurationService configuration,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         ITextureProvider textures)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
@@ -185,6 +190,7 @@ public sealed class SpawnBrowserWindow : Window
         _bindings = bindings;
         _animation = animation;
         _configuration = configuration;
+        _lifecycle = lifecycle;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -657,16 +663,22 @@ public sealed class SpawnBrowserWindow : Window
         switch (index)
         {
             case RowNewActor:
-                SelectSpawned(
-                    _spawnService.SpawnNewActor(reserveCompanionSlot: false));
+                SelectSpawned(_lifecycle.SpawnActor(
+                    "Add actor",
+                    () => _spawnService.SpawnNewActor(
+                        reserveCompanionSlot: false)));
                 return;
             case RowNewActorCompanion:
-                SelectSpawned(
-                    _spawnService.SpawnNewActor(reserveCompanionSlot: true));
+                SelectSpawned(_lifecycle.SpawnActor(
+                    "Add actor with companion slot",
+                    () => _spawnService.SpawnNewActor(
+                        reserveCompanionSlot: true)));
                 return;
             case RowCloneActor:
                 if (SelectedActor() is { } source)
-                    SelectSpawned(_spawnService.CloneActor(source));
+                    SelectSpawned(_lifecycle.SpawnActor(
+                        "Clone actor",
+                        () => _spawnService.CloneActor(source)));
                 return;
             case RowProp:
                 _propService.SpawnProp();
@@ -682,7 +694,7 @@ public sealed class SpawnBrowserWindow : Window
                     RowLightDirectional => LightKind.Directional,
                     _ => LightKind.Spot,
                 };
-                if (_lightingService.SpawnLight(kind) is { } light)
+                if (_lifecycle.SpawnLight(kind) is { } light)
                     _pendingSelectSpawnedLight = light;
                 return;
             case RowLightFromFile:
@@ -707,7 +719,7 @@ public sealed class SpawnBrowserWindow : Window
             case RowCameraGame:
             case RowCameraFree:
             {
-                var created = _cameraService.CreateCamera(
+                var created = _lifecycle.CreateCamera(
                     index == RowCameraFree ? CameraKind.Free : CameraKind.Game);
                 if (created == null)
                 {
@@ -761,7 +773,8 @@ public sealed class SpawnBrowserWindow : Window
         // at spawn — never attached to an owner's slot, and with no
         // post-spawn model surface anywhere.
         var entry = _catalog.Entries[index - ActionRows];
-        var spawned = _spawnService.SpawnCatalogActor(entry);
+        var spawned = _lifecycle.SpawnActor(
+            $"Add {entry.Name}", () => _spawnService.SpawnCatalogActor(entry));
         if (spawned == null)
         {
             _note = SpawnFailedNote;

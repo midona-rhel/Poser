@@ -47,8 +47,7 @@ public sealed class DomainApplicationContractTests
         Assert.True(app.History.CanUndo);
         Assert.False(app.History.CanRedo);
         Assert.Equal("contract edit", app.History.UndoDescription);
-        var patch = app.History.PeekUndo();
-        Assert.NotNull(patch);
+        var patch = Assert.IsType<TransformPatch>(app.History.PeekUndo());
         Assert.Single(patch.Before);
         Assert.Single(patch.After);
 

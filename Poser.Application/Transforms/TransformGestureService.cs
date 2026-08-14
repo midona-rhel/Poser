@@ -352,13 +352,44 @@ public sealed class TransformGestureService : IDisposable
             return Busy();
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before undo.");
-        var patch = History.PeekUndo();
-        if (patch == null)
+        var entry = History.PeekUndo();
+        if (entry == null)
             return GestureResult.Fail("Nothing to undo.");
+        if (entry is SceneLifecyclePatch lifecycle)
+            return RunLifecycle(
+                lifecycle.Undo,
+                $"Could not undo {lifecycle.Description.ToLowerInvariant()}.",
+                () => History.CommitUndo(entry));
+        var patch = (TransformPatch)entry;
         var recovery = AttemptRecovery(patch.Before);
         if (recovery.Complete)
             History.CommitUndo(patch);
         return RecoveryResult(recovery);
+    }
+
+    /// <summary>
+    /// Runs one direction of a lifecycle entry. The entry moves stacks ONLY
+    /// when the act it names actually landed — the same rule the transform
+    /// path applies to its restore receipt: a spawn the game refused leaves
+    /// the entry exactly where it was, still undoable, rather than quietly
+    /// consuming a step of the user's history.
+    /// </summary>
+    private static GestureResult RunLifecycle(
+        Func<bool> act, string failure, Action commit)
+    {
+        bool landed;
+        try
+        {
+            landed = act();
+        }
+        catch (Exception exception)
+        {
+            return GestureResult.Fail($"{failure} {exception.Message}");
+        }
+        if (!landed)
+            return GestureResult.Fail(failure);
+        commit();
+        return GestureResult.Ok();
     }
 
     public GestureResult Redo()
@@ -370,9 +401,15 @@ public sealed class TransformGestureService : IDisposable
             return Busy();
         if (_active != null)
             return GestureResult.Fail("Cancel the active gesture before redo.");
-        var patch = History.PeekRedo();
-        if (patch == null)
+        var entry = History.PeekRedo();
+        if (entry == null)
             return GestureResult.Fail("Nothing to redo.");
+        if (entry is SceneLifecyclePatch lifecycle)
+            return RunLifecycle(
+                lifecycle.Redo,
+                $"Could not redo {lifecycle.Description.ToLowerInvariant()}.",
+                () => History.CommitRedo(entry));
+        var patch = (TransformPatch)entry;
         var recovery = AttemptRecovery(patch.After);
         if (recovery.Complete)
             History.CommitRedo(patch);

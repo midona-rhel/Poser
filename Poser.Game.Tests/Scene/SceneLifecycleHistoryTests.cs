@@ -1,0 +1,495 @@
+using System.Numerics;
+using Poser.Application.Transforms;
+using Poser.Core;
+using Poser.Domain.Companions;
+using Poser.Domain.Scene;
+using Poser.Entities;
+using Poser.Game.Scene;
+using Poser.Services;
+
+namespace Poser.Game.Tests.Scene;
+
+/// <summary>
+/// The lifecycle seam's contract: an add or a remove is one entry in the
+/// SAME history the transforms use, its two directions are exact inverses,
+/// and the entity's IDENTITY survives a destroy/respawn pair so entries
+/// stacked on one entity keep naming that entity rather than its corpse.
+/// </summary>
+public sealed class SceneLifecycleHistoryTests
+{
+    // ── lights ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Adding_a_light_leaves_one_undoable_entry_that_destroys_it()
+    {
+        var world = new World();
+
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot);
+
+        Assert.NotNull(light);
+        Assert.Equal("Add spot light", world.History.UndoDescription);
+        Assert.Single(world.Lighting.Live);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Lighting.Live);
+        Assert.False(world.History.CanUndo);
+        Assert.True(world.History.CanRedo);
+    }
+
+    [Fact]
+    public void Redoing_an_add_restores_the_light_as_the_user_last_had_it()
+    {
+        var world = new World();
+        var light = world.Lifecycle.SpawnLight(LightKind.Point)!;
+        light.Name = "Key";
+        light.Intensity = 7.5f;
+        light.Kind = LightKind.Area;
+
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+
+        var restored = Assert.Single(world.Lighting.Live);
+        Assert.NotSame(light, restored);
+        Assert.Equal("Key", restored.Name);
+        Assert.Equal(7.5f, restored.Intensity);
+        Assert.Equal(LightKind.Area, restored.Kind);
+    }
+
+    [Fact]
+    public void Removing_a_light_is_undone_by_bringing_the_same_light_back()
+    {
+        var world = new World();
+        var light = world.Lighting.SpawnLight(LightKind.Spot)!;
+        light.Name = "Rim";
+
+        world.Lifecycle.DestroyLight(light);
+
+        Assert.Empty(world.Lighting.Live);
+        Assert.Equal("Remove light 'Rim'", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal("Rim", Assert.Single(world.Lighting.Live).Name);
+    }
+
+    /// <summary>
+    /// The regression the slot registry exists for: an add and a later remove
+    /// are two entries about ONE light. Undoing past the remove must destroy
+    /// the light the remove's own undo just re-created — not the original,
+    /// which by then is a corpse, leaving the replacement standing.
+    /// </summary>
+    [Fact]
+    public void Undo_past_a_removal_destroys_the_light_the_removal_restored()
+    {
+        var world = new World();
+        var original = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+        world.Lifecycle.DestroyLight(original);
+
+        Assert.True(world.Undo());   // the removal: the light comes back
+        var restored = Assert.Single(world.Lighting.Live);
+        Assert.NotSame(original, restored);
+
+        Assert.True(world.Undo());   // the add: nothing may be left standing
+        Assert.Empty(world.Lighting.Live);
+    }
+
+    [Fact]
+    public void A_light_the_game_refuses_to_respawn_keeps_its_entry()
+    {
+        var world = new World();
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+        Assert.True(world.Undo());
+
+        world.Lighting.RefuseSpawn = true;
+        Assert.False(world.Redo());
+
+        // The step is still there to be redone: a refused act consumes no
+        // history.
+        Assert.True(world.History.CanRedo);
+        Assert.Empty(world.Lighting.Live);
+        world.Lighting.RefuseSpawn = false;
+        Assert.True(world.Redo());
+        Assert.Single(world.Lighting.Live);
+    }
+
+    [Fact]
+    public void A_borrowed_light_is_released_without_taking_an_entry()
+    {
+        var world = new World();
+        var borrowed = world.Lighting.AddBorrowed();
+
+        world.Lifecycle.DestroyLight(borrowed);
+
+        Assert.Empty(world.Lighting.Live);
+        Assert.False(world.History.CanUndo);
+    }
+
+    [Fact]
+    public void A_light_that_left_by_another_path_undoes_without_a_dead_write()
+    {
+        var world = new World();
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+
+        // A scene import, or the game itself, took it: nothing this seam did.
+        world.Lighting.VanishWithoutNotice(light);
+
+        // Undo has nothing left to remove and says so honestly, rather than
+        // failing on a corpse and pinning every older entry behind it.
+        Assert.True(world.Undo());
+        Assert.Empty(world.Lighting.Live);
+        // Nothing was ever documented, so the redo refuses instead of minting
+        // a default-valued impostor wearing the entry's name.
+        Assert.False(world.Redo());
+    }
+
+    // ── cameras ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Adding_a_camera_is_undoable_and_redo_restores_its_framing()
+    {
+        var world = new World();
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+        camera.Name = "Wide";
+        camera.Zoom = 12f;
+
+        Assert.Equal("Add free camera", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Empty(world.Cameras.Live);
+
+        Assert.True(world.Redo());
+        var restored = Assert.Single(world.Cameras.Live);
+        Assert.Equal("Wide", restored.Name);
+        Assert.Equal(12f, restored.Zoom);
+        Assert.Equal(CameraKind.Free, restored.Kind);
+    }
+
+    [Fact]
+    public void Undo_past_a_camera_removal_destroys_the_restored_camera()
+    {
+        var world = new World();
+        var original = world.Lifecycle.CreateCamera(CameraKind.Game)!;
+        world.Lifecycle.DestroyCamera(original);
+
+        Assert.True(world.Undo());
+        Assert.NotSame(original, Assert.Single(world.Cameras.Live));
+        Assert.True(world.Undo());
+        Assert.Empty(world.Cameras.Live);
+    }
+
+    [Fact]
+    public void The_gpose_camera_is_destroyed_without_taking_an_entry()
+    {
+        var world = new World();
+        var session = world.Cameras.AddDefault();
+
+        world.Lifecycle.DestroyCamera(session);
+
+        Assert.Empty(world.Cameras.Live);
+        Assert.False(world.History.CanUndo);
+    }
+
+    // ── actors ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void An_actor_spawn_is_undone_by_a_despawn_and_redone_by_respawning()
+    {
+        var world = new World();
+
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Actor"));
+
+        Assert.NotNull(actor);
+        Assert.Equal("Add actor", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Empty(world.Actors.Live);
+
+        Assert.True(world.Redo());
+        Assert.NotSame(actor, Assert.Single(world.Actors.Live));
+        Assert.Equal(2, world.Actors.SpawnCalls);
+    }
+
+    [Fact]
+    public void An_actor_despawned_elsewhere_still_lets_its_add_undo()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Actor"))!;
+
+        // The actor context menu's own Despawn: not routed through this seam.
+        world.Actors.DestroyActor(actor);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Actors.Live);
+        Assert.True(world.Redo());
+        Assert.Single(world.Actors.Live);
+    }
+
+    [Fact]
+    public void A_spawn_the_game_refuses_records_nothing()
+    {
+        var world = new World();
+
+        Assert.Null(world.Lifecycle.SpawnActor("Add actor", () => null));
+
+        Assert.False(world.History.CanUndo);
+    }
+
+    // ── the shared stack ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Reconcile_never_drops_a_lifecycle_entry()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnLight(LightKind.Spot);
+
+        // A lifecycle entry holds no target state, and the entity it names is
+        // deliberately absent for half its life — the staleness rule that
+        // prunes transform patches must not touch it.
+        world.History.Reconcile(static _ => false);
+
+        Assert.True(world.History.CanUndo);
+    }
+
+    [Fact]
+    public void Lifecycle_and_transform_entries_share_one_ordered_stack()
+    {
+        var world = new World();
+        world.History.Append(new TransformPatch("edit", [], []));
+        world.Lifecycle.SpawnLight(LightKind.Spot);
+
+        Assert.Equal("Add spot light", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal("edit", world.History.UndoDescription);
+    }
+
+    // ── harness ──────────────────────────────────────────────────────────
+
+    /// <summary>The seam over fake services, plus the undo/redo dispatch the
+    /// gesture service performs on a lifecycle entry: run the direction, and
+    /// move the entry between stacks only if it landed.</summary>
+    private sealed class World
+    {
+        public TransformHistory History { get; } = new();
+        public FakeLighting Lighting { get; } = new();
+        public FakeCameras Cameras { get; } = new();
+        public FakeActors Actors { get; } = new();
+        public SceneLifecycleHistory Lifecycle { get; }
+
+        public World() =>
+            Lifecycle = new SceneLifecycleHistory(
+                History, Lighting, Cameras, Actors);
+
+        public bool Undo()
+        {
+            var entry = (SceneLifecyclePatch)History.PeekUndo()!;
+            if (!entry.Undo())
+                return false;
+            History.CommitUndo(entry);
+            return true;
+        }
+
+        public bool Redo()
+        {
+            var entry = (SceneLifecyclePatch)History.PeekRedo()!;
+            if (!entry.Redo())
+                return false;
+            History.CommitRedo(entry);
+            return true;
+        }
+    }
+
+    private sealed class FakeLighting : ILightingService
+    {
+        private readonly List<ILight> _lights = new();
+
+        public bool RefuseSpawn { get; set; }
+        public IReadOnlyList<ILight> Live => _lights;
+
+        public bool IsAvailable => true;
+        public IReadOnlyList<ILight> Lights => _lights;
+        public IReadOnlyList<GoboEntry> Gobos => Array.Empty<GoboEntry>();
+        public void Dispose() { }
+
+        public ILight? SpawnLight(LightKind kind)
+        {
+            if (RefuseSpawn)
+                return null;
+            var light = new FakeLight { Kind = kind };
+            _lights.Add(light);
+            return light;
+        }
+
+        public ILight? CloneLight(ILight source) => SpawnLight(source.Kind);
+
+        public void DestroyLight(ILight light)
+        {
+            _lights.Remove(light);
+            ((FakeLight)light).IsValid = false;
+        }
+
+        /// <summary>The light leaves without this seam's knowledge — a scene
+        /// import, or the game.</summary>
+        public void VanishWithoutNotice(ILight light) => DestroyLight(light);
+
+        public ILight AddBorrowed()
+        {
+            var light = new FakeLight { Ownership = LightOwnership.World };
+            _lights.Add(light);
+            return light;
+        }
+
+        public void DestroyAllLights() => _lights.Clear();
+
+        public bool IsSpawnedLight(ILight light) =>
+            light.Ownership == LightOwnership.Spawned;
+
+        public void ReleaseLight(ILight light) => _lights.Remove(light);
+        public bool ApplyGobo(ILight light, GoboEntry gobo) => false;
+        public void ClearGobo(ILight light) { }
+        public IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates() =>
+            Array.Empty<WorldLightCandidate>();
+        public ILight? CaptureWorldLight(WorldLightCandidate candidate) => null;
+    }
+
+    private sealed class FakeLight : ILight
+    {
+        public bool IsValid { get; set; } = true;
+        public string Name { get; set; } = "Light";
+        public LightKind Kind { get; set; }
+        public bool IsOn { get; set; } = true;
+        public Transform Transform { get; set; } = Transform.Identity;
+        public Vector3 Color { get; set; } = Vector3.One;
+        public float Intensity { get; set; } = 1f;
+        public float Range { get; set; } = 1f;
+        public float Falloff { get; set; }
+        public LightFalloffType FalloffType { get; set; }
+        public float SpotAngle { get; set; }
+        public float FalloffAngle { get; set; }
+        public Vector2 AreaAngle { get; set; }
+        public bool HasReflection { get; set; }
+        public bool CastsDynamicShadows { get; set; }
+        public bool CastsCharacterShadow { get; set; }
+        public bool CastsObjectShadow { get; set; }
+        public float CharacterShadowRange { get; set; }
+        public float ShadowPlaneNear { get; set; }
+        public float ShadowPlaneFar { get; set; }
+        public LightOwnership Ownership { get; set; } = LightOwnership.Spawned;
+        public string? GoboPath => null;
+        public IBone? AttachedBone { get; set; }
+    }
+
+    private sealed class FakeCameras : IVirtualCameraService
+    {
+        private readonly List<IVirtualCamera> _cameras = new();
+
+        public IReadOnlyList<IVirtualCamera> Live => _cameras;
+
+        public bool IsAvailable => true;
+        public IReadOnlyList<IVirtualCamera> Cameras => _cameras;
+        public IVirtualCamera? LiveCamera => null;
+        public void Dispose() { }
+
+        public IVirtualCamera? CreateCamera(CameraKind kind)
+        {
+            var camera = new FakeCamera(kind);
+            _cameras.Add(camera);
+            return camera;
+        }
+
+        public IVirtualCamera? CloneCamera(IVirtualCamera source) =>
+            CreateCamera(source.Kind);
+
+        public IVirtualCamera AddDefault()
+        {
+            var camera = new FakeCamera(CameraKind.Game) { IsDefault = true };
+            _cameras.Add(camera);
+            return camera;
+        }
+
+        public void DestroyCamera(IVirtualCamera camera)
+        {
+            _cameras.Remove(camera);
+            ((FakeCamera)camera).IsValid = false;
+        }
+
+        public void DestroyAllCameras() => _cameras.Clear();
+        public void SetLive(IVirtualCamera camera) { }
+        public bool SetTargetActor(
+            IVirtualCamera camera, IActor actor, string displayName) => false;
+        public void ClearTargetActor(IVirtualCamera camera) { }
+    }
+
+    private sealed class FakeCamera(CameraKind kind) : IVirtualCamera
+    {
+        public bool IsValid { get; set; } = true;
+        public string Name { get; set; } = "Camera";
+        public CameraKind Kind { get; } = kind;
+        public bool IsLive => false;
+        public bool IsDefault { get; set; }
+        public bool IsLocked { get; set; }
+        public Vector2 Angle { get; set; }
+        public Vector2 Pan { get; set; }
+        public float Roll { get; set; }
+        public float Zoom { get; set; }
+        public Vector2 ZoomLimits => Vector2.Zero;
+        public float FoV { get; set; }
+        public Vector3 PositionOffset { get; set; }
+        public Vector3 TargetOffset { get; set; }
+        public string TargetActorName { get; set; } = string.Empty;
+        public Vector3 WorldPosition => Vector3.Zero;
+        public bool DisableCollision { get; set; }
+        public bool DelimitCamera { get; set; }
+        public bool IsPortraitMode => false;
+        public void TogglePortraitMode() { }
+        public Vector3 Position { get; set; }
+        public Vector3 SpawnPosition => Vector3.Zero;
+        public Vector3 Rotation { get; set; }
+        public bool MovementEnabled { get; set; }
+        public bool Move2D { get; set; }
+        public float MovementSpeed { get; set; }
+        public float MouseSensitivity { get; set; }
+        public bool DelimitAngle { get; set; }
+        public bool Orthographic { get; set; }
+        public float OrthographicZoom { get; set; }
+        public bool IsTracking { get; set; }
+        public CameraTrackingMode TrackingMode { get; set; }
+        public IList<IBone> TrackedBones { get; } = new List<IBone>();
+        public void ResetProperties() { }
+    }
+
+    private sealed class FakeActors : IActorSpawnService
+    {
+        private readonly List<IActor> _actors = new();
+        private int _next;
+
+        public IReadOnlyList<IActor> Live => _actors;
+        public int SpawnCalls { get; private set; }
+
+        public IActor? Spawn(string name)
+        {
+            SpawnCalls++;
+            var actor = new ActorBase(
+                new EntityId($"{name}-{_next++}"),
+                name,
+                (nint)(_next + 1),
+                ActorKind.Player);
+            _actors.Add(actor);
+            return actor;
+        }
+
+        public bool DestroyActor(IActor actor) => _actors.Remove(actor);
+        public bool IsSpawnedActor(IActor actor) => _actors.Contains(actor);
+
+        public void Dispose() { }
+        public IActor? SpawnNewActor(bool reserveCompanionSlot) => Spawn("Actor");
+        public IActor? CloneActor(IActor source) => Spawn(source.Name);
+        public IActor? SpawnCatalogActor(SpawnCatalogEntry entry) => Spawn("Catalog");
+        public int GetModelCharaId(IActor actor) => 0;
+        public void SetModelCharaId(IActor actor, int modelCharaId) { }
+        public CompanionKind? GetSpawnedKind(IActor actor) => null;
+        public void SetVisibility(IActor actor, bool visible) { }
+        public bool IsVisible(IActor actor) => true;
+        public bool SetCompanion(IActor owner, CompanionAttachment? container) => false;
+        public void DestroyCompanion(IActor owner) { }
+        public CompanionAttachment? GetCompanionInfo(IActor owner) => null;
+        public bool HasCompanionSlot(IActor actor) => false;
+    }
+}
