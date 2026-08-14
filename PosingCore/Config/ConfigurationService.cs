@@ -30,6 +30,11 @@ public class ConfigurationService : IDisposable
 
         // Seeded in memory only; it persists with the next save the user causes.
         Config.Library.EnsureDefaults();
+
+        // The friendly-name switch is a field on the bone tables, because the
+        // bones read it per frame; this is where the stored value reaches it.
+        Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
+            Config.Skeleton.ShowFriendlyBoneNames;
     }
 
     /// <summary>

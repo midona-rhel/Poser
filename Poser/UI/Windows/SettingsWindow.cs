@@ -260,6 +260,8 @@ public class SettingsWindow : Window
         // and every entity that has already resolved its own name reads it
         // live — so publishing it here is the whole of applying it.
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
+        Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
+            _vm.ShowFriendlyBoneNames;
         c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
 
         c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);

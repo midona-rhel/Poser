@@ -29,6 +29,16 @@ public static class BoneInfoService
     private static readonly HashSet<string> _nsfwBones = new();
 
     /// <summary>
+    /// Ktisis' <c>ShowFriendlyBoneNames</c>, published here rather than read
+    /// from config at every call site: <see cref="Poser.Entities.Bone.Name"/>
+    /// consults it per bone per frame, so it has to be a field read. The
+    /// settings page writes it on save; the plugin writes it once on load from
+    /// the stored value. True is the shipped state, which is what Poser has
+    /// always done.
+    /// </summary>
+    public static bool ShowFriendlyNames { get; set; } = true;
+
+    /// <summary>
     /// Initializes the bone info service with a logger.
     /// </summary>
     public static void Initialize(IPluginLog log)

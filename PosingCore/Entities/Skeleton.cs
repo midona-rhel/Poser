@@ -371,6 +371,10 @@ public class Skeleton : EntityBase, ISkeleton
             }
         }
 
+        // Before anything asks a bone whether it is hidden: the two rules that
+        // need the whole bone list, or the actor, rather than the bone.
+        ApplyBoneFilters();
+
         // Attach root bone (or first non-hidden bone) to this skeleton entity
         if (RootBone != null)
         {
@@ -397,6 +401,56 @@ public class Skeleton : EntityBase, ISkeleton
         if (IsValid)
         {
             UpdateBoneTransforms();
+        }
+    }
+
+    /// <summary>
+    /// The per-skeleton hidden-bone verdicts: the superseded jaw and the Viera
+    /// ear sets the character does not wear. Both are decided ONCE per rebuild
+    /// — one is a fact about the bone list, the other a single customize read —
+    /// and stamped onto the bones, because <c>Bone.IsHiddenBone</c> answers per
+    /// bone per frame.
+    ///
+    /// <para>The ear read is skipped entirely unless the skeleton actually has
+    /// ear bones, so a non-Viera skeleton costs nothing.</para>
+    /// </summary>
+    private void ApplyBoneFilters()
+    {
+        bool hasModernJaw =
+            _bonesByName.ContainsKey(LegacyBoneFilters.ModernJaw);
+        bool showAllEars =
+            Config.ConfigurationService.Instance.Config.Skeleton.ShowAllVieraEars;
+
+        char earSet = '\0';
+        if (!showAllEars)
+        {
+            bool anyEarBone = false;
+            foreach (var entry in _bones)
+            {
+                if (!LegacyBoneFilters.IsVieraEarBone(((Bone)entry).BoneName))
+                    continue;
+                anyEarBone = true;
+                break;
+            }
+            if (anyEarBone)
+            {
+                byte set = Game.RaceFeatureRead.VieraEarSet(Actor.Address);
+                // An unreadable or unexpected value filters nothing: showing
+                // four ear sets is a nuisance, hiding the worn one is a bug.
+                if (LegacyBoneFilters.IsKnownVieraEarSet(set))
+                    earSet = LegacyBoneFilters.VieraEarSetFor(set);
+            }
+        }
+
+        foreach (var entry in _bones)
+        {
+            var bone = (Bone)entry;
+            bone.FilteredOut =
+                LegacyBoneFilters.IsSupersededJaw(
+                    bone.BoneName, bone.PartialId, hasModernJaw)
+                || (earSet != '\0'
+                    && LegacyBoneFilters.IsVieraEarBone(bone.BoneName)
+                    && LegacyBoneFilters.VieraEarSetOf(bone.BoneName) != earSet);
         }
     }
 

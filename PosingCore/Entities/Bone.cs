@@ -68,13 +68,19 @@ public class Bone : EntityBase, IBone
 
     /// <summary>
     /// Gets the display name with translation: "Translation (internal_name)" or just "internal_name".
-    /// Resolved ONCE at construction: the bone tables are immutable after
-    /// BoneInfoService.Initialize (which runs before the plugin's DI container
-    /// exists, so no bone can be built ahead of them), while these two
-    /// properties are read per bone per frame by every tree, overlay and
-    /// descriptor rebuild.
+    /// The TRANSLATION is resolved once at construction: the bone tables are
+    /// immutable after BoneInfoService.Initialize (which runs before the
+    /// plugin's DI container exists, so no bone can be built ahead of them),
+    /// while this property is read per bone per frame by every tree, overlay
+    /// and descriptor rebuild.
+    ///
+    /// <para>WHICH of the two names is handed back is a live read of a static
+    /// field (Ktisis' <c>ShowFriendlyBoneNames</c>), because the switch has to
+    /// take effect on the next frame rather than the next skeleton rebuild.
+    /// </para>
     /// </summary>
-    public override string Name => _displayName;
+    public override string Name =>
+        BoneInfoService.ShowFriendlyNames ? _displayName : BoneName;
 
     /// <summary>
     /// Gets the category for this bone.
@@ -85,8 +91,19 @@ public class Bone : EntityBase, IBone
     private readonly BoneCategory _category;
 
     /// <summary>
+    /// The legacy-dedupe and race-feature verdicts, decided once per skeleton
+    /// rebuild by <see cref="Skeleton.ApplyBoneFilters"/>. They are stored
+    /// rather than computed here because both need facts about the WHOLE
+    /// skeleton (is there a modern jaw) or about the actor (which ear set),
+    /// and <see cref="IsHiddenBone"/> is read per bone per frame.
+    /// </summary>
+    internal bool FilteredOut { get; set; }
+
+    /// <summary>
     /// Whether this bone should be hidden in the UI.
-    /// Hidden bones include partial roots (except skeleton root when attached).
+    /// Hidden bones include partial roots (except skeleton root when attached),
+    /// the superseded jaw, and the three Viera ear sets the character does not
+    /// wear.
     /// </summary>
     public bool IsHiddenBone
     {
@@ -96,7 +113,7 @@ public class Bone : EntityBase, IBone
             if (IsPartialRoot && !IsSkeletonRoot)
                 return true;
 
-            return false;
+            return FilteredOut;
         }
     }
 

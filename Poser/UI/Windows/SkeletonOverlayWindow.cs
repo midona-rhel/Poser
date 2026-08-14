@@ -32,6 +32,9 @@ public class SkeletonOverlayWindow : Window
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
     private readonly StableBindingRegistry _bindings;
     private readonly WorldAdoptionSource _adoption;
+    // Only for the inactive-actor fade: "active" can mean the GAME's target,
+    // and the overlay has no other route to it.
+    private readonly IActorManager _actorManager;
 
     // Configuration from settings
     private static SkeletonConfiguration Config => ConfigurationService.Instance.Config.Skeleton;
@@ -62,8 +65,25 @@ public class SkeletonOverlayWindow : Window
     private static uint MirroredBoneColor => Config.MirroredBoneColor;
 
     private static bool ShowSkeletonLines => Config.ShowSkeletonLines;
+    private static bool LineToCircle => Config.SkeletonLineToCircle;
+    private static bool HideSkeletonWhileDragging =>
+        Config.HideSkeletonWhileDragging;
     private static bool ShowNsfwBones =>
         ConfigurationService.Instance.Config.Display.ShowNsfwBones;
+
+    private static GizmoConfiguration GizmoConfig =>
+        ConfigurationService.Instance.Config.Gizmo;
+
+    /// <summary>Whether the configured hold modifier is down THIS frame. The
+    /// unbound state is never "down", so the shipped configuration answers
+    /// false without touching the IO flags.</summary>
+    internal static bool HoldModifierDown(OverlayHoldModifier modifier)
+    {
+        if (modifier == OverlayHoldModifier.None)
+            return false;
+        var io = ImGui.GetIO();
+        return modifier == OverlayHoldModifier.Ctrl ? io.KeyCtrl : io.KeyShift;
+    }
 
     // ── the per-frame display model ──────────────────────────────────────
     // One VALUE per drawn handle, held in buffers this window owns and
@@ -87,6 +107,11 @@ public class SkeletonOverlayWindow : Window
         public bool IsSelected;
         public bool IsIkChain;
         public bool IsMirrorPartner;
+        /// <summary>The owning actor's dimming multiplier — 1 unless the
+        /// inactive-actor fade is on and this actor is not the active one.
+        /// Held per handle because the draw passes iterate handles, not
+        /// actors.</summary>
+        public float Opacity;
     }
 
     private struct ActorDisplayData
@@ -96,6 +121,7 @@ public class SkeletonOverlayWindow : Window
         public Vector2 ScreenPos;
         public float CameraDistance;
         public bool IsHovered;
+        public float Opacity;
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
@@ -175,6 +201,7 @@ public class SkeletonOverlayWindow : Window
         Application.Posing.IIkConfigurationPort ikPort,
         StableBindingRegistry bindings,
         WorldAdoptionSource adoption,
+        IActorManager actorManager,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -196,6 +223,7 @@ public class SkeletonOverlayWindow : Window
         _ikPort = ikPort;
         _bindings = bindings;
         _adoption = adoption;
+        _actorManager = actorManager;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -374,8 +402,16 @@ public class SkeletonOverlayWindow : Window
                 ScreenPos = viewportPos + propScreen,
                 CameraDistance = Vector3.Distance(
                     cameraPosition, propTransform.Position),
+                // A prop belongs to no actor, so the actor fade has nothing to
+                // say about it.
+                Opacity = 1f,
             });
         }
+
+        // The dimming verdict is one question per frame — which lineage is
+        // active — and one lookup per actor, so it is resolved before the two
+        // actor passes rather than inside either.
+        var activeLineage = ResolveActiveLineage();
 
         // Actor origin handles draw for EVERY actor, armature or not — the
         // sidebar's manip toggle is their one gate (user 2026-08-12): the
@@ -397,6 +433,7 @@ public class SkeletonOverlayWindow : Window
                     Id = actorSelectionId,
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
+                    Opacity = ActorOpacity(actor.Id, activeLineage),
                 });
             }
         }
@@ -408,6 +445,7 @@ public class SkeletonOverlayWindow : Window
         foreach (var actor in _scene.Snapshot.Actors)
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);
+            float armatureOpacity = ActorOpacity(actor.Id, activeLineage);
 
             // The overlay projects every present slot skeleton; each slot has
             // its own model matrix (a weapon's draw object moves with the
@@ -471,7 +509,8 @@ public class SkeletonOverlayWindow : Window
                     ParentScreenPos = parentScreenPos,
                     CameraDistance = Vector3.Distance(cameraPosition, boneWorldPositions[bone.Id]),
                     IsSelected = selectedIds.Contains(selectionId),
-                    IsIkChain = armedIkBones?.Contains(bone.Id.CanonicalName) == true
+                    IsIkChain = armedIkBones?.Contains(bone.Id.CanonicalName) == true,
+                    Opacity = armatureOpacity,
                 });
             }
             }
@@ -498,8 +537,13 @@ public class SkeletonOverlayWindow : Window
                 && !listTravel
                 && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
 
-        // Update hover state
-        if (pointerBlocked)
+        // Update hover state. Brio's Posing_DisableSkeleton — a held modifier
+        // that leaves the dots painted and stops them answering the pointer,
+        // so a gizmo handle underneath one can be grabbed — reads exactly like
+        // an occluded pointer here, which is what makes it a one-line gate.
+        bool dotsSuppressed =
+            HoldModifierDown(GizmoConfig.DisableDotsModifier);
+        if (pointerBlocked || dotsSuppressed)
         {
             foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
                 bone.IsHovered = false;
@@ -522,10 +566,16 @@ public class SkeletonOverlayWindow : Window
         // drag, so this single check covers both engagement states.
         var isGizmoActive = Controls.GizmoPointerOwnership.Owned;
         var lineOpacity = isGizmoActive ? LineOpacityWhileUsing : LineOpacity;
+        // Brio's HideSkeletonWhenGizmoActive: the armature goes away for the
+        // length of a drag rather than fading. Hover and press were resolved
+        // above and stay resolved — the gizmo owns the pointer while it is
+        // engaged anyway, so this is a paint decision only.
+        bool paintArmature = !(isGizmoActive && HideSkeletonWhileDragging);
 
         // Under everything the scene owns; see the collection comment.
         DrawAdoptionHandles(drawList, adopts);
 
+        if (paintArmature)
         switch (_editorState.SkeletonViewMode)
         {
             case SkeletonViewMode.Default:
@@ -550,6 +600,8 @@ public class SkeletonOverlayWindow : Window
         {
             bool selected = _selection.IsSelected(actor.Id);
             uint color = selected ? SelectedBoneColor : BoneColor;
+            if (actor.Opacity < 1f)
+                color = SetAlpha(color, GetAlpha(color) * actor.Opacity);
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
             drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
             drawList.AddCircle(actor.ScreenPos, radius, OutlineColor, 20, 2f * ImGuiHelpers.GlobalScale);
@@ -605,6 +657,21 @@ public class SkeletonOverlayWindow : Window
         bool hasWorldBone = !listTravel
             ? AnyHovered(bones)
             : onFrozenCluster;
+        // Ktisis' hover-list wheel (SelectableGui.DrawSelectList): a notch
+        // steps the highlighted candidate and wraps at both ends. It runs
+        // while the cluster is alive — over the dots OR travelling into the
+        // list — and BEFORE the target is read below, so the entry a release
+        // commits is the one the wheel just put under the highlight. The wheel
+        // is claimed only when it actually moved the highlight, so a single
+        // candidate leaves scrolling to whatever is underneath.
+        if (_hoveredBones.Count > 1 && (hasWorldBone || listTravel)
+            && io.MouseWheel != 0f)
+        {
+            _hoverIndex = CycleHoverIndex(
+                _hoverIndex, _hoveredBones.Count, io.MouseWheel);
+            io.WantCaptureMouse = true;
+            ImGui.SetNextFrameWantCaptureMouse(true);
+        }
         // A light handle sits in front of everything else it overlaps: it is
         // the only route to a light from the viewport, and a bone dot behind it
         // is still reachable from the sidebar.
@@ -642,11 +709,66 @@ public class SkeletonOverlayWindow : Window
                 + $"hoverL={hasHoveredLight} hoverA={hasHoveredActor}");
         UpdateWorldPress(
             worldTarget,
-            pointerBlocked || (listTravel && !hasWorldBone));
+            pointerBlocked || dotsSuppressed
+                || (listTravel && !hasWorldBone));
         UpdateAdoptPress(adoptTarget, pointerBlocked || listTravel);
         if (_hoveredBones.Count > 0)
             DrawHoverList();
     }
+
+    // ── inactive-actor dimming (Ktisis SceneDraw.GetOpacityMultiplier) ────
+
+    /// <summary>
+    /// The lineage the overlay treats as active this frame, or null when the
+    /// fade is off or nothing qualifies. Ktisis' <c>ActiveState</c> reads as
+    /// written: Target asks the game, Selection asks the app, and Both accepts
+    /// either — so Both resolves the target FIRST and falls back to the
+    /// selection, which is the only reading under which "both" can name one
+    /// actor.
+    /// </summary>
+    private Guid? ResolveActiveLineage()
+    {
+        if (!Config.DimInactiveActors)
+            return null;
+        var source = Config.ActiveActorSource;
+        if (source is ActiveActorSource.Target or ActiveActorSource.Both
+            && _actors_GPoseTargetLineage() is { } targetLineage)
+            return targetLineage;
+        if (source is ActiveActorSource.Selection or ActiveActorSource.Both)
+            return SelectedActorLineage();
+        return null;
+    }
+
+    /// <summary>The GAME's target as a stable lineage, or null when there is
+    /// none or it has no binding.</summary>
+    private Guid? _actors_GPoseTargetLineage() =>
+        _actorManager.GetGPoseTarget() is { } target
+        && _bindings.GetActorId(target) is { } id
+            ? id.LogicalId
+            : null;
+
+    /// <summary>The actor the current selection belongs to — a selected bone
+    /// names its actor exactly as a selected actor does, so posing one actor
+    /// keeps that actor lit.</summary>
+    private Guid? SelectedActorLineage()
+    {
+        foreach (var id in _selection.Selected)
+        {
+            if (id.Bone is { } bone)
+                return bone.Skeleton.Actor.LogicalId;
+            if (id.Actor is { } actor
+                && id.Kind is SceneEntityKind.Actor or SceneEntityKind.GazeTarget)
+                return actor.LogicalId;
+        }
+        return null;
+    }
+
+    /// <summary>One actor's fade: full while it is the active one or while
+    /// nothing is active, the configured multiplier otherwise.</summary>
+    private static float ActorOpacity(ActorId actor, Guid? activeLineage) =>
+        activeLineage is not { } active || actor.LogicalId == active
+            ? 1f
+            : Math.Clamp(Config.InactiveActorOpacity, 0f, 1f);
 
     private const int HoverPadding = 6;
 
@@ -855,6 +977,31 @@ public class SkeletonOverlayWindow : Window
             _hoverIndex = 0;
             _hoverAnchor = mousePos;
         }
+    }
+
+    /// <summary>
+    /// Ktisis' <c>ScrollIndex</c> step, exactly: the wheel notch is
+    /// SUBTRACTED, so pushing the wheel away walks toward the front of the
+    /// list, and an index that leaves either end lands on the opposite one
+    /// rather than being clamped — a cluster of two is two entries the wheel
+    /// alternates between, in both directions.
+    ///
+    /// <para>Ktisis' own wrap is a single test per side, so a burst that
+    /// overshoots by more than one lands on the far end rather than walking
+    /// modulo the count. That is reproduced, not corrected: the list is a
+    /// handful of dots and "wheel hard, land at the end" is the behaviour a
+    /// Ktisis user's hand already has.</para>
+    /// </summary>
+    internal static int CycleHoverIndex(int index, int count, float wheel)
+    {
+        if (count <= 0)
+            return 0;
+        int next = index - (int)wheel;
+        if (next >= count)
+            return 0;
+        if (next < 0)
+            return count - 1;
+        return next;
     }
 
     private bool CanContinueIntoHoverList(
@@ -1147,14 +1294,47 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawLines(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
     {
-        // Ktisis style: bone color with opacity
-        var color = SetAlpha(BoneColor, opacity);
+        bool toCircle = LineToCircle;
+        float radius = DotRadius;
 
         foreach (var bone in bones)
         {
             if (bone.ParentScreenPos == null) continue;
-            drawList.AddLine(bone.ParentScreenPos.Value, bone.ScreenPos, color, LineThickness);
+            // Ktisis style: bone color with opacity, times the owning actor's
+            // inactive fade.
+            var color = SetAlpha(BoneColor, opacity * bone.Opacity);
+            var from = bone.ParentScreenPos.Value;
+            var to = bone.ScreenPos;
+            if (toCircle)
+            {
+                // Brio's SkeletonLineToCircle, its guard included: two dots
+                // closer together than their combined diameter get NO
+                // connector, because pulling both ends back past each other
+                // would draw the segment inside out.
+                float diameter = radius * 2f;
+                if (Vector2.DistanceSquared(from, to) < diameter * diameter)
+                    continue;
+                var shortened = ShrinkToCircles(from, to, radius - 1f);
+                from = shortened.From;
+                to = shortened.To;
+            }
+            drawList.AddLine(from, to, color, LineThickness);
         }
+    }
+
+    /// <summary>Both ends of a segment pulled back by <paramref name="inset"/>
+    /// along its own direction — Brio's <c>PointAlongLine</c> applied at each
+    /// end, so a connector meets the two circles' edges instead of their
+    /// centres. A degenerate segment is returned untouched.</summary>
+    internal static (Vector2 From, Vector2 To) ShrinkToCircles(
+        Vector2 from, Vector2 to, float inset)
+    {
+        var direction = to - from;
+        float length = direction.Length();
+        if (length < 1e-3f || inset <= 0f)
+            return (from, to);
+        var step = direction / length * inset;
+        return (from + step, to - step);
     }
 
     private void DrawDots(ImDrawListPtr drawList, List<BoneDisplayData> bones)
@@ -1168,6 +1348,8 @@ public class SkeletonOverlayWindow : Window
             var radius = DotRadius;
             float outlineThickness;
             var color = ResolveBoneColor(bone, useHover: false, BoneColor);
+            if (bone.Opacity < 1f)
+                color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
 
             if (bone.IsSelected)
             {
@@ -1198,8 +1380,9 @@ public class SkeletonOverlayWindow : Window
             if (!bone.IsSelected && !bone.IsHovered)
                 color = SetAlpha(color, 0.6f);
 
-            var fillColor = SetAlpha(color, GetAlpha(color) * 0.5f * opacity);
-            var edgeColor = SetAlpha(color, opacity);
+            float bodyOpacity = opacity * bone.Opacity;
+            var fillColor = SetAlpha(color, GetAlpha(color) * 0.5f * bodyOpacity);
+            var edgeColor = SetAlpha(color, bodyOpacity);
 
             var start = bone.ParentScreenPos.Value;
             var end = bone.ScreenPos;
@@ -1234,6 +1417,8 @@ public class SkeletonOverlayWindow : Window
             var outlineThickness = 2f;
 
             var color = ResolveBoneColor(bone, useHover: true, BoneColor);
+            if (bone.Opacity < 1f)
+                color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
             if (bone.IsSelected)
                 radius += 2f * ImGuiHelpers.GlobalScale;
 
