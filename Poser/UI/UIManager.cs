@@ -340,8 +340,19 @@ public sealed class UIManager : IUIManager
         _hiddenWindows = null;
     }
 
+    /// <summary>
+    /// The workspace and everything that belongs to a session go up and down
+    /// TOGETHER, which is what <see cref="UiWindowSet.SetPrimaryOpen"/> is
+    /// for. Flipping <c>Main.IsOpen</c> here directly opened the shell and
+    /// nothing else: the skeleton overlay's flag is written in exactly one
+    /// place, so a workspace opened from the command, the launcher entry or
+    /// the chord came up with no bone dots, no gizmo and no world-adoption
+    /// handles at all — the sidebar could mark a world class and nothing in
+    /// the viewport could answer, because the window that draws the answers
+    /// was never opened (user 2026-08-15).
+    /// </summary>
     public void ToggleMainWindow()
-        => _windows.Main.IsOpen = !_windows.Main.IsOpen;
+        => _windows.SetPrimaryOpen(!_windows.Main.IsOpen);
 
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
@@ -359,7 +370,10 @@ public sealed class UIManager : IUIManager
     // to be reachable at all.
     private void OpenPoseLibrary()
     {
-        _windows.Main.IsOpen = true;
+        // Through the same seat as every other opener, for the same reason:
+        // the library is workspace content, and a workspace raised without
+        // its session windows is a shell with a dead viewport.
+        _windows.SetPrimaryOpen(true);
         _windows.Main.ShowLibrary();
     }
 
