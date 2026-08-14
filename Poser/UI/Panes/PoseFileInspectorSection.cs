@@ -1501,11 +1501,13 @@ public sealed class PoseFileInspectorSection
         float band = Crystarium.MeasureText(refusal, style).Y + inset;
         float width = MathF.Max(1f, boxSize.X - inset * 2f);
         var bandMin = new Vector2(boxMin.X, boxMin.Y + boxSize.Y - band);
+        // The theme's own scrim-over-content token, so the band tracks polarity
+        // instead of assuming a dark render behind it.
         ImGui.GetWindowDrawList().AddRectFilled(
             bandMin,
             boxMin + boxSize,
             ImGui.ColorConvertFloat4ToU32(
-                ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.62f))),
+                ColorEx.ApplyAlpha(theme.Chrome.ModalDim)),
             radius,
             ImDrawFlags.RoundCornersBottom);
         Crystarium.TextInBand(

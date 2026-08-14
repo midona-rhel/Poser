@@ -71,6 +71,12 @@ public sealed unsafe class PosePreviewService : IDisposable
     private const float MinPanScale = 0.15f;
     private const float MaxPanScale = 2.0f;
 
+    /// <summary>Framework ticks a stage may wait on the preview body's skeleton
+    /// before the wait is STATED. About two seconds — long past the handful of
+    /// ticks a healthy bind takes, so the line only ever appears when something
+    /// is actually stuck.</summary>
+    private const int SkeletonWaitTicks = 120;
+
     private readonly IFramework _framework;
     private readonly IObjectTable _objectTable;
     private readonly IActorManager _actors;
@@ -83,13 +89,12 @@ public sealed unsafe class PosePreviewService : IDisposable
     private readonly object _gate = new();
     private nint _requestedSource;
 
-    /// <summary>Why the standing request could not be shown, or null. The
-    /// preview's own refusals are the only signal a rejected pose ever
-    /// produced — a refused import leaves the body exactly where the last
-    /// successful stage left it, so the surface showed a render and said
-    /// nothing (user 2026-08-14: "I keep selecting new poses and nothing just
-    /// loads", browsing a folder of creature poses that share no bone name
-    /// with a human preview body). Superseded by the next statement.</summary>
+    /// <summary>Why the standing request could not be shown, or null. A refused
+    /// import leaves the body exactly where the last successful stage left it,
+    /// so without this the surface shows a perfectly good render and says
+    /// nothing about the pose the user actually picked. Superseded by the next
+    /// statement. NOT a readiness channel — see <see cref="_skeletonWaitTicks"/>
+    /// — only a verdict about the file.</summary>
     private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
@@ -113,6 +118,31 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// <summary>The last source the copy refused, so a source that stays
     /// unresolvable is logged once rather than once per tick.</summary>
     private nint _refusedSource;
+
+    /// <summary>
+    /// The appearance source AS PROVEN on the framework thread: the address the
+    /// draw thread asked for, the object-table slot found to be holding it, and
+    /// that occupant's GameObjectId. Recorded ONCE, by searching the table for
+    /// the address (<see cref="ProveSource"/>) rather than by dereferencing it,
+    /// and thereafter only ever revalidated INDEX-FIRST
+    /// (<see cref="ProvenSourceStillStands"/>).
+    ///
+    /// <para>The identity has to be stored, not re-derived: an index taken FROM
+    /// the address under test proves only "this address is some live occupant",
+    /// which a recycled address at a DIFFERENT slot satisfies. The stored slot
+    /// plus the stored id is what makes the check say "still the same actor"
+    /// (WorldActorDiscovery.cs:77-86 stores the index, :270-274 pairs it with
+    /// the GameObjectId).</para>
+    /// </summary>
+    private nint _provenSource;
+    private ushort _provenIndex = ushort.MaxValue;
+    private ulong _provenObjectId;
+
+    /// <summary>Consecutive ticks the standing stage has waited on the preview
+    /// body's skeleton. The wait is correct but must not be endless AND silent.
+    /// </summary>
+    private int _skeletonWaitTicks;
+
     private uint _counter = 1;
 
     /// <summary>The serial the body currently stands for, and how many of its
@@ -285,11 +315,11 @@ public sealed unsafe class PosePreviewService : IDisposable
             _requestedFirst = first;
             _requestedSecond = second;
             _requestSerial++;
+            // Inside the gate, WITH the bump: the verdict named the pose the
+            // serial just replaced, so a framework tick must never be able to
+            // observe the new serial still carrying the old reason.
+            _refusalText = null;
         }
-
-        // A new statement supersedes the old one's verdict with it: the reason
-        // named a pose that is no longer the one being shown.
-        _refusalText = null;
     }
 
     /// <summary>
@@ -411,8 +441,9 @@ public sealed unsafe class PosePreviewService : IDisposable
         agent->CharaView.Initialize(&agent->AgentInterface, CharaViewIndex, 0);
         _initialized = true;
         _counter = 1;
-        _copiedSource = nint.Zero;
         _refusedSource = nint.Zero;
+        _skeletonWaitTicks = 0;
+        ForgetProvenSource();
         ForgetAppliedPose();
         ClearPanBase();
         CopyAppearance(agent);
@@ -424,8 +455,9 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (!_initialized)
             return;
         _initialized = false;
-        _copiedSource = nint.Zero;
         _refusedSource = nint.Zero;
+        _skeletonWaitTicks = 0;
+        ForgetProvenSource();
         ForgetAppliedPose();
         _counter = 1;
         // The body goes back where the game put it, and the next preview opens
@@ -445,37 +477,36 @@ public sealed unsafe class PosePreviewService : IDisposable
         {
             source = _requestedSource;
         }
-        if (source == nint.Zero || source == _copiedSource)
+        if (source == nint.Zero)
             return;
 
-        // Deref-time revalidation, on the phase that owns the deref. The
-        // request only NAMES an address and was stated ticks ago; a source that
-        // despawned since would leave it pointing at freed or recycled memory,
-        // so the exact-identity rule still holds — the address must resolve AND
-        // still occupy its own object-table slot (WorldActorDiscovery's
-        // standard). Both halves run HERE, where the table is coherent, rather
-        // than one of them on the draw thread.
+        // PROVE ONCE, then REVALIDATE EVERY TICK — both on this thread, where
+        // the object table is coherent. The request only NAMES an address and
+        // was stated ticks ago; a source that despawned since would leave it
+        // pointing at freed or recycled memory.
         //
-        // Refusal is for THIS TICK ONLY, and never touches the request. The
+        // Refusal is for THIS TICK ONLY and never touches the request: the
         // standing request belongs to the draw thread, which restates it every
-        // frame from Open(): clearing it here would start a refuse/re-arm loop
-        // that cannot terminate and logs once per tick, and a refusal landing
-        // before the first successful copy would leave the CharaView with empty
-        // ModelData — no body ever spawns at slot 441, TryApplyPendingPose is
-        // never reached, and every stated pose is dropped in silence.
-        if (_objectTable.CreateObjectReference(source) is not { } resolved
-            || _objectTable[resolved.ObjectIndex] is not { } occupant
-            || occupant.Address != source)
+        // frame from Open(). Clearing it here would start a refuse/re-arm loop
+        // that cannot terminate, and a refusal landing before the first
+        // successful copy would leave the CharaView with empty ModelData — no
+        // body ever spawns at slot 441, TryApplyPendingPose is never reached,
+        // and every stated pose is dropped in silence.
+        if (source != _provenSource && !ProveSource(source))
+            return;
+        if (!ProvenSourceStillStands())
         {
-            if (_refusedSource != source)
-            {
-                _refusedSource = source;
-                _log.Debug(
-                    "PosePreviewService: appearance source does not occupy its "
-                    + "slot; copy refused until it does");
-            }
+            // The proof no longer holds. _copiedSource goes with it: leaving it
+            // set would let the short-circuit below FOSSILIZE a copy taken from
+            // an actor that has since left, with no path back.
+            _log.Debug(
+                "PosePreviewService: appearance source left its slot; the copy "
+                + "is dropped and the source must prove itself again");
+            ForgetProvenSource();
             return;
         }
+        if (source == _copiedSource)
+            return;
 
         _refusedSource = nint.Zero;
         agent->CharaView.ModelData.CopyFromCharacter((Character*)source);
@@ -484,6 +515,62 @@ public sealed unsafe class PosePreviewService : IDisposable
         // game stages it — the pan base is re-read against it.
         ForgetAppliedPose();
         ClearPanBase();
+    }
+
+    /// <summary>
+    /// Finds the object-table slot HOLDING this address and records the
+    /// identity there. The search is by ADDRESS over the table
+    /// (<c>GetObjectAddress</c> reads each slot's own pointer), so the suspect
+    /// pointer is never dereferenced to find out where it lives — which is the
+    /// whole point: asking the address which slot it occupies is asking the
+    /// thing under test to vouch for itself.
+    /// </summary>
+    private bool ProveSource(nint source)
+    {
+        for (var index = 0; index < _objectTable.Length; index++)
+        {
+            if (_objectTable.GetObjectAddress(index) != source)
+                continue;
+            if (_objectTable[index] is not { } occupant)
+                break;
+            _provenSource = source;
+            _provenIndex = (ushort)index;
+            _provenObjectId = occupant.GameObjectId;
+            return true;
+        }
+
+        if (_refusedSource != source)
+        {
+            _refusedSource = source;
+            _log.Debug(
+                "PosePreviewService: appearance source occupies no object-table "
+                + "slot; copy refused until it does");
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// INDEX FIRST, always: read the slot that was recorded and ask whether it
+    /// still holds the recorded address AND the recorded actor. Deriving the
+    /// index from the address instead would prove only that the address is
+    /// SOME live occupant — a despawned source whose memory has been recycled
+    /// into a different actor at a different slot passes that test, which is no
+    /// test at all.
+    /// </summary>
+    private bool ProvenSourceStillStands() =>
+        _provenIndex != ushort.MaxValue
+        && _objectTable[_provenIndex] is { } occupant
+        && occupant.Address == _provenSource
+        && occupant.GameObjectId == _provenObjectId;
+
+    /// <summary>Drops the proof and the copy taken under it. The next tick
+    /// proves the standing request again from scratch.</summary>
+    private void ForgetProvenSource()
+    {
+        _provenSource = nint.Zero;
+        _provenIndex = ushort.MaxValue;
+        _provenObjectId = 0;
+        _copiedSource = nint.Zero;
     }
 
     /// <summary>The body stands for nothing: the standing request runs again
@@ -611,8 +698,19 @@ public sealed unsafe class PosePreviewService : IDisposable
         // below, so the pose is dropped for good while the skeleton lands
         // milliseconds later. Waiting is the only correct reading: readiness is
         // not a verdict about the file.
+        //
+        // Bounded silence, never a refusal. The wait normally ends within a
+        // handful of ticks; past the bound something is genuinely stuck, and a
+        // preview that sits there saying nothing is the same failure in a new
+        // costume. The user is told it is WAITING — the standing render, if
+        // any, keeps showing meanwhile.
         if (!_poses.HasPosableSkeleton(actor))
+        {
+            if (++_skeletonWaitTicks > SkeletonWaitTicks)
+                _statusText = "Waiting for the preview body…";
             return;
+        }
+        _skeletonWaitTicks = 0;
 
         var result = request.Pose is { } pose
             ? _poses.ImportPose(actor, pose, request.Options, "Preview pose")

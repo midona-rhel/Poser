@@ -26,12 +26,13 @@ namespace Poser.Tests.Files;
 /// staged attempt inside that window, dropping the pose for good.</para>
 ///
 /// <para>Partial application needs no intersection gate; it is also the Brio
-/// semantic. <c>PoseImporter.ApplyBone</c>
-/// (Brio/Game/Posing/PoseImporter.cs:28-37) walks the TARGET's bones and does
+/// semantic. <c>PoseImporter.ApplyBone</c> walks the TARGET's bones and does
 /// <c>poseFile.Bones.TryGetValue(bone.Name, out var fileBone)</c>, applying the
-/// overlap and skipping the rest in silence — Brio has no whole-import verdict
-/// at all. Poser walks the other direction (file bone → skeleton instances)
-/// for the same intersection.</para>
+/// overlap and skipping the rest in silence — Character at
+/// Brio/Game/Posing/PoseImporter.cs:28-38, MainHand :40-50, OffHand :52-62,
+/// all three the same shape. Brio has no whole-import verdict at all. Poser
+/// walks the other direction (file bone → skeleton instances) for the same
+/// intersection.</para>
 /// </summary>
 public class PreviewHumanoidPlanTests
 {
