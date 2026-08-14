@@ -117,6 +117,39 @@ public readonly record struct SceneActionResult(bool Success, string? Detail = n
 }
 
 /// <summary>
+/// What a destroy-first clear actually removed, per kind. It is counted rather
+/// than assumed because the clear is the ONE part of a load that cannot be
+/// rolled back, so the outcome has to be able to say exactly what it cost.
+/// </summary>
+public readonly record struct SceneClearOutcome(
+    int Actors, int Props, int Overlays, int Lights, int Cameras)
+{
+    public int Total => Actors + Props + Overlays + Lights + Cameras;
+
+    /// <summary>The clear in the user's words, or null when it removed
+    /// nothing — an empty session needs no sentence about being emptied.
+    /// </summary>
+    public string? Summary()
+    {
+        if (Total == 0)
+            return null;
+        var parts = new List<string>(5);
+        void Part(int count, string singular, string plural)
+        {
+            if (count > 0)
+                parts.Add($"{count} {(count == 1 ? singular : plural)}");
+        }
+        Part(Actors, "actor", "actors");
+        Part(Props, "prop", "props");
+        Part(Overlays, "overlay", "overlays");
+        Part(Lights, "light", "lights");
+        Part(Cameras, "camera", "cameras");
+        return $"Cleared the session first: {string.Join(", ", parts)} were " +
+            "destroyed. Undoing the load does not bring them back.";
+    }
+}
+
+/// <summary>
 /// The native/persistence seam under <see cref="SceneWorkflow"/>. The
 /// workflow owns the transaction — admission, phases, guards, rollback,
 /// publication — while this seam owns every native materialization and file
@@ -161,6 +194,24 @@ internal interface ISceneRuntime
         Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured);
 
     // ── load-side materialization (framework thread) ─────────────────────
+
+    /// <summary>
+    /// Where the user is standing NOW — the anchor a relative load rebases a
+    /// scene onto, read from the same local player the capture recorded its
+    /// <see cref="SceneFile.Origin"/> from. Null outside a session that has
+    /// one, which refuses a relative load rather than rebasing onto zero.
+    /// Framework thread.
+    /// </summary>
+    System.Numerics.Vector3? CurrentOrigin();
+
+    /// <summary>
+    /// Destroys everything the session is holding — spawned actors, props,
+    /// overlay nodes, spawned lights and additional cameras — before a
+    /// destroy-first load restores anything. Borrowed entities (a captured
+    /// world light, the session's own default camera) are left alone: they were
+    /// never this session's to destroy. Framework thread.
+    /// </summary>
+    SceneClearOutcome ClearScene();
 
     /// <summary>Spawns one actor and applies its model id. Null with a detail
     /// on failure.</summary>

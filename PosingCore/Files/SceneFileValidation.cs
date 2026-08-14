@@ -119,6 +119,12 @@ public static class SceneFileValidation
             !ValidateText(scene.PlaceName, "PlaceName", out textFailure))
             return textFailure!;
 
+        // The relative-load anchor is a world position like any other, so it
+        // takes the same finite check every stated position takes.
+        if (scene.Origin is { } origin && !IsFinite(origin))
+            return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                "The scene origin is not finite.");
+
         var actorKeys = new HashSet<Guid>();
         foreach (var actor in scene.Actors)
         {

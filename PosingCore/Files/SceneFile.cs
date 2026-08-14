@@ -64,6 +64,29 @@ public class SceneFile
     /// territory had no name.</summary>
     public string? PlaceName { get; set; }
 
+    /// <summary>
+    /// Where the capture STOOD: the local player's world position at save. It
+    /// is the anchor a relative load rebases onto, and nothing else — every
+    /// placement in this document stays ABSOLUTE, which is the invariant a
+    /// reader that ignores this field depends on.
+    ///
+    /// <para>Both references encode the same anchor and neither states it the
+    /// same way: Ktisis stores every actor position ALREADY relative to its
+    /// <c>SceneOrigin</c> and adds the origin back on load
+    /// (<c>Services/Data/SceneDataService.cs</c>), while Brio keeps absolutes
+    /// and anchors on the live local player at import
+    /// (<c>Services/SceneService.cs</c>, <c>useRelativeLightPositions</c>).
+    /// Poser follows Brio's shape — absolutes on the wire — because a document
+    /// whose numbers only mean something beside an origin cannot be read by a
+    /// listing, a diff, or a reader that never asked for a relative load.</para>
+    ///
+    /// <para>Absent on a capture with no local player to anchor on and on
+    /// every file written before the anchor was recorded; a relative load of
+    /// such a file is REFUSED by name rather than rebased onto a guess.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public Vector3? Origin { get; set; }
+
     public List<SceneActor> Actors { get; set; } = new();
     public List<SceneProp> Props { get; set; } = new();
     public List<SceneLight> Lights { get; set; } = new();

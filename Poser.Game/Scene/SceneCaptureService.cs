@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -76,6 +76,7 @@ public sealed class SceneCaptureService
     private readonly StableBindingRegistry _bindings;
     private readonly CleanPoseFacade _poses;
     private readonly IPlaceService _place;
+    private readonly IObjectTable _objects;
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
@@ -97,6 +98,7 @@ public sealed class SceneCaptureService
         StableBindingRegistry bindings,
         CleanPoseFacade poses,
         IPlaceService place,
+        IObjectTable objects,
         IPosingService posing,
         AnimationSession animation,
         IGazeService gaze,
@@ -108,6 +110,7 @@ public sealed class SceneCaptureService
         _integration = integration;
         _exports = exports;
         _place = place;
+        _objects = objects;
         _posing = posing;
         _animation = animation;
         _gaze = gaze;
@@ -250,6 +253,11 @@ public sealed class SceneCaptureService
         var place = _place.Current;
         scene.TerritoryId = place.TerritoryId;
         scene.PlaceName = place.PlaceName;
+        // The anchor a relative load rebases onto — the same one both
+        // references anchor on, the local player. Absent with no local player
+        // rather than defaulted to the world origin: a stated zero would rebase
+        // a whole scene onto a place nobody ever stood.
+        scene.Origin = _objects.LocalPlayer?.Position;
     }
 
     private Dictionary<IActor, Guid> CaptureActors(

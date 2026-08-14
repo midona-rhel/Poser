@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Poser.Application.Operations;
 using Poser.Domain.Companions;
 using Poser.Files;
@@ -315,6 +315,25 @@ public sealed class SceneWorkflowTests
             Record("ApplyWorld");
             AppliedWorld = world;
             return WorldFailure;
+        }
+
+        /// <summary>What the session is standing at, for a relative load. Null
+        /// is a session with nobody to anchor on.</summary>
+        public System.Numerics.Vector3? Origin = new(10f, 0f, 20f);
+
+        public System.Numerics.Vector3? CurrentOrigin()
+        {
+            Record("CurrentOrigin");
+            return Origin;
+        }
+
+        /// <summary>What a destroy-first sweep finds to remove.</summary>
+        public SceneClearOutcome ClearResult = new(2, 1, 0, 3, 1);
+
+        public SceneClearOutcome ClearScene()
+        {
+            Record("ClearScene");
+            return ClearResult;
         }
 
         public void DestroyActor(object actor) => Destroy(actor);
@@ -1327,7 +1346,426 @@ public sealed class SceneWorkflowTests
             runtime.Destroyed.ToArray());
     }
 
-    // ── disposal ─────────────────────────────────────────────────────────
+    // -- load options: the import matrix --------------------------------
+
+    /// <summary>Every category populated, so a skip is visible as an absence.
+    /// </summary>
+    private static SceneFile FullScene(out Guid leadKey)
+    {
+        var lead = Actor("Lead", out leadKey);
+        var scene = SceneWith(lead);
+        scene.Origin = new System.Numerics.Vector3(1f, 2f, 3f);
+        scene.Props.Add(new SceneProp
+        {
+            Key = Guid.NewGuid(),
+            Name = "Chair",
+            Transform = new LightFile.TransformData
+            {
+                Position = new System.Numerics.Vector3(5f, 0f, 5f),
+                Rotation = System.Numerics.Quaternion.Identity,
+                Scale = System.Numerics.Vector3.One,
+            },
+        });
+        scene.Lights.Add(new SceneLight
+        {
+            Key = Guid.NewGuid(),
+            Light = new LightFile
+            {
+                Name = "Key",
+                Transform = new LightFile.TransformData
+                {
+                    Position = new System.Numerics.Vector3(7f, 1f, 7f),
+                    Rotation = System.Numerics.Quaternion.Identity,
+                    Scale = System.Numerics.Vector3.One,
+                },
+            },
+        });
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(),
+            Camera = new CameraFile
+            {
+                Name = "Free",
+                Kind = Poser.Domain.Scene.CameraKind.Free,
+                Position = new System.Numerics.Vector3(9f, 2f, 9f),
+            },
+            IsLive = true,
+        });
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new Poser.Domain.Presentation.OverlayNodeState
+                {
+                    Name = "Line",
+                },
+            },
+        ];
+        scene.Environment = new SceneEnvironment();
+        return scene;
+    }
+
+    [Fact]
+    public void A_load_that_includes_nothing_is_refused_at_admission()
+    {
+        var runtime = new FakeRuntime { ReadResult = FullScene(out _) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        var result = workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions
+            {
+                IncludeActors = false,
+                IncludeProps = false,
+                IncludeLights = false,
+                IncludeCameras = false,
+                IncludeEnvironment = false,
+                IncludeOverlays = false,
+            });
+
+        Assert.False(result.Success);
+        // Nothing was read, so nothing native could have run either.
+        Assert.Empty(runtime.Calls);
+    }
+
+    [Fact]
+    public async Task Default_options_load_exactly_what_no_options_load()
+    {
+        var withDefaults = new FakeRuntime { ReadResult = FullScene(out _) };
+        using (var workflow = new SceneWorkflow(withDefaults))
+        {
+            Assert.True(workflow
+                .BeginLoad("shot.poserscene", SceneLoadOptions.Default).Success);
+            await workflow.Drain;
+        }
+
+        var without = new FakeRuntime { ReadResult = FullScene(out _) };
+        using (var workflow = new SceneWorkflow(without))
+        {
+            Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+            await workflow.Drain;
+        }
+
+        Assert.Equal(without.Calls, withDefaults.Calls);
+    }
+
+    [Fact]
+    public async Task Clearing_first_sweeps_the_session_before_anything_spawns()
+    {
+        var runtime = new FakeRuntime { ReadResult = FullScene(out _) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { ClearExistingScene = true }).Success);
+        await workflow.Drain;
+
+        var clear = runtime.Calls.IndexOf("ClearScene");
+        Assert.True(clear >= 0);
+        Assert.True(clear < runtime.Calls.IndexOf("SpawnActor:Lead"));
+        Assert.True(clear < runtime.Calls.IndexOf("CaptureEnvironmentState"));
+        // The sweep is outside the rollback ledger, so the outcome has to say
+        // what it cost.
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Notes,
+            note => note.Contains("Cleared the session first") &&
+                note.Contains("does not bring them back"));
+    }
+
+    [Fact]
+    public async Task A_load_that_does_not_clear_never_sweeps()
+    {
+        var runtime = new FakeRuntime { ReadResult = FullScene(out _) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("ClearScene", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task An_empty_sweep_says_nothing_about_being_emptied()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = FullScene(out _),
+            ClearResult = default,
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { ClearExistingScene = true }).Success);
+        await workflow.Drain;
+
+        Assert.Contains("ClearScene", runtime.Calls);
+        Assert.DoesNotContain(
+            workflow.Progress!.Outcome!.Notes,
+            note => note.Contains("Cleared the session first"));
+    }
+
+    [Fact]
+    public async Task Excluding_a_category_skips_every_phase_that_category_owns()
+    {
+        var runtime = new FakeRuntime { ReadResult = FullScene(out _) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions
+            {
+                IncludeProps = false,
+                IncludeLights = false,
+                IncludeOverlays = false,
+                IncludeEnvironment = false,
+            }).Success);
+        await workflow.Drain;
+
+        Assert.Contains("SpawnActor:Lead", runtime.Calls);
+        Assert.DoesNotContain("SpawnProp:Chair", runtime.Calls);
+        Assert.DoesNotContain("SpawnLight", runtime.Calls);
+        Assert.DoesNotContain("SpawnOverlay:Line", runtime.Calls);
+        Assert.DoesNotContain("ApplyEnvironment", runtime.Calls);
+        // The session-wide toggles belong to the environment category, so a
+        // load that leaves it out leaves them as the user set them.
+        Assert.DoesNotContain("ApplyWorld", runtime.Calls);
+        // What the file HAS and this load left alone is said once, per
+        // category, rather than left to look like a short scene.
+        var notes = workflow.Progress!.Outcome!.Notes;
+        Assert.Contains(notes, note => note.Contains("1 props were not loaded"));
+        Assert.Contains(notes, note => note.Contains("1 lights were not loaded"));
+        Assert.Contains(notes, note => note.Contains("1 overlays were not loaded"));
+        Assert.Contains(
+            notes, note => note.Contains("environment was not loaded"));
+    }
+
+    [Fact]
+    public async Task Excluding_actors_skips_every_phase_that_hangs_off_a_body()
+    {
+        var scene = FullScene(out _);
+        scene.Actors[0].CompanionKind = CompanionKind.Companion;
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { IncludeActors = false }).Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("SpawnActor:Lead", runtime.Calls);
+        Assert.DoesNotContain("ArmPoseImport:Lead", runtime.Calls);
+        Assert.DoesNotContain("AttachCompanion:Lead", runtime.Calls);
+        // The rest of the scene still lands.
+        Assert.Contains("SpawnProp:Chair", runtime.Calls);
+        Assert.Contains("SpawnLight", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task A_light_attached_to_an_excluded_actor_is_refused_by_name()
+    {
+        var scene = FullScene(out var leadKey);
+        scene.Lights[0].Attachment = new SceneBoneAttachment
+        {
+            ActorKey = leadKey,
+            BoneName = "j_kubi",
+        };
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { IncludeActors = false }).Success);
+        await workflow.Drain;
+
+        // Never a silent world-space spawn: the light does not appear, and the
+        // outcome says which actor it was hanging on.
+        Assert.DoesNotContain("SpawnLight", runtime.Calls);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is
+            {
+                Kind: "Light", Name: "Key", Restored: false,
+            } &&
+            entity.Detail!.Contains("this load did not restore"));
+    }
+
+    [Fact]
+    public async Task A_camera_following_an_excluded_actor_keeps_the_camera()
+    {
+        var scene = FullScene(out var leadKey);
+        scene.Cameras[0].TargetActorKey = leadKey;
+        scene.Cameras[0].TargetActorName = "Lead";
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { IncludeActors = false }).Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain(
+            runtime.Calls, call => call.StartsWith("SetCameraTarget"));
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is { Kind: "Camera", Restored: false } &&
+                entity.Detail!.Contains("did not restore"));
+    }
+
+    // -- load options: relative placement --------------------------------
+
+    [Fact]
+    public async Task A_relative_load_moves_every_world_position_by_one_offset()
+    {
+        var scene = FullScene(out _);
+        scene.Actors[0].ModelTransform = new LightFile.TransformData
+        {
+            Position = new System.Numerics.Vector3(4f, 0f, 4f),
+            Rotation = System.Numerics.Quaternion.Identity,
+            Scale = System.Numerics.Vector3.One,
+        };
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            // Origin (1,2,3) -> here (11,2,23): an offset of (10,0,20).
+            Origin = new System.Numerics.Vector3(11f, 2f, 23f),
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { PlaceRelativeToCurrentOrigin = true }).Success);
+        await workflow.Drain;
+
+        var offset = new System.Numerics.Vector3(10f, 0f, 20f);
+        Assert.Equal(
+            new System.Numerics.Vector3(4f, 0f, 4f) + offset,
+            scene.Actors[0].ModelTransform!.Position);
+        Assert.Equal(
+            new System.Numerics.Vector3(5f, 0f, 5f) + offset,
+            scene.Props[0].Transform.Position);
+        Assert.Equal(
+            new System.Numerics.Vector3(7f, 1f, 7f) + offset,
+            scene.Lights[0].Light!.Transform.Position);
+        Assert.Equal(
+            new System.Numerics.Vector3(9f, 2f, 9f) + offset,
+            scene.Cameras[0].Camera!.Position);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Notes,
+            note => note.Contains("relative to where you are standing"));
+    }
+
+    [Fact]
+    public async Task An_absolute_load_moves_nothing()
+    {
+        var scene = FullScene(out _);
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            Origin = new System.Numerics.Vector3(500f, 0f, 500f),
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("CurrentOrigin", runtime.Calls);
+        Assert.Equal(
+            new System.Numerics.Vector3(5f, 0f, 5f),
+            scene.Props[0].Transform.Position);
+    }
+
+    [Fact]
+    public async Task A_relative_load_of_an_anchorless_file_refuses_before_it_starts()
+    {
+        var scene = FullScene(out _);
+        scene.Origin = null;
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { PlaceRelativeToCurrentOrigin = true }).Success);
+        await workflow.Drain;
+
+        // Read and asked where we are, then stopped: nothing native ran, so
+        // there is nothing to roll back and the state is a plain Failed.
+        Assert.Equal(new[] { "ReadScene", "CurrentOrigin" }, runtime.Calls);
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Contains("records no origin", workflow.Progress!.Outcome!.Detail);
+    }
+
+    [Fact]
+    public async Task A_relative_load_with_nobody_to_anchor_on_refuses()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = FullScene(out _),
+            Origin = null,
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad(
+            "shot.poserscene",
+            new SceneLoadOptions { PlaceRelativeToCurrentOrigin = true }).Success);
+        await workflow.Drain;
+
+        Assert.Equal(new[] { "ReadScene", "CurrentOrigin" }, runtime.Calls);
+        Assert.Contains(
+            "nobody to place the scene relative to",
+            workflow.Progress!.Outcome!.Detail);
+    }
+
+    [Fact]
+    public void A_bone_attached_light_and_an_orbit_camera_stay_where_they_are()
+    {
+        var scene = FullScene(out var leadKey);
+        scene.Lights[0].Attachment = new SceneBoneAttachment
+        {
+            ActorKey = leadKey,
+            BoneName = "j_kubi",
+        };
+        scene.Cameras[0].Camera!.Kind = Poser.Domain.Scene.CameraKind.Game;
+
+        Assert.Null(SceneRelativePlacement.Rebase(
+            scene, new System.Numerics.Vector3(11f, 2f, 23f)));
+
+        // An attached light's position is its bone's, and an orbit camera
+        // orbits a target that moved with the scene; moving either again would
+        // move it twice.
+        Assert.Equal(
+            new System.Numerics.Vector3(7f, 1f, 7f),
+            scene.Lights[0].Light!.Transform.Position);
+        Assert.Equal(
+            new System.Numerics.Vector3(9f, 2f, 9f),
+            scene.Cameras[0].Camera!.Position);
+    }
+
+    [Fact]
+    public void A_relative_load_moves_the_points_an_actor_is_looking_at()
+    {
+        var scene = FullScene(out _);
+        scene.Actors[0].Gaze = new SceneActorGaze
+        {
+            Position = new System.Numerics.Vector3(1f, 1f, 1f),
+            EyesPosition = new System.Numerics.Vector3(2f, 2f, 2f),
+            HeadPosition = new System.Numerics.Vector3(3f, 3f, 3f),
+            BodyPosition = new System.Numerics.Vector3(4f, 4f, 4f),
+        };
+
+        Assert.Null(SceneRelativePlacement.Rebase(
+            scene, new System.Numerics.Vector3(11f, 2f, 23f)));
+
+        var offset = new System.Numerics.Vector3(10f, 0f, 20f);
+        var gaze = scene.Actors[0].Gaze!;
+        Assert.Equal(new System.Numerics.Vector3(1f, 1f, 1f) + offset, gaze.Position);
+        Assert.Equal(new System.Numerics.Vector3(2f, 2f, 2f) + offset, gaze.EyesPosition);
+        Assert.Equal(new System.Numerics.Vector3(3f, 3f, 3f) + offset, gaze.HeadPosition);
+        Assert.Equal(new System.Numerics.Vector3(4f, 4f, 4f) + offset, gaze.BodyPosition);
+    }
+
+    // -- disposal --------------------------------------------------------
 
     [Fact]
     public void Disposal_closes_admission_permanently()

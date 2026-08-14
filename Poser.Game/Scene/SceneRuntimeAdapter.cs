@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -43,6 +43,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly IGazeService _gaze;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingService _rendering;
+    private readonly IActorManager _actors;
+    private readonly IObjectTable _objects;
 
     public SceneRuntimeAdapter(
         IFramework framework,
@@ -61,8 +63,12 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         AnimationSession animation,
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        IWorldRenderingService rendering)
+        IWorldRenderingService rendering,
+        IActorManager actors,
+        IObjectTable objects)
     {
+        _actors = actors;
+        _objects = objects;
         _rendering = rendering;
         _integration = integration;
         _bindings = bindings;
@@ -135,6 +141,45 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         string? description,
         Action<SceneCaptureOutcome> onCaptured) =>
         _capture.BeginCapture(sceneId, description, onCaptured);
+
+    // ── session-wide load preamble ───────────────────────────────────────
+
+    public System.Numerics.Vector3? CurrentOrigin() =>
+        _objects.LocalPlayer?.Position;
+
+    /// <summary>
+    /// The destroy-first clear. Actors go through the spawn service one at a
+    /// time because only the spawned ones are this session's to destroy — the
+    /// GPose target the user brought in is not — while props, overlays, lights
+    /// and cameras each have a bulk verb that already applies the same
+    /// ownership rule (a borrowed world light is released, the default camera
+    /// cannot be destroyed), so their counts are read before the sweep.
+    /// </summary>
+    public SceneClearOutcome ClearScene()
+    {
+        int actors = 0;
+        foreach (var actor in _actors.Actors.ToList())
+        {
+            if (!_spawns.IsSpawnedActor(actor))
+                continue;
+            if (_spawns.DestroyActor(actor))
+                actors++;
+        }
+
+        int props = _props.Props.Count;
+        _props.DestroyAll();
+
+        int overlays = _overlays.Nodes.Count;
+        _overlays.DestroyAll();
+
+        int lights = _lighting.Lights.Count(_lighting.IsSpawnedLight);
+        _lighting.DestroyAllLights();
+
+        int cameras = _cameras.Cameras.Count(camera => !camera.IsDefault);
+        _cameras.DestroyAllCameras();
+
+        return new SceneClearOutcome(actors, props, overlays, lights, cameras);
+    }
 
     // ── actors ───────────────────────────────────────────────────────────
 

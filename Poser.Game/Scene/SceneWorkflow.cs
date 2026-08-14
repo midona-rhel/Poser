@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -25,7 +25,10 @@ namespace Poser.Game.Scene;
 /// receipt identity must be stable from Pending to terminal).
 ///
 /// Load semantics: the ENTIRE document is validated before any native
-/// mutation; entities spawn additively (nothing pre-existing is destroyed);
+/// mutation; entities spawn additively unless the load was asked to clear the
+/// session first (<see cref="SceneLoadOptions.ClearExistingScene"/>, whose
+/// sweep is deliberately outside the rollback ledger and says so in the
+/// outcome);
 /// structural failures (a failed actor spawn, readiness timeout, session
 /// replacement, cancellation) roll back everything THIS operation created in
 /// reverse order; entity-level failures (a companion, pose, prop, light or
@@ -96,11 +99,13 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Application.Animation.AnimationSession animation,
         Poser.Services.IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        Poser.Services.IWorldRenderingService rendering)
+        Poser.Services.IWorldRenderingService rendering,
+        Poser.Services.IActorManager actors,
+        Dalamud.Plugin.Services.IObjectTable objects)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
-            animation, gaze, integration, rendering))
+            animation, gaze, integration, rendering, actors, objects))
     {
     }
 
@@ -262,14 +267,23 @@ public sealed class SceneWorkflow : IDisposable
         return SceneActionResult.Ok();
     }
 
-    /// <summary>Starts the whole-scene load transaction.</summary>
-    public SceneActionResult BeginLoad(string path)
+    /// <summary>Starts the whole-scene load transaction. Null options is the
+    /// load as it has always been — see <see cref="SceneLoadOptions.Default"/>.
+    /// </summary>
+    public SceneActionResult BeginLoad(
+        string path, SceneLoadOptions? options = null)
     {
+        var chosen = options ?? SceneLoadOptions.Default;
         if (AdmissionGate() is { } refused)
             return refused;
         if (_runtime.ActiveSession is not { } session)
             return SceneActionResult.Fail(
                 "No GPose session is active; a scene load needs the exact session identity.");
+        // A load that includes no category would report success over a session
+        // it never touched; refused at admission, where nothing has happened.
+        if (!chosen.IncludesAnything)
+            return SceneActionResult.Fail(
+                "The load has every category switched off, so there is nothing to restore.");
 
         var operation = Admit(
             Guid.NewGuid(), System.IO.Path.GetFileName(path),
@@ -280,7 +294,8 @@ public sealed class SceneWorkflow : IDisposable
             ScenePhase.Reading, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
-            () => RunLoad(operation, path, cancellation), CancellationToken.None);
+            () => RunLoad(operation, path, chosen, cancellation),
+            CancellationToken.None);
         return SceneActionResult.Ok();
     }
 
@@ -408,9 +423,15 @@ public sealed class SceneWorkflow : IDisposable
     // ── Load ─────────────────────────────────────────────────────────────
 
     private async Task RunLoad(
-        Operation operation, string path, CancellationToken cancellation)
+        Operation operation,
+        string path,
+        SceneLoadOptions options,
+        CancellationToken cancellation)
     {
         var entities = new List<SceneEntityOutcome>();
+        // Facts about the OPERATION rather than about any one entity: what a
+        // destroy-first clear cost, and which categories the user left out.
+        var notes = new List<string>();
         int total = 0;
         int done = 0;
 
@@ -422,7 +443,7 @@ public sealed class SceneWorkflow : IDisposable
         void Finish(OperationReceiptState state, string detail) =>
             FinishTerminal(
                 operation, SceneOperationKind.Load, state, detail,
-                entities, Array.Empty<string>(), Array.Empty<string>());
+                entities, notes, Array.Empty<string>());
 
         async Task<string?> RollbackCreated()
         {
@@ -475,14 +496,79 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
-            total = scene.Actors.Count + scene.Props.Count +
-                scene.Lights.Count + scene.Cameras.Count +
-                (scene.Overlays?.Count ?? 0) +
-                (scene.Environment is null ? 0 : 1);
+            // The per-category views. An excluded category is an EMPTY view
+            // rather than a flag consulted at each of its phases: every phase
+            // then reads one list, and a category can never be half-skipped.
+            var actors = options.IncludeActors
+                ? (IReadOnlyList<SceneActor>)scene.Actors
+                : Array.Empty<SceneActor>();
+            var props = options.IncludeProps
+                ? (IReadOnlyList<SceneProp>)scene.Props
+                : Array.Empty<SceneProp>();
+            var overlays = options.IncludeOverlays
+                ? (IReadOnlyList<SceneOverlay>)(scene.Overlays ?? [])
+                : Array.Empty<SceneOverlay>();
+            var lights = options.IncludeLights
+                ? (IReadOnlyList<SceneLight>)scene.Lights
+                : Array.Empty<SceneLight>();
+            var cameras = options.IncludeCameras
+                ? (IReadOnlyList<SceneCamera>)scene.Cameras
+                : Array.Empty<SceneCamera>();
+            var environment = options.IncludeEnvironment
+                ? scene.Environment
+                : null;
+
+            // What the file HAS that this load was told to leave alone. Stated
+            // once, as a note, so a scene that came back with fewer entities
+            // than it was saved with says why rather than looking short.
+            AppendSkipNote(notes, "actors", options.IncludeActors, scene.Actors.Count);
+            AppendSkipNote(notes, "props", options.IncludeProps, scene.Props.Count);
+            AppendSkipNote(notes, "lights", options.IncludeLights, scene.Lights.Count);
+            AppendSkipNote(notes, "cameras", options.IncludeCameras, scene.Cameras.Count);
+            AppendSkipNote(
+                notes, "overlays", options.IncludeOverlays,
+                scene.Overlays?.Count ?? 0);
+            AppendSkipNote(
+                notes, "the environment", options.IncludeEnvironment,
+                scene.Environment is null ? 0 : 1);
+
+            // Relative placement rebases the READ document, before one native
+            // call: a file with no origin refuses HERE, where nothing has
+            // happened and there is nothing to roll back.
+            if (options.PlaceRelativeToCurrentOrigin)
+            {
+                var origin = await _runtime.OnFramework(_runtime.CurrentOrigin);
+                if (origin is not { } anchor)
+                {
+                    Finish(
+                        OperationReceiptState.Failed,
+                        "There is nobody to place the scene relative to, so the " +
+                        "load was not started. Load it as saved instead.");
+                    return;
+                }
+                if (SceneRelativePlacement.Rebase(scene, anchor) is { } refusal)
+                {
+                    Finish(OperationReceiptState.Failed, refusal);
+                    return;
+                }
+                notes.Add("Placed relative to where you are standing.");
+            }
+
+            total = actors.Count + props.Count +
+                lights.Count + cameras.Count +
+                overlays.Count +
+                (environment is null ? 0 : 1);
 
             // Phase 2 — baselines, then spawn/admit every entity that other
             // phases depend on. Actor spawn failures are structural: pose
             // and relationships cannot proceed against a hole.
+            //
+            // The destroy-first clear runs at the head of the same framework
+            // action, so nothing this load creates can be caught by the sweep
+            // that was meant to precede it. It is deliberately OUTSIDE the
+            // rollback ledger: rollback undoes what this operation CREATED, and
+            // no ledger can resurrect an actor the user asked to be rid of —
+            // which is why the clear reports what it cost.
             var actorTokens = new Dictionary<Guid, object>();
             Step(ScenePhase.SpawningEntities);
             var spawnFailure = await _runtime.OnFramework(() =>
@@ -490,13 +576,23 @@ public sealed class SceneWorkflow : IDisposable
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
 
-                operation.EnvironmentBaseline = _runtime.CaptureEnvironmentState();
-                operation.WorldBaseline = _runtime.CaptureWorldState();
-                if (scene.Cameras.Count > 0)
+                if (options.ClearExistingScene &&
+                    _runtime.ClearScene().Summary() is { } cleared)
+                    notes.Add(cleared);
+
+                // A baseline is captured only for what this load will WRITE:
+                // restoring an environment the load never touched would undo
+                // edits the user made before it.
+                if (environment is not null || options.IncludeEnvironment)
+                {
+                    operation.EnvironmentBaseline = _runtime.CaptureEnvironmentState();
+                    operation.WorldBaseline = _runtime.CaptureWorldState();
+                }
+                if (cameras.Count > 0)
                     operation.DefaultCameraBaseline =
                         _runtime.CaptureDefaultCameraState();
 
-                foreach (var actor in scene.Actors)
+                foreach (var actor in actors)
                 {
                     var token = _runtime.SpawnActor(actor, out var detail);
                     if (token is null)
@@ -506,7 +602,7 @@ public sealed class SceneWorkflow : IDisposable
                     actorTokens[actor.Key] = token;
                 }
 
-                foreach (var prop in scene.Props)
+                foreach (var prop in props)
                 {
                     var token = _runtime.SpawnProp(prop, out var detail);
                     if (token is null)
@@ -523,7 +619,7 @@ public sealed class SceneWorkflow : IDisposable
                 // An overlay node that will not stage is a NAMED refusal, not
                 // a structural one: the scene it decorates is still a scene
                 // without it, exactly as a prop's is.
-                foreach (var overlay in scene.Overlays ?? [])
+                foreach (var overlay in overlays)
                 {
                     string name = overlay.Node?.Name ?? "Overlay";
                     var token = _runtime.SpawnOverlay(overlay, out var detail);
@@ -544,7 +640,7 @@ public sealed class SceneWorkflow : IDisposable
                 await Abort(spawnFailure);
                 return;
             }
-            done = scene.Props.Count;
+            done = props.Count;
 
             // Phase 3 — bounded readiness barrier: pose needs the spawned
             // actors' skeletons, which build with their draw objects.
@@ -564,10 +660,10 @@ public sealed class SceneWorkflow : IDisposable
             // the ownership it registers — and the by-name unlock-and-restore
             // teardown that ownership buys — is the same one a hand-driven
             // import leaves behind.
-            if (scene.Actors.Any(entry => entry.Mcdf is not null))
+            if (actors.Any(entry => entry.Mcdf is not null))
             {
                 Step(ScenePhase.ApplyingAppearance);
-                foreach (var actor in scene.Actors)
+                foreach (var actor in actors)
                 {
                     if (actor.Mcdf is null)
                         continue;
@@ -604,7 +700,7 @@ public sealed class SceneWorkflow : IDisposable
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var actor in scene.Actors)
+                foreach (var actor in actors)
                 {
                     if (actor.CompanionKind is null)
                         continue;
@@ -627,11 +723,11 @@ public sealed class SceneWorkflow : IDisposable
             // on until its skeleton exists. Bounded, and deliberately NOT
             // structural: a companion that never draws costs one named refusal
             // in the pose phase, never the whole scene.
-            if (scene.Actors.Any(entry => entry.CompanionPose is not null))
+            if (actors.Any(entry => entry.CompanionPose is not null))
             {
                 Step(ScenePhase.AwaitingActors);
                 await WaitForCompanions(
-                    operation, scene, actorTokens, cancellation);
+                    operation, actors, actorTokens, cancellation);
             }
 
             // Phase 4b — animation, BEFORE the pose. The saved state is what
@@ -645,7 +741,7 @@ public sealed class SceneWorkflow : IDisposable
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var actor in scene.Actors)
+                foreach (var actor in actors)
                 {
                     // VISIBILITY BEFORE THE POSE, and the ordering is the
                     // invariant, not the mechanism. Hiding is a fade today
@@ -676,7 +772,7 @@ public sealed class SceneWorkflow : IDisposable
             // rolls ITSELF back and becomes a typed entity outcome; the
             // actor stays restored.
             Step(ScenePhase.ApplyingPose);
-            foreach (var actor in scene.Actors)
+            foreach (var actor in actors)
             {
                 if (Guard(operation, cancellation) is { } stop)
                 {
@@ -726,7 +822,7 @@ public sealed class SceneWorkflow : IDisposable
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var actor in scene.Actors)
+                foreach (var actor in actors)
                 {
                     // Gaze comes AFTER the pose: the look-at re-drives its
                     // channels every frame, and its Entity target is another
@@ -761,7 +857,7 @@ public sealed class SceneWorkflow : IDisposable
 
                 object? liveCamera = null;
                 bool liveIsDefault = false;
-                foreach (var camera in scene.Cameras)
+                foreach (var camera in cameras)
                 {
                     object? token = null;
                     string? detail;
@@ -787,8 +883,19 @@ public sealed class SceneWorkflow : IDisposable
                     if (camera.TargetActorKey is { } targetKey)
                     {
                         // The document validated this reference; it can only
-                        // miss here if the target actor itself failed, which
-                        // is structural and already aborted.
+                        // miss here if the target actor itself failed (which is
+                        // structural and already aborted) or if this load was
+                        // told to leave the actors out — then the camera is
+                        // restored and its target refused BY NAME.
+                        if (!actorTokens.ContainsKey(targetKey))
+                        {
+                            entities.Add(new SceneEntityOutcome(
+                                "Camera", camera.Camera!.Name, false,
+                                "The camera was restored but it follows an " +
+                                "actor this load did not restore."));
+                            done++;
+                            continue;
+                        }
                         var targetDetail = _runtime.SetCameraTarget(
                             token, actorTokens[targetKey], camera.TargetActorName);
                         if (targetDetail != null)
@@ -811,7 +918,7 @@ public sealed class SceneWorkflow : IDisposable
                     done++;
                 }
 
-                if (scene.Cameras.Count > 0)
+                if (cameras.Count > 0)
                 {
                     var liveDetail = _runtime.SetLiveCamera(
                         liveIsDefault ? null : liveCamera);
@@ -835,8 +942,22 @@ public sealed class SceneWorkflow : IDisposable
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
-                foreach (var light in scene.Lights)
+                foreach (var light in lights)
                 {
+                    // An attachment whose owner was not loaded is a NAMED
+                    // refusal of that light, exactly as an unresolvable
+                    // attachment already is: a light is never silently
+                    // detached into world space.
+                    if (light.Attachment is { } unresolved &&
+                        !actorTokens.ContainsKey(unresolved.ActorKey))
+                    {
+                        entities.Add(new SceneEntityOutcome(
+                            "Light", light.Light!.Name, false,
+                            "The light is attached to an actor this load did " +
+                            "not restore, so it was not spawned."));
+                        done++;
+                        continue;
+                    }
                     object? owner = light.Attachment is { } attachment
                         ? actorTokens[attachment.ActorKey]
                         : null;
@@ -879,16 +1000,20 @@ public sealed class SceneWorkflow : IDisposable
                 {
                     if (Guard(operation, cancellation) is { } stop)
                         return stop;
-                    if (scene.Environment is { } environment)
+                    if (environment is { } stated)
                     {
-                        _runtime.ApplyEnvironment(environment);
+                        _runtime.ApplyEnvironment(stated);
                         entities.Add(new SceneEntityOutcome(
                             "Environment", "Environment", true));
                         done++;
                     }
                     // Reported only when something DEGRADED: a toggle that
-                    // landed is not worth a row beside the entities.
-                    if (_runtime.ApplyWorld(scene.World ?? new SceneWorld())
+                    // landed is not worth a row beside the entities. The
+                    // session-wide toggles belong to the environment category,
+                    // so a load that leaves the environment out leaves them
+                    // exactly as the user set them.
+                    if (options.IncludeEnvironment &&
+                        _runtime.ApplyWorld(scene.World ?? new SceneWorld())
                         is { } detail)
                         entities.Add(new SceneEntityOutcome(
                             "World", "World", false, detail));
@@ -910,9 +1035,9 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
-                    ? $"Loaded {operation.FileName}: {scene.Actors.Count} actors, " +
-                      $"{scene.Props.Count} props, {scene.Lights.Count} lights, " +
-                      $"{scene.Cameras.Count} cameras."
+                    ? $"Loaded {operation.FileName}: {actors.Count} actors, " +
+                      $"{props.Count} props, {lights.Count} lights, " +
+                      $"{cameras.Count} cameras."
                     : $"Loaded {operation.FileName} partially: " +
                       $"{failures.Count} of {total} entities could not be restored " +
                       "(the restored entities were kept): " +
@@ -928,7 +1053,7 @@ public sealed class SceneWorkflow : IDisposable
                         ? OperationReceiptState.Applied
                         : OperationReceiptState.Failed,
                     detail, entities,
-                    Array.Empty<string>(), Array.Empty<string>());
+                    notes, Array.Empty<string>());
                 return null;
             });
             if (committed != null)
@@ -949,6 +1074,19 @@ public sealed class SceneWorkflow : IDisposable
                     : OperationReceiptState.RolledBack,
                 detail);
         }
+    }
+
+    /// <summary>One line stating a category the user left out, and only when
+    /// the FILE actually carries something in it: "props were not loaded" over
+    /// a scene with no props says nothing true about this load.</summary>
+    private static void AppendSkipNote(
+        List<string> notes, string category, bool included, int count)
+    {
+        if (included || count == 0)
+            return;
+        notes.Add(count == 1 && category.StartsWith("the ", StringComparison.Ordinal)
+            ? $"The file's {category[4..]} was not loaded."
+            : $"The file's {count} {category} were not loaded.");
     }
 
     /// <summary>Arms ONE atomic pose import — an actor's or its companion's,
@@ -1039,7 +1177,7 @@ public sealed class SceneWorkflow : IDisposable
     /// </summary>
     private async Task WaitForCompanions(
         Operation operation,
-        SceneFile scene,
+        IReadOnlyList<SceneActor> actors,
         Dictionary<Guid, object> actorTokens,
         CancellationToken cancellation)
     {
@@ -1053,7 +1191,7 @@ public sealed class SceneWorkflow : IDisposable
                 {
                     if (operation.Invalidated)
                         return true;
-                    foreach (var entry in scene.Actors)
+                    foreach (var entry in actors)
                     {
                         if (entry.CompanionPose is null)
                             continue;

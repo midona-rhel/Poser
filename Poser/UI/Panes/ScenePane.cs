@@ -9,7 +9,9 @@ using Poser.Application.Operations;
 using Poser.Config;
 using Poser.Files;
 using Poser.Game.Scene;
+using Dalamud.Bindings.ImGui;
 using Poser.Library;
+using Poser.Services;
 
 namespace Poser.UI;
 
@@ -96,22 +98,51 @@ public sealed class ScenePane
 
     private readonly UserNotices _notices;
 
+    /// <summary>Where the session is, for the map-mismatch line: a scene taken
+    /// somewhere else loads perfectly well and looks wrong, so the dialog says
+    /// so BEFORE the load rather than leaving the user to work it out from the
+    /// skybox. Ktisis turns its whole caption red on the same comparison
+    /// (<c>Interface/Windows/Editors/SceneWindow.cs</c>); Brio does not compare
+    /// at all.</summary>
+    private readonly IPlaceService _place;
+
+    /// <summary>
+    /// What the NEXT load is asked to do. Held on the pane rather than on the
+    /// workflow because they are the user's standing preference for this
+    /// session, not state of any operation; every default is the load as it
+    /// behaved before options existed.
+    /// </summary>
+    private SceneLoadOptions _options = SceneLoadOptions.Default;
+
+    /// <summary>The options band's logical height, corrected by its first
+    /// draw — the self-measure idiom the import dialog's band uses, so every
+    /// open after the first fits its rows exactly.</summary>
+    private float _optionsBandHeight = 92f;
+
     public ScenePane(
         SceneWorkflow workflow,
         SceneAutoSaveService snapshots,
         IPoseLibraryService library,
         ConfigurationService config,
+        IPlaceService place,
         UserNotices notices)
     {
         _workflow = workflow;
         _snapshots = snapshots;
         _library = library;
+        _place = place;
         _notices = notices;
         _lastPath = config.Config.Library.EnsureSceneRootExists();
 
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
         _snapshotBrowser.SidePanels.Add(verdict);
+        // The same band under both loading dialogs: a snapshot is a scene, and
+        // recovering one into a session that must be cleared first is exactly
+        // the case the option exists for.
+        var band = new FileSidePanel(_optionsBandHeight, DrawLoadOptionsBand);
+        _loadBrowser.BottomPanel = band;
+        _snapshotBrowser.BottomPanel = band;
     }
 
     /// <summary>Asks for the save destination from ANOTHER surface — the
@@ -416,6 +447,140 @@ public sealed class ScenePane
         });
     }
 
+    // ── the load dialog's options band ───────────────────────────────────
+
+    /// <summary>The band's label column, logical px — the dense form's, as
+    /// the import dialog's own option columns use.</summary>
+    private const float OptionsLabelColumn = 64f;
+
+    /// <summary>The band may not grow past this, logical px; past it each
+    /// column scrolls inside its own box.</summary>
+    private const float OptionsBandMaxHeight = 160f;
+
+    private const string OptionsBandId = "##scene-load-options";
+
+    /// <summary>
+    /// What the load will DO, stated under the listing it is about: the
+    /// destroy-first choice and the placement choice in one column, the six
+    /// category toggles in the other. Every default is today's load, so a user
+    /// who never opens this band gets the load they have always had.
+    ///
+    /// <para>Composed exactly as the pose import dialog's own options band is —
+    /// equal scroll regions past the left inset, each holding one headerless
+    /// DENSE section, each region's gutter its own trailing inset — because it
+    /// is the same thing in the same place, and a second layout for it would be
+    /// a second grammar for "options under a file listing".</para>
+    /// </summary>
+    private void DrawLoadOptionsBand(Vector2 origin, Vector2 size, string? path)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset;
+        float regionWidth = (size.X / scale - inset) / 2f;
+        float regionHeight = size.Y / scale - inset;
+        float tallest = 0f;
+        for (int column = 0; column < 2; column++)
+        {
+            int mount = column;
+            ImGui.SetCursorScreenPos(new Vector2(
+                origin.X + (inset + regionWidth * column) * scale,
+                origin.Y + inset * scale));
+            Crystarium.ScrollRegion(
+                $"{OptionsBandId}-{column}",
+                regionWidth,
+                regionHeight,
+                region =>
+                {
+                    var top = ImGui.GetCursorScreenPos();
+                    float width = region.ContentWidth * scale;
+                    float height = mount == 0
+                        ? DrawLoadSceneOptions(top, width)
+                        : DrawLoadIncludeOptions(top, width);
+                    ImGui.SetCursorScreenPos(new Vector2(top.X, top.Y + height));
+                    ImGui.Dummy(new Vector2(1f, 1f));
+                    tallest = MathF.Max(tallest, height / scale);
+                });
+        }
+
+        float fitted = MathF.Min(OptionsBandMaxHeight, tallest + inset * 2f);
+        if (MathF.Abs(fitted - _optionsBandHeight) > 0.5f)
+        {
+            _optionsBandHeight = fitted;
+            var band = new FileSidePanel(fitted, DrawLoadOptionsBand);
+            _loadBrowser.BottomPanel = band;
+            _snapshotBrowser.BottomPanel = band;
+        }
+    }
+
+    private float DrawLoadSceneOptions(Vector2 origin, float width) =>
+        Section(
+            $"{OptionsBandId}-scene", origin, width,
+            form => form.Checkboxes(
+                "Load",
+                disabled: false,
+                fullWidth: false,
+                new Crystarium.CheckItem(
+                    "Clear the session first",
+                    _options.ClearExistingScene,
+                    next => _options = _options with { ClearExistingScene = next },
+                    "Destroy every actor, prop, light, camera and overlay node "
+                        + "this session holds before restoring the file. "
+                        + "Undoing the load does not bring them back."),
+                new Crystarium.CheckItem(
+                    "Place relative to me",
+                    _options.PlaceRelativeToCurrentOrigin,
+                    next => _options =
+                        _options with { PlaceRelativeToCurrentOrigin = next },
+                    "Put the scene down where you are standing instead of where "
+                        + "it was captured. Needs a file that recorded where it "
+                        + "was taken.")));
+
+    private float DrawLoadIncludeOptions(Vector2 origin, float width) =>
+        Section(
+            $"{OptionsBandId}-include", origin, width,
+            form => form.Checkboxes(
+                "Include",
+                disabled: false,
+                fullWidth: false,
+                new Crystarium.CheckItem(
+                    "Actors", _options.IncludeActors,
+                    next => _options = _options with { IncludeActors = next },
+                    "Actors, their poses, animation, companions and gaze"),
+                new Crystarium.CheckItem(
+                    "Props", _options.IncludeProps,
+                    next => _options = _options with { IncludeProps = next }),
+                new Crystarium.CheckItem(
+                    "Lights", _options.IncludeLights,
+                    next => _options = _options with { IncludeLights = next }),
+                new Crystarium.CheckItem(
+                    "Cameras", _options.IncludeCameras,
+                    next => _options = _options with { IncludeCameras = next }),
+                new Crystarium.CheckItem(
+                    "Environment", _options.IncludeEnvironment,
+                    next => _options = _options with { IncludeEnvironment = next },
+                    "Time, weather, the held sky sections and the frozen "
+                        + "water and physics toggles"),
+                new Crystarium.CheckItem(
+                    "Overlays", _options.IncludeOverlays,
+                    next => _options = _options with { IncludeOverlays = next },
+                    "Dialogue, balloon and status nodes")));
+
+    /// <summary>One headerless dense option section, the band's only shape.
+    /// </summary>
+    private static float Section(
+        string id, Vector2 origin, float width, Action<Crystarium.FormScope> rows) =>
+        Crystarium.Section(
+            id,
+            string.Empty,
+            origin,
+            width,
+            true,
+            null,
+            rows,
+            divider: false,
+            labelColumnWidth: OptionsLabelColumn,
+            dense: true);
+
     // ── the load dialog's verdict column ─────────────────────────────────
 
     /// <summary>
@@ -485,6 +650,24 @@ public sealed class ScenePane
 
         if (!string.IsNullOrWhiteSpace(metadata.Description))
             Line(metadata.Description!, theme.FormHint, theme.Typography.CaptionSize);
+
+        // Where it was taken, and whether that is where you are. The scene
+        // loads either way — every placement in it is a world position, and
+        // nothing about a territory refuses one — so this is a WARNING, not a
+        // gate: the file's own words for the place, dimmed to the refusal
+        // colour when the territory is not this one.
+        if (metadata.TerritoryId != 0)
+        {
+            bool elsewhere = metadata.TerritoryId != _place.Current.TerritoryId;
+            string place = string.IsNullOrWhiteSpace(metadata.PlaceName)
+                ? $"territory {metadata.TerritoryId}"
+                : metadata.PlaceName!;
+            Line(
+                elsewhere ? $"Taken in {place} — you are somewhere else" : place,
+                elsewhere ? theme.Warning : theme.FormHint,
+                theme.Typography.CaptionSize);
+        }
+
         Line($"{metadata.ActorCount} actors", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.PropCount} props", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.LightCount} lights", theme.FormHint, theme.Typography.CaptionSize);
@@ -613,7 +796,7 @@ public sealed class ScenePane
 
     private void BeginLoad(string path)
     {
-        var started = _workflow.BeginLoad(path);
+        var started = _workflow.BeginLoad(path, _options);
         if (!started.Success)
             _notices.Failed(started.Detail ?? "The scene could not be loaded.");
     }
