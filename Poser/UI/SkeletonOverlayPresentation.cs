@@ -10,6 +10,14 @@ namespace Poser.UI;
 /// in — the replaced armature toggle's per-actor successor (user
 /// 2026-08-11). Selection anchors bypass this mask at the overlay.
 /// </summary>
+/// <summary>How much of a group of bones the overlay is showing.</summary>
+public enum OverlayVisibility
+{
+    None,
+    Partial,
+    All,
+}
+
 public sealed class SkeletonOverlayPresentation
 {
     private readonly HashSet<BoneId> _shown = new();
@@ -19,12 +27,29 @@ public sealed class SkeletonOverlayPresentation
 
     public bool IsVisible(BoneId bone) => _shown.Contains(bone);
 
-    public bool AreVisible(IReadOnlyList<BoneId> bones)
+    public bool AreVisible(IReadOnlyList<BoneId> bones) =>
+        Resolve(bones) == OverlayVisibility.All;
+
+    /// <summary>
+    /// A group's THREE states — Brio's tri-state category checkbox
+    /// (<c>ImBrio.TristateCheckbox</c>: 1 all, −1 none, 0 mixed). A row that
+    /// covers a hundred bones of which two are shown is not "hidden", and
+    /// answering that question with a bool is what made it look hidden.
+    ///
+    /// <para>An EMPTY group is <see cref="OverlayVisibility.None"/>: there is
+    /// nothing shown in it, and it is certainly not partly shown.</para>
+    /// </summary>
+    public OverlayVisibility Resolve(IReadOnlyList<BoneId> bones)
     {
+        int shown = 0;
         foreach (var bone in bones)
-            if (!_shown.Contains(bone))
-                return false;
-        return bones.Count > 0;
+            if (_shown.Contains(bone))
+                shown++;
+        if (shown == 0)
+            return OverlayVisibility.None;
+        return shown == bones.Count
+            ? OverlayVisibility.All
+            : OverlayVisibility.Partial;
     }
 
     public void SetVisible(IReadOnlyList<BoneId> bones, bool visible)

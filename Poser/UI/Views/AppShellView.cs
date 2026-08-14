@@ -242,8 +242,12 @@ public sealed class AppShellViewModel
     /// world thing. The row body raises it too — the row IS the toggle.
     /// </summary>
     public Action<ShellSidebarRow>? OnWorldClassToggle;
-    public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
-        IsOverlayVisible;
+    /// <summary>A row's overlay state as one of three: 0 none, 1 partial,
+    /// 2 all — <c>OverlayVisibility</c>'s declaration order. The eye reads
+    /// three states because a category row covers many bones and "some of
+    /// them" is a real answer (Brio's tri-state category checkbox).</summary>
+    public Func<IReadOnlyList<Domain.Identity.BoneId>, int>?
+        OverlayVisibilityOf;
     /// <summary>The world manip-handle toggle every entity row carries; the
     /// handle state is read live, like the overlay eyes.</summary>
     public Action<ShellSidebarRow>? OnHandleToggle;

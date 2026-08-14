@@ -897,7 +897,8 @@ public class MainWindow : Window
             _overlayPresentation.SetVisible(
                 bones, !_overlayPresentation.AreVisible(bones));
         };
-        _vm.IsOverlayVisible = _overlayPresentation.AreVisible;
+        _vm.OverlayVisibilityOf =
+            bones => (int)_overlayPresentation.Resolve(bones);
         _vm.DrawContent = DrawTabContent;
     }
 
@@ -3576,14 +3577,26 @@ public class MainWindow : Window
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
-        bool visible = _overlayPresentation.AreVisible(bones);
+        // Tri-state, like the row's own eye: a partly shown group's verb is
+        // "show the rest", never "hide" — Brio's mixed checkbox clicks into
+        // ALL for the same reason.
+        var state = _overlayPresentation.Resolve(bones);
+        bool visible = state == OverlayVisibility.All;
         var items = new[]
         {
             new ContextMenuItem(
-                visible ? "Hide category from overlay" : "Show category in overlay",
+                state switch
+                {
+                    OverlayVisibility.All => "Hide category from overlay",
+                    OverlayVisibility.Partial => "Show the rest of this category",
+                    _ => "Show category in overlay",
+                },
                 visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
-            new ContextMenuItem("Show all categories", TablerIcon.Eye),
+            // The actor-scope pair Brio's filter popup puts above its
+            // categories as Select All / Select None.
+            new ContextMenuItem("Show all of this actor", TablerIcon.Eye),
+            new ContextMenuItem("Hide all of this actor", TablerIcon.EyeOff),
         };
         if (_overlayCtxOpenRequested)
         {
@@ -3611,6 +3624,9 @@ public class MainWindow : Window
                 break;
             case 2:
                 _overlayPresentation.SetVisible(ownerBones, true);
+                break;
+            case 3:
+                _overlayPresentation.SetVisible(ownerBones, false);
                 break;
         }
     }

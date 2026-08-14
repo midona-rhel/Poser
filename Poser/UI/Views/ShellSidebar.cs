@@ -773,19 +773,26 @@ public sealed class ShellSidebar
 
             if (row.OverlayBones is not { } bones)
                 return;
-            bool visible = _vm.IsOverlayVisible?.Invoke(bones) ?? true;
-            // ONE eye whichever way it points, fading when hidden — the
-            // engaged/faded language every action slot speaks.
+            // 0 none, 1 partial, 2 all. The middle state is drawn as the eye
+            // at FULL strength but not lit — the row is showing something, so
+            // it must not read as switched off, and it is not showing
+            // everything, so it must not read as switched on either. Brio
+            // spells the same three states with a tri-state checkbox; a
+            // sidebar row has an eye, so the eye carries them.
+            int state = _vm.OverlayVisibilityOf?.Invoke(bones) ?? 2;
             ImGui.SetCursorScreenPos(origin);
             if (Crystarium.TemporaryIconToggle(
                     TablerIcon.Eye,
-                    selected: false,
+                    selected: state == 1,
                     style: square,
-                    help: visible
-                        ? "Hide from skeleton overlay"
-                        : "Show in skeleton overlay",
+                    help: state switch
+                    {
+                        0 => "Show in skeleton overlay",
+                        1 => "Some of this is in the overlay; show all of it",
+                        _ => "Hide from skeleton overlay",
+                    },
                     id: "##overlay",
-                    dimmed: !visible))
+                    dimmed: state == 0))
                 _vm.OnOverlayVisibility?.Invoke(row);
         }
         finally
