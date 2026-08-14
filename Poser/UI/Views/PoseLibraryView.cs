@@ -426,6 +426,7 @@ public static class PoseLibraryView
     private const string TileId = "##tile";
     private const string StarId = "##star";
     private const string TileLabelHelpId = "##tile-label";
+    private const string FolderLabelHelpId = "##folder-label";
 
     /// <summary>The band under the title bar, which is also FilterPill's own
     /// natural search height.</summary>
@@ -964,6 +965,16 @@ public static class PoseLibraryView
                 Size = theme.Typography.BodySize,
                 Color = theme.Text,
             });
+
+        // Same answer the tile caption comes off: the fit already knows whether
+        // the name was cut, so a truncated folder names itself without a second
+        // measure and an untruncated one costs nothing.
+        if (hit.Hovered && row.LabelFit.Truncated)
+            Crystarium.HoverHelp.Preview(
+                FolderLabelHelpId,
+                hit.ScreenMin,
+                new Vector2(contentRight, hit.ScreenMax.Y),
+                row.Label);
         return hit.Activated;
     }
 

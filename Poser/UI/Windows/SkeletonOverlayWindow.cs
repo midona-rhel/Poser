@@ -571,12 +571,14 @@ public class SkeletonOverlayWindow : Window
         {
             var adopt = adopts[hoveredAdoptIndex];
             var overlayMouse = ImGui.GetMousePos();
+            // A hovered handle says its NAME and nothing else (user, round 4).
+            // What kind of thing it is, the handle's own shape and colour
+            // already say; a type suffix is the overlay describing itself
+            // where the pointer asked what it was on.
             Crystarium.HoverHelp.Preview("sow-adopt",
                 overlayMouse - new Vector2(4f, 4f),
                 overlayMouse + new Vector2(4f, 4f),
-                adopt.Kind == WorldAdoptionKind.Light
-                    ? "Add this world light to the scene"
-                    : $"Add {adopt.Name} to the scene",
+                adopt.Name,
                 animated: false);
         }
         if (hasHoveredLight && !pointerBlocked)
@@ -584,7 +586,7 @@ public class SkeletonOverlayWindow : Window
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-light",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
-                $"{lights[hoveredLightIndex].Name} — light", animated: false);
+                lights[hoveredLightIndex].Name, animated: false);
         }
         else if (hasHoveredActor && !pointerBlocked)
         {
@@ -592,9 +594,7 @@ public class SkeletonOverlayWindow : Window
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-actor",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
-                hoveredActor.Id.Kind == SceneEntityKind.Prop
-                    ? $"{hoveredActor.Name} — prop"
-                    : $"{hoveredActor.Name} — actor transform",
+                hoveredActor.Name,
                 animated: false);
         }
 
