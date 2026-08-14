@@ -20,16 +20,29 @@ generations are re-resolved immediately before a write; failed resolution is
 explicit, and no native object or address is handed to Application or UI.
 
 Spawned actors follow the same boundary: the service owns one private record
-per operation, keyed by a service token plus the current native index, address,
-verified `GameObject.EntityId`, and an owner-thread slot-generation observation.
-Every later classification, visibility override, or deletion re-resolves that
-descriptor; index reuse, an observed generation change, or unavailable
-identity fails closed. Post-create and GPose-exit deletion is exact and
-retryable: successful deletion or verified absence retires one record, while
-uncertain or failed deletion remains pending. Records are session-only and
-never become a public handle or background retry mechanism. This preserves
-Brio's create/copy/model-before-draw/GPose ordering without allowing a stale
-actor wrapper to affect a replacement.
+per operation, keyed by a service token plus the exact native index, address,
+verified `GameObject.EntityId`, and a destruction stamp advanced inside a
+native `Character` finalize hook — the same authoritative lifetime transition
+Brio's ObjectMonitorService consumes. Because the stamp advances at the native
+destructor itself, an external delete-and-reuse with an identical triple is
+still observed and fails closed; when the hook cannot be installed, spawning
+and delayed callbacks refuse outright — authority never spans frames without
+the transition. Every native read or write, owned or legacy non-owned,
+re-resolves the exact descriptor immediately before dereferencing inside the
+adapter; unresolved identity refuses the operation, and all operations refuse
+off the framework thread. Binding also compares the wrapper's logical
+`EntityId` against the production minting formula, never address alone.
+Post-create and GPose-exit deletion is exact and retryable: successful
+deletion or verified absence retires one record, uncertain or failed deletion
+remains pending, a created index whose first resolve failed is retried on
+framework ticks and promoted to exact pending deletion once its create-time
+index stamp proves the occupant, and a create that faulted without an index is
+an explicit non-recoverable readout. Non-owned visibility overrides live in a
+separate descriptor-keyed store that dies with the native lifetime and the
+GPose session. Records are session-only and never become a public handle or
+background retry mechanism. This preserves Brio's
+create/copy/model-before-draw/GPose ordering without allowing a stale actor
+wrapper to affect a replacement.
 
 The current Application-facing native transform write/capture path is
 `ITransformRuntimePort`, implemented by Game's `TransformRuntimePort`; it
