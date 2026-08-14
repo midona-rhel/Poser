@@ -152,7 +152,7 @@ public sealed class ScenePane
 
         Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("Scene", form =>
+            page.Section("SCENE", form =>
             {
                 form.TextInput(
                     "Description",
@@ -166,7 +166,7 @@ public sealed class ScenePane
                     actions =>
                     {
                         actions.Button(
-                            "Save the scene…",
+                            "Save scene…",
                             OpenSave,
                             disabled: busy,
                             help: busy
@@ -174,7 +174,7 @@ public sealed class ScenePane
                                 : "Capture every actor, prop, light, camera and the environment into one file.",
                             variant: ButtonVariant.Primary);
                         actions.Button(
-                            "Load a scene…",
+                            "Load scene…",
                             OpenLoad,
                             disabled: busy,
                             help: busy
@@ -200,7 +200,7 @@ public sealed class ScenePane
 
     private void DrawProgress(Crystarium.PageScope page, SceneProgress progress)
     {
-        page.Section("In progress", form =>
+        page.Section("IN PROGRESS", form =>
         {
             float fraction = progress.EntitiesTotal > 0
                 ? Math.Clamp(
@@ -257,7 +257,7 @@ public sealed class ScenePane
         OperationReceipt? receipt)
     {
         var refusals = outcome.Entities.Where(entity => !entity.Restored).ToList();
-        page.Section("Last result", form =>
+        page.Section("LAST RESULT", form =>
         {
             form.ReadOnly(
                 "Outcome",
@@ -324,7 +324,7 @@ public sealed class ScenePane
             .Take(RecentSceneCount)
             .ToList();
 
-        page.Section("Recent scenes", form =>
+        page.Section("RECENT SCENES", form =>
         {
             if (recent.Count == 0)
             {
@@ -373,7 +373,7 @@ public sealed class ScenePane
     private void DrawSnapshots(Crystarium.PageScope page, bool busy)
     {
         var last = _snapshots.LastResult;
-        page.Section("Automatic snapshots", form =>
+        page.Section("AUTOMATIC SNAPSHOTS", form =>
         {
             form.ReadOnly(
                 "Status",
@@ -406,7 +406,7 @@ public sealed class ScenePane
             form.Actions(
                 string.Empty,
                 actions => actions.Button(
-                    "Load a snapshot…",
+                    "Load snapshot…",
                     OpenSnapshots,
                     disabled: busy || !Directory.Exists(_snapshots.RootDirectory),
                     help: Directory.Exists(_snapshots.RootDirectory)

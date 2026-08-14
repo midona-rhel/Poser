@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -2485,7 +2485,7 @@ public class MainWindow : Window
         {
             // One tab: the scene workspace is a single page, and the strip is
             // what states the mode the user is in.
-            _activeStrip = ShotStrip;
+            _activeStrip = SceneStrip;
             _sceneTabs[0].Active = true;
             _vm.Tabs.Add(_sceneTabs[0]);
             return;
@@ -2576,7 +2576,7 @@ public class MainWindow : Window
     /// not on two with separate scroll memories.</summary>
     private const string LibraryStrip = "library";
 
-    private const string ShotStrip = "shot";
+    private const string SceneStrip = "scene";
 
     // ── status bar, restated only when its numbers move ─────────────────
     private int _statusActorCount = -1;
