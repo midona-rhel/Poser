@@ -543,6 +543,9 @@ public class MainWindow : Window
                 ShowLibrary();
             else if (index == EnvironmentSectionIndex)
             {
+                // The exits restate nothing; the resync at the end of this
+                // handler stands for them and for the selection below, which
+                // is the only order that keeps the tab the user was on.
                 ExitLibraryMode();
                 ExitSceneMode();
                 // There is exactly one environment, so range and toggle mean
@@ -991,7 +994,7 @@ public class MainWindow : Window
     /// releases the scene the same way.</summary>
     public void ShowLibrary()
     {
-        ExitSceneMode(resync: false);
+        ExitSceneMode();
         _libraryMode = true;
         _selection.Clear();
         // Both switches can happen from a sidebar click, which occurs while
@@ -1001,20 +1004,24 @@ public class MainWindow : Window
         ResyncTabLayout();
     }
 
-    /// <param name="resync">False when the CALLER restates the layout itself
-    /// after further changes. Resyncing here would resolve the strip against
-    /// the selection as it stands mid-change — the outgoing one, or none at
-    /// all — and settle <see cref="_activeTab"/> onto that strip's first tab,
-    /// which is precisely the tab the user was on that leaving a mode
-    /// promises to give back.</param>
-    private void ExitLibraryMode(bool resync = true)
+    /// <summary>
+    /// Leaves library mode and RESTATES NOTHING: the caller resyncs, once,
+    /// after every change it is going to make.
+    ///
+    /// <para>This is not an optimisation. Leaving a mode is never the last
+    /// thing a caller does — a row click selects, the shot workspace opens,
+    /// the environment header selects — and a resync here would resolve the
+    /// strip against the selection as it stands mid-change: the outgoing one,
+    /// or none at all, since entering the library clears it. It would then
+    /// settle <see cref="_activeTab"/> onto that strip's first tab, which is
+    /// precisely the tab that leaving a mode promises to give back.</para>
+    /// </summary>
+    private void ExitLibraryMode()
     {
         if (!_libraryMode)
             return;
         _libraryMode = false;
         _libraryPane.OnHidden();
-        if (resync)
-            ResyncTabLayout();
     }
 
     /// <summary>Puts the workspace into shot mode. Openers only, exactly like
@@ -1023,21 +1030,19 @@ public class MainWindow : Window
     /// this one leaves the library.</summary>
     public void ShowSceneFiles()
     {
-        ExitLibraryMode(resync: false);
+        ExitLibraryMode();
         _sceneMode = true;
         _scenePane.OnShown();
         ResyncTabLayout();
     }
 
-    /// <param name="resync">False when the CALLER restates the layout itself;
-    /// see <see cref="ExitLibraryMode"/>.</param>
-    private void ExitSceneMode(bool resync = true)
+    /// <summary>Leaves shot mode and restates nothing; the caller resyncs.
+    /// See <see cref="ExitLibraryMode"/> for why.</summary>
+    private void ExitSceneMode()
     {
         if (!_sceneMode)
             return;
         _sceneMode = false;
-        if (resync)
-            ResyncTabLayout();
     }
 
     public override void PostDraw()
@@ -2457,8 +2462,8 @@ public class MainWindow : Window
     {
         // Selecting anything in the scene is leaving the library or the shot
         // workspace: they are alternatives in one workspace.
-        ExitLibraryMode(resync: false);
-        ExitSceneMode(resync: false);
+        ExitLibraryMode();
+        ExitSceneMode();
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);

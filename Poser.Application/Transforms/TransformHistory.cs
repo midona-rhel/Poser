@@ -75,9 +75,13 @@ public sealed class TransformHistory
         if (capacity < 1)
         {
             // Undo turned off: drop the stacks rather than keep a history the
-            // setting says may not be walked.
+            // setting says may not be walked. This empties them exactly as
+            // Clear does, so it announces exactly as Clear does — the entry
+            // being appended is discarded too, and whatever state was put
+            // behind it goes with the rest.
             _undo.Clear();
             _redo.Clear();
+            RaiseCleared();
         }
         else
         {
@@ -149,13 +153,17 @@ public sealed class TransformHistory
     }
 
     /// <summary>
-    /// Raised after both stacks are emptied. A lifecycle entry closes over
-    /// state its owner keeps beside the stack — the slot that re-binds an
-    /// entity across a destroy/respawn pair — and that state is meaningless
-    /// once the entries naming it are gone. Announcing the clear keeps the
-    /// answer in ONE place: whoever put state behind an entry drops it here,
-    /// rather than every future caller of <see cref="Clear"/> having to
-    /// remember a second sweep.
+    /// Raised whenever both stacks are emptied — by <see cref="Clear"/>, and
+    /// equally by the undo-off branch of <see cref="Append"/>, which empties
+    /// them just as thoroughly.
+    ///
+    /// <para>A lifecycle entry closes over state its owner keeps beside the
+    /// stack — the slot that re-binds an entity across a destroy/respawn pair
+    /// — and that state is meaningless once the entries naming it are gone.
+    /// Announcing the emptying keeps the answer in ONE place: whoever put
+    /// state behind an entry drops it here, rather than every site that
+    /// empties the stacks having to remember a second sweep. This class's own
+    /// Append forgot exactly that, which is the point.</para>
     /// </summary>
     public event Action? Cleared;
 
@@ -163,6 +171,11 @@ public sealed class TransformHistory
     {
         _undo.Clear();
         _redo.Clear();
+        RaiseCleared();
+    }
+
+    private void RaiseCleared()
+    {
         if (Cleared is { } observers)
             foreach (Action observer in observers.GetInvocationList())
                 try

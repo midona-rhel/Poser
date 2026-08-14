@@ -271,6 +271,27 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Empty(Slots(world.Lifecycle, "_actorSlots"));
     }
 
+    /// <summary>
+    /// Undo switched off empties the stacks on every append. That is the same
+    /// emptying <see cref="TransformHistory.Clear"/> performs, so it drops the
+    /// slots the same way — otherwise the one configuration that keeps no
+    /// history at all would be the one that accumulated state behind it.
+    /// </summary>
+    [Fact]
+    public void With_undo_switched_off_a_spawn_keeps_neither_entry_nor_slot()
+    {
+        var world = new World(capacity: 0);
+
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot);
+
+        // The light is spawned either way: the act was never conditional on
+        // being undoable.
+        Assert.NotNull(light);
+        Assert.Single(world.Lighting.Live);
+        Assert.False(world.History.CanUndo);
+        Assert.Empty(Slots(world.Lifecycle, "_lightSlots"));
+    }
+
     private static IDictionary Slots(
         SceneLifecycleHistory lifecycle, string field) =>
         (IDictionary)typeof(SceneLifecycleHistory)
@@ -296,15 +317,20 @@ public sealed class SceneLifecycleHistoryTests
     /// move the entry between stacks only if it landed.</summary>
     private sealed class World
     {
-        public TransformHistory History { get; } = new();
+        public TransformHistory History { get; }
         public FakeLighting Lighting { get; } = new();
         public FakeCameras Cameras { get; } = new();
         public FakeActors Actors { get; } = new();
         public SceneLifecycleHistory Lifecycle { get; }
 
-        public World() =>
+        /// <param name="capacity">Undo depth; below 1 is undo switched off.
+        /// </param>
+        public World(int capacity = TransformHistory.DefaultCapacity)
+        {
+            History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
                 History, Lighting, Cameras, Actors);
+        }
 
         public bool Undo()
         {

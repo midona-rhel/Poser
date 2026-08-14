@@ -75,6 +75,11 @@ public sealed class AnimationOwnershipTests
         var failed = session.ResetAll();
 
         Assert.False(failed.Success);
+        // The native's own reason reaches the caller: a reset that says only
+        // "failed" cannot be acted on, and this is the one channel the port's
+        // detail travels on.
+        Assert.Contains(
+            "unpatch", failed.Detail!, StringComparison.OrdinalIgnoreCase);
         Assert.True(port.Frozen);
         // The frozen scene still has its owner on record — never a patched
         // site nobody admits to.

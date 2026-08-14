@@ -510,8 +510,13 @@ public sealed class AnimationSession
         {
             var result = _port.SetPhysicsFrozen(frozen);
             if (!result.Success)
+                // The fallback names the DIRECTION that failed: this call
+                // both patches and unpatches, and "freeze failed" on a
+                // release is a report of the opposite of what was attempted.
                 return AnimationResult.Fail(
-                    result.Detail ?? "Physics freeze failed.");
+                    result.Detail ?? (frozen
+                        ? "Physics freeze failed."
+                        : "Physics release failed."));
         }
 
         _sceneOwnsPhysics = frozen;
