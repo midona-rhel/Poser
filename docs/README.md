@@ -18,6 +18,9 @@ XML comments carry implementation detail.
 | Implementation/review loop | [process/external-implementation-review-loop.md](process/external-implementation-review-loop.md) |
 | Live testing gate | [process/testing.md](process/testing.md) |
 | Dependency updates | [process/dependency-currency.md](process/dependency-currency.md) |
+| Deliberate Brio divergences (do-not-copy) | [brio/known-brio-bugs.md](brio/known-brio-bugs.md) |
+| Parity tracking (non-normative) | `brio/parity-checklist.md` |
+| Dated audit snapshots (non-normative) | `validation/*.md` |
 | Backlog | `backlog/PBI-*.md` |
 
 Rules: one normative home per contract — link, never restate. New documents

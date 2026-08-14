@@ -16,11 +16,14 @@ listed as retained is not part of the active product surface.
   ../features/files-and-transfer.md)), and outbound Open-in-Glamourer through
   one integration port. Animation may run while posing. Props, lights, virtual
   cameras, the pose/MCDF library, and AutoSave are retained workspace surfaces.
+  The spawn browser's World tab clones a visible overworld actor into the
+  scene (read-only discovery; the clone enters through the owned spawn
+  transaction — [posing-runtime.md](posing-runtime.md)).
   The environment is a selectable scene entity: time, weather, the eight
   holdable environment sections, water rendering, and festival slots.
 - Deferred or parked (no dormant UI or registrations): animation authoring,
-  whole-shot scene/project save and restore, reference images, overworld actor
-  import, arbitrary actor-to-bone attachment, and VFX authoring. Character
+  whole-shot scene/project save and restore, reference images, arbitrary
+  actor-to-bone attachment, and VFX authoring. Character
   Select+ actor application remains deferred until its public IPC has
   arbitrary-actor targeting and a restore call. General IPC/web APIs beyond
   the integration port remain out of product scope.

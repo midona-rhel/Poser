@@ -39,15 +39,25 @@ interchange with Brio and (via name conversion) Anamnesis.
   `.cmp` can never zero a pose.
 - Hazard: pre-2026-07-15 Poser exports stored deltas in `Bones` and import
   incorrectly; they are indistinguishable from absolute files.
-- Import UI: one Scope dropdown (Full/Body/Expression/Selected) plus
-  component, descendant, and reset-before-import options. Weapon, prop,
-  and ornament application are internal import options selected by the
-  Full/Selected scopes, not individual controls. Full includes every
-  slot; Body and Expression are Character-only; Selected uses the
-  selected bones' exact slots. Reset-before-import touches only the
-  chosen scope; the model transform applies once to the owning actor.
-  The Expression preset applies face bones with `j_kao` excluded; `.cmp`
-  remains Character-only.
+- Import UI (Brio popup parity): Body and Expression type checkboxes,
+  per-component options, Reset-first, and a bone-filter popup that shapes
+  only the default path (disabled while either type is checked).
+  Selected-bones and Include-descendants rows mount only in the import
+  dialog; confirm freezes the live bone selection into exact `BoneId`s.
+  Directly selected bones bypass the type strip, category exclusions,
+  face gate, and slot enables — those gates apply only to descendant
+  expansion (Ktisis ApplyToBones parity) — and the reset scope mirrors
+  the bypass. A-pose/T-pose presets and a two-step-armed Reference
+  preset (arm with a visible warning, disarm on menu reopen) live with
+  the import surfaces. Weapon, prop, and ornament application are
+  internal import options, not individual controls: a default import
+  (neither type checked) includes every slot; Body and Expression are
+  Character-only; selected bones use their exact slots.
+  Reset-before-import touches only the chosen scope; the model transform
+  applies once to the owning actor. Expression applies face bones with
+  `j_kao` excluded (the carve survives even the direct-bone bypass —
+  engine head-restore mechanics, not a gate); `.cmp` remains
+  Character-only.
 - File import is ONE atomic undoable edit: the importer computes a plan
   without mutating, every affected exact slot-qualified target (including
   reset-before-import and the model transform) is captured first, a

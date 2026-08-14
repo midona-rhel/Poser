@@ -2,9 +2,13 @@
 
 ## Surfaces
 
-Retained surfaces: main window, settings, spawn browser, skeleton overlay,
-gizmo overlay (`UiWindowSet`, exactly five). `GraphicalBonePane` is
-main-window content.
+Retained surfaces (`UiWindowSet`): main window, settings, spawn browser,
+skeleton overlay, gizmo overlay, and the two detached-shell part windows —
+sidebar and toolbar — open exactly while `UI.DetachedShell` is on and the
+workspace is up; detaching seats the parts where the sidebar column and
+titlebar stood so content and inspector never move. Per-actor frozen pop-out
+windows are minted on request and leave the window system when dismissed.
+`GraphicalBonePane` is main-window content (pop-outs mint their own instance).
 
 - Main surface + gizmo canvas open/close with GPose; the skeleton overlay
   starts Off each session (titlebar toggle; Alt temporarily hides dots).

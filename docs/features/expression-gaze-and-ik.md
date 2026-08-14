@@ -12,8 +12,13 @@ over partial-0 duplicates; unresolvable units are hidden. No propagation.
 
 ## Gaze
 
-Modes Off/Forward/Camera/Actor drive Eyes, Head, and Body independently;
-each participating part can be locked at its current target. Actor mode
+Modes Off/Forward/Camera/Point/Actor drive Eyes, Head, and Body
+independently; each participating part can be locked at its current target.
+Point (`GazeTargetMode.Position`) aims at a fixed world point: one shared
+anchor plus divergeable per-part points, seeded at the actor↔camera midpoint
+on mode entry, edited per part as a numeric Vector3 with snap-to-camera, and
+grabbable by the world gizmo (mutually exclusive with the bone gizmo); gaze
+writes never enter history. Actor mode
 requires an explicit target choice: the UI picker lists candidates by stable
 `ActorId` from the scene snapshot, while `GazeService` keys its state and
 target by native `GameObjectId`. Disabling a part immediately restores its
