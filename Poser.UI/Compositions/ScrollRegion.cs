@@ -92,7 +92,7 @@ public static partial class Crystarium
                     IconTexture = iconTexture,
                     HideIcon = !iconVisible,
                 },
-                style with { Width = UiWidth.Fixed(ContentWidth) })
+                style with { Width = UiWidth.Region(ContentWidth) })
                 == TreeRowAction.Selected;
         }
 

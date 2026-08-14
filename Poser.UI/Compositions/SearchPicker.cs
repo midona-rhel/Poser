@@ -385,7 +385,7 @@ public static partial class Crystarium
                 "Search by name",
                 new ControlStyle
                 {
-                    Width = UiWidth.Fixed(
+                    Width = UiWidth.Region(
                         _panelWidth - searchMargin - inset - PickerSearchClearPad),
                 });
             y += PickerSearchHeight;
@@ -420,7 +420,7 @@ public static partial class Crystarium
                 band.OnChange,
                 new ControlStyle
                 {
-                    Width = UiWidth.Fixed(rowWidth),
+                    Width = UiWidth.Region(rowWidth),
                     Height = UiHeight.Fixed(ActiveTheme.Controls.NavigationHeight),
                 });
             return y + StripHeight();

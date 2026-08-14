@@ -24,13 +24,36 @@ public readonly record struct UiWidth
     internal UiWidthKind Kind { get; }
     internal float Value { get; }
 
+    /// <summary>The smallest width <see cref="Fixed"/> accepts, and what a
+    /// region with no room left resolves to.</summary>
+    public const float Minimum = 1f;
+
     public static UiWidth Content => new(UiWidthKind.Content);
     public static UiWidth Fill => new(UiWidthKind.Fill);
+
+    /// <summary>An EXACT width, stated by a caller that knows it. Non-positive
+    /// is a programming error here — derived widths go through
+    /// <see cref="Region"/>.</summary>
     public static UiWidth Fixed(float width)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         return new(UiWidthKind.Fixed, width);
     }
+
+    /// <summary>
+    /// The width a layout REGION offers a control — a span DERIVED by
+    /// subtraction (a row's control column less its action strip, a pane less
+    /// its gutter) rather than stated outright. A region that cannot state a
+    /// positive width offers <see cref="Minimum"/>, so the control collapses
+    /// to a hairline it can never paint over its neighbours with.
+    /// <para>Derived spans go through this factory and NEVER through
+    /// <see cref="Fixed"/>: a narrow pane, a collapsed child or a first-frame
+    /// measure drives such a span to zero routinely, and <c>Fixed</c> answers
+    /// that by throwing — out of layout math, mid-frame, which takes the whole
+    /// window down with it rather than one row.</para>
+    /// </summary>
+    public static UiWidth Region(float width) =>
+        new(UiWidthKind.Fixed, width > Minimum ? width : Minimum);
 }
 
 internal enum UiHeightKind

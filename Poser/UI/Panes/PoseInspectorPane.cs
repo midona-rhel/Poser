@@ -1081,7 +1081,7 @@ public class PoseInspectorPane
             "Filter bones",
             ControlStyle.Workspace with
             {
-                Width = UiWidth.Fixed(MathF.Min(
+                Width = UiWidth.Region(MathF.Min(
                     theme.Matrix.FilterWidth,
                     (max.X - min.X) / s)),
             });

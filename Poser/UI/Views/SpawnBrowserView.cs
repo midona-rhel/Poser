@@ -298,7 +298,7 @@ public static class SpawnBrowserView
             "Search everything spawnable",
             new ControlStyle
             {
-                Width = UiWidth.Fixed(width - margin - cluster),
+                Width = UiWidth.Region(width - margin - cluster),
             });
     }
 

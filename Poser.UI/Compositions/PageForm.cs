@@ -668,6 +668,15 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>
+        /// A value trigger with an optional action strip right-aligned beside
+        /// it. The trigger IS the row — it is what opens the picker — so it
+        /// keeps the value column as a FLOOR, the same guarantee the progress
+        /// row gives its bar: an intrinsically-measured strip is free to be
+        /// wider than the column it sits in (three worded buttons on a rail
+        /// row are), and a trigger sized by plain subtraction disappears
+        /// there.
+        /// </summary>
         public void Picker(
             string label,
             string value,
@@ -681,15 +690,18 @@ public static partial class Crystarium
             var row = _page.BeginRow(label);
             var actionScope = new ActionScope();
             actions?.Invoke(actionScope);
-            float actionWidth = actionScope.Items.Count == 0
-                ? 0f
-                : MeasureActions(
-                    actionScope.Items, row.Scale, row.ControlWidth);
             float gap = actionScope.Items.Count == 0
                 ? 0f
                 : ActiveTheme.Page.ActionGap * row.Scale;
+            float floor = ActiveTheme.Form.ValueColumnWidth * row.Scale;
+            float actionWidth = actionScope.Items.Count == 0
+                ? 0f
+                : MeasureActions(
+                    actionScope.Items,
+                    row.Scale,
+                    MathF.Max(0f, row.ControlWidth - floor - gap));
             float valueWidth = MathF.Max(
-                0f, row.ControlWidth - actionWidth - gap);
+                floor, row.ControlWidth - actionWidth - gap);
             var pickerStyle = WorkspaceInRegion(
                 style, valueWidth / row.Scale);
             float controlHeight = ControlSizing.Height(
@@ -708,9 +720,15 @@ public static partial class Crystarium
                 help: help,
                 id: id);
             if (actionScope.Items.Count > 0)
+                // Right-aligned while the strip fits. A strip too wide for
+                // what the trigger left starts AFTER the trigger and runs off
+                // the right edge, where the region clips it — right-aligning
+                // it would instead walk it left over the trigger and the
+                // label, hiding the row's own control behind its actions.
                 DrawActions(
                     actionScope.Items,
-                    row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                    row.ControlOrigin.X + MathF.Max(
+                        valueWidth + gap, row.ControlWidth - actionWidth),
                     actionWidth,
                     row.Origin.Y,
                     true,
@@ -899,7 +917,7 @@ public static partial class Crystarium
                 onChange,
                 new ControlStyle
                 {
-                    Width = UiWidth.Fixed(sliderWidth / row.Scale),
+                    Width = UiWidth.Region(sliderWidth / row.Scale),
                 },
                 marks,
                 disabled,
@@ -1276,7 +1294,7 @@ public static partial class Crystarium
                     format,
                     ControlStyle.Workspace with
                     {
-                        Width = UiWidth.Fixed(width / row.Scale),
+                        Width = UiWidth.Region(width / row.Scale),
                     },
                     disabled);
             }
@@ -1825,12 +1843,17 @@ public static partial class Crystarium
         }
     }
 
+    /// <summary>Pins a control to the region a row hands it. The span is
+    /// DERIVED — the row's width less its label column, less whatever a strip
+    /// beside it took — so it reaches zero on a narrow rail or a collapsed
+    /// pane and goes through <see cref="UiWidth.Region"/>, which answers that
+    /// with a hairline instead of throwing out of the frame.</summary>
     private static ControlStyle InRegion(
         ControlStyle style, float width, bool fillByDefault) =>
         style.Width.Kind == UiWidthKind.Fill
             || (fillByDefault
                 && style.Width.Kind == UiWidthKind.Unspecified)
-                ? style with { Width = UiWidth.Fixed(width) }
+                ? style with { Width = UiWidth.Region(width) }
                 : style;
 
     private static ControlStyle WorkspaceInRegion(
