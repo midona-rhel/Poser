@@ -91,7 +91,7 @@ public sealed class PoseLibraryPane
 
     /// <summary>The band's type tabs, positional against
     /// <see cref="PoseLibraryView.TypeLabels"/>.</summary>
-    private enum LibraryType
+    internal enum LibraryType
     {
         Poses,
         AutoSaves,
@@ -1881,6 +1881,25 @@ public sealed class PoseLibraryPane
                 : word + ": " + detail;
     }
 
+    /// <summary>
+    /// Whether the footer belongs to a live character-file apply. Every
+    /// conjunct earns its place: the MCDF TAB is the only surface that
+    /// starts one, so no other tab may have its caption or its action row
+    /// taken over (a tab added later is excluded by construction); the
+    /// single-flight transaction must be an IMPORT rather than an export;
+    /// and its receipt must still be Pending, because a terminal outcome
+    /// reports through the note like every other result.
+    /// </summary>
+    internal static bool ShowsImportCancel(
+        LibraryType type,
+        bool busy,
+        McdfProgress? progress,
+        OperationReceipt? receipt) =>
+        type == LibraryType.Mcdf
+        && busy
+        && progress is { Kind: McdfOperationKind.Import }
+        && receipt is { State: OperationReceiptState.Pending };
+
     private void SyncStatus()
     {
         // Each tab states its OWN enumeration. The auto-save tab browses no
@@ -1893,14 +1912,16 @@ public sealed class PoseLibraryPane
 
         // A character file applied from HERE runs as a long transaction, and
         // the appearance pane's progress row is a pane away. State the live
-        // phase and offer the stop on the surface that started it — during
-        // the PENDING phases only: a committing or rolling-back operation is
-        // past the point a cancel means anything, and the receipt's terminal
-        // states are reported through _note like every other outcome.
+        // phase and offer the stop on the surface that started it. The MCDF
+        // TAB is the only surface that can start one, so it is the only one
+        // that may claim the footer: without that conjunct this hijacks the
+        // Poses and Auto-saves captions and buries the auto-save health line.
         var running = _integration.Mcdf;
-        bool importing = _integration.McdfBusy
-            && running is { Kind: McdfOperationKind.Import }
-            && _integration.McdfReceipt is { State: OperationReceiptState.Pending };
+        bool importing = ShowsImportCancel(
+            _type, _integration.McdfBusy, running, _integration.McdfReceipt);
+        _vm.ShowCancelImport = importing;
+        // The stop greys — never vanishes — through Committing and Rolling
+        // back, matching the appearance pane's progress row.
         _vm.CanCancelImport = importing && running!.Cancellable;
         if (importing)
         {
