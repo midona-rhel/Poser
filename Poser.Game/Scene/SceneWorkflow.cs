@@ -88,6 +88,7 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.ISkeletonService skeletons,
         Poser.Services.IPosingService posing,
         PropSpawnService props,
+        Overlays.OverlayNodeService overlays,
         Poser.Services.ILightingService lighting,
         Poser.Services.IVirtualCameraService cameras,
         Poser.Services.IEnvironmentService environment,
@@ -98,8 +99,8 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.IWorldRenderingService rendering)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
-            props, lighting, cameras, environment, bindings, animation, gaze,
-            integration, rendering))
+            props, overlays, lighting, cameras, environment, bindings,
+            animation, gaze, integration, rendering))
     {
     }
 
@@ -149,6 +150,7 @@ public sealed class SceneWorkflow : IDisposable
         // these in reverse. Tokens are opaque runtime handles.
         public readonly List<object> SpawnedActors = new();
         public readonly List<object> SpawnedProps = new();
+        public readonly List<object> StagedOverlays = new();
         public readonly List<object> SpawnedLights = new();
         public readonly List<object> CreatedCameras = new();
         public CameraFile? DefaultCameraBaseline;
@@ -475,6 +477,7 @@ public sealed class SceneWorkflow : IDisposable
 
             total = scene.Actors.Count + scene.Props.Count +
                 scene.Lights.Count + scene.Cameras.Count +
+                (scene.Overlays?.Count ?? 0) +
                 (scene.Environment is null ? 0 : 1);
 
             // Phase 2 — baselines, then spawn/admit every entity that other
@@ -515,6 +518,24 @@ public sealed class SceneWorkflow : IDisposable
                     }
                     operation.SpawnedProps.Add(token);
                     entities.Add(new SceneEntityOutcome("Prop", prop.Name, true));
+                }
+
+                // An overlay node that will not stage is a NAMED refusal, not
+                // a structural one: the scene it decorates is still a scene
+                // without it, exactly as a prop's is.
+                foreach (var overlay in scene.Overlays ?? [])
+                {
+                    string name = overlay.Node?.Name ?? "Overlay";
+                    var token = _runtime.SpawnOverlay(overlay, out var detail);
+                    if (token is null)
+                    {
+                        entities.Add(new SceneEntityOutcome(
+                            "Overlay", name, false,
+                            detail ?? "The overlay could not be staged."));
+                        continue;
+                    }
+                    operation.StagedOverlays.Add(token);
+                    entities.Add(new SceneEntityOutcome("Overlay", name, true));
                 }
                 return null;
             });
@@ -1124,6 +1145,8 @@ public sealed class SceneWorkflow : IDisposable
             "camera", failures);
         RollbackList(operation.SpawnedLights, _runtime.DestroyLight,
             "light", failures);
+        RollbackList(operation.StagedOverlays, _runtime.DestroyOverlay,
+            "overlay", failures);
         RollbackList(operation.SpawnedProps, _runtime.DestroyProp,
             "prop", failures);
         RollbackList(operation.SpawnedActors, _runtime.DestroyActor,

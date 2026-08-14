@@ -69,6 +69,7 @@ public sealed class SceneCaptureService
     private readonly IPoseFileService _poseFiles;
     private readonly IActorSpawnService _spawns;
     private readonly PropSpawnService _props;
+    private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IEnvironmentService _environment;
@@ -89,6 +90,7 @@ public sealed class SceneCaptureService
         IPoseFileService poseFiles,
         IActorSpawnService spawns,
         PropSpawnService props,
+        Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IEnvironmentService environment,
@@ -115,6 +117,7 @@ public sealed class SceneCaptureService
         _poseFiles = poseFiles;
         _spawns = spawns;
         _props = props;
+        _overlays = overlays;
         _lighting = lighting;
         _cameras = cameras;
         _environment = environment;
@@ -213,6 +216,7 @@ public sealed class SceneCaptureService
 
             var actorKeys = CaptureActors(scene, notes);
             CaptureProps(scene, notes);
+            CaptureOverlays(scene);
             CaptureLights(scene, actorKeys, notes);
             CaptureCameras(scene, actorKeys, notes);
             scene.Environment = CaptureEnvironment();
@@ -556,6 +560,30 @@ public sealed class SceneCaptureService
                 Visible = prop.Visible,
                 Transform = NormalizedTransform(
                     prop.Transform, $"Prop '{prop.Name}'", notes),
+            });
+        }
+    }
+
+    /// <summary>
+    /// The staged overlay nodes, each as its whole document. The list is left
+    /// ABSENT when there are none, so a scene with no staged dialogue writes
+    /// exactly the file it wrote before overlay nodes existed.
+    /// </summary>
+    private void CaptureOverlays(SceneFile scene)
+    {
+        foreach (var overlay in _overlays.Nodes)
+        {
+            if (!overlay.IsValid)
+                continue;
+            scene.Overlays ??= new List<SceneOverlay>();
+            scene.Overlays.Add(new SceneOverlay
+            {
+                Key = _bindings.GetOverlayId(overlay)?.LogicalId
+                    ?? Guid.NewGuid(),
+                Node = overlay.State with
+                {
+                    Name = Bounded(overlay.State.Name, "Overlay"),
+                },
             });
         }
     }

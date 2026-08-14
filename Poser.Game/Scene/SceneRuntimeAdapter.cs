@@ -34,6 +34,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly ISkeletonService _skeletons;
     private readonly IPosingService _posing;
     private readonly PropSpawnService _props;
+    private readonly Poser.Game.Overlays.OverlayNodeService _overlays;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IEnvironmentService _environment;
@@ -52,6 +53,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         ISkeletonService skeletons,
         IPosingService posing,
         PropSpawnService props,
+        Poser.Game.Overlays.OverlayNodeService overlays,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IEnvironmentService environment,
@@ -75,6 +77,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         _skeletons = skeletons;
         _posing = posing;
         _props = props;
+        _overlays = overlays;
         _lighting = lighting;
         _cameras = cameras;
         _environment = environment;
@@ -482,6 +485,23 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     // ── props ────────────────────────────────────────────────────────────
 
+    public object? SpawnOverlay(SceneOverlay data, out string? detail)
+    {
+        if (data.Node is not { } document)
+        {
+            detail = "The overlay entry carries no node document.";
+            return null;
+        }
+        var handle = _overlays.Create(document);
+        if (handle is null)
+        {
+            detail = "The overlay node could not be staged.";
+            return null;
+        }
+        detail = null;
+        return handle;
+    }
+
     public object? SpawnProp(SceneProp data, out string? detail)
     {
         var handle = _props.SpawnProp(new PropModel(
@@ -709,6 +729,9 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public void DestroyActor(object actor) => _spawns.DestroyActor((IActor)actor);
 
     public void DestroyProp(object prop) => _props.Destroy((PropHandle)prop);
+
+    public void DestroyOverlay(object overlay) =>
+        _overlays.Destroy((Poser.Game.Overlays.OverlayNodeHandle)overlay);
 
     public void DestroyLight(object light) => _lighting.DestroyLight((ILight)light);
 

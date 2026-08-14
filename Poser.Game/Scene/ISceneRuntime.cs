@@ -237,6 +237,9 @@ internal interface ISceneRuntime
     /// <summary>Spawns one prop with its transform and visibility.</summary>
     object? SpawnProp(SceneProp data, out string? detail);
 
+    /// <summary>Stages one overlay node from its saved document.</summary>
+    object? SpawnOverlay(SceneOverlay data, out string? detail);
+
     /// <summary>Spawns one light with its complete document, gobo, and — when
     /// an attachment is stated — the exact resolved bone on the restored
     /// owner. An unresolvable attachment returns null with a detail and
@@ -281,6 +284,7 @@ internal interface ISceneRuntime
 
     void DestroyActor(object actor);
     void DestroyProp(object prop);
+    void DestroyOverlay(object overlay);
     void DestroyLight(object light);
     void DestroyCamera(object camera);
     void RestoreDefaultCamera(CameraFile baseline);

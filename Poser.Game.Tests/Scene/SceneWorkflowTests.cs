@@ -34,6 +34,7 @@ public sealed class SceneWorkflowTests
 
         public Func<SceneActor, string?>? ActorSpawnFailure;
         public Func<SceneProp, string?>? PropSpawnFailure;
+        public Func<SceneOverlay, string?>? OverlayStageFailure;
         public Func<SceneLight, string?>? LightSpawnFailure;
         public Func<SceneActor, string?>? PoseFailure;
         public Func<SceneActor, string?>? CompanionFailure;
@@ -232,6 +233,14 @@ public sealed class SceneWorkflowTests
             return detail is null ? new Token($"prop:{data.Name}") : null;
         }
 
+        public object? SpawnOverlay(SceneOverlay data, out string? detail)
+        {
+            string name = data.Node?.Name ?? "Overlay";
+            Record($"SpawnOverlay:{name}");
+            detail = OverlayStageFailure?.Invoke(data);
+            return detail is null ? new Token($"overlay:{name}") : null;
+        }
+
         public object? SpawnLight(
             SceneLight data, object? attachmentOwner, out string? detail)
         {
@@ -302,6 +311,7 @@ public sealed class SceneWorkflowTests
 
         public void DestroyActor(object actor) => Destroy(actor);
         public void DestroyProp(object prop) => Destroy(prop);
+        public void DestroyOverlay(object overlay) => Destroy(overlay);
         public void DestroyLight(object light) => Destroy(light);
         public void DestroyCamera(object camera) => Destroy(camera);
 
@@ -1165,6 +1175,121 @@ public sealed class SceneWorkflowTests
         Assert.Empty(runtime.Destroyed);
         Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
         Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+    }
+
+    // ── overlays ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Staged_overlays_are_restored_with_the_rest_of_the_scene()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new Poser.Domain.Presentation.OverlayNodeState
+                {
+                    Name = "Opening line",
+                },
+            },
+        ];
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Contains("SpawnOverlay:Opening line", runtime.Calls);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is
+                { Kind: "Overlay", Name: "Opening line", Restored: true });
+    }
+
+    /// <summary>A scene the codec wrote before overlay nodes existed carries
+    /// no list at all, and the load must not go looking for one.</summary>
+    [Fact]
+    public async Task A_scene_with_no_overlay_list_stages_none()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain(
+            runtime.Calls, call => call.StartsWith("SpawnOverlay"));
+    }
+
+    [Fact]
+    public async Task A_refused_overlay_leaves_the_rest_of_the_shot_standing()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new Poser.Domain.Presentation.OverlayNodeState
+                {
+                    Name = "Opening line",
+                },
+            },
+        ];
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            OverlayStageFailure = _ => "The game's UI would not take it.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Empty(runtime.Destroyed);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is { Kind: "Overlay", Restored: false });
+    }
+
+    /// <summary>A structural refusal must take the staged nodes down with
+    /// everything else: a rolled-back load may not leave a dialogue box
+    /// hanging over an empty scene.</summary>
+    [Fact]
+    public async Task A_rolled_back_load_takes_its_staged_overlays_down()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new Poser.Domain.Presentation.OverlayNodeState
+                {
+                    Name = "Opening line",
+                },
+            },
+        ];
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+        // Cancel once the node is staged: the commit re-guard must roll back
+        // rather than commit a half-applied shot.
+        runtime.AfterCall = call =>
+        {
+            if (call == "SpawnOverlay:Opening line")
+                workflow.Cancel();
+        };
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.Cancelled, workflow.Receipt!.State);
+        // Overlays go down before the props and actors they were staged over.
+        Assert.Equal(
+            new[] { "overlay:Opening line", "actor:Lead" },
+            runtime.Destroyed.ToArray());
     }
 
     // ── disposal ─────────────────────────────────────────────────────────

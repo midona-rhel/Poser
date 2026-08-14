@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Services;
 
 namespace Poser.Files;
@@ -75,6 +76,13 @@ public class SceneFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneWorld? World { get; set; }
 
+    /// <summary>The staged game-UI overlay nodes. ABSENT rather than empty
+    /// when the scene has none, which is every scene written before overlay
+    /// nodes existed: an older file reads back byte-identical and a scene with
+    /// no nodes writes no list at all.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<SceneOverlay>? Overlays { get; set; }
+
     // The same wire style every Poser document uses — numerics as
     // comma-space strings, enums by name, PascalCase, pretty printing,
     // relaxed escaping, tolerated trailing commas and unknown members.
@@ -107,6 +115,7 @@ public static class SceneFileLimits
     public const int MaxProps = 100;
     public const int MaxLights = 50;
     public const int MaxCameras = 50;
+    public const int MaxOverlays = 50;
     public const int MaxNameCharacters = 256;
 
     /// <summary>Bound for stated filesystem paths, which are legitimately
@@ -370,6 +379,23 @@ public class SceneProp
     public bool Visible { get; set; } = true;
     public LightFile.TransformData Transform { get; set; } =
         LightFile.TransformData.Identity;
+}
+
+/// <summary>
+/// One staged overlay node: its stable in-document key plus the COMPLETE node
+/// document, embedded rather than restated. A node's state is already one
+/// value the editor, the undo journal and the native port all speak, so the
+/// scene carries that value and nothing else — the same rule that has a scene
+/// light carry a whole <see cref="LightFile"/>.
+/// </summary>
+[Serializable]
+public class SceneOverlay
+{
+    public Guid Key { get; set; }
+
+    /// <summary>The node's whole state. Required — an overlay entry without
+    /// one names nothing.</summary>
+    public OverlayNodeState? Node { get; set; }
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

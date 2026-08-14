@@ -4,6 +4,7 @@ using System.Numerics;
 using Poser.Domain.Animation;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Services;
@@ -106,6 +107,12 @@ public static class SceneFileValidation
         if (scene.Cameras.Count > SceneFileLimits.MaxCameras)
             return Fail(SceneFileValidationFailureKind.CollectionSize,
                 $"The scene contains {scene.Cameras.Count} cameras (limit {SceneFileLimits.MaxCameras}).");
+        // The overlay list is optional: absent is a scene with no staged
+        // nodes, which is every file written before they existed.
+        if (scene.Overlays is { } overlayList &&
+            overlayList.Count > SceneFileLimits.MaxOverlays)
+            return Fail(SceneFileValidationFailureKind.CollectionSize,
+                $"The scene contains {overlayList.Count} overlays (limit {SceneFileLimits.MaxOverlays}).");
 
         if (!ValidateText(scene.Author, "Author", out var textFailure) ||
             !ValidateText(scene.Description, "Description", out textFailure) ||
@@ -134,6 +141,16 @@ public static class SceneFileValidation
         {
             if (ValidateProp(prop, keys) is { } failure)
                 return failure;
+        }
+
+        if (scene.Overlays is { } overlays)
+        {
+            keys.Clear();
+            foreach (var overlay in overlays)
+            {
+                if (ValidateOverlay(overlay, keys) is { } failure)
+                    return failure;
+            }
         }
 
         keys.Clear();
@@ -264,6 +281,48 @@ public static class SceneFileValidation
             mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
             return Fail(SceneFileValidationFailureKind.Document,
                 $"{label} content hash is not a SHA-256 digest.");
+        return null;
+    }
+
+    private static SceneFileValidationOutcome? ValidateOverlay(
+        SceneOverlay? overlay, HashSet<Guid> keys)
+    {
+        if (overlay is null)
+            return Fail(SceneFileValidationFailureKind.Document,
+                "The scene contains a null overlay entry.");
+        if (overlay.Key == Guid.Empty)
+            return Fail(SceneFileValidationFailureKind.Identity,
+                "An overlay has no key.");
+        if (!keys.Add(overlay.Key))
+            return Fail(SceneFileValidationFailureKind.Identity,
+                $"The scene contains duplicate overlay key {overlay.Key:N}.");
+        if (overlay.Node is not { } node)
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"Overlay {overlay.Key:N} has no node document.");
+        if (!ValidateRequiredName(
+                node.Name, $"Overlay {overlay.Key:N}", out var nameFailure))
+            return nameFailure;
+        if (!Enum.IsDefined(node.Kind))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"Overlay '{node.Name}' names an unknown kind.");
+        if (!Enum.IsDefined(node.TalkBackground) ||
+            !Enum.IsDefined(node.TalkCursor) ||
+            !Enum.IsDefined(node.BalloonChannel) ||
+            !Enum.IsDefined(node.BalloonGradient) ||
+            !Enum.IsDefined(node.StatusKind))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"Overlay '{node.Name}' names an unknown style.");
+        if (!float.IsFinite(node.Position.X) ||
+            !float.IsFinite(node.Position.Y) ||
+            !float.IsFinite(node.Scale) ||
+            !float.IsFinite(node.Alpha) ||
+            !float.IsFinite(node.ArrowX))
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"Overlay '{node.Name}' carries a non-finite value.");
+        if (node.Text.Length > OverlayNodeLimits.MaxTextCharacters)
+            return Fail(SceneFileValidationFailureKind.Range,
+                $"Overlay '{node.Name}' carries {node.Text.Length} characters " +
+                $"(limit {OverlayNodeLimits.MaxTextCharacters}).");
         return null;
     }
 
