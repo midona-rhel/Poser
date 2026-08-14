@@ -29,8 +29,11 @@ still observed and fails closed; when the hook cannot be installed, spawning
 and delayed callbacks refuse outright — authority never spans frames without
 the transition. Every native read or write, owned or legacy non-owned,
 re-resolves the exact descriptor immediately before dereferencing inside the
-adapter; unresolved identity refuses the operation, and all operations refuse
-off the framework thread. Binding also compares the wrapper's logical
+adapter; the sole exception is the spawn seed copy, which reads its source
+within the same framework tick the source was obtained — the local player's
+address straight from the object table, a clone source only after adapter
+resolution refuses a stale wrapper at entry. Unresolved identity refuses the
+operation, and all operations refuse off the framework thread. Binding also compares the wrapper's logical
 `EntityId` against the production minting formula, never address alone.
 Post-create and GPose-exit deletion is exact and retryable: successful
 deletion or verified absence retires one record, uncertain or failed deletion

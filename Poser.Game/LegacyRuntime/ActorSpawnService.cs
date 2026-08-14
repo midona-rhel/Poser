@@ -51,15 +51,19 @@ internal sealed class SpawnLifetimeStamps
 {
     // Character objects are pool-allocated, so distinct destroyed addresses
     // stay small in practice; the cap only bounds a pathological session.
-    // On overflow the maps clear while the sequence keeps rising: stored
-    // descriptors can then only mismatch (refusal/retire of our own records),
-    // never claim a foreign object.
+    // On overflow the maps clear while the sequence keeps rising, and the
+    // clear raises the unknown-entry floor to the current sequence: every
+    // pre-clear stamp — including the implicit stamp 0 of a never-destroyed
+    // entry — is strictly below the floor, so a post-clear resolve can only
+    // mismatch a stored descriptor (refusal/retire of our own records),
+    // never compare equal and claim a foreign object.
     private const int MaxTrackedAddresses = 8192;
 
     private readonly object _gate = new();
     private readonly Dictionary<nint, ulong> _byAddress = new();
     private readonly Dictionary<ushort, ulong> _byIndex = new();
     private ulong _sequence;
+    private ulong _clearFloor;
 
     public void NoteDestroyed(nint address, ushort? index)
     {
@@ -71,6 +75,7 @@ internal sealed class SpawnLifetimeStamps
             {
                 _byAddress.Clear();
                 _byIndex.Clear();
+                _clearFloor = _sequence;
             }
             _byAddress[address] = _sequence;
             if (index is { } known)
@@ -82,7 +87,7 @@ internal sealed class SpawnLifetimeStamps
     {
         lock (_gate)
         {
-            return _byAddress.GetValueOrDefault(address);
+            return _byAddress.GetValueOrDefault(address, _clearFloor);
         }
     }
 
@@ -90,7 +95,7 @@ internal sealed class SpawnLifetimeStamps
     {
         lock (_gate)
         {
-            return _byIndex.GetValueOrDefault(index);
+            return _byIndex.GetValueOrDefault(index, _clearFloor);
         }
     }
 }
@@ -763,9 +768,28 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _log?.Warning("ActorSpawnService: Cannot clone - source has no address");
             return null;
         }
+        // The seed copy reads the clone source raw, so the source wrapper
+        // must prove its identity through the adapter first. A stale wrapper
+        // (null or faulting resolution) is refusal, never permission to
+        // dereference its remembered address.
+        SpawnNativeDescriptor? resolvedSource;
+        try
+        {
+            resolvedSource = _native.ResolveActor(source.Address);
+        }
+        catch
+        {
+            resolvedSource = null;
+        }
+        if (resolvedSource is null)
+        {
+            _log?.Warning(
+                "ActorSpawnService: Cannot clone - source identity did not resolve (stale wrapper)");
+            return null;
+        }
         // A clone keeps the slot so companion attachment stays possible,
         // matching the pre-split behavior of every Poser spawn.
-        return SpawnCloneFrom(source.Address, reserveCompanionSlot: true);
+        return SpawnCloneFrom(resolvedSource.Value.Address, reserveCompanionSlot: true);
     }
 
     public IActor? SpawnCatalogActor(SpawnCatalogEntry entry)

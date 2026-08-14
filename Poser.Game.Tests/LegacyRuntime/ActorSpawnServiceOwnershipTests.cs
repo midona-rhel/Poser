@@ -30,6 +30,67 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
+    public void Overflow_clear_never_lets_post_clear_stamps_match_pre_clear_descriptors()
+    {
+        var stamps = new SpawnLifetimeStamps();
+
+        // Pre-clear epoch descriptors: a never-destroyed address carries the
+        // implicit stamp 0, a destroyed one carries its sequence value.
+        var untouched = (nint)0xA000;
+        var destroyed = (nint)0xB000;
+        var untouchedStamp = stamps.StampFor(untouched);
+        Assert.Equal(0UL, untouchedStamp);
+        stamps.NoteDestroyed(destroyed, 250);
+        var destroyedStamp = stamps.StampFor(destroyed);
+        var destroyedIndexStamp = stamps.IndexStampFor(250);
+
+        // Drive the map past the overflow cap with distinct addresses so the
+        // clear path runs.
+        for (var i = 0; i < 8192; i++)
+            stamps.NoteDestroyed((nint)(0x10_0000 + i), null);
+
+        // Post-clear resolves sit at or above the clear floor, strictly above
+        // every pre-clear stamp: a stored pre-clear descriptor can never
+        // compare equal again — including the stamp-0 one.
+        Assert.True(stamps.StampFor(untouched) > untouchedStamp);
+        Assert.True(stamps.StampFor(destroyed) > destroyedStamp);
+        Assert.True(stamps.IndexStampFor(250) > destroyedIndexStamp);
+
+        // Stamps keep advancing monotonically in the new epoch.
+        var floor = stamps.StampFor(destroyed);
+        stamps.NoteDestroyed(destroyed, 250);
+        Assert.True(stamps.StampFor(destroyed) > floor);
+    }
+
+    [Fact]
+    public void Clone_refuses_a_source_whose_identity_does_not_resolve()
+    {
+        var actor = Actor(0x990);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(990, actor.Address, 990));
+        using var service = NewService(native, manager);
+
+        // A wrapper whose remembered address resolves to no current native
+        // object refuses before any native create or dereference.
+        var stale = Actor(0x991);
+        Assert.Null(service.CloneActor(stale));
+        Assert.Equal(0, native.CreateCalls);
+        Assert.Empty(service.OwnershipSnapshot);
+
+        // A resolution fault is refusal, not permission.
+        native.ThrowOnResolve = true;
+        Assert.Null(service.CloneActor(actor));
+        Assert.Equal(0, native.CreateCalls);
+        Assert.Empty(service.OwnershipSnapshot);
+
+        // Positive control: the same source clones once it resolves.
+        native.ThrowOnResolve = false;
+        Assert.Same(actor, service.CloneActor(actor));
+        Assert.Equal(1, native.CreateCalls);
+        Assert.True(service.IsSpawnedActor(actor));
+    }
+
+    [Fact]
     public void Public_spawn_and_catalog_paths_bind_only_after_exact_refresh_identity()
     {
         var actor = Actor(0x810);
