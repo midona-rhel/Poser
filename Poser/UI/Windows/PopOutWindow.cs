@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -394,9 +394,20 @@ public sealed class PopOutWindow : Window
         // No extra bottom inset: the hosted pane owns its own footer band,
         // exactly as it does inside the main window (user 2026-08-11: the
         // pop-out's footer read wider than the shell's).
+        //
+        // The SCROLL GUTTER is reserved here for the same reason the shell
+        // reserves it (AppShellView's content viewport): panes right-align
+        // against content width PLUS the gutter, so a host that hands over the
+        // gutter's width as usable content pushes those controls flush to the
+        // window edge — the mirror switch and the 3D tab's Reset View both lost
+        // their right inset in the detached window (user 2026-08-14). One
+        // geometry, both hosts.
         var contentOrigin = new Vector2(min.X + inset, min.Y + barHeight);
         var contentSize = new Vector2(
-            MathF.Max(1f, max.X - min.X - inset * 2f),
+            MathF.Max(
+                1f,
+                max.X - min.X - inset * 2f
+                    - AppShellView.ScrollbarWidth * s),
             MathF.Max(1f, max.Y - contentOrigin.Y));
 
         // THE substitution: while this window draws its content, the frozen
