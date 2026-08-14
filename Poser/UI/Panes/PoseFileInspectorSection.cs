@@ -64,6 +64,10 @@ public sealed class PoseFileInspectorSection
     // refusal, never a silent full-body import.
     private bool _selectiveImport;
     private bool _selectiveDescendants;
+    // Ktisis' "Anchor group positions" (PoseImportDialog.cs:151-155, gated
+    // on the Position transform): the selective set keeps its positions,
+    // the file contributes rotation/scale.
+    private bool _selectiveAnchor;
     // Two-step reference-pose confirm: the first press arms and shows the
     // visible warning, the second applies. Any other preset disarms.
     private bool _referenceArmed;
@@ -1240,6 +1244,20 @@ public sealed class PoseFileInspectorSection
                         disabled: !_selectiveImport,
                         help: "Extend the selected-bones scope to every "
                             + "descendant of the selected bones");
+                    // Ktisis' "Anchor group positions"
+                    // (PoseImportDialog.cs:151-155): live only while a
+                    // position component is importing, exactly Ktisis'
+                    // ImRaii.Disabled(!hasPosition) gate.
+                    form.Checkbox(
+                        "Anchor positions", _selectiveAnchor,
+                        next => _selectiveAnchor = next,
+                        disabled: !_selectiveImport || !_position,
+                        help: _position || !_selectiveImport
+                            ? "Keep the selected bones (and descendants) "
+                                + "where they stand — the file's rotations "
+                                + "and scales apply, its positions do not"
+                            : "Turn on the Position component first — "
+                                + "without it there is nothing to anchor");
                 }
                 form.Checkbox(
                     "Reset first", _reset, next => _reset = next,
@@ -1887,6 +1905,11 @@ public sealed class PoseFileInspectorSection
             if (!_selectiveDescendants && cmp == null)
                 options = RouteAsType(options, body: true, expression: false);
             options.FilterIncludesDescendants = _selectiveDescendants;
+            // The service gates the anchor on the EFFECTIVE position
+            // component (Ktisis' transforms.HasFlag(Position) at
+            // PosingManager.cs:254), so a checked anchor with no position
+            // importing is inert, exactly like Ktisis' disabled checkbox.
+            options.AnchorSelectedPositions = _selectiveAnchor;
         }
         var imported = _poseFacade.ImportPose(
             skeleton.Actor,

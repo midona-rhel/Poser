@@ -301,6 +301,101 @@ public sealed class SelectiveImportContractTests
         Assert.Contains(plan.Writes, write => write.Bone.BoneName == "n_hara");
     }
 
+    // ── Anchor positions (Ktisis "Anchor group positions") ───────────────
+
+    [Fact]
+    public void Anchored_selection_keeps_position_while_the_other_components_apply()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyPosition = true,
+            BoneFilter = new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") },
+            FilterIncludesDescendants = false,
+            AnchorSelectedPositions = true,
+        };
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao"), options);
+
+        // Ktisis restores the selection's pre-import positions after the
+        // selective apply (PosingManager.cs:254-265); the planned mask is
+        // the same net pose — rotation lands, position is withheld.
+        var write = Assert.Single(plan.Writes);
+        Assert.Equal("j_kao", write.Bone.BoneName);
+        Assert.True(write.Components.HasFlag(TransformComponents.Rotation));
+        Assert.False(write.Components.HasFlag(TransformComponents.Position));
+    }
+
+    [Fact]
+    public void Anchor_with_descendants_masks_the_whole_selective_set()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyPosition = true,
+            BoneFilter = new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") },
+            FilterIncludesDescendants = true,
+            AnchorSelectedPositions = true,
+        };
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao", "j_mab_l"), options);
+
+        // Ktisis' restore set is GetSelectedBones(false, includeDescendants)
+        // — descendants ride the anchor (PosingManager.cs:255), so the
+        // expanded subtree holds position exactly like the direct selection.
+        Assert.Equal(2, plan.Writes.Count);
+        Assert.All(plan.Writes, write =>
+        {
+            Assert.True(write.Components.HasFlag(TransformComponents.Rotation));
+            Assert.False(write.Components.HasFlag(TransformComponents.Position));
+        });
+    }
+
+    [Fact]
+    public void Anchor_without_a_position_component_is_inert_and_a_position_only_anchor_empties_the_plan()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        var filter = new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") };
+
+        // No position importing: the anchor has nothing to withhold — the
+        // Ktisis gate (selective AND Position applying) leaves the plan
+        // exactly as without it.
+        var inert = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao"),
+            new PoseImportOptions
+            {
+                ApplyRotation = true,
+                ApplyPosition = false,
+                BoneFilter = new HashSet<(PoseSlot, string)>(filter),
+                AnchorSelectedPositions = true,
+            });
+        var write = Assert.Single(inert.Writes);
+        Assert.True(write.Components.HasFlag(TransformComponents.Rotation));
+
+        // Position-only + anchor masks every write to nothing: the plan
+        // comes back EMPTY, and the transaction's existing empty-plan gate
+        // ("Nothing in this file applies to the chosen scope") turns that
+        // into the typed refusal — never a silent zero-bone arm.
+        var emptied = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao"),
+            new PoseImportOptions
+            {
+                ApplyRotation = false,
+                ApplyPosition = true,
+                BoneFilter = new HashSet<(PoseSlot, string)>(filter),
+                AnchorSelectedPositions = true,
+            });
+        Assert.Empty(emptied.Writes);
+        Assert.True(emptied.IsEmpty);
+    }
+
     // ── Reference pose ───────────────────────────────────────────────────
 
     [Fact]

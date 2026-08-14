@@ -258,7 +258,10 @@ public class PoseFileService : IPoseFileService
                             continue;
                         if (slotGated && match != BoneFilterMatch.Direct)
                             continue;
-                        PlanBoneTransform(plan, bone, boneData, components);
+                        var writeComponents = AnchorMask(match, options, components);
+                        if (writeComponents == TransformComponents.None)
+                            continue;
+                        PlanBoneTransform(plan, bone, boneData, writeComponents);
                         applied = true;
                     }
                     if (applied)
@@ -457,7 +460,10 @@ public class PoseFileService : IPoseFileService
                     continue;
                 if (modeGated && match != BoneFilterMatch.Direct)
                     continue;
-                PlanBoneTransform(plan, bone, boneData, boneComponents);
+                var writeComponents = AnchorMask(match, options, boneComponents);
+                if (writeComponents == TransformComponents.None)
+                    continue;
+                PlanBoneTransform(plan, bone, boneData, writeComponents);
                 applied = true;
             }
             if (applied)
@@ -512,6 +518,30 @@ public class PoseFileService : IPoseFileService
         Descendant,
         /// <summary>No filter — the ordinary full-scope import.</summary>
         Unfiltered,
+    }
+
+    /// <summary>
+    /// Ktisis' "Anchor group positions" (PosingManager.ApplyPoseFile:254-265):
+    /// after the selective apply, Ktisis restores the selection's pre-import
+    /// POSITIONS — descendants included, GetSelectedBones(false,
+    /// includeDescendants) — inside the same MultipleMemento. Poser plans the
+    /// equivalent by withholding the position component from every filtered
+    /// bone's write: same net pose, same single history patch, no transient
+    /// motion. Gated exactly like Ktisis (selective active AND a position
+    /// component applying); a write masked to nothing is dropped, so an
+    /// anchor that empties the whole plan surfaces as the existing typed
+    /// "nothing applies" refusal instead of a silent no-op arm.
+    /// </summary>
+    private static TransformComponents AnchorMask(
+        BoneFilterMatch match,
+        PoseImportOptions options,
+        TransformComponents components)
+    {
+        if ((match is BoneFilterMatch.Direct or BoneFilterMatch.Descendant)
+            && options.AnchorSelectedPositions
+            && components.HasFlag(TransformComponents.Position))
+            return components & ~TransformComponents.Position;
+        return components;
     }
 
     /// <summary>Selective-import filter: the slot-qualified bone itself, or

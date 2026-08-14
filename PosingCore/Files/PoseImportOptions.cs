@@ -93,6 +93,20 @@ public class PoseImportOptions
     public bool FilterIncludesDescendants { get; set; }
 
     /// <summary>
+    /// Anchor the selective set in place: the file's POSITION component is
+    /// withheld from every filtered bone (descendants included) while
+    /// rotation and scale still apply — Ktisis' "Anchor group positions"
+    /// (PosingManager.ApplyPoseFile:254-265 restores the selection's
+    /// pre-import positions after the selective apply; planning the mask is
+    /// the same net effect with no transient motion and the same single
+    /// history entry). Effective only with a live <see cref="BoneFilter"/>
+    /// and an applying position component, mirroring Ktisis'
+    /// <c>selectedBones &amp;&amp; anchorGroups &amp;&amp;
+    /// transforms.HasFlag(Position)</c> gate.
+    /// </summary>
+    public bool AnchorSelectedPositions { get; set; }
+
+    /// <summary>
     /// Bone-name prefixes the bone-filter menu disabled — compiled from
     /// <see cref="ImportBoneCategories"/> (Brio's category filter as an
     /// exclusion): a Character bone starting with any of these neither
@@ -308,6 +322,7 @@ public class PoseImportOptions
                 ? null
                 : new System.Collections.Generic.HashSet<(Poser.Domain.Identity.PoseSlot Slot, string Name)>(BoneFilter),
             FilterIncludesDescendants = FilterIncludesDescendants,
+            AnchorSelectedPositions = AnchorSelectedPositions,
             ExcludedBonePrefixes = ExcludedBonePrefixes == null
                 ? null
                 : new System.Collections.Generic.HashSet<string>(
