@@ -6,6 +6,7 @@ using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Appearance;
 using Poser.Application.Integration;
+using Poser.Application.Operations;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Domain.Appearance;
@@ -665,14 +666,22 @@ public sealed class AppearancePane
                 unavailable: !mcdfOwnedNow);
         }
 
-        // The skipped-resources list rides the status row's hover help: at most
-        // 8 names, built only when an outcome exists.
-        if (operation?.Outcome is not { } outcome
-            || string.IsNullOrEmpty(outcome.Detail))
+        // The OperationReceipt is the terminal authority (application-state.md:
+        // "UI renders the receipt"): the status row exists only when the
+        // receipt has left Pending. The outcome text and skipped-resources
+        // list remain derived display riding on that gate.
+        if (_integration.McdfReceipt is not { } receipt
+            || receipt.State == OperationReceiptState.Pending)
+            return;
+        var outcome = operation?.Outcome;
+        string? detail = outcome?.Detail;
+        if (string.IsNullOrEmpty(detail))
+            detail = receipt.Detail;
+        if (string.IsNullOrEmpty(detail))
             return;
         string? skipped = null;
-        var resources = outcome.SkippedResources;
-        if (resources.Count > 0)
+        var resources = outcome?.SkippedResources;
+        if (resources is { Count: > 0 })
         {
             int shown = Math.Min(8, resources.Count);
             var parts = new string[shown];
@@ -682,7 +691,7 @@ public sealed class AppearancePane
             if (resources.Count > shown)
                 skipped += "  …";
         }
-        form.Status(outcome.Detail!, skipped);
+        form.Status(detail!, skipped);
     }
 
     // ── picker and dialogs ───────────────────────────────────────────────
