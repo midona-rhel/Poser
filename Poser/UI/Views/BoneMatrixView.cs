@@ -40,10 +40,11 @@ public sealed class BoneMatrixViewModel
 }
 
 /// <summary>
-/// Anamnesis-style grouped bone matrix — pixel transcription of the approved
-/// docs/mockups/m2-properties.html `.mxWrap/.mxHead/.mxGrid/.mxRow/.mxPill`
-/// grammar (itself transcribed from Anamnesis PoseMatrixView.xaml into picto
-/// tokens). Dynamic auto-fit columns: `repeat(auto-fit, minmax(235px, 1fr))`
+/// Anamnesis-style grouped bone matrix — pixel transcription of the m2
+/// properties mockup's `.mxWrap/.mxHead/.mxGrid/.mxRow/.mxPill` grammar
+/// (itself transcribed from Anamnesis PoseMatrixView.xaml into picto
+/// tokens); the frozen mockup remains the only source for that grammar.
+/// Dynamic auto-fit columns: `repeat(auto-fit, minmax(235px, 1fr))`
 /// with 22px column / 2px row gaps; rows are 30px (label right-aligned,
 /// 24px circular pills); wide clusters span two tracks. Selection state and
 /// click routing come from the VM — the view stays service-free.

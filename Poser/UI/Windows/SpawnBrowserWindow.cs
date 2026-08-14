@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
@@ -83,8 +81,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
-    private readonly ITextureProvider _textures;
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
 
     /// <summary>The capture surface. Candidates are a snapshot of the moment
@@ -188,12 +185,12 @@ public sealed class SpawnBrowserWindow : Window
         _bindings = bindings;
         _animation = animation;
         _configuration = configuration;
-        _textures = textures;
+        _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnActivate = Activate;
         _vm.OnClose = () => IsOpen = false;
-        _vm.ResolveIcon = ResolveIcon;
+        _vm.ResolveIcon = _icons.Resolve;
         _vm.OnTab = next =>
         {
             if (_vm.Tab == next)
@@ -868,32 +865,5 @@ public sealed class SpawnBrowserWindow : Window
         var result = _animation.Pause(actor);
         if (!result.Success)
             _note = result.Detail ?? "The new actor could not be frozen.";
-    }
-
-    /// <summary>
-    /// Resolves a row's game icon to an ImGui handle, or 0 when there is none.
-    /// Sheet icon ids are not guaranteed to exist and GetFromGameIcon THROWS for
-    /// those, so this uses the try-variant, catches anyway, and remembers the
-    /// failures. The WRAP is never cached: shared textures must be re-resolved
-    /// each frame.
-    /// </summary>
-    private nint ResolveIcon(uint iconId)
-    {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
-            return 0;
-        IDalamudTextureWrap? wrap = null;
-        try
-        {
-            if (_textures.TryGetFromGameIcon(
-                    new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
-        }
-        catch (Exception)
-        {
-            _missingIcons.Add(iconId);
-        }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 }

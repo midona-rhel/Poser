@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Services;
 
@@ -131,10 +130,7 @@ public sealed class EnvironmentPane
 
     private readonly Dictionary<uint, string> _idText = new();
 
-    /// <summary>Sheet icon ids are not guaranteed to exist and the game icon
-    /// lookup THROWS for those, so a failure is remembered: an exception per
-    /// row per frame is a frame-rate cliff.</summary>
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly GameIconResolver _icons;
 
     private readonly Func<WeatherOption, string> _weatherName =
         static option => option.Name;
@@ -168,8 +164,9 @@ public sealed class EnvironmentPane
         _rendering = rendering;
         _festivals = festivals;
         _textures = textures;
+        _icons = new GameIconResolver(textures);
         _weatherQuery = WeatherResults;
-        _weatherTexture = option => ResolveIcon(option.IconId);
+        _weatherTexture = option => _icons.Resolve(option.IconId);
         _weatherBadge = option => IdText(option.Id);
         _festivalKey = entry => IdText(entry.Id);
         _festivalBadge = entry => IdText(entry.Id);
@@ -1161,32 +1158,5 @@ public sealed class EnvironmentPane
         text = id.ToString(CultureInfo.InvariantCulture);
         _idText[id] = text;
         return text;
-    }
-
-    /// <summary>
-    /// Resolves a weather's game icon to an ImGui handle, or 0 when there is
-    /// none. Sheet icon ids are not guaranteed to exist and the game icon
-    /// lookup THROWS for those, so this uses the try-variant, catches anyway,
-    /// and remembers the failures. The WRAP is never cached: shared textures
-    /// must be re-resolved each frame.
-    /// </summary>
-    private nint ResolveIcon(uint iconId)
-    {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
-            return 0;
-        IDalamudTextureWrap? wrap = null;
-        try
-        {
-            if (_textures.TryGetFromGameIcon(
-                    new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
-        }
-        catch (Exception)
-        {
-            _missingIcons.Add(iconId);
-        }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 }

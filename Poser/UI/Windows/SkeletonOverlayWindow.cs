@@ -210,8 +210,11 @@ public class SkeletonOverlayWindow : Window
     {
         // First line of the frame, before every gate: a left press ALWAYS
         // logs, so a missing line means this method never ran that frame.
+        // Debug, not Information: these are standing breadcrumbs for the
+        // world-click path, and every user click would otherwise spam the
+        // Dalamud log forever.
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Information(
+            _log.Debug(
                 $"[Overlay] frame-press mouse={ImGui.GetIO().MousePos} "
                 + $"alt={ImGui.GetIO().KeyAlt}");
         try
@@ -542,7 +545,7 @@ public class SkeletonOverlayWindow : Window
         // Diagnostic breadcrumb for dead world clicks: one line per press
         // naming every gate that can swallow it.
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Information(
+            _log.Debug(
                 $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
                 + $"blocked={pointerBlocked} listTravel={listTravel} "
                 + $"hasWorldBone={hasWorldBone} "
@@ -837,7 +840,7 @@ public class SkeletonOverlayWindow : Window
         bool releaseOccluded = Interactive.PointerOccluded(
             pending.Owner,
             pending.ReleasePoint);
-        _log.Information(
+        _log.Debug(
             $"[Overlay] commit {pending.Id} present={stillPresent} "
             + $"occluded={releaseOccluded}");
         if (!stillPresent || releaseOccluded)

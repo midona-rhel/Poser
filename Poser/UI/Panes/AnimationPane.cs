@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
@@ -29,7 +27,6 @@ public sealed class AnimationPane
     private readonly AnimationCatalog _catalog;
     private readonly AnimationSceneActions _sceneActions;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
-    private readonly ITextureProvider _textures;
     private readonly SceneSession _scene;
 
     /// <summary>One surface for every picker row: the row that opened it is
@@ -76,10 +73,7 @@ public sealed class AnimationPane
 
     private readonly Action<int> _setWeaponFilter;
 
-    /// <summary>Sheet icon ids are not guaranteed to exist and the game icon
-    /// lookup THROWS for those, so a failure is remembered: an exception per row
-    /// per frame is a frame-rate cliff.</summary>
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly GameIconResolver _icons;
 
     /// <summary>Every timeline id the rows have shown, as text — a row's badge
     /// on every frame the surface draws it.</summary>
@@ -166,10 +160,10 @@ public sealed class AnimationPane
         _catalog = catalog;
         _sceneActions = sceneActions;
         _facialCapture = facialCapture;
-        _textures = textures;
+        _icons = new GameIconResolver(textures);
         _scene = scene;
         _timelineKey = RowKey;
-        _timelineTexture = entry => ResolveIcon(entry.Icon);
+        _timelineTexture = entry => _icons.Resolve(entry.Icon);
         _setWeaponFilter = chosen => _weaponFilter = chosen;
         _baseFeed = new TimelineFeed(
             this, "animation", AnimationPickTarget.Base, AnimationSlot.Base,
@@ -808,33 +802,6 @@ public sealed class AnimationPane
         text = identity.ToString(CultureInfo.InvariantCulture);
         _rowKeys[identity] = text;
         return text;
-    }
-
-    /// <summary>
-    /// Resolves a row's game icon to an ImGui handle, or 0 when there is none.
-    /// Sheet icon ids are not guaranteed to exist and GetFromGameIcon THROWS for
-    /// those, so this uses the try-variant, catches anyway, and remembers the
-    /// failures. The WRAP is never cached: shared textures must be re-resolved
-    /// each frame.
-    /// </summary>
-    private nint ResolveIcon(uint iconId)
-    {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
-            return 0;
-        IDalamudTextureWrap? wrap = null;
-        try
-        {
-            if (_textures.TryGetFromGameIcon(
-                    new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
-        }
-        catch (Exception)
-        {
-            _missingIcons.Add(iconId);
-        }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 
     /// <summary>

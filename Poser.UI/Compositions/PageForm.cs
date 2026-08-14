@@ -931,9 +931,9 @@ public static partial class Crystarium
             string? help = null, bool alignRight = false,
             bool fullWidth = false)
         {
-            // Id("") would be the same string for every unlabelled row of a
-            // section, so an unlabelled Actions row is identified by its kind.
-            string id = Id(string.IsNullOrEmpty(label) ? "actions" : label);
+            string id = string.IsNullOrEmpty(label)
+                ? UnlabelledId("actions", ref _actionRows)
+                : Id(label);
             var row = _page.BeginRow(label);
             var actions = new ActionScope();
             content(actions);
@@ -1025,7 +1025,9 @@ public static partial class Crystarium
             Action<ActionScope> content, string? help = null,
             bool unavailable = false)
         {
-            string id = Id(label);
+            string id = string.IsNullOrEmpty(label)
+                ? UnlabelledId("readonly-actions", ref _readOnlyActionRows)
+                : Id(label);
             var row = _page.BeginRow(label);
             var actions = new ActionScope();
             content(actions);
@@ -1052,7 +1054,7 @@ public static partial class Crystarium
 
         public void Status(string text, string? help = null)
         {
-            string id = Id("status");
+            string id = UnlabelledId("status", ref _statusRows);
             var row = _page.BeginRow(string.Empty);
             LabelInBand(
                 row.Origin,
@@ -1302,6 +1304,24 @@ public static partial class Crystarium
         }
 
         private string Id(string label) => _page.RowId(_section, label);
+
+        // One counter per unlabelled row KIND, reset with the section (a
+        // FormScope is minted per section per frame).
+        private int _actionRows;
+        private int _readOnlyActionRows;
+        private int _statusRows;
+
+        /// <summary>The id for a row whose label cannot identify it.
+        /// <c>Id("")</c> is ONE string for every unlabelled row of a
+        /// section, so the row's kind names it and a repeat takes an
+        /// ordinal. The first of a kind keeps the bare kind name, which is
+        /// what every already-correct id in the product is; only the
+        /// repeats that used to alias move.</summary>
+        private string UnlabelledId(string kind, ref int seen)
+        {
+            int ordinal = seen++;
+            return Id(ordinal == 0 ? kind : Ids.Join(kind, "-", ordinal));
+        }
     }
 
     /// <summary>The wells of one <see cref="FormScope.ColorWells"/> row. Each

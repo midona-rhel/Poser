@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
 using Poser.Application.Companions;
 using Poser.Domain.Companions;
@@ -27,7 +25,6 @@ public sealed class CompanionSection
     private readonly CompanionCatalog _catalog;
     private readonly IActorSpawnService _spawn;
     private readonly StableBindingRegistry _bindings;
-    private readonly ITextureProvider _textures;
 
     private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
         new("companion");
@@ -43,10 +40,7 @@ public sealed class CompanionSection
     /// a swap starts from what the actor already is.</summary>
     private int _kindIndex;
 
-    /// <summary>Sheet icon ids are not guaranteed to exist and the game icon
-    /// lookup THROWS for those, so a failure is remembered: an exception per
-    /// row per frame is a frame-rate cliff.</summary>
-    private readonly HashSet<uint> _missingIcons = new();
+    private readonly GameIconResolver _icons;
 
     private readonly Dictionary<ushort, string> _idText = new();
     private readonly Dictionary<int, string> _rowKeys = new();
@@ -85,10 +79,10 @@ public sealed class CompanionSection
         _catalog = catalog;
         _spawn = spawn;
         _bindings = bindings;
-        _textures = textures;
+        _icons = new GameIconResolver(textures);
         _query = Compute;
         _entryKey = RowKey;
-        _entryTexture = entry => ResolveIcon(entry.Icon);
+        _entryTexture = entry => _icons.Resolve(entry.Icon);
         _entryBadge = Badge;
         _setKind = chosen => _kindIndex = chosen;
     }
@@ -207,32 +201,5 @@ public sealed class CompanionSection
         text = identity.ToString(CultureInfo.InvariantCulture);
         _rowKeys[identity] = text;
         return text;
-    }
-
-    /// <summary>
-    /// Resolves a row's game icon to an ImGui handle, or 0 when there is none.
-    /// Sheet icon ids are not guaranteed to exist and GetFromGameIcon THROWS
-    /// for those, so this uses the try-variant, catches anyway, and remembers
-    /// the failures. The WRAP is never cached: shared textures must be
-    /// re-resolved each frame.
-    /// </summary>
-    private nint ResolveIcon(uint iconId)
-    {
-        if (iconId == 0 || _missingIcons.Contains(iconId))
-            return 0;
-        IDalamudTextureWrap? wrap = null;
-        try
-        {
-            if (_textures.TryGetFromGameIcon(
-                    new GameIconLookup(iconId), out var shared))
-                wrap = shared.GetWrapOrDefault();
-            else
-                _missingIcons.Add(iconId);
-        }
-        catch (Exception)
-        {
-            _missingIcons.Add(iconId);
-        }
-        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 }

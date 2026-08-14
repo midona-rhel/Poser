@@ -180,13 +180,12 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(track)),
             Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale);
 
-        // Filled segment: minimum → value in the primary blue; the
-        // remainder above stays neutral.
+        // Filled segment: minimum → value in WHITE, like the thumb; the
+        // remainder above stays neutral. PBI-090 supersedes Picto's
+        // primary-blue fill, and the one remaining deviation from its
+        // .rangeInput is that control's primary THUMB.
         if (thumbX - min.X > 1f * scale)
         {
-            // The filled span is WHITE like the thumb, not the primary blue;
-            // the remaining deviation from Picto's .rangeInput is its
-            // primary THUMB.
             var fill = Crystarium.ActiveTheme.Palette.White.Fade(alpha);
             dl.AddRectFilled(
                 new Vector2(min.X, cy - Crystarium.ActiveTheme.Controls.SliderTrackHeight * 0.5f * scale),
