@@ -49,7 +49,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 10 Overlay filter wiring | not started |
 | 11 Bone visibility presets | not started |
 | 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix) |
-| 13A Companion attach UI | **Decision-resolved/source-verified; acceptance pending** — owner-slot attach/current-state display intentionally not exposed |
+| 13A Companion attach UI | **Source-verified; acceptance pending** — gated attach picker + detach live in the actor context menu (user decision 2026-08-14 supersedes the 2026-08-11 "do not re-add") |
 | 13B Actor-to-bone attach | not started |
 | 14 Scene save/load | not started |
 | 15 IPC provider | not started |
@@ -427,20 +427,21 @@ the sheet, auto-selected, and **automatically classified** by kind
 "Detach companion" remains, gated on `GetCompanionInfo` (its first caller), because clones
 can still arrive with a slot companion; `SetCompanion` survives as internal machinery with
 no UI caller by design. Do not re-add an attach surface without a new user decision.
-
-**Newer user decision 2026-08-14: the gated companion attach picker stays.** The head
-ships an attach surface again — `Poser/UI/Panes/CompanionSection.cs` seeds the picker from
-current state (`GetCompanionInfo` at `:112`, `SetCompanion` at `:141`) and mounts only
-while the companion slot exists; "Detach companion" stays gated on `GetCompanionInfo`
-(`MainWindow.cs:2802`). This supersedes the 2026-08-11 "do not re-add" instruction, and
-closes the write-only-picker / zero-`GetCompanionInfo`-callers holes recorded above.
 Bone attachment (B):
 nothing — no drag-drop anywhere in the repo; the only bone-attach code is the lights path,
 not reusable for charas.
 
-**Superseded task (session A — user decision 2026-08-11):** the earlier request for
-an owner-slot "Attach…" context-menu picker and current-state display is superseded
-by the design pivot above. Do not reintroduce that UI without a new user decision.
+**Newer user decision 2026-08-14: the gated companion attach picker stays.** Both slot
+verbs are actor-context-menu rows: "Attach companion" opens
+`Poser/UI/Panes/CompanionSection.cs` — a catalog picker seeded from the slot's current
+contents (`GetCompanionInfo` at `:112`), one `SetCompanion` call attaching or swapping
+(`:141`) — disabled unless `HasCompanionSlot` holds; "Detach companion" stays gated on
+`GetCompanionInfo` (`MainWindow.cs:2797-2803`, picker opened at `:2835`). This supersedes
+the 2026-08-11 "do not re-add" instruction, and closes the write-only-picker /
+zero-`GetCompanionInfo`-callers holes recorded above.
+
+**Task (session A):** closed by the decision above — the owner-slot attach picker and
+current-state display exist; only live acceptance remains.
 **Task (session B — native work):** Ktisis-style bone attachment: sidebar drag-drop of an
 actor row onto a partial-0 bone row, attach via the skeleton-attach mechanism (grep Ktisis'
 `AttachUtility` call sites and verify struct semantics first per standing rule), link

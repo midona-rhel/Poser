@@ -18,9 +18,7 @@ This PBI defined the one-ownership UI foundation: Theme owns every metric,
 Crystarium is the single product-facing composition API, panes describe
 content and callbacks without positioning ordinary widgets. The canonical
 metric and composition contracts it tabulated now live in their normative
-home, [architecture/ui-workspace.md](../architecture/ui-workspace.md); the
-migration mechanics it planned were reshaped by the PBI-014 → PBI-015 →
-PBI-016 chain (see those records).
+home, [architecture/ui-workspace.md](../architecture/ui-workspace.md).
 
 The disposition of this document's remaining open items — including any
 still-wanted "live correction tranche" entries — is a pending user decision;
