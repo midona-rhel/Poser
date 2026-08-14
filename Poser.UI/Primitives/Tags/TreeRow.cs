@@ -121,6 +121,11 @@ public static partial class Crystarium
     /// <summary>The root row's disclosure slot, left of the icon.</summary>
     private const float TreeRootSlot = 16f;
 
+    /// <summary>A bare list row's label inset — no disclosure, no mark, so the
+    /// label sits this snug pad off the pill's edge rather than an empty
+    /// expander slot away from it.</summary>
+    private const float TreeBareLabelPad = 6f;
+
     /// <summary>The disclosure's box: the hit rect and the drawn mark are one
     /// rectangle, so the chevron can never be clickable where it is not
     /// visible.</summary>
@@ -341,9 +346,15 @@ public static partial class Crystarium
 
         // ---- mark, label, badge -------------------------------------------
         // The zone spans everything left of the label: the root's expander
-        // slot, or a nested row's trunk plus its label offset.
+        // slot, or a nested row's trunk plus its label offset. A bare list
+        // row — no disclosure, no mark — has nothing for the zone to hold,
+        // so its label sits a snug pad off the pill instead of an empty
+        // expander slot away from it (user 2026-08-15: "the distance between
+        // the highlight and the left edge of the text is too far").
         float zoneWidth = depth == 0
-            ? TreeRootSlot
+            ? props.Expander == SidebarExpander.None && props.HideIcon
+                ? TreeBareLabelPad
+                : TreeRootSlot
             : TreeTrunkX(depth) + TreeLabelOffset;
         float x = hit.ScreenMin.X + zoneWidth * scale;
         bool hasMark = props.IconTexture is not null
