@@ -31,6 +31,10 @@ public class SettingsWindow : Window
             ImGuiWindowFlags.NoResize)
     {
         _autoSave = autoSave;
+        // Settings closes through Cancel or the chrome's own X, both of which
+        // discard deliberately. Escape belongs to the deselect chord, and an
+        // Escape that silently threw away a page of edits read as a crash.
+        RespectCloseHotkey = false;
     }
 
     public override void OnOpen()

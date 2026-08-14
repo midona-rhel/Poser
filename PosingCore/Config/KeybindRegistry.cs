@@ -78,6 +78,7 @@ public static class KeybindRegistry
     [
         new("Undo", GroupEditing, "Undo the last move, rotation or scale"),
         new("Redo", GroupEditing, "Reapply the change you undid"),
+        new("Deselect", GroupEditing, "Drop the current selection"),
 
         new("Translate mode", GroupGizmo, "Gizmo moves the selection"),
         new("Rotate mode", GroupGizmo, "Gizmo rotates the selection"),
@@ -122,13 +123,16 @@ public static class KeybindRegistry
     /// toggle takes Ctrl+O because BOTH references ship that chord for it,
     /// and every other new action ships unbound. Redo carries a second
     /// default — Ctrl+Shift+Z, what a Ktisis user's hand already does —
-    /// which is the whole point of a second slot.
+    /// which is the whole point of a second slot. Deselect takes Escape,
+    /// which is what both references bind it to (Brio's <c>Posing_Esc</c>,
+    /// Ktisis's <c>Select_None</c>) and what the window no longer answers.
     /// </summary>
     private static readonly Dictionary<string, KeybindSlots> PoserDefaults =
         new(StringComparer.Ordinal)
         {
             ["Undo"] = new("Ctrl+Z"),
             ["Redo"] = new("Ctrl+Y", "Ctrl+Shift+Z"),
+            ["Deselect"] = new("Escape"),
             ["Translate mode"] = new("Ctrl+1"),
             ["Rotate mode"] = new("Ctrl+2"),
             ["Scale mode"] = new("Ctrl+3"),
@@ -150,6 +154,7 @@ public static class KeybindRegistry
         {
             ["Undo"] = new("Ctrl+Z"),
             ["Redo"] = new("Ctrl+Y"),
+            ["Deselect"] = new("Escape"),
             ["Toggle bone overlay"] = new("Ctrl+O"),
             ["Toggle workspace"] = new("Ctrl+B"),
             ["Freeze all actors"] = new("Shift+M"),
@@ -166,6 +171,7 @@ public static class KeybindRegistry
         {
             ["Undo"] = new("Ctrl+Z"),
             ["Redo"] = new("Ctrl+Shift+Z"),
+            ["Deselect"] = new("Escape"),
             ["Translate mode"] = new("Ctrl+T"),
             ["Rotate mode"] = new("Ctrl+R"),
             ["Scale mode"] = new("Ctrl+S"),

@@ -510,6 +510,11 @@ public class MainWindow : Window
     {
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
+        // Escape is the deselect chord, not the dismiss-the-workspace one —
+        // the split parts and the pop-outs already said so, and losing the
+        // whole shell mid-shoot to a stray Escape is the footgun the
+        // references close the same way (Brio's main window).
+        RespectCloseHotkey = false;
         // Construction predates the configuration read; PreDraw restates the
         // effective floor every frame anyway.
         SizeConstraints = ExpandedSizeConstraints(MinimumWidth);

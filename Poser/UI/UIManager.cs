@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Core;
 using Poser.Game;
@@ -31,6 +32,7 @@ public sealed class UIManager : IUIManager
     private readonly UiWindowSet _windows;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly IVirtualCameraService _cameras;
+    private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
     private readonly Keybind[] _keybinds;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
@@ -46,6 +48,7 @@ public sealed class UIManager : IUIManager
         UiWindowSet windows,
         PoseFileInspectorSection poseFileSection,
         IVirtualCameraService cameras,
+        SceneSession scene,
         AnimationSceneActions sceneActions)
     {
         _pluginInterface = pluginInterface;
@@ -58,6 +61,7 @@ public sealed class UIManager : IUIManager
         _windows = windows;
         _poseFileSection = poseFileSection;
         _cameras = cameras;
+        _scene = scene;
         _sceneActions = sceneActions;
 
         // Bound ONCE, in registry order: the delegates and their parsed
@@ -135,6 +139,11 @@ public sealed class UIManager : IUIManager
                 if (_cleanTransforms.CanRedo)
                     _cleanTransforms.Redo();
             },
+            // What Escape means now that the workspace no longer closes on it:
+            // both references answer Escape with a deselect (Brio's Posing_Esc,
+            // Ktisis's Select_None), and a clear on an empty selection is a
+            // no-op, so the chord needs no gate of its own.
+            ["Deselect"] = () => _scene.Selection.Clear(),
             ["Translate mode"] =
                 () => _editorState.TransformTool = TransformTool.Move,
             ["Rotate mode"] =
