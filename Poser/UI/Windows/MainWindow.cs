@@ -552,12 +552,14 @@ public class MainWindow : Window
             else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Actors);
         };
-        // The LIBRARY and ENVIRONMENT headers are the selectable ones, so no
-        // other index can arrive. The library is a MODE over an untouched
-        // selection; the environment is a scene entity, so its header selects
-        // exactly as a row does — leaving the library first, because the two are
-        // alternatives in one workspace and the environment's own tab strip
-        // cannot show through the library's.
+        // The LIBRARY, SCENE and ENVIRONMENT headers are the selectable ones,
+        // so no other index can arrive. The library and the scene workspace are
+        // MODES over an untouched selection, and their openers already restate
+        // the layout, so those two branches do nothing else here. The
+        // environment is a scene entity, so its header selects exactly as a row
+        // does — leaving both modes first, because they are alternatives in one
+        // workspace and the environment's own tab strip cannot show through
+        // theirs — and it carries the one resync those exits do not make.
         _vm.OnSectionSelected = index =>
         {
             if (index == LibrarySectionIndex)
@@ -1032,7 +1034,7 @@ public class MainWindow : Window
     /// after every change it is going to make.
     ///
     /// <para>This is not an optimisation. Leaving a mode is never the last
-    /// thing a caller does — a row click selects, the shot workspace opens,
+    /// thing a caller does — a row click selects, the scene workspace opens,
     /// the environment header selects — and a resync here would resolve the
     /// strip against the selection as it stands mid-change: the outgoing one,
     /// or none at all, since entering the library clears it. It would then
@@ -1059,7 +1061,7 @@ public class MainWindow : Window
         ResyncTabLayout();
     }
 
-    /// <summary>Leaves shot mode and restates nothing; the caller resyncs.
+    /// <summary>Leaves scene mode and restates nothing; the caller resyncs.
     /// See <see cref="ExitLibraryMode"/> for why.</summary>
     private void ExitSceneMode()
     {
@@ -1427,7 +1429,8 @@ public class MainWindow : Window
         _librarySection.Active = _libraryMode;
         _sceneSection.Active = _sceneMode;
         // The environment's header wears the selection, exactly as the row it
-        // replaced did: both selectable headers state their own flag here.
+        // replaced did: every selectable header states its own flag here — the
+        // two modes theirs, the environment its selection.
         _environmentSection.Active = _selection.IsSelected(EnvironmentSelection);
         // Without the native lighting signatures a spawn is a silent no-op, so
         // the header's plus is absent rather than inert. The answer is a field
