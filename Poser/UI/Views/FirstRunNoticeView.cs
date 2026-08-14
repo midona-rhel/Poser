@@ -20,9 +20,9 @@ namespace Poser.UI.Views;
 public sealed class FirstRunNoticeView
 {
     /// <summary>Sized to hold the whole notice without scrolling at the design
-    /// scale: the body's paragraphs measure ~370px at the Large width, and the
+    /// scale: the body's paragraphs measure ~300px at the Large width, and the
     /// two 44px bars sit outside that.</summary>
-    private const float DialogHeight = 500f;
+    private const float DialogHeight = 440f;
     private const float ParagraphGap = 10f;
     private const float ConfirmationFieldWidth = 180f;
 
@@ -104,21 +104,16 @@ public sealed class FirstRunNoticeView
         ImGui.Dummy(new Vector2(0f, (ParagraphGap - 2f) * scale));
 
         Paragraph(
-            "If you are not comfortable using AI-generated code, uninstall "
-                + "this plugin and use those projects instead.",
-            width,
-            default);
-
-        Paragraph(
             "This is a beta — a first release candidate. It is not stable and "
-                + "it is not finished. If that is not to your taste, the three "
-                + "projects above are the mature alternatives.",
+                + "it is not finished. If that, or AI-generated code, is not to "
+                + "your taste, the three projects above are the mature "
+                + "alternatives.",
             width,
             default);
 
         Paragraph(
             $"Type \"{FirstRunNotice.ConfirmationPhrase}\" below to confirm you "
-                + "have read and understood this.",
+                + "have read this and know what you are using.",
             width,
             new TextStyle { Weight = FontWeight.Medium, Color = theme.Text },
             gap: 0f);

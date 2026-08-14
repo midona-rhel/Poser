@@ -25,10 +25,11 @@ deliberate, and where it diverges the reason is written down in `docs/`.
 
 ## Coded with AI
 
-Poser was coded with the use of artificial intelligence. If you are not
-comfortable using AI-generated code, do not install this plugin — use Anamnesis,
-Ktisis or Brio instead. The plugin says the same thing on first launch and asks
-you to confirm it before the workspace opens.
+Poser was coded with the use of artificial intelligence. That is stated up front
+so you can decide for yourself; if it — or a beta — is not to your taste,
+Anamnesis, Ktisis and Brio are the mature alternatives. The plugin says the same
+thing on first launch and asks you to confirm you have read it before the
+workspace opens.
 
 ## License
 
