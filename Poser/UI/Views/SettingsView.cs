@@ -57,6 +57,14 @@ public sealed class SettingsViewModel
     /// never collapses to a number mid-keystroke.</summary>
     public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
+
+    /// <summary>Whether the same cadence also snapshots the WHOLE shot.</summary>
+    public bool SceneSnapshotsEnabled = true;
+
+    /// <summary>Kept whole-shot snapshots, same free-text contract as
+    /// <see cref="AutoSaveMaxKept"/>: one snapshot is one large document, so
+    /// its retention is counted separately from the per-actor poses.</summary>
+    public string SceneSnapshotsMaxKept = "5";
     /// <summary>The auto-save root on disk, for the Open-in-Explorer row.
     /// Empty when the binder has no auto-save service to ask.</summary>
     public string AutoSaveFolder = "";
@@ -402,6 +410,19 @@ public static class SettingsView
                 next => vm.AutoSaveMaxKept = next,
                 placeholder: "10",
                 help: "How many snapshot folders to keep; the oldest are deleted first");
+            form.Switch(
+                "Auto-save whole shots",
+                vm.SceneSnapshotsEnabled,
+                next => vm.SceneSnapshotsEnabled = next,
+                "Also snapshot the entire shot — actors, props, lights, cameras and the environment — on the same interval, into its own folder",
+                disabled: !vm.AutoSaveEnabled);
+            form.TextInput(
+                "Kept shot snapshots",
+                vm.SceneSnapshotsMaxKept,
+                next => vm.SceneSnapshotsMaxKept = next,
+                placeholder: "5",
+                help: "How many whole-shot snapshots to keep; the oldest are deleted first",
+                disabled: !vm.AutoSaveEnabled || !vm.SceneSnapshotsEnabled);
             form.Switch(
                 "Clean up on GPose exit",
                 vm.AutoSaveCleanOnExit,

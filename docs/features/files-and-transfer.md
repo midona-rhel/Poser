@@ -172,6 +172,8 @@ interchange with Brio and (via name conversion) Anamnesis.
   last-accepted-save stamp (which claims dispatch acceptance only, exactly
   what `LastSaveUtc` claims), then "Auto-save is off." / "No auto-save yet
   this session." — the typed status is never hidden behind an empty caption.
+- The WHOLE SHOT has its own snapshot on the same cadence and its own root;
+  see [whole-shot-scenes.md](whole-shot-scenes.md).
 
 The storage boundary is intentionally narrow. Versioned codecs, finite-value
 validation, same-directory atomic replacement, autosave queue/join, library

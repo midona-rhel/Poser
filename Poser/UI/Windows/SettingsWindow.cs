@@ -92,6 +92,9 @@ public class SettingsWindow : Window
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
             AutoSaveMaxKept = c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture),
             AutoSaveCleanOnExit = c.AutoSave.CleanOnExit,
+            SceneSnapshotsEnabled = c.AutoSave.SceneSnapshots,
+            SceneSnapshotsMaxKept =
+                c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture),
             AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
@@ -190,6 +193,18 @@ public class SettingsWindow : Window
         _vm.AutoSaveMaxKept =
             c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
         c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
+        // Same free-text contract as the pose count: an unusable draft leaves
+        // the stored retention alone.
+        c.AutoSave.SceneSnapshots = _vm.SceneSnapshotsEnabled;
+        if (int.TryParse(
+                _vm.SceneSnapshotsMaxKept.Trim(),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int keptSceneSnapshots)
+            && keptSceneSnapshots >= 1)
+            c.AutoSave.MaxSceneSnapshots = keptSceneSnapshots;
+        _vm.SceneSnapshotsMaxKept =
+            c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture);
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
