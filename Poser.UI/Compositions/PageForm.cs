@@ -361,6 +361,11 @@ public static partial class Crystarium
         /// mono readout alone, so a slider can BE its own clock (or any other
         /// derived unit) instead of shipping a second read-only row beside
         /// it.</param>
+        /// <param name="actions">Buttons at the row's right edge, outboard of
+        /// the numeric well — the reset arrow the references put beside a
+        /// slider. They take their width off the TRACK, so the well stays in
+        /// its column and a row with actions still reads against one without.
+        /// </param>
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string? format = null, string? help = null,
             bool disabled = false, ControlStyle style = default,
@@ -369,16 +374,30 @@ public static partial class Crystarium
             Action? onCommit = null,
             SliderScale scale = SliderScale.Linear,
             Func<float, string>? readout = null,
-            float logCurvature = 99f)
+            float logCurvature = 99f,
+            Action<ActionScope>? actions = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
             float displayedValue = value;
+            ActionScope? actionScope = null;
+            float actionWidth = 0f;
+            float actionGap = 0f;
+            if (actions != null)
+            {
+                actionScope = new ActionScope();
+                actions(actionScope);
+                actionWidth = MeasureActions(
+                    actionScope.Items, row.Scale, row.ControlWidth);
+                if (actionWidth > 0f)
+                    actionGap = ActiveTheme.Page.ActionGap * row.Scale;
+            }
             // The track stops one ActionGap short of the well, exactly as
             // NumericSlider spaces the same pair.
             float controlWidth = row.ControlWidth -
                 ActiveTheme.Form.ValueColumnWidth * row.Scale -
-                ActiveTheme.Page.ActionGap * row.Scale;
+                ActiveTheme.Page.ActionGap * row.Scale -
+                actionWidth - actionGap;
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
             Crystarium.Slider(
@@ -399,7 +418,7 @@ public static partial class Crystarium
             // numeric well — drag to adjust, double-click to type — with the
             // adaptive three-digit label unless a format is stated.
             var bandOrigin = new Vector2(
-                row.ControlOrigin.X + row.ControlWidth -
+                row.ControlOrigin.X + row.ControlWidth - actionWidth - actionGap -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale,
                 row.Origin.Y);
             if (readout is { } custom)
@@ -436,6 +455,10 @@ public static partial class Crystarium
                     disabled,
                     adaptiveDisplay: format is null);
             }
+            if (actionScope != null && actionWidth > 0f)
+                DrawActions(actionScope.Items,
+                    row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                    actionWidth, row.Origin.Y, true, id, row.RowHeight);
             _page.EndRow(row, id, help);
         }
 

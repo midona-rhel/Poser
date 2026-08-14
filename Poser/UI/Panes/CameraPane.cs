@@ -29,6 +29,13 @@ public sealed class CameraPane
     private const float Rad2Deg = 180f / MathF.PI;
     private const float Deg2Rad = MathF.PI / 180f;
 
+    /// <summary>What the per-slider reset arrows go back to. The same two
+    /// numbers <c>IVirtualCamera.ResetProperties</c> writes — stated here
+    /// because a row's arrow and the whole-camera Reset must not disagree
+    /// about what "default" is.</summary>
+    private const float DefaultZoom = 2.5f;
+    private const float DefaultOrthographicZoom = 10f;
+
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly IVirtualCameraService _cameras;
@@ -401,7 +408,10 @@ public sealed class CameraPane
             value => camera.Zoom = value,
             disabled: locked,
             scale: SliderScale.Log,
-            help: "How far the camera orbits from its pivot");
+            help: "How far the camera orbits from its pivot",
+            actions: actions => ResetArrow(
+                actions, "zoom", DefaultZoom, camera.Zoom,
+                value => camera.Zoom = value, locked));
         FovRollRow(form, camera, locked);
 
         // Angle and pan are wrap-around headings, not bounded travels — a
@@ -496,18 +506,30 @@ public sealed class CameraPane
         // The slider ends ARE the wheel's clamp: the row and the notch read
         // the same two numbers, so a scrolled speed can never sit off the end
         // of the control that shows it.
+        // The two rows the settings page seeds, so their reset arrows go back
+        // to the CONFIGURED default rather than to a constant — "default"
+        // means what a new camera would have started with.
+        var defaults = ConfigurationService.Instance.Config.Camera;
         form.Slider("Speed", camera.MovementSpeed,
             FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
             value => camera.MovementSpeed = value,
             format: "0.000",
             disabled: locked,
             help: "How fast the camera flies; the mouse wheel steps it while "
-                + "flying, Ctrl speeds up, Alt slows down");
+                + "flying, Ctrl speeds up, Alt slows down",
+            actions: actions => ResetArrow(
+                actions, "speed", defaults.DefaultMovementSpeed,
+                camera.MovementSpeed,
+                value => camera.MovementSpeed = value, locked));
         form.Slider("Sensitivity", camera.MouseSensitivity, 0.001f, 0.2f,
             value => camera.MouseSensitivity = value,
             format: "0.000",
             disabled: locked,
-            help: "How far a right-drag turns the view");
+            help: "How far a right-drag turns the view",
+            actions: actions => ResetArrow(
+                actions, "sensitivity", defaults.DefaultMouseSensitivity,
+                camera.MouseSensitivity,
+                value => camera.MouseSensitivity = value, locked));
         form.Switch("Delimit angle", camera.DelimitAngle,
             value => camera.DelimitAngle = value,
             disabled: locked,
@@ -521,6 +543,10 @@ public sealed class CameraPane
     {
         form.Cells(cells =>
         {
+            // FoV and roll keep the shared cells row rather than growing reset
+            // arrows: a cell is half a row wide, and an arrow taken out of
+            // that track would leave the slider unusable. The whole-camera
+            // Reset in ACTIONS is what puts these two back.
             cells.Cell(
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
@@ -603,8 +629,34 @@ public sealed class CameraPane
                     camera.Orthographic = true;
             },
             disabled: locked || !camera.Orthographic,
-            help: "How much of the world the flat projection spans");
+            help: "How much of the world the flat projection spans",
+            actions: actions => ResetArrow(
+                actions, "ortho-zoom", DefaultOrthographicZoom,
+                camera.OrthographicZoom,
+                value =>
+                {
+                    camera.OrthographicZoom = value;
+                    if (camera.Orthographic)
+                        camera.Orthographic = true;
+                },
+                locked || !camera.Orthographic));
     }
+
+    /// <summary>Brio's per-slider Undo button: one arrow, disabled while the
+    /// value already IS the default, so the row states whether it has been
+    /// touched as well as offering to untouch it.</summary>
+    private static void ResetArrow(
+        Crystarium.ActionScope actions,
+        string id,
+        float defaultValue,
+        float current,
+        Action<float> apply,
+        bool disabled) =>
+        actions.IconButton(TablerIcon.ArrowBackUp,
+            () => apply(defaultValue),
+            disabled: disabled || current == defaultValue,
+            help: "Back to the default",
+            id: $"##camera-{id}-reset");
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
