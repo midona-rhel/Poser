@@ -871,6 +871,12 @@ public unsafe class BonePosingService : IBonePosingService
                     // and invalidates its descendants, a side effect that
                     // must happen even when no parent transform is written.
                     var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.Propagate);
+                    // The Propagate side effect above is the point of the call
+                    // and has already happened; the null check only gates the
+                    // WRITE below, matching every other model-space deref in
+                    // this file (check-then-use, never fail-open).
+                    if (modelSpace == null)
+                        continue;
 
                     var parentBone = bone.ParentBone;
                     if (parentBone == null)
@@ -882,9 +888,15 @@ public unsafe class BonePosingService : IBonePosingService
                     Quaternion rot;
                     Vector3 scale;
 
-                    if (parentPose != null)
+                    // A pose that exists but cannot hand back the parent's
+                    // model-space entry falls through to the cached transform
+                    // arm rather than dereferencing null.
+                    var parentModelSpace = parentPose == null
+                        ? null
+                        : parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
+
+                    if (parentModelSpace != null)
                     {
-                        var parentModelSpace = parentPose->AccessBoneModelSpace(parentBone.BoneIndex, hkaPose.PropagateOrNot.DontPropagate);
                         pos = new Vector3(parentModelSpace->Translation.X, parentModelSpace->Translation.Y, parentModelSpace->Translation.Z);
                         rot = new Quaternion(parentModelSpace->Rotation.X, parentModelSpace->Rotation.Y, parentModelSpace->Rotation.Z, parentModelSpace->Rotation.W);
                         scale = new Vector3(parentModelSpace->Scale.X, parentModelSpace->Scale.Y, parentModelSpace->Scale.Z);

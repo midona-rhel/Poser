@@ -971,8 +971,28 @@ public unsafe class ActorSpawnService : IActorSpawnService
             }
             else
             {
-                TryDelete(ownership);
+                var deleted = TryDelete(ownership);
                 _log?.Error($"ActorSpawnService: Failed to spawn clone: {ex.Message}");
+                if (deleted)
+                {
+                    // The transaction refreshed the actor list mid-flight, so a
+                    // wrapper for the object we just deleted is still published.
+                    // DestroyActor refreshes after its delete for the same
+                    // reason; the rollback arm owes the list the same repair
+                    // rather than leaving a dead wrapper until the next scan.
+                    // Guarded because this runs from a catch arm: the refresh
+                    // publishes, and a faulting subscriber must not replace the
+                    // spawn failure with a second, unrelated exception.
+                    try
+                    {
+                        _actorManager.RefreshActors();
+                    }
+                    catch (Exception refreshEx)
+                    {
+                        _log?.Error(
+                            $"ActorSpawnService: rollback refresh failed; a deleted wrapper may persist until the next scan: {refreshEx.Message}");
+                    }
+                }
             }
             return null;
         }

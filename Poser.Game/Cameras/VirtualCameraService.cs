@@ -101,6 +101,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     // policy is drivable without the game. Null in production.
     private readonly Func<nint>? _nativeCameraOverride;
 
+    // Null only in the test ctor (no native actors exist there); every
+    // actor-address deref resolves through it first — a raw IActor address
+    // is a claim, not a proof (WorldActorDiscovery standard).
+    private readonly Dalamud.Plugin.Services.IObjectTable? _objectTable;
+
     private bool _disposed;
 
     public VirtualCameraService(
@@ -109,12 +114,14 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IFramework framework,
         IPluginLog log,
         IGPoseService gPose,
-        IEventBus events)
+        IEventBus events,
+        Dalamud.Plugin.Services.IObjectTable objectTable)
     {
         _log = log;
         _framework = framework;
         _gPose = gPose;
         _events = events;
+        _objectTable = objectTable;
 
         Hook<T>? TryHook<T>(string name, string signature, T detour)
             where T : Delegate
@@ -336,12 +343,17 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         if (camera is not VirtualCamera target || actor.Address == nint.Zero)
             return false;
-        var gameObject = (GameObject*)actor.Address;
+        // Deref-time revalidation: the stored actor address is only a claim;
+        // the deref goes through the object-table-resolved wrapper.
+        var resolved = _objectTable?.CreateObjectReference(actor.Address);
+        if (resolved == null || !resolved.IsValid())
+            return false;
+        var gameObject = (GameObject*)resolved.Address;
         var drawObject = gameObject->DrawObject;
         if (drawObject == null)
             return false;
         Vector3 drawPosition = drawObject->Object.Position;
-        Vector3 objectPosition = gameObject->Position;
+        Vector3 objectPosition = resolved.Position;
         target.TargetOffset = drawPosition - objectPosition;
         target.TargetActorName = displayName;
         return true;
@@ -719,10 +731,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 _trackedPivot is { } pivot &&
                 live.TrackedBones.Count > 0 &&
                 live.TrackedBones[0].Skeleton?.Actor is { } actor &&
-                actor.Address != nint.Zero)
+                actor.Address != nint.Zero &&
+                // Deref-time revalidation between the per-tick validity
+                // scans: the tracked bone's stored actor address is only a
+                // claim; unresolved is refusal for this frame.
+                _objectTable?.CreateObjectReference(actor.Address) is { } resolved &&
+                resolved.IsValid())
             {
-                var gameObject = (GameObject*)actor.Address;
-                Vector3 actorPosition = gameObject->Position;
+                var gameObject = (GameObject*)resolved.Address;
+                Vector3 actorPosition = resolved.Position;
                 float cameraOffsetY = gameObject->CameraOffset.Y;
 
                 switch (live.TrackingMode)
