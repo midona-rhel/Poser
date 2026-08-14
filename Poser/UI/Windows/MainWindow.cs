@@ -3256,7 +3256,9 @@ public class MainWindow : Window
             actions.Add(null);
             actions.Add(() =>
             {
-                _spawnService.DestroyActor(actor);
+                // Through the seam, exactly as Clone is: spawning an actor
+                // was a step of the user's history and despawning it was not.
+                _lifecycle.DespawnActor(actor);
                 _selection.Clear();
             });
         }

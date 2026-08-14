@@ -305,6 +305,7 @@ internal sealed class PosePreviewBinder
         && a.AnchorSelectedPositions == b.AnchorSelectedPositions
         && a.ExcludeUncategorizedBones == b.ExcludeUncategorizedBones
         && a.FreezeOnImport == b.FreezeOnImport
+        && a.SuppressHistory == b.SuppressHistory
         && SameSet(a.ExcludedBonePrefixes, b.ExcludedBonePrefixes)
         && SameSet(a.BoneFilter, b.BoneFilter);
 

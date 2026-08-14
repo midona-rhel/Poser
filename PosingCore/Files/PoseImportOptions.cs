@@ -134,6 +134,17 @@ public class PoseImportOptions
     public bool FreezeOnImport { get; set; }
 
     /// <summary>
+    /// Keep this import out of the undo history. An import IS a history
+    /// entry everywhere else — that is how a pose file is undone — but an
+    /// import that is itself the UNDO of something cannot file itself in the
+    /// stack it is walking: the append would clear the redo stack the undo
+    /// just pushed onto, so the act could never be redone, and the entry it
+    /// left on top would strip the pose again if the user pressed undo twice.
+    /// Set only by <c>SceneLifecycleHistory</c>'s actor restore.
+    /// </summary>
+    public bool SuppressHistory { get; set; }
+
+    /// <summary>
     /// Default options: every slot, rotation-only, no model transform.
     /// </summary>
     public static PoseImportOptions Default => new();
@@ -333,6 +344,7 @@ public class PoseImportOptions
                     ExcludedBonePrefixes, StringComparer.OrdinalIgnoreCase),
             ExcludeUncategorizedBones = ExcludeUncategorizedBones,
             FreezeOnImport = FreezeOnImport,
+            SuppressHistory = SuppressHistory,
         };
     }
 }

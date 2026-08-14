@@ -556,7 +556,8 @@ public sealed class CleanPoseFacade
                     var begun = _imports.Begin(
                         arm.Operation,
                         plan,
-                        expression: options.AsExpression);
+                        expression: options.AsExpression,
+                        suppressHistory: options.SuppressHistory);
                     if (!begun.Success)
                     {
                         _log.Warning(

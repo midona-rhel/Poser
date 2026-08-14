@@ -161,6 +161,12 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
         /// body. Its changes are scenery, never user edits — they must not
         /// spend the user's undo stack.</summary>
         public required bool PreviewTarget;
+        /// <summary>The caller asked for no history entry
+        /// (<see cref="PoseImportOptions.SuppressHistory"/>). Its one caller
+        /// is an undo restoring a despawned actor's pose: that import is
+        /// already inside the history's own walk, and an append there would
+        /// clear the redo stack the walk had just pushed onto.</summary>
+        public bool SuppressHistory;
         public ImportStage Stage = ImportStage.Apply;
         /// <summary>Whether this is an expression import — it runs the head
         /// restore and, at the very end, Brio's whole-pose flatten
@@ -413,13 +419,15 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
     public GestureResult Begin(
         PoseImportOperation operation,
         PoseImportPlan plan,
-        bool expression = false)
+        bool expression = false,
+        bool suppressHistory = false)
     {
         if (Volatile.Read(ref _pending) is not { } import ||
             !ReferenceEquals(import.Operation, operation) ||
             import.Invalidation.IsInvalidated)
             return GestureResult.Fail("The pose import arm is stale.");
         import.Expression = expression;
+        import.SuppressHistory = suppressHistory;
         if (plan.IsEmpty)
             return FailAdmitted(import, "Nothing in this file applies to the chosen scope.");
 
@@ -1435,8 +1443,10 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
     private string? AppendHistory(Import import)
     {
         // Preview-body imports happen once per browsed file: recording them
-        // would bury the user's real edits under scenery entries.
-        if (import.PreviewTarget)
+        // would bury the user's real edits under scenery entries. A
+        // suppressed import is the other case that may not spend the stack:
+        // it IS an undo, walking that very stack.
+        if (import.PreviewTarget || import.SuppressHistory)
             return null;
 
         var before = new List<TransformTargetState>();

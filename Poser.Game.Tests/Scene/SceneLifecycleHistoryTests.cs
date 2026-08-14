@@ -236,6 +236,112 @@ public sealed class SceneLifecycleHistoryTests
         Assert.False(world.History.CanUndo);
     }
 
+    /// <summary>An actor edited after its spawn comes back edited, exactly as
+    /// a light and a prop do: the document is captured when the actor LEAVES,
+    /// not when it was born.</summary>
+    [Fact]
+    public void Redoing_a_spawn_brings_the_actor_back_as_the_user_had_it()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Actor"))!;
+        world.Actors.Edit(actor, Posed(new Vector3(2f, 0f, 5f), visible: false));
+
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+
+        var restored = Assert.Single(world.Actors.Live);
+        var state = world.Actors.StateOf(restored);
+        Assert.Equal(new Vector3(2f, 0f, 5f), state.Placement.Position);
+        Assert.False(state.Visible);
+        Assert.NotNull(state.Pose);
+    }
+
+    [Fact]
+    public void Despawning_an_actor_this_seam_spawned_brings_it_back_as_it_stood()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Lead"))!;
+        world.Actors.Edit(actor, Posed(new Vector3(-1f, 0f, 3f), visible: true));
+
+        world.Lifecycle.DespawnActor(actor);
+
+        Assert.Empty(world.Actors.Live);
+        Assert.Equal("Despawn actor 'Lead'", world.History.UndoDescription);
+        Assert.Empty(world.Actors.Notes);
+
+        Assert.True(world.Undo());
+
+        var restored = Assert.Single(world.Actors.Live);
+        Assert.NotSame(actor, restored);
+        var state = world.Actors.StateOf(restored);
+        Assert.Equal(new Vector3(-1f, 0f, 3f), state.Placement.Position);
+        Assert.NotNull(state.Pose);
+    }
+
+    /// <summary>The slot-identity regression, on the actor half: the despawn's
+    /// own undo minted a NEW actor, and undoing past it has to take THAT one
+    /// away rather than the corpse the spawn entry was born holding.</summary>
+    [Fact]
+    public void Undo_past_a_despawn_destroys_the_actor_the_despawn_restored()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Lead"))!;
+        world.Lifecycle.DespawnActor(actor);
+
+        Assert.True(world.Undo());
+        Assert.NotSame(actor, Assert.Single(world.Actors.Live));
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Actors.Live);
+    }
+
+    /// <summary>
+    /// The despawns that stay unundoable, and the point of the test: they are
+    /// NAMED, not silently skipped. Poser never recorded spawning this actor
+    /// — the world tab's clone and the overlay's adoption both reach the spawn
+    /// service directly — so there is no call to run again.
+    /// </summary>
+    [Fact]
+    public void Despawning_an_actor_nobody_recorded_spawning_says_why_it_cannot_be_undone()
+    {
+        var world = new World();
+        var actor = world.Actors.Spawn("Stranger")!;
+
+        world.Lifecycle.DespawnActor(actor);
+
+        Assert.Empty(world.Actors.Live);
+        Assert.False(world.History.CanUndo);
+        var note = Assert.Single(world.Actors.Notes);
+        Assert.Contains("Stranger", note);
+        Assert.Contains("cannot be undone", note);
+    }
+
+    [Fact]
+    public void A_despawn_the_game_refuses_records_no_entry()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("Lead"))!;
+        world.Actors.RefuseDestroy = true;
+
+        world.Lifecycle.DespawnActor(actor);
+
+        // The actor is still there, so nothing was stacked on top of the add
+        // that put it there.
+        Assert.Single(world.Actors.Live);
+        Assert.Equal("Add actor", world.History.UndoDescription);
+    }
+
+    private static ActorState Posed(Vector3 position, bool visible)
+    {
+        var placement = Transform.Identity;
+        placement.Position = position;
+        return new ActorState(placement, visible, new Poser.Files.PoseFile());
+    }
+
     // ── props ────────────────────────────────────────────────────────────
 
     private static readonly PropModel Apple =
@@ -932,13 +1038,25 @@ public sealed class SceneLifecycleHistoryTests
         public OverlayNodeState State { get; set; } = new();
     }
 
-    private sealed class FakeActors : IActorSpawnService
+    private sealed class FakeActors : IActorLifecycle
     {
         private readonly List<IActor> _actors = new();
+
+        /// <summary>What each live actor currently IS, so a removal's capture
+        /// and a restore's re-application are observable without a body.
+        /// </summary>
+        private readonly Dictionary<IActor, ActorState> _states =
+            new(ReferenceEqualityComparer.Instance);
+
         private int _next;
 
         public IReadOnlyList<IActor> Live => _actors;
         public int SpawnCalls { get; private set; }
+        public bool RefuseDestroy { get; set; }
+
+        /// <summary>Every refusal the seam named rather than skipping.
+        /// </summary>
+        public List<string> Notes { get; } = new();
 
         public IActor? Spawn(string name)
         {
@@ -949,26 +1067,35 @@ public sealed class SceneLifecycleHistoryTests
                 (nint)(_next + 1),
                 ActorKind.Player);
             _actors.Add(actor);
+            _states[actor] = new ActorState(Transform.Identity, true, null);
             return actor;
         }
 
-        public bool DestroyActor(IActor actor) => _actors.Remove(actor);
-        public bool IsSpawnedActor(IActor actor) => _actors.Contains(actor);
+        /// <summary>What the user made of a live actor after it was spawned.
+        /// </summary>
+        public void Edit(IActor actor, ActorState state) => _states[actor] = state;
 
-        public void Dispose() { }
-        public IActor? SpawnNewActor(bool reserveCompanionSlot) => Spawn("Actor");
-        public IActor? CloneActor(IActor source) => Spawn(source.Name);
-        public IActor? SpawnCatalogActor(SpawnCatalogEntry entry) => Spawn("Catalog");
-        public int GetModelCharaId(IActor actor) => 0;
-        public void SetModelCharaId(IActor actor, int modelCharaId) { }
-        public CompanionKind? GetSpawnedKind(IActor actor) => null;
-        public void SetVisibility(IActor actor, bool visible) { }
-        public bool IsVisible(IActor actor) => true;
-        public bool SetCompanion(IActor owner, CompanionAttachment? container) => false;
-        public void DestroyCompanion(IActor owner) { }
-        public CompanionAttachment? GetCompanionInfo(IActor owner) => null;
+        public ActorState StateOf(IActor actor) => _states[actor];
 
-        public IActor? GetCompanionActor(IActor owner) => null;
-        public bool HasCompanionSlot(IActor actor) => false;
+        /// <summary>The actor leaves without this seam's knowledge — a scene
+        /// import, or the game.</summary>
+        public void DestroyActor(IActor actor) => Destroy(actor);
+
+        public bool IsSpawned(object actor) => _actors.Contains((IActor)actor);
+
+        public bool Destroy(object actor)
+        {
+            if (RefuseDestroy)
+                return false;
+            _states.Remove((IActor)actor);
+            return _actors.Remove((IActor)actor);
+        }
+
+        public ActorState Read(object actor) => _states[(IActor)actor];
+
+        public void Restore(object actor, ActorState state) =>
+            _states[(IActor)actor] = state;
+
+        public void Note(string detail) => Notes.Add(detail);
     }
 }

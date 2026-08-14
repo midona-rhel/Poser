@@ -82,6 +82,44 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     }
 }
 
+/// <summary>What an actor entry has to put back BEYOND the spawn that made
+/// it: where the user had stood it, whether they had it in sight, and the pose
+/// they had authored on it. Captured at the MOMENT OF REMOVAL, exactly as a
+/// light's document and a prop's state are.</summary>
+internal readonly record struct ActorState(
+    Transform Placement,
+    bool Visible,
+    PoseFile? Pose);
+
+/// <summary>
+/// The actor half of <see cref="SceneLifecycleHistory"/>. An actor's restore
+/// is the one that cannot finish in the frame it starts — a respawned body's
+/// draw object, and the skeleton hanging off it, are several ticks behind the
+/// call that made them — so the seam names the acts and this port owns the
+/// waiting. <see cref="ActorServiceLifecycle"/> is the sole production
+/// implementation; the indirection is what lets an entry's two directions be
+/// proven without the game.
+/// </summary>
+internal interface IActorLifecycle
+{
+    bool IsSpawned(object actor);
+
+    bool Destroy(object actor);
+
+    ActorState Read(object actor);
+
+    /// <summary>Puts <paramref name="state"/> back onto a JUST-RESPAWNED
+    /// actor. Placement and pose land once the body is posable, so this
+    /// returns long before the actor looks right; the restore is complete or
+    /// it says why, and never fails the entry that asked for it — the actor
+    /// is back either way.</summary>
+    void Restore(object actor, ActorState state);
+
+    /// <summary>The seam's refusal channel. An act it cannot journal says so
+    /// here rather than passing for one it can.</summary>
+    void Note(string detail);
+}
+
 /// <summary>
 /// The overlay-node half of <see cref="SceneLifecycleHistory"/>, the prop
 /// port's twin. A node's whole identity IS its document, so — like a prop and
@@ -159,11 +197,19 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
 /// restores the entity as the user last had it, not as it was born: an edited
 /// light that is deleted and undone comes back edited.</para>
 ///
-/// <para>A PROP is the one entity whose removal is as invertible as its
-/// addition: its whole identity is the model triple it was spawned from, so a
-/// removal captures that plus the transform and visibility the user gave it
+/// <para>A PROP's whole identity is the model triple it was spawned from, so
+/// a removal captures that plus the transform and visibility the user gave it
 /// and comes back as itself. Clearing the list is one act of the user's, so it
 /// is one entry over every slot it took.</para>
+///
+/// <para>An ACTOR is the one whose document cannot rebuild it: its appearance
+/// is a redraw, not a receipt, so it is always brought back by re-running the
+/// call that made it, and the document then puts back what that call does not
+/// decide — placement, visibility, pose. Its restore is also the one that
+/// outlives the frame it starts in (see <see cref="IActorLifecycle"/>). A
+/// despawn therefore takes an entry only where this seam recorded the spawn;
+/// where it did not, the despawn is refused BY NAME rather than passing for
+/// an undoable one.</para>
 ///
 /// <para>Only OWNED entities are recorded. A captured world light is borrowed,
 /// not spawned, and its release is a restoration of the game's own object; the
@@ -184,7 +230,7 @@ public sealed class SceneLifecycleHistory
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
-    private readonly IActorSpawnService _actors;
+    private readonly IActorLifecycle _actors;
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
 
@@ -212,26 +258,33 @@ public sealed class SceneLifecycleHistory
         ILightingService lighting,
         IVirtualCameraService cameras,
         IActorSpawnService actors,
+        IPosingService posing,
+        ISkeletonService skeletons,
+        IPoseFileService poseFiles,
+        Posing.CleanPoseFacade poses,
+        Dalamud.Plugin.Services.IFramework framework,
+        Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,
         OverlayNodeService overlays)
         : this(
             history,
             lighting,
             cameras,
-            actors,
+            new ActorServiceLifecycle(
+                actors, posing, skeletons, poseFiles, poses, framework, log),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays))
     {
     }
 
-    /// <summary>Test seam: the prop and overlay halves as ports, so an entry's
-    /// two directions can be exercised without a native scene object and
-    /// without a native UI node.</summary>
+    /// <summary>Test seam: the actor, prop and overlay halves as ports, so an
+    /// entry's two directions can be exercised without a native scene object
+    /// and without a native UI node.</summary>
     internal SceneLifecycleHistory(
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IActorSpawnService actors,
+        IActorLifecycle actors,
         IPropLifecycle props,
         IOverlayLifecycle overlays)
     {
@@ -490,21 +543,34 @@ public sealed class SceneLifecycleHistory
     // ── actors ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The live actor plus the call that made it. An actor's APPEARANCE is
-    /// not a document this seam can capture — restoring one is the scene
-    /// pipeline's asynchronous redraw, not a synchronous receipt — so a
-    /// spawn is inverted by re-running the very call that produced it. That
-    /// is exact for the spawn it undoes: the actor comes back exactly as it
-    /// was born, which is what redoing a spawn means. It is also why a
-    /// DESPAWN takes no entry: resurrecting an arbitrary actor — one this
-    /// session may never have spawned, wearing edits no document here holds —
-    /// is a different problem, and an entry that restored a blank stand-in
-    /// would be a worse answer than admitting there is none.
+    /// The live actor, the call that made it, and what the user had made of
+    /// it when it left.
+    ///
+    /// <para>An actor's APPEARANCE is still not a document this seam can
+    /// capture — restoring one is the scene pipeline's asynchronous redraw,
+    /// not a synchronous receipt — so an actor is always brought back by
+    /// re-running the very call that produced it. That call is now worth far
+    /// more than it was: a clone carries the source's Penumbra collection
+    /// (<c>ISpawnCollectionPort</c>), so re-running it reproduces the modded
+    /// appearance and not a bare body. <see cref="Document"/> then puts back
+    /// everything the spawn does not decide — placement, visibility, and the
+    /// pose the user authored — captured at the MOMENT OF REMOVAL, exactly as
+    /// a light's and a prop's are.</para>
+    ///
+    /// <para>So a DESPAWN takes an entry now, where it did not before, but
+    /// only for an actor whose spawn this seam RECORDED. Without
+    /// <see cref="HasRespawn"/> there is no call to run again and no
+    /// appearance to reproduce, and an entry restoring a blank stand-in would
+    /// still be a worse answer than admitting there is none: those despawns
+    /// are refused by name through <see cref="IActorLifecycle.Note"/>.</para>
     /// </summary>
     private sealed class ActorSlot
     {
         public IActor? Live;
         public Func<IActor?> Respawn = static () => null;
+        public bool HasRespawn;
+        public ActorState Document;
+        public bool HasDocument;
     }
 
     /// <summary>Records one actor spawn. <paramref name="spawn"/> must be
@@ -516,11 +582,42 @@ public sealed class SceneLifecycleHistory
             return null;
         var slot = SlotFor(actor);
         slot.Respawn = spawn;
+        slot.HasRespawn = true;
         _history.Append(new SceneLifecyclePatch(
             description,
             () => RemoveActor(slot),
             () => RestoreActor(slot)));
         return actor;
+    }
+
+    /// <summary>
+    /// Despawns one actor, as a step of the user's history when it can be
+    /// one. Spawning an actor was undoable and despawning it was not, which
+    /// made the pair asymmetric in the direction that costs the user work.
+    ///
+    /// <para>The entry exists exactly when this seam recorded the spawn: only
+    /// then is there a call to run again, and only then does re-running it
+    /// reproduce the appearance and the collection. Every other despawn — an
+    /// actor cloned straight through the world tab, one adopted from the
+    /// overlay, one spawned before the history was last cleared — is destroyed
+    /// all the same and NAMED as unundoable, never silently skipped.</para>
+    /// </summary>
+    public void DespawnActor(IActor actor)
+    {
+        if (!_actorSlots.TryGetValue(actor, out var slot) || !slot.HasRespawn)
+        {
+            _actors.Note(
+                $"Despawning '{actor.Name}' cannot be undone: Poser has no record of spawning this actor, so it has no call to run again and no way to reproduce the appearance it is wearing.");
+            _actors.Destroy(actor);
+            return;
+        }
+        string description = $"Despawn actor '{actor.Name}'";
+        if (!RemoveActor(slot))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            description,
+            () => RestoreActor(slot),
+            () => RemoveActor(slot)));
     }
 
     private ActorSlot SlotFor(IActor actor)
@@ -539,8 +636,16 @@ public sealed class SceneLifecycleHistory
         // Despawned by the actor menu already: the removal this undo names
         // has happened, so it reports the truth rather than failing on a
         // corpse and pinning every older entry behind it.
-        if (_actors.IsSpawnedActor(actor) && !_actors.DestroyActor(actor))
-            return false;
+        if (_actors.IsSpawned(actor))
+        {
+            // Captured HERE, not at spawn: the actor comes back where the
+            // user left it, in the pose they gave it — the same rule the
+            // light and the prop follow.
+            slot.Document = _actors.Read(actor);
+            slot.HasDocument = true;
+            if (!_actors.Destroy(actor))
+                return false;
+        }
         _actorSlots.Remove(actor);
         slot.Live = null;
         return true;
@@ -550,6 +655,8 @@ public sealed class SceneLifecycleHistory
     {
         if (slot.Live != null)
             return true;
+        if (!slot.HasRespawn)
+            return false;
         // A clone's source may itself be gone by now; the service answers
         // null and the entry stays redoable rather than half-applied.
         var actor = slot.Respawn();
@@ -557,6 +664,13 @@ public sealed class SceneLifecycleHistory
             return false;
         slot.Live = actor;
         _actorSlots[actor] = slot;
+        // The body is back; the placement and the pose land on it over the
+        // next few ticks, because the skeleton they need is built with a draw
+        // object the spawn deliberately defers. The entry has landed either
+        // way: the actor IS restored, and a pose that cannot follow says so
+        // rather than leaving the step un-consumed and unrepeatable.
+        if (slot.HasDocument)
+            _actors.Restore(actor, slot.Document);
         return true;
     }
 
