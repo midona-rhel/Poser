@@ -905,7 +905,7 @@ public sealed unsafe class LightingService : ILightingService
                 continue;
             Vector3 position = native->Transform.Position;
             candidates.Add(new WorldLightCandidate(
-                handle, Vector3.Distance(position, origin)));
+                handle, Vector3.Distance(position, origin), position));
         }
 
         candidates.Sort(static (left, right) =>

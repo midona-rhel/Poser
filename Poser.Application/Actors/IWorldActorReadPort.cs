@@ -1,11 +1,17 @@
 namespace Poser.Application.Actors;
 
 /// <summary>
-/// Opaque identity of one discovered overworld actor, minted per enumeration
-/// pass. It carries no pointer, index, or native id — the Game side keeps the
-/// exact observation it stands for, and a new listing mints new ids, so an id
-/// from an older listing can only resolve to a typed stale refusal, never to
-/// "whatever occupies that slot now".
+/// Opaque identity of one discovered overworld actor. It carries no pointer,
+/// index, or native id — the Game side keeps the exact observation it stands
+/// for, and an id is only ever re-issued for that SAME exact identity
+/// (address, object-table index, GameObjectId). A different occupant is a
+/// different id, so an id can never resolve to "whatever occupies that slot
+/// now"; an id whose object is gone is a typed stale refusal.
+///
+/// Ids outlive a refresh on purpose: two surfaces list candidates at their own
+/// cadences (the spawn browser's World tab, the overlay's adoption handles),
+/// and per-pass minting would have each one's refresh silently invalidate the
+/// other's rows.
 /// </summary>
 public readonly record struct WorldActorCandidateId(Guid Value)
 {
@@ -25,12 +31,14 @@ public enum WorldActorKind
 }
 
 /// <summary>One visible overworld actor, as a pointer-free snapshot for
-/// Application/UI. Valid until the next enumeration pass replaces it.</summary>
+/// Application/UI. <paramref name="Position"/> is where the actor stood when
+/// it was listed — the world point an adoption handle projects from.</summary>
 public readonly record struct WorldActorCandidate(
     WorldActorCandidateId Id,
     string Name,
     WorldActorKind Kind,
-    float DistanceFromPlayer);
+    float DistanceFromPlayer,
+    System.Numerics.Vector3 Position = default);
 
 public enum WorldActorImportStatus
 {
@@ -80,13 +88,14 @@ public readonly record struct WorldActorImportResult(
 /// the only operation that ever crosses from a candidate to native effect is
 /// <see cref="CloneCandidate"/>, which clones the exact source into a
 /// Poser-owned GPose actor — the source is never adopted, mutated, or
-/// deleted. A new <see cref="RefreshCandidates"/> pass invalidates every
-/// previously issued id.
+/// deleted. A <see cref="RefreshCandidates"/> pass keeps the ids of the
+/// objects it still sees and drops the rest.
 /// </summary>
 public interface IWorldActorReadPort
 {
     /// <summary>Enumerates the currently visible overworld actors, nearest
-    /// first, minting fresh candidate ids. Empty outside GPose.</summary>
+    /// first. Each keeps the id its exact identity was last given; anything
+    /// that has gone loses its id. Empty outside GPose.</summary>
     IReadOnlyList<WorldActorCandidate> RefreshCandidates();
 
     /// <summary>Clones the candidate's exact source into a Poser-owned GPose

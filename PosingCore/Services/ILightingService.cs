@@ -62,7 +62,10 @@ public interface ILightingService : IDisposable
 public sealed record GoboEntry(string Path, string Name);
 
 /// <summary>One capturable overworld light. The handle is only valid on the
-/// framework thread and only until the light list next changes.</summary>
+/// framework thread and only until the light list next changes;
+/// <paramref name="Position"/> is where the light stood when it was listed —
+/// the world point an adoption handle projects from.</summary>
 public readonly record struct WorldLightCandidate(
     nint Handle,
-    float DistanceFromPlayer);
+    float DistanceFromPlayer,
+    System.Numerics.Vector3 Position = default);

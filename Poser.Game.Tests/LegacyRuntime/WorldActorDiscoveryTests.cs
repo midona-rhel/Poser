@@ -63,26 +63,84 @@ public sealed class WorldActorDiscoveryTests
         Assert.Empty(discovery.RefreshCandidates());
     }
 
+    /// <summary>An id belongs to an exact identity, not to an enumeration
+    /// pass: two surfaces list candidates on their own cadences (the spawn
+    /// browser's World tab, the overlay's adoption handles) and neither
+    /// refresh may invalidate the other's rows. What an id must NEVER do is
+    /// survive a change of occupant — that is the whole safety property, and
+    /// it is asserted here beside the reuse.</summary>
     [Fact]
-    public void A_refresh_mints_new_ids_and_old_ids_are_typed_stale_refusals()
+    public void An_id_survives_a_refresh_but_never_a_change_of_occupant()
     {
         var adapter = new FakeTableAdapter();
-        adapter.World.Add(Obs((nint)0x10));
+        adapter.World.Add(Obs((nint)0x10, index: 5, id: 1));
         var seam = new CloneSeam();
         var discovery = NewDiscovery(adapter, seam);
 
         var first = Assert.Single(discovery.RefreshCandidates());
         var second = Assert.Single(discovery.RefreshCandidates());
-        Assert.NotEqual(first.Id, second.Id);
+        Assert.Equal(first.Id, second.Id);
 
-        var stale = discovery.CloneCandidate(first.Id, out var spawned);
-        Assert.Equal(WorldActorImportStatus.StaleCandidate, stale.Status);
-        Assert.Null(spawned);
-        Assert.Empty(seam.Calls);
-
-        // Positive control: the current listing's id clones.
-        Assert.True(discovery.CloneCandidate(second.Id, out _).Success);
+        // The id the first listing handed out still clones its own source.
+        Assert.True(discovery.CloneCandidate(first.Id, out var spawned).Success);
+        Assert.NotNull(spawned);
         Assert.Equal((nint)0x10, Assert.Single(seam.Calls));
+
+        // A DIFFERENT occupant of the same slot is a different candidate: it
+        // mints its own id, and the old id no longer names anything.
+        seam.Calls.Clear();
+        adapter.World.Clear();
+        adapter.World.Add(Obs((nint)0x20, index: 5, id: 2));
+        var replacement = Assert.Single(discovery.RefreshCandidates());
+        Assert.NotEqual(first.Id, replacement.Id);
+
+        var stale = discovery.CloneCandidate(first.Id, out var refused);
+        Assert.Equal(WorldActorImportStatus.StaleCandidate, stale.Status);
+        Assert.Null(refused);
+        Assert.Empty(seam.Calls);
+    }
+
+    /// <summary>An id lives exactly as long as the listing keeps naming it:
+    /// an object that drops out of the enumeration and comes back is a new
+    /// candidate, so nothing holds an id across an absence.</summary>
+    [Fact]
+    public void An_id_does_not_survive_dropping_out_of_the_listing()
+    {
+        var adapter = new FakeTableAdapter();
+        var observed = Obs((nint)0x10, index: 5, id: 1);
+        adapter.World.Add(observed);
+        var seam = new CloneSeam();
+        var discovery = NewDiscovery(adapter, seam);
+
+        var first = Assert.Single(discovery.RefreshCandidates());
+        adapter.World.Clear();
+        Assert.Empty(discovery.RefreshCandidates());
+        adapter.World.Add(observed);
+        var returned = Assert.Single(discovery.RefreshCandidates());
+
+        Assert.NotEqual(first.Id, returned.Id);
+        Assert.Equal(
+            WorldActorImportStatus.StaleCandidate,
+            discovery.CloneCandidate(first.Id, out _).Status);
+        Assert.Empty(seam.Calls);
+    }
+
+    /// <summary>The listing carries the world point each candidate stood at:
+    /// it is what an overlay handle projects from, and a candidate without one
+    /// could only be reached from a list.</summary>
+    [Fact]
+    public void A_candidate_carries_the_world_point_it_was_seen_at()
+    {
+        var adapter = new FakeTableAdapter();
+        adapter.World.Add(Obs((nint)0x10) with
+        {
+            Position = new System.Numerics.Vector3(1f, 2f, 3f),
+        });
+        var discovery = NewDiscovery(adapter, new CloneSeam());
+
+        var candidate = Assert.Single(discovery.RefreshCandidates());
+
+        Assert.Equal(new System.Numerics.Vector3(1f, 2f, 3f), candidate.Position);
     }
 
     [Fact]

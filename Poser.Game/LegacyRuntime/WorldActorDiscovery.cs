@@ -25,7 +25,16 @@ internal readonly record struct WorldActorObservation(
     string Name,
     WorldActorKind? Kind,
     float DistanceFromPlayer,
-    bool IsDrawing);
+    bool IsDrawing,
+    Vector3 Position = default)
+{
+    /// <summary>The exact identity a candidate id is keyed by. An occupant
+    /// that differs in any member is a different object and gets its own id —
+    /// which is what keeps a reused id from ever meaning "whatever is at that
+    /// index now".</summary>
+    internal (nint, ushort, ulong) Identity =>
+        (Address, ObjectIndex, GameObjectId);
+}
 
 /// <summary>
 /// The read-only object-table boundary for overworld discovery. Enumeration
@@ -106,7 +115,8 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
             origin is { } from
                 ? Vector3.Distance(gameObject.Position, from)
                 : 0f,
-            IsDrawing(gameObject.Address));
+            IsDrawing(gameObject.Address),
+            gameObject.Position);
 
     /// <summary>Overworld kinds Poser offers for cloning: exactly the set the
     /// GPose admission scan accepts (ActorManager.GetGPoseCharacters). Mount
@@ -154,6 +164,19 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
     private readonly Dictionary<WorldActorCandidateId, WorldActorObservation>
         _observations = new();
 
+    /// <summary>The id each exact identity was last given, so a refresh
+    /// re-issues it rather than minting a new one. Rebuilt beside
+    /// <see cref="_observations"/> every pass — an identity that stops being
+    /// listed loses its id with it, and a DIFFERENT occupant of the same index
+    /// is a different key and gets a fresh id.</summary>
+    private readonly Dictionary<(nint, ushort, ulong), WorldActorCandidateId>
+        _idsByIdentity = new();
+
+    /// <summary>Scratch for the rebuild above; a field so a refresh that runs
+    /// on a UI cadence does not allocate a dictionary per pass.</summary>
+    private readonly Dictionary<(nint, ushort, ulong), WorldActorCandidateId>
+        _reissued = new();
+
     private readonly List<WorldActorCandidate> _candidates = new();
 
     public WorldActorDiscovery(
@@ -199,7 +222,10 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         _observations.Clear();
         _candidates.Clear();
         if (!OnOwnerThread || !_gPose.IsGPosing)
+        {
+            _idsByIdentity.Clear();
             return Array.Empty<WorldActorCandidate>();
+        }
 
         List<WorldActorObservation> kept;
         try
@@ -210,21 +236,33 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
         {
             _log?.Warning(
                 $"WorldActorDiscovery: enumeration failed: {ex.Message}");
+            _idsByIdentity.Clear();
             return Array.Empty<WorldActorCandidate>();
         }
 
         kept.Sort(static (left, right) =>
             left.DistanceFromPlayer.CompareTo(right.DistanceFromPlayer));
+        // The identity map is rebuilt from THIS pass, reusing the id an
+        // identity already held: the listing is what keeps an id alive, so an
+        // object that stopped being listed loses its id here.
+        _reissued.Clear();
         foreach (var observed in kept)
         {
-            var id = WorldActorCandidateId.New();
+            var identity = observed.Identity;
+            if (!_idsByIdentity.TryGetValue(identity, out var id))
+                id = WorldActorCandidateId.New();
+            _reissued[identity] = id;
             _observations[id] = observed;
             _candidates.Add(new WorldActorCandidate(
                 id,
                 observed.Name,
                 observed.Kind!.Value,
-                observed.DistanceFromPlayer));
+                observed.DistanceFromPlayer,
+                observed.Position));
         }
+        _idsByIdentity.Clear();
+        foreach (var pair in _reissued)
+            _idsByIdentity[pair.Key] = pair.Value;
         return _candidates.ToArray();
     }
 
@@ -334,7 +372,8 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
 
     private void Forget(WorldActorCandidateId id)
     {
-        _observations.Remove(id);
+        if (_observations.Remove(id, out var forgotten))
+            _idsByIdentity.Remove(forgotten.Identity);
         for (int i = 0; i < _candidates.Count; i++)
         {
             if (_candidates[i].Id == id)
