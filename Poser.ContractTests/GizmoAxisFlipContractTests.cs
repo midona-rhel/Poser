@@ -15,8 +15,10 @@ namespace Poser.ContractTests;
 /// rotation rings never flip. ImGuizmo's ComputeTripodAxisAndVisibility
 /// decides by comparing the ±axis projected lengths with a FLT_EPSILON tie
 /// band (ties keep +1) and latches the factors while a manipulation is live;
-/// the sign here is the analytic equivalent — flip exactly when
-/// dot(axis, camera→pivot) exceeds the epsilon band — with the same latch.
+/// projected length scales by 1/clip-w, so the sign here is the analytic
+/// equivalent — flip exactly when the axis's clip-w (camera-forward)
+/// component exceeds the epsilon band; NOT the camera→pivot direction, which
+/// agrees only at screen centre — with the same latch.
 /// </summary>
 public sealed class GizmoAxisFlipContractTests
 {
@@ -87,9 +89,10 @@ public sealed class GizmoAxisFlipContractTests
     [InlineData(2)]
     public void Axis_pointing_away_from_the_camera_flips_negative(int axis)
     {
-        // viewDirection is the unit camera→pivot vector; an axis aligned with
-        // it points away from the camera and must flip (ImGuizmo: the negated
-        // direction projects longer). Both polarities per axis = 6 half-spaces.
+        // viewForward is the camera-forward (clip-w gradient) unit vector; an
+        // axis aligned with it points away from the camera and must flip
+        // (ImGuizmo: the negated direction projects longer). Both polarities
+        // per axis = 6 half-spaces.
         Assert.Equal(-1f, WorldGizmo.AxisFlipSign(Axis(axis), Axis(axis)));
         Assert.Equal(1f, WorldGizmo.AxisFlipSign(-Axis(axis), Axis(axis)));
     }
@@ -117,6 +120,45 @@ public sealed class GizmoAxisFlipContractTests
         var clearlyAway = Vector3.Normalize(new Vector3(1f, 0f, 1e-3f));
         Assert.Equal(1f, WorldGizmo.AxisFlipSign(barelyAway, Vector3.UnitZ));
         Assert.Equal(-1f, WorldGizmo.AxisFlipSign(clearlyAway, Vector3.UnitZ));
+    }
+
+    [Fact]
+    public void Off_center_pivot_flips_by_camera_forward_not_pivot_direction()
+    {
+        // Camera at (0,0,10) looking at the origin (forward (0,0,-1)) with
+        // the pivot far off-centre at (5,0,2): the camera→pivot ray leans
+        // hard +X, but the clip-w component of +X is exactly zero — screen
+        // scale is 1/w and w grows along camera FORWARD, not along the pivot
+        // ray. ImGuizmo therefore does NOT flip X here; a camera→pivot
+        // derivation would, and would draw the arrow opposite to Ktisis at
+        // the screen edge.
+        var projection = WorldGizmoProjection.Create(
+            new FakeCamera(new Vector3(0f, 0f, 10f), Vector3.Zero),
+            new Vector2(1920f, 1080f),
+            new Vector3(5f, 0f, 2f),
+            80f);
+        Assert.NotNull(projection);
+        var layout = WorldGizmo.Build(
+            projection!, TransformTool.Move,
+            Quaternion.Identity, Quaternion.Identity, Quaternion.Identity, 1f);
+
+        // The discriminator: the pivot ray genuinely leans +X …
+        Assert.True(Vector3.Dot(Vector3.UnitX, projection!.ViewDirection) > 0.1f);
+        // … yet X does not flip, because camera forward decides.
+        Assert.Equal(1f, layout.TranslateSign[0]);
+
+        // Every sign equals the clip-w criterion read straight off the raw
+        // ViewProj matrix — the reviewer-stated ImGuizmo reduction, computed
+        // here independently of WorldGizmoProjection.ViewForward.
+        var m = projection.ViewProj;
+        for (int a = 0; a < 3; a++)
+        {
+            var axis = WorldGizmo.FrameAxis(Quaternion.Identity, a);
+            float wComponent =
+                m.M14 * axis.X + m.M24 * axis.Y + m.M34 * axis.Z;
+            Assert.Equal(
+                wComponent > 1e-6f ? -1f : 1f, layout.TranslateSign[a]);
+        }
     }
 
     // ---- Build: drawn arrows and the drag axis are one vector --------------

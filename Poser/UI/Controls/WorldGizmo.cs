@@ -59,6 +59,15 @@ public sealed class WorldGizmoProjection
     public Vector3 ViewDirection;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
+    /// <summary>The world-space gradient of clip w — the camera-forward
+    /// direction, normalized. This is the exact quantity the axis-flip
+    /// test measures: a projected handle scales by 1/w, and w grows along
+    /// camera FORWARD, not along the camera→pivot ray — the two agree at
+    /// screen centre and diverge toward the edges, up to the half-FOV.
+    /// Zero under a degenerate/orthographic projection, where clip w is
+    /// constant and nothing ever flips (stock ImGuizmo's equal-length
+    /// tie).</summary>
+    public Vector3 ViewForward;
 
     /// <summary>
     /// Builds the projection for one frame, or null when the camera is
@@ -96,6 +105,14 @@ public sealed class WorldGizmoProjection
         if (toPivot.LengthSquared() < 1e-8f)
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
+
+        // Read straight off the matrix Project() consumes (w's fourth
+        // column), so the flip criterion needs no view-convention
+        // assumption at all.
+        var wGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
+        result.ViewForward = wGradient.LengthSquared() > 1e-12f
+            ? Vector3.Normalize(wGradient)
+            : Vector3.Zero;
 
         // WorldScale is measured, not derived from matrix cells: project a
         // unit offset perpendicular to the view direction at the pivot and
@@ -349,7 +366,7 @@ public static class WorldGizmo
             layout.TranslateActive = true;
             for (int a = 0; a < 3; a++)
                 layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(translateFrame, a), projection.ViewDirection);
+                    FrameAxis(translateFrame, a), projection.ViewForward);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedTranslateAxis(a);
@@ -389,7 +406,7 @@ public static class WorldGizmo
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
             for (int a = 0; a < 3; a++)
                 layout.ScaleSign[a] = heldScaleSigns?[a] ?? AxisFlipSign(
-                    FrameAxis(scaleFrame, a), projection.ViewDirection);
+                    FrameAxis(scaleFrame, a), projection.ViewForward);
             for (int a = 0; a < 3; a++)
             {
                 var axis = layout.SignedScaleAxis(a);
@@ -424,15 +441,17 @@ public static class WorldGizmo
     /// <summary>
     /// Stock ImGuizmo AllowAxisFlip semantics (upstream
     /// ComputeTripodAxisAndVisibility): a linear handle is drawn along
-    /// whichever of ±axis projects LONGER on screen — the end nearer the
-    /// camera (`mulAxis = lenDir &lt; lenDirMinus ? -1 : 1`, tie-broken by
-    /// FLT_EPSILON toward +1). At the pivot, "nearer" is exactly
-    /// dot(axis, camera→pivot) &lt; 0, so the sign flips when the axis
-    /// points away past the epsilon band. Rotation rings never take a
-    /// sign, also as stock.
+    /// whichever of ±axis projects LONGER on screen
+    /// (`mulAxis = lenDir &lt; lenDirMinus ? -1 : 1`, tie-broken by
+    /// FLT_EPSILON toward +1). Projected length scales by 1/clip-w, so
+    /// the comparison reduces to the sign of the axis's clip-w
+    /// (camera-forward) component: flip when it exceeds the epsilon band.
+    /// NOT the camera→pivot direction — that agrees only at screen centre
+    /// and would draw the wrong arrow toward the screen edges. Rotation
+    /// rings never take a sign, also as stock.
     /// </summary>
-    public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewDirection) =>
-        Vector3.Dot(axisWorld, viewDirection) > AxisFlipEpsilon ? -1f : 1f;
+    public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewForward) =>
+        Vector3.Dot(axisWorld, viewForward) > AxisFlipEpsilon ? -1f : 1f;
 
     public static Vector3 FrameAxis(Quaternion frame, int axis) =>
         Vector3.Normalize(Vector3.Transform(
