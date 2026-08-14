@@ -551,22 +551,9 @@ public sealed class AnimationSession
 
     private ScrubGesture? _scrub;
 
-    public bool IsScrubbing => _scrub != null;
-    public float? ScrubDuration => _scrub?.Duration;
-
-    public IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token) =>
-        _port.EnumerateControls(actor, out token);
-
     /// <summary>The control that drives a slot, by the reference lookup.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
         _port.FindSlotControl(actor, slot, out _);
-
-    /// <summary>The actor whose scrub is in flight, if any. Surfaces must
-    /// compare against this before feeding a slider value into an update:
-    /// a value from a newly selected actor must never land in the previous
-    /// actor's gesture.</summary>
-    public ActorId? ScrubActor => _scrub?.Actor;
-    public ScrubControlId? ScrubControl => _scrub?.Control;
 
     /// <summary>
     /// Freezes playback and captures the drag's whole mapping. Fails when
@@ -605,12 +592,18 @@ public sealed class AnimationSession
     /// at Begin rather than a freshly read one — a duration that changes
     /// mid-drag would otherwise stretch or jump the mapping. A skeleton
     /// token mismatch ends the drag instead of writing through whatever
-    /// now occupies that control position.
+    /// now occupies that control position. The update names its actor and
+    /// a mismatch with the gesture's actor is refused inside the session:
+    /// a value from a newly selected actor can never land in the previous
+    /// actor's gesture.
     /// </summary>
-    public AnimationResult UpdateScrub(float time)
+    public AnimationResult UpdateScrub(ActorId actor, float time)
     {
         if (_scrub is not { } gesture)
             return AnimationResult.Fail("No scrub is active.");
+        if (!gesture.Actor.Equals(actor))
+            return AnimationResult.Fail(
+                "The scrub in flight belongs to a different actor.");
         if (!float.IsFinite(time))
             return AnimationResult.Fail("Scrub time must be a finite number.");
 

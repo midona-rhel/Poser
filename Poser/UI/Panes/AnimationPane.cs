@@ -633,6 +633,7 @@ public sealed class AnimationPane
                 EnsureScrub();
                 Report(
                     _animation.UpdateScrub(
+                        actor,
                         Math.Clamp(next, 0f, duration)),
                     "Scrub");
             },
