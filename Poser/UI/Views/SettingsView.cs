@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -44,6 +45,9 @@ public sealed class SettingsViewModel
     public bool PreservePoseAcrossRedraws = true;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
+    /// <summary>How many edits undo keeps. Zero turns undo off, which is why
+    /// the slider bottoms out there rather than at one.</summary>
+    public int UndoDepth = 200;
 
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 60f;
@@ -139,6 +143,10 @@ public static class SettingsView
         "Blue",
         "Purple",
     ];
+
+    /// <summary>The two depths worth snapping to: Off, and the shipped
+    /// default the slider otherwise has no way back to.</summary>
+    private static readonly float[] UndoDepthMarks = [0f, 200f];
 
     private static readonly Vector4[] ThemeSwatches =
     [
@@ -357,6 +365,18 @@ public static class SettingsView
                 vm.TargetFollowsSelection,
                 next => vm.TargetFollowsSelection = next,
                 "Selecting an actor in Poser targets it in GPose");
+            form.Slider(
+                "Undo history",
+                vm.UndoDepth,
+                0f,
+                500f,
+                next => vm.UndoDepth = (int)MathF.Round(next),
+                readout: static value => value < 1f
+                    ? "Off"
+                    : ((int)MathF.Round(value)).ToString(
+                        CultureInfo.InvariantCulture) + " steps",
+                marks: UndoDepthMarks,
+                help: "How many edits Poser can undo; zero turns undo off");
         }, divider: false);
         // Auto-save lives beside the other GPose-lifecycle switches: it starts
         // and stops with GPose exactly as Open/Close with GPose do, and the

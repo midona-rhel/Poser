@@ -172,7 +172,13 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<ITransformRuntimePort, TransformRuntimePort>();
-        services.AddSingleton<TransformHistory>();
+        // The depth is a live setting read per recorded edit, so the history
+        // takes the config as a delegate rather than a captured number.
+        services.AddSingleton(sp =>
+        {
+            var configuration = sp.GetRequiredService<ConfigurationService>();
+            return new TransformHistory(() => configuration.Config.UndoDepth);
+        });
         services.AddSingleton<TransformGestureService>();
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<PoseEditService>();

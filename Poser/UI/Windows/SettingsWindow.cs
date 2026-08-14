@@ -86,6 +86,7 @@ public class SettingsWindow : Window
             PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
+            UndoDepth = c.UndoDepth,
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
@@ -169,6 +170,9 @@ public class SettingsWindow : Window
         c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
+        // Clamped, not trusted: the slider is bounded but the stored value is
+        // also what a hand-edited config file hands back.
+        c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
 
         // The interval slider is a float row over integer config; the kept count
         // is free text, so it parses here and an unusable draft (empty, blank,

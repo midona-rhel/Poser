@@ -44,4 +44,14 @@ public class PoserConfiguration : IPluginConfiguration
     /// giving the replacement a fresh, empty pose store.
     /// </summary>
     public bool PreservePoseAcrossRedraws { get; set; } = true;
+
+    /// <summary>
+    /// How many edits the undo history keeps, read live on every recorded edit
+    /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
+    /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the
+    /// default, not Brio's 50. Kept in step with
+    /// <c>TransformHistory.DefaultCapacity</c>, which this assembly cannot
+    /// reference (config sits below the application layer).
+    /// </summary>
+    public int UndoDepth { get; set; } = 200;
 }
