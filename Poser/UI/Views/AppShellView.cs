@@ -127,6 +127,19 @@ public sealed class AppShellViewModel
     public bool ContentUsesPage;
 
     /// <summary>
+    /// The content ScrollRegion's identity, keyed by the ACTIVE TAB: ImGui
+    /// persists scroll offset and extent per child id, so one shared id would
+    /// carry tab A's offset into tab B's first frame and clamp-jump on the
+    /// next. Minted by the active tab's owner ON TAB SWITCH, never per frame.
+    /// </summary>
+    public string ContentScrollId = ContentScrollIdFor("Pose");
+
+    /// <summary>The per-tab scroll identity derivation — the one home for the
+    /// id shape, so hosts cannot drift apart.</summary>
+    public static string ContentScrollIdFor(string tabKey) =>
+        "##shell-content-scroll/" + tabKey;
+
+    /// <summary>
     /// The pane owns its internal scrolling and needs the shell viewport to
     /// remain fixed. Pose uses this for fixed mode tabs and footer chrome.
     /// </summary>
@@ -904,7 +917,7 @@ public static class AppShellView
             {
                 ImGui.SetCursorScreenPos(viewportCursor);
                 Crystarium.ScrollRegion(
-                    "##shell-content-scroll",
+                    vm.ContentScrollId,
                     childSize.X / s,
                     childSize.Y / s,
                     region =>

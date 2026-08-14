@@ -2254,8 +2254,21 @@ public class MainWindow : Window
         ApplyTabLayout(label);
     }
 
+    /// <summary>The tab whose scroll identity <see cref="AppShellViewModel.ContentScrollId"/>
+    /// currently carries; the id string is minted only when this moves.</summary>
+    private string _scrollIdTab = "";
+
     private void ApplyTabLayout(string tab)
     {
+        // Scroll identity is per TAB (audit R1): one shared id would carry
+        // the previous tab's scroll offset and extent into the next tab's
+        // first frame. Minted on tab switch only — this method also runs on
+        // the warm per-frame path.
+        if (!string.Equals(_scrollIdTab, tab, StringComparison.Ordinal))
+        {
+            _scrollIdTab = tab;
+            _vm.ContentScrollId = AppShellViewModel.ContentScrollIdFor(tab);
+        }
         // The library paints its own bands and rules, so it takes the
         // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
         _vm.ContentFlush = tab is "Library";

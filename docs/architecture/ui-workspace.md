@@ -99,6 +99,9 @@ into what it hands them and never rebuild any of it locally.
 - The inset is measured from the viewport CHILD, not the panel: the child is
   1 px narrower than the panel (the glass border pixel) and the bar hugs the
   child's right edge.
+- Scroll identity is per TAB: the content ScrollRegion id carries the active
+  tab key (minted on tab switch), so scroll offset and extent bookkeeping never
+  leak across navigation.
 - A pane declares which of the three hostings it wants:
   `ContentOwnsViewport` (the pane scrolls internally and the shell viewport
   stays fixed — Pose uses this for its fixed mode tabs and footer),
@@ -129,9 +132,10 @@ section headers and tree drawn over a FLAT cache of visible entries.
   slot band it reports to exact per-entry offsets, so the header band and the
   inter-section gap survive instead of being quantized to a uniform pitch.
 - The cache holds (section, row) PATHS, never row references. The view model
-  rebuilds row objects every frame, so a held reference would freeze selection
-  and badges; anything that can change without a structural change is read from
-  the live row through the cached path. `_rowCounts` catches a structural change
+  rebuild is gated (scene revision, filter, disclosure, gaze dirt) but a
+  rebuild still replaces every row object, so a held reference would freeze
+  selection and badges; anything that can change without a structural change is
+  read from the live row through the cached path. `_rowCounts` catches a structural change
   that arrives without a revision bump.
 - A warm frame walks no tree, builds no string, and measures no text for a
   clipped row. This remains an ordinary application performance invariant;
