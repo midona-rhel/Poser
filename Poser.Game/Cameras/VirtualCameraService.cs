@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Game;
@@ -369,12 +369,18 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetActor = null;
     }
 
+    /// <summary>The spawned camera's default name. Bare number, no "#": every
+    /// other numbered entity in the scene (lights, props) is named
+    /// "{stem} {n}", and one family wearing a hash read as a different sort of
+    /// thing (user 2026-08-14). Nothing parses the number back out and scene
+    /// documents store the display name verbatim, so older saves keep their
+    /// hashed names and load unchanged.</summary>
     private string NextName(CameraKind kind)
     {
         string stem = kind == CameraKind.Free ? "Free camera" : "Camera";
         for (int i = 1; i <= 100; i++)
         {
-            string name = $"{stem} #{i}";
+            string name = $"{stem} {i}";
             if (!_cameras.Exists(camera =>
                     string.Equals(camera.Name, name, StringComparison.Ordinal)))
                 return name;
