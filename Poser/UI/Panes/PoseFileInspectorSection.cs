@@ -689,7 +689,8 @@ public sealed class PoseFileInspectorSection
                     float height = mount switch
                     {
                         0 => DrawImportTypeSection(
-                            top, width, divider: false, dense: true),
+                            top, width, divider: false, dense: true,
+                            selective: true),
                         1 => DrawTransformSection(
                             top, width, divider: false, dense: true),
                         _ => DrawScopeSection(
@@ -1076,7 +1077,8 @@ public sealed class PoseFileInspectorSection
     /// their top edges aligned. The popup and rail mounts keep the ordinary
     /// form.</param>
     private float DrawImportTypeSection(
-        Vector2 origin, float width, bool divider, bool dense = false) =>
+        Vector2 origin, float width, bool divider, bool dense = false,
+        bool selective = false) =>
         Crystarium.Section(
             "##import-menu-head", dense ? string.Empty : "Import pose",
             origin, width, true, null,
@@ -1099,19 +1101,35 @@ public sealed class PoseFileInspectorSection
                     }, "Keep the actor paused after the import"),
                     ("Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
+                // Ktisis hides the mode checkboxes during selective import
+                // without descendants (PoseImportDialog.cs:158): directly
+                // selected bones bypass the type gates entirely, so the row
+                // would gate nothing. Disabled rather than hidden — the row
+                // geometry stays put and the reason is readable (the same
+                // call the library-mode Import row made). With descendants
+                // on, the type pair gates the expansion and stays live.
+                bool typeLocked =
+                    selective && _selectiveImport && !_selectiveDescendants;
+                const string typeLockedWhy =
+                    "Selected bones import directly — the type gates only "
+                    + "descendants (turn on Include descendants to use it)";
                 form.Checkboxes(
                     "Type",
-                    disabled: false,
+                    disabled: typeLocked,
                     fullWidth: false,
                     CheckColumnPitch,
                     ("Body", _typeBody,
                         next => _typeBody = next,
-                        "Import the body. With Expression too, everything "
-                        + "imports with every component"),
+                        typeLocked
+                            ? typeLockedWhy
+                            : "Import the body. With Expression too, everything "
+                                + "imports with every component"),
                     ("Expression", _typeExpression,
                         next => _typeExpression = next,
-                        "Import the face as an expression — always every "
-                        + "component"));
+                        typeLocked
+                            ? typeLockedWhy
+                            : "Import the face as an expression — always every "
+                                + "component"));
             },
             divider: divider,
             labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
@@ -1838,6 +1856,14 @@ public sealed class PoseFileInspectorSection
         if (fromDialog && _selectiveImport)
         {
             frozenSelection = FrozenSelectedBones(expectedActor);
+            // Without descendants the type pair is locked in the band and
+            // gates nothing (direct bones bypass the mode gates) — but a
+            // stale Expression check must not smuggle the expression FLOW
+            // in: all-components force, aux collections off, the head
+            // restore stage. The confirm re-derives the plain Body pair;
+            // direct bones bypass its face gate and exclusions anyway.
+            if (!_selectiveDescendants && cmp == null)
+                options = RouteAsType(options, body: true, expression: false);
             options.FilterIncludesDescendants = _selectiveDescendants;
         }
         var imported = _poseFacade.ImportPose(

@@ -213,10 +213,91 @@ public sealed class SelectiveImportContractTests
             new[] { app.Skeleton }, FileWith("j_kao", "j_mab_l"), options);
 
         // j_mab_l's parent chain reaches j_kao on the same slot, so the
-        // subtree rides the filter (PoseFileService.PassesBoneFilter's
+        // subtree rides the filter (PoseFileService.ClassifyBoneFilter's
         // ancestor walk).
         Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_kao");
         Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_mab_l");
+    }
+
+    // ── Direct selection bypasses the mode gates (Ktisis parity) ─────────
+
+    [Fact]
+    public void Directly_selected_bone_applies_under_narrowed_mode_gates()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        // Every mode gate narrowed against j_kao at once: body scope off,
+        // face gate off, and a category exclusion banning the whole j_
+        // prefix. Ktisis applies a directly selected bone regardless
+        // (PoseContainer.ApplyToBones has no partial-mode gate); a
+        // selection the user made bone by bone must never silently drop.
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyBody = false,
+            ApplyFace = false,
+            ExcludedBonePrefixes = new HashSet<string> { "j_" },
+            BoneFilter = new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") },
+            FilterIncludesDescendants = false,
+        };
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao", "j_mab_l"), options);
+
+        Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_kao");
+        Assert.DoesNotContain(plan.Writes, write => write.Bone.BoneName == "j_mab_l");
+    }
+
+    [Fact]
+    public void Descendant_expansion_still_respects_the_mode_gates()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyBody = true,
+            ApplyFace = true,
+            // The gate bans only the descendant: the direct selection
+            // applies, its expanded subtree respects the exclusion —
+            // Ktisis' modes gate expansion, never the explicit selection.
+            ExcludedBonePrefixes = new HashSet<string> { "j_mab" },
+            BoneFilter = new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") },
+            FilterIncludesDescendants = true,
+        };
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao", "j_mab_l"), options);
+
+        Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_kao");
+        Assert.DoesNotContain(plan.Writes, write => write.Bone.BoneName == "j_mab_l");
+    }
+
+    [Fact]
+    public void Directly_selected_weapon_bone_applies_with_its_slot_disabled()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+        var file = new PoseFile();
+        file.MainHand["n_hara"] = new PoseFile.BoneData
+        {
+            Rotation = System.Numerics.Quaternion.Identity,
+            Scale = System.Numerics.Vector3.One,
+        };
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyMainHand = false,
+            BoneFilter = new HashSet<(PoseSlot, string)> { (PoseSlot.MainHand, "n_hara") },
+            FilterIncludesDescendants = false,
+        };
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton, app.WeaponSkeleton }, file, options);
+
+        // The slot enables are mode gates too: the disabled MainHand slot
+        // still admits the DIRECTLY selected bone.
+        Assert.Contains(plan.Writes, write => write.Bone.BoneName == "n_hara");
     }
 
     // ── Reference pose ───────────────────────────────────────────────────

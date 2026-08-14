@@ -195,8 +195,11 @@ public class PoseFileService : IPoseFileService
         if (options.ResetBeforeImport)
             PlanResetScope(plan, bySlot, character, poseFile, options);
 
-        // Character collection → Character slot only.
-        if (options.ApplyBody && character != null)
+        // Character collection → Character slot only. A live selective
+        // filter re-enters a disabled body scope: the direct bones bypass
+        // the mode gates inside (Ktisis parity), so the call-site gate must
+        // not eat them first.
+        if (character != null && (options.ApplyBody || options.BoneFilter != null))
             PlanCharacterCollection(plan, character, poseFile, options, components);
 
         // Each auxiliary collection imports only into its matching live
@@ -212,7 +215,14 @@ public class PoseFileService : IPoseFileService
                      })
             {
                 var collection = CollectionFor(poseFile, slot)!;
-                if (collection.Count == 0 || !SlotEnabled(slot, options))
+                if (collection.Count == 0)
+                    continue;
+                // A disabled slot still admits DIRECTLY selected bones —
+                // the slot enables are mode gates like the type strip, and
+                // Ktisis' explicit selection ignores them all; descendants
+                // keep respecting them.
+                bool slotGated = !SlotEnabled(slot, options);
+                if (slotGated && options.BoneFilter == null)
                     continue;
                 if (!bySlot.TryGetValue(slot, out var slotSkeleton))
                 {
@@ -228,7 +238,10 @@ public class PoseFileService : IPoseFileService
                     bool applied = false;
                     foreach (var bone in bones)
                     {
-                        if (!PassesBoneFilter(bone, options))
+                        var match = ClassifyBoneFilter(bone, options);
+                        if (match == BoneFilterMatch.Excluded)
+                            continue;
+                        if (slotGated && match != BoneFilterMatch.Direct)
                             continue;
                         PlanBoneTransform(plan, bone, boneData, components);
                         applied = true;
@@ -285,23 +298,35 @@ public class PoseFileService : IPoseFileService
     {
         bool InCharacterScope(IBone bone)
         {
-            if (!PassesBoneFilter(bone, options))
+            var match = ClassifyBoneFilter(bone, options);
+            if (match == BoneFilterMatch.Excluded)
                 return false;
-            if (IsExcludedByCategories(bone.BoneName, options))
-                return false;
+            // A DIRECT selection resets under the same bypass it applies
+            // under — reset touching less than the import writes would
+            // leave a reset/apply mismatch. Only the AsExpression j_kao
+            // carve survives the bypass: it is engine mechanics (the head
+            // restore stage reverts to the pre-import stacks), not a gate.
+            bool direct = match == BoneFilterMatch.Direct;
             if (options.AsExpression)
                 // The reset matches the apply scope MINUS the head: the
                 // head's pre-import stacks must survive because the file's
                 // head lands only transiently and the engine's head-restore
                 // stage reverts to exactly those.
-                return IsExpressionScopeBone(bone.BoneName) &&
+                return (direct ||
+                        (IsExpressionScopeBone(bone.BoneName) &&
+                         !IsExcludedByCategories(bone.BoneName, options))) &&
                        bone.BoneName != "j_kao";
+            if (direct)
+                return true;
+            if (IsExcludedByCategories(bone.BoneName, options))
+                return false;
             if (!options.ApplyFace && IsFaceBone(bone.BoneName))
                 return false;
-            return true;
+            return options.ApplyBody;
         }
 
-        if (options.ApplyBody && character != null && poseFile.Bones.Count > 0)
+        if (character != null && poseFile.Bones.Count > 0 &&
+            (options.ApplyBody || options.BoneFilter != null))
         {
             foreach (var bone in character.Bones.Where(InCharacterScope))
                 plan.Resets.Add(bone);
@@ -311,14 +336,24 @@ public class PoseFileService : IPoseFileService
             return;
         foreach (var (slot, skeleton) in bySlot)
         {
-            // Same gate as application: enabled AND its collection is
-            // actually present in the file.
+            // Same gate as application: the collection must be present in
+            // the file, and a disabled slot resets only DIRECTLY selected
+            // bones — exactly the set the apply loop can write.
             if (slot == PoseSlot.Character ||
-                !SlotEnabled(slot, options) ||
                 CollectionFor(poseFile, slot) is not { Count: > 0 })
                 continue;
-            foreach (var bone in skeleton.Bones.Where(bone => PassesBoneFilter(bone, options)))
+            bool slotGated = !SlotEnabled(slot, options);
+            if (slotGated && options.BoneFilter == null)
+                continue;
+            foreach (var bone in skeleton.Bones)
+            {
+                var match = ClassifyBoneFilter(bone, options);
+                if (match == BoneFilterMatch.Excluded)
+                    continue;
+                if (slotGated && match != BoneFilterMatch.Direct)
+                    continue;
                 plan.Resets.Add(bone);
+            }
         }
     }
 
@@ -360,7 +395,14 @@ public class PoseFileService : IPoseFileService
             // modify how an accepted bone applies, never smuggle an
             // out-of-scope bone past AsExpression/ApplyFace/the filter.
 
-            // Expression import: Brio's ExpressionOptions scope — head,
+            // The MODE gates, folded into one verdict because a DIRECTLY
+            // selected bone bypasses all of them (Ktisis: ApplyToBones
+            // applies the explicit selection with no partial-mode gating;
+            // modes gate only descendant expansion). A selection the user
+            // made bone by bone must never partially and silently drop
+            // under a narrowed type strip or category filter.
+            //
+            // Expression import scope: Brio's ExpressionOptions — head,
             // ears, hair, face, eyes, lips, jaw (PosingService.cs:77-86) —
             // INCLUDING j_kao. The file's face was authored around the
             // file's OWN head, so the head must move to the file's space for
@@ -370,21 +412,21 @@ public class PoseFileService : IPoseFileService
             // earlier "skip j_kao, single phase" shortcut silently baked the
             // exporter-vs-target head offset into every face position delta
             // and flung imported faces (user 2026-08-08).
-            if (options.AsExpression && !IsExpressionScopeBone(boneName))
-                continue;
-
-            // The bone-filter menu's exclusions (Brio's category filter,
-            // BoneFilter.IsBoneValidUncached): disabled category prefixes
-            // never apply; with "Other" off, neither does anything no
-            // category claims.
-            if (IsExcludedByCategories(boneName, options))
-                continue;
-            // Filter by face bones if needed
-            else if (!options.ApplyFace && IsFaceBone(boneName))
-                continue;
+            //
+            // Category exclusions: the bone-filter menu (Brio's category
+            // filter, BoneFilter.IsBoneValidUncached): disabled category
+            // prefixes never apply; with "Other" off, neither does anything
+            // no category claims. Then the face gate, then the call site's
+            // own ApplyBody gate, which the filtered call re-enters.
+            bool modeGated =
+                (options.AsExpression && !IsExpressionScopeBone(boneName))
+                || IsExcludedByCategories(boneName, options)
+                || (!options.ApplyFace && IsFaceBone(boneName))
+                || !options.ApplyBody;
 
             // Pre-DT protection folds into the delta mask: a protected face
-            // bone's position component contributes nothing.
+            // bone's position component contributes nothing — for DIRECT
+            // selections too: it is data protection, not a scope gate.
             var boneComponents = preDtFace && IsFaceBone(boneName)
                 ? components & ~TransformComponents.Position
                 : components;
@@ -392,9 +434,13 @@ public class PoseFileService : IPoseFileService
             bool applied = false;
             foreach (var bone in bones)
             {
-                // Selective import (Ktisis/Anamnesis parity): only filtered
-                // bones (+ descendants when requested)
-                if (!PassesBoneFilter(bone, options))
+                // Selective import (Ktisis parity): direct selections apply
+                // even mode-gated; descendants and the unfiltered walk
+                // respect the gates.
+                var match = ClassifyBoneFilter(bone, options);
+                if (match == BoneFilterMatch.Excluded)
+                    continue;
+                if (modeGated && match != BoneFilterMatch.Direct)
                     continue;
                 PlanBoneTransform(plan, bone, boneData, boneComponents);
                 applied = true;
@@ -433,27 +479,48 @@ public class PoseFileService : IPoseFileService
     private static bool IsThrowBone(string boneName) =>
         boneName.StartsWith("n_throw", StringComparison.Ordinal);
 
+    /// <summary>How a bone relates to the selective-import filter. The
+    /// distinction carries semantics (Ktisis PoseContainer.ApplyToBones vs
+    /// Apply): a DIRECTLY selected bone applies regardless of the mode gates
+    /// — type strip, category exclusions, the face gate, slot enables — while
+    /// a bone reached only through descendant expansion still respects every
+    /// one of them, exactly like Ktisis' modes gating expansion but never the
+    /// explicit selection.</summary>
+    private enum BoneFilterMatch
+    {
+        /// <summary>A filter is active and the bone is outside it.</summary>
+        Excluded,
+        /// <summary>The slot-qualified bone itself is in the set.</summary>
+        Direct,
+        /// <summary>Reached through a same-slot ancestor with descendants
+        /// requested.</summary>
+        Descendant,
+        /// <summary>No filter — the ordinary full-scope import.</summary>
+        Unfiltered,
+    }
+
     /// <summary>Selective-import filter: the slot-qualified bone itself, or
-    /// any same-slot ancestor, is in the set.</summary>
-    private static bool PassesBoneFilter(Poser.Entities.IBone bone, PoseImportOptions options)
+    /// any same-slot ancestor when descendants are requested.</summary>
+    private static BoneFilterMatch ClassifyBoneFilter(
+        Poser.Entities.IBone bone, PoseImportOptions options)
     {
         if (options.BoneFilter == null)
-            return true;
+            return BoneFilterMatch.Unfiltered;
         var slot = bone.Skeleton.Slot;
         if (options.BoneFilter.Contains((slot, bone.BoneName)))
-            return true;
+            return BoneFilterMatch.Direct;
         if (!options.FilterIncludesDescendants)
-            return false;
+            return BoneFilterMatch.Excluded;
 
         var ancestor = bone.ParentBone;
         int guard = 0;
         while (ancestor != null && guard++ < 256)
         {
             if (options.BoneFilter.Contains((slot, ancestor.BoneName)))
-                return true;
+                return BoneFilterMatch.Descendant;
             ancestor = ancestor.ParentBone;
         }
-        return false;
+        return BoneFilterMatch.Excluded;
     }
 
     private static void PlanBoneTransform(
