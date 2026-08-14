@@ -670,11 +670,23 @@ public sealed class AnimationSession
 
     /// <summary>
     /// Returns the FACIAL LAYER ALONE to what Poser found there: unpin the
-    /// layer, then replay the incoming facial timeline captured before the
-    /// first hold. Deliberately NOT <see cref="ReleaseExpression"/>: Brio's
-    /// release is the user's whole-actor reset button and ends with idle (3)
-    /// on the BASE slot, which puts the body back to idle. A bake owns the
-    /// face and nothing else, so it tears down the face and nothing else.
+    /// layer, then put back the face it was showing before the first hold.
+    /// Deliberately NOT <see cref="ReleaseExpression"/>: Brio's release is the
+    /// user's whole-actor reset button and ends with idle (3) on the BASE
+    /// slot, which puts the body back to idle. A bake owns the face and
+    /// nothing else, so it tears down the face and nothing else.
+    ///
+    /// <para>THE LAYER MUST COME OFF POSER'S OWN TIMELINE EITHER WAY, and that
+    /// is not a nicety — it is what makes a bake mean anything. The bake
+    /// measures its delta against whatever the released layer settles on, so a
+    /// teardown that leaves the expression playing measures the expression
+    /// against itself: the delta comes out identity, the pose owns nothing,
+    /// and undo has nothing to take away while the face goes on grinning under
+    /// the animation nobody took off. An actor that arrived with no facial
+    /// timeline at all therefore gets the neutral face (the same timeline
+    /// <see cref="ReleaseExpression"/> uses to say "no expression") rather than
+    /// being left on the one the bake is about to quote — playing 0 is not a
+    /// way to say "nothing".</para>
     ///
     /// The capture is consumed here — it has just been replayed, and a later
     /// Reset must not replay a stale timeline over the layer.
@@ -682,20 +694,21 @@ public sealed class AnimationSession
     public AnimationResult RestoreFacialLayer(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
-        var captured = OverridesFor(actor)
-            .SlotCaptures.TryGetValue(AnimationSlot.Facial, out var incoming)
-                ? incoming
-                : (ushort)0;
+        // The KEY, not its value, is the record that Poser played here at all:
+        // no entry means there is nothing of Poser's on this layer to take
+        // off, while an entry of 0 means Poser played over a layer that was
+        // showing nothing.
+        bool played = OverridesFor(actor)
+            .SlotCaptures.TryGetValue(AnimationSlot.Facial, out var captured);
 
         var unpin = ClearSlotSpeed(actor, AnimationSlot.Facial);
         if (!unpin.Success)
             return unpin;
-        // A zero capture means the layer held nothing before Poser played
-        // there; there is no timeline to put back, and playing 0 is not a
-        // way to say "nothing".
-        if (captured != 0)
+        if (played)
         {
-            var replayed = Blend(actor, captured);
+            var replayed = Blend(
+                actor,
+                captured != 0 ? captured : AnimationTimelines.StraightFace);
             if (!replayed.Success)
                 // The layer is unpinned but still on Poser's timeline; the
                 // hold stays owned so Reset or a retry runs the restore

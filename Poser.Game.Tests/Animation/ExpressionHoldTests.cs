@@ -237,12 +237,19 @@ public sealed class ExpressionHoldTests
         Assert.False(session.OverridesFor(Actor).HasAny);
     }
 
+    /// <summary>
+    /// The regression the bake exists to avoid. An actor that arrived with no
+    /// facial timeline records 0 — "Poser played over a layer showing nothing"
+    /// — and 0 is not a timeline that can be played back. Unpinning alone
+    /// would leave the layer running the very expression the bake is about to
+    /// quote, so the delta would be measured against itself: identity, a pose
+    /// that owns nothing, and a face that goes on grinning after undo. The
+    /// neutral face is what "nothing" means on this layer.
+    /// </summary>
     [Fact]
-    public void Bake_teardown_of_an_empty_facial_layer_only_unpins()
+    public void Bake_teardown_of_an_empty_facial_layer_neutralises_it()
     {
         var port = FakePort.Create();
-        // The actor arrived with no facial timeline at all; 0 is not a
-        // timeline to play back, it is the record that there was none.
         port.LiveFacialTimeline = 0;
         var session = new AnimationSession(port.Port);
         Assert.True(session.HoldExpression(Actor, Smile).Success);
@@ -250,7 +257,16 @@ public sealed class ExpressionHoldTests
 
         Assert.True(session.RestoreFacialLayer(Actor).Success);
 
-        Assert.Equal(new[] { "ClearSlotSpeed:Facial" }, port.Calls);
+        Assert.Equal(
+            new[]
+            {
+                "ClearSlotSpeed:Facial",
+                $"Blend:{AnimationTimelines.StraightFace}",
+            },
+            port.Calls);
+        // Still the bake's teardown and not Brio's whole-actor reset: the
+        // BASE slot is never touched.
+        Assert.DoesNotContain($"Blend:{AnimationTimelines.Idle}", port.Calls);
         Assert.False(session.OverridesFor(Actor).HasAny);
     }
 
@@ -284,7 +300,8 @@ public sealed class ExpressionHoldTests
         port.Calls.Clear();
 
         // Pressing bake again with nothing held must not replay a stale
-        // timeline over the layer, and must not refuse.
+        // timeline over the layer, must not neutralise a face Poser is not
+        // driving, and must not refuse.
         var again = session.RestoreFacialLayer(Actor);
 
         Assert.True(again.Success);
