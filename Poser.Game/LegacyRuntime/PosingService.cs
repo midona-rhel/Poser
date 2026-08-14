@@ -30,6 +30,10 @@ public unsafe class PosingService : IPosingService
     /// a per-frame ToArray would charge the steady state one array per frame).</summary>
     private readonly List<nint> _staleOverrideBuffer = new();
 
+    // One-shot fault flag: the detour runs per game reset attempt, so a
+    // repeating fault must not turn the log into a firehose.
+    private bool _setPositionDetourFaultLogged;
+
     // Hook for intercepting position resets
     private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
     private readonly Hook<SetPositionDelegate>? _setPositionHook;
@@ -83,11 +87,25 @@ public unsafe class PosingService : IPosingService
     /// </summary>
     private void SetPositionDetour(StructsGameObject* gameObject, float x, float y, float z)
     {
-        if (_gPoseService.IsGPosing && _transformOverrides.TryGetValue((nint)gameObject, out var transform))
+        // Never fault the native caller (CharacterFinalizeDetour standard):
+        // a managed fault falls through to Original so the game's own write
+        // still happens.
+        try
         {
-            // Reapply our override instead of game's reset
-            ApplyTransformToActor((nint)gameObject, transform);
-            return; // Don't call original - we override completely
+            if (_gPoseService.IsGPosing && _transformOverrides.TryGetValue((nint)gameObject, out var transform))
+            {
+                // Reapply our override instead of game's reset
+                ApplyTransformToActor((nint)gameObject, transform);
+                return; // Don't call original - we override completely
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_setPositionDetourFaultLogged)
+            {
+                _setPositionDetourFaultLogged = true;
+                _log.Error($"PosingService: SetPosition detour faulted (logged once): {ex}");
+            }
         }
 
         _setPositionHook?.Original(gameObject, x, y, z);

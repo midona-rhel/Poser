@@ -146,6 +146,11 @@ public unsafe class BonePosingService : IBonePosingService
 
     private bool _isUpdating = false;
 
+    // One-shot fault flags: the detours run every frame, so a repeating
+    // fault must not turn the log into a firehose.
+    private bool _physicsDetourFaultLogged;
+    private bool _finalizeDetourFaultLogged;
+
     public BonePosingService(
         IPluginLog log,
         IFramework framework,
@@ -217,6 +222,17 @@ public unsafe class BonePosingService : IBonePosingService
         {
             _evaluationSequence++;
             ApplyAllBoneTransforms();
+        }
+        catch (Exception ex)
+        {
+            // Never fault the native physics update (CharacterFinalizeDetour
+            // standard): a managed fault here would unwind into the game's
+            // render graph.
+            if (!_physicsDetourFaultLogged)
+            {
+                _physicsDetourFaultLogged = true;
+                _log.Error($"BonePosingService: apply pass faulted (logged once): {ex}");
+            }
         }
         finally
         {
@@ -1271,6 +1287,24 @@ public unsafe class BonePosingService : IBonePosingService
     {
         _finalizeSkeletonsHook!.Original(a1);
 
+        // Never fault the native render frame (CharacterFinalizeDetour
+        // standard): everything after Original is managed bookkeeping.
+        try
+        {
+            FinalizeSkeletons();
+        }
+        catch (Exception ex)
+        {
+            if (!_finalizeDetourFaultLogged)
+            {
+                _finalizeDetourFaultLogged = true;
+                _log.Error($"BonePosingService: finalize pass faulted (logged once): {ex}");
+            }
+        }
+    }
+
+    private void FinalizeSkeletons()
+    {
         if (!_gPoseService.IsGPosing)
         {
             // Brio's interval does not end outside gpose either, but a batch
