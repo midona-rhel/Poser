@@ -67,6 +67,14 @@ public class GazeState
 /// </summary>
 public interface IGazeService
 {
+    /// <summary>Whether the native gaze capability initialized successfully.</summary>
+    bool IsAvailable { get; }
+
+    /// <summary>
+    /// Stable detail for an unavailable native capability; null when available.
+    /// </summary>
+    string? UnavailableDetail { get; }
+
     /// <summary>Snapshot of the actor's managed gaze state.</summary>
     GazeState GetGazeState(IActor actor);
 

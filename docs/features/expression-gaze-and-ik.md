@@ -21,6 +21,12 @@ pre-Poser native target (captured once, never re-seeded from Poser output);
 Off writes nothing. Redraws cannot orphan the id-keyed state; a vanished
 target transitions to Off. Reset restores every part and clears gaze state.
 
+The native gaze capability is optional: missing signatures or hook setup keeps
+the plugin running, reports a stable unavailable detail through `IGazeService`,
+and leaves the gaze pane without mutating controls. Unavailable reads return
+the disabled default state and all writes are refused before native or event
+side effects.
+
 ## IK
 
 Calls the game's own Havok solvers (Brio) — engine-identical results, applied

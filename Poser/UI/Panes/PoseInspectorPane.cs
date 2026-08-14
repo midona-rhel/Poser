@@ -1426,6 +1426,12 @@ public class PoseInspectorPane
     /// buttons plus a lock never fit a control cell.</param>
     private void DrawGaze(Crystarium.FormScope form, IActor actor, bool wide)
     {
+        if (!_gazeService.IsAvailable)
+        {
+            form.Status($"Gaze unavailable: {_gazeService.UnavailableDetail ?? "native capability unavailable."}");
+            return;
+        }
+
         var state = _gazeService.GetGazeState(actor);
 
         // Target discovery is scene membership: every other actor the

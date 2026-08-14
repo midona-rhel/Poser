@@ -16,6 +16,48 @@ using Poser.Services;
 
 namespace Poser.Game;
 
+internal unsafe delegate nint GazeLoopDelegate(ContainerInterface* args);
+
+internal unsafe interface IGazeHook : IDisposable
+{
+    void Enable();
+    nint Original(ContainerInterface* args);
+}
+
+internal interface IGazeNativeFactory
+{
+    nint ScanUpdateLookAt(ISigScanner scanner);
+    nint ScanActorLookAtLoop(ISigScanner scanner);
+    IGazeHook CreateActorLookAtHook(
+        IGameInteropProvider hooks,
+        nint address,
+        GazeLoopDelegate detour);
+}
+
+internal sealed class GazeNativeFactory : IGazeNativeFactory
+{
+    public nint ScanUpdateLookAt(ISigScanner scanner) => scanner.ScanText(
+        "E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
+
+    public nint ScanActorLookAtLoop(ISigScanner scanner) => scanner.ScanText(
+        "E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
+
+    public IGazeHook CreateActorLookAtHook(
+        IGameInteropProvider hooks,
+        nint address,
+        GazeLoopDelegate detour) =>
+        new DalamudGazeHook(hooks.HookFromAddress<GazeLoopDelegate>(address, detour));
+
+    private sealed class DalamudGazeHook(Hook<GazeLoopDelegate> hook) : IGazeHook
+    {
+        public void Enable() => hook.Enable();
+
+        public unsafe nint Original(ContainerInterface* args) => hook.Original(args);
+
+        public void Dispose() => hook.Dispose();
+    }
+}
+
 /// <summary>
 /// Service for controlling actor gaze (where they look). Based on Brio's
 /// ActorLookAtService. One entry per actor, keyed by the native GameObjectId —
@@ -39,9 +81,14 @@ public unsafe class GazeService : IGazeService, IDisposable
     private readonly IPluginLog _log;
 
     private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
+    private IGazeHook? _actorLookAtLoop;
+    private bool _isAvailable;
+    private bool _disposed;
+    private bool _subscribed;
 
-    private delegate nint ActorLookAtLoopDelegate(ContainerInterface* args);
-    private Hook<ActorLookAtLoopDelegate> _actorLookAtLoop = null!;
+    public bool IsAvailable => _isAvailable && !_disposed;
+
+    public string? UnavailableDetail { get; private set; }
 
     /// <summary>
     /// One managed+native entry per actor. Mutated from the UI thread and read
@@ -75,6 +122,27 @@ public unsafe class GazeService : IGazeService, IDisposable
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IPluginLog log)
+        : this(
+            gPoseService,
+            cameraService,
+            objectTable,
+            eventBus,
+            sigScanner,
+            hooks,
+            log,
+            new GazeNativeFactory())
+    {
+    }
+
+    internal GazeService(
+        IGPoseService gPoseService,
+        ICameraService cameraService,
+        IObjectTable objectTable,
+        IEventBus eventBus,
+        ISigScanner sigScanner,
+        IGameInteropProvider hooks,
+        IPluginLog log,
+        IGazeNativeFactory nativeFactory)
     {
         _gPoseService = gPoseService;
         _cameraService = cameraService;
@@ -82,16 +150,75 @@ public unsafe class GazeService : IGazeService, IDisposable
         _eventBus = eventBus;
         _log = log;
 
-        // No try-catch - let plugin fail to load if sigs are invalid rather than run in broken state
-        var updateFaceTrackerAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
-        _updateLookAt = (delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void>)updateFaceTrackerAddress;
+        nint updateLookAtAddress;
+        try
+        {
+            updateLookAtAddress = nativeFactory.ScanUpdateLookAt(sigScanner);
+            if (updateLookAtAddress == nint.Zero)
+            {
+                SetUnavailable("Required gaze update signature unavailable.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetUnavailable("Required gaze update signature unavailable.", ex);
+            return;
+        }
 
-        var actorLookAtLoopAddress = sigScanner.ScanText("E8 ?? ?? ?? ?? 48 83 C3 08 48 83 EF 01 75 CF 48 ?? ?? ?? ?? 48");
-        _actorLookAtLoop = hooks.HookFromAddress<ActorLookAtLoopDelegate>(actorLookAtLoopAddress, ActorLookAtDetour);
-        _actorLookAtLoop.Enable();
+        nint actorLookAtLoopAddress;
+        try
+        {
+            actorLookAtLoopAddress = nativeFactory.ScanActorLookAtLoop(sigScanner);
+            if (actorLookAtLoopAddress == nint.Zero)
+            {
+                SetUnavailable("Required gaze loop signature unavailable.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetUnavailable("Required gaze loop signature unavailable.", ex);
+            return;
+        }
 
-        _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
-        _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+        IGazeHook? hook = null;
+        try
+        {
+            _updateLookAt = (delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void>)updateLookAtAddress;
+            hook = nativeFactory.CreateActorLookAtHook(
+                hooks,
+                actorLookAtLoopAddress,
+                ActorLookAtDetour);
+            hook.Enable();
+            _actorLookAtLoop = hook;
+            _isAvailable = true;
+
+            _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+            _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
+            _subscribed = true;
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_actorLookAtLoop, hook))
+                _actorLookAtLoop = null;
+            hook?.Dispose();
+            SetUnavailable(
+                hook is null
+                    ? "Gaze hook creation failed."
+                    : "Gaze hook enable failed.",
+                ex);
+        }
+    }
+
+    private void SetUnavailable(string detail, Exception? error = null)
+    {
+        _isAvailable = false;
+        UnavailableDetail = detail;
+        if (error is null)
+            _log.Warning($"GazeService: {detail}");
+        else
+            _log.Warning($"GazeService: {detail} {error.Message}");
     }
 
     /// <summary>Entity mode without a chosen target performs no override.</summary>
@@ -102,6 +229,9 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     private nint ActorLookAtDetour(ContainerInterface* args)
     {
+        if (!IsAvailable)
+            return _actorLookAtLoop!.Original(args);
+
         if (_gPoseService.IsGPosing)
         {
             bool any;
@@ -144,7 +274,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                     // cessation (Brio parity): the game's own update re-takes
                     // any slot Poser stops writing.
                     if (!known || mode == GazeTargetMode.None)
-                        return _actorLookAtLoop.Original(args);
+                        return _actorLookAtLoop!.Original(args);
 
                     var lookAtController =
                         &((Character*)targetActor.Address)->LookAt.Controller;
@@ -190,7 +320,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
 
         // Call original - this runs gaze IK and modifies bones
-        return _actorLookAtLoop.Original(args);
+        return _actorLookAtLoop!.Original(args);
     }
 
     private IGameObject? Resolve(IActor actor) =>
@@ -198,6 +328,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public GazeState GetGazeState(IActor actor)
     {
+        if (!IsAvailable)
+            return new GazeState();
         if (Resolve(actor) is not { } gameObject)
             return new GazeState();
         lock (_sync)
@@ -219,6 +351,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetGazeMode(IActor actor, GazeTargetMode mode)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         bool modeChanged;
@@ -254,6 +388,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetGazeParts(IActor actor, GazeTargetType parts)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         bool modeChanged;
@@ -280,6 +416,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetGazeTarget(IActor actor, IActor target)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
             return;
         if (gameObject.GameObjectId == targetObject.GameObjectId)
@@ -310,6 +448,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public nint GetGazeTargetAddress(IActor actor)
     {
+        if (!IsAvailable)
+            return 0;
         ulong targetId;
         if (Resolve(actor) is not { } gameObject)
             return 0;
@@ -324,6 +464,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetGazePosition(IActor actor, Vector3 position)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         lock (_sync)
@@ -339,6 +481,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetPartPosition(IActor actor, GazeTargetType part, Vector3 position)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         lock (_sync)
@@ -354,6 +498,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SnapPartToCamera(IActor actor, GazeTargetType part)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         lock (_sync)
@@ -373,6 +519,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetPartLock(IActor actor, GazeTargetType part, bool locked)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         lock (_sync)
@@ -408,6 +556,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public bool IsPartLocked(IActor actor, GazeTargetType part)
     {
+        if (!IsAvailable)
+            return false;
         if (Resolve(actor) is not { } gameObject)
             return false;
         lock (_sync)
@@ -423,6 +573,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public bool IsGazeEnabled(IActor actor)
     {
+        if (!IsAvailable)
+            return false;
         if (Resolve(actor) is not { } gameObject)
             return false;
         lock (_sync)
@@ -434,6 +586,8 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void ResetGaze(IActor actor)
     {
+        if (!IsAvailable)
+            return;
         if (Resolve(actor) is not { } gameObject)
             return;
         bool modeChanged;
@@ -611,9 +765,18 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void Dispose()
     {
-        _actorLookAtLoop.Dispose();
-        _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
-        _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+        if (_disposed)
+            return;
+        _disposed = true;
+        _isAvailable = false;
+        _actorLookAtLoop?.Dispose();
+        _actorLookAtLoop = null;
+        if (_subscribed)
+        {
+            _eventBus.Unsubscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+            _eventBus.Unsubscribe<ActorListChangedEvent>(OnActorListChanged);
+            _subscribed = false;
+        }
     }
 }
 
