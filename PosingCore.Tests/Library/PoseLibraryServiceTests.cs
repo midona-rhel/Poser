@@ -105,6 +105,39 @@ public sealed class PoseLibraryServiceTests
         Assert.Equal(new[] { "tagone" }, entry.TagsLower);
     }
 
+    // Author is what an author search matches. A shot's description is prose
+    // about the shot, so lending it the Author field would make a shot answer
+    // an author search with words nobody authored.
+    [Fact]
+    public void A_shot_carries_its_own_author_never_its_description()
+    {
+        using var fixture = new LibraryFixture();
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Author = null;
+        scene.Description = "Rooftop duel, dusk";
+        fixture.WriteScene("unauthored", scene);
+
+        var authored = SceneFileStoreTests.ValidScene();
+        authored.Author = "MiDoNa";
+        authored.Description = "Rooftop duel, dusk";
+        fixture.WriteScene("authored-shot", authored);
+
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        var entries = service.Snapshot.Entries;
+        var unauthored = entries.Single(e => e.Name == "unauthored");
+        Assert.Equal(PoseLibraryMetadataStatus.Valid, unauthored.MetadataStatus);
+        Assert.Null(unauthored.Author);
+        Assert.Equal(string.Empty, unauthored.AuthorLower);
+        Assert.NotEmpty(unauthored.SceneContents);
+
+        var named = entries.Single(e => e.Name == "authored-shot");
+        Assert.Equal("MiDoNa", named.Author);
+        Assert.Equal("midona", named.AuthorLower);
+    }
+
     [Fact]
     public void Quarantine_folders_are_never_indexed_and_a_round_trip_restores_the_corrupt_entry()
     {
@@ -252,6 +285,13 @@ public sealed class PoseLibraryServiceTests
         {
             var path = Path.Combine(Root, name + ".pose");
             var result = AtomicPoseFileStore.Default.Write(pose, path);
+            Assert.True(result.Succeeded, result.Failure?.Detail);
+        }
+
+        public void WriteScene(string name, SceneFile scene)
+        {
+            var path = Path.Combine(Root, name + SceneFile.Extension);
+            var result = SceneFileStore.Default.Write(scene, path);
             Assert.True(result.Succeeded, result.Failure?.Detail);
         }
 

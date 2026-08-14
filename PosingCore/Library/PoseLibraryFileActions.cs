@@ -72,13 +72,19 @@ public sealed class PoseLibraryFileActions
     public static PoseLibraryFileActions Default { get; } = new();
 
     private readonly AtomicPoseFileStore _store;
+    private readonly SceneFileStore _sceneStore;
 
     public PoseLibraryFileActions()
         : this(AtomicPoseFileStore.Default)
     {
     }
 
-    internal PoseLibraryFileActions(AtomicPoseFileStore store) => _store = store;
+    internal PoseLibraryFileActions(
+        AtomicPoseFileStore store, SceneFileStore? sceneStore = null)
+    {
+        _store = store;
+        _sceneStore = sceneStore ?? SceneFileStore.Default;
+    }
 
     /// <summary>Maps a metadata read to the library's typed entry status —
     /// the ONE mapping the scan and the retry probe both answer with.
@@ -100,6 +106,31 @@ public sealed class PoseLibraryFileActions
                 : PoseLibraryMetadataStatus.Corrupt,
             metadata.Failure?.Detail ?? "The pose metadata could not be read.");
     }
+
+    /// <summary>The same mapping for a SHOT, which is a different document
+    /// read by a different codec — the ONE mapping the scan and the retry
+    /// probe both answer a <c>.poserscene</c> with.</summary>
+    internal static (PoseLibraryMetadataStatus Status, string Detail) Classify(
+        SceneMetadataReadOutcome metadata)
+    {
+        if (metadata.Succeeded)
+            return (PoseLibraryMetadataStatus.Valid, string.Empty);
+
+        var status = metadata.Status switch
+        {
+            SceneEntryStatus.Future => PoseLibraryMetadataStatus.Future,
+            SceneEntryStatus.Oversized => PoseLibraryMetadataStatus.Oversized,
+            _ => PoseLibraryMetadataStatus.Corrupt,
+        };
+        return (status, metadata.Failure?.Detail ?? "The shot could not be read.");
+    }
+
+    /// <summary>Whether the path names a whole shot rather than a pose. The
+    /// two are different documents with different codecs, so every read the
+    /// library performs has to pick one.</summary>
+    private static bool IsScene(string path) =>
+        Path.GetExtension(path).Equals(
+            SceneFile.Extension, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Renames the file in place, keeping its extension. The new
     /// name must be a bare file name; an empty, invalid, or taken name is
@@ -257,13 +288,20 @@ public sealed class PoseLibraryFileActions
     /// corrupt entry whose write may since have completed. The probe itself
     /// succeeds whenever the file could be classified; the status says what
     /// it is.
+    ///
+    /// <para>The retry answers exactly what the next SCAN would answer, which
+    /// means it must read each kind through that kind's own codec: a shot
+    /// re-read with the pose codec would answer Corrupt however healthy it is,
+    /// which is the one answer a retry must never invent.</para>
     /// </summary>
     public PoseLibraryFileActionResult Probe(string path)
     {
         const PoseLibraryFileActionKind kind = PoseLibraryFileActionKind.Probe;
         try
         {
-            var (status, detail) = Classify(_store.ReadMetadata(path));
+            var (status, detail) = IsScene(path)
+                ? Classify(_sceneStore.ReadMetadata(path))
+                : Classify(_store.ReadMetadata(path));
             return new PoseLibraryFileActionResult
             {
                 Kind = kind,

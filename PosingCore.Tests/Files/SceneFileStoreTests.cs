@@ -13,7 +13,9 @@ public sealed class SceneFileStoreTests
 {
     // ── document building ────────────────────────────────────────────────
 
-    private static SceneFile ValidScene()
+    /// <summary>Shared with the library suites, which need a shot the real
+    /// codec accepts to prove the library reads one through it.</summary>
+    internal static SceneFile ValidScene()
     {
         var actorKey = Guid.NewGuid();
         var pose = new PoseFile();

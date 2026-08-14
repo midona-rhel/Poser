@@ -211,6 +211,24 @@ public sealed class PoseLibraryFileActionsTests
         Assert.NotEmpty(failed.Detail);
     }
 
+    // A shot is a different document with a different codec. Re-probing one
+    // with the POSE codec answers Corrupt however healthy the shot is, so a
+    // retry would permanently condemn a file that reads perfectly.
+    [Fact]
+    public void Probe_reads_a_shot_through_the_scene_codec_not_the_pose_codec()
+    {
+        using var fixture = new ActionsFixture();
+        var valid = fixture.WriteScene("shot", SceneFileStoreTests.ValidScene());
+        var corrupt = fixture.WriteRawScene("broken", "{ nope");
+
+        Assert.Equal(PoseLibraryMetadataStatus.Valid, ProbeStatus(valid));
+        Assert.Equal(PoseLibraryMetadataStatus.Corrupt, ProbeStatus(corrupt));
+
+        var refused = PoseLibraryFileActions.Default.Probe(corrupt);
+        Assert.True(refused.Succeeded);
+        Assert.NotEmpty(refused.Detail);
+    }
+
     private static PoseLibraryMetadataStatus ProbeStatus(string path)
     {
         var result = PoseLibraryFileActions.Default.Probe(path);
@@ -387,12 +405,27 @@ public sealed class PoseLibraryFileActionsTests
             return path;
         }
 
+        public string WriteScene(string name, SceneFile scene)
+        {
+            var path = Path.Combine(Root, name + SceneFile.Extension);
+            var result = SceneFileStore.Default.Write(scene, path);
+            Assert.True(result.Succeeded, result.Failure?.Detail);
+            return path;
+        }
+
         // Bytes, not File.WriteAllText(…, Encoding.UTF8): that helper emits a
         // BOM, and the codec's preflight reader would reject the fixture
         // before it ever reached what the test is about.
         public string WriteRaw(string name, string json)
         {
             var path = Path.Combine(Root, name + ".pose");
+            File.WriteAllBytes(path, Encoding.UTF8.GetBytes(json));
+            return path;
+        }
+
+        public string WriteRawScene(string name, string json)
+        {
+            var path = Path.Combine(Root, name + SceneFile.Extension);
             File.WriteAllBytes(path, Encoding.UTF8.GetBytes(json));
             return path;
         }

@@ -468,22 +468,19 @@ public sealed class PoseLibraryService : IPoseLibraryService
         if (kind == PoseLibraryEntryKind.Scene)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
-            status = metadata.Status switch
-            {
-                SceneEntryStatus.Valid => PoseLibraryMetadataStatus.Valid,
-                SceneEntryStatus.Future => PoseLibraryMetadataStatus.Future,
-                SceneEntryStatus.Oversized => PoseLibraryMetadataStatus.Oversized,
-                _ => PoseLibraryMetadataStatus.Corrupt,
-            };
             if (metadata.Succeeded)
             {
-                author = metadata.Description;
+                // The document's OWN author, which Poser's capture never sets,
+                // so this is normally empty. It is emphatically not the
+                // description: Author is what the search box's author term
+                // matches, and a shot must not answer an author search with
+                // words from its description.
+                author = metadata.Author;
                 sceneContents = DescribeScene(metadata);
             }
-            else
-            {
-                detail = metadata.Failure?.Detail ?? "The scene could not be read.";
-            }
+            // The ONE mapping — shared with the retry probe, exactly as the
+            // pose branch shares its own.
+            (status, detail) = PoseLibraryFileActions.Classify(metadata);
         }
         // A .cmp has no header and an .mcdf is a compressed archive: opening
         // either would cost a read that can never answer.

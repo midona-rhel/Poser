@@ -80,9 +80,16 @@ interchange with Brio and (via name conversion) Anamnesis.
   `Valid`, `Corrupt`, `Future`, or `Oversized` status with a concise detail —
   one classification (`PoseLibraryFileActions.Classify`) shared by the scan
   and the retry probe. Flagged entries stay VISIBLE: the tile carries a
-  warning badge and the info strip states the typed diagnosis.
+  warning badge and the info strip states the typed diagnosis. A
+  `.poserscene` is a different document read by its own codec and classified
+  by the matching `Classify` overload — the scan and the probe BOTH dispatch
+  on extension, because a shot re-read with the pose codec would answer
+  Corrupt however healthy it is.
 - Search matches the entry's name, author, and tags (substring, against runs
-  lowercased at scan time); the tag chip remains an exact filter. Folders are
+  lowercased at scan time); the tag chip remains an exact filter. `Author` is
+  always the document's own author member — a shot whose document names
+  nobody carries no author rather than borrowing its description, so no entry
+  answers an author search with prose it did not author. Folders are
   the on-disk tree, bounded by the traversal limits, with per-kind recursive
   counts so a tab drops empty subtrees whole.
 - File verbs live in `PoseLibraryFileActions` — synchronous, stateless, every

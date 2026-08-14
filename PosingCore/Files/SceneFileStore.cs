@@ -91,6 +91,12 @@ public sealed class SceneMetadataReadOutcome
     public SceneEntryStatus Status { get; }
     public bool Succeeded => Status == SceneEntryStatus.Valid;
     public Guid SceneId { get; }
+
+    /// <summary>Who authored the shot, when the document names anyone. Poser's
+    /// own capture names nobody, so this is normally absent — it is NOT the
+    /// description under another name.</summary>
+    public string? Author { get; }
+
     public string? Description { get; }
     public DateTimeOffset? SavedAt { get; }
     public int ActorCount { get; }
@@ -107,6 +113,7 @@ public sealed class SceneMetadataReadOutcome
         if (scene is null)
             return;
         SceneId = scene.SceneId;
+        Author = scene.Author;
         Description = scene.Description;
         SavedAt = scene.SavedAt;
         ActorCount = scene.Actors.Count;
