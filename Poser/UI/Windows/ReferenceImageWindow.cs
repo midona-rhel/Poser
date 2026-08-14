@@ -88,6 +88,33 @@ public sealed class ReferenceImageWindow : Window
 
     private bool _hovered;
 
+    /// <summary>The ratio <see cref="ConformToAspect"/> is to hold, handed over
+    /// for the length of one <c>Begin</c>. Static because the callback is a
+    /// plain function with no state of its own, and only ever runs between the
+    /// <c>SetNextWindowSizeConstraints</c> that arms it and the <c>Begin</c>
+    /// immediately after — one window, one thread, no overlap.</summary>
+    private static float _constraintAspect;
+
+    /// <summary>
+    /// The aspect lock, applied WHILE the resize is being resolved rather than
+    /// after it. The dominant drag axis stays authoritative — whichever edge
+    /// the hand actually moved is the one kept, and the other is derived from
+    /// it — so a corner drag does not fight itself and an edge drag reads as
+    /// the picture growing rather than as a box being squared up afterwards.
+    /// </summary>
+    private static unsafe void ConformToAspect(ImGuiSizeCallbackData* data)
+    {
+        float aspect = _constraintAspect;
+        if (aspect <= 0f || data == null)
+            return;
+        var current = data->CurrentSize;
+        var desired = data->DesiredSize;
+        data->DesiredSize =
+            MathF.Abs(desired.X - current.X) >= MathF.Abs(desired.Y - current.Y)
+                ? new Vector2(desired.X, desired.X / aspect)
+                : new Vector2(desired.Y * aspect, desired.Y);
+    }
+
     public ReferenceImageWindow(
         ReferenceImageSession session, ReferenceImageInstance image)
         : base($"###poser_reference_image_{image.Id}",
@@ -111,12 +138,17 @@ public sealed class ReferenceImageWindow : Window
 
     public ReferenceImageInstance Image => _image;
 
-    public override void PreDraw()
+    public override unsafe void PreDraw()
     {
         base.PreDraw();
 
         var entry = _image.Entry;
         float aspect = _image.Aspect;
+        // Hoisted: the size seats below and the constraint at the end both
+        // measure in it, and the constraint is stated in PHYSICAL pixels
+        // because ImGui's own is — Dalamud's SizeConstraints was the only
+        // thing scaling that for us, and it is off for this window now.
+        float gs = MathF.Max(ImGuiHelpers.GlobalScale, 0.01f);
 
         // The Always position seat lasts exactly one frame — see
         // _positionApplied.
@@ -147,7 +179,6 @@ public sealed class ReferenceImageWindow : Window
             }
             else if (aspect > 0f)
             {
-                float gs = MathF.Max(ImGuiHelpers.GlobalScale, 0.01f);
                 _applied = ReferenceImageGeometry.InitialSize(
                     _image.Pixels / gs, ImGui.GetIO().DisplaySize / gs);
                 Size = _applied;
@@ -186,11 +217,25 @@ public sealed class ReferenceImageWindow : Window
             }
         }
 
-        SizeConstraints = new WindowSizeConstraints
-        {
-            MinimumSize = new Vector2(ReferenceImageGeometry.MinimumSide),
-            MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
-        };
+        // The ratio is held as a CONSTRAINT, not as a correction. Dalamud's
+        // SizeConstraints is left null on purpose so it issues no competing
+        // call: this one carries the aspect callback, and ImGui runs it inside
+        // the Begin that follows this method, while the resize is being
+        // resolved. The post-hoc ResolveAspect above still governs the
+        // programmatic seats (a restored placement, the picture's own pixels);
+        // what it cannot govern is the DRAG, because it only ever sees last
+        // frame's size — so every dragged frame was submitted off-ratio and
+        // snapped back on the next one, which is the deformation the user saw.
+        SizeConstraints = null;
+        // The callback reads this rather than a capture: it fires inside the
+        // very next Begin, on this thread, for this window, so a static hand-off
+        // is the whole lifetime it needs and the delegate stays allocation-free.
+        _constraintAspect = aspect;
+        ImGui.SetNextWindowSizeConstraints(
+            new Vector2(ReferenceImageGeometry.MinimumSide * gs),
+            new Vector2(float.MaxValue, float.MaxValue),
+            ConformToAspect,
+            null);
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
