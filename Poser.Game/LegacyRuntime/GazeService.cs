@@ -598,11 +598,10 @@ public unsafe class GazeService : IGazeService, IDisposable
             return GazeResult.Refused("Gaze targets can only be set on the game thread.");
         if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
             return GazeResult.Refused("This actor is no longer resolvable.");
-        // The GPose index gate is load-bearing here exactly as in the detour
-        // (Brio ActorTableHelpers 201..439): a GPose clone SHARES its
-        // GameObjectId with the overworld original, so a stale wrapper naming
-        // an overworld body would write the target id onto the real actor.
-        if (!gameObject.IsValid() || gameObject.ObjectIndex is not (>= 201 and <= 439))
+        // The same predicate the write funnel enforces, spelled once, so this
+        // refusal can never drift from what WriteCharacterTarget will accept.
+        // It is stated here as well only to name the reason for the user.
+        if (!CanWriteCharacter(gameObject))
             return GazeResult.Refused("Only a GPose actor can be given a gaze target.");
         if (gameObject.GameObjectId == targetObject.GameObjectId)
         {
@@ -962,7 +961,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         List<(IGameObject Character, ulong TargetId)>? targetWrites = null;
         lock (_sync)
         {
-            foreach (var (id, _) in snapshot)
+            foreach (var (id, probedTargetId) in snapshot)
             {
                 if (!_entries.TryGetValue(id, out var entry))
                     continue;
@@ -973,6 +972,12 @@ public unsafe class GazeService : IGazeService, IDisposable
                     _entries.Remove(id);
                     continue;
                 }
+                // The liveness probe answered about the target this entry held
+                // when the snapshot was taken. An entry retargeted since is
+                // left alone rather than judged on the wrong id — the retarget
+                // proved its own target live and cleared the mark itself.
+                if (entry.TargetId != probedTargetId)
+                    continue;
                 bool wasStale = entry.TargetStale;
                 // Exact identity, and STICKY: once a remembered target has left
                 // the scene the mark stays until a live target is chosen. An id
