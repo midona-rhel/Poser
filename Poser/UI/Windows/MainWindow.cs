@@ -118,16 +118,23 @@ public class MainWindow : Window
     /// Library mode leaves it untouched, exactly as it leaves the tab.</summary>
     private string _activeStrip = "actor";
 
+    /// <summary>
+    /// The shell's ONE selection: the workspace modes and the entity selection
+    /// are the same track, so LIBRARY, SCENE, the environment header and an
+    /// entity row can never light together.
+    /// </summary>
+    private readonly ShellWorkspaceSelection _workspace;
+
     /// <summary>The workspace is showing the pose library instead of the
-    /// selection's tabs. The SELECTION is untouched — the library applies to
-    /// whatever actor was selected before the mode was entered.</summary>
-    private bool _libraryMode;
+    /// selection's tabs. Entering it releases the entity selection, so the
+    /// library never shows through a selected entity's chrome.</summary>
+    private bool _libraryMode => _workspace.IsLibrary;
 
     /// <summary>The workspace is showing the WHOLE SCENE — save, load, progress
     /// and recovery — instead of the selection's tabs. A mode exactly like the
     /// library's, and its alternative: a scene is not a property of whatever
     /// happens to be selected.</summary>
-    private bool _sceneMode;
+    private bool _sceneMode => _workspace.IsScene;
 
     /// <summary>The library's sidebar section and its one tab, both retained:
     /// they carry no per-frame data, so a warm frame restates them rather than
@@ -417,6 +424,11 @@ public class MainWindow : Window
         _actorManager = actorManager;
         _scene = scene;
         _selection = scene.Selection;
+        // One selection for the whole shell. The subscription lives as long as
+        // this window does — both outlive every scene — so it is never torn
+        // down; Dispose exists on the type for hosts that do own a lifetime.
+        _workspace = new ShellWorkspaceSelection(_selection);
+        _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
@@ -572,14 +584,12 @@ public class MainWindow : Window
                 ShowSceneFiles();
             else if (index == EnvironmentSectionIndex)
             {
-                // The exits restate nothing; the resync at the end of this
-                // handler stands for them and for the selection below, which
-                // is the only order that keeps the tab the user was on.
-                ExitLibraryMode();
-                ExitSceneMode();
                 // There is exactly one environment, so range and toggle mean
                 // nothing here: the header is a plain Select, never a modified
-                // one.
+                // one. Selecting IS leaving whichever mode was showing — one
+                // selection — and the leave restates nothing, so the resync
+                // below stands for both, which is the only order that keeps
+                // the tab the user was on.
                 _selection.Select(EnvironmentSelection);
                 // Same frame, same reason as a row click: the environment's
                 // strip is not the strip this frame was laid out for.
@@ -1018,60 +1028,42 @@ public class MainWindow : Window
 
     /// <summary>Puts the workspace into library mode. Openers only — a second
     /// request must not toggle a library the user is already looking at. The
-    /// selection CLEARS: library and scene selection are exclusive (user
-    /// 2026-08-09) — row clicks already exit the library, and entering it now
-    /// releases the scene the same way.</summary>
+    /// selection releases, because a mode and an entity are one selection
+    /// (see <see cref="ShellWorkspaceSelection"/>).</summary>
     public void ShowLibrary()
     {
-        ExitSceneMode();
-        _libraryMode = true;
-        _selection.Clear();
-        // Both switches can happen from a sidebar click, which occurs while
+        _workspace.Enter(ShellWorkspace.Library);
+        // The switch can happen from a sidebar click, which occurs while
         // AppShellView is already drawing: the viewport contract moves in the
         // same breath as the content selection, so the remainder of the frame
         // cannot render one mode through the other mode's layout path.
         ResyncTabLayout();
     }
 
-    /// <summary>
-    /// Leaves library mode and RESTATES NOTHING: the caller resyncs, once,
-    /// after every change it is going to make.
-    ///
-    /// <para>This is not an optimisation. Leaving a mode is never the last
-    /// thing a caller does — a row click selects, the scene workspace opens,
-    /// the environment header selects — and a resync here would resolve the
-    /// strip against the selection as it stands mid-change: the outgoing one,
-    /// or none at all, since entering the library clears it. It would then
-    /// settle <see cref="_activeTab"/> onto that strip's first tab, which is
-    /// precisely the tab that leaving a mode promises to give back.</para>
-    /// </summary>
-    private void ExitLibraryMode()
-    {
-        if (!_libraryMode)
-            return;
-        _libraryMode = false;
-        _libraryPane.OnHidden();
-    }
-
     /// <summary>Puts the workspace into scene mode. Openers only, exactly like
-    /// the library's: a second request must not toggle a scene workspace the
-    /// user is already looking at. The two modes are alternatives, so entering
-    /// this one leaves the library.</summary>
+    /// the library's, and releasing the entity selection exactly like it: the
+    /// two modes and the entity selection are one track.</summary>
     public void ShowSceneFiles()
     {
-        ExitLibraryMode();
-        _sceneMode = true;
+        _workspace.Enter(ShellWorkspace.Scene);
         _scenePane.OnShown();
         ResyncTabLayout();
     }
 
-    /// <summary>Leaves scene mode and restates nothing; the caller resyncs.
-    /// See <see cref="ExitLibraryMode"/> for why.</summary>
-    private void ExitSceneMode()
+    /// <summary>
+    /// The one mode has been left — by an opener, or by ANY surface selecting
+    /// an entity. Restates nothing beyond the outgoing pane's own hidden
+    /// notice: leaving is never the last thing a caller does, and a resync
+    /// here would resolve the strip against the selection mid-change — the
+    /// outgoing one, or none at all — and settle <see cref="_activeTab"/> onto
+    /// that strip's first tab, which is precisely the tab that leaving a mode
+    /// promises to give back. Every caller resyncs once, after every change it
+    /// is going to make.
+    /// </summary>
+    private void OnWorkspaceLeft(ShellWorkspace left)
     {
-        if (!_sceneMode)
-            return;
-        _sceneMode = false;
+        if (left == ShellWorkspace.Library)
+            _libraryPane.OnHidden();
     }
 
     public override void PostDraw()
@@ -2499,10 +2491,11 @@ public class MainWindow : Window
 
     private void ApplyRowClick(ShellSidebarRow row)
     {
-        // Selecting anything in the scene is leaving the library or the scene
-        // workspace: they are alternatives in one workspace.
-        ExitLibraryMode();
-        ExitSceneMode();
+        // Touching anything in the scene tree is leaving the library or the
+        // scene workspace: they are alternatives in one workspace. A selecting
+        // click leaves through the selection itself; a bare category
+        // disclosure selects nothing, so the tree still states it here.
+        _workspace.Leave();
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
