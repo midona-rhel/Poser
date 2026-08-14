@@ -319,7 +319,9 @@ public sealed class SceneCaptureService
         return matches.Count == 1 ? matches[0] : null;
     }
 
-    private SceneEnvironment CaptureEnvironment()
+    /// <summary>The ONE environment snapshot builder; the workflow's
+    /// rollback baseline uses it too.</summary>
+    internal SceneEnvironment CaptureEnvironment()
     {
         var environment = new SceneEnvironment
         {
