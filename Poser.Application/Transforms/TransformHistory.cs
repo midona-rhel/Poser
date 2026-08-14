@@ -148,9 +148,31 @@ public sealed class TransformHistory
         _redo.RemoveAll(entry => Stale(entry));
     }
 
+    /// <summary>
+    /// Raised after both stacks are emptied. A lifecycle entry closes over
+    /// state its owner keeps beside the stack — the slot that re-binds an
+    /// entity across a destroy/respawn pair — and that state is meaningless
+    /// once the entries naming it are gone. Announcing the clear keeps the
+    /// answer in ONE place: whoever put state behind an entry drops it here,
+    /// rather than every future caller of <see cref="Clear"/> having to
+    /// remember a second sweep.
+    /// </summary>
+    public event Action? Cleared;
+
     public void Clear()
     {
         _undo.Clear();
         _redo.Clear();
+        if (Cleared is { } observers)
+            foreach (Action observer in observers.GetInvocationList())
+                try
+                {
+                    observer();
+                }
+                catch
+                {
+                    // Observers have no transaction authority or result
+                    // channel, exactly as for PatchAppended.
+                }
     }
 }

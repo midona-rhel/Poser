@@ -7,107 +7,18 @@ using Poser.Domain.Scene;
 namespace Poser.Game.Tests.Animation;
 
 /// <summary>
-/// Ownership-truth contracts for <see cref="AnimationSession"/>: the global
-/// physics owner set may only shrink when the unpatch actually landed, a
-/// physics-only reset reports its own failure, and Replay is a resuming act
-/// that never retains a zero-speed owner.
+/// Ownership-truth contracts for <see cref="AnimationSession"/>: the scene's
+/// hold on the global physics patch is recorded only once the patch landed and
+/// released only once the unpatch did, no actor can retire it, and Replay is a
+/// resuming act that never retains a zero-speed owner.
 /// </summary>
 public sealed class AnimationOwnershipTests
 {
     private static readonly ActorId ActorA =
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
-    private static readonly ActorId ActorB =
-        new(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), 1);
 
     [Fact]
-    public void Physics_only_reset_retains_the_owner_until_unfreeze_succeeds()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
-        Assert.True(port.Frozen);
-        port.FailUnfreeze = true;
-
-        var failed = session.ResetActor(ActorA);
-
-        Assert.False(failed.Success);
-        Assert.True(session.OwnsPhysics(ActorA));
-        Assert.True(session.IsPhysicsFrozen);
-
-        port.FailUnfreeze = false;
-        var retried = session.ResetActor(ActorA);
-
-        Assert.True(retried.Success);
-        Assert.False(session.OwnsPhysics(ActorA));
-        Assert.False(port.Frozen);
-    }
-
-    [Fact]
-    public void Reset_with_overrides_reports_a_failed_unfreeze_and_keeps_the_owner()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetSpeed(ActorA, 0f).Success);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
-        port.FailUnfreeze = true;
-
-        var result = session.ResetActor(ActorA);
-
-        Assert.False(result.Success);
-        Assert.Contains("unpatch", result.Detail!, StringComparison.OrdinalIgnoreCase);
-        // The speed override was still released; only the physics hold stays.
-        Assert.Null(session.OverridesFor(ActorA).OverallSpeed);
-        Assert.True(session.OwnsPhysics(ActorA));
-        Assert.True(port.Frozen);
-    }
-
-    [Fact]
-    public void Reset_all_releases_physics_only_owners_with_one_native_unpatch()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
-        Assert.True(session.SetPhysicsFrozen(ActorB, true).Success);
-        // The second owner joins an already-frozen scene without a write.
-        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:True"));
-
-        var result = session.ResetAll();
-
-        Assert.True(result.Success);
-        Assert.False(session.OwnsPhysics(ActorA));
-        Assert.False(session.OwnsPhysics(ActorB));
-        Assert.False(port.Frozen);
-        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:False"));
-    }
-
-    [Fact]
-    public void Reset_all_failed_unpatch_keeps_an_owner_and_stays_retryable()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
-        Assert.True(session.SetPhysicsFrozen(ActorB, true).Success);
-        port.FailUnfreeze = true;
-
-        var failed = session.ResetAll();
-
-        Assert.False(failed.Success);
-        Assert.True(port.Frozen);
-        // The frozen scene still has an owner on record — never a patched
-        // site nobody admits to.
-        Assert.True(session.OwnsPhysics(ActorA) || session.OwnsPhysics(ActorB));
-
-        port.FailUnfreeze = false;
-        var retried = session.ResetAll();
-
-        Assert.True(retried.Success);
-        Assert.False(session.OwnsPhysics(ActorA));
-        Assert.False(session.OwnsPhysics(ActorB));
-        Assert.False(port.Frozen);
-    }
-
-    [Fact]
-    public void The_scene_holds_physics_with_no_actor_and_outlives_every_actor()
+    public void The_scene_holds_physics_with_no_actor_involved()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
@@ -118,15 +29,10 @@ public sealed class AnimationOwnershipTests
         Assert.True(session.SceneOwnsPhysics);
         Assert.True(port.Frozen);
 
-        // An actor joining and departing cannot lift the scene's own hold.
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
+        // Asking again for what is already held writes nothing.
+        Assert.True(session.SetScenePhysicsFrozen(true).Success);
         Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:True"));
-        session.Reconcile(EmptyScene(1));
-        Assert.False(session.OwnsPhysics(ActorA));
-        Assert.True(port.Frozen);
-        Assert.DoesNotContain("SetPhysicsFrozen:False", port.Calls);
 
-        // Releasing the scene's hold with no other owner unpatches once.
         Assert.True(session.SetScenePhysicsFrozen(false).Success);
         Assert.False(session.SceneOwnsPhysics);
         Assert.False(port.Frozen);
@@ -134,43 +40,49 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void An_actor_release_leaves_the_scenes_hold_patched()
+    public void No_actor_reset_or_departure_can_retire_the_scenes_hold()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
+        Assert.True(session.SetSpeed(ActorA, 0f).Success);
 
+        // Resetting an actor, and losing it from the scene entirely, are both
+        // silent on a patch no actor holds.
         Assert.True(session.ResetActor(ActorA).Success);
+        session.Reconcile(EmptyScene(1));
 
-        Assert.False(session.OwnsPhysics(ActorA));
         Assert.True(session.SceneOwnsPhysics);
         Assert.True(port.Frozen);
+        Assert.DoesNotContain("SetPhysicsFrozen:False", port.Calls);
 
-        // Only ResetAll retires the scene: it is the one owner no reconcile
-        // can ever see depart.
+        // ResetAll is the one release: the scene is the only owner, and it is
+        // not something that can depart.
         Assert.True(session.ResetAll().Success);
         Assert.False(session.SceneOwnsPhysics);
         Assert.False(port.Frozen);
+        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:False"));
     }
 
     [Fact]
-    public void Reconcile_retains_a_departed_owner_when_the_unpatch_fails()
+    public void A_failed_unpatch_keeps_the_hold_on_record_and_stays_retryable()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
-        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
+        Assert.True(session.SetScenePhysicsFrozen(true).Success);
         port.FailUnfreeze = true;
 
-        session.Reconcile(EmptyScene(1));
+        var failed = session.ResetAll();
 
-        Assert.True(session.OwnsPhysics(ActorA));
+        Assert.False(failed.Success);
         Assert.True(port.Frozen);
+        // The frozen scene still has its owner on record — never a patched
+        // site nobody admits to.
+        Assert.True(session.SceneOwnsPhysics);
 
         port.FailUnfreeze = false;
-        session.Reconcile(EmptyScene(2));
-
-        Assert.False(session.OwnsPhysics(ActorA));
+        Assert.True(session.ResetAll().Success);
+        Assert.False(session.SceneOwnsPhysics);
         Assert.False(port.Frozen);
     }
 

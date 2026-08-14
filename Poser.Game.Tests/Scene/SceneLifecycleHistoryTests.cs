@@ -1,4 +1,6 @@
+using System.Collections;
 using System.Numerics;
+using System.Reflection;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
@@ -247,6 +249,33 @@ public sealed class SceneLifecycleHistoryTests
 
         Assert.True(world.History.CanUndo);
     }
+
+    /// <summary>
+    /// A slot serves entries and nothing else, so it may not outlive them.
+    /// Leaving GPose clears the history, and the slots go with it rather than
+    /// keeping handles into a session that has ended.
+    /// </summary>
+    [Fact]
+    public void Clearing_the_history_forgets_every_slot()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnLight(LightKind.Spot);
+        world.Lifecycle.CreateCamera(CameraKind.Free);
+        world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("A"));
+        Assert.Single(Slots(world.Lifecycle, "_lightSlots"));
+
+        world.History.Clear();
+
+        Assert.Empty(Slots(world.Lifecycle, "_lightSlots"));
+        Assert.Empty(Slots(world.Lifecycle, "_cameraSlots"));
+        Assert.Empty(Slots(world.Lifecycle, "_actorSlots"));
+    }
+
+    private static IDictionary Slots(
+        SceneLifecycleHistory lifecycle, string field) =>
+        (IDictionary)typeof(SceneLifecycleHistory)
+            .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(lifecycle)!;
 
     [Fact]
     public void Lifecycle_and_transform_entries_share_one_ordered_stack()

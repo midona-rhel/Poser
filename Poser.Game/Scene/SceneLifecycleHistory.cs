@@ -46,8 +46,9 @@ namespace Poser.Game.Scene;
 /// direction therefore checks the entity is still there before touching it: a
 /// removal whose entity is already gone is SATISFIED (nothing left to remove),
 /// while a restore with no document behind it FAILS rather than minting a
-/// default-valued impostor. Leaving GPose clears the history outright, so a
-/// slot never outlives the session that made it.</para>
+/// default-valued impostor. Leaving GPose clears the history outright and the
+/// slots go with it (<see cref="TransformHistory.Cleared"/>), so a slot never
+/// outlives the session that made it.</para>
 /// </summary>
 public sealed class SceneLifecycleHistory
 {
@@ -79,6 +80,18 @@ public sealed class SceneLifecycleHistory
         _lighting = lighting;
         _cameras = cameras;
         _actors = actors;
+        // A slot exists only to serve entries, and is only ever minted by
+        // this seam recording one. When the history drops every entry —
+        // leaving GPose is the clear that matters — the slots are holding
+        // handles into a session that no longer exists, so they go with it.
+        _history.Cleared += ForgetSlots;
+    }
+
+    private void ForgetSlots()
+    {
+        _lightSlots.Clear();
+        _cameraSlots.Clear();
+        _actorSlots.Clear();
     }
 
     // ── lights ───────────────────────────────────────────────────────────

@@ -53,17 +53,23 @@ public sealed class AnimationSession
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
-    private readonly HashSet<ActorId> _physicsOwners = new();
 
     /// <summary>
-    /// The SCENE's own hold on the global physics patch. The freeze is one
-    /// process-global code patch and nothing about it is per-actor, so it has
-    /// to be requestable when no actor is selected at all — a light, a camera
-    /// or the environment is a perfectly ordinary thing to be looking at
-    /// while wanting the scene's cloth to stop (user 2026-08-14). The scene
-    /// is an owner exactly like an actor is; it simply has no
-    /// <see cref="ActorId"/> to be keyed by, and unlike an actor it never
-    /// departs, so only <see cref="ResetAll"/> releases it.
+    /// The scene's hold on the global physics patch, and the ONLY hold there
+    /// is. The freeze is one process-global code patch and nothing about it
+    /// is per-actor, so it has to be requestable when no actor is selected at
+    /// all — a light, a camera or the environment is a perfectly ordinary
+    /// thing to be looking at while wanting the scene's cloth to stop (user
+    /// 2026-08-14). The scene never departs, so only <see cref="ResetAll"/>
+    /// releases it.
+    ///
+    /// <para>This was once one owner among a set keyed by
+    /// <see cref="ActorId"/>, reference-counted against per-actor holds. Once
+    /// the shell's switch became the only surface that asks, the actor
+    /// entry points had no callers left, and a set that can only ever hold
+    /// the scene is a boolean wearing a reference count — worse than one,
+    /// because a future per-actor hold would freeze physics that the shell's
+    /// own switch could not then release.</para>
     /// </summary>
     private bool _sceneOwnsPhysics;
 
@@ -485,60 +491,24 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    // ── Physics (global patch, reference-counted by owner) ────────────
-
-    /// <summary>Every hold on the patch: each actor that asked, plus the
-    /// scene itself.</summary>
-    private int PhysicsOwnerCount =>
-        _physicsOwners.Count + (_sceneOwnsPhysics ? 1 : 0);
+    // ── Physics (one global patch, held by the scene) ─────────────────
 
     /// <summary>
-    /// Physics is one global code patch shared by every actor, so the
-    /// session reference-counts who asked for it. The ownership set is
-    /// mutated ONLY after the patch itself succeeded: a failed patch that
-    /// had already registered an owner would report the scene as frozen
-    /// while it was still running, and the last release would then try to
-    /// undo a patch that was never applied.
-    /// </summary>
-    public AnimationResult SetPhysicsFrozen(ActorId actor, bool frozen)
-    {
-        bool alreadyOwned = _physicsOwners.Contains(actor);
-        if (frozen == alreadyOwned)
-            return AnimationResult.Ok();
-
-        int othersOwning = PhysicsOwnerCount - (alreadyOwned ? 1 : 0);
-        bool shouldFreeze = frozen || othersOwning > 0;
-
-        if (shouldFreeze != _port.IsPhysicsFrozen)
-        {
-            var result = _port.SetPhysicsFrozen(shouldFreeze);
-            if (!result.Success)
-                return AnimationResult.Fail(result.Detail ?? "Physics freeze failed.");
-        }
-
-        if (frozen)
-            _physicsOwners.Add(actor);
-        else
-            _physicsOwners.Remove(actor);
-        return AnimationResult.Ok();
-    }
-
-    /// <summary>
-    /// The SCENE's request, booked against no actor at all — the shell's
-    /// physics switch, which stands over every selection and over none. Same
-    /// discipline as the actor overload: the hold is recorded only after the
-    /// patch it implies has actually landed, and the unpatch happens only
-    /// when this is the last hold standing.
+    /// The scene's request for the global freeze — the shell's physics
+    /// switch, which stands over every selection and over none. The hold is
+    /// recorded ONLY after the patch it implies has actually landed: a
+    /// failed patch that had already recorded the hold would report the
+    /// scene as frozen while it was still running, and the release would
+    /// then try to undo a patch that was never applied.
     /// </summary>
     public AnimationResult SetScenePhysicsFrozen(bool frozen)
     {
         if (frozen == _sceneOwnsPhysics)
             return AnimationResult.Ok();
 
-        bool shouldFreeze = frozen || _physicsOwners.Count > 0;
-        if (shouldFreeze != _port.IsPhysicsFrozen)
+        if (frozen != _port.IsPhysicsFrozen)
         {
-            var result = _port.SetPhysicsFrozen(shouldFreeze);
+            var result = _port.SetPhysicsFrozen(frozen);
             if (!result.Success)
                 return AnimationResult.Fail(
                     result.Detail ?? "Physics freeze failed.");
@@ -548,37 +518,10 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    public bool OwnsPhysics(ActorId actor) => _physicsOwners.Contains(actor);
-
-    /// <summary>Whether the SCENE holds the patch — distinct from
-    /// <see cref="IsPhysicsFrozen"/>, which is the global state whoever asked
-    /// for it.</summary>
+    /// <summary>Whether the scene holds the patch — distinct from
+    /// <see cref="IsPhysicsFrozen"/>, which is the global state however it
+    /// came to be true.</summary>
     public bool SceneOwnsPhysics => _sceneOwnsPhysics;
-
-    /// <summary>
-    /// Releases one actor's share of the global physics patch. The owner
-    /// record is removed only AFTER the state it implies has been made
-    /// true: when this is the last owner the global unpatch must land
-    /// first, so a failed unpatch keeps the owner and the session keeps
-    /// reporting — truthfully — that physics is frozen and by whom, and
-    /// the next reset retries the release. The patch is process-global
-    /// and needs no actor resolution, so even a departed actor's release
-    /// is retried until the site is actually restored.
-    /// </summary>
-    private AnimationResult ReleasePhysicsOwner(ActorId actor)
-    {
-        if (!_physicsOwners.Contains(actor))
-            return AnimationResult.Ok();
-        if (PhysicsOwnerCount == 1 && _port.IsPhysicsFrozen)
-        {
-            var result = _port.SetPhysicsFrozen(false);
-            if (!result.Success)
-                return AnimationResult.Fail(
-                    result.Detail ?? "Physics release failed.");
-        }
-        _physicsOwners.Remove(actor);
-        return AnimationResult.Ok();
-    }
 
     // ── Scrubbing ─────────────────────────────────────────────────────
 
@@ -780,11 +723,11 @@ public sealed class AnimationSession
         if (Suspended() is { } blocked) return blocked;
         if (!_overrides.TryGetValue(actor, out var owned))
         {
-            // A physics-only reset is still a reset: the release failure
-            // is the result, and the owner stays until the unpatch lands.
-            var physicsOnly = ReleasePhysicsOwner(actor);
+            // Nothing is owned for this actor. Physics is not among the
+            // things that could be: the freeze is held by the scene, not by
+            // any actor, so no actor's reset can retire it.
             _port.ClearLoops(actor);
-            return physicsOnly;
+            return AnimationResult.Ok();
         }
 
         // Each aspect is released ONLY when its restore succeeded. What
@@ -934,13 +877,6 @@ public sealed class AnimationSession
             _overrides[actor] = remaining;
         }
 
-        // Physics is process-global, so this release runs even when the
-        // actor itself is gone; a failure keeps the owner for retry and
-        // joins the aggregate result like every other aspect.
-        var physics = ReleasePhysicsOwner(actor);
-        if (!physics.Success && physics.Detail is { } physicsDetail)
-            failures.Add(physicsDetail);
-
         return failures.Count == 0
             ? AnimationResult.Ok()
             : AnimationResult.Fail(string.Join("; ", failures));
@@ -957,19 +893,11 @@ public sealed class AnimationSession
             if (!result.Success && result.Detail is { } detail)
                 failures.Add($"{actor}: {detail}");
         }
-        // Physics-only owners hold no override entry, so the loop above
-        // never saw them. Each release is truthful: only the last owner
-        // performs the global unpatch, and a failed unpatch retains that
-        // owner rather than clearing the set over a still-patched site.
-        foreach (var actor in _physicsOwners.ToList())
-        {
-            var result = ReleasePhysicsOwner(actor);
-            if (!result.Success && result.Detail is { } detail)
-                failures.Add($"{actor}: {detail}");
-        }
-        // The scene's hold last, so the actor releases above see it standing
-        // and leave the patch alone: it is the one owner that is not an
-        // actor and that no reconcile will ever retire.
+        // The scene's hold holds no override entry, so the loop above never
+        // saw it — and no reconcile will ever retire it, because the scene
+        // is not something that can depart. This is the one place it is
+        // released, and a failed unpatch keeps it on record rather than
+        // clearing it over a still-patched site.
         var scene = SetScenePhysicsFrozen(false);
         if (!scene.Success && scene.Detail is { } sceneDetail)
             failures.Add($"scene: {sceneDetail}");
@@ -988,13 +916,8 @@ public sealed class AnimationSession
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
-        // Departed physics-only owners first: the release is global and
-        // needs no actor, but a failed unpatch retains the owner so the
-        // next reconcile or reset retries it instead of stranding a
-        // patched site with no owner on record.
-        foreach (var id in _physicsOwners.Where(id => !present.Contains(id)).ToList())
-            ReleasePhysicsOwner(id);
-
+        // Physics is deliberately absent here: the freeze is held by the
+        // scene, which cannot depart, so no actor leaving can retire it.
         var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();
         foreach (var id in departed)
         {

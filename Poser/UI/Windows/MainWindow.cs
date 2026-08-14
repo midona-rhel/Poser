@@ -948,7 +948,6 @@ public class MainWindow : Window
         _lastHeight = ImGui.GetWindowSize().Y / gs;
         _lastPosition = ImGui.GetWindowPos();
         _overlayPresentation.Reconcile(_scene.Snapshot);
-        ReconcilePendingSpawn();
         BuildViewModel();
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
@@ -957,8 +956,6 @@ public class MainWindow : Window
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
-        DrawLightMenu();
-        DrawCameraMenu();
         DrawActorContextMenu();
         // Window-level: the attach picker outlives the context menu that
         // opened it.
@@ -994,7 +991,7 @@ public class MainWindow : Window
     /// releases the scene the same way.</summary>
     public void ShowLibrary()
     {
-        ExitSceneMode();
+        ExitSceneMode(resync: false);
         _libraryMode = true;
         _selection.Clear();
         // Both switches can happen from a sidebar click, which occurs while
@@ -1004,13 +1001,20 @@ public class MainWindow : Window
         ResyncTabLayout();
     }
 
-    private void ExitLibraryMode()
+    /// <param name="resync">False when the CALLER restates the layout itself
+    /// after further changes. Resyncing here would resolve the strip against
+    /// the selection as it stands mid-change — the outgoing one, or none at
+    /// all — and settle <see cref="_activeTab"/> onto that strip's first tab,
+    /// which is precisely the tab the user was on that leaving a mode
+    /// promises to give back.</param>
+    private void ExitLibraryMode(bool resync = true)
     {
         if (!_libraryMode)
             return;
         _libraryMode = false;
         _libraryPane.OnHidden();
-        ResyncTabLayout();
+        if (resync)
+            ResyncTabLayout();
     }
 
     /// <summary>Puts the workspace into shot mode. Openers only, exactly like
@@ -1019,18 +1023,21 @@ public class MainWindow : Window
     /// this one leaves the library.</summary>
     public void ShowSceneFiles()
     {
-        ExitLibraryMode();
+        ExitLibraryMode(resync: false);
         _sceneMode = true;
         _scenePane.OnShown();
         ResyncTabLayout();
     }
 
-    private void ExitSceneMode()
+    /// <param name="resync">False when the CALLER restates the layout itself;
+    /// see <see cref="ExitLibraryMode"/>.</param>
+    private void ExitSceneMode(bool resync = true)
     {
         if (!_sceneMode)
             return;
         _sceneMode = false;
-        ResyncTabLayout();
+        if (resync)
+            ResyncTabLayout();
     }
 
     public override void PostDraw()
@@ -1099,12 +1106,9 @@ public class MainWindow : Window
         // a zero speed override on the selected actor.
         _vm.AnimationOn = toolbarActor is not { } animActor
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
-        // The freeze is one PROCESS-GLOBAL code patch, so the switch shows
-        // the global state: a scene frozen by any actor's request reads
-        // frozen from every selection, never "simulating" merely because
-        // the selected actor wasn't the one who asked. It is live under
-        // EVERY selection and under none, because nothing about the patch is
-        // per-actor.
+        // The freeze is one PROCESS-GLOBAL code patch held by the scene, so
+        // the switch shows the global state and is live under EVERY selection
+        // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
@@ -1113,11 +1117,11 @@ public class MainWindow : Window
         // an actor can be frozen into its own content window.
         _vm.ShowPopOut = toolbarActor != null && !_libraryMode && !_sceneMode;
         // Entity creation has two entry points by design (approved shell): the
-        // titlebar action and the ACTORS header. Both open the SAME surface,
-        // the spawn browser (the LIGHTS and CAMERAS header pluses are the
-        // exceptions: each makes its own kind at the pointer). References
-        // stay absent (not disabled) in the browser until their runtime
-        // entity type exists.
+        // titlebar action and a section header's plus. Every one of them opens
+        // the SAME surface, the spawn browser — the LIGHTS and CAMERAS pluses
+        // once made their own kind from a menu of their own, and no longer do.
+        // References stay absent (not disabled) in the browser until their
+        // runtime entity type exists.
         _vm.ShowSpawn = true;
         _vm.ShowProject = false;
 
@@ -2246,7 +2250,8 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// Restates the viewport contract from the LIVE selection, mid-frame.
+    /// Rebuilds the tab strip AND restates the viewport contract from the
+    /// LIVE selection, mid-frame.
     ///
     /// <para>The shell decides the content viewport ONCE per frame, before it
     /// draws: whether the pane owns the viewport, hosts a page, or runs
@@ -2257,26 +2262,24 @@ public class MainWindow : Window
     /// incoming pane through the OUTGOING strip's contract for the rest of
     /// the frame, and only <see cref="BuildTabs"/> on the next frame put the
     /// insets right. That one frame is the padding that "arrives late" (user
-    /// 2026-08-14). Re-resolving the strip and tab here — from the selection
-    /// as it now stands, never from the tab the previous strip remembered —
-    /// is what closes it.</para>
+    /// 2026-08-14). Running the frame's own build again here — from the
+    /// selection as it now stands, never from the tab the previous strip
+    /// remembered — is what closes it, and it must be the WHOLE build: the
+    /// strip is drawn after the sidebar, so a resync that moved only the
+    /// contract left the tab LABELS a frame behind the pane they name.</para>
     /// </summary>
     private void ResyncTabLayout()
     {
-        if (_libraryMode)
-        {
-            _activeStrip = LibraryStrip;
-            ApplyTabLayout("Library");
-            return;
-        }
-        if (_sceneMode)
-        {
-            _activeStrip = ShotStrip;
-            ApplyTabLayout(SceneTabLabel);
-            return;
-        }
-        SyncStripAndTab(_selection.Primary);
-        ApplyTabLayout(_activeTab);
+        // The SAME pair the frame's own build runs, in the same order: the
+        // strip a selection answers for decides both the viewport contract
+        // and the ROWS OF THE STRIP, and the strip is drawn after the sidebar
+        // that changed the selection. Restating only the contract left the
+        // tab labels a frame behind the pane they name.
+        BuildTabs(_selection.Primary);
+        ApplyTabLayout(
+            _libraryMode ? "Library"
+            : _sceneMode ? SceneTabLabel
+            : _activeTab);
     }
 
     /// <summary>The two MODE strips. A mode is a strip like an entity type is
@@ -2431,12 +2434,31 @@ public class MainWindow : Window
                 or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
+    /// <summary>
+    /// One row click, then ONE layout resync — after every change the click
+    /// makes, never between them. The strip a frame draws is a function of
+    /// the selection, so the mode exits below must not restate the layout on
+    /// their way out: they would resolve it against the outgoing selection
+    /// (the library clears it entirely) and settle the active tab onto that
+    /// strip's first tab, losing the tab the user was on before entering the
+    /// mode — the promise <see cref="BuildTabs"/> makes for the library.
+    /// </summary>
     private void OnRowClicked(ShellSidebarRow row)
+    {
+        ApplyRowClick(row);
+        // The row was clicked while the shell is already drawing, and the tab
+        // strip is a function of the selection's TYPE: without this the rest
+        // of the frame renders the incoming pane through the outgoing strip's
+        // viewport contract, and draws the outgoing strip's LABELS with it.
+        ResyncTabLayout();
+    }
+
+    private void ApplyRowClick(ShellSidebarRow row)
     {
         // Selecting anything in the scene is leaving the library or the shot
         // workspace: they are alternatives in one workspace.
-        ExitLibraryMode();
-        ExitSceneMode();
+        ExitLibraryMode(resync: false);
+        ExitSceneMode(resync: false);
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
@@ -2466,12 +2488,6 @@ public class MainWindow : Window
         {
             _selection.Select(id);
         }
-
-        // The row was clicked while the shell is already drawing, and the tab
-        // strip is a function of the selection's TYPE: without this the rest
-        // of the frame renders the incoming pane through the outgoing strip's
-        // viewport contract.
-        ResyncTabLayout();
     }
 
     private IActor? ResolveActorRow(ShellSidebarRow row)
@@ -2601,131 +2617,6 @@ public class MainWindow : Window
     private readonly Game.PropSpawnService _propService;
     private readonly PropsPane _propsPane;
     private readonly CompanionSection _companions;
-
-    /// <summary>Selects a freshly spawned actor so the thing just created
-    /// is the thing being edited. The scene has not rescanned yet, so the
-    /// id is resolved on the next refresh rather than here.</summary>
-    private void SelectSpawned(IActor? spawned)
-    {
-        if (spawned == null)
-            return;
-        _pendingSelectSpawned = spawned;
-    }
-
-    private IActor? _pendingSelectSpawned;
-    private ILight? _pendingSelectSpawnedLight;
-
-    /// <summary>Spawns one light of the chosen kind and arms it for selection.
-    /// </summary>
-    private void SpawnLight(LightKind kind)
-    {
-        if (_lifecycle.SpawnLight(kind) is { } spawned)
-            _pendingSelectSpawnedLight = spawned;
-    }
-
-    /// <summary>The LIGHTS header's chooser, positional against
-    /// <see cref="LightMenuKinds"/>. Retained: the rows carry no per-frame
-    /// data, so a warm frame restates nothing.</summary>
-    private static readonly ContextMenuItem[] LightMenuItems =
-    [
-        new("New spot light", TablerIcon.Spotlight),
-        new("New point light", TablerIcon.Bulb),
-        new("New area light", TablerIcon.LightPanel),
-        new("New directional light", TablerIcon.Sun),
-    ];
-
-    private static readonly LightKind[] LightMenuKinds =
-    [
-        LightKind.Spot,
-        LightKind.Point,
-        LightKind.Area,
-        LightKind.Directional,
-    ];
-
-    private bool _lightMenuOpenRequested;
-
-    /// <summary>The LIGHTS header's plus: a light has four kinds and the kind
-    /// decides which native is created, so the choice is asked for before the
-    /// light exists rather than corrected on the Light tab afterwards.
-    /// </summary>
-    private void DrawLightMenu()
-    {
-        if (_lightMenuOpenRequested)
-        {
-            _lightMenuOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##lights-add", ImGui.GetMousePos(), LightMenuItems);
-        }
-        int clicked = Crystarium.FloatingMenu.Draw("##lights-add");
-        if (clicked >= 0 && clicked < LightMenuKinds.Length)
-            SpawnLight(LightMenuKinds[clicked]);
-    }
-
-    /// <summary>The CAMERAS header's chooser, positional against the switch
-    /// in <see cref="DrawCameraMenu"/>. Retained like the light menu's rows.
-    /// </summary>
-    private static readonly ContextMenuItem[] CameraMenuItems =
-    [
-        new("New camera", TablerIcon.Camera),
-        new("New free camera", TablerIcon.Video),
-        new("New camera from file…", TablerIcon.Download),
-    ];
-
-    private bool _cameraMenuOpenRequested;
-
-    /// <summary>The CAMERAS header's plus: a camera has two kinds and the
-    /// kind decides how it drives the game view, so the choice is asked for
-    /// before the camera exists — Brio's "New…" menu, the lights' idiom.
-    /// </summary>
-    private void DrawCameraMenu()
-    {
-        if (_cameraMenuOpenRequested)
-        {
-            _cameraMenuOpenRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##cameras-add", ImGui.GetMousePos(), CameraMenuItems);
-        }
-        switch (Crystarium.FloatingMenu.Draw("##cameras-add"))
-        {
-            case 0:
-                CreateCamera(Domain.Scene.CameraKind.Game);
-                break;
-            case 1:
-                CreateCamera(Domain.Scene.CameraKind.Free);
-                break;
-            case 2:
-                _cameraPane.OpenLoad();
-                break;
-        }
-    }
-
-    /// <summary>Creates one camera of the chosen kind and arms it for
-    /// selection once the scene refresh has bound it.</summary>
-    private void CreateCamera(Domain.Scene.CameraKind kind)
-    {
-        if (_lifecycle.CreateCamera(kind) is { } created)
-            _cameraPane.SelectWhenBound(created);
-    }
-
-    /// <summary>Second half of <see cref="SelectSpawned"/> and
-    /// <see cref="SpawnLight"/>: once the scene refresh has bound the new
-    /// entity, select it and forget it.</summary>
-    private void ReconcilePendingSpawn()
-    {
-        if (_pendingSelectSpawnedLight is { } spawnedLight &&
-            _bindings.GetLightId(spawnedLight) is { } lightId)
-        {
-            _selection.Select(SelectionId.ForLight(lightId));
-            _pendingSelectSpawnedLight = null;
-        }
-
-        if (_pendingSelectSpawned is not { } spawned)
-            return;
-        if (_bindings.GetActorId(spawned) is not { } id)
-            return;
-        _selection.Select(SelectionId.ForActor(id));
-        _pendingSelectSpawned = null;
-    }
 
     /// <summary>
     /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
