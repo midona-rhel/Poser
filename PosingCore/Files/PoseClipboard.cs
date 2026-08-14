@@ -49,9 +49,11 @@ public static class PoseClipboard
     /// defaults (PoseFile.cs:138-148).
     ///
     /// <para>An independent DTO rather than Poser's <see cref="PoseFile"/>:
-    /// the .pose model has no place for a GameVersion or a FaceID, and
+    /// the .pose model has no place for a FileExtension or a FaceID, and
     /// putting them there would change what Poser WRITES to disk. This shape
-    /// exists only for the wire.</para>
+    /// exists only for the wire. The members the .pose model DOES carry —
+    /// FileVersion, GameVersion — are copied across rather than restated, so
+    /// the clipboard says what the file would say.</para>
     /// </summary>
     private sealed class BrioPosePayload
     {
@@ -77,8 +79,9 @@ public static class PoseClipboard
         /// it is here (PoseFile.cs:138).</summary>
         public string FileExtension => ".pose";
 
-        /// <summary>Brio's current document version (PoseFile.cs:140).</summary>
-        public int FileVersion { get; set; } = 3;
+        /// <summary>Brio's current document version (PoseFile.cs:140), carried
+        /// from the pose being encoded.</summary>
+        public int FileVersion { get; set; } = PoseFile.CurrentFileVersion;
 
         public string TypeName { get; set; } = "Brio Pose";
 
@@ -92,10 +95,10 @@ public static class PoseClipboard
         public int? FaceID { get; set; } = null;
 
         /// <summary>Brio stamps the live game version here
-        /// (<c>Framework.Instance()-&gt;GameVersionString</c>, PoseFile.cs:148).
-        /// Poser's pose model carries no such value and the field is
-        /// informational on both sides — nothing reads it back — so the
-        /// payload states it empty rather than inventing one.</summary>
+        /// (<c>Framework.Instance()-&gt;GameVersionString</c>, PoseFile.cs:148)
+        /// and so does Poser's export. The field is informational on both
+        /// sides — nothing reads it back — so a pose with no resolvable build
+        /// carries it empty rather than inventing one.</summary>
         public string GameVersion { get; set; } = string.Empty;
     }
 
@@ -138,6 +141,8 @@ public static class PoseClipboard
                 Position = pose.Position,
                 Rotation = pose.Rotation,
                 Scale = pose.Scale,
+                FileVersion = pose.FileVersion,
+                GameVersion = pose.GameVersion,
             };
             var json = JsonSerializer.Serialize(payload, BrioOptions);
             var bytes = Encoding.UTF8.GetBytes(json);

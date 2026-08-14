@@ -9,6 +9,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Services;
+using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace Poser.Files;
 
@@ -58,10 +59,35 @@ public class PoseFileService : IPoseFileService
         _ => false,
     };
 
+    /// <summary>The running game build, or empty when it is not resolvable —
+    /// an export off the framework thread, or a call before the framework
+    /// exists. Brio stamps the same value from the same place
+    /// (PoseFile.cs:148); neither plugin reads it back, so an empty string is
+    /// a correct answer and an invented one would not be.</summary>
+    private static unsafe string LiveGameVersion()
+    {
+        try
+        {
+            var framework = CSFramework.Instance();
+            if (framework == null)
+                return string.Empty;
+            // Brio reads exactly this member the same way (PoseFile.cs:148).
+            string version = framework->GameVersionString;
+            return version ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
     public PoseFile CreatePoseFile(
         IReadOnlyList<ISkeleton> slots, Func<IBone, bool>? include = null)
     {
-        var poseFile = new PoseFile();
+        var poseFile = new PoseFile
+        {
+            GameVersion = LiveGameVersion(),
+        };
         IActor? actor = null;
 
         // Brio parity (SkeletonPosingCapability.ExportSkeletonPose): every

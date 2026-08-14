@@ -304,8 +304,9 @@ public sealed class PoseLibraryFileActionsTests
     public void EditMetadata_preserves_every_root_member_Poser_does_not_model()
     {
         // The members Brio writes and consumes at the document root, plus a
-        // nested container standing in for whatever the format gains next.
-        // None of them is named by Poser.Files.PoseFile.
+        // nested container standing in for whatever the format gains next —
+        // FutureBrioMember is the one Poser.Files.PoseFile does not name, and
+        // it is the one this case actually guards.
         using var fixture = new ActionsFixture();
         var path = fixture.WriteRaw("foreign", """
         {

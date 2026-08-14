@@ -46,6 +46,8 @@ public sealed class PoseFilePersistenceTests
         var expected = """
         {
           "TypeName": "Brio Pose",
+          "FileVersion": 3,
+          "GameVersion": "",
           "Author": null,
           "Description": "<current & compatible>",
           "Version": null,

@@ -17,6 +17,26 @@ public class PoseFile
 {
     public string TypeName { get; set; } = "Brio Pose";
 
+    /// <summary>Brio's current document version, its default exactly
+    /// (Brio Files/PoseFile.cs:140). Nothing in Poser branches on it — the
+    /// value is emitted so a fresh Poser export carries the same header a
+    /// fresh Brio export does instead of leaning on Brio's read-side default.
+    /// A file authored elsewhere keeps whatever version it arrived with.
+    /// </summary>
+    public int FileVersion { get; set; } = CurrentFileVersion;
+
+    /// <summary>The game build the capture ran on, Brio's wire name and its
+    /// informational semantics (Brio stamps
+    /// <c>Framework.Instance()-&gt;GameVersionString</c>, PoseFile.cs:148).
+    /// NOTHING reads it back on either side; it exists so a file can say which
+    /// build it came from. Empty is the honest answer when no build is
+    /// resolvable, which is why the default is not a guess — the export path
+    /// stamps it (<see cref="PoseFileService.CreatePoseFile"/>).</summary>
+    public string GameVersion { get; set; } = string.Empty;
+
+    /// <summary>Brio's <c>CurrentVersion</c> for a .pose document.</summary>
+    public const int CurrentFileVersion = 3;
+
     // Metadata (optional)
     public string? Author { get; set; }
     public string? Description { get; set; }
@@ -86,7 +106,7 @@ public class PoseFile
     /// System.Text.Json SKIPS unmapped members by default, so without this any
     /// read-modify-write of a document Poser did not author would silently
     /// drop what Brio (or a newer Poser) writes and consumes at that root —
-    /// <c>FileVersion</c>, <c>GameVersion</c>, whatever the format gains next.
+    /// whatever the format gains next.
     /// Brio's own metadata edit is careful for the same reason: it edits
     /// through the full-fidelity document
     /// (Brio Services/Library/Sources/FileSource.cs:341).
