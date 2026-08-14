@@ -83,6 +83,8 @@ public sealed class WorldAdoptionSource
     private readonly IPluginLog _log;
 
     private readonly List<WorldAdoptionCandidate> _candidates = new();
+    private int _actorCount;
+    private int _lightCount;
     private long _nextRefreshMs;
     private IActor? _pendingSelectActor;
     private ILight? _pendingSelectLight;
@@ -105,15 +107,65 @@ public sealed class WorldAdoptionSource
         _log = log;
     }
 
-    /// <summary>The workspace bar's World switch. Session state, not config —
-    /// Ktisis' ShowWorldObjects is runtime-only for the same reason: it is a
-    /// mode you are in while hunting for something to add, not a preference.
-    /// </summary>
-    public bool Enabled { get; set; }
+    /// <summary>Whether the world's addable ACTORS draw handles. Session
+    /// state, not config — Ktisis' ShowWorldObjects is runtime-only for the
+    /// same reason: it is a mode you are in while hunting for something to
+    /// add, not a preference.</summary>
+    public bool ShowActors { get; set; }
 
-    /// <summary>The current listing, nearest first. Empty whenever the switch
+    /// <summary>Whether the world's addable LIGHTS draw handles. A zone holds
+    /// far more of one class than the other, so hunting for a light through a
+    /// field of actor handles is what the class filters are for.</summary>
+    public bool ShowLights { get; set; }
+
+    /// <summary>
+    /// Whether the layer draws at all — DERIVED from the class filters rather
+    /// than held beside them. A master switch over exactly two filters is a
+    /// third state that can disagree with both: it reads on while no class
+    /// draws, or off while both classes read on, and the sidebar then has two
+    /// answers to one question.
+    /// </summary>
+    public bool Enabled => ShowActors || ShowLights;
+
+    /// <summary>One class's filter, as one call so no caller restates the
+    /// mapping.</summary>
+    public bool IsShown(WorldAdoptionKind kind) =>
+        kind == WorldAdoptionKind.Light ? ShowLights : ShowActors;
+
+    /// <summary>Sets one class's filter. Turning the last one off leaves the
+    /// layer off, because the layer IS its classes.</summary>
+    public void SetShown(WorldAdoptionKind kind, bool shown)
+    {
+        if (kind == WorldAdoptionKind.Light)
+            ShowLights = shown;
+        else
+            ShowActors = shown;
+        // The listing is stale the moment a filter moves: re-read on the next
+        // tick rather than leaving the outgoing class's handles up for the
+        // rest of the cadence.
+        _nextRefreshMs = 0;
+    }
+
+    /// <summary>The session ended: the next one starts with the world
+    /// unmarked, exactly as the armature toggle does.</summary>
+    public void EndSession()
+    {
+        ShowActors = false;
+        ShowLights = false;
+        _candidates.Clear();
+        _actorCount = 0;
+        _lightCount = 0;
+    }
+
+    /// <summary>The current listing, nearest first. Empty whenever every class
     /// is off, so nothing is enumerated for a hidden layer.</summary>
     public IReadOnlyList<WorldAdoptionCandidate> Candidates => _candidates;
+
+    /// <summary>How many of one class the last listing offered — the number
+    /// the sidebar's class row badges. Zero while that class is off, because
+    /// nothing was enumerated for it.</summary>
+    public int CountOf(WorldAdoptionKind kind) =>
+        kind == WorldAdoptionKind.Light ? _lightCount : _actorCount;
 
     /// <summary>Pumped once per overlay frame: re-lists on the cadence and
     /// finishes any adoption whose entity the scene has now bound.</summary>
@@ -123,6 +175,8 @@ public sealed class WorldAdoptionSource
         if (!Enabled)
         {
             _candidates.Clear();
+            _actorCount = 0;
+            _lightCount = 0;
             return;
         }
         long now = Environment.TickCount64;
@@ -217,18 +271,29 @@ public sealed class WorldAdoptionSource
     private void Refresh()
     {
         _candidates.Clear();
-        foreach (var actor in _worldActors.RefreshCandidates())
+        _actorCount = 0;
+        _lightCount = 0;
+        // A class that is off is not enumerated at all: the filter is not a
+        // draw-time skip over a listing nobody asked for — the enumeration is
+        // the expensive half.
+        if (ShowActors)
         {
-            if (actor.DistanceFromPlayer > RangeYalms)
-                continue;
-            _candidates.Add(new WorldAdoptionCandidate(
-                WorldAdoptionKind.Actor,
-                actor.Name,
-                actor.Position,
-                actor.DistanceFromPlayer,
-                Actor: actor.Id));
+            foreach (var actor in _worldActors.RefreshCandidates())
+            {
+                if (actor.DistanceFromPlayer > RangeYalms)
+                    continue;
+                _candidates.Add(new WorldAdoptionCandidate(
+                    WorldAdoptionKind.Actor,
+                    actor.Name,
+                    actor.Position,
+                    actor.DistanceFromPlayer,
+                    Actor: actor.Id));
+                _actorCount++;
+            }
         }
 
+        if (!ShowLights)
+            return;
         foreach (var light in _lighting.GetWorldLightCandidates())
         {
             if (light.DistanceFromPlayer > RangeYalms)
@@ -239,6 +304,7 @@ public sealed class WorldAdoptionSource
                 light.Position,
                 light.DistanceFromPlayer,
                 Light: light));
+            _lightCount++;
         }
     }
 }

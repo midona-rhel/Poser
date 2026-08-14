@@ -108,7 +108,7 @@ public sealed class UiWindowSet : IDisposable
             // The adoption layer is session state for the same reason the
             // Armature toggle is: the next session starts with the world
             // unmarked.
-            _worldAdoption.Enabled = false;
+            _worldAdoption.EndSession();
         }
         SyncSplitWindows();
     }

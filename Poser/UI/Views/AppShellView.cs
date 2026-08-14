@@ -48,6 +48,17 @@ public sealed class ShellSidebarRow
     public bool CameraActions;
     public bool CameraLive;
     public bool CameraLocked;
+
+    /// <summary>A WORLD class row's one action slot: the eye deciding whether
+    /// that class of addable world thing draws its handle. The row is not an
+    /// entity — nothing selects — so the row body throws the same eye.
+    /// </summary>
+    public bool WorldClassActions;
+    public bool WorldClassOn;
+    /// <summary>The class row's two hover cards, minted with the row: a warm
+    /// sidebar frame states help, so it must not build the sentence.</summary>
+    public string WorldClassShowHelp = "";
+    public string WorldClassHideHelp = "";
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -106,11 +117,6 @@ public sealed class AppShellViewModel
     /// under none.</summary>
     public bool PhysicsOn;
 
-    /// <summary>The world-adoption layer: while it is on, everything the
-    /// world holds that the scene does not draws a hollow handle you can click
-    /// to add it. Session state like Ktisis' own ShowWorldObjects — a mode you
-    /// are in while hunting for something to add, not a preference.</summary>
-    public bool WorldAdoptionOn;
     public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -199,7 +205,6 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
-    public Action<bool>? OnWorldAdoption;
     public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
     /// <summary>
     /// A BUTTON-BORNE surface anchors under the button that opened it, never
@@ -227,6 +232,10 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
+    /// <summary>A WORLD class row's eye: show or hide that class of addable
+    /// world thing. The row body raises it too — the row IS the toggle.
+    /// </summary>
+    public Action<ShellSidebarRow>? OnWorldClassToggle;
     public Func<IReadOnlyList<Domain.Identity.BoneId>, bool>?
         IsOverlayVisible;
     /// <summary>The world manip-handle toggle every entity row carries; the
@@ -252,7 +261,6 @@ public sealed class AppShellViewModel
     internal Action<int>? SymmetryChosen;
     internal Action<bool>? AnimationToggled;
     internal Action<bool>? PhysicsToggled;
-    internal Action<bool>? WorldAdoptionToggled;
     internal Action? CollapseToggled;
     internal Action<Crystarium.ActionBarScope>? WorkspaceRightActions;
 }
@@ -367,7 +375,6 @@ public static class AppShellView
         vm.SymmetryChosen ??= index => vm.OnSymmetry?.Invoke(index);
         vm.AnimationToggled ??= next => vm.OnAnimation?.Invoke(next);
         vm.PhysicsToggled ??= next => vm.OnPhysics?.Invoke(next);
-        vm.WorldAdoptionToggled ??= next => vm.OnWorldAdoption?.Invoke(next);
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
@@ -391,16 +398,10 @@ public static class AppShellView
                 vm.PhysicsOn
                     ? "Switch off to freeze physics for the whole scene"
                     : "Switch on to resume physics for the whole scene");
-            // Like physics, this is scene-wide and always live, so it holds
-            // its slot under every selection and under none.
-            right.Switch(
-                "World",
-                vm.WorldAdoptionOn,
-                vm.WorldAdoptionToggled!,
-                vm.WorldAdoptionOn
-                    ? "Switch off to hide the world's addable actors and lights"
-                    : "Switch on to mark the world's actors and lights — "
-                        + "click one to add it to the scene");
+            // The world-adoption layer is NOT here. It adds things to the
+            // scene, so it belongs with the scene tree that lists them — the
+            // sidebar's WORLD section — not on a bar of per-selection
+            // modifiers (user 2026-08-14).
         };
     }
 
