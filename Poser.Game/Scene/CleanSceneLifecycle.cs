@@ -77,6 +77,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Subscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Subscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Subscribe<PropListChangedEvent>(OnPropListChanged);
+        _events.Subscribe<OverlayNodeListChangedEvent>(OnOverlayListChanged);
         _events.Subscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         // Discovery, retries, and refreshes all run on the framework thread:
@@ -95,6 +96,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _events.Unsubscribe<LightListChangedEvent>(OnLightListChanged);
         _events.Unsubscribe<CameraListChangedEvent>(OnCameraListChanged);
         _events.Unsubscribe<PropListChangedEvent>(OnPropListChanged);
+        _events.Unsubscribe<OverlayNodeListChangedEvent>(OnOverlayListChanged);
         _events.Unsubscribe<SkeletonChangedEvent>(OnSkeletonChanged);
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
 
@@ -313,6 +315,9 @@ public sealed class CleanSceneLifecycle : IDisposable
         Refresh();
 
     private void OnPropListChanged(PropListChangedEvent _) =>
+        Refresh();
+
+    private void OnOverlayListChanged(OverlayNodeListChangedEvent _) =>
         Refresh();
 
     private void OnCameraListChanged(CameraListChangedEvent _) =>

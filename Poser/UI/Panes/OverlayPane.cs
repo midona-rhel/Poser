@@ -1,0 +1,567 @@
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin.Services;
+using Poser.Application.Scene;
+using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
+using Poser.Game.Bindings;
+using Poser.Game.Overlays;
+using Poser.Game.Scene;
+
+namespace Poser.UI;
+
+/// <summary>
+/// The selected overlay node's editor — the pane behind the "Overlay" tab
+/// that stands while an OVERLAYS sidebar row is selected.
+///
+/// <para>An overlay node is the one scene entity with no WORLD transform: it
+/// lives in screen space, so its placement is two pixel numbers, one uniform
+/// scale and an opacity rather than a gizmo, and those rows live HERE rather
+/// than on the inspector rail every other entity's transform uses. Ktisis
+/// makes the same split (<c>Interface/Editor/Properties/OverlayPropertyList.cs:82-119</c>).
+/// </para>
+///
+/// <para>The rest of the pane is the node's own vocabulary, which is a
+/// function of its kind: the dialogue panel's speaker and plate, the balloon's
+/// channel and tail, the status line's kind and icon.</para>
+///
+/// <para>Lifetime clicks are DEFERRED to the end of the frame: destroying the
+/// node republishes the scene mid-walk otherwise — the props pane's rule.</para>
+/// </summary>
+public sealed class OverlayPane
+{
+    private readonly SceneSession _scene;
+    private readonly StableBindingRegistry _bindings;
+    private readonly StatusIconCatalog _statusIcons;
+
+    /// <summary>Adding and removing a node goes through the lifecycle seam, so
+    /// both land in the shell's undo history.</summary>
+    private readonly SceneLifecycleHistory _lifecycle;
+
+    private readonly GameIconResolver _icons;
+
+    /// <summary>The status sheet's icons, flat and searchable. The rows are a
+    /// snapshot minted at open, not per frame.</summary>
+    private readonly Crystarium.SearchPicker<StatusIconChoice> _iconPicker =
+        new("overlay-status-icon");
+
+    private readonly List<StatusIconChoice> _iconChoices = new();
+
+    private bool _openPlacement = true;
+    private bool _openContent = true;
+    private bool _openActions = true;
+
+    /// <summary>Anything that changes the list, run after the page has drawn.
+    /// </summary>
+    private Action? _pending;
+
+    /// <summary>The node a create or duplicate made, selected once the scene
+    /// refresh has bound it.</summary>
+    private OverlayNodeHandle? _pendingSelect;
+
+    private string _status = string.Empty;
+
+    /// <summary>One pickable icon, as a picker row. The picker takes reference
+    /// types and the catalog entry is a struct, so the label and the ImGui key
+    /// are minted at open rather than per frame.</summary>
+    private sealed record StatusIconChoice(
+        uint IconId, string Name, string Key);
+
+    public OverlayPane(
+        SceneSession scene,
+        StableBindingRegistry bindings,
+        StatusIconCatalog statusIcons,
+        SceneLifecycleHistory lifecycle,
+        ITextureProvider textures)
+    {
+        _scene = scene;
+        _bindings = bindings;
+        _statusIcons = statusIcons;
+        _lifecycle = lifecycle;
+        _icons = new GameIconResolver(textures);
+    }
+
+    /// <summary>Selects a node some other surface just created — the spawn
+    /// browser's rows and this pane's own duplicate. The scene has not
+    /// rescanned yet, so the id is resolved on a later frame.</summary>
+    public void SelectWhenBound(OverlayNodeHandle? node)
+    {
+        if (node != null)
+            _pendingSelect = node;
+    }
+
+    /// <summary>The shell's every-frame pump. A node created from the spawn
+    /// browser has nothing selected yet, so this pane is not being drawn when
+    /// the scene refresh binds it — the pending select would never land if it
+    /// were only reconciled from <see cref="Draw"/>. The camera pane's rule.
+    /// </summary>
+    public void Tick() => ReconcilePendingSelect();
+
+    public void Draw(Vector2 origin, Vector2 size)
+    {
+        ReconcilePendingSelect();
+
+        Crystarium.Page("overlay", origin, size, page =>
+        {
+            if (SelectedNode() is not { } node)
+            {
+                page.EmptyState("Select an overlay in the sidebar.");
+                return;
+            }
+
+            page.Section(
+                "PLACEMENT",
+                _openPlacement,
+                next => _openPlacement = next,
+                form => PlacementRows(form, node));
+            page.Section(
+                ContentTitle(node.Kind),
+                _openContent,
+                next => _openContent = next,
+                form => ContentRows(form, node));
+            page.Section(
+                "LIFETIME",
+                _openActions,
+                next => _openActions = next,
+                form => LifetimeRows(form, node),
+                divider: false);
+        });
+
+        // Pumped after the page: the surface a row opened has to outlive that
+        // row's own draw call.
+        if (_iconPicker.Draw() is { } picked)
+            ApplyIcon(picked.Item);
+
+        var pending = _pending;
+        _pending = null;
+        pending?.Invoke();
+    }
+
+    // ── sections ─────────────────────────────────────────────────────────
+
+    private void PlacementRows(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        string name = node.Name;
+        form.TextInput(
+            "Name",
+            name,
+            next => node.Name = next,
+            placeholder: "Overlay",
+            help: "What the sidebar calls this overlay — never the text it "
+                + "draws");
+        form.Switch(
+            "Visible",
+            node.Visible,
+            next => node.Visible = next,
+            help: "Hide this overlay without destroying it");
+        form.Switch(
+            "Drag on screen",
+            node.Draggable,
+            next => node.Draggable = next,
+            help: "Let the pointer drag the overlay directly. Off by default: "
+                + "a draggable overlay eats clicks meant for the scene.");
+
+        var position = node.Position;
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "X",
+                cell => cell.Number(
+                    "##overlay-x",
+                    position.X,
+                    next => node.Position = new Vector2(next, position.Y),
+                    perPixel: 1f,
+                    format: "0"));
+            cells.Cell(
+                "Y",
+                cell => cell.Number(
+                    "##overlay-y",
+                    position.Y,
+                    next => node.Position = new Vector2(position.X, next),
+                    perPixel: 1f,
+                    format: "0"));
+        },
+        help: "Where the overlay sits, in screen pixels from the top-left");
+
+        form.NumericSlider(
+            "Scale",
+            node.Scale,
+            OverlayNodeLimits.MinScale,
+            OverlayNodeLimits.MaxScale,
+            next => node.Scale = next,
+            perPixel: 0.01f);
+        form.NumericSlider(
+            "Opacity",
+            node.Alpha,
+            0f,
+            1f,
+            next => node.Alpha = next,
+            perPixel: 0.01f);
+
+        form.Actions("Position", actions =>
+        {
+            actions.Button(
+                "Centre",
+                () => node.Position = Centred(node),
+                help: "Move the overlay to the middle of the viewport");
+            actions.Button(
+                "Reset size",
+                () =>
+                {
+                    node.Scale = 1f;
+                    node.Alpha = 1f;
+                },
+                help: "Back to full size and full opacity");
+        });
+    }
+
+    private void ContentRows(Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        switch (node.Kind)
+        {
+            case OverlayNodeKind.Talk:
+                TalkRows(form, node);
+                return;
+            case OverlayNodeKind.Balloon:
+                BalloonRows(form, node);
+                return;
+            default:
+                StatusRows(form, node);
+                return;
+        }
+    }
+
+    private static void TalkRows(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.TextInput(
+            "Speaker",
+            node.Speaker,
+            next => node.Speaker = next,
+            placeholder: "Who is talking",
+            help: "The name on the plate above the panel");
+        form.TextInput(
+            "Line",
+            node.Text,
+            next => node.Text = next,
+            placeholder: "What they say",
+            help: "The panel's body, up to "
+                + OverlayNodeLimits.MaxTextCharacters + " characters");
+        form.Dropdown(
+            "Panel",
+            TalkBackgroundLabels,
+            (int)node.TalkBackground,
+            next => node.TalkBackground = (TalkBackground)next,
+            help: "Which of the game's own dialogue plates to draw on");
+        form.Dropdown(
+            "Advance mark",
+            TalkCursorLabels,
+            (int)node.TalkCursor,
+            next => node.TalkCursor = (TalkCursor)next,
+            help: "The mark in the panel's corner: the page-turn pin, the "
+                + "continue loop, or none");
+        FontSizeRow(form, node);
+    }
+
+    private static void BalloonRows(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.TextInput(
+            "Line",
+            node.Text,
+            next => node.Text = next,
+            placeholder: "What they say",
+            help: "The bubble holds one line; longer text is cut with an "
+                + "ellipsis, exactly as the game's own bubbles are");
+        form.Dropdown(
+            "Channel",
+            BalloonChannelLabels,
+            (int)node.BalloonChannel,
+            next => node.BalloonChannel = (BalloonChannel)next,
+            help: "Which chat channel's frame to wear");
+        form.Dropdown(
+            "Tint",
+            BalloonGradientLabels,
+            (int)node.BalloonGradient,
+            next => node.BalloonGradient = (BalloonGradient)next,
+            help: "The colour over the bubble's gradient band — the same set "
+                + "the chat colour settings offer");
+        form.Switch(
+            "Tail",
+            node.ArrowVisible,
+            next => node.ArrowVisible = next,
+            help: "The point that marks who is speaking");
+        form.NumericSlider(
+            "Tail position",
+            node.ArrowX,
+            OverlayNodeLimits.MinArrowX,
+            OverlayNodeLimits.MaxArrowX,
+            next => node.ArrowX = next,
+            perPixel: 0.5f,
+            format: "0",
+            disabled: !node.ArrowVisible);
+        FontSizeRow(form, node);
+    }
+
+    private void StatusRows(Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.TextInput(
+            "Effect",
+            node.Text,
+            next => node.Text = next,
+            placeholder: "What the effect is called",
+            help: "The name the status bar shows");
+        form.Dropdown(
+            "Reads as",
+            StatusKindLabels,
+            (int)node.StatusKind,
+            next => node.StatusKind = (StatusKind)next,
+            help: "Gained effects read as additions and expiring ones as "
+                + "subtractions, in the game's own green, red and grey");
+
+        string current = _statusIcons.NameFor(node.StatusIconId);
+        form.Picker(
+            "Icon",
+            current.Length > 0
+                ? current
+                : node.StatusIconId == 0
+                    ? "None"
+                    : "Icon " + node.StatusIconId,
+            () => OpenIconPicker(node),
+            help: "Any status icon the game declares");
+    }
+
+    private static void FontSizeRow(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.NumericSlider(
+            "Text size",
+            node.FontSize,
+            OverlayNodeLimits.MinFontSize,
+            OverlayNodeLimits.MaxFontSize,
+            next => node.FontSize = (uint)MathF.Round(next),
+            perPixel: 0.2f,
+            format: "0");
+    }
+
+    private void LifetimeRows(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.Actions("Overlay", actions =>
+        {
+            actions.Button(
+                "Duplicate",
+                () => _pending = () => Duplicate(node),
+                help: "Add another overlay saying exactly this");
+            actions.Button(
+                "Delete",
+                () => _pending = () =>
+                {
+                    _lifecycle.DestroyOverlay(node);
+                    _scene.Selection.Clear();
+                },
+                variant: ButtonVariant.Danger,
+                help: "Take this overlay off the screen");
+            actions.Button(
+                "Remove all",
+                () => _pending = () =>
+                {
+                    _lifecycle.DestroyAllOverlays();
+                    _scene.Selection.Clear();
+                },
+                variant: ButtonVariant.Danger,
+                help: "Take every overlay off the screen");
+        });
+        form.Status(
+            _status.Length > 0
+                ? _status
+                : "Overlays are drawn behind the game's own interface and "
+                    + "survive hiding the UI, so they stay in the shot.");
+    }
+
+    // ── the icon picker ──────────────────────────────────────────────────
+
+    private void OpenIconPicker(OverlayNodeHandle node)
+    {
+        _iconChoices.Clear();
+        foreach (var entry in _statusIcons.Entries)
+            _iconChoices.Add(new StatusIconChoice(
+                entry.IconId,
+                entry.Name,
+                entry.IconId.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture)));
+
+        _iconPicker.Open(
+            "status-icon",
+            _iconChoices,
+            static choice => choice.Name,
+            static choice => choice.Key,
+            node.StatusIconId.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            loadError: _iconChoices.Count == 0
+                ? "The status sheet declared no icons."
+                : null,
+            options: new PickerOptions<StatusIconChoice>
+            {
+                // A picture picker has to show the pictures: the row's mark is
+                // the icon itself, not a glyph standing in for one.
+                Texture = choice => _icons.Resolve(choice.IconId),
+            });
+    }
+
+    private void ApplyIcon(StatusIconChoice choice)
+    {
+        if (SelectedNode() is { } node)
+            node.StatusIconId = choice.IconId;
+    }
+
+    // ── acts ─────────────────────────────────────────────────────────────
+
+    private void Duplicate(OverlayNodeHandle node)
+    {
+        // The copy is offset so it does not land exactly under the original,
+        // where it would look like nothing happened; the NAME is dropped so
+        // the service mints the next one of its kind rather than two rows
+        // wearing one name.
+        var document = node.State with
+        {
+            Name = string.Empty,
+            Position = node.Position + new Vector2(DuplicateOffset),
+        };
+        if (_lifecycle.SpawnOverlay(document) is OverlayNodeHandle copy)
+        {
+            _pendingSelect = copy;
+            _status = string.Empty;
+            return;
+        }
+        _status = "The overlay could not be duplicated — the game's interface "
+            + "would not take it.";
+    }
+
+    /// <summary>How far a duplicate lands from its original, in the node's own
+    /// screen pixels.</summary>
+    private const float DuplicateOffset = 24f;
+
+    private static Vector2 Centred(OverlayNodeHandle node)
+    {
+        var viewport = ImGui.GetMainViewport().Size;
+        var extent = DesignSize(node.Kind) * node.Scale;
+        return (viewport - extent) * 0.5f;
+    }
+
+    /// <summary>Each node's own drawn extent, which is what centring has to
+    /// measure against — the node reports no bounds of its own.</summary>
+    private static Vector2 DesignSize(OverlayNodeKind kind) => kind switch
+    {
+        OverlayNodeKind.Balloon => new Vector2(200f, 90f),
+        OverlayNodeKind.Status => new Vector2(247f, 32f),
+        _ => new Vector2(680f, 180f),
+    };
+
+    // ── state ────────────────────────────────────────────────────────────
+
+    private OverlayNodeHandle? SelectedNode()
+    {
+        if (_scene.Selection.Primary is not
+            { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
+            return null;
+        var resolved = _bindings.Resolve(overlayId);
+        return resolved.Success && resolved.Value is { IsValid: true } node
+            ? node
+            : null;
+    }
+
+    /// <summary>Second half of <see cref="SelectWhenBound"/>: once the scene
+    /// refresh has bound the new node, select it and forget it.</summary>
+    private void ReconcilePendingSelect()
+    {
+        if (_pendingSelect is not { } pending)
+            return;
+        if (!pending.IsValid)
+        {
+            _pendingSelect = null;
+            return;
+        }
+        if (_bindings.GetOverlayId(pending) is not { } id)
+            return;
+        _scene.Selection.Select(SelectionId.ForOverlay(id));
+        _pendingSelect = null;
+    }
+
+    private static string ContentTitle(OverlayNodeKind kind) => kind switch
+    {
+        OverlayNodeKind.Balloon => "BUBBLE",
+        OverlayNodeKind.Status => "STATUS",
+        _ => "DIALOGUE",
+    };
+
+    // The label sets are positional against their enums, minted once: a
+    // dropdown that rebuilt its list per frame would be this pane's whole
+    // warm-frame cost.
+
+    private static readonly string[] TalkBackgroundLabels =
+    [
+        "Basic",
+        "Thought",
+        "Echo",
+        "Computer",
+        "Yell",
+        "Parchment",
+        "Dragonspeak",
+        "Linkpearl",
+        "Narration",
+    ];
+
+    private static readonly string[] TalkCursorLabels =
+    [
+        "None",
+        "Page turn",
+        "Continue",
+    ];
+
+    private static readonly string[] BalloonChannelLabels =
+    [
+        "Say",
+        "Party",
+        "Tell",
+        "Alliance",
+        "Yell",
+        "Shout",
+        "Free Company",
+        "Linkshell",
+        "Cross-world linkshell",
+        "Novice Network",
+        "PvP team",
+    ];
+
+    private static readonly string[] BalloonGradientLabels =
+    [
+        "Default",
+        "Lime",
+        "Orange",
+        "Violet",
+        "Sky blue",
+        "Clay",
+        "Light jeans",
+        "Grass green",
+        "Grey",
+        "Pink",
+        "Dark jeans",
+        "Green",
+        "Purple",
+        "Brown",
+        "Cloudy blue",
+        "Royal purple",
+    ];
+
+    private static readonly string[] StatusKindLabels =
+    [
+        "Plain",
+        "Gained",
+        "Suffered",
+        "Expiring",
+    ];
+}

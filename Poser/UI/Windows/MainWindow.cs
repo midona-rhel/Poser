@@ -9,6 +9,7 @@ using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Core;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Entities;
@@ -194,6 +195,16 @@ public class MainWindow : Window
         ShowPlus = true,
     };
 
+    /// <summary>The overlays section, the props section's sibling: flat rows,
+    /// one per staged game-UI node, rebuilt behind the same gate (the scene
+    /// revision carries a node's create, destroy, rename and visibility) and
+    /// flag-refreshed on warm frames.</summary>
+    private readonly ShellSidebarSection _overlaysSection = new()
+    {
+        Title = "OVERLAYS",
+        ShowPlus = true,
+    };
+
     /// <summary>The lights section, retained like ACTORS. Lights are flat — a
     /// spawned light owns nothing beneath it — so its rows are one per light,
     /// rebuilt behind the same gate (the scene revision carries a light's
@@ -358,6 +369,15 @@ public class MainWindow : Window
         new() { Label = "Shadows" },
     ];
 
+    /// <summary>An overlay's tab strip, the prop strip's sibling: while a
+    /// staged game-UI node is selected the one tab IS its editor. An overlay
+    /// has no world transform for the inspector rail to own, so its screen
+    /// placement lives on the tab with everything else about it.</summary>
+    private readonly ShellTab[] _overlayTabs =
+    [
+        new() { Label = "Overlay" },
+    ];
+
     /// <summary>A camera's tab strip, the light strip's sibling: while a
     /// camera is selected the one tab IS the camera editor — the camera's
     /// offset and its bone tracking live on the inspector rail instead.
@@ -393,13 +413,18 @@ public class MainWindow : Window
     /// <summary>Lights stand under the actors they light.</summary>
     private const int LightsSectionIndex = 5;
 
-    /// <summary>Cameras close the scene: they look at everything above them.
-    /// </summary>
+    /// <summary>Cameras stand above the overlays: they look at everything in
+    /// the world, and an overlay is not in the world.</summary>
     private const int CamerasSectionIndex = 6;
+
+    /// <summary>Overlays close the scene's own list. They are the one entity
+    /// that lives on the SCREEN rather than in the scene, so they sit outside
+    /// everything the camera can see.</summary>
+    private const int OverlaysSectionIndex = 7;
 
     /// <summary>The world stands last of all — under everything the scene
     /// holds, because it is where the next of them comes from.</summary>
-    private const int WorldSectionIndex = 7;
+    private const int WorldSectionIndex = 8;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -453,6 +478,8 @@ public class MainWindow : Window
         GraphicalBonePane graphicalBonePane,
         Game.PropSpawnService propService,
         PropsPane propsPane,
+        Game.Overlays.OverlayNodeService overlayService,
+        OverlayPane overlayPane,
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         WorldAdoptionSource worldAdoption,
@@ -488,6 +515,8 @@ public class MainWindow : Window
         _spawnService = spawnService;
         _propService = propService;
         _propsPane = propsPane;
+        _overlayService = overlayService;
+        _overlayPane = overlayPane;
         _companions = companions;
         _poseInspector = poseInspector;
         _animationPane = animationPane;
@@ -617,6 +646,9 @@ public class MainWindow : Window
                 OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Cameras);
             else if (index == ActorsSectionIndex)
                 OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Actors);
+            else if (index == OverlaysSectionIndex)
+                OnSpawnBrowserRequested?.Invoke(
+                    anchor, SpawnBrowserTab.Overlays);
             // The world's plus is the same affordance on the same surface: the
             // browser's World tab is the LIST of what the handles mark, so the
             // section offers both ways in — a list from the plus, handles in
@@ -752,6 +784,19 @@ public class MainWindow : Window
                     return;
                 handle.Visible = !handle.Visible;
                 row.LightOn = handle.Visible;
+                return;
+            }
+            // An overlay row wears the same eye seat as a prop's: its toggle
+            // is whether the node is drawn.
+            if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId })
+            {
+                var overlay = _bindings.Resolve(overlayId);
+                if (!overlay.Success ||
+                    overlay.Value is not { IsValid: true } node)
+                    return;
+                node.Visible = !node.Visible;
+                row.LightOn = node.Visible;
                 return;
             }
             if (row.Tag is not SelectionId
@@ -1077,6 +1122,10 @@ public class MainWindow : Window
         _cameraPane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
         _scenePane.DrawBrowsers();
+        // An overlay created from the spawn browser binds a frame or more
+        // later, with nothing selected and its pane therefore undrawn; the
+        // pending select has to be pumped from the shell or it never lands.
+        _overlayPane.Tick();
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
         _libraryPane.Tick();
@@ -1370,13 +1419,17 @@ public class MainWindow : Window
         _vm.Sections.Add(_propsSection);
         _vm.Sections.Add(_lightsSection);
         _vm.Sections.Add(_camerasSection);
-        // The world stands under the whole scene: everything above is what the
-        // scene holds, and this is where the next of it comes from.
+        // Overlays close the scene's list: they are the one entity that lives
+        // on the screen rather than in the world the cameras above them look
+        // at. The world stands under everything — it is where the next of the
+        // scene comes from.
+        _vm.Sections.Add(_overlaysSection);
         _vm.Sections.Add(_worldSection);
         _actorsSection.Rows.Clear();
         _propsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
         _camerasSection.Rows.Clear();
+        _overlaysSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
@@ -1450,6 +1503,25 @@ public class MainWindow : Window
             });
         }
 
+        // Overlays are flat like props: one row per staged node, the header's
+        // plus makes another, and the eye seat toggles whether it is drawn.
+        // The mark states the KIND, which is the one thing about a node that
+        // can never change.
+        foreach (var overlay in _scene.Snapshot.Overlays)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, overlay.Name))
+                continue;
+            _overlaysSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = overlay.Name,
+                Count = "",
+                Icon = OverlayIcon(overlay.Kind),
+                Tag = SelectionId.ForOverlay(overlay.Id),
+                LightActions = true,
+                LightOn = overlay.Visible,
+            });
+        }
+
         // Cameras are flat like lights: one row per camera, the header's plus
         // makes another, and the row's one action makes it the live camera.
         foreach (var camera in _scene.Snapshot.Cameras)
@@ -1483,6 +1555,18 @@ public class MainWindow : Window
     /// </summary>
     private static string CameraBadge(bool live, bool isDefault) =>
         live ? "Live" : isDefault ? "Default" : "";
+
+    /// <summary>The mark for one overlay KIND. A dialogue panel, a bubble and
+    /// a status line are three different things on screen, so they are three
+    /// different marks in the tree.</summary>
+    private static TablerIcon OverlayIcon(
+        OverlayNodeKind kind) => kind switch
+    {
+        OverlayNodeKind.Balloon =>
+            TablerIcon.MessageCircle,
+        OverlayNodeKind.Status => TablerIcon.Star,
+        _ => TablerIcon.Message,
+    };
 
     /// <summary>The mark for one light KIND, shared by the sidebar rows and
     /// the LIGHTS header's type chooser: a kind means the same thing wherever
@@ -1594,6 +1678,27 @@ public class MainWindow : Window
                 cameraRow.Count =
                     CameraBadge(liveCamera.IsLive, liveCamera.IsDefault);
             }
+        }
+
+        // Without the node library a create is a silent no-op, so the
+        // header's plus is absent rather than inert — the lights header's own
+        // rule.
+        _overlaysSection.ShowPlus = _overlayService.IsAvailable;
+
+        var overlayRows = _overlaysSection.Rows;
+        for (int i = 0; i < overlayRows.Count; i++)
+        {
+            var overlayRow = overlayRows[i];
+            if (overlayRow.Tag is not SelectionId overlaySelection)
+                continue;
+            overlayRow.Active = _selection.IsSelected(overlaySelection);
+            // The eye reads the LIVE node, not the descriptor: visibility
+            // moves the scene signature, and waiting for the republish would
+            // leave the glyph behind the click that flipped it.
+            if (overlaySelection.Overlay is { } overlayId &&
+                _bindings.Resolve(overlayId) is
+                    { Success: true, Value: { } liveOverlay })
+                overlayRow.LightOn = liveOverlay.Visible;
         }
 
         var propRows = _propsSection.Rows;
@@ -2401,6 +2506,7 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Light } => (_lightTabs, "light"),
             { Kind: SceneEntityKind.Camera } => (_cameraTabs, "camera"),
             { Kind: SceneEntityKind.Prop } => (_propTabs, "prop"),
+            { Kind: SceneEntityKind.Overlay } => (_overlayTabs, "overlay"),
             // Creatures share the actor strip: their skeleton poses, their
             // battle-chara body animates, and the Appearance pane hides the
             // humanoid-only sections itself.
@@ -2763,6 +2869,15 @@ public class MainWindow : Window
             return;
         }
 
+        // The overlay tab stands only while an overlay is selected — the label
+        // is unique across every strip, so it is the whole dispatch, exactly
+        // like the prop's.
+        if (_activeTab == "Overlay")
+        {
+            _overlayPane.Draw(origin, size);
+            return;
+        }
+
         // The environment is answered by the SELECTION, not by the label: it
         // and a light both name a "Light" tab, and only the selected entity
         // says which pane that tab belongs to. Its strip is its own five tabs,
@@ -2826,6 +2941,8 @@ public class MainWindow : Window
 
     private readonly Game.PropSpawnService _propService;
     private readonly PropsPane _propsPane;
+    private readonly Game.Overlays.OverlayNodeService _overlayService;
+    private readonly OverlayPane _overlayPane;
     private readonly CompanionSection _companions;
 
     /// <summary>

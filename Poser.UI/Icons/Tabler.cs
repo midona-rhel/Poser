@@ -89,6 +89,8 @@ public enum TablerIcon
     ZoomIn,
     ZoomOut,
     Video,
+    Message,
+    MessageCircle,
 }
 
 /// <summary>
@@ -222,6 +224,8 @@ public static class Tabler
         TablerIcon.ZoomIn          => "zoom-in",
         TablerIcon.ZoomOut         => "zoom-out",
         TablerIcon.Video           => "video",
+        TablerIcon.Message         => "message",
+        TablerIcon.MessageCircle   => "message-circle",
         _ => "circle",
     };
 }

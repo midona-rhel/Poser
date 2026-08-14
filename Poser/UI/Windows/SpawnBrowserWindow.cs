@@ -12,6 +12,7 @@ using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Bindings;
@@ -40,16 +41,19 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
-    private const int RowLightSpot = 4;
-    private const int RowLightPoint = 5;
-    private const int RowLightArea = 6;
-    private const int RowLightDirectional = 7;
-    private const int RowLightFromFile = 8;
-    private const int RowWorldLight = 9;
-    private const int RowCameraGame = 10;
-    private const int RowCameraFree = 11;
-    private const int RowCameraFromFile = 12;
-    private const int ActionRows = 13;
+    private const int RowOverlayTalk = 4;
+    private const int RowOverlayBalloon = 5;
+    private const int RowOverlayStatus = 6;
+    private const int RowLightSpot = 7;
+    private const int RowLightPoint = 8;
+    private const int RowLightArea = 9;
+    private const int RowLightDirectional = 10;
+    private const int RowLightFromFile = 11;
+    private const int RowWorldLight = 12;
+    private const int RowCameraGame = 13;
+    private const int RowCameraFree = 14;
+    private const int RowCameraFromFile = 15;
+    private const int ActionRows = 16;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -72,6 +76,8 @@ public sealed class SpawnBrowserWindow : Window
     private readonly IActorSpawnService _spawnService;
     private readonly Game.WorldActorDiscovery _worldActors;
     private readonly Game.PropSpawnService _propService;
+    private readonly Game.Overlays.OverlayNodeService _overlayService;
+    private readonly OverlayPane _overlayPane;
     private readonly ILightingService _lightingService;
     private readonly LightPane _lightPane;
     private readonly IVirtualCameraService _cameraService;
@@ -162,6 +168,8 @@ public sealed class SpawnBrowserWindow : Window
         IActorSpawnService spawnService,
         Game.WorldActorDiscovery worldActors,
         Game.PropSpawnService propService,
+        Game.Overlays.OverlayNodeService overlayService,
+        OverlayPane overlayPane,
         ILightingService lightingService,
         LightPane lightPane,
         IVirtualCameraService cameraService,
@@ -181,6 +189,8 @@ public sealed class SpawnBrowserWindow : Window
         _spawnService = spawnService;
         _worldActors = worldActors;
         _propService = propService;
+        _overlayService = overlayService;
+        _overlayPane = overlayPane;
         _lightingService = lightingService;
         _lightPane = lightPane;
         _cameraService = cameraService;
@@ -373,6 +383,22 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Stack2));
         rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Diamond));
+        // The three game-UI overlays. Without the node library a create is a
+        // silent no-op, so they read as disabled rather than doing nothing.
+        bool noOverlays = !_overlayService.IsAvailable;
+        rows.Add(ActionRow(
+            "##spawn-overlay-talk", "Dialogue box", TablerIcon.Message,
+            noOverlays,
+            help: "The game's own NPC dialogue panel, with a speaker and a "
+                + "line of your own"));
+        rows.Add(ActionRow(
+            "##spawn-overlay-balloon", "Chat bubble", TablerIcon.MessageCircle,
+            noOverlays,
+            help: "The game's own chat bubble, in any channel's colours"));
+        rows.Add(ActionRow(
+            "##spawn-overlay-status", "Status line", TablerIcon.Star,
+            noOverlays,
+            help: "One line of the status bar: an icon and an effect name"));
         // Both light entries need the native lighting signatures; without them
         // a spawn is a silent no-op, so they read as disabled rather than
         // doing nothing. Availability is fixed for the session.
@@ -423,9 +449,11 @@ public sealed class SpawnBrowserWindow : Window
                 ? SpawnBrowserTab.Props
                 : i < RowProp
                     ? SpawnBrowserTab.Actors
-                    : i <= RowWorldLight
-                        ? SpawnBrowserTab.Lights
-                        : SpawnBrowserTab.Cameras);
+                    : i <= RowOverlayStatus
+                        ? SpawnBrowserTab.Overlays
+                        : i <= RowWorldLight
+                            ? SpawnBrowserTab.Lights
+                            : SpawnBrowserTab.Cameras);
 
         var entries = _catalog.Entries;
         _actorEntryCount = entries.Count;
@@ -684,6 +712,29 @@ public sealed class SpawnBrowserWindow : Window
                 if (_lifecycle.SpawnProp() == null)
                     _note = SpawnFailedNote;
                 return;
+            case RowOverlayTalk:
+            case RowOverlayBalloon:
+            case RowOverlayStatus:
+            {
+                var overlayKind = index switch
+                {
+                    RowOverlayBalloon => OverlayNodeKind.Balloon,
+                    RowOverlayStatus => OverlayNodeKind.Status,
+                    _ => OverlayNodeKind.Talk,
+                };
+                if (_lifecycle.SpawnOverlay(overlayKind)
+                    is Game.Overlays.OverlayNodeHandle staged)
+                {
+                    // The pane owns the pending select and is pumped by the
+                    // main window every frame, so the selection lands however
+                    // this window is dismissed — the camera row's rule.
+                    _overlayPane.SelectWhenBound(staged);
+                    return;
+                }
+                _note = "The overlay could not be staged — the game's "
+                    + "interface would not take it.";
+                return;
+            }
             case RowLightSpot:
             case RowLightPoint:
             case RowLightArea:

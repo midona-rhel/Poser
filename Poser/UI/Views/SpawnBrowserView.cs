@@ -19,6 +19,10 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
+    /// <summary>The three game-UI overlay nodes: the dialogue panel, the chat
+    /// bubble and the status line.</summary>
+    Overlays,
+
     /// <summary>Visible overworld actors offered for cloning into the scene.
     /// The rows are a snapshot: refreshed on open, on switching here, and by
     /// the tab's own refresh row — never per frame.</summary>
@@ -149,6 +153,7 @@ public static class SpawnBrowserView
         "Lights",
         "Cameras",
         "Props",
+        "Overlays",
         "World",
     ];
 

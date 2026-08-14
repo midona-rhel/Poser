@@ -350,6 +350,7 @@ internal static class ServiceRegistration
             Game.Overlays.IOverlayNodePort,
             Game.Overlays.KamiToolKitOverlayPort>();
         services.AddSingleton<Game.Overlays.OverlayNodeService>();
+        services.AddSingleton<Game.Overlays.StatusIconCatalog>();
         return services;
     }
 
@@ -419,6 +420,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();
+        services.AddSingleton<OverlayPane>();
         services.AddSingleton<LightPane>();
         services.AddSingleton<CameraPane>();
         services.AddSingleton<EnvironmentPane>();
