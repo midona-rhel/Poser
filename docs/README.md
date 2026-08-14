@@ -19,6 +19,10 @@ XML comments carry implementation detail.
 | Implementation/review loop | [process/external-implementation-review-loop.md](process/external-implementation-review-loop.md) |
 | Live testing gate | [process/testing.md](process/testing.md) |
 | Dependency updates | [process/dependency-currency.md](process/dependency-currency.md) |
+| Licensing, attribution, dependency verdicts | [../THIRD-PARTY-LICENSES.md](../THIRD-PARTY-LICENSES.md) |
+| Public-release procedure | [release/runbook.md](release/runbook.md) |
+| What must not ship publicly | [release/exclusions.md](release/exclusions.md) |
+| User-facing release notes | [release/CHANGELOG.md](release/CHANGELOG.md) |
 | Deliberate Brio divergences (do-not-copy) | [brio/known-brio-bugs.md](brio/known-brio-bugs.md) |
 | Parity tracking (non-normative) | `brio/parity-checklist.md` |
 | Dated audit snapshots (non-normative) | `validation/*.md` |

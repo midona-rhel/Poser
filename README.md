@@ -31,4 +31,13 @@ and asks you to confirm you have read it before the workspace opens.
 
 ## License
 
-See [LICENSE](LICENSE).
+Poser is **GPL-3.0-only** — see [LICENSE](LICENSE).
+
+It could not be anything else. Ktisis and Brio are both GPL-3.0 with no "or any
+later version" option, and Poser derives mechanisms from both and ships data
+files from both, so the copyleft carries through at version 3 exactly.
+Anamnesis is MIT, which combines into a GPL work but does not loosen it.
+
+Every upstream project, every NuGet package Poser redistributes, and the
+evidence behind each license verdict are listed in
+[THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
