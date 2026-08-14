@@ -290,11 +290,13 @@ public sealed class PoseEditService
         if (!prepared.Success)
             return PoseCaptureResult.Fail(prepared.Detail!);
 
+        var bones = SceneBonesById();
         var entries = new List<PortableBoneEntry>(prepared.States!.Count);
         foreach (var state in prepared.States)
         {
             if (!TryCreatePortableTarget(
                     state.Target.Bone!.Value,
+                    bones,
                     out var portableTarget,
                     out var detail))
                 return PoseCaptureResult.Fail(detail!);
@@ -333,11 +335,13 @@ public sealed class PoseEditService
         if (!TryValidateBoneTargets(targets, out var targetDetail))
             return PoseEditResult.Fail(targetDetail!);
 
+        var bones = SceneBonesById();
         var destinations = new List<PortableBoneTarget>(targets.Count);
         foreach (var target in targets.Distinct())
         {
             if (!TryCreatePortableTarget(
                     target.Bone!.Value,
+                    bones,
                     out var destination,
                     out var detail))
                 return PoseEditResult.Fail(detail!);
@@ -378,22 +382,29 @@ public sealed class PoseEditService
         return Apply(description, before, desired);
     }
 
-    private bool TryCreatePortableTarget(
+    /// <summary>Every bone of every actor in the scene, by id. Built ONCE
+    /// per capture/apply pass and passed through the per-bone loop —
+    /// rebuilding it per bone made portable capture O(bones²) on the
+    /// framework thread.</summary>
+    private Dictionary<BoneId, BoneDescriptor> SceneBonesById() =>
+        _scene.Snapshot.Actors
+            .SelectMany(actor => actor.Skeletons)
+            .SelectMany(skeleton => skeleton.Bones)
+            .ToDictionary(item => item.Id);
+
+    private static bool TryCreatePortableTarget(
         BoneId bone,
+        IReadOnlyDictionary<BoneId, BoneDescriptor> bones,
         out PortableBoneTarget target,
         out string? detail)
     {
-        if (!TryFindBoneDescriptor(bone, out var descriptor))
+        if (!bones.TryGetValue(bone, out var descriptor))
         {
             target = default;
             detail = $"Could not construct a structural path for bone {bone}.";
             return false;
         }
 
-        var parents = _scene.Snapshot.Actors
-            .SelectMany(actor => actor.Skeletons)
-            .SelectMany(skeleton => skeleton.Bones)
-            .ToDictionary(item => item.Id);
         var segments = new List<string>();
         var seen = new HashSet<BoneId>();
         var current = descriptor;
@@ -410,7 +421,7 @@ public sealed class PoseEditService
             segments.Add(current.Id.CanonicalName);
             if (current.Parent is not { } parent)
                 break;
-            if (!parents.TryGetValue(parent, out var parentDescriptor))
+            if (!bones.TryGetValue(parent, out var parentDescriptor))
             {
                 target = default;
                 detail = $"Bone parent {parent} is missing for {bone}.";
@@ -426,25 +437,6 @@ public sealed class PoseEditService
             bone.BoneIndex);
         detail = null;
         return true;
-    }
-
-    private bool TryFindBoneDescriptor(
-        BoneId bone,
-        out BoneDescriptor descriptor)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-        foreach (var skeleton in actor.Skeletons)
-        foreach (var candidate in skeleton.Bones)
-        {
-            if (candidate.Id == bone)
-            {
-                descriptor = candidate;
-                return true;
-            }
-        }
-
-        descriptor = null!;
-        return false;
     }
 
     private static string? DescribeMatchFailure(PortablePoseMatchResult match)
