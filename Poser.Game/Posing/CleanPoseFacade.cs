@@ -75,6 +75,19 @@ public sealed class CleanPoseFacade
     /// instead of spending its stage against a failure.</summary>
     public bool IsImportBusy => _importArm != null || _imports.IsPending;
 
+    /// <summary>
+    /// Whether an import could reach this actor's posable skeleton at all.
+    /// The SAME wait-don't-spend distinction <see cref="IsImportBusy"/> draws:
+    /// a body with no Character skeleton yet plans NOTHING, and the plan
+    /// builder cannot tell that apart from a file whose bones genuinely miss —
+    /// both arrive as the typed "nothing applies" refusal. A caller that spends
+    /// its one attempt against it drops the pose permanently, so the staged
+    /// preview asks first and waits (the CharaView body is bound several ticks
+    /// after its actor is, so EVERY first statement races it).
+    /// </summary>
+    public bool HasPosableSkeleton(IActor actor) =>
+        _skeletons.GetSkeleton(actor) is not null;
+
     private readonly PoseImportCapture _imports;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Config.ConfigurationService _configuration;

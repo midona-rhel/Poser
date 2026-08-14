@@ -602,6 +602,17 @@ public sealed unsafe class PosePreviewService : IDisposable
         }
         if (actor == null || _bindings.GetActorId(actor) == null)
             return;
+        // …and its SKELETON, on the same terms. The auxiliary actor and its
+        // stable binding both exist several ticks before the CharaView body is
+        // skeleton-bound, so every first statement against a fresh body races
+        // it. An import dispatched inside that window plans nothing and comes
+        // back as the ordinary "nothing applies" refusal — indistinguishable
+        // from a file whose bones genuinely miss — and the stage is SPENT
+        // below, so the pose is dropped for good while the skeleton lands
+        // milliseconds later. Waiting is the only correct reading: readiness is
+        // not a verdict about the file.
+        if (!_poses.HasPosableSkeleton(actor))
+            return;
 
         var result = request.Pose is { } pose
             ? _poses.ImportPose(actor, pose, request.Options, "Preview pose")
