@@ -828,7 +828,10 @@ public sealed class AppearancePane
         }
     }
 
-    private static string PhaseLabel(McdfPhase phase) => phase switch
+    /// <summary>The one wording for an MCDF phase. Shared, not copied: the
+    /// library pane states the same live phase beside the apply that
+    /// started it.</summary>
+    internal static string PhaseLabel(McdfPhase phase) => phase switch
     {
         McdfPhase.Reading => "Reading",
         McdfPhase.Validating => "Validating",

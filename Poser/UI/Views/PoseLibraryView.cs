@@ -241,6 +241,13 @@ public sealed class PoseLibraryViewModel
     public bool CanApply;
     public bool CanSpawn;
 
+    /// <summary>Whether an applied character file is still working and can
+    /// still be stopped. The MCDF apply is a long transaction started from
+    /// THIS pane, so its stop belongs beside the action that started it,
+    /// not only on the appearance pane's progress row. Binder-owned; set
+    /// only while the operation is genuinely cancellable.</summary>
+    public bool CanCancelImport;
+
     /// <summary>Whether the action row leads with the import toggles.
     /// Character files never travel the pose import pipeline, so the MCDF
     /// tab hides them.</summary>
@@ -289,6 +296,9 @@ public sealed class PoseLibraryViewModel
 
     /// <summary>The footer primary: opens the apply-target actor picker.</summary>
     public Action? OnApplyMenu;
+
+    /// <summary>Stops the character-file apply this pane started.</summary>
+    public Action? OnCancelImport;
 
     /// <summary>Whether tiles carry the favorite star — the poses library
     /// only; an auto-save snapshot is not a curated entry.</summary>
@@ -596,6 +606,15 @@ public static class PoseLibraryView
         }
         if (vm.ShowImportMenus)
             scope.Button("Options", vm.ImportMenuClick!);
+        // A character file applies as a long transaction from THIS pane, so
+        // while one is running its stop leads the row: the user never has to
+        // find another pane to get out of an import.
+        if (vm.CanCancelImport)
+            scope.Button(
+                "Cancel import",
+                vm.OnCancelImport!,
+                help: "Stop applying this character file. Everything it has "
+                    + "already applied is undone.");
         bool none = vm.Selected < 0 || vm.Selected >= vm.Tiles.Count;
         // Default control scale (user: Comfortable read oversized here).
         // Configuring sources belongs where the library is, not only in the

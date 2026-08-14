@@ -13,6 +13,7 @@ using Poser.Application.Posing;
 using Poser.Application.Selection;
 using Poser.Config;
 using Poser.Domain.Identity;
+using Poser.Domain.Integration;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
@@ -378,6 +379,10 @@ public sealed class PoseLibraryPane
             _applyMenuAnchor = Crystarium.ButtonSeat;
             _applyMenuRequested = true;
         };
+        // The character-file apply is the one long transaction this pane
+        // starts, so this pane also carries its stop — the same cooperative
+        // cancel the appearance pane's progress row calls.
+        _vm.OnCancelImport = _integration.CancelMcdf;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -1885,6 +1890,23 @@ public sealed class PoseLibraryPane
             ? _autoPending
             : _library.IsScanning;
         _vm.IsScanning = scanning;
+
+        // A character file applied from HERE runs as a long transaction, and
+        // the appearance pane's progress row is a pane away. State the live
+        // phase and offer the stop on the surface that started it — during
+        // the PENDING phases only: a committing or rolling-back operation is
+        // past the point a cancel means anything, and the receipt's terminal
+        // states are reported through _note like every other outcome.
+        var running = _integration.Mcdf;
+        bool importing = _integration.McdfBusy
+            && running is { Kind: McdfOperationKind.Import }
+            && _integration.McdfReceipt is { State: OperationReceiptState.Pending };
+        _vm.CanCancelImport = importing && running!.Cancellable;
+        if (importing)
+        {
+            _vm.Status = $"{AppearancePane.PhaseLabel(running!.Phase)} {running.FileName}";
+            return;
+        }
 
         if (_note is { } note)
         {

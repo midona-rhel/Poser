@@ -235,8 +235,12 @@ identity, and receipt semantics stay in Application.
   a partial rollback stays owned and retryable through **Reset MCDF**.
   Re-import tears the active MCDF down (including its barrier-gated
   directory release) before applying anything. Disposal cancels and
-  joins the active MCDF task within a bound before the integration port
-  is disposed. Export is read-only, refuses an MCDF-wearing actor
+  joins the active MCDF task within a bound and THEN tears down committed
+  ownership, both before the integration port is disposed. Every surface
+  that STARTS an import also carries its stop while the operation is
+  pending — the appearance pane's progress row and the library's MCDF
+  tab — because the transaction is single-flight and long.
+  Export is read-only, refuses an MCDF-wearing actor
   and foreign Glamourer locks, keeps swaps as swaps, applies Brio's
   compatibility filter, deduplicates payloads by SHA-1, reports every
   skipped resource by name, and replaces the destination atomically via
