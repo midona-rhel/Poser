@@ -264,6 +264,14 @@ internal interface ISceneRuntime
     /// <summary>Snapshot of the current environment for rollback.</summary>
     SceneEnvironment CaptureEnvironmentState();
 
+    /// <summary>Snapshot of the session-wide render/simulation toggles for
+    /// rollback.</summary>
+    SceneWorld CaptureWorldState();
+
+    /// <summary>Stamps the session-wide toggles: a scene that asks for neither
+    /// RELEASES them. Null on success, else a named degradation.</summary>
+    string? ApplyWorld(SceneWorld world);
+
     /// <summary>Stamps the complete environment: time, freeze, weather and
     /// all eight sections (held sections take their values, unheld sections
     /// release to the game).</summary>

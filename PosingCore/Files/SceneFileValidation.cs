@@ -299,6 +299,32 @@ public static class SceneFileValidation
                 return Fail(SceneFileValidationFailureKind.Range,
                     $"{label} slot {slot.Slot} speed {speed} is invalid.");
         }
+
+        if (animation.Frames is null)
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"{label} frame list is missing.");
+        var frames = new HashSet<AnimationSlot>();
+        foreach (var frame in animation.Frames)
+        {
+            if (frame is null)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} contains a null frame entry.");
+            if (!Enum.IsDefined(frame.Slot))
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} frames name an unknown slot.");
+            if (!frames.Add(frame.Slot))
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} states a frame for slot {frame.Slot} twice.");
+            if (!float.IsFinite(frame.Time) || frame.Time < 0)
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} frame for slot {frame.Slot} is at an invalid time.");
+        }
+        // A frame is only meaningful on a paused timeline; a running one is
+        // wherever the game advanced it to, so a stated frame would restore a
+        // fact the file cannot have observed.
+        if (frames.Count > 0 && animation.Speed != 0f)
+            return Fail(SceneFileValidationFailureKind.Relationship,
+                $"{label} states a paused frame while the actor is not paused.");
         return null;
     }
 

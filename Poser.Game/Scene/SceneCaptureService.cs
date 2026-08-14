@@ -80,6 +80,7 @@ public sealed class SceneCaptureService
     private readonly IGazeService _gaze;
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly IWorldRenderingService _rendering;
 
     public SceneCaptureService(
         IFramework framework,
@@ -98,8 +99,10 @@ public sealed class SceneCaptureService
         AnimationSession animation,
         IGazeService gaze,
         PoseExportCapture exports,
-        Poser.Application.Integration.ActorIntegrationSession integration)
+        Poser.Application.Integration.ActorIntegrationSession integration,
+        IWorldRenderingService rendering)
     {
+        _rendering = rendering;
         _integration = integration;
         _exports = exports;
         _place = place;
@@ -213,6 +216,8 @@ public sealed class SceneCaptureService
             CaptureLights(scene, actorKeys, notes);
             CaptureCameras(scene, actorKeys, notes);
             scene.Environment = CaptureEnvironment();
+            var world = CaptureWorld();
+            scene.World = world.IsDefault ? null : world;
 
             var validation = SceneFileValidation.Validate(scene);
             if (!validation.Succeeded)
@@ -426,6 +431,27 @@ public sealed class SceneCaptureService
                     : null,
                 Loop = loop,
             });
+        }
+
+        // Where the paused timelines STAND. Only while paused: a running
+        // control's time is whatever this tick advanced it to, and the very
+        // next tick disagrees. Base and UpperBody only — the reference lookup
+        // that finds a slot's control does not hold for the other slots
+        // (IAnimationRuntimePort.FindSlotControl).
+        if (animation.Speed == 0f)
+        {
+            foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody })
+            {
+                if (_animation.FindSlotControl(id, slot) is not { } control)
+                    continue;
+                if (!float.IsFinite(control.Time) || control.Time < 0)
+                    continue;
+                animation.Frames.Add(new SceneAnimationFrame
+                {
+                    Slot = slot,
+                    Time = control.Time,
+                });
+            }
         }
 
         bool interesting =
@@ -642,6 +668,18 @@ public sealed class SceneCaptureService
             .ToList();
         return matches.Count == 1 ? matches[0] : null;
     }
+
+    /// <summary>
+    /// The ONE world-toggle snapshot builder; the workflow's rollback baseline
+    /// uses it too. Physics states what the SCENE holds rather than the raw
+    /// global: the patch can be true because something else set it, and a
+    /// scene that claimed that hold would release a freeze it never took.
+    /// </summary>
+    internal SceneWorld CaptureWorld() => new()
+    {
+        IsWaterFrozen = _rendering.IsWaterFrozen,
+        IsPhysicsFrozen = _animation.SceneOwnsPhysics,
+    };
 
     /// <summary>The ONE environment snapshot builder; the workflow's
     /// rollback baseline uses it too.</summary>

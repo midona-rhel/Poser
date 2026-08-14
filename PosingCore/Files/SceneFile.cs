@@ -69,6 +69,12 @@ public class SceneFile
     public List<SceneCamera> Cameras { get; set; } = new();
     public SceneEnvironment? Environment { get; set; }
 
+    /// <summary>Session-wide render and simulation toggles. Absent when every
+    /// one of them sits at the game's own behaviour, which is what a scene
+    /// written before they were recorded says.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public SceneWorld? World { get; set; }
+
     // The same wire style every Poser document uses — numerics as
     // comma-space strings, enums by name, PascalCase, pretty printing,
     // relaxed escaping, tolerated trailing commas and unknown members.
@@ -278,6 +284,30 @@ public class SceneActorAnimation
     /// <see cref="SceneEnvironment.HeldSections"/> and never depends on how a
     /// serializer chooses to spell an enum used as a dictionary key.</summary>
     public List<SceneAnimationSlot> Slots { get; set; } = new();
+
+    /// <summary>
+    /// Where a PAUSED timeline actually stands — the exact frame the user
+    /// scrubbed to, which the speed and the timeline id together cannot
+    /// express. Recorded only while <see cref="Speed"/> is zero: a running
+    /// animation's frame is whatever the game advanced it to this tick and
+    /// means nothing an instant later, so writing one back would be inventing
+    /// a fact. Empty for a running actor, and for every scene written before
+    /// frames were recorded.
+    /// </summary>
+    public List<SceneAnimationFrame> Frames { get; set; } = new();
+}
+
+/// <summary>One paused control's local time, named by the SLOT it drives
+/// rather than by a control index: an index is a position in a freshly
+/// enumerated native list, and a saved one would name whatever occupies that
+/// position on a restored skeleton.</summary>
+[Serializable]
+public class SceneAnimationFrame
+{
+    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
+
+    /// <summary>Local time within the control, in seconds.</summary>
+    public float Time { get; set; }
 }
 
 /// <summary>One animation slot's owned state: its pinned speed, its armed
@@ -380,6 +410,34 @@ public class SceneCamera
     public Guid? TargetActorKey { get; set; }
     public string TargetActorName { get; set; } = string.Empty;
     public Vector3 TargetOffset { get; set; }
+}
+
+/// <summary>
+/// Toggles that belong to the whole session rather than to any one entity: a
+/// suppressed water renderer and a suppressed physics simulation. They are not
+/// environment values — the environment is a set of held per-section VALUES,
+/// while these two are patches whose enabled state is the whole of their
+/// state — so they are stated in their own right rather than smuggled into
+/// <see cref="SceneEnvironment"/>.
+///
+/// <para>The water freeze is Brio's <c>SceneFile.IsWaterFrozen</c> (Brio
+/// EnvironmentDTO); neither reference records a physics freeze.</para>
+/// </summary>
+[Serializable]
+public class SceneWorld
+{
+    /// <summary>The water renderer's update suppressed, freezing every
+    /// surface.</summary>
+    public bool IsWaterFrozen { get; set; }
+
+    /// <summary>The physics simulation suppressed. Global, not per-actor: a
+    /// scene states whether IT asked for the freeze, which is exactly what the
+    /// shell's own switch owns.</summary>
+    public bool IsPhysicsFrozen { get; set; }
+
+    /// <summary>Nothing to state: a scene records no world block at all.
+    /// </summary>
+    public bool IsDefault => !IsWaterFrozen && !IsPhysicsFrozen;
 }
 
 /// <summary>Time, weather and the held environment sections. A section's

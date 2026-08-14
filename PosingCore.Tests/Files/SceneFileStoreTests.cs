@@ -382,6 +382,86 @@ public sealed class SceneFileStoreTests
     }
 
     [Fact]
+    public void The_world_toggles_round_trip_and_are_absent_at_their_defaults()
+    {
+        var scene = ValidScene();
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
+        Assert.DoesNotContain("\"World\"", json);
+        Assert.Null(Store().Parse(json).Scene!.World);
+
+        scene.World = new SceneWorld { IsWaterFrozen = true, IsPhysicsFrozen = true };
+        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.True(read.Scene!.World!.IsWaterFrozen);
+        Assert.True(read.Scene.World.IsPhysicsFrozen);
+        Assert.False(read.Scene.World.IsDefault);
+    }
+
+    [Fact]
+    public void A_paused_frame_round_trips_against_the_slot_that_drives_it()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneActorAnimation
+        {
+            Speed = 0f,
+            Frames =
+            {
+                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 1.75f },
+                new SceneAnimationFrame
+                {
+                    Slot = AnimationSlot.UpperBody,
+                    Time = 0.5f,
+                },
+            },
+        };
+
+        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var frames = Assert.Single(read.Scene!.Actors).Animation!.Frames;
+        Assert.Equal(2, frames.Count);
+        Assert.Equal(AnimationSlot.Base, frames[0].Slot);
+        Assert.Equal(1.75f, frames[0].Time);
+        Assert.Equal(0.5f, frames[1].Time);
+    }
+
+    [Fact]
+    public void A_frame_stated_while_the_actor_is_running_is_refused()
+    {
+        // A running control's time is whatever the game advanced it to this
+        // tick; a file cannot have observed it and must not restore one.
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneActorAnimation
+        {
+            Speed = 1f,
+            Frames = { new SceneAnimationFrame { Slot = AnimationSlot.Base } },
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
+    }
+
+    [Fact]
+    public void A_frame_stated_twice_for_one_slot_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Animation = new SceneActorAnimation
+        {
+            Speed = 0f,
+            Frames =
+            {
+                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 1f },
+                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 2f },
+            },
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
+    }
+
+    [Fact]
     public void A_character_file_reference_round_trips_as_a_path_and_a_hash()
     {
         var scene = ValidScene();

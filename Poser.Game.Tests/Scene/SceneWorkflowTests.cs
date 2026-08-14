@@ -281,6 +281,25 @@ public sealed class SceneWorkflowTests
         public void ApplyEnvironment(SceneEnvironment target) =>
             Record("ApplyEnvironment");
 
+        /// <summary>The last world block the load stamped, so a test can
+        /// assert what a scene actually asked the session for.</summary>
+        public SceneWorld? AppliedWorld;
+
+        public string? WorldFailure;
+
+        public SceneWorld CaptureWorldState()
+        {
+            Record("CaptureWorldState");
+            return new SceneWorld { IsWaterFrozen = true };
+        }
+
+        public string? ApplyWorld(SceneWorld world)
+        {
+            Record("ApplyWorld");
+            AppliedWorld = world;
+            return WorldFailure;
+        }
+
         public void DestroyActor(object actor) => Destroy(actor);
         public void DestroyProp(object prop) => Destroy(prop);
         public void DestroyLight(object light) => Destroy(light);
@@ -550,6 +569,7 @@ public sealed class SceneWorkflowTests
                 "ReadScene",
                 // baselines, then spawn/admit
                 "CaptureEnvironmentState",
+                "CaptureWorldState",
                 "CaptureDefaultCameraState",
                 "SpawnActor:Lead",
                 "SpawnProp:Chair",
@@ -575,10 +595,80 @@ public sealed class SceneWorkflowTests
                 "SetLiveCamera",
                 "SpawnLight",
                 "ApplyEnvironment",
+                // The session-wide toggles ride with the environment, and run
+                // even for a file that states none — the game's own behaviour
+                // is what such a file asks for.
+                "ApplyWorld",
             },
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    // ── session-wide toggles ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_scene_stating_no_world_toggles_releases_the_ones_the_session_holds()
+    {
+        // The absence of a world block IS a statement: the scene was taken
+        // with the water running and the physics live, so a session holding
+        // either must hand it back.
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.False(runtime.AppliedWorld!.IsWaterFrozen);
+        Assert.False(runtime.AppliedWorld.IsPhysicsFrozen);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+    }
+
+    [Fact]
+    public async Task A_saved_world_toggle_is_stamped_and_a_refused_one_is_named()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.World = new SceneWorld { IsWaterFrozen = true, IsPhysicsFrozen = true };
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            WorldFailure =
+                "The scene was restored except that the water freeze could not be hooked.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.True(runtime.AppliedWorld!.IsWaterFrozen);
+        Assert.True(runtime.AppliedWorld.IsPhysicsFrozen);
+        var refusal = Assert.Single(
+            workflow.Progress!.Outcome!.Entities, entity => entity.Kind == "World");
+        Assert.False(refusal.Restored);
+        Assert.Contains("could not be hooked", refusal.Detail);
+    }
+
+    [Fact]
+    public async Task A_rolled_back_load_hands_the_world_toggles_back()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.World = new SceneWorld { IsWaterFrozen = false };
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            // A structural refusal: the actor cannot be spawned at all.
+            ActorSpawnFailure = _ => "No object slot is free.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.RolledBack, workflow.Receipt!.State);
+        // The baseline the fake reported at admission, put back.
+        Assert.True(runtime.AppliedWorld!.IsWaterFrozen);
     }
 
     // ── character files ──────────────────────────────────────────────────

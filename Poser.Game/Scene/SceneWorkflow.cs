@@ -94,11 +94,12 @@ public sealed class SceneWorkflow : IDisposable
         Bindings.StableBindingRegistry bindings,
         Poser.Application.Animation.AnimationSession animation,
         Poser.Services.IGazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration)
+        Poser.Application.Integration.ActorIntegrationSession integration,
+        Poser.Services.IWorldRenderingService rendering)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, lighting, cameras, environment, bindings, animation, gaze,
-            integration))
+            integration, rendering))
     {
     }
 
@@ -152,6 +153,7 @@ public sealed class SceneWorkflow : IDisposable
         public readonly List<object> CreatedCameras = new();
         public CameraFile? DefaultCameraBaseline;
         public SceneEnvironment? EnvironmentBaseline;
+        public SceneWorld? WorldBaseline;
     }
 
     // ── Publication (late-completion armor) ──────────────────────────────
@@ -486,6 +488,7 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
 
                 operation.EnvironmentBaseline = _runtime.CaptureEnvironmentState();
+                operation.WorldBaseline = _runtime.CaptureWorldState();
                 if (scene.Cameras.Count > 0)
                     operation.DefaultCameraBaseline =
                         _runtime.CaptureDefaultCameraState();
@@ -834,19 +837,31 @@ public sealed class SceneWorkflow : IDisposable
             }
             Step(ScenePhase.ApplyingLights);
 
-            // Phase 9 — environment, stamped last exactly as both references
-            // order it.
-            if (scene.Environment is { } environment)
+            // Phase 9 — environment and the session-wide toggles, stamped last
+            // exactly as both references order it. The world block runs even
+            // when the file states none: "no frozen water, no frozen physics"
+            // is what a scene taken with the game running says, so a load into
+            // a session that froze either one must RELEASE it, or the scene did
+            // not restore what it saved.
             {
                 Step(ScenePhase.ApplyingEnvironment);
                 var environmentFailure = await _runtime.OnFramework(() =>
                 {
                     if (Guard(operation, cancellation) is { } stop)
                         return stop;
-                    _runtime.ApplyEnvironment(environment);
-                    entities.Add(new SceneEntityOutcome(
-                        "Environment", "Environment", true));
-                    done++;
+                    if (scene.Environment is { } environment)
+                    {
+                        _runtime.ApplyEnvironment(environment);
+                        entities.Add(new SceneEntityOutcome(
+                            "Environment", "Environment", true));
+                        done++;
+                    }
+                    // Reported only when something DEGRADED: a toggle that
+                    // landed is not worth a row beside the entities.
+                    if (_runtime.ApplyWorld(scene.World ?? new SceneWorld())
+                        is { } detail)
+                        entities.Add(new SceneEntityOutcome(
+                            "World", "World", false, detail));
                     return null;
                 });
                 if (environmentFailure != null)
@@ -1076,6 +1091,19 @@ public sealed class SceneWorkflow : IDisposable
             catch (Exception ex)
             {
                 failures.Add($"environment restore: {ex.Message}");
+            }
+        }
+
+        if (operation.WorldBaseline is { } world)
+        {
+            try
+            {
+                _runtime.ApplyWorld(world);
+                operation.WorldBaseline = null;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"world toggle restore: {ex.Message}");
             }
         }
 

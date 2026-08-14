@@ -41,6 +41,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
+    private readonly IWorldRenderingService _rendering;
 
     public SceneRuntimeAdapter(
         IFramework framework,
@@ -57,8 +58,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         StableBindingRegistry bindings,
         AnimationSession animation,
         IGazeService gaze,
-        Poser.Application.Integration.ActorIntegrationSession integration)
+        Poser.Application.Integration.ActorIntegrationSession integration,
+        IWorldRenderingService rendering)
     {
+        _rendering = rendering;
         _integration = integration;
         _bindings = bindings;
         _animation = animation;
@@ -390,6 +393,29 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         if (saved.Speed != 1f)
             Try(_animation.SetSpeed(id, saved.Speed));
 
+        // The paused frames LAST, after the pause that makes them meaningful.
+        // The scrub gesture is the one route that writes a control time, and
+        // it needs a token from a FRESH enumeration — which is exactly what
+        // BeginScrub takes here, on the restored skeleton. It leaves the actor
+        // paused on the frame, which is the state the file recorded.
+        foreach (var frame in saved.Frames)
+        {
+            if (_animation.FindSlotControl(id, frame.Slot) is not { } control)
+            {
+                failures.Add(
+                    $"The saved {frame.Slot} frame has no control on this actor.");
+                continue;
+            }
+            var begun = _animation.BeginScrub(id, control.Id);
+            if (!begun.Success)
+            {
+                failures.Add(begun.Detail ?? $"The {frame.Slot} frame was refused.");
+                continue;
+            }
+            Try(_animation.UpdateScrub(id, frame.Time));
+            _animation.EndScrub();
+        }
+
         return failures.Count == 0 ? null : string.Join("; ", failures);
     }
 
@@ -594,6 +620,35 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     public SceneEnvironment CaptureEnvironmentState() =>
         _capture.CaptureEnvironment();
+
+    public SceneWorld CaptureWorldState() => _capture.CaptureWorld();
+
+    /// <summary>
+    /// Stamps the session-wide toggles. Both are patches whose enabled state
+    /// is their whole state, so a scene that asks for neither RELEASES them —
+    /// loading a scene taken with running water into a session that froze it
+    /// must give the water back, or the scene did not restore what it saved.
+    /// A toggle the running client cannot reach is a named degradation, never
+    /// a silent no-op.
+    /// </summary>
+    public string? ApplyWorld(SceneWorld world)
+    {
+        var failures = new List<string>();
+        if (world.IsWaterFrozen && !_rendering.IsWaterFreezeAvailable)
+            failures.Add(
+                "the water freeze could not be hooked on this client, so the " +
+                "surface is still moving");
+        else
+            _rendering.IsWaterFrozen = world.IsWaterFrozen;
+
+        var physics = _animation.SetScenePhysicsFrozen(world.IsPhysicsFrozen);
+        if (!physics.Success)
+            failures.Add(physics.Detail ?? "the physics freeze was refused");
+
+        return failures.Count == 0
+            ? null
+            : "The scene was restored except that " + string.Join("; ", failures) + ".";
+    }
 
     public void ApplyEnvironment(SceneEnvironment target)
     {
