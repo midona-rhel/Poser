@@ -316,6 +316,67 @@ public sealed class SceneAutoSaveServiceTests : IDisposable
         Assert.False(Directory.Exists(firstDay));
     }
 
+    // ── one act, one snapshot ────────────────────────────────────────────
+
+    /// <summary>
+    /// The cadence insures against losing work, so an interval that finds the
+    /// scene exactly as the last snapshot left it writes nothing. Otherwise a
+    /// user who spawns one prop and then leaves the scene alone collects a
+    /// fresh identical file every interval until the retention window holds
+    /// nothing but copies of that one moment.
+    /// </summary>
+    [Fact]
+    public void An_unchanged_scene_is_skipped_rather_than_filed_again()
+    {
+        using var service = Create();
+        _captureResult = SceneCaptureOutcome.Ok(Shot(), new());
+
+        service.SnapshotNow();
+        _now = Noon.AddSeconds(61);
+        service.SnapshotNow();
+
+        Assert.Single(Snapshots());
+        Assert.Equal(2, _captures);
+        Assert.Equal(SceneAutoSaveStatus.Skipped, service.LastResult.Status);
+        Assert.Contains("nothing new", service.LastResult.Detail);
+    }
+
+    [Fact]
+    public void The_next_change_after_a_skipped_interval_is_filed()
+    {
+        using var service = Create();
+        _captureResult = SceneCaptureOutcome.Ok(Shot(), new());
+
+        service.SnapshotNow();
+        _now = Noon.AddSeconds(61);
+        service.SnapshotNow();
+        _captureResult = SceneCaptureOutcome.Ok(Shot(actors: 2), new());
+        _now = Noon.AddSeconds(122);
+        service.SnapshotNow();
+
+        Assert.Equal(2, Snapshots().Length);
+        Assert.Equal(SceneAutoSaveStatus.Written, service.LastResult.Status);
+    }
+
+    /// <summary>The capture stamp moves on every tick by construction; it is
+    /// when the snapshot ran, not anything about the scene, so it may not
+    /// count as a change.</summary>
+    [Fact]
+    public void A_moved_capture_stamp_alone_is_not_a_change()
+    {
+        using var service = Create();
+        var scene = Shot();
+        scene.SavedAt = DateTimeOffset.UnixEpoch;
+        _captureResult = SceneCaptureOutcome.Ok(scene, new());
+        service.SnapshotNow();
+
+        scene.SavedAt = DateTimeOffset.UnixEpoch.AddHours(3);
+        _now = Noon.AddSeconds(61);
+        service.SnapshotNow();
+
+        Assert.Single(Snapshots());
+    }
+
     [Fact]
     public void Two_snapshots_in_the_same_second_suffix_instead_of_overwriting()
     {

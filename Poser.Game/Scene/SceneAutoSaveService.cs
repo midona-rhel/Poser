@@ -21,7 +21,8 @@ public enum SceneAutoSaveStatus
     Written,
 
     /// <summary>The tick deliberately did nothing, with a stated reason —
-    /// an empty scene, a running scene operation, a busy pose import.</summary>
+    /// an empty scene, an unchanged scene, a running scene operation, a busy
+    /// pose import.</summary>
     Skipped,
 
     /// <summary>Capture or the write refused; nothing new is on disk.</summary>
@@ -58,6 +59,13 @@ public sealed record SceneAutoSaveResult(
 /// for. It instead SKIPS whenever a scene operation is running, so it can
 /// never snapshot a half-restored scene.
 ///
+/// A snapshot is a VERSION, so an interval that finds the scene exactly as the
+/// last written snapshot left it writes nothing: the cadence exists to insure
+/// against losing work, and re-filing an unchanged scene insures nothing while
+/// pushing the retention window until it holds nothing but copies of one
+/// moment. One user act therefore produces at most one snapshot, however long
+/// they then leave the scene alone.
+///
 /// Layout mirrors the pose auto-saves' user-decided shape:
 /// <c>&lt;pluginConfigDir&gt;/SceneAutoSaves/&lt;yyyy-MM-dd&gt;/&lt;HH-mm-ss&gt; Scene.poserscene</c>
 /// — one folder per LOCAL day, 24-hour prefix so name order is time order.
@@ -89,6 +97,11 @@ public sealed class SceneAutoSaveService : IDisposable
     private bool _writing;
     private bool _disposed;
     private SceneAutoSaveResult _lastResult = SceneAutoSaveResult.Idle;
+
+    /// <summary>Content identity of the snapshot last written to disk, or null
+    /// when this session has written none. Guarded by <see cref="_gate"/>: it
+    /// is set on the writer and read there too.</summary>
+    private string? _writtenSignature;
 
     public SceneAutoSaveService(
         IPluginLog log,
@@ -265,6 +278,26 @@ public sealed class SceneAutoSaveService : IDisposable
     {
         try
         {
+            // The comparison runs HERE, on the writer, because that is where
+            // the cost of describing a whole scene belongs — never on the
+            // framework thread the capture ran on.
+            var signature = Signature(scene);
+            if (signature != null)
+            {
+                string? filed;
+                lock (_gate)
+                    filed = _writtenSignature;
+                if (string.Equals(signature, filed, StringComparison.Ordinal))
+                {
+                    Publish(new SceneAutoSaveResult(
+                        SceneAutoSaveStatus.Skipped,
+                        "The scene is exactly as the last snapshot left it; " +
+                        "there is nothing new to insure.",
+                        null));
+                    return;
+                }
+            }
+
             var folder = System.IO.Path.Combine(
                 RootDirectory, localNow.ToString("yyyy-MM-dd"));
             Directory.CreateDirectory(folder);
@@ -285,6 +318,8 @@ public sealed class SceneAutoSaveService : IDisposable
                 return;
             }
 
+            lock (_gate)
+                _writtenSignature = signature;
             Prune(Math.Max(1, Settings.MaxSceneSnapshots));
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Written,
@@ -302,6 +337,37 @@ public sealed class SceneAutoSaveService : IDisposable
         {
             lock (_gate)
                 _writing = false;
+        }
+    }
+
+    /// <summary>
+    /// Content identity of one captured scene, with the capture stamp set
+    /// aside: two ticks over an untouched scene differ only in when they ran,
+    /// and that is not a change worth a file.
+    ///
+    /// <para>It hashes the WHOLE document, embedded poses included, rather
+    /// than a summary of it: a summary that missed a moved bone would drop
+    /// the user's work, which is far worse than a duplicate file. A document
+    /// this cannot describe answers null, and a null signature never matches
+    /// anything — an unreadable scene is written, not skipped.</para>
+    /// </summary>
+    private static string? Signature(SceneFile scene)
+    {
+        var savedAt = scene.SavedAt;
+        scene.SavedAt = null;
+        try
+        {
+            return Convert.ToHexString(System.Security.Cryptography.SHA256
+                .HashData(System.Text.Json.JsonSerializer
+                    .SerializeToUtf8Bytes(scene)));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            scene.SavedAt = savedAt;
         }
     }
 
