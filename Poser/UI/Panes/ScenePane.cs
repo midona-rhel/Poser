@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using Poser.Application.Operations;
 using Poser.Files;
 using Poser.Game.Scene;
@@ -49,11 +51,33 @@ public sealed class ScenePane
     private string _description = string.Empty;
     private string _note = string.Empty;
 
-    /// <summary>The load dialog's verdict on whichever row the list is
-    /// highlighting, re-probed only when that path changes: the probe reads
-    /// and validates a whole document, so it must not run per frame.</summary>
-    private string? _probedPath;
-    private SceneMetadataReadOutcome? _probed;
+    /// <summary>How many probed paths the verdict column remembers. Highlighting
+    /// walks a folder one row at a time, so the answers must survive a walk back
+    /// up it; the cap is what stops a long folder from retaining every document
+    /// it ever previewed.</summary>
+    private const int VerdictCacheLimit = 64;
+
+    /// <summary>
+    /// The load dialog's verdict per probed path. A probe reads, parses and
+    /// VALIDATES a whole bounded document — up to the codec's file limit — so it
+    /// never runs on the render thread: the panel states a pending line while a
+    /// background read resolves, and the answer is kept against its path.
+    /// A cached null is a probe that could not produce an outcome at all.
+    /// </summary>
+    private readonly Dictionary<string, SceneMetadataReadOutcome?> _verdicts =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Probe insertion order, for evicting the oldest past the cap.</summary>
+    private readonly Queue<string> _verdictOrder = new();
+
+    /// <summary>Paths whose background probe has not answered yet — the guard
+    /// that keeps one highlighted row from starting a read per frame.</summary>
+    private readonly HashSet<string> _verdictsInFlight = new(StringComparer.Ordinal);
+
+    /// <summary>Finished probes, handed back from the worker and drained into
+    /// the cache by the drawing thread that owns it.</summary>
+    private readonly ConcurrentQueue<(string Path, SceneMetadataReadOutcome? Outcome)>
+        _verdictInbox = new();
 
     public ScenePane(
         SceneWorkflow workflow,
@@ -361,30 +385,26 @@ public sealed class ScenePane
     /// <summary>
     /// The highlighted file, read through the SAME codec the load uses. A
     /// listing can therefore never offer a shot the load would reject without
-    /// saying so first. The probe is cached on the path because it validates a
-    /// whole bounded document.
+    /// saying so first.
+    ///
+    /// <para>The dialog hands a side panel its ORIGIN and its SIZE — never two
+    /// corners. Deriving the column width as if the second vector were the far
+    /// corner produced a negative width every frame the panel drew, which the
+    /// text constraint rejected: layout math that cannot state a width states
+    /// NOTHING here, it does not throw.</para>
     /// </summary>
-    private void DrawVerdictPanel(Vector2 min, Vector2 max, string? path)
+    private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
         if (path is null)
-        {
-            _probedPath = null;
-            _probed = null;
-            return;
-        }
-        if (!string.Equals(path, _probedPath, StringComparison.Ordinal))
-        {
-            _probedPath = path;
-            _probed = SceneFileStore.Default.ReadMetadata(path);
-        }
-        if (_probed is not { } metadata)
             return;
 
         var theme = Crystarium.ActiveTheme;
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         float inset = theme.Spacing.Four * scale;
-        float width = MathF.Max(0f, max.X - min.X - inset * 2f);
-        var cursor = new Vector2(min.X + inset, min.Y + inset);
+        float width = size.X - inset * 2f;
+        if (!(width > 0f))
+            return;
+        var cursor = new Vector2(origin.X + inset, origin.Y + inset);
         float line = theme.Controls.FormRowHeight * scale;
 
         void Line(string text, Vector4 color, float size)
@@ -398,6 +418,18 @@ public sealed class ScenePane
                 TextAlign.Start,
                 besideIcon: true);
             cursor.Y += line;
+        }
+
+        if (!TryVerdict(path, out var probed))
+        {
+            Line("Reading…", theme.TextDim, theme.Typography.LabelSize);
+            return;
+        }
+
+        if (probed is not { } metadata)
+        {
+            Line("Cannot be read", theme.TextDim, theme.Typography.LabelSize);
+            return;
         }
 
         bool valid = metadata.Status == SceneEntryStatus.Valid;
@@ -428,6 +460,50 @@ public sealed class ScenePane
                 theme.FormHint,
                 theme.Typography.CaptionSize);
         }
+    }
+
+    /// <summary>
+    /// The probe for one path, never blocking the frame. Answers false while a
+    /// read is outstanding — the panel states that as its pending line — and
+    /// true once an answer exists, whose null is a probe that failed outright.
+    /// The worker only ever hands its result back through the inbox; the cache,
+    /// the order queue and the in-flight set belong to the drawing thread.
+    /// </summary>
+    private bool TryVerdict(string path, out SceneMetadataReadOutcome? verdict)
+    {
+        while (_verdictInbox.TryDequeue(out var done))
+        {
+            _verdictsInFlight.Remove(done.Path);
+            if (_verdicts.TryAdd(done.Path, done.Outcome))
+                _verdictOrder.Enqueue(done.Path);
+            while (_verdictOrder.Count > VerdictCacheLimit)
+                _verdicts.Remove(_verdictOrder.Dequeue());
+        }
+
+        if (_verdicts.TryGetValue(path, out verdict))
+            return true;
+
+        if (_verdictsInFlight.Add(path))
+        {
+            string requested = path;
+            _ = Task.Run(() =>
+            {
+                SceneMetadataReadOutcome? outcome = null;
+                try
+                {
+                    outcome = SceneFileStore.Default.ReadMetadata(requested);
+                }
+                catch
+                {
+                    // The codec answers with a typed failure rather than
+                    // throwing; a throw that escapes it anyway must still
+                    // retire the in-flight path, or the column would state
+                    // "Reading…" for the rest of the session.
+                }
+                _verdictInbox.Enqueue((requested, outcome));
+            });
+        }
+        return false;
     }
 
     private static string StatusWordFor(SceneEntryStatus status) => status switch
