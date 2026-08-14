@@ -1698,7 +1698,12 @@ public class PoseInspectorPane
         {
             bool locked = _gazeService.IsPartLocked(actor, part);
             actions.IconButton(
-                locked ? TablerIcon.Lock : TablerIcon.LockOff,
+                // Unlocked is an OPEN lock, never a struck-through one: a
+                // slash says "locking is unavailable here", and the state
+                // being shown is that the part CAN be locked and is not.
+                // The sidebar's camera lock already states the pair this way
+                // (user 2026-08-14, asked twice).
+                locked ? TablerIcon.Lock : TablerIcon.LockOpen,
                 () => _gazeService.SetPartLock(actor, part, !locked),
                 disabled: !enabled,
                 help: locked
