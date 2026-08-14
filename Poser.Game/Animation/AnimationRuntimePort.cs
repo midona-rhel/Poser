@@ -716,15 +716,26 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public AnimationPortResult ClearOverallSpeed(ActorId actor)
     {
-        if (_enforcement.TryGetValue(actor, out var enforcement))
-            enforcement.OverallSpeed = null;
-        PruneEnforcement(actor);
-
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
-        // Hand the actor back at normal speed; the game's own
-        // recalculation takes over from its next run.
+
+        // Exact ownership is resolved BEFORE enforcement drops, and the
+        // hand-back write happens only for a speed Poser actually
+        // enforced. An unconditional 1 would stomp a speed the game or
+        // another tool is driving on an actor Poser never touched — and
+        // ApplySpeedNow reaches every Havok control, so it would also
+        // unpin playback state that was never Poser's.
+        if (!_enforcement.TryGetValue(actor, out var enforcement) ||
+            enforcement.OverallSpeed == null)
+            return AnimationPortResult.Ok();
+
+        enforcement.OverallSpeed = null;
+        PruneEnforcement(actor);
+        // Hand the actor back at normal speed. The container write alone
+        // is not enough: the game re-drives the container but not every
+        // Havok control, so a Poser pause (controls at 0) is released
+        // here or not at all.
         ApplySpeedNow(character, 1f);
         return AnimationPortResult.Ok();
     }
@@ -829,13 +840,20 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot)
     {
-        if (_enforcement.TryGetValue(actor, out var enforcement))
-            enforcement.SlotSpeeds.Remove((int)slot);
-        PruneEnforcement(actor);
-
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
+
+        // Same ownership rule as the overall clear: only a slot Poser
+        // pinned is handed back with a 1. Clearing an unowned slot is a
+        // native no-op — which is also Brio's exact release behavior
+        // (ResetSlotSpeedOverride only drops the dictionary entry), so
+        // the expression release's second defensive unpin stays safe.
+        if (!_enforcement.TryGetValue(actor, out var enforcement) ||
+            !enforcement.SlotSpeeds.Remove((int)slot))
+            return AnimationPortResult.Ok();
+
+        PruneEnforcement(actor);
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, 1f);
         return AnimationPortResult.Ok();
     }

@@ -318,7 +318,10 @@ public sealed class PopOutWindow : Window
         bool animationAvailable = _animation.IsSupported(frozen);
         bool animationOn =
             _animation.OverridesFor(frozen).OverallSpeed is not 0f;
-        bool physicsOn = !_animation.OwnsPhysics(frozen);
+        // Physics is one PROCESS-GLOBAL patch: the switch shows the global
+        // state (the tooltip already says "whole scene"), while the toggle
+        // still books the request against this window's actor.
+        bool physicsOn = !_animation.IsPhysicsFrozen;
         Crystarium.ActionBar(
             $"popout-actions-{_identity}",
             new Vector2(min.X + inset, min.Y),

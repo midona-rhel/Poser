@@ -97,20 +97,30 @@ public sealed class AnimationSceneActions
     /// <summary>
     /// Restarts whatever each actor is currently playing, from its own
     /// base slot — an actor with no animation is skipped rather than
-    /// being given one.
+    /// being given one. Replay is a resuming act (the session releases
+    /// any Poser-owned pause first); <paramref name="resumed"/> counts
+    /// how many paused actors that woke, so the UI can say so.
     /// </summary>
-    public SceneActionReport ReplayAll() =>
-        Run(Capture(), id =>
+    public SceneActionReport ReplayAll(out int resumed)
+    {
+        int count = 0;
+        var report = Run(Capture(), id =>
         {
             if (_animation.Read(id) is not { } reading)
                 return AnimationResult.Fail("unreadable");
             ushort timeline = reading.BaseTimeline != 0
                 ? reading.BaseTimeline
                 : reading.TimelineFor(AnimationSlot.Base);
-            return timeline == 0
-                ? AnimationResult.Ok()
-                : _animation.Blend(id, timeline);
+            if (timeline == 0)
+                return AnimationResult.Ok();
+            var result = _animation.Replay(id, timeline, out bool actorResumed);
+            if (actorResumed)
+                count++;
+            return result;
         });
+        resumed = count;
+        return report;
+    }
 
     /// <summary>Restores every Poser-owned override on every captured
     /// actor, leaving the scene as Poser found it.</summary>

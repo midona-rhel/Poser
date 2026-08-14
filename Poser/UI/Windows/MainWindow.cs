@@ -1035,11 +1035,13 @@ public class MainWindow : Window
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
         _vm.PhysicsAvailable = toolbarActor is { } actorId
             && _animation.IsSupported(actorId);
-        // OwnsPhysics means "this actor holds a freeze", so the switch is ON
-        // unless the selected actor froze; no actor shows the game default,
-        // physics simulating (disabled either way via PhysicsAvailable).
-        _vm.PhysicsOn = toolbarActor is not { } physicsActor
-            || !_animation.OwnsPhysics(physicsActor);
+        // The freeze is one PROCESS-GLOBAL code patch, so the switch shows
+        // the global state: a scene frozen by any actor's request reads
+        // frozen from every selection, never "simulating" merely because
+        // the selected actor wasn't the one who asked. The action still
+        // attributes the request to the selected actor, whose hold is
+        // released with the rest of that actor's overrides.
+        _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;

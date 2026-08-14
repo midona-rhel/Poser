@@ -22,9 +22,15 @@
   unresolvable actor is dropped without writes. GPose exit AND plugin unload
   both run the full restore; stance picks release base state and loops first.
 - Speed is enforced through the two speed hooks, not written once; range
-  −5..10, reset hands authority back. Physics freeze patches two regions
+  −5..10, reset hands authority back — and only for a speed Poser actually
+  enforced: clearing an unowned speed is a native no-op, never a blanket 1.
+  Replay is a resuming act: a Poser-owned pause is released before the play
+  (no zero-speed owner survives a replay; a non-zero owned speed does), and
+  the surface says when that happened. Physics freeze patches two regions
   transactionally (rollback on partial failure, protection restored in
-  finally) and releases with the last owner.
+  finally) and releases with the last owner; an owner is removed only after
+  its unfreeze landed, and the physics switches show the process-global
+  state, not the selected actor's share of it.
 - Stance uses the sig-scanned transition (cancel → emote mode → pose writes),
   reports the RAW family (Battle/Umbrella/Accessory included), and is gated
   by `SupportsStance`. Scrubbing is a gesture: freeze at Begin, clamp to the

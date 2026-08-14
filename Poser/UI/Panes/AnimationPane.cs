@@ -293,10 +293,19 @@ public sealed class AnimationPane
                         : "Freeze this actor on the current frame");
                 actions.Button(
                     "Replay",
-                    () => Report(
-                        _animation.Blend(actor, current), "Replay"),
+                    () =>
+                    {
+                        // Replay resumes: the session releases a Poser-owned
+                        // pause first, and the status line says when it did.
+                        var result = _animation.Replay(
+                            actor, current, out bool resumed);
+                        Report(result, "Replay");
+                        if (result.Success && resumed)
+                            _status = "Replay resumed paused playback.";
+                    },
                     disabled: current == 0,
-                    help: "Play this actor's animation again from the start");
+                    help: "Play this actor's animation again from the "
+                        + "start; a paused actor resumes playing");
                 actions.Button(
                     "Restore",
                     () => Report(
@@ -1079,8 +1088,17 @@ public sealed class AnimationPane
                 Report(_sceneActions.ResumeAll(), "Resume all");
                 break;
             case 2:
-                Report(_sceneActions.ReplayAll(), "Replay all");
+            {
+                var replay = _sceneActions.ReplayAll(out int resumed);
+                Report(replay, "Replay all");
+                // Replay-all resumes paused actors by design; the status
+                // line says which semantic actually ran.
+                if (replay.Success && resumed > 0)
+                    _status = string.IsNullOrEmpty(_status)
+                        ? $"Replay resumed {resumed} paused actor{(resumed == 1 ? "" : "s")}."
+                        : $"Replay resumed {resumed} paused actor{(resumed == 1 ? "" : "s")}. {_status}";
                 break;
+            }
             case 3:
                 Report(_sceneActions.StopAll(), "Restore all");
                 break;

@@ -314,6 +314,31 @@ public sealed class AnimationSession
     public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
 
     /// <summary>
+    /// Replays a timeline from the start. Replay is explicitly a RESUMING
+    /// act: a Poser-owned pause (zero speed) is released first, because a
+    /// replay that kept the zero-speed owner would freeze the very
+    /// animation it claims to restart and leave Poser owning a pause the
+    /// user asked to play through. A non-zero owned speed survives — the
+    /// user's chosen rate applies to the replayed timeline. A failed
+    /// release keeps the pause owner and plays nothing, so ownership
+    /// stays truthful. <paramref name="resumed"/> reports whether a pause
+    /// was released so surfaces can SAY which semantic ran.
+    /// </summary>
+    public AnimationResult Replay(ActorId actor, ushort timeline, out bool resumed)
+    {
+        resumed = false;
+        if (Suspended() is { } blocked) return blocked;
+        if (IsPaused(actor))
+        {
+            var released = ClearSpeed(actor);
+            if (!released.Success)
+                return released;
+            resumed = true;
+        }
+        return Blend(actor, timeline);
+    }
+
+    /// <summary>
     /// Rewinds every paused Havok control of the actor to its frame 0 —
     /// Brio's settle rewind between pausing and importing a pose
     /// (ActionTimelineCapability.StopSpeedAndResetTimeline, ATC:120-165).
@@ -483,6 +508,31 @@ public sealed class AnimationSession
 
     public bool OwnsPhysics(ActorId actor) => _physicsOwners.Contains(actor);
 
+    /// <summary>
+    /// Releases one actor's share of the global physics patch. The owner
+    /// record is removed only AFTER the state it implies has been made
+    /// true: when this is the last owner the global unpatch must land
+    /// first, so a failed unpatch keeps the owner and the session keeps
+    /// reporting — truthfully — that physics is frozen and by whom, and
+    /// the next reset retries the release. The patch is process-global
+    /// and needs no actor resolution, so even a departed actor's release
+    /// is retried until the site is actually restored.
+    /// </summary>
+    private AnimationResult ReleasePhysicsOwner(ActorId actor)
+    {
+        if (!_physicsOwners.Contains(actor))
+            return AnimationResult.Ok();
+        if (_physicsOwners.Count == 1 && _port.IsPhysicsFrozen)
+        {
+            var result = _port.SetPhysicsFrozen(false);
+            if (!result.Success)
+                return AnimationResult.Fail(
+                    result.Detail ?? "Physics release failed.");
+        }
+        _physicsOwners.Remove(actor);
+        return AnimationResult.Ok();
+    }
+
     // ── Scrubbing ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -646,10 +696,11 @@ public sealed class AnimationSession
         if (Suspended() is { } blocked) return blocked;
         if (!_overrides.TryGetValue(actor, out var owned))
         {
-            if (_physicsOwners.Remove(actor))
-                ReleasePhysicsIfUnowned();
+            // A physics-only reset is still a reset: the release failure
+            // is the result, and the owner stays until the unpatch lands.
+            var physicsOnly = ReleasePhysicsOwner(actor);
             _port.ClearLoops(actor);
-            return AnimationResult.Ok();
+            return physicsOnly;
         }
 
         // Each aspect is released ONLY when its restore succeeded. What
@@ -799,8 +850,12 @@ public sealed class AnimationSession
             _overrides[actor] = remaining;
         }
 
-        if (_physicsOwners.Remove(actor))
-            ReleasePhysicsIfUnowned();
+        // Physics is process-global, so this release runs even when the
+        // actor itself is gone; a failure keeps the owner for retry and
+        // joins the aggregate result like every other aspect.
+        var physics = ReleasePhysicsOwner(actor);
+        if (!physics.Success && physics.Detail is { } physicsDetail)
+            failures.Add(physicsDetail);
 
         return failures.Count == 0
             ? AnimationResult.Ok()
@@ -818,8 +873,16 @@ public sealed class AnimationSession
             if (!result.Success && result.Detail is { } detail)
                 failures.Add($"{actor}: {detail}");
         }
-        _physicsOwners.Clear();
-        ReleasePhysicsIfUnowned();
+        // Physics-only owners hold no override entry, so the loop above
+        // never saw them. Each release is truthful: only the last owner
+        // performs the global unpatch, and a failed unpatch retains that
+        // owner rather than clearing the set over a still-patched site.
+        foreach (var actor in _physicsOwners.ToList())
+        {
+            var result = ReleasePhysicsOwner(actor);
+            if (!result.Success && result.Detail is { } detail)
+                failures.Add($"{actor}: {detail}");
+        }
         return failures.Count == 0
             ? AnimationResult.Ok()
             : AnimationResult.Fail(string.Join("; ", failures));
@@ -835,14 +898,14 @@ public sealed class AnimationSession
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
-        var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();
-        if (departed.Count == 0)
-        {
-            if (_physicsOwners.RemoveWhere(id => !present.Contains(id)) > 0)
-                ReleasePhysicsIfUnowned();
-            return;
-        }
+        // Departed physics-only owners first: the release is global and
+        // needs no actor, but a failed unpatch retains the owner so the
+        // next reconcile or reset retries it instead of stranding a
+        // patched site with no owner on record.
+        foreach (var id in _physicsOwners.Where(id => !present.Contains(id)).ToList())
+            ReleasePhysicsOwner(id);
 
+        var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();
         foreach (var id in departed)
         {
             // Attempt the native restore; an actor that no longer resolves
@@ -850,11 +913,5 @@ public sealed class AnimationSession
             // dropped either way so it can never be re-applied.
             ResetActor(id);
         }
-    }
-
-    private void ReleasePhysicsIfUnowned()
-    {
-        if (_physicsOwners.Count == 0 && _port.IsPhysicsFrozen)
-            _port.SetPhysicsFrozen(false);
     }
 }
