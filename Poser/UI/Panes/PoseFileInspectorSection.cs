@@ -57,6 +57,16 @@ public sealed class PoseFileInspectorSection
     // file's baked positions/scales fight IK and Customize+ scaling.
     private bool _rotation = true, _position, _scale;
     private bool _reset;
+    // Ktisis' selective import (PoseImportDialog.cs:141-158): live only in
+    // the import DIALOG's scope column — the quick popup stays Brio-pure
+    // (user 2026-08-10). The selection freezes as complete BoneIds at
+    // dialog confirmation; an empty or stale frozen selection is a typed
+    // refusal, never a silent full-body import.
+    private bool _selectiveImport;
+    private bool _selectiveDescendants;
+    // Two-step reference-pose confirm: the first press arms and shows the
+    // visible warning, the second applies. Any other preset disarms.
+    private bool _referenceArmed;
 
     // ── the two Brio menus (one shared state for FILES and the library) ──
     // Import menu: Brio's import popup (FileUIHelpers.DrawImportPoseMenuPopup)
@@ -405,6 +415,10 @@ public sealed class PoseFileInspectorSection
         if (_importMenuRequested)
         {
             _importMenuRequested = false;
+            // A fresh menu session starts disarmed: an armed confirm left
+            // behind by a closed popup must not let the next session apply
+            // the reference pose on a single press without its warning.
+            _referenceArmed = false;
             Crystarium.OpenPopover(ImportMenuId);
         }
         if (_exportMenuRequested)
@@ -679,7 +693,8 @@ public sealed class PoseFileInspectorSection
                         1 => DrawTransformSection(
                             top, width, divider: false, dense: true),
                         _ => DrawScopeSection(
-                            top, width, divider: false, dense: true),
+                            top, width, divider: false, dense: true,
+                            selective: true),
                     };
                     ImGui.SetCursorScreenPos(new Vector2(top.X, top.Y + height));
                     ImGui.Dummy(new Vector2(1f, 1f));
@@ -1024,6 +1039,16 @@ public sealed class PoseFileInspectorSection
                             () => ApplyRestPreset(RestPose.APose));
                         actions.Button("T-pose",
                             () => ApplyRestPreset(RestPose.TPose));
+                        // Ktisis' "Set to reference pose"
+                        // (PosePropertyList.cs:105-110) behind a two-step
+                        // confirm: the arm shows the visible warning below,
+                        // the second press applies as one undoable edit.
+                        actions.Button(
+                            _referenceArmed ? "Confirm reference" : "Reference",
+                            ApplyReferencePreset,
+                            help: "Restore the skeleton's built-in reference "
+                                + "pose — replaces the current pose of every "
+                                + "bone; undo restores it");
                     });
                 // The popup is where a clipboard paste fails, so it is where
                 // the reason has to appear — the FILES area's own status row
@@ -1143,14 +1168,37 @@ public sealed class PoseFileInspectorSection
     /// the button flush to the column's content right edge (user
     /// 2026-08-10), which IS the gutter contract's trailing inset.</param>
     private float DrawScopeSection(
-        Vector2 origin, float width, bool divider, bool dense = false) =>
+        Vector2 origin, float width, bool divider, bool dense = false,
+        bool selective = false) =>
         Crystarium.Section(
             "##import-menu-scope", dense ? string.Empty : "Scope",
             origin, width, true, null,
             form =>
             {
                 // Brio's popup has no selected-bones or descendants row —
-                // both were Ktisis imports and are gone (user 2026-08-10).
+                // both were Ktisis imports and are gone from THIS mount
+                // (user 2026-08-10). The import DIALOG is the Ktisis-parity
+                // surface (PoseImportDialog.cs:141-158): only it mounts the
+                // selective rows, and its confirm freezes the live bone
+                // selection into exact BoneIds.
+                if (selective)
+                {
+                    bool hasSelection = HasSelectedBonesForImportTarget();
+                    form.Checkbox(
+                        "Selected bones", _selectiveImport,
+                        next => _selectiveImport = next,
+                        disabled: !hasSelection && !_selectiveImport,
+                        help: hasSelection || _selectiveImport
+                            ? "Apply the pose only to the bones currently "
+                                + "selected on this actor"
+                            : "Select bones on the target actor first");
+                    form.Checkbox(
+                        "Include descendants", _selectiveDescendants,
+                        next => _selectiveDescendants = next,
+                        disabled: !_selectiveImport,
+                        help: "Extend the selected-bones scope to every "
+                            + "descendant of the selected bones");
+                }
                 form.Checkbox(
                     "Reset first", _reset, next => _reset = next,
                     help: "Clear every bone in scope before importing, "
@@ -1499,8 +1547,37 @@ public sealed class PoseFileInspectorSection
         }
     }
 
+    /// <summary>The reference-pose preset. First press arms with the
+    /// explicit visible warning (the popup's status row); the second press
+    /// applies through the same import transaction as every preset — one
+    /// receipt, one history patch.</summary>
+    private void ApplyReferencePreset()
+    {
+        if (!_referenceArmed)
+        {
+            _referenceArmed = true;
+            _status = "Reference pose replaces the current pose of every "
+                + "bone (undo restores it). Press Confirm reference to apply.";
+            return;
+        }
+        _referenceArmed = false;
+        if (SelectedSkeleton() is not { } skeleton
+            || _poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
+        {
+            _status = "Select an actor first.";
+            return;
+        }
+        NotePoseApplied();
+        _status = _poseFacade.ApplyReferencePose(
+            skeleton.Actor, TrackImport(expectedActor)) is
+            { Success: false } failed
+            ? $"Reference: {failed.Detail}"
+            : string.Empty;
+    }
+
     private void ApplyRestPreset(RestPose pose)
     {
+        _referenceArmed = false;
         if (SelectedSkeleton() is { } skeleton)
         {
             if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
@@ -1714,7 +1791,7 @@ public sealed class PoseFileInspectorSection
         {
             if (rememberPath)
                 _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            ImportFromPath(skeleton, path);
+            ImportFromPath(skeleton, path, fromDialog: true);
         }));
     }
 
@@ -1725,7 +1802,7 @@ public sealed class PoseFileInspectorSection
     /// source for "Reapply Last Pose", then the .cmp gates, then the ordinary
     /// build.
     /// </summary>
-    private void ImportFromPath(ISkeleton skeleton, string path)
+    private void ImportFromPath(ISkeleton skeleton, string path, bool fromDialog = false)
     {
         bool isCmp = path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
         string notice = string.Empty;
@@ -1752,12 +1829,57 @@ public sealed class PoseFileInspectorSection
             _status = "Import: the actor could not be resolved.";
             return;
         }
+        // Selected-bones scope applies only to DIALOG confirms — the one
+        // surface that shows the toggle — and freezes the selection HERE,
+        // as complete BoneIds; the facade refuses stale or cross-actor ids
+        // and an emptied selection refuses instead of importing everything.
+        IReadOnlyList<BoneId>? frozenSelection = null;
+        var options = cmp ?? BuildOptions();
+        if (fromDialog && _selectiveImport)
+        {
+            frozenSelection = FrozenSelectedBones(expectedActor);
+            options.FilterIncludesDescendants = _selectiveDescendants;
+        }
         var imported = _poseFacade.ImportPose(
             skeleton.Actor,
             path,
-            cmp ?? BuildOptions(),
-            onReceipt: TrackImport(expectedActor));
+            options,
+            frozenSelection,
+            TrackImport(expectedActor));
         _status = imported.Success ? notice : $"Import: {imported.Detail}";
+    }
+
+    /// <summary>Whether the import dialog's frozen target actor has at
+    /// least one bone selected right now — Ktisis' isSelectBones gate for
+    /// the selective-import row.</summary>
+    private bool HasSelectedBonesForImportTarget()
+    {
+        if (_importTarget is not { } target
+            || _poseFacade.GetActorId(target) is not { } actor)
+            return false;
+        foreach (var id in _selection.Selected)
+        {
+            if (id is { Kind: SceneEntityKind.Bone, Bone: { } bone }
+                && bone.Skeleton.Actor.Equals(actor))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>The live bone selection frozen to the exact target actor's
+    /// BoneIds at dialog confirmation. Bones selected on OTHER actors are
+    /// not the import's business and drop out here; an empty result is the
+    /// facade's typed refusal.</summary>
+    private List<BoneId> FrozenSelectedBones(ActorId target)
+    {
+        var frozen = new List<BoneId>();
+        foreach (var id in _selection.Selected)
+        {
+            if (id is { Kind: SceneEntityKind.Bone, Bone: { } bone }
+                && bone.Skeleton.Actor.Equals(target))
+                frozen.Add(bone);
+        }
+        return frozen;
     }
 
     /// <summary>
