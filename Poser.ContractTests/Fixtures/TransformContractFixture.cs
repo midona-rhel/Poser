@@ -14,11 +14,23 @@ internal static class TestIds
     public static readonly Guid ActorLineage =
         Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+    /// <summary>A SECOND actor, for the group gestures. A different LINEAGE is
+    /// a different actor, where a different generation of one lineage is the
+    /// same actor come back.</summary>
+    public static readonly Guid SecondActorLineage =
+        Guid.Parse("22222222-2222-2222-2222-222222222222");
+
     public static ActorId Actor(uint generation = 0) =>
         new(ActorLineage, generation);
 
     public static TransformTargetId ActorTarget(uint generation = 0) =>
         TransformTargetId.ForActor(Actor(generation));
+
+    public static ActorId SecondActor(uint generation = 0) =>
+        new(SecondActorLineage, generation);
+
+    public static TransformTargetId SecondActorTarget(uint generation = 0) =>
+        TransformTargetId.ForActor(SecondActor(generation));
 
     public static TransformTargetId BoneTarget(
         uint actorGeneration = 0,
@@ -50,6 +62,21 @@ internal static class TestScenes
                     "Test actor",
                     Array.Empty<SkeletonDescriptor>()),
             },
+            Lights: Array.Empty<LightDescriptor>(),
+            Cameras: Array.Empty<CameraDescriptor>(),
+            Props: Array.Empty<PropDescriptor>());
+
+    /// <summary>A scene holding SEVERAL actors, for the gestures that consume
+    /// a selection rather than a primary.</summary>
+    public static SceneSnapshot ActorsScene(params ActorId[] actors) =>
+        new(
+            Revision: 1,
+            Actors: actors
+                .Select(actor => new ActorDescriptor(
+                    actor,
+                    $"Test actor {actor.Generation}",
+                    Array.Empty<SkeletonDescriptor>()))
+                .ToArray(),
             Lights: Array.Empty<LightDescriptor>(),
             Cameras: Array.Empty<CameraDescriptor>(),
             Props: Array.Empty<PropDescriptor>());

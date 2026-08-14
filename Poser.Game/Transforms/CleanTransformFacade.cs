@@ -26,6 +26,11 @@ public sealed class CleanTransformFacade
 
     public TransformGestureId? ActiveGesture =>
         _gestures.ActiveGesture;
+
+    /// <summary>The running gesture's frozen pivot, for a surface that draws a
+    /// handle on a target the pivot makes orbit.</summary>
+    public Vector3? ActivePivot => _gestures.ActivePivot;
+
     public bool CanUndo => _gestures.History.CanUndo;
     public bool CanRedo => _gestures.History.CanRedo;
     public string? UndoDescription =>

@@ -2762,7 +2762,17 @@ public class PoseInspectorPane
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
-                pivotMode = DomainPivot.PerTarget;
+                // More than one entity moves and turns as ONE body: the
+                // selection's own middle is the pivot, so three actors turned
+                // together swing around each other instead of each spinning on
+                // the spot. It is Brio's `Rotation (Pivot)` row
+                // (UI/Widgets/Core/EntityManagerWidget.cs) as the standing rule
+                // rather than as a second set of drags, and it collapses to the
+                // per-target pivot exactly when there is one target — so a
+                // single entity behaves as it always has.
+                pivotMode = targets.Count > 1
+                    ? DomainPivot.Centroid
+                    : DomainPivot.PerTarget;
                 break;
             }
 

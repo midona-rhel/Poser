@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
@@ -945,4 +945,129 @@ public sealed class SceneLifecycleHistory
         OverlayNodeKind.Status => "status",
         _ => "dialog",
     };
+
+    // ── group removal ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Removing a SELECTION is one act of the user's, so it is ONE entry over
+    /// every slot it took — the prop list's own rule, widened from "every prop"
+    /// to "everything selected". Each direction reports the truth for the whole
+    /// set: a partial restore answers false and leaves the entry where it was,
+    /// so the step is retried rather than consumed.
+    ///
+    /// <para>ACTORS are the exception, and deliberately: a despawn has no
+    /// inverse this seam can state (see <see cref="ActorSlot"/>), so selected
+    /// actors are destroyed OUTSIDE the entry rather than journaled as a
+    /// removal whose undo would mint a blank stand-in. A selection is
+    /// homogeneous by construction, so in practice an entry is over one kind;
+    /// the signature takes them all because the seam must not depend on that
+    /// staying true.</para>
+    ///
+    /// <para>Returns how many entities it removed, so a caller can say what
+    /// happened without counting live handles that no longer exist.</para>
+    /// </summary>
+    public int DestroySelection(
+        IReadOnlyList<IActor>? actors = null,
+        IReadOnlyList<object>? props = null,
+        IReadOnlyList<ILight>? lights = null,
+        IReadOnlyList<IVirtualCamera>? cameras = null,
+        IReadOnlyList<object>? overlays = null)
+    {
+        int removed = 0;
+
+        // Outside the entry, for the reason ActorSlot states.
+        foreach (var actor in actors ?? Array.Empty<IActor>())
+        {
+            if (!_actors.IsSpawnedActor(actor))
+                continue;
+            if (_actors.DestroyActor(actor))
+                removed++;
+        }
+
+        var propSlots = new List<PropSlot>();
+        foreach (var prop in props ?? Array.Empty<object>())
+            propSlots.Add(SlotFor(prop));
+        var lightSlots = new List<LightSlot>();
+        foreach (var light in lights ?? Array.Empty<ILight>())
+        {
+            // A borrowed light is released, not destroyed, and a release has no
+            // spawn that inverts it — the single-light rule, applied per member.
+            if (!_lighting.IsSpawnedLight(light))
+            {
+                _lighting.DestroyLight(light);
+                removed++;
+                continue;
+            }
+            lightSlots.Add(SlotFor(light));
+        }
+        var cameraSlots = new List<CameraSlot>();
+        foreach (var camera in cameras ?? Array.Empty<IVirtualCamera>())
+        {
+            // The session's own camera cannot be destroyed at all.
+            if (camera.IsDefault)
+                continue;
+            cameraSlots.Add(SlotFor(camera));
+        }
+        var overlaySlots = new List<OverlaySlot>();
+        foreach (var overlay in overlays ?? Array.Empty<object>())
+            overlaySlots.Add(OverlaySlotFor(overlay));
+
+        int journaled = propSlots.Count + lightSlots.Count +
+            cameraSlots.Count + overlaySlots.Count;
+        if (journaled == 0)
+            return removed;
+
+        bool Remove() =>
+            RemoveProps(propSlots) &
+            RemoveLights(lightSlots) &
+            RemoveCameras(cameraSlots) &
+            RemoveOverlays(overlaySlots);
+
+        bool Restore() =>
+            RestoreProps(propSlots) &
+            RestoreLights(lightSlots) &
+            RestoreCameras(cameraSlots) &
+            RestoreOverlays(overlaySlots);
+
+        if (!Remove())
+            return removed;
+        removed += journaled;
+        _history.Append(new SceneLifecyclePatch(
+            journaled == 1 ? "Remove 1 entity" : $"Remove {journaled} entities",
+            Restore,
+            Remove));
+        return removed;
+    }
+
+    private bool RemoveLights(IReadOnlyList<LightSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RemoveLight(slot);
+        return landed;
+    }
+
+    private bool RestoreLights(IReadOnlyList<LightSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RestoreLight(slot);
+        return landed;
+    }
+
+    private bool RemoveCameras(IReadOnlyList<CameraSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RemoveCamera(slot);
+        return landed;
+    }
+
+    private bool RestoreCameras(IReadOnlyList<CameraSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RestoreCamera(slot);
+        return landed;
+    }
 }

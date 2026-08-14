@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Poser.Domain.Transforms;
 
@@ -16,10 +16,27 @@ public enum TransformOperation
     Universal,
 }
 
+/// <summary>Where a multi-target gesture rotates and scales ABOUT.</summary>
 public enum PivotMode
 {
+    /// <summary>Each target about its own origin — the targets keep their
+    /// places and only turn.</summary>
     PerTarget,
+
+    /// <summary>Every target about the first selected one.</summary>
     Primary,
+
+    /// <summary>Every target about the MEAN of the captured target positions:
+    /// the selection turns and scales as one body, and the body's middle stays
+    /// where it is. It is Brio's <c>Rotation (Pivot)</c> row, whose pivot is
+    /// likewise the centroid of the selected entities
+    /// (<c>Capabilities/Core/EntitManagerCapability.cs</c>). Identical to
+    /// <see cref="PerTarget"/> for one target, which is what makes it safe as
+    /// the standing rule for an entity selection.</summary>
+    Centroid,
+
+    /// <summary>Every target about a point the caller froze at Begin — a
+    /// bone's parent, say.</summary>
     Custom,
 
     /// <summary>

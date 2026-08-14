@@ -644,6 +644,135 @@ public sealed class SceneLifecycleHistoryTests
         Assert.False(world.History.CanUndo);
     }
 
+    // ── group removal ────────────────────────────────────────────────────
+
+    [Fact]
+    public void Removing_a_selection_of_props_is_one_entry_over_all_of_them()
+    {
+        var world = new World();
+        var first = world.Lifecycle.SpawnProp(Apple)!;
+        var second = world.Lifecycle.SpawnProp(Apple with { Name = "Lamp" })!;
+
+        var removed = world.Lifecycle.DestroySelection(
+            props: new[] { first, second });
+
+        Assert.Equal(2, removed);
+        Assert.Empty(world.Props.Live);
+        Assert.Equal("Remove 2 entities", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal(2, world.Props.Live.Count);
+        // And the two adds are still there behind the one group entry.
+        Assert.Equal("Add prop 'Lamp'", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void One_entry_covers_a_selection_of_several_kinds_at_once()
+    {
+        var world = new World();
+        var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
+        var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
+
+        var removed = world.Lifecycle.DestroySelection(
+            props: new[] { prop },
+            lights: new[] { light },
+            cameras: new[] { camera },
+            overlays: new[] { overlay });
+
+        Assert.Equal(4, removed);
+        Assert.Equal("Remove 4 entities", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Single(world.Lighting.Live);
+        Assert.Single(world.Props.Live);
+        Assert.Single(world.Overlays.Live);
+        Assert.Single(world.Cameras.Live);
+    }
+
+    /// <summary>
+    /// A despawn has no inverse this seam can state, so selected actors are
+    /// destroyed OUTSIDE the entry — they are counted as removed and the
+    /// entry that remains is about the rest.
+    /// </summary>
+    [Fact]
+    public void Actors_in_a_selection_are_destroyed_without_joining_the_entry()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("A"))!;
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+
+        var removed = world.Lifecycle.DestroySelection(
+            new[] { actor }, new[] { prop });
+
+        Assert.Equal(2, removed);
+        Assert.Empty(world.Actors.Live);
+        Assert.Equal("Remove 1 entity", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        // The prop comes back; the actor does not, and never claimed it would.
+        Assert.Single(world.Props.Live);
+        Assert.Empty(world.Actors.Live);
+    }
+
+    [Fact]
+    public void A_selection_of_actors_alone_leaves_no_entry_at_all()
+    {
+        var world = new World();
+        var actor = world.Lifecycle.SpawnActor(
+            "Add actor", () => world.Actors.Spawn("A"))!;
+
+        var removed = world.Lifecycle.DestroySelection(new[] { actor });
+
+        Assert.Equal(1, removed);
+        Assert.Empty(world.Actors.Live);
+        // Only the ADD is left to undo: the removal recorded nothing.
+        Assert.Equal("Add actor", world.History.UndoDescription);
+    }
+
+    /// <summary>A borrowed light is released, not destroyed, and a release has
+    /// no spawn that inverts it — the single-light rule, applied per member of
+    /// a selection.</summary>
+    [Fact]
+    public void A_borrowed_light_in_a_selection_is_released_without_an_entry()
+    {
+        var world = new World();
+        var borrowed = world.Lighting.AddBorrowed();
+
+        var removed = world.Lifecycle.DestroySelection(
+            lights: new[] { borrowed });
+
+        Assert.Equal(1, removed);
+        Assert.Empty(world.Lighting.Live);
+        Assert.False(world.History.CanUndo);
+    }
+
+    /// <summary>The session's own camera cannot be destroyed at all, so a
+    /// selection holding it removes everything else and leaves it standing.
+    /// </summary>
+    [Fact]
+    public void The_session_camera_in_a_selection_is_left_where_it_is()
+    {
+        var world = new World();
+        var session = world.Cameras.AddDefault();
+
+        var removed = world.Lifecycle.DestroySelection(
+            cameras: new[] { session });
+
+        Assert.Equal(0, removed);
+        Assert.Single(world.Cameras.Live);
+        Assert.False(world.History.CanUndo);
+    }
+
+    [Fact]
+    public void An_empty_selection_removes_nothing_and_records_nothing()
+    {
+        var world = new World();
+
+        Assert.Equal(0, world.Lifecycle.DestroySelection());
+
+        Assert.False(world.History.CanUndo);
+    }
+
     // ── the shared stack ─────────────────────────────────────────────────
 
     [Fact]

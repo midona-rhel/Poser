@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Poser.Application.Operations;
 using Poser.Application.Scene;
 using Poser.Domain.Identity;
@@ -78,6 +78,15 @@ public sealed class TransformGestureService : IDisposable
     public TransformHistory History { get; }
     public TransformGestureId? ActiveGesture => _active?.Id;
 
+    /// <summary>The point the running gesture rotates and scales ABOUT, frozen
+    /// at Begin. Published because a surface that draws a handle has to draw it
+    /// where the thing it moves has GOT to — under
+    /// <see cref="PivotMode.Centroid"/> and <see cref="PivotMode.Custom"/> the
+    /// primary orbits this point like every other target, so a handle echoing
+    /// the primary must orbit it too, and it must be THIS point rather than one
+    /// the surface derived again from live positions.</summary>
+    public Vector3? ActivePivot => _active?.Pivot;
+
     /// <summary>
     /// An incomplete exact-state restore. While present it blocks every new
     /// transform/pose mutation so partial state cannot become a new baseline.
@@ -130,10 +139,15 @@ public sealed class TransformGestureService : IDisposable
             captured.Add(result.State);
         }
 
+        // Frozen at Begin, from the captured baselines: a pivot re-derived
+        // per frame from the moving targets would feed a result back as the
+        // next frame's input, which is the one thing every gesture here
+        // refuses to do.
         var pivot = command.PivotMode switch
         {
             PivotMode.PerTarget => captured[0].Transform.Position,
             PivotMode.Primary => captured[0].Transform.Position,
+            PivotMode.Centroid => Centroid(captured),
             PivotMode.Custom => command.CustomPivot!.Value,
             PivotMode.Centroid => Centroid(captured),
             _ => captured[0].Transform.Position,
@@ -253,6 +267,9 @@ public sealed class TransformGestureService : IDisposable
             {
                 PivotMode.PerTarget => false,
                 PivotMode.Primary => index != 0,
+                // The centroid is nobody's own origin, so EVERY target swings
+                // about it — including the primary, unlike Primary mode.
+                PivotMode.Centroid => true,
                 PivotMode.Custom => true,
                 // EVERY target orbits a centroid, the first one included:
                 // unlike Primary, no target sits on the pivot, so exempting
@@ -624,6 +641,16 @@ public sealed class TransformGestureService : IDisposable
         {
             Recovery = recovery,
         };
+
+    /// <summary>The mean of the captured target positions — the middle of the
+    /// selection as it stood when the gesture began.</summary>
+    private static Vector3 Centroid(IReadOnlyList<TransformTargetState> captured)
+    {
+        var sum = Vector3.Zero;
+        foreach (var state in captured)
+            sum += state.Transform.Position;
+        return sum / captured.Count;
+    }
 
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)

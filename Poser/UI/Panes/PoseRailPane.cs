@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -11,7 +11,8 @@ namespace Poser.UI;
 
 /// <summary>
 /// The inspector RAIL: lives in the
-/// shell's 280px right column. Crumb, the compact oriented rotation gizmo,
+/// shell's 280px right column. Crumb, the group verbs while more than one
+/// entity is selected, the compact oriented rotation gizmo,
 /// then the sections the PRIMARY SELECTION owns — TRANSLATION always, IK for a
 /// bone with a chain, GAZE / EXPRESSION / POSE for an actor. Pose FILES is a
 /// property of the actor rather than of the selection and lives on the
@@ -21,6 +22,10 @@ public class PoseRailPane
 {
     private readonly PoseInspectorPane _inspector;
     private readonly ICameraService _camera;
+
+    /// <summary>The group verbs, which stand only while more than one entity
+    /// is selected and take no height otherwise.</summary>
+    private readonly SelectionSection _selection;
 
     // One ring drag through the inspector's rotation-gizmo projection: hit axis,
     // frozen model-space rotation axis, frozen screen tangent at the grab
@@ -54,10 +59,14 @@ public class PoseRailPane
     private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
     private static Vector4 AxisZ => Crystarium.ActiveTheme.Palette.AxisZ;
 
-    public PoseRailPane(PoseInspectorPane inspector, ICameraService camera)
+    public PoseRailPane(
+        PoseInspectorPane inspector,
+        ICameraService camera,
+        SelectionSection selection)
     {
         _inspector = inspector;
         _camera = camera;
+        _selection = selection;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -147,6 +156,11 @@ public class PoseRailPane
             Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             cursor.Y += 22f * s;
         }
+
+        // The group verbs come before the gizmo and before every section: they
+        // are about the WHOLE selection, and the surfaces under them are about
+        // the primary. Zero height while one entity is selected.
+        cursor.Y += _selection.Draw(cursor, width);
 
         // A camera has no rotation for the rings to edit — its view is
         // angle/pan, owned by the Camera tab — so the gizmo stands down

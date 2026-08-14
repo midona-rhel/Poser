@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
@@ -427,6 +427,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();
+        services.AddSingleton<SelectionSection>();
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
         services.AddSingleton<CompanionSection>();

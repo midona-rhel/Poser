@@ -1335,8 +1335,13 @@ public class GizmoOverlayWindow : Window
                 : DomainSpace.Local;
 
         // Parent pivot routes through the clean gesture with a frozen
-        // custom pivot; there is no second orbit session. Multi-actor
-        // selections pivot on the primary.
+        // custom pivot; there is no second orbit session. A selection of more
+        // than one ENTITY turns and scales about its own middle, so the world
+        // gizmo and the rail's rotation rings move the same selection the same
+        // way — Brio makes the identical split, centroid for a multi-entity
+        // selection and per-bone for bones
+        // (UI/Windows/Specialized/PosingOverlayWindow.cs, the
+        // `isMultiEntity && not Bone` branch).
         var cleanPivotMode = PivotMode.PerTarget;
         Vector3? cleanCustomPivot = null;
         if (ringHandle && isBone && pivotActive)
@@ -1400,7 +1405,12 @@ public class GizmoOverlayWindow : Window
             Start = currentTransform,
             Current = currentTransform,
             PivotMode = cleanPivotMode,
-            Pivot = cleanCustomPivot ?? currentTransform.Position,
+            // The pivot the GESTURE froze, not one derived here: under
+            // Centroid it is the middle of the captured targets, which this
+            // surface never computes.
+            Pivot = _cleanTransforms.ActivePivot
+                ?? cleanCustomPivot
+                ?? currentTransform.Position,
             PivotChoice = pivotChoice,
         };
         _gestureTargetType = targetType;
@@ -1495,7 +1505,11 @@ public class GizmoOverlayWindow : Window
                 };
                 if (!DispatchUpdate(gesture, newTransform))
                     return;
-                if (gesture.PivotMode == PivotMode.Custom)
+                // Under Custom AND Centroid the primary orbits the pivot like
+                // every other target, so the handle drawn on it has to orbit
+                // too; under PerTarget and Primary the primary turns on the
+                // spot and there is nothing to correct.
+                if (gesture.PivotMode is PivotMode.Custom or PivotMode.Centroid)
                 {
                     newTransform = newTransform with
                     {
