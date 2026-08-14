@@ -42,7 +42,16 @@ Redraws cannot orphan the id-keyed state. A vanished Actor target is kept by
 id and marked stale rather than zeroed: it stops being enforced, and
 reapplying it (re-enabling a part, or re-entering Actor mode) is refused with
 a typed `GazeResult` naming the reason instead of following a reused address.
-Choosing a live target is the only thing that lifts the mark.
+The mark is sticky: a target returning under the same `GameObjectId` does not
+resume by itself, because id reuse is not the user asking for it. Choosing a
+live target is the only thing that lifts the mark.
+
+Every native gaze write is gated on the GPose object-index range 201–439, at
+one funnel rather than per call site: a clone shares its `GameObjectId` with
+its overworld original, so an id alone never names a writable body.
+Reconciliation resolves the clone by scanning that range —
+`IObjectTable.SearchById` scans from index 0 and answers with the original,
+which makes it a sound existence probe and an unsound write address.
 
 The native gaze capability is optional: missing signatures or hook setup keeps
 the plugin running, reports a stable unavailable detail through `IGazeService`,

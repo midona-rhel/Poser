@@ -1617,11 +1617,13 @@ public class PoseInspectorPane
         else
             _gazeActorUnavailableNote = false;
 
-        // The remembered target outliving its actor is a standing condition,
-        // so it is stated whether or not a click has just been refused.
-        if (state.TargetStale)
+        // The remembered target outliving its actor is a standing condition, so
+        // it is stated whether or not a click has just been refused — but only
+        // in Actor mode, where it is actually refusing something. Both notes
+        // draw: a stale target must not swallow an unrelated refusal.
+        if (state.TargetStale && state.Mode == GazeTargetMode.Entity)
             form.Status("The remembered gaze target has left the scene. Choose another actor.");
-        else if (_gazeRefusal is { } refusal && refusal.Actor == actor.Address)
+        if (_gazeRefusal is { } refusal && refusal.Actor == actor.Address)
             form.Status(refusal.Text);
 
         DrawGazeParts(form, actor, state, wide, Record);

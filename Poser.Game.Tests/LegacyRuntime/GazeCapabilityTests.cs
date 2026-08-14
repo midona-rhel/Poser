@@ -322,6 +322,97 @@ public sealed class GazeCapabilityTests
         Assert.Equal(GazeTargetType.All, scene.Written());
     }
 
+    // ── the 201-439 clone gate ───────────────────────────────────────────
+    // A GPose clone SHARES its GameObjectId with the overworld original, so an
+    // id never names a writable body on its own. Every native gaze write is
+    // gated at one funnel, and the reconciliation pass resolves the clone by
+    // scanning the GPose range instead of trusting SearchById, which scans from
+    // index 0 and answers with the original.
+
+    [Fact]
+    public void Target_writes_land_on_the_gpose_clone_never_the_overworld_original()
+    {
+        using var scene = GazeScene.Create();
+
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
+
+        // Guard against a vacuous pass: the harness must really place two
+        // bodies under one id, and SearchById must really answer with the
+        // overworld original, or none of this proves anything.
+        Assert.NotEqual(scene.CloneAddress, scene.OriginalAddress);
+        Assert.Equal(
+            scene.OriginalAddress,
+            scene.ObjectTable.SearchById(GazeScene.ActorId)!.Address);
+
+        Assert.NotEmpty(scene.WrittenAddresses());
+        Assert.All(scene.WrittenAddresses(), a => Assert.Equal(scene.CloneAddress, a));
+        Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
+    }
+
+    [Fact]
+    public void A_despawned_target_clears_the_id_on_the_clone_not_the_overworld_original()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+
+        // SearchById(ActorId) answers with the index-3 original here — taking
+        // the write address from it would land SetTargetId on the real body.
+        scene.DespawnTarget();
+
+        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
+        Assert.All(scene.WrittenAddresses(), a => Assert.Equal(scene.CloneAddress, a));
+    }
+
+    [Fact]
+    public void An_actor_outside_the_gpose_range_is_never_written()
+    {
+        using var scene = GazeScene.Create();
+
+        Assert.False(scene.Service.SetGazeTarget(scene.Ungated, scene.Target).Success);
+        scene.Service.SetGazeMode(scene.Ungated, GazeTargetMode.Camera);
+        scene.Service.SetGazeParts(scene.Ungated, GazeTargetType.None);
+        scene.Service.SetGazeParts(scene.Ungated, GazeTargetType.All);
+        scene.Service.SetGazeMode(scene.Ungated, GazeTargetMode.None);
+        scene.Service.ResetGaze(scene.Ungated);
+        scene.Reconcile();
+
+        Assert.Empty(scene.Factory.TargetWrites);
+    }
+
+    // ── stale is sticky ──────────────────────────────────────────────────
+
+    [Fact]
+    public void A_target_returning_under_the_same_id_does_not_resume_by_itself()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        scene.DespawnTarget();
+
+        scene.RespawnTargetUnderTheSameId();
+
+        Assert.True(scene.Service.GetGazeState(scene.Actor).TargetStale);
+        Assert.Equal(GazeTargetType.None, scene.Written());
+        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
+    }
+
+    [Fact]
+    public void A_stale_pass_leaves_the_locks_of_a_point_mode_entry_alone()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        // The Actor target is now merely remembered — it governs nothing in
+        // Point mode, so its despawn must not touch this lock.
+        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Position);
+        scene.Service.SetPartLock(scene.Actor, GazeTargetType.Head, true);
+
+        scene.DespawnTarget();
+
+        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Head));
+        Assert.Equal(GazeTargetType.All, scene.Written());
+    }
+
     private static GazeService Create(TestNativeFactory factory)
     {
         return new GazeService(
@@ -337,44 +428,67 @@ public sealed class GazeCapabilityTests
     }
 
     /// <summary>
-    /// A resolvable three-actor GPose scene: the source plus two candidate
-    /// targets. Addresses are real zeroed allocations, because the service
-    /// reads the native GameObject for its Position/Rotation seeds; every
-    /// native CALL goes through the injected factory instead.
+    /// A resolvable GPose scene, keyed by OBJECT INDEX because that is the
+    /// distinction that matters: the source actor exists twice — as the
+    /// overworld original at index 3 and as the GPose clone at index 201 —
+    /// sharing one GameObjectId at two different addresses, which is the
+    /// collision every native gaze write has to survive. Addresses are real
+    /// zeroed allocations, because the service reads the native GameObject for
+    /// its Position/Rotation seeds; every native CALL goes through the
+    /// injected factory.
     /// </summary>
     private sealed class GazeScene : IDisposable
     {
         public const ulong ActorId = 0x1001;
         public const ulong TargetId = 0x1002;
         public const ulong SecondId = 0x1003;
+        public const ulong UngatedId = 0x1004;
+
+        public const int OriginalIndex = 3;   // overworld original of the source
+        public const int UngatedIndex = 5;    // outside 201..439 entirely
+        public const int CloneIndex = 201;
+        public const int TargetIndex = 202;
+        public const int SecondIndex = 203;
 
         private readonly List<nint> _blocks = new();
 
         /// <summary>The SAME dictionary instance the object-table proxy reads,
         /// so removing a row here is what the service observes.</summary>
-        private Dictionary<ulong, FakeGameObject> _table = new();
+        private Dictionary<int, FakeGameObject> _slots = new();
 
         public required GazeService Service { get; init; }
         public required TestNativeFactory Factory { get; init; }
+
+        /// <summary>The source actor, addressed at its GPose CLONE.</summary>
         public required IActor Actor { get; init; }
         public required IActor Target { get; init; }
         public required IActor Second { get; init; }
 
-        public static GazeScene Create()
-        {
-            var factory = new TestNativeFactory();
-            var scene = new GazeSceneBuilder(factory);
-            return scene.Build();
-        }
+        /// <summary>An actor outside the GPose index range — nothing may ever
+        /// write to it.</summary>
+        public required IActor Ungated { get; init; }
+
+        /// <summary>The table itself, so a test can prove the collision trap is
+        /// live rather than asserting against a harness that never had one.</summary>
+        public required IObjectTable ObjectTable { get; init; }
+
+        public nint CloneAddress => _slots[CloneIndex].Address;
+        public nint OriginalAddress => _slots[OriginalIndex].Address;
+
+        public static GazeScene Create() =>
+            new GazeSceneBuilder(new TestNativeFactory()).Build();
 
         internal static GazeScene From(
             GazeService service,
             TestNativeFactory factory,
             List<nint> blocks,
-            Dictionary<ulong, FakeGameObject> table,
+            Dictionary<int, FakeGameObject> slots,
             IActor actor,
             IActor target,
-            IActor second)
+            IActor second,
+            IActor ungated,
+            nint targetBlock,
+            IObjectTable objectTable)
         {
             var scene = new GazeScene
             {
@@ -383,22 +497,42 @@ public sealed class GazeCapabilityTests
                 Actor = actor,
                 Target = target,
                 Second = second,
+                Ungated = ungated,
+                TargetBlock = targetBlock,
+                ObjectTable = objectTable,
             };
             scene._blocks.AddRange(blocks);
-            scene._table = table;
+            scene._slots = slots;
             return scene;
         }
 
         /// <summary>The channels the detour would enforce on its next pass.</summary>
         public GazeTargetType Written() => Service.WrittenParts(ActorId);
 
-        /// <summary>Removes the chosen target from the object table and runs the
-        /// reconciliation pass, exactly as a despawn does.</summary>
+        /// <summary>Every address a character-target write landed on.</summary>
+        public nint[] WrittenAddresses() =>
+            Factory.TargetWrites.ConvertAll(write => write.Address).ToArray();
+
+        public void Reconcile() =>
+            Factory.EventBus.Publish(new ActorListChangedEvent(Array.Empty<IActor>()));
+
+        /// <summary>Removes the chosen target and runs the reconciliation pass,
+        /// exactly as a despawn does.</summary>
         public void DespawnTarget()
         {
-            _table.Remove(TargetId);
-            Factory.EventBus.Publish(new ActorListChangedEvent(Array.Empty<IActor>()));
+            _slots.Remove(TargetIndex);
+            Reconcile();
         }
+
+        /// <summary>Puts a fresh object carrying the SAME GameObjectId back in
+        /// the target slot — id reuse, which must not resume anything.</summary>
+        public void RespawnTargetUnderTheSameId()
+        {
+            _slots[TargetIndex] = new FakeGameObject(TargetId, TargetIndex, TargetBlock);
+            Reconcile();
+        }
+
+        internal nint TargetBlock { get; init; }
 
         public void Dispose()
         {
@@ -409,17 +543,17 @@ public sealed class GazeCapabilityTests
         }
     }
 
-    /// <summary>Builds the scene's proxies; separated so the shared table
-    /// instance is captured by the object-table proxy before construction.</summary>
+    /// <summary>Builds the scene's proxies; separated so the shared slot table
+    /// is captured by the object-table proxy before construction.</summary>
     private sealed class GazeSceneBuilder(TestNativeFactory factory)
     {
         public GazeScene Build()
         {
             var blocks = new List<nint>();
-            var table = new Dictionary<ulong, FakeGameObject>();
+            var slots = new Dictionary<int, FakeGameObject>();
             var byAddress = new Dictionary<nint, FakeGameObject>();
 
-            IActor Add(ulong id, ushort index)
+            FakeGameObject Add(ulong id, int index)
             {
                 // Zeroed native storage: the service reads GameObject
                 // Position/Rotation for its Position/Forward seeds.
@@ -429,17 +563,26 @@ public sealed class GazeCapabilityTests
                 blocks.Add(block);
 
                 var obj = new FakeGameObject(id, index, block);
-                table[id] = obj;
+                slots[index] = obj;
                 byAddress[block] = obj;
+                return obj;
+            }
 
+            static IActor ActorAt(FakeGameObject obj)
+            {
                 var actor = NewProxy<IActor>();
-                ((DefaultProxy)(object)actor).Overrides["get_Address"] = block;
+                ((DefaultProxy)(object)actor).Overrides["get_Address"] = obj.Address;
                 return actor;
             }
 
-            var actor = Add(GazeScene.ActorId, 201);
-            var target = Add(GazeScene.TargetId, 202);
-            var second = Add(GazeScene.SecondId, 203);
+            // The source exists twice under ONE GameObjectId: the overworld
+            // original first (lower index, so SearchById reaches it first) and
+            // the GPose clone second.
+            Add(GazeScene.ActorId, GazeScene.OriginalIndex);
+            var clone = Add(GazeScene.ActorId, GazeScene.CloneIndex);
+            var target = Add(GazeScene.TargetId, GazeScene.TargetIndex);
+            var second = Add(GazeScene.SecondId, GazeScene.SecondIndex);
+            var ungated = Add(GazeScene.UngatedId, GazeScene.UngatedIndex);
 
             var objectTable = NewProxy<IObjectTable>();
             var proxy = (DefaultProxy)(object)objectTable;
@@ -447,9 +590,23 @@ public sealed class GazeCapabilityTests
                 args?[0] is nint address && byAddress.TryGetValue(address, out var found)
                     ? found.Wrapper
                     : null;
+            // Dalamud's SearchById scans from index 0, so a shared id answers
+            // with the OVERWORLD ORIGINAL. Reproduced exactly, because the
+            // service must never take a write address from it.
             proxy.Handlers["SearchById"] = args =>
-                args?[0] is ulong id && table.TryGetValue(id, out var found)
-                    ? found.Wrapper
+            {
+                if (args?[0] is not ulong id)
+                    return null;
+                var indices = new List<int>(slots.Keys);
+                indices.Sort();
+                foreach (var index in indices)
+                    if (slots[index].Id == id)
+                        return slots[index].Wrapper;
+                return null;
+            };
+            proxy.Handlers["get_Item"] = args =>
+                args?[0] is int index && slots.TryGetValue(index, out var slot)
+                    ? slot.Wrapper
                     : null;
 
             var service = new GazeService(
@@ -463,24 +620,31 @@ public sealed class GazeCapabilityTests
                 framework: null,
                 factory);
 
-            return GazeScene.From(service, factory, blocks, table, actor, target, second);
+            return GazeScene.From(
+                service, factory, blocks, slots,
+                ActorAt(clone), ActorAt(target), ActorAt(second), ActorAt(ungated),
+                target.Address, objectTable);
         }
     }
 
-    /// <summary>One object-table row: a stable id, a GPose object index and the
-    /// address the service resolves it by.</summary>
+    /// <summary>One object-table row: a stable id, an object index and the
+    /// address the service resolves it by. Two rows may share an id.</summary>
     internal sealed class FakeGameObject
     {
-        public FakeGameObject(ulong id, ushort index, nint address)
+        public FakeGameObject(ulong id, int index, nint address)
         {
+            Id = id;
+            Address = address;
             Wrapper = NewProxy<IGameObject>();
             var proxy = (DefaultProxy)(object)Wrapper;
             proxy.Overrides["get_GameObjectId"] = id;
-            proxy.Overrides["get_ObjectIndex"] = index;
+            proxy.Overrides["get_ObjectIndex"] = (ushort)index;
             proxy.Overrides["get_Address"] = address;
             proxy.Overrides["IsValid"] = true;
         }
 
+        public ulong Id { get; }
+        public nint Address { get; }
         public IGameObject Wrapper { get; }
     }
 
