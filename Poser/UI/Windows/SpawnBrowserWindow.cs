@@ -53,7 +53,8 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowCameraGame = 13;
     private const int RowCameraFree = 14;
     private const int RowCameraFromFile = 15;
-    private const int ActionRows = 16;
+    private const int RowReferenceImage = 16;
+    private const int ActionRows = 17;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -87,6 +88,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
+    private readonly ReferenceImageSession _referenceImages;
 
     /// <summary>Every entity this browser adds goes through the lifecycle
     /// seam, so the add lands in the shell's undo history.</summary>
@@ -184,7 +186,8 @@ public sealed class SpawnBrowserWindow : Window
         ConfigurationService configuration,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ITextureProvider textures,
-        UserNotices notices)
+        UserNotices notices,
+        ReferenceImageSession referenceImages)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -206,6 +209,7 @@ public sealed class SpawnBrowserWindow : Window
         _configuration = configuration;
         _lifecycle = lifecycle;
         _notices = notices;
+        _referenceImages = referenceImages;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -441,21 +445,29 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-camera-file", "New camera from file", TablerIcon.File,
             noCameras));
+        // A reference picture needs no native signature and no scene entity,
+        // so it is never disabled.
+        rows.Add(ActionRow(
+            "##spawn-reference-image", "Reference image", TablerIcon.Photo,
+            help: "Pin a picture over the game to pose against — it keeps "
+                + "its place across GPose and reloads"));
 
         // Tab per action row, by the fixed row order above. The prop entry
         // is its own tab (a prop catalog arrives later); everything the
         // companion catalog spawns is an ACTOR, so it files under Actors.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i == RowProp
-                ? SpawnBrowserTab.Props
-                : i < RowProp
-                    ? SpawnBrowserTab.Actors
-                    : i <= RowOverlayStatus
-                        ? SpawnBrowserTab.Overlays
-                        : i <= RowWorldLight
-                            ? SpawnBrowserTab.Lights
-                            : SpawnBrowserTab.Cameras);
+            _rowTabs.Add(i == RowReferenceImage
+                ? SpawnBrowserTab.Images
+                : i == RowProp
+                    ? SpawnBrowserTab.Props
+                    : i < RowProp
+                        ? SpawnBrowserTab.Actors
+                        : i <= RowOverlayStatus
+                            ? SpawnBrowserTab.Overlays
+                            : i <= RowWorldLight
+                                ? SpawnBrowserTab.Lights
+                                : SpawnBrowserTab.Cameras);
 
         var entries = _catalog.Entries;
         _actorEntryCount = entries.Count;
@@ -786,6 +798,12 @@ public sealed class SpawnBrowserWindow : Window
                 // The pane owns the dialog and the import's own selection,
                 // exactly like the light file row above.
                 _cameraPane.OpenLoad();
+                return;
+            case RowReferenceImage:
+                // The session owns the picker for the same reason the panes
+                // own theirs: it is pumped from the UI root every frame, so
+                // the dialog outlives this window closing on focus loss.
+                _referenceImages.OpenAddDialog();
                 return;
         }
 

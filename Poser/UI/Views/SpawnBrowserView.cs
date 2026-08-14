@@ -23,6 +23,12 @@ public enum SpawnBrowserTab
     /// bubble and the status line.</summary>
     Overlays,
 
+    /// <summary>Reference pictures pinned over the game. Brio files the same
+    /// entry under its spawn menu's "Other" group
+    /// (<c>Brio/UI/Controls/Editors/SpawnMenu.cs:268-280</c>); Poser's groups
+    /// are named for what they add, and what this adds is an image.</summary>
+    Images,
+
     /// <summary>Visible overworld actors offered for cloning into the scene.
     /// The rows are a snapshot: refreshed on open, on switching here, and by
     /// the tab's own refresh row — never per frame.</summary>
@@ -154,6 +160,7 @@ public static class SpawnBrowserView
         "Cameras",
         "Props",
         "Overlays",
+        "Images",
         "World",
     ];
 
