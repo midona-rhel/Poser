@@ -73,8 +73,32 @@ interchange with Brio and (via name conversion) Anamnesis.
   and JSON depth are bounded by the shared codec/traversal limits; cancellation,
   traversal failure, or a bound breach retains the previous snapshot.
 - `.pose` metadata is observed through the typed pose codec. Each entry carries
-  `Valid`, `Corrupt`, `Future`, or `Oversized` status with a concise detail;
-  recovery/quarantine UI is explicitly deferred.
+  `Valid`, `Corrupt`, `Future`, or `Oversized` status with a concise detail —
+  one classification (`PoseLibraryFileActions.Classify`) shared by the scan
+  and the retry probe. Flagged entries stay VISIBLE: the tile carries a
+  warning badge and the info strip states the typed diagnosis.
+- Search matches the entry's name, author, and tags (substring, against runs
+  lowercased at scan time); the tag chip remains an exact filter. Folders are
+  the on-disk tree, bounded by the traversal limits, with per-kind recursive
+  counts so a tab drops empty subtrees whole.
+- File verbs live in `PoseLibraryFileActions` — synchronous, stateless, every
+  outcome typed (`PoseLibraryFileActionResult`), and none of them mutates the
+  published snapshot: a successful mutation requests a fresh complete pass.
+  - Recovery (flagged entries): **Retry** re-probes through the same bounded
+    metadata seam; **Quarantine** moves the file into its directory's
+    `.quarantine` folder (collision-suffixed, never overwriting earlier
+    evidence) which the scan skips by name; **Restore** moves it back
+    (collision-suffixed, never overwriting a live file); **Reveal**/**Delete**
+    round it out. Delete is confirm-gated in UI and idempotent at the core.
+  - Authoring: **Rename** (same-directory, extension kept, taken names
+    refused), **Move** to another scanned folder (missing destination or
+    taken name refused), **Edit metadata** — author and tags written back
+    into the file through the atomic store's bounded read + validate +
+    same-directory atomic replace (Brio `SaveMetadata` parity); tags are
+    trimmed, deduplicated case-insensitively, and bounded by the codec's
+    256-tag limit, and a file the codec cannot read is refused untouched.
+- Favourites key on the absolute path; a path-changing verb carries the
+  favourite along, and delete/quarantine drop it.
 
 ## Auto-save
 
@@ -132,6 +156,11 @@ interchange with Brio and (via name conversion) Anamnesis.
   recovered file flows through the standard import pipeline. Settings
   (General → AUTO-SAVE): enabled, interval 10–600 s, kept count (free
   numeric input, floor 1, no cap), clean-on-exit — read live each tick.
+- The library's auto-save tab states the service's health on its footer:
+  a `RecoveryRequired` terminal result or health record outranks the
+  last-accepted-save stamp (which claims dispatch acceptance only, exactly
+  what `LastSaveUtc` claims), then "Auto-save is off." / "No auto-save yet
+  this session." — the typed status is never hidden behind an empty caption.
 
 The storage boundary is intentionally narrow. Versioned codecs, finite-value
 validation, same-directory atomic replacement, autosave queue/join, library
