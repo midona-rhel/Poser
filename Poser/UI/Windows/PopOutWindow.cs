@@ -100,6 +100,9 @@ public sealed class PopOutWindow : Window
         _inspector = ActivatorUtilities
             .CreateInstance<PoseInspectorPane>(services);
         _inspector.DrawMapInline = graphical.DrawInline;
+        // This window's OWN animation pane owns the expression row and the
+        // picker it opens, for the same reason the panes above are per-window.
+        _inspector.DrawExpressionRow = _animationPane.DrawExpressionRow;
         graphical.SidesSwapped =
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
         _inspector.GetMapMirror = () => graphical.SidesSwapped;
@@ -233,6 +236,10 @@ public sealed class PopOutWindow : Window
         // it: without this line the pop-out's MCDF Import/Export are dead
         // buttons, because those dialogs draw from DrawBrowsers alone.
         _appearancePane.DrawBrowsers();
+        // Same rule for the expression row's picker: the row is drawn on this
+        // window's inspector, on any tab, so its surface is pumped here. A
+        // no-op on frames the animation tab already drew it.
+        _animationPane.DrawExpressionPicker();
     }
 
     public override void OnClose()

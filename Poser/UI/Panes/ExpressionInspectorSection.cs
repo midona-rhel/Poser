@@ -2,17 +2,26 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Game;
 
 namespace Poser.UI;
 
 /// <summary>
-/// Actor expression action-unit controls: one weight slider per resolvable
-/// unit, plus the reset that clears them all. On a WIDE surface, units the
-/// catalog names "(L)" and "(R)" share ONE row — the two halves of a face
-/// read as one control, not as two unrelated rows a screen apart. The 280px
-/// rail has no width for two sliders and keeps one full-label row per unit.
+/// The actor's whole face: the expression the game plays (picked, previewed,
+/// baked into the pose) and then the action-unit weights that shape it. Both
+/// belong to the FACE, so both are reached from the face surface rather than
+/// through the animation tab.
+///
+/// The picked-expression row is drawn by a delegate — <see cref="AnimationPane"/>
+/// owns the catalog feed and the shared picker it opens, and the surface that
+/// draws this section is the one that draws that picker.
+///
+/// On a WIDE surface, units the catalog names "(L)" and "(R)" share ONE row —
+/// the two halves of a face read as one control, not as two unrelated rows a
+/// screen apart. The 280px rail has no width for two sliders and keeps one
+/// full-label row per unit.
 /// </summary>
 public sealed class ExpressionInspectorSection
 {
@@ -21,13 +30,28 @@ public sealed class ExpressionInspectorSection
     public ExpressionInspectorSection(IExpressionService expressions)
         => _expressions = expressions;
 
-    /// <summary>Whether the expression backend is up at all. The rail asks
-    /// before it declares the section, so an unavailable backend costs no
-    /// header rather than an empty one.</summary>
+    /// <summary>Whether the action-unit backend is up. The section is drawn
+    /// whenever this OR an expression row is available — the picked expression
+    /// stands on its own if the sliders are down.</summary>
     public bool CanDraw => _expressions.IsAvailable;
 
-    public void Draw(Crystarium.FormScope form, IActor actor, bool paired)
+    /// <summary>
+    /// <paramref name="expressionRow"/> is passed per call rather than held:
+    /// this section is a DI singleton shared by every inspector, and each
+    /// window's row belongs to that window's own animation pane.
+    /// </summary>
+    public void Draw(
+        Crystarium.FormScope form,
+        IActor actor,
+        ActorId? actorId,
+        bool paired,
+        Action<Crystarium.FormScope, ActorId>? expressionRow = null)
     {
+        if (expressionRow is { } row && actorId is { } rowActor)
+            row(form, rowActor);
+        if (!_expressions.IsAvailable)
+            return;
+
         var units = _expressions.GetUnits(actor);
         int drawn = 0;
         // A unit consumed as the second half of a pair must not emit its own
@@ -68,7 +92,7 @@ public sealed class ExpressionInspectorSection
 
         if (drawn == 0)
         {
-            form.Status("Expressions unavailable");
+            form.Status("Expression sliders unavailable");
             return;
         }
 

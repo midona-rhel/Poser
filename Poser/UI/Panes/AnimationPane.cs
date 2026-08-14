@@ -25,6 +25,10 @@ public sealed class AnimationPane
 {
     private readonly AnimationSession _animation;
     private readonly AnimationCatalog _catalog;
+
+    /// <summary>The expression row can be the first catalog consumer of a
+    /// session, on a surface that never loads it for itself.</summary>
+    private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
     private readonly AnimationSceneActions _sceneActions;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly SceneSession _scene;
@@ -47,6 +51,11 @@ public sealed class AnimationPane
     private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks =
         new();
     private string _status = string.Empty;
+
+    /// <summary>The expression row's own status: the row is drawn on another
+    /// pane's surface, which has no line of this pane's to report into.</summary>
+    private string _expressionStatus = string.Empty;
+    private int _pickerFrame = -1;
     private bool _sceneMenuRequested;
 
     /// <summary>The exact actor and feed captured when the picker opened. A
@@ -151,6 +160,7 @@ public sealed class AnimationPane
     public AnimationPane(
         AnimationSession animation,
         AnimationCatalog catalog,
+        Game.Animation.AnimationCatalogLoader catalogLoader,
         AnimationSceneActions sceneActions,
         Game.Animation.FacialPoseCapture facialCapture,
         ITextureProvider textures,
@@ -158,6 +168,7 @@ public sealed class AnimationPane
     {
         _animation = animation;
         _catalog = catalog;
+        _catalogLoader = catalogLoader;
         _sceneActions = sceneActions;
         _facialCapture = facialCapture;
         _icons = new GameIconResolver(textures);
@@ -229,11 +240,15 @@ public sealed class AnimationPane
                             AnimationSlots.DisplayName(slot),
                             alwaysShow: false);
                 });
+            // The EXPRESSION picker is not here: an expression is a face edit,
+            // and it lives on the face surface with the rest of them (the pose
+            // inspector's EXPRESSION section). What stays is the actor's
+            // speech layer, which is animation and nothing else.
             page.Section(
-                "FACE & LIPS",
+                "LIPS",
                 _openFace,
                 next => _openFace = next,
-                form => DrawFace(form, actor, reading));
+                form => DrawLips(form, actor, reading));
             page.Section(
                 "ADVANCED SLOTS",
                 _openAdvancedSlots,
@@ -656,7 +671,53 @@ public sealed class AnimationPane
         }
     }
 
-    private void DrawFace(
+    /// <summary>
+    /// The actor's EXPRESSION row — preview, release, and the bake into the
+    /// pose. Public because it is drawn on the FACE surface (the pose
+    /// inspector's EXPRESSION section), not on this pane: an expression is a
+    /// property of the face being posed, and the click path to it must not go
+    /// through the animation tab. This pane still owns the catalog feed and
+    /// the shared picker the row opens, so the surface that draws the row also
+    /// calls <see cref="DrawExpressionPicker"/> once per frame.
+    /// </summary>
+    public void DrawExpressionRow(Crystarium.FormScope form, ActorId actor)
+    {
+        if (!_animation.IsSupported(actor))
+        {
+            form.Status("This actor does not support expressions.");
+            return;
+        }
+        // The row can be the first thing the user touches in a session, on a
+        // surface that never loads the catalog for itself.
+        _catalogLoader.EnsureLoaded();
+        var reading = _animation.Read(actor) ?? ActorAnimationReading.Empty;
+        if (_expressionStatus.Length > 0)
+            form.Status(_expressionStatus);
+        DrawExpression(form, actor, reading);
+    }
+
+    /// <summary>The shared picker surface, for the pane that hosts the
+    /// expression row. Only the expression feed can be open there.</summary>
+    public void DrawExpressionPicker() => DrawPicker();
+
+    private void DrawLips(
+        Crystarium.FormScope form,
+        ActorId actor,
+        ActorAnimationReading reading)
+    {
+        form.Picker(
+            "Lips",
+            NameFor(reading.LipsOverride, "Choose speech"),
+            () => OpenPicker(_lipsFeed, actor, reading.LipsOverride),
+            actions => actions.Button(
+                "None",
+                () => Report(_animation.SetLips(actor, 0), "Lips"),
+                disabled: reading.LipsOverride == 0,
+                help: "Put back the lip animation the actor had before"),
+            help: "Choose the speech animation this actor's lips play");
+    }
+
+    private void DrawExpression(
         Crystarium.FormScope form,
         ActorId actor,
         ActorAnimationReading reading)
@@ -675,7 +736,7 @@ public sealed class AnimationPane
             {
                 actions.Button(
                     "Preview",
-                    () => Report(
+                    () => ReportExpression(
                         held != 0
                             ? _animation.HoldExpression(actor, held)
                             : _animation.Blend(actor, facial),
@@ -685,7 +746,7 @@ public sealed class AnimationPane
                         + "held by the animation, which Release takes back");
                 actions.Button(
                     "Release",
-                    () => Report(
+                    () => ReportExpression(
                         _animation.ReleaseExpression(actor), "Expression"),
                     disabled: held == 0,
                     help: "Drop the previewed expression so the face follows "
@@ -695,7 +756,7 @@ public sealed class AnimationPane
                     () =>
                     {
                         var descriptor = Describe(actor);
-                        _status = descriptor == null
+                        _expressionStatus = descriptor == null
                             ? "Bake expression: actor is no longer in the scene."
                             : _facialCapture.Begin(actor, descriptor)
                                 is { Success: false } failed
@@ -707,17 +768,6 @@ public sealed class AnimationPane
                         + "undoable edit — it stays after the preview ends");
             },
             help: "Choose an expression to hold on this actor's face");
-
-        form.Picker(
-            "Lips",
-            NameFor(reading.LipsOverride, "Choose speech"),
-            () => OpenPicker(_lipsFeed, actor, reading.LipsOverride),
-            actions => actions.Button(
-                "None",
-                () => Report(_animation.SetLips(actor, 0), "Lips"),
-                disabled: reading.LipsOverride == 0,
-                help: "Put back the lip animation the actor had before"),
-            help: "Choose the speech animation this actor's lips play");
     }
 
     // ── the one picker surface ───────────────────────────────────────────
@@ -744,6 +794,13 @@ public sealed class AnimationPane
     /// draws.</summary>
     private void DrawPicker()
     {
+        // The surface is drawn by whoever hosts a picker row this frame — this
+        // pane for its own rows, the shell for the expression row it hosts on
+        // the face surface. Once per frame, whichever asks first.
+        int frame = ImGui.GetFrameCount();
+        if (_pickerFrame == frame)
+            return;
+        _pickerFrame = frame;
         if (_openFeed is not { } feed)
             return;
         _picker.Update(PickerOptionsFor(feed));
@@ -1214,6 +1271,13 @@ public sealed class AnimationPane
         _scrub = null;
         _scrubFrozenControls = null;
     }
+
+    /// <summary>The expression row reports into its own line: the row is
+    /// drawn on the face surface, which never shows this pane's status.</summary>
+    private void ReportExpression(AnimationResult result, string what) =>
+        _expressionStatus = result.Success
+            ? string.Empty
+            : $"{what}: {result.Detail}";
 
     private void Report(AnimationResult result, string what) =>
         _status = result.Success

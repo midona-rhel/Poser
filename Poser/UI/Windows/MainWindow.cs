@@ -434,6 +434,7 @@ public class MainWindow : Window
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
+        _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
         _poseInspector.GetMapMirror = () => graphicalBonePane.SidesSwapped;
@@ -955,6 +956,11 @@ public class MainWindow : Window
         // Window-level: the attach picker outlives the context menu that
         // opened it.
         _companions.DrawPicker();
+        // The expression row is drawn on the FACE surface (the pose rail and
+        // the Expression workspace tab), which exists on every tab; its picker
+        // is therefore pumped at the shell. A no-op on the frames the
+        // animation pane already drew the surface for its own rows.
+        _animationPane.DrawExpressionPicker();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
         DrawLightContextMenu();

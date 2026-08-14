@@ -61,6 +61,13 @@ public class PoseInspectorPane
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
 
+    /// <summary>The actor's picked-expression row (preview, release, bake),
+    /// drawn at the top of the EXPRESSION section. It belongs to THIS window's
+    /// animation pane, which owns the catalog feed and the shared picker the
+    /// row opens — the row is here because an expression is a face edit, and
+    /// the click path to it must not detour through the animation tab.</summary>
+    public Action<Crystarium.FormScope, ActorId>? DrawExpressionRow;
+
     /// <summary>Mirror selection state on the graphical maps (SidesSwapped).</summary>
     public Func<bool>? GetMapMirror;
     public Action<bool>? SetMapMirror;
@@ -689,14 +696,16 @@ public class PoseInspectorPane
                     _openGaze,
                     next => _openGaze = next,
                     form => DrawGaze(form, actor, wide: false));
-            if (actor != null && humanoid && _expressionSection.CanDraw)
+            if (actor != null && humanoid &&
+                (_expressionSection.CanDraw || DrawExpressionRow != null))
                 stack.Section(
                     "expression",
                     "EXPRESSION",
                     _openExpression,
                     next => _openExpression = next,
                     form => _expressionSection.Draw(
-                        form, actor, paired: false));
+                        form, actor, OwningActorId(), paired: false,
+                        DrawExpressionRow));
             if (skeleton != null)
                 stack.Section(
                     "pose",
@@ -958,7 +967,8 @@ public class PoseInspectorPane
             "##pose-expression-scroll", min, max, s, insets: 2,
             (origin, contentWidth) =>
             {
-                if (actor == null || !_expressionSection.CanDraw)
+                if (actor == null ||
+                    (!_expressionSection.CanDraw && DrawExpressionRow == null))
                 {
                     Crystarium.TextAt(
                         origin,
@@ -978,7 +988,8 @@ public class PoseInspectorPane
                     _openSurfaceExpression,
                     next => _openSurfaceExpression = next,
                     form => _expressionSection.Draw(
-                        form, actor, paired: true),
+                        form, actor, OwningActorId(), paired: true,
+                        DrawExpressionRow),
                     divider: false);
             });
         return viewportHeight;
@@ -2597,6 +2608,21 @@ public class PoseInspectorPane
             Divide(numerator.X, denominator.X),
             Divide(numerator.Y, denominator.Y),
             Divide(numerator.Z, denominator.Z));
+    }
+
+    /// <summary>The scene identity of <see cref="OwningActor"/> — a gaze point
+    /// and a bone both name their owner, exactly as
+    /// <see cref="PrimarySkeletonDescriptor"/> resolves lineage.</summary>
+    private ActorId? OwningActorId()
+    {
+        if (_primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                Actor: { } direct })
+            return direct;
+        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } bone })
+            foreach (var candidate in _scene.Snapshot.Actors)
+                if (candidate.Id.LogicalId == bone.Skeleton.Actor.LogicalId)
+                    return candidate.Id;
+        return null;
     }
 
     private IActor? OwningActor() => _entity switch
