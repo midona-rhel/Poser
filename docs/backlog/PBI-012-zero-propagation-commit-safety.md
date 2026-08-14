@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Ready after the active PBI-011 slice has a clean accepted head |
+| Status | Implementation present; live acceptance pending (status corrected 2026-08-14) |
 | Size | Small, urgent runtime defect |
 | Implementation owner | Claude |
 | Review owner | Codex |
@@ -12,6 +12,12 @@
 | Base ref | Record from the clean accepted head before implementation |
 | Feature branch | `feature/pbi-012-zero-propagation-commit-safety` |
 | Accepted head | Pending |
+
+Status note 2026-08-14: the domain fix is in at the integration head —
+`Poser.Domain/Posing/PoseLayers.cs` accepts `TransformComponents.None` and
+rejects unknown bits with a typed error (`(value & ~All) == None` known-bit
+check; "Transform components contain unknown bits."). The in-game acceptance
+walkthrough below remains the user's open gate.
 
 ## Defect
 
