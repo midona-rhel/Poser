@@ -30,8 +30,18 @@ using Poser.UI.Composition;
 namespace Poser.Composition;
 
 /// <summary>
-/// Explicit composition modules for the plugin executable. These methods only
-/// describe ownership; product behavior remains in the registered services.
+/// Explicit composition modules for the plugin executable, arranged as a
+/// per-feature registration manifest. These methods only describe ownership;
+/// product behavior remains in the registered services.
+///
+/// Order contract: the public module methods, their call order
+/// (Dalamud, core, features, presentation), and each module's content are
+/// load-bearing — the lifecycle contract suite composes AddPoserCore +
+/// AddPoserFeatures alone and appends its own overrides afterward, relying on
+/// last-registration-wins. Inside a module no service type is registered
+/// twice and nothing resolves IEnumerable&lt;T&gt; over these registrations,
+/// so intra-module order carries no container meaning; the feature methods
+/// preserve the original registration sequence verbatim regardless.
 /// </summary>
 internal static class ServiceRegistration
 {
@@ -69,10 +79,59 @@ internal static class ServiceRegistration
 
     public static IServiceCollection AddPoserCore(this IServiceCollection services)
     {
+        services.AddConfigurationAndEvents();
+        services.AddSessionLifecycle();
+        services.AddPosingRuntime();
+        services.AddSceneState();
+        services.AddTransformFeature();
+        services.AddAnimationFeature();
+        services.AddAppearanceFeature();
+        services.AddIntegrationFeature();
+        services.AddCatalogs();
+        services.AddPoseCaptureFeature();
+        services.AddSceneOwnership();
+        // Feature-pending: new core registrations land here until they move
+        // into (or become) a feature method above.
+        return services;
+    }
+
+    public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
+    {
+        services.AddEnvironmentAndCameras();
+        services.AddSpawnFeature();
+        services.AddPoseLibraryFeature();
+        services.AddPropFeature();
+        services.AddFaceAndDevTools();
+        services.AddFilePersistence();
+        // Feature-pending: new feature registrations land here until they move
+        // into (or become) a feature method above.
+        return services;
+    }
+
+    public static IServiceCollection AddPoserPresentation(this IServiceCollection services)
+    {
+        services.AddFeaturePanes();
+        services.AddWindows();
+        services.AddUiShell();
+        // Feature-pending: new presentation registrations land here until they
+        // move into (or become) a feature method above.
+        return services;
+    }
+
+    // ----- Core: configuration, lifecycle, posing runtime -------------------
+
+    private static IServiceCollection AddConfigurationAndEvents(
+        this IServiceCollection services)
+    {
         services.AddSingleton<ConfigurationService>();
         services.AddSingleton<EventBus>();
         services.AddSingleton<IEventBus>(sp => sp.GetRequiredService<EventBus>());
+        return services;
+    }
 
+    private static IServiceCollection AddSessionLifecycle(
+        this IServiceCollection services)
+    {
         services.AddSingleton<IFinalCapturePort>(sp =>
             new AutoSaveFinalCapturePort(
                 () => sp.GetRequiredService<IAutoSaveService>()));
@@ -81,7 +140,12 @@ internal static class ServiceRegistration
             sp.GetRequiredService<SessionLifecycleCoordinator>());
         services.AddSingleton<ISessionGenerationSource>(sp =>
             sp.GetRequiredService<SessionLifecycleCoordinator>());
+        return services;
+    }
 
+    private static IServiceCollection AddPosingRuntime(
+        this IServiceCollection services)
+    {
         services.AddSingleton<IGPoseService, GPoseService>();
         services.AddSingleton<IActorManager, ActorManager>();
         services.AddSingleton<PosingService>();
@@ -92,10 +156,21 @@ internal static class ServiceRegistration
         services.AddSingleton<BonePosingService>();
         services.AddSingleton<IBonePosingService>(
             sp => sp.GetRequiredService<BonePosingService>());
+        return services;
+    }
 
+    private static IServiceCollection AddSceneState(
+        this IServiceCollection services)
+    {
         services.AddSingleton<SelectionSession>();
         services.AddSingleton<SceneSession>();
         services.AddSingleton<StableBindingRegistry>();
+        return services;
+    }
+
+    private static IServiceCollection AddTransformFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<ITransformRuntimePort, TransformRuntimePort>();
         services.AddSingleton<TransformHistory>();
         services.AddSingleton<TransformGestureService>();
@@ -106,6 +181,12 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Viewport.ViewportProjection>();
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
+        return services;
+    }
+
+    private static IServiceCollection AddAnimationFeature(
+        this IServiceCollection services)
+    {
         // Animation joins the clean core, not the legacy feature block:
         // the port owns the hooks and every address, the session owns
         // stable-id state and restoration.
@@ -113,7 +194,12 @@ internal static class ServiceRegistration
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>();
+        return services;
+    }
 
+    private static IServiceCollection AddAppearanceFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<Game.Presentation.PresentationRuntimePort>();
         services.AddSingleton<Application.Presentation.IPresentationRuntimePort>(
             sp => sp.GetRequiredService<Game.Presentation.PresentationRuntimePort>());
@@ -121,6 +207,12 @@ internal static class ServiceRegistration
         services.AddSingleton<
             Application.Presentation.ICustomizeReadRuntimePort,
             Game.Presentation.CustomizeReadRuntimePort>();
+        return services;
+    }
+
+    private static IServiceCollection AddIntegrationFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
@@ -144,11 +236,23 @@ internal static class ServiceRegistration
                 limits.McdfMaxGamePathCount);
             return session;
         });
+        return services;
+    }
+
+    private static IServiceCollection AddCatalogs(
+        this IServiceCollection services)
+    {
         services.AddSingleton<AnimationCatalog>();
         services.AddSingleton<AnimationSceneActions>();
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
         services.AddSingleton<CompanionCatalog>();
         services.AddSingleton<Game.Companions.CompanionCatalogLoader>();
+        return services;
+    }
+
+    private static IServiceCollection AddPoseCaptureFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
@@ -158,13 +262,22 @@ internal static class ServiceRegistration
         // The pose library's CharaView preview. No force-resolve: the pane
         // holds it, and it only subscribes the framework tick while open.
         services.AddSingleton<Game.Preview.PosePreviewService>();
+        return services;
+    }
+
+    private static IServiceCollection AddSceneOwnership(
+        this IServiceCollection services)
+    {
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
     }
 
-    public static IServiceCollection AddPoserFeatures(this IServiceCollection services)
+    // ----- Features: world, spawning, library, persistence ------------------
+
+    private static IServiceCollection AddEnvironmentAndCameras(
+        this IServiceCollection services)
     {
         services.AddSingleton<ICameraService, CameraService>();
         services.AddSingleton<ILightingService, Game.Lighting.LightingService>();
@@ -172,6 +285,12 @@ internal static class ServiceRegistration
         services.AddSingleton<IEnvironmentService, Game.Environment.EnvironmentService>();
         services.AddSingleton<IWorldRenderingService, Game.Environment.WorldRenderingService>();
         services.AddSingleton<IFestivalService, Game.Environment.FestivalService>();
+        return services;
+    }
+
+    private static IServiceCollection AddSpawnFeature(
+        this IServiceCollection services)
+    {
         // The concrete spawn service is registered once and forwarded: the
         // world-actor discovery funnels its clones through the same accepted
         // ownership transaction (no second spawner).
@@ -182,13 +301,38 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Actors.IWorldActorReadPort>(
             sp => sp.GetRequiredService<WorldActorDiscovery>());
         services.AddSingleton<ISpawnCatalogService, SpawnCatalogService>();
+        return services;
+    }
+
+    private static IServiceCollection AddPoseLibraryFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<Library.IPoseLibraryService, Library.PoseLibraryService>();
+        return services;
+    }
+
+    private static IServiceCollection AddPropFeature(
+        this IServiceCollection services)
+    {
         services.AddSingleton<Game.PropSpawnService>();
+        return services;
+    }
+
+    private static IServiceCollection AddFaceAndDevTools(
+        this IServiceCollection services)
+    {
+        // Gaze and expression are the face features; LiveTestService is the
+        // in-game validation harness and CommandRouter the /poser dev bridge.
         services.AddSingleton<IGazeService, GazeService>();
         services.AddSingleton<ILiveTestService, LiveTestService>();
         services.AddSingleton<IExpressionService, ExpressionService>();
         services.AddSingleton<CommandRouter>();
+        return services;
+    }
 
+    private static IServiceCollection AddFilePersistence(
+        this IServiceCollection services)
+    {
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
         services.AddSingleton<ICameraFileService, CameraFileService>();
@@ -207,7 +351,10 @@ internal static class ServiceRegistration
         return services;
     }
 
-    public static IServiceCollection AddPoserPresentation(this IServiceCollection services)
+    // ----- Presentation: panes, windows, shell ------------------------------
+
+    private static IServiceCollection AddFeaturePanes(
+        this IServiceCollection services)
     {
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
@@ -224,13 +371,23 @@ internal static class ServiceRegistration
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
         services.AddSingleton<PoseThumbnailCache>();
+        return services;
+    }
 
+    private static IServiceCollection AddWindows(
+        this IServiceCollection services)
+    {
         services.AddSingleton<SkeletonOverlayWindow>();
         services.AddSingleton<GizmoOverlayWindow>();
         services.AddSingleton<MainWindow>();
         services.AddSingleton<SettingsWindow>();
         services.AddSingleton<SpawnBrowserWindow>();
+        return services;
+    }
 
+    private static IServiceCollection AddUiShell(
+        this IServiceCollection services)
+    {
         services.AddSingleton<UiWindowSet>();
         services.AddSingleton<IUIManager, UIManager>();
         return services;
