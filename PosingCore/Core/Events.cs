@@ -49,6 +49,14 @@ public record PropListChangedEvent : IEvent;
 public record OverlayNodeListChangedEvent : IEvent;
 
 /// <summary>
+/// Published when the set of ADOPTED world objects changes (a BG/layout object
+/// taken into the scene, or given back to the map). Payload-free for the same
+/// reason the prop event is: the handle type lives above this assembly and
+/// every subscriber re-reads the live list.
+/// </summary>
+public record WorldObjectListChangedEvent : IEvent;
+
+/// <summary>
 /// Published when the virtual-camera list changes (camera created, destroyed,
 /// or the live camera switched).
 /// </summary>
