@@ -118,6 +118,9 @@ internal static class ServiceRegistration
         services.AddSingleton<Application.Presentation.IPresentationRuntimePort>(
             sp => sp.GetRequiredService<Game.Presentation.PresentationRuntimePort>());
         services.AddSingleton<Application.Presentation.ActorPresentationSession>();
+        services.AddSingleton<
+            Application.Presentation.ICustomizeReadRuntimePort,
+            Game.Presentation.CustomizeReadRuntimePort>();
         services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(

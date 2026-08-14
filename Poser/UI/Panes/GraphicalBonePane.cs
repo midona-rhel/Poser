@@ -6,7 +6,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using Poser.Application.Presentation;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
 using Poser.Data;
@@ -40,6 +40,7 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly IActorManager _actorManager;
     private readonly ISkeletonService _skeletonService;
     private readonly ITextureProvider _textureProvider;
+    private readonly ICustomizeReadRuntimePort _customizeRead;
 
     private readonly GraphicalBoneConfig _config;
     private readonly Dictionary<string, IDalamudTextureWrap?> _textures = new();
@@ -70,7 +71,8 @@ public sealed class GraphicalBonePane : IDisposable
         StableBindingRegistry bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
-        ITextureProvider textureProvider)
+        ITextureProvider textureProvider,
+        ICustomizeReadRuntimePort customizeRead)
     {
         _scene = scene;
         _selection = scene.Selection;
@@ -78,6 +80,7 @@ public sealed class GraphicalBonePane : IDisposable
         _actorManager = actorManager;
         _skeletonService = skeletonService;
         _textureProvider = textureProvider;
+        _customizeRead = customizeRead;
 
         _config = GraphicalBoneReader.ReadEmbeddedResource();
 
@@ -97,7 +100,7 @@ public sealed class GraphicalBonePane : IDisposable
         _dotCandidates.Clear();
         _dotIds.Clear();
 
-        var actor = GetSelectedActor();
+        var (actor, actorId) = GetSelectedActor();
         if (actor == null)
             return false;
         var skeleton = _skeletonService.GetSkeleton(actor);
@@ -109,7 +112,7 @@ public sealed class GraphicalBonePane : IDisposable
         if (page == 0)
             DrawBodyPage(skeleton, contentArea);
         else
-            DrawFacePage(skeleton, actor, contentArea);
+            DrawFacePage(skeleton, actorId, contentArea);
         ResolveAndDrawDots();
 
         bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
@@ -238,9 +241,14 @@ public sealed class GraphicalBonePane : IDisposable
         }
     }
 
-    private unsafe void DrawFacePage(ISkeleton skeleton, IActor actor, Vector2 contentArea)
+    private void DrawFacePage(ISkeleton skeleton, ActorId? actorId, Vector2 contentArea)
     {
-        string headSection = GetHeadSectionForActor(actor);
+        // Face-map variant (race → head section) is a native customize read
+        // and lives behind the Game read port; without a stable id for the
+        // actor the map keeps the default human section.
+        string headSection = actorId is { } id
+            ? _customizeRead.HeadSectionFor(id)
+            : ICustomizeReadRuntimePort.DefaultHeadSection;
         if (!_config.PoseImages.TryGetValue(headSection, out var section) ||
             string.IsNullOrEmpty(section.Image))
             return;
@@ -270,39 +278,6 @@ public sealed class GraphicalBonePane : IDisposable
                 imageSize.Y),
             drawMirrors: true,
             skeleton);
-    }
-
-    private unsafe string GetHeadSectionForActor(IActor actor)
-    {
-        if (actor.Address == nint.Zero)
-            return "human_head";
-
-        try
-        {
-            var character = (Character*)actor.Address;
-            if (character == null)
-                return "human_head";
-
-            var customize = character->DrawData.CustomizeData;
-            var race = customize.Race;
-
-            return race switch
-            {
-                1 => "human_head",     // Hyur
-                2 => "human_head",     // Elezen
-                3 => "human_head",     // Lalafell
-                4 => "miqote_head",    // Miqo'te
-                5 => "human_head",     // Roegadyn
-                6 => "human_head",     // Au Ra
-                7 => "hrothgar_head",  // Hrothgar
-                8 => "viera_head_a",   // Viera (default ear type)
-                _ => "human_head"
-            };
-        }
-        catch
-        {
-            return "human_head";
-        }
     }
 
     private void DrawBoneSectionAt(
@@ -460,7 +435,7 @@ public sealed class GraphicalBonePane : IDisposable
         return null;
     }
 
-    private IActor? GetSelectedActor()
+    private (IActor? Actor, ActorId? Id) GetSelectedActor()
     {
         // Primary selection decides which actor's maps draw. The stable id
         // resolves to a live actor for this frame's rendering walk only.
@@ -497,15 +472,19 @@ public sealed class GraphicalBonePane : IDisposable
                     }
                 }
                 // Residual frame-scoped resolution: the maps still render from
-                // the live skeleton and read the face-map variant from actor
-                // customize data (display formatting, not selection identity).
+                // the live skeleton; the face-map variant read goes through
+                // the customize read port with this exact id.
                 var resolved = _bindings.Resolve(descriptor.Id);
-                return resolved.Success ? resolved.Value : null;
+                return resolved.Success
+                    ? (resolved.Value, descriptor.Id)
+                    : (null, null);
             }
         }
 
-        // Fall back to first actor
-        return _actorManager.Actors.Count > 0 ? _actorManager.Actors[0] : null;
+        // Fall back to first actor; its stable id is the registry's reverse
+        // mapping (null before the first committed scene refresh).
+        var fallback = _actorManager.Actors.Count > 0 ? _actorManager.Actors[0] : null;
+        return (fallback, fallback != null ? _bindings.GetActorId(fallback) : null);
     }
 
     private static string? GetMirrorBoneName(string boneName)
