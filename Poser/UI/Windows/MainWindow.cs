@@ -106,6 +106,14 @@ public class MainWindow : Window
     private float _sidebarWidth = 280f;
     private readonly AppShellViewModel _vm = new();
 
+    /// <summary>The acceptance gate. A field initializer, not a dependency:
+    /// it reads the config service's static instance exactly like the rename
+    /// modal below does.</summary>
+    private readonly FirstRunNoticeView _firstRunNotice = new()
+    {
+        OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url),
+    };
+
     /// <summary>The per-frame shell view model, for the split-part windows —
     /// they are registered after this window, so a frame's model is already
     /// built when they read it.</summary>
@@ -1129,6 +1137,9 @@ public class MainWindow : Window
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
         _libraryPane.Tick();
+        // Last, and over everything: until the notice is accepted the shell
+        // has drawn a workspace the user may read and may not touch.
+        _firstRunNotice.Draw();
     }
 
     /// <summary>Puts the workspace into library mode. Openers only — a second

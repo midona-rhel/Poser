@@ -35,6 +35,9 @@ public static partial class Crystarium
     ///           ButtonVariant.Primary));
     /// </code>
     /// </summary>
+    /// <param name="dismissible">False draws no close affordance: a GATE modal
+    /// (one whose own body carries the only way out) must not offer a corner
+    /// X that its caller reopens on the next frame.</param>
     /// <returns>True on the frame the modal closes.</returns>
     public static bool Modal(
         string id,
@@ -43,7 +46,8 @@ public static partial class Crystarium
         string title,
         Action body,
         Action? footer = null, ModalSize size = ModalSize.Small, float? height = null,
-        Vector2? position = null)
+        Vector2? position = null,
+        bool dismissible = true)
     {
         float scale = ImGuiHelpers.GlobalScale;
         string popupId = $"{title}##{id}";
@@ -152,12 +156,15 @@ public static partial class Crystarium
                     Color = theme.Text,
                 });
 
-            float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
-            ImGui.SetCursorScreenPos(new Vector2(
-                winMax.X - Crystarium.ActiveTheme.Floating.CloseInset * scale - closeSize,
-                winMin.Y + (barHeight - closeSize) * 0.5f));
-            if (FloatingSurface.CloseButton($"{id}##close"))
-                keepOpen = false;
+            if (dismissible)
+            {
+                float closeSize = Crystarium.ActiveTheme.Floating.CloseActionSize * scale;
+                ImGui.SetCursorScreenPos(new Vector2(
+                    winMax.X - Crystarium.ActiveTheme.Floating.CloseInset * scale - closeSize,
+                    winMin.Y + (barHeight - closeSize) * 0.5f));
+                if (FloatingSurface.CloseButton($"{id}##close"))
+                    keepOpen = false;
+            }
 
             dl.AddRectFilled(
                 new Vector2(winMin.X, winMin.Y + barHeight - 1f * scale),

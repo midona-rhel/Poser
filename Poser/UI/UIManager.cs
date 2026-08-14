@@ -229,7 +229,12 @@ public sealed class UIManager : IUIManager
     /// </summary>
     private void HandleKeybinds()
     {
-        if (!_gPoseService.IsGPosing || ImGui.GetIO().WantTextInput)
+        // The acceptance gate blocks every ImGui path into the workspace;
+        // chords are the one workspace input that does not travel through
+        // ImGui, so they are gated here rather than by the modal.
+        if (Views.FirstRunNoticeView.Pending
+            || !_gPoseService.IsGPosing
+            || ImGui.GetIO().WantTextInput)
         {
             foreach (var bind in _keybinds)
                 bind.Down = false;
