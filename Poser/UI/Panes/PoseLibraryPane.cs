@@ -117,7 +117,7 @@ public sealed class PoseLibraryPane
     /// entry starts on the poses.</summary>
     private LibraryType _type;
 
-    /// <summary>The toggle row's import components, one set per tab. SESSION
+    /// <summary>The action row's import components, one set per tab. SESSION
     /// state like the FILES section's own toggles. The poses tab starts
     /// rotation-only — the pose import default; the auto-save tab starts with
     /// all three, because a restore reproduces what was saved. The MCDF tab
@@ -291,7 +291,7 @@ public sealed class PoseLibraryPane
         _vm.OnImportPosition = SetImportPosition;
         _vm.OnImportRotation = SetImportRotation;
         _vm.OnImportScale = SetImportScale;
-        // The two Brio menus, opened from the toggle row; the shared state
+        // The two Brio menus, opened from the action row; the shared state
         // lives on the FILES section so both surfaces read one filter. The
         // library mount opens the import menu WITHOUT presets — rest poses
         // belong to the actor part (user rule).
@@ -1392,8 +1392,8 @@ public sealed class PoseLibraryPane
 
     // ── the import components ────────────────────────────────────────────
 
-    /// <summary>The toggle row: the active tab's set, hidden on the MCDF
-    /// tab.</summary>
+    /// <summary>The action row's import toggles: the active tab's set,
+    /// hidden on the MCDF tab.</summary>
     private void SyncImportToggles()
     {
         // The poses tab's options live in the inspector rail now; the

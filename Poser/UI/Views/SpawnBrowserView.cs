@@ -161,10 +161,6 @@ public static class SpawnBrowserView
     /// </summary>
     private const float ListVPad = 4f;
 
-    /// <summary>The clear cross breathes off the gutter instead of sitting
-    /// flush against it.</summary>
-    private const float SearchClearPad = 6f;
-
     /// <summary>FilterPill's own left pad; the band's margin tops it up to the
     /// row content base.</summary>
     private const float SearchInnerPad = 10f;
