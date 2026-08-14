@@ -988,7 +988,13 @@ public static class PoseLibraryView
             return;
         }
 
-        bool selected = vm.Selected >= 0 && vm.Selected < vm.Tiles.Count;
+        // The strip is reserved only when it has something to STATE. An empty
+        // strip is not a neutral gap: it takes a band off the grid and paints
+        // a rule under it, which reads as a second footer above the real one.
+        // The auto-save tab showed exactly that on every selection, because
+        // its rows carry no author and no tags by nature.
+        bool selected = vm.Selected >= 0 && vm.Selected < vm.Tiles.Count
+            && HasStripContent(vm.Tiles[vm.Selected]);
         float strip = selected ? InfoStripHeight : 0f;
         ImGui.SetCursorScreenPos(body.Min);
         Crystarium.ScrollRegion(
@@ -1572,6 +1578,15 @@ public static class PoseLibraryView
     }
 
     // ---- Info strip -------------------------------------------------
+
+    /// <summary>Whether the info strip would draw anything for this row: a
+    /// diagnosis, an author, or a tag. The three cases are exactly the three
+    /// <see cref="DrawInfoStrip"/> renders, so the reservation and the content
+    /// cannot disagree.</summary>
+    private static bool HasStripContent(PoseLibraryTileRow tile) =>
+        (tile.Flagged && tile.StatusText.Length > 0)
+        || tile.Author is { Length: > 0 }
+        || tile.Tags.Count > 0;
 
     /// <summary>
     /// The selected pose's metadata, pinned under the grid: the author, then
