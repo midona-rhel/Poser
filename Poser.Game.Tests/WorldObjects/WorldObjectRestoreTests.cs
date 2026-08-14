@@ -1,0 +1,521 @@
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using System.Reflection;
+using Dalamud.Plugin.Services;
+using Poser.Core;
+using Poser.Game.WorldObjects;
+using Poser.Services;
+
+namespace Poser.Game.Tests.WorldObjects;
+
+/// <summary>
+/// THE RESTORE CONTRACT, proven edge by edge. An adopted world object belongs
+/// to the map, not to Poser: it is never created, never destroyed, and must
+/// never be left displaced. Every path that can end a claim writes the captured
+/// placement and flags back — an explicit release, a scene clear, GPose exit,
+/// and plugin unload — each idempotent, and any pair of them safe in either
+/// order. A claim whose address has stopped being a BG object is dropped
+/// without a write, because restoring onto whatever took its place is the one
+/// way this contract could do harm.
+/// </summary>
+public sealed class WorldObjectRestoreTests
+{
+    private static readonly Transform Placed = new(
+        new Vector3(10f, 2f, -4f),
+        Quaternion.CreateFromYawPitchRoll(0.5f, 0f, 0f),
+        new Vector3(1f, 1f, 1f));
+
+    private static readonly Transform Moved = new(
+        new Vector3(99f, 50f, 12f),
+        Quaternion.CreateFromYawPitchRoll(1.5f, 0.25f, 0f),
+        new Vector3(2f, 2f, 2f));
+
+    // ── adoption captures, and writes nothing ────────────────────────────
+
+    [Fact]
+    public void Adopting_captures_the_placement_and_flags_and_writes_nothing()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+
+        var adopted = world.Service.Adopt(address);
+
+        Assert.NotNull(adopted);
+        Assert.Equal(Placed, adopted!.InitialPlacement);
+        Assert.Equal((byte)0x21, adopted.InitialFlags);
+        Assert.True(adopted.InitialVisible);
+        Assert.Equal("tree", adopted.Name);
+        Assert.Equal("bg/tree.mdl", adopted.Path);
+        // Nothing was written: adoption is a READ plus a record of it.
+        Assert.Equal(0, world.Port.Writes);
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+    }
+
+    [Fact]
+    public void Adopting_the_same_address_twice_is_one_claim_and_one_capture()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var first = world.Service.Adopt(address)!;
+        first.Transform = Moved;
+
+        var second = world.Service.Adopt(address);
+
+        Assert.Same(first, second);
+        Assert.Single(world.Service.Adopted);
+        // The second adoption must not re-capture the moved placement as the
+        // thing to restore, or the release would give the map back the user's
+        // edit instead of the map's own value.
+        Assert.Equal(Placed, second!.InitialPlacement);
+    }
+
+    [Fact]
+    public void Adopting_an_address_the_world_does_not_hold_refuses()
+    {
+        var world = new World();
+
+        Assert.Null(world.Service.Adopt(0x1234));
+        Assert.Empty(world.Service.Adopted);
+    }
+
+    // ── the write-through half ───────────────────────────────────────────
+
+    [Fact]
+    public void Moving_an_adopted_object_writes_through_to_the_world()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+
+        adopted.Transform = Moved;
+
+        Assert.Equal(Moved, world.Port.PlacementOf(address));
+        Assert.Equal(Moved, adopted.Transform);
+    }
+
+    // ── release restores ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Releasing_puts_the_captured_placement_and_flags_back()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+        var adopted = world.Service.Adopt(address)!;
+        adopted.Transform = Moved;
+        adopted.Visible = false;
+
+        Assert.True(world.Service.Release(adopted));
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
+        Assert.True(world.Port.VisibleOf(address));
+        Assert.Empty(world.Service.Adopted);
+        Assert.False(adopted.IsValid);
+    }
+
+    [Fact]
+    public void Releasing_never_destroys_the_object()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+
+        world.Service.Release(adopted);
+
+        // The map still holds it, and it is listable again — a released claim
+        // is a claim given back, never an object taken away.
+        Assert.True(world.Port.IsAlive(address));
+        Assert.Contains(
+            world.Service.GetCandidates(),
+            candidate => candidate.Address == address);
+    }
+
+    [Fact]
+    public void Releasing_twice_is_a_no_op()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+        adopted.Transform = Moved;
+        world.Service.Release(adopted);
+        int writesAfterFirst = world.Port.Writes;
+
+        Assert.False(world.Service.Release(adopted));
+
+        Assert.Equal(writesAfterFirst, world.Port.Writes);
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+    }
+
+    [Fact]
+    public void A_released_handle_writes_nothing()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+        world.Service.Release(adopted);
+
+        adopted.Transform = Moved;
+        adopted.Visible = false;
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.True(world.Port.VisibleOf(address));
+    }
+
+    // ── session and process edges ────────────────────────────────────────
+
+    [Fact]
+    public void Clearing_the_scene_restores_every_adopted_object()
+    {
+        var world = new World();
+        var first = world.Port.Add("bg/a.mdl", Placed);
+        var second = world.Port.Add("bg/b.mdl", Placed);
+        world.Service.Adopt(first)!.Transform = Moved;
+        world.Service.Adopt(second)!.Transform = Moved;
+
+        world.Service.ReleaseAll();
+
+        Assert.Equal(Placed, world.Port.PlacementOf(first));
+        Assert.Equal(Placed, world.Port.PlacementOf(second));
+        Assert.Empty(world.Service.Adopted);
+    }
+
+    [Fact]
+    public void Leaving_gpose_restores_every_adopted_object()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        world.Service.Adopt(address)!.Transform = Moved;
+
+        world.Events.Publish(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Empty(world.Service.Adopted);
+    }
+
+    [Fact]
+    public void Entering_gpose_releases_nothing()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        world.Service.Adopt(address)!.Transform = Moved;
+
+        world.Events.Publish(new GPoseStateChangedEvent(true));
+
+        Assert.Single(world.Service.Adopted);
+        Assert.Equal(Moved, world.Port.PlacementOf(address));
+    }
+
+    [Fact]
+    public void Unloading_the_plugin_restores_every_adopted_object()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        world.Service.Adopt(address)!.Transform = Moved;
+
+        world.Service.Dispose();
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Empty(world.Service.Adopted);
+    }
+
+    [Fact]
+    public void Gpose_exit_then_unload_is_correct_and_so_is_the_other_order()
+    {
+        var exitFirst = new World();
+        var a = exitFirst.Port.Add("bg/tree.mdl", Placed);
+        exitFirst.Service.Adopt(a)!.Transform = Moved;
+        exitFirst.Events.Publish(new GPoseStateChangedEvent(false));
+        exitFirst.Service.Dispose();
+        Assert.Equal(Placed, exitFirst.Port.PlacementOf(a));
+
+        var unloadFirst = new World();
+        var b = unloadFirst.Port.Add("bg/tree.mdl", Placed);
+        unloadFirst.Service.Adopt(b)!.Transform = Moved;
+        unloadFirst.Service.Dispose();
+        // The unsubscribe means the exit cannot reach a disposed service; the
+        // object is already back either way.
+        unloadFirst.Events.Publish(new GPoseStateChangedEvent(false));
+        Assert.Equal(Placed, unloadFirst.Port.PlacementOf(b));
+    }
+
+    [Fact]
+    public void A_disposed_service_adopts_nothing()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        world.Service.Dispose();
+
+        Assert.Null(world.Service.Adopt(address));
+        Assert.Empty(world.Service.GetCandidates());
+    }
+
+    // ── the address that stopped being one ───────────────────────────────
+
+    [Fact]
+    public void An_object_that_has_gone_is_released_without_a_write()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+        adopted.Transform = Moved;
+        world.Port.Kill(address);
+        int writesBefore = world.Port.Writes;
+
+        Assert.True(world.Service.Release(adopted));
+
+        // Nothing was written onto an address that is no longer a BG object.
+        Assert.Equal(writesBefore, world.Port.Writes);
+        Assert.Empty(world.Service.Adopted);
+        Assert.False(adopted.IsValid);
+    }
+
+    [Fact]
+    public void A_port_that_throws_on_restore_still_ends_the_claim()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var adopted = world.Service.Adopt(address)!;
+        world.Port.ThrowOnWrite = true;
+
+        Assert.True(world.Service.Release(adopted));
+
+        Assert.Empty(world.Service.Adopted);
+        Assert.False(adopted.IsValid);
+    }
+
+    // ── the listing ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void The_listing_excludes_what_the_scene_has_taken()
+    {
+        var world = new World();
+        var first = world.Port.Add("bg/a.mdl", Placed);
+        world.Port.Add("bg/b.mdl", Placed);
+
+        world.Service.Adopt(first);
+
+        Assert.DoesNotContain(
+            world.Service.GetCandidates(),
+            candidate => candidate.Address == first);
+        Assert.Single(world.Service.GetCandidates());
+    }
+
+    [Fact]
+    public void The_listing_stands_nearest_first()
+    {
+        var world = new World();
+        var far = world.Port.Add(
+            "bg/far.mdl", new Transform(new Vector3(50f, 0f, 0f), Quaternion.Identity, Vector3.One));
+        var near = world.Port.Add(
+            "bg/near.mdl", new Transform(new Vector3(2f, 0f, 0f), Quaternion.Identity, Vector3.One));
+
+        var candidates = world.Service.GetCandidates();
+
+        Assert.Equal(near, candidates[0].Address);
+        Assert.Equal(far, candidates[1].Address);
+    }
+
+    // ── a scene load's re-adoption ───────────────────────────────────────
+
+    [Fact]
+    public void Adopting_at_a_saved_placement_still_restores_the_maps_own()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+
+        var adopted = world.Service.AdoptAt(address, Moved, visible: false)!;
+
+        Assert.Equal(Moved, world.Port.PlacementOf(address));
+        Assert.False(world.Port.VisibleOf(address));
+        Assert.Equal(Placed, adopted.InitialPlacement);
+
+        world.Service.Release(adopted);
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
+        Assert.True(world.Port.VisibleOf(address));
+    }
+
+    // ── fixtures ─────────────────────────────────────────────────────────
+
+    private sealed class World
+    {
+        public FakePort Port { get; } = new();
+        public FakeEventBus Events { get; } = new();
+        public WorldObjectService Service { get; }
+
+        public World() =>
+            Service = new WorldObjectService(
+                Port,
+                Events,
+                DispatchProxy.Create<IObjectTable, NullTable>(),
+                DispatchProxy.Create<IPluginLog, SilentLog>());
+    }
+
+    /// <summary>
+    /// The world's graph, faithfully: a flat set of addressable BG objects with
+    /// a placement, a flags byte and a drawn state; reads and writes that are
+    /// inert for an address the world no longer holds; and a kill that models
+    /// the one thing the real game can do behind Poser's back — stop an address
+    /// being a BG object.
+    /// </summary>
+    private sealed class FakePort : IWorldObjectPort
+    {
+        private readonly Dictionary<nint, Node> _nodes = new();
+        private nint _next = 0x1000;
+
+        public int Writes { get; private set; }
+        public bool ThrowOnWrite { get; set; }
+
+        public bool IsAvailable => true;
+
+        public nint Add(
+            string path, Transform placement, byte flags = 0, bool visible = true)
+        {
+            var address = _next;
+            _next += 0x100;
+            _nodes[address] = new Node
+            {
+                Path = path,
+                Placement = placement,
+                Flags = flags,
+                Visible = visible,
+            };
+            return address;
+        }
+
+        /// <summary>The address stops being a BG object — a zone streaming
+        /// event, or the object simply going away under the claim.</summary>
+        public void Kill(nint address) => _nodes.Remove(address);
+
+        public Transform PlacementOf(nint address) => _nodes[address].Placement;
+
+        public byte FlagsOf(nint address) => _nodes[address].Flags;
+
+        public bool VisibleOf(nint address) => _nodes[address].Visible;
+
+        public IReadOnlyList<WorldObjectRow> Enumerate()
+        {
+            var rows = new List<WorldObjectRow>(_nodes.Count);
+            foreach (var (address, node) in _nodes)
+                rows.Add(new WorldObjectRow(
+                    address, node.Path, node.Placement, node.Flags));
+            return rows;
+        }
+
+        public bool IsAlive(nint address) => _nodes.ContainsKey(address);
+
+        public bool TryRead(nint address, out Transform placement)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+            {
+                placement = node.Placement;
+                return true;
+            }
+            placement = Transform.Identity;
+            return false;
+        }
+
+        public void Write(nint address, in Transform placement)
+        {
+            if (ThrowOnWrite)
+                throw new InvalidOperationException("the world refused a write");
+            if (!_nodes.TryGetValue(address, out var node))
+                return;
+            node.Placement = placement;
+            Writes++;
+        }
+
+        public bool TryReadFlags(nint address, out byte flags)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+            {
+                flags = node.Flags;
+                return true;
+            }
+            flags = 0;
+            return false;
+        }
+
+        public void WriteFlags(nint address, byte flags)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+                node.Flags = flags;
+        }
+
+        public bool TryReadVisible(nint address, out bool visible)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+            {
+                visible = node.Visible;
+                return true;
+            }
+            visible = false;
+            return false;
+        }
+
+        public void WriteVisible(nint address, bool visible)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+                node.Visible = visible;
+        }
+
+        private sealed class Node
+        {
+            public string Path = string.Empty;
+            public Transform Placement;
+            public byte Flags;
+            public bool Visible;
+        }
+    }
+
+    private sealed class FakeEventBus : IEventBus
+    {
+        private readonly Dictionary<Type, List<Delegate>> _handlers = new();
+
+        public int ListChanges { get; private set; }
+
+        public void Dispose() { }
+
+        public void Subscribe<T>(Action<T> handler) where T : IEvent
+        {
+            if (!_handlers.TryGetValue(typeof(T), out var list))
+                _handlers[typeof(T)] = list = new();
+            list.Add(handler);
+        }
+
+        public void Unsubscribe<T>(Action<T> handler) where T : IEvent
+        {
+            if (_handlers.TryGetValue(typeof(T), out var list))
+                list.Remove(handler);
+        }
+
+        public void Publish<T>(T evt) where T : IEvent
+        {
+            if (evt is WorldObjectListChangedEvent)
+                ListChanges++;
+            if (_handlers.TryGetValue(typeof(T), out var list))
+                foreach (var handler in list.ToArray())
+                    ((Action<T>)handler)(evt);
+        }
+    }
+
+    private class NullTable : DispatchProxy
+    {
+        protected override object? Invoke(
+            MethodInfo? targetMethod, object?[]? args) => null;
+    }
+
+    private class SilentLog : DispatchProxy
+    {
+        protected override object? Invoke(
+            MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.ReturnType is { IsValueType: true } type &&
+                type != typeof(void))
+                return Activator.CreateInstance(type);
+            return null;
+        }
+    }
+}

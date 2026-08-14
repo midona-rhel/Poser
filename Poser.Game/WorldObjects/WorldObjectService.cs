@@ -365,6 +365,10 @@ public sealed class WorldObjectService : IDisposable
             {
                 _port.Write(handle.Address, handle.InitialPlacement);
                 _port.WriteFlags(handle.Address, handle.InitialFlags);
+                // Written BESIDE the flags rather than left to them: whether
+                // the drawn bit lives inside that byte is the game's business,
+                // and this contract may not rest on the answer.
+                _port.WriteVisible(handle.Address, handle.InitialVisible);
             }
         }
         catch (Exception ex)
