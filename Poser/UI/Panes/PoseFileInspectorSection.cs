@@ -950,6 +950,34 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private static readonly int[] PreviewCameraGroups = [2, 1];
 
+    /// <summary>
+    /// One section of these menus' surfaces, with the menus' column policy
+    /// stated ONCE: a dense mount (the import dialog's band) drops the title
+    /// and shrinks to <see cref="DenseLabelColumn"/>; every other mount
+    /// keeps the title and <see cref="MenuLabelColumn"/>. Every menu
+    /// section routes through here rather than restating the
+    /// dense/label-column tail per call.
+    /// </summary>
+    private static float MenuSection(
+        string id,
+        string title,
+        Vector2 origin,
+        float width,
+        Action<Crystarium.FormScope> rows,
+        bool divider = true,
+        bool dense = false) =>
+        Crystarium.Section(
+            id,
+            dense ? string.Empty : title,
+            origin,
+            width,
+            true,
+            null,
+            rows,
+            divider: divider,
+            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
+            dense: dense);
+
     /// <summary>The import-option section stack, shared verbatim by the
     /// popup body, the library rail and the import dialog's options column.
     /// Returns the y past the last section.</summary>
@@ -968,12 +996,11 @@ public sealed class PoseFileInspectorSection
 
         bool preview = _previewVisible && previewCap > 0f;
         if (preview)
-            y += Crystarium.Section(
+            y += MenuSection(
                 "##pose-preview", "Preview",
-                new Vector2(origin.X, y), width, true, null,
+                new Vector2(origin.X, y), width,
                 form => DrawPreviewBody(form, width, previewCap),
-                divider: false,
-                labelColumnWidth: MenuLabelColumn);
+                divider: false);
 
         // The rule is a divider BETWEEN sections: the first one leads the
         // stack only when the preview does not.
@@ -987,9 +1014,9 @@ public sealed class PoseFileInspectorSection
         if (!withActions)
             return y;
 
-        y += Crystarium.Section(
+        y += MenuSection(
             "##import-menu-import", "Import",
-            new Vector2(origin.X, y), width, true, null,
+            new Vector2(origin.X, y), width,
             form =>
             {
                 // Brio's order (FileUIHelpers.cs:568-575): From File, then
@@ -1056,8 +1083,7 @@ public sealed class PoseFileInspectorSection
                 // is behind it, and the library rail has none at all.
                 if (_status.Length > 0)
                     form.Status(_status);
-            },
-            labelColumnWidth: MenuLabelColumn);
+            });
 
         return y;
     }
@@ -1079,9 +1105,9 @@ public sealed class PoseFileInspectorSection
     private float DrawImportTypeSection(
         Vector2 origin, float width, bool divider, bool dense = false,
         bool selective = false) =>
-        Crystarium.Section(
-            "##import-menu-head", dense ? string.Empty : "Import pose",
-            origin, width, true, null,
+        MenuSection(
+            "##import-menu-head", "Import pose",
+            origin, width,
             form =>
             {
                 // The row label stays in BOTH mounts (user 2026-08-11:
@@ -1132,7 +1158,6 @@ public sealed class PoseFileInspectorSection
                                 + "component"));
             },
             divider: divider,
-            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
             dense: dense);
 
     /// <summary>The Transform group. Returns the section's height, px.
@@ -1142,9 +1167,9 @@ public sealed class PoseFileInspectorSection
     /// trio and Model.</param>
     private float DrawTransformSection(
         Vector2 origin, float width, bool divider, bool dense = false) =>
-        Crystarium.Section(
-            "##import-menu-transform", dense ? string.Empty : "Transform",
-            origin, width, true, null,
+        MenuSection(
+            "##import-menu-transform", "Transform",
+            origin, width,
             form =>
             {
                 // Brio's icon row disables under Smart Import and whenever
@@ -1176,7 +1201,6 @@ public sealed class PoseFileInspectorSection
                     disabled: _smartImport);
             },
             divider: divider,
-            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
             dense: dense);
 
     /// <summary>The Scope group — Reset first, then the bone filter. Returns
@@ -1188,9 +1212,9 @@ public sealed class PoseFileInspectorSection
     private float DrawScopeSection(
         Vector2 origin, float width, bool divider, bool dense = false,
         bool selective = false) =>
-        Crystarium.Section(
-            "##import-menu-scope", dense ? string.Empty : "Scope",
-            origin, width, true, null,
+        MenuSection(
+            "##import-menu-scope", "Scope",
+            origin, width,
             form =>
             {
                 // Brio's popup has no selected-bones or descendants row —
@@ -1237,7 +1261,6 @@ public sealed class PoseFileInspectorSection
                     fullWidth: dense);
             },
             divider: divider,
-            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
             dense: dense);
 
     /// <summary>
@@ -1648,9 +1671,9 @@ public sealed class PoseFileInspectorSection
         var page = Crystarium.ActiveTheme.Page;
 
         float top = origin.Y - MenuTitleOffset(scale);
-        float y = top + Crystarium.Section(
+        float y = top + MenuSection(
             "##filter-head", "Bone filter",
-            new Vector2(origin.X, top), width, true, null,
+            new Vector2(origin.X, top), width,
             form => form.Actions(string.Empty, actions =>
             {
                 actions.Button("All", () => _disabledCategories.Clear());
@@ -1661,8 +1684,7 @@ public sealed class PoseFileInspectorSection
                             _disabledCategories.Add(category.Id);
                 });
             }, fullWidth: true),
-            divider: false,
-            labelColumnWidth: MenuLabelColumn);
+            divider: false);
 
         ImGui.SetCursorScreenPos(new Vector2(origin.X, y));
         float scrollHeight =
