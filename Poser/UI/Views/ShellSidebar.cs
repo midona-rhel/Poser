@@ -543,13 +543,18 @@ public sealed class ShellSidebar
             return;
         // The header's plus stops at the gutter, like every row's content.
         float side = theme.Controls.SwitchHeight;
-        ImGui.SetCursorScreenPos(new Vector2(
-            at.X + (width - theme.Scrollbar.GutterWidth - side) * scale, at.Y));
+        var plusMin = new Vector2(
+            at.X + (width - theme.Scrollbar.GutterWidth - side) * scale, at.Y);
+        ImGui.SetCursorScreenPos(plusMin);
         if (Crystarium.IconButton(
                 TablerIcon.Plus,
                 style: ControlStyle.Square(side),
                 id: entry.Id))
-            _vm.OnSectionPlus?.Invoke(entry.Section);
+            // The spawn surface hangs off THIS button's bottom-left, the
+            // burger's rule, never off the pointer.
+            _vm.OnSectionPlus?.Invoke(
+                entry.Section,
+                new Vector2(plusMin.X, plusMin.Y + side * scale));
     }
 
     /// <summary>

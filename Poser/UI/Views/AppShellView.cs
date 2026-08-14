@@ -187,11 +187,22 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
-    public Action? OnUndo, OnRedo, OnSpawn, OnSettings, OnHideUi, OnPopOut, OnProject;
-    /// <summary>The titlebar command menu, told the burger button's
-    /// bottom-left screen position so the menu anchors under the button
-    /// instead of at the mouse.</summary>
+    public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
+    /// <summary>
+    /// A BUTTON-BORNE surface anchors under the button that opened it, never
+    /// at the pointer: the pointer is merely where the press landed, the
+    /// button is what the surface belongs to. Every such opener is therefore
+    /// told the button's bottom-left screen position and places its surface
+    /// from that (user 2026-08-14: the sidebar plus opened at the cursor
+    /// while the burger correctly opened under its button). A surface with no
+    /// seat — a row's context menu — keeps the pointer, because there is no
+    /// button to hang it off.
+    /// </summary>
     public Action<Vector2>? OnBurger;
+
+    /// <summary>The titlebar plus, anchored under itself exactly as
+    /// <see cref="OnBurger"/> is.</summary>
+    public Action<Vector2>? OnSpawn;
     public Action<bool>? OnSkeletonOverlay;
     public Action<ShellSidebarRow>? OnRowClicked;
     public Action<ShellSidebarRow>? OnRowContextMenu;
@@ -209,7 +220,10 @@ public sealed class AppShellViewModel
     /// handle state is read live, like the overlay eyes.</summary>
     public Action<ShellSidebarRow>? OnHandleToggle;
     public Func<ShellSidebarRow, bool>? IsHandleShown;
-    public Action<int>? OnSectionPlus;
+    /// <summary>A section header's plus, told the section index and that
+    /// plus button's own bottom-left screen position — the anchor
+    /// <see cref="OnBurger"/> documents.</summary>
+    public Action<int, Vector2>? OnSectionPlus;
     /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
     /// header, told the section index.</summary>
     public Action<int>? OnSectionSelected;
@@ -291,6 +305,13 @@ public static class AppShellView
     private static bool _burgerPressed;
     private static readonly Action BurgerPressed =
         static () => _burgerPressed = true;
+
+    /// <summary>The titlebar plus's press, read back the same way and for the
+    /// same reason: the seat's anchor is a local, and a warm titlebar frame
+    /// must not mint a closure to carry it.</summary>
+    private static bool _spawnPressed;
+    private static readonly Action SpawnPressed =
+        static () => _spawnPressed = true;
 
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
@@ -638,10 +659,16 @@ public static class AppShellView
             help: vm.CanRedo ? _redoHelp : _redoEmptyHelp);
         if (!vm.ShowSpawn)
             return;
+        x += step;
         IconAt(
-            new Vector2(x + step, y), TablerIcon.Plus, side, vm.OnSpawn,
+            new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
             "##shell-spawn",
             help: "Add an actor or prop to the scene");
+        if (_spawnPressed)
+        {
+            _spawnPressed = false;
+            vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
+        }
     }
 
     private static void DrawTitleCenter(
@@ -1232,9 +1259,14 @@ public static class AppShellView
         if (vm.ShowSpawn)
         {
             IconAt(
-                new Vector2(x, y), TablerIcon.Plus, side, vm.OnSpawn,
+                new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
                 "##shell-spawn",
                 help: "Add an actor or prop to the scene");
+            if (_spawnPressed)
+            {
+                _spawnPressed = false;
+                vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
+            }
             x += step;
         }
         x += CenterInset * s - theme.Spacing.Two * s;

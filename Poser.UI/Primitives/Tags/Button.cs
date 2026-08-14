@@ -21,6 +21,20 @@ public enum ButtonVariant
 
 public static partial class Crystarium
 {
+    /// <summary>
+    /// The SEAT of the button whose click callback is running: the bottom-left
+    /// screen corner of that button's own rect. A button-borne floating
+    /// surface hangs off its button, never off the pointer — the pointer is
+    /// merely where the press landed (user 2026-08-14) — and a click callback
+    /// is an argumentless <see cref="Action"/>, so the seat is published here
+    /// for the duration of the call rather than threaded through every
+    /// button API. Meaningful ONLY inside a click callback; every other frame
+    /// it holds whatever the last press left. A surface with no button — a
+    /// row's context menu — still opens at the pointer, because it has no
+    /// seat to take.
+    /// </summary>
+    public static Vector2 ButtonSeat { get; private set; }
+
     public static bool Button(
         string label,
         Action? onClick = null,
@@ -246,7 +260,10 @@ public static partial class Crystarium
                 hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
+        {
+            ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
+        }
         return hit.Activated;
     }
 
@@ -473,7 +490,10 @@ public static partial class Crystarium
                 hit, hit.Disabled, hit.ScreenMin, hit.ScreenMax))
             HoverHelp.Explain(id, hit.ScreenMin, hit.ScreenMax, help!);
         if (hit.Activated)
+        {
+            ButtonSeat = new Vector2(hit.ScreenMin.X, hit.ScreenMax.Y);
             onClick?.Invoke();
+        }
         return hit.Activated;
     }
 

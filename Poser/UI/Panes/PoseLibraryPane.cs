@@ -110,6 +110,11 @@ public sealed class PoseLibraryPane
     private readonly IActorManager _actors;
     private readonly PoseLibraryViewModel _vm = new();
     private bool _applyMenuRequested;
+
+    /// <summary>Where the actor picker opens. The FOOTER button has a seat and
+    /// hands it over; a tile double-click, a submit key and the tile menu's
+    /// own row have none, so those keep the pointer.</summary>
+    private Vector2 _applyMenuAnchor;
     private readonly List<IActor> _applyTargets = new();
 
     /// <summary>Which library the tabs are showing. SESSION state: it is a
@@ -348,6 +353,7 @@ public sealed class PoseLibraryPane
         _vm.OnApplyTile = index =>
         {
             Select(index);
+            _applyMenuAnchor = ImGui.GetMousePos();
             _applyMenuRequested = true;
         };
         _vm.OnSpawnTile = Spawn;
@@ -364,7 +370,11 @@ public sealed class PoseLibraryPane
         // belong to the actor part (user rule).
         _vm.OnImportMenu = () => _files.RequestImportMenu(withPresets: false);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
-        _vm.OnApplyMenu = () => _applyMenuRequested = true;
+        _vm.OnApplyMenu = () =>
+        {
+            _applyMenuAnchor = Crystarium.ButtonSeat;
+            _applyMenuRequested = true;
+        };
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -486,7 +496,7 @@ public sealed class PoseLibraryPane
                 return;
             }
             Crystarium.FloatingMenu.Open(
-                "##library-apply-target", ImGui.GetMousePos(), items.ToArray());
+                "##library-apply-target", _applyMenuAnchor, items.ToArray());
         }
 
         int clicked = Crystarium.FloatingMenu.Draw("##library-apply-target");
@@ -604,6 +614,7 @@ public sealed class PoseLibraryPane
         {
             case TileMenuAction.Apply:
                 Select(index);
+                _applyMenuAnchor = ImGui.GetMousePos();
                 _applyMenuRequested = true;
                 break;
             case TileMenuAction.Spawn:

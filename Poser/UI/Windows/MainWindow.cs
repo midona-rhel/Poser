@@ -508,24 +508,22 @@ public class MainWindow : Window
                 OnPopOutRequested?.Invoke(popOut);
         };
         // The sidebar's add affordance. Every section plus opens the ONE
-        // spawn browser, at the pointer, on that section's own tab — the
+        // spawn browser, UNDER THAT PLUS, on that section's own tab — the
         // browser replaced the per-section mini choosers (user 2026-08-11:
         // "it should spawn where the user click, either the plus at the top
-        // or the plus next to actors camera or lights").
-        _vm.OnSectionPlus = index =>
+        // or the plus next to actors camera or lights"). The anchor is the
+        // button's own bottom-left, not the pointer, so the surface stands in
+        // one place per plus (user 2026-08-14).
+        _vm.OnSectionPlus = (index, anchor) =>
         {
             if (index == PropsSectionIndex)
-                OnSpawnBrowserRequested?.Invoke(
-                    ImGui.GetMousePos(), SpawnBrowserTab.Props);
+                OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Props);
             else if (index == LightsSectionIndex)
-                OnSpawnBrowserRequested?.Invoke(
-                    ImGui.GetMousePos(), SpawnBrowserTab.Lights);
+                OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Lights);
             else if (index == CamerasSectionIndex)
-                OnSpawnBrowserRequested?.Invoke(
-                    ImGui.GetMousePos(), SpawnBrowserTab.Cameras);
+                OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Cameras);
             else if (index == ActorsSectionIndex)
-                OnSpawnBrowserRequested?.Invoke(
-                    ImGui.GetMousePos(), SpawnBrowserTab.Actors);
+                OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.Actors);
         };
         // The LIBRARY and ENVIRONMENT headers are the selectable ones, so no
         // other index can arrive. The library is a MODE over an untouched
@@ -547,8 +545,8 @@ public class MainWindow : Window
                 _selection.Select(EnvironmentSelection);
             }
         };
-        _vm.OnSpawn = () => OnSpawnBrowserRequested?.Invoke(
-            ImGui.GetMousePos(), SpawnBrowserTab.All);
+        _vm.OnSpawn = anchor =>
+            OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.All);
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
@@ -2797,8 +2795,11 @@ public class MainWindow : Window
                 ShowSceneFiles();
                 break;
             case ShellCommand.SpawnActor:
+                // Reached FROM the burger menu, so the burger's own anchor is
+                // this surface's seat too: the pointer is on a menu row that
+                // is about to vanish.
                 OnSpawnBrowserRequested?.Invoke(
-                    ImGui.GetMousePos(), SpawnBrowserTab.All);
+                    _shellMenuAnchor, SpawnBrowserTab.All);
                 break;
             // Import/Export open the Brio menus — the ONE import and export
             // surface; the file dialogs live inside them.

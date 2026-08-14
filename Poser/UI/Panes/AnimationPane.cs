@@ -62,6 +62,10 @@ public sealed class AnimationPane
         ActorAnimationReading.Empty;
     private bool _sceneMenuRequested;
 
+    /// <summary>The "All actors" button's own seat, taken at the press so the
+    /// menu hangs under the button rather than at the pointer.</summary>
+    private System.Numerics.Vector2 _sceneMenuAnchor;
+
     /// <summary>The exact actor and feed captured when the picker opened. A
     /// selection change while the surface is up never retargets the pending
     /// pick, and the row that opened the picker is the row that remembers
@@ -347,7 +351,11 @@ public sealed class AnimationPane
                 help: "Give this actor's playback speed back to the game");
             actions.Button(
                 "All actors",
-                () => _sceneMenuRequested = true,
+                () =>
+                {
+                    _sceneMenuAnchor = Crystarium.ButtonSeat;
+                    _sceneMenuRequested = true;
+                },
                 help: "Freeze, resume, replay or restore every actor in "
                     + "the scene");
         });
@@ -1110,7 +1118,7 @@ public sealed class AnimationPane
             _sceneMenuRequested = false;
             Crystarium.FloatingMenu.Open(
                 "##anim-scene-menu",
-                ImGui.GetMousePos(),
+                _sceneMenuAnchor,
                 [
                     new ContextMenuItem(
                         "Freeze all",
