@@ -82,17 +82,46 @@ public sealed class SettingsViewModel
     public string LibraryNewName = "";
     public string LibraryNewPath = "";
 
-    public (string Action, string Binding)[] Keybinds =
+    /// <summary>Every registered action's two chords, edited free of the
+    /// persisted config until Save. Always complete — the binder fills it
+    /// through <see cref="KeybindRegistry.Resolve"/> — so a row can index it
+    /// without asking whether the action is there.</summary>
+    public Dictionary<string, KeybindSlots> Bindings =
+        KeybindRegistry.Bindings(KeybindPreset.Poser);
+
+    /// <summary>The action whose slot is capturing, and which slot: 0 is
+    /// primary, 1 secondary. Null is "no capture in progress" — the state the
+    /// page opens in and returns to on Escape.</summary>
+    public string? RebindingAction;
+    public int RebindingSlot;
+
+    public int PresetIndex;
+    /// <summary>The preset switcher's first press arms; the second applies.
+    /// Overwriting every chord is not something a stray click gets to do.
+    /// </summary>
+    public bool PresetArmed;
+    public string PresetStatus = "";
+
+    /// <summary>Bumped by every chord that moves. The conflict scan is a
+    /// whole-table pass, so it runs when the table changes rather than once
+    /// a frame.</summary>
+    public int BindingRevision;
+    private int _conflictRevision = -1;
+    private Dictionary<KeybindRegistry.SlotRef, IReadOnlyList<string>>
+        _conflicts = new();
+
+    public IReadOnlyDictionary<KeybindRegistry.SlotRef, IReadOnlyList<string>>
+        Conflicts
     {
-        ("Undo", "Ctrl+Z"),
-        ("Redo", "Ctrl+Y"),
-        ("Translate mode", "Ctrl+1"),
-        ("Rotate mode", "Ctrl+2"),
-        ("Scale mode", "Ctrl+3"),
-        ("Universal mode", "Ctrl+4"),
-        ("Hide UI", "Ctrl+H"),
-    };
-    public int RebindingIndex = -1;
+        get
+        {
+            if (_conflictRevision == BindingRevision)
+                return _conflicts;
+            _conflicts = KeybindRegistry.Conflicts(Bindings);
+            _conflictRevision = BindingRevision;
+            return _conflicts;
+        }
+    }
 
     public string Version = "dev";
 
@@ -202,7 +231,7 @@ public static class SettingsView
         DrawNavigation(vm, rects.Rail);
         DrawPage(vm, rects.Body);
 
-        if (vm.RebindingIndex >= 0)
+        if (vm.RebindingAction != null)
             CaptureRebind(vm);
     }
 
@@ -558,27 +587,167 @@ public static class SettingsView
                 "Show hierarchy connector lines"));
     }
 
+    private static readonly string[] PresetLabels =
+        ["Poser", "Brio", "Ktisis"];
+
+    /// <summary>Both slot buttons take the SAME fixed width, which is the
+    /// whole of the two-column reading: a chord's column is a column because
+    /// every row's slot starts and ends on the same x.</summary>
+    private const float KeybindSlotWidth = 132f;
+
+    /// <summary>An unbound slot says so in words. It is a legal state, not a
+    /// missing value, and a blank button would read as a broken row.</summary>
+    private const string UnboundCaption = "Unbound";
+
     private static void DrawKeybinds(
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("KEYBINDS", form =>
+        page.Section("PRESET", form =>
         {
-            for (int i = 0; i < vm.Keybinds.Length; i++)
-            {
-                int index = i;
-                bool rebinding = vm.RebindingIndex == index;
-                form.ReadOnlyWithActions(
-                    vm.Keybinds[index].Action,
-                    rebinding
-                        ? "Press a key"
-                        : vm.Keybinds[index].Binding,
-                    actions => actions.Button(
-                        rebinding ? "Cancel" : "Rebind",
-                        () => vm.RebindingIndex =
-                            rebinding ? -1 : index));
-            }
+            form.Segmented(
+                "Chords from",
+                PresetLabels,
+                vm.PresetIndex,
+                next =>
+                {
+                    vm.PresetIndex = next;
+                    vm.PresetArmed = false;
+                    vm.PresetStatus = string.Empty;
+                },
+                help: "Which tool's keyboard layout to take");
+            form.Actions(
+                string.Empty,
+                actions => actions.Button(
+                    vm.PresetArmed ? "Confirm preset" : "Apply preset",
+                    () => ApplyPreset(vm),
+                    variant: vm.PresetArmed
+                        ? ButtonVariant.Primary
+                        : ButtonVariant.Secondary));
+            form.Status(
+                vm.PresetStatus.Length > 0
+                    ? vm.PresetStatus
+                    : "Click a slot below to rebind it. Escape cancels, "
+                        + "Backspace clears it.",
+                warning: vm.PresetArmed);
         }, divider: false);
+
+        foreach (var (group, start, count) in KeybindGroups)
+            page.Section(group, form =>
+            {
+                for (int i = start; i < start + count; i++)
+                    DrawKeybindRow(vm, form, KeybindRegistry.Actions[i]);
+            });
+    }
+
+    /// <summary>The registry's order IS the page's order and its groups ARE
+    /// the sections, so the runs are cut once from the registry rather than
+    /// filtered per frame.</summary>
+    private static readonly (string Group, int Start, int Count)[]
+        KeybindGroups = BuildKeybindGroups();
+
+    private static (string, int, int)[] BuildKeybindGroups()
+    {
+        var groups = new List<(string Group, int Start, int Count)>();
+        var actions = KeybindRegistry.Actions;
+        for (int i = 0; i < actions.Count; i++)
+        {
+            if (groups.Count > 0
+                && string.Equals(
+                    groups[^1].Group, actions[i].Group, StringComparison.Ordinal))
+            {
+                groups[^1] = groups[^1] with { Count = groups[^1].Count + 1 };
+                continue;
+            }
+            groups.Add((actions[i].Group, i, 1));
+        }
+        return groups.ConvertAll(
+            entry => (entry.Group, entry.Start, entry.Count)).ToArray();
+    }
+
+    private static void DrawKeybindRow(
+        SettingsViewModel vm,
+        Crystarium.FormScope form,
+        KeybindAction action)
+    {
+        var slots = vm.Bindings[action.Id];
+        form.Actions(
+            action.Id,
+            actions =>
+            {
+                DrawKeybindSlot(vm, actions, action, slots, 0);
+                DrawKeybindSlot(vm, actions, action, slots, 1);
+            },
+            help: action.Help);
+
+        // Both halves of a collision flag, so the row that was edited last
+        // carries no more blame than the row it landed on.
+        var conflicts = vm.Conflicts;
+        var others = conflicts.TryGetValue(
+                new KeybindRegistry.SlotRef(action.Id, 0), out var primary)
+            ? primary
+            : conflicts.TryGetValue(
+                new KeybindRegistry.SlotRef(action.Id, 1), out var secondary)
+                ? secondary
+                : null;
+        if (others is { Count: > 0 })
+            form.Status(
+                "Also bound to " + string.Join(", ", others) + ".",
+                warning: true);
+    }
+
+    private static void DrawKeybindSlot(
+        SettingsViewModel vm,
+        Crystarium.ActionScope actions,
+        KeybindAction action,
+        KeybindSlots slots,
+        int slot)
+    {
+        bool capturing = vm.RebindingSlot == slot
+            && string.Equals(vm.RebindingAction, action.Id, StringComparison.Ordinal);
+        string chord = slots[slot];
+        // The caption is the chord, so the two slots can read identically
+        // ("Unbound" beside "Unbound"); the slot's own id is what keeps them
+        // apart as controls.
+        actions.Button(
+            capturing
+                ? "Press a key"
+                : chord.Length > 0 ? chord : UnboundCaption,
+            () =>
+            {
+                vm.RebindingAction = capturing ? null : action.Id;
+                vm.RebindingSlot = slot;
+                vm.PresetArmed = false;
+            },
+            style: ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(KeybindSlotWidth),
+            },
+            help: slot == 0
+                ? "Primary chord — click to rebind"
+                : "Secondary chord — click to rebind",
+            id: slot == 0 ? "primary" : "secondary");
+    }
+
+    /// <summary>The preset switcher's confirm. First press arms with the
+    /// visible warning; the second replaces BOTH slots of every action,
+    /// because a preset is a statement about the whole table and a leftover
+    /// secondary would be a chord the preset never claimed.</summary>
+    private static void ApplyPreset(SettingsViewModel vm)
+    {
+        string name = PresetLabels[vm.PresetIndex];
+        if (!vm.PresetArmed)
+        {
+            vm.PresetArmed = true;
+            vm.PresetStatus = $"{name} chords replace every binding below, "
+                + "both slots. Press Confirm preset to apply.";
+            return;
+        }
+        vm.PresetArmed = false;
+        vm.RebindingAction = null;
+        vm.Bindings = KeybindRegistry.Bindings((KeybindPreset)vm.PresetIndex);
+        vm.BindingRevision++;
+        vm.PresetStatus = $"{name} chords loaded. Save to keep them.";
     }
 
     private static void DrawLibrary(
@@ -696,37 +865,52 @@ public static class SettingsView
         }, divider: false);
     }
 
-    /// <summary>The raw-input boundary: while a row is rebinding, the next key
-    /// press becomes its binding and Escape abandons the capture.</summary>
+    /// <summary>
+    /// The raw-input boundary: while a slot is capturing, the next key press
+    /// becomes its chord. Escape abandons the capture and Backspace clears
+    /// the slot — unbound is a state the user has to be able to reach, and
+    /// the only key that could mean "none" is one that cannot also be a
+    /// chord.
+    ///
+    /// <para>The scan is <see cref="KeyChord.CapturableKeys"/> and nothing
+    /// else, so the keys the page can capture are exactly the keys a stored
+    /// chord can name — a press it cannot store is a press it ignores rather
+    /// than one it records unfirably.</para>
+    /// </summary>
     private static void CaptureRebind(SettingsViewModel vm)
     {
-        var io = ImGui.GetIO();
-        for (var key = ImGuiKey.A; key <= ImGuiKey.F12; key++)
+        if (vm.RebindingAction is not { } action
+            || !vm.Bindings.TryGetValue(action, out var slots))
         {
-            if (key is ImGuiKey.LeftCtrl
-                or ImGuiKey.RightCtrl
-                or ImGuiKey.LeftShift
-                or ImGuiKey.RightShift
-                or ImGuiKey.LeftAlt
-                or ImGuiKey.RightAlt)
-                continue;
-            if (!ImGui.IsKeyPressed(key))
-                continue;
-
-            string name = key.ToString();
-            if (name.StartsWith("_"))
-                name = name[1..];
-            string binding =
-                (io.KeyCtrl ? "Ctrl+" : "")
-                + (io.KeyShift ? "Shift+" : "")
-                + (io.KeyAlt ? "Alt+" : "")
-                + name;
-            vm.Keybinds[vm.RebindingIndex] =
-                (vm.Keybinds[vm.RebindingIndex].Action, binding);
-            vm.RebindingIndex = -1;
+            vm.RebindingAction = null;
             return;
         }
+
         if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-            vm.RebindingIndex = -1;
+        {
+            vm.RebindingAction = null;
+            return;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Backspace))
+        {
+            slots[vm.RebindingSlot] = string.Empty;
+            vm.BindingRevision++;
+            vm.RebindingAction = null;
+            return;
+        }
+
+        var io = ImGui.GetIO();
+        foreach (var key in KeyChord.CapturableKeys())
+        {
+            if (!ImGui.IsKeyPressed(key)
+                || KeyChord.FromImGui(key) is not { } virtualKey)
+                continue;
+            slots[vm.RebindingSlot] = new KeyChord(
+                io.KeyCtrl, io.KeyShift, io.KeyAlt, virtualKey).ToString();
+            vm.BindingRevision++;
+            vm.RebindingAction = null;
+            return;
+        }
     }
 }

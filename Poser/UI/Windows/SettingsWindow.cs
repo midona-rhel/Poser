@@ -157,10 +157,11 @@ public class SettingsWindow : Window
                 Enabled = source.Enabled,
             });
 
-        // Keybinds: stored overrides on top of the view defaults.
-        for (int i = 0; i < _vm.Keybinds.Length; i++)
-            if (c.UI.Keybinds.TryGetValue(_vm.Keybinds[i].Action, out var bound))
-                _vm.Keybinds[i] = (_vm.Keybinds[i].Action, bound);
+        // Keybinds: the stored slots filled out to the whole registry and
+        // COPIED, so Cancel leaves the live bindings untouched exactly as it
+        // does the library roots.
+        _vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
+        _vm.BindingRevision++;
     }
 
     private void SaveToConfig()
@@ -224,8 +225,11 @@ public class SettingsWindow : Window
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
 
-        foreach (var (action, binding) in _vm.Keybinds)
-            c.UI.Keybinds[action] = binding;
+        // Replaced whole, never merged: an action dropped from the registry
+        // has no row to clear it from, and a stale entry would keep firing.
+        c.UI.Bindings.Clear();
+        foreach (var (action, slots) in _vm.Bindings)
+            c.UI.Bindings[action] = slots.Copy();
 
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
         c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
