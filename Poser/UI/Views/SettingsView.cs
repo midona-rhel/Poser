@@ -1045,7 +1045,35 @@ public static class SettingsView
             {
                 for (int i = start; i < start + count; i++)
                     DrawKeybindRow(vm, form, KeybindRegistry.Actions[i]);
+                // Ktisis's per-group reset, unarmed like its own: a group is a
+                // handful of rows the user can see, so the button's blast
+                // radius is on screen beside it — unlike the preset switcher,
+                // which replaces every chord on the page.
+                form.Actions(
+                    string.Empty,
+                    actions => actions.Button(
+                        "Reset group",
+                        () => ResetKeybindGroup(vm, group, start, count),
+                        help: "Put this group's chords back to Poser's defaults"),
+                    alignRight: true);
             });
+    }
+
+    /// <summary>Restores one group's shipped chords, BOTH slots. Poser's own
+    /// defaults are what "default" means here, whichever preset the switcher
+    /// is currently showing — a reset is a return, not a re-application.
+    /// </summary>
+    private static void ResetKeybindGroup(
+        SettingsViewModel vm, string group, int start, int count)
+    {
+        for (int i = start; i < start + count; i++)
+            vm.Bindings[KeybindRegistry.Actions[i].Id] =
+                KeybindRegistry.Default(KeybindRegistry.Actions[i].Id);
+        vm.RebindingAction = null;
+        vm.PresetArmed = false;
+        vm.BindingRevision++;
+        vm.PresetStatus =
+            $"{group} chords are back to Poser's defaults. Save to keep them.";
     }
 
     /// <summary>The registry's order IS the page's order and its groups ARE

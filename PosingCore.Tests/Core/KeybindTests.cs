@@ -66,6 +66,48 @@ public class KeybindTests
         Assert.Empty(ui.Bindings);
     }
 
+    // ── vocabulary ───────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Num0", VirtualKey.NUMPAD0)]
+    [InlineData("Num9", VirtualKey.NUMPAD9)]
+    [InlineData("NumPlus", VirtualKey.ADD)]
+    [InlineData("NumMinus", VirtualKey.SUBTRACT)]
+    [InlineData("NumMultiply", VirtualKey.MULTIPLY)]
+    [InlineData("NumDivide", VirtualKey.DIVIDE)]
+    [InlineData("NumDecimal", VirtualKey.DECIMAL)]
+    [InlineData("PageUp", VirtualKey.PRIOR)]
+    [InlineData("Left", VirtualKey.LEFT)]
+    [InlineData("[", VirtualKey.OEM_4)]
+    public void TheCaptureVocabularyReachesTheKeysTheReferencesBind(
+        string text, VirtualKey key)
+    {
+        var chord = KeyChord.Parse(text);
+
+        Assert.Equal(key, chord.Key);
+        // Round-trips: a captured key is a storable one, and a stored one is
+        // a showable one.
+        Assert.Equal(text, chord.ToString());
+    }
+
+    [Fact]
+    public void EveryCapturableKeyResolvesBackToAVirtualKey()
+    {
+        foreach (var key in KeyChord.CapturableKeys())
+            Assert.NotNull(KeyChord.FromImGui(key));
+    }
+
+    [Fact]
+    public void NoTwoTokensClaimTheSameVirtualKey()
+    {
+        // The key index is keyed by VirtualKey, so a duplicate would silently
+        // rename whichever token lost — keypad Enter is left out for exactly
+        // this reason.
+        var seen = new HashSet<VirtualKey>();
+        foreach (var key in KeyChord.CapturableKeys())
+            Assert.True(seen.Add(KeyChord.FromImGui(key)!.Value));
+    }
+
     // ── presets ──────────────────────────────────────────────────────────
 
     [Theory]

@@ -93,6 +93,28 @@ public readonly record struct KeyChord(
             new("/", VirtualKey.OEM_2, ImGuiKey.Slash),
             new("`", VirtualKey.OEM_3, ImGuiKey.GraveAccent),
         ]);
+        // The numeric keypad, which a photographer's off-hand can reach
+        // without leaving the mouse. Named in WORDS rather than symbols
+        // because the chord text is split on '+' — a key called "Num+" would
+        // parse as a modifier followed by nothing.
+        for (int i = 0; i < 10; i++)
+            tokens.Add(new(
+                "Num" + i.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture),
+                (VirtualKey)((int)VirtualKey.NUMPAD0 + i),
+                (ImGuiKey)((int)ImGuiKey.Keypad0 + i)));
+        tokens.AddRange(
+        [
+            new("NumPlus", VirtualKey.ADD, ImGuiKey.KeypadAdd),
+            new("NumMinus", VirtualKey.SUBTRACT, ImGuiKey.KeypadSubtract),
+            new("NumMultiply", VirtualKey.MULTIPLY, ImGuiKey.KeypadMultiply),
+            new("NumDivide", VirtualKey.DIVIDE, ImGuiKey.KeypadDivide),
+            new("NumDecimal", VirtualKey.DECIMAL, ImGuiKey.KeypadDecimal),
+            // Keypad Enter is deliberately absent: Windows reports it as
+            // VK_RETURN, so it cannot be told from the main Enter in the key
+            // state a chord is matched against, and claiming the code here
+            // would rename the Enter token.
+        ]);
         return tokens.ToArray();
     }
 
