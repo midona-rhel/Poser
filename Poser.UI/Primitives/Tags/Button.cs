@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -75,6 +75,7 @@ public static partial class Crystarium
         return RenderIconButton(
             id ?? Tabler.NameFor(icon),
             size,
+            style.Selected,
             disabled,
             help,
             (min, max, opacity, background) => DrawButtonIcon(
@@ -102,6 +103,7 @@ public static partial class Crystarium
         return RenderIconButton(
             id ?? icon,
             size,
+            style.Selected,
             disabled,
             help,
             (min, max, opacity, background) => DrawButtonIcon(
@@ -423,6 +425,7 @@ public static partial class Crystarium
     private static bool RenderIconButton(
         string id,
         Vector2 logicalSize,
+        bool selected,
         bool disabled,
         string? help,
         Action<Vector2, Vector2, float, Vector4> content,
@@ -472,6 +475,28 @@ public static partial class Crystarium
         draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
         try
         {
+            // A LATCHED icon button reads the way every other on-state in the
+            // app reads: the accent wash with the 1px accent edge that pairs
+            // with it (the same pair the rail's selected pill wears). It sits
+            // under the hover/active overlay, so pointing at a latched button
+            // still lightens it.
+            if (selected && !disabled)
+            {
+                draw.AddRectFilled(
+                    hit.ScreenMin,
+                    hit.ScreenMax,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(theme.Chrome.AccentFill)),
+                    radius);
+                draw.AddRect(
+                    hit.ScreenMin,
+                    hit.ScreenMax,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(theme.Chrome.AccentFillBorder)),
+                    radius,
+                    ImDrawFlags.None,
+                    MathF.Max(1f, scale));
+            }
             draw.AddRectFilled(
                 hit.ScreenMin,
                 hit.ScreenMax,

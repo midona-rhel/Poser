@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -96,8 +96,10 @@ public readonly record struct ControlStyle
     /// span here; containment outranks any minimum the control would
     /// otherwise enforce.</summary>
     public float? MaxWidth { get; init; }
-    // Toggle-only presentation: momentary IconButton and typed text Button
-    // ignore this flag.
+    /// <summary>The LATCHED on-state. An icon button wearing it draws the
+    /// accent wash and its paired 1px accent edge — the app's one "this is
+    /// on" convention — and is otherwise sized and hit-tested exactly as the
+    /// same button off. Typed text buttons ignore it.</summary>
     public bool Selected { get; init; }
 
     public static ControlStyle Workspace => new() { Height = UiHeight.Workspace };

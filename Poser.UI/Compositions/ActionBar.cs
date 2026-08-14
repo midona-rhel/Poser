@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -281,10 +281,23 @@ public static partial class Crystarium
                     }
                     case ItemKind.Icon:
                     {
-                        var style = item.Style == default
-                            ? ControlStyle.Square(
-                                ActiveTheme.Floating.CloseActionSize)
-                            : item.Style;
+                        // The bar's icons are SQUARE at the close-action side,
+                        // and stay square whatever else the caller states.
+                        // Substituting the square only when the whole style was
+                        // default meant one extra flag — Selected — silently
+                        // re-sized the button to the shell action side, so a
+                        // toggle grew out of the slot the bar had measured for
+                        // it and spilled past its bottom-right corner (user
+                        // 2026-08-14).
+                        var style = item.Style;
+                        if (style.Width == default && style.Height == default)
+                            style = style with
+                            {
+                                Width = UiWidth.Fixed(
+                                    ActiveTheme.Floating.CloseActionSize),
+                                Height = UiHeight.Fixed(
+                                    ActiveTheme.Floating.CloseActionSize),
+                            };
                         float height = ControlSizing.Height(
                             style.Height,
                             ActiveTheme.Floating.CloseActionSize) * scale;
