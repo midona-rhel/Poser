@@ -7,6 +7,7 @@ using Poser.Domain.Companions;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.Overlays;
+using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Game.Scene;
 using Poser.Services;
@@ -777,6 +778,145 @@ public sealed class SceneLifecycleHistoryTests
         Assert.False(world.History.CanUndo);
     }
 
+    // ── adopted world objects ────────────────────────────────────────────
+
+    /// <summary>The map's own placement, and where the user drags the object.
+    /// </summary>
+    private static readonly Transform MapStood = new(
+        new Vector3(4f, 0f, 8f), Quaternion.Identity, Vector3.One);
+
+    private static readonly Transform UserPut = new(
+        new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
+
+    [Fact]
+    public void Adopting_a_world_object_takes_an_entry()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+
+        Assert.NotNull(world.Lifecycle.AdoptWorldObject(address));
+
+        Assert.Equal("Add world object", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void Undoing_an_adoption_releases_it_and_gives_the_map_it_back()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.WorldObjects.Apply(
+            claim, new WorldObjectState(address, UserPut, true));
+
+        Assert.True(world.Undo());
+
+        Assert.Empty(world.WorldObjects.Live);
+        // The map has its object back where the map stood it — an adoption's
+        // undo is a RESTORE, never a destroy.
+        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
+    }
+
+    [Fact]
+    public void Redoing_an_adoption_takes_the_same_address_and_the_users_placement()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.WorldObjects.Apply(
+            claim, new WorldObjectState(address, UserPut, false));
+        world.Undo();
+
+        Assert.True(world.Redo());
+
+        var restored = Assert.Single(world.WorldObjects.Live);
+        var state = world.WorldObjects.Read(restored);
+        Assert.Equal(address, state.Address);
+        Assert.Equal(UserPut, state.Placement);
+        Assert.False(state.Visible);
+    }
+
+    [Fact]
+    public void Releasing_a_world_object_takes_an_entry_that_re_adopts()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.WorldObjects.Apply(
+            claim, new WorldObjectState(address, UserPut, true));
+
+        world.Lifecycle.ReleaseWorldObject(claim);
+
+        Assert.Equal("Remove world object", world.History.UndoDescription);
+        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
+
+        Assert.True(world.Undo());
+
+        var restored = Assert.Single(world.WorldObjects.Live);
+        Assert.Equal(UserPut, world.WorldObjects.Read(restored).Placement);
+    }
+
+    [Fact]
+    public void Every_entry_about_one_claim_shares_one_slot()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        var claim = world.Lifecycle.AdoptWorldObject(address)!;
+        world.Lifecycle.ReleaseWorldObject(claim);
+        // Undoing the removal mints a NEW claim on the same address; undoing
+        // past it must release THAT claim, not the corpse the adoption held.
+        Assert.True(world.Undo());
+
+        Assert.True(world.Undo());
+
+        Assert.Empty(world.WorldObjects.Live);
+        Assert.Equal(MapStood, world.WorldObjects.MapPlacement(address));
+    }
+
+    [Fact]
+    public void Releasing_every_claim_is_one_entry()
+    {
+        var world = new World();
+        var first = world.WorldObjects.Place(0x1000, MapStood);
+        var second = world.WorldObjects.Place(0x2000, MapStood);
+        world.Lifecycle.AdoptWorldObject(first);
+        world.Lifecycle.AdoptWorldObject(second);
+
+        world.Lifecycle.ReleaseAllWorldObjects();
+
+        Assert.Equal("Remove 2 world objects", world.History.UndoDescription);
+        Assert.Empty(world.WorldObjects.Live);
+
+        Assert.True(world.Undo());
+
+        Assert.Equal(2, world.WorldObjects.Live.Count);
+    }
+
+    [Fact]
+    public void An_adoption_the_world_refuses_takes_no_entry()
+    {
+        var world = new World();
+        world.WorldObjects.Place(0x1000, MapStood);
+        world.WorldObjects.RefuseAdopt = true;
+
+        Assert.Null(world.Lifecycle.AdoptWorldObject(0x1000));
+
+        Assert.Null(world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void A_re_adoption_the_world_refuses_leaves_the_entry_where_it_was()
+    {
+        var world = new World();
+        var address = world.WorldObjects.Place(0x1000, MapStood);
+        world.Lifecycle.AdoptWorldObject(address);
+        world.Undo();
+        world.WorldObjects.RefuseAdopt = true;
+
+        Assert.False(world.Redo());
+
+        Assert.Empty(world.WorldObjects.Live);
+    }
+
     // ── the shared stack ─────────────────────────────────────────────────
 
     [Fact]
@@ -870,6 +1010,7 @@ public sealed class SceneLifecycleHistoryTests
         public FakeActors Actors { get; } = new();
         public FakeProps Props { get; } = new();
         public FakeOverlays Overlays { get; } = new();
+        public FakeWorldObjects WorldObjects { get; } = new();
         public SceneLifecycleHistory Lifecycle { get; }
 
         /// <param name="capacity">Undo depth; below 1 is undo switched off.
@@ -878,7 +1019,8 @@ public sealed class SceneLifecycleHistoryTests
         {
             History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
-                History, Lighting, Cameras, Actors, Props, Overlays);
+                History, Lighting, Cameras, Actors, Props, Overlays,
+                WorldObjects);
         }
 
         public bool Undo()
@@ -1064,6 +1206,80 @@ public sealed class SceneLifecycleHistoryTests
 
     /// <summary>The prop half at its port: a token per spawned prop, with the
     /// state an entry reads and writes back.</summary>
+    /// <summary>
+    /// The adopted-world-object half at its port: a MAP the claims are taken
+    /// against, so a release genuinely gives the object back and a re-adoption
+    /// finds it again — the one property that separates this half from every
+    /// other, all of which destroy and re-create.
+    /// </summary>
+    private sealed class FakeWorldObjects : IWorldObjectLifecycle
+    {
+        private readonly Dictionary<nint, Transform> _map = new();
+        private readonly List<object> _adopted = new();
+
+        public bool RefuseAdopt { get; set; }
+        public IReadOnlyList<object> Live => _adopted;
+        public IReadOnlyList<object> WorldObjects => _adopted.ToList();
+
+        /// <summary>Where the map stands one address, which is what every
+        /// release has to put back.</summary>
+        public Transform MapPlacement(nint address) => _map[address];
+
+        public nint Place(nint address, Transform placement)
+        {
+            _map[address] = placement;
+            return address;
+        }
+
+        public object? Adopt(nint address)
+        {
+            if (RefuseAdopt || !_map.ContainsKey(address))
+                return null;
+            var claim = new FakeWorldObject
+            {
+                Owner = this,
+                State = new WorldObjectState(address, _map[address], true),
+                MapPlacement = _map[address],
+            };
+            _adopted.Add(claim);
+            return claim;
+        }
+
+        public bool IsLive(object worldObject) =>
+            ((FakeWorldObject)worldObject).IsValid;
+
+        public void Release(object worldObject)
+        {
+            var claim = (FakeWorldObject)worldObject;
+            _adopted.Remove(claim);
+            if (claim.IsValid)
+                _map[claim.State.Address] = claim.MapPlacement;
+            claim.IsValid = false;
+        }
+
+        public WorldObjectState Read(object worldObject) =>
+            ((FakeWorldObject)worldObject).State;
+
+        public void Apply(object worldObject, WorldObjectState state)
+        {
+            var claim = (FakeWorldObject)worldObject;
+            claim.State = state;
+            _map[state.Address] = state.Placement;
+        }
+    }
+
+    private sealed class FakeWorldObject
+    {
+        public FakeWorldObjects Owner { get; set; } = null!;
+        public bool IsValid { get; set; } = true;
+        public WorldObjectState State { get; set; }
+
+        /// <summary>The map's own placement, captured at adoption and written
+        /// back on release. It is the fake's stand-in for the service's
+        /// InitialPlacement.</summary>
+        public Transform MapPlacement { get; set; }
+    }
+
     private sealed class FakeProps : IPropLifecycle
     {
         private readonly List<object> _props = new();

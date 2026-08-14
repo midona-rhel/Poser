@@ -4,6 +4,7 @@ using Poser.Application.Transforms;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.Overlays;
+using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
@@ -169,6 +170,79 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
         ((OverlayNodeHandle)overlay).State;
 }
 
+/// <summary>What an ADOPTED WORLD OBJECT entry has to put back: the address the
+/// claim was taken at, plus the placement and drawn state the user gave it. The
+/// address is the whole of its identity — a BG object is the map's, so there is
+/// nothing to re-create, only a claim to take again.</summary>
+internal readonly record struct WorldObjectState(
+    nint Address,
+    Transform Placement,
+    bool Visible);
+
+/// <summary>
+/// The adopted-world-object half of <see cref="SceneLifecycleHistory"/>. It is
+/// the one half whose "remove" is a RESTORE rather than a destroy: releasing a
+/// claim gives the map its object back exactly as it stood, and re-adopting is
+/// taking the same address again. Both directions are therefore exactly
+/// statable, which is why an adoption takes an entry where a captured world
+/// LIGHT does not — that one has no address-stable inverse to state.
+/// </summary>
+internal interface IWorldObjectLifecycle
+{
+    IReadOnlyList<object> WorldObjects { get; }
+
+    object? Adopt(nint address);
+
+    bool IsLive(object worldObject);
+
+    void Release(object worldObject);
+
+    WorldObjectState Read(object worldObject);
+
+    void Apply(object worldObject, WorldObjectState state);
+}
+
+internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
+{
+    private readonly WorldObjectService _worldObjects;
+
+    public WorldObjectServiceLifecycle(WorldObjectService worldObjects) =>
+        _worldObjects = worldObjects;
+
+    public IReadOnlyList<object> WorldObjects
+    {
+        get
+        {
+            var live = new List<object>(_worldObjects.Adopted.Count);
+            foreach (var worldObject in _worldObjects.Adopted)
+                live.Add(worldObject);
+            return live;
+        }
+    }
+
+    public object? Adopt(nint address) => _worldObjects.Adopt(address);
+
+    public bool IsLive(object worldObject) =>
+        ((AdoptedWorldObject)worldObject).IsValid;
+
+    public void Release(object worldObject) =>
+        _worldObjects.Release((AdoptedWorldObject)worldObject);
+
+    public WorldObjectState Read(object worldObject)
+    {
+        var handle = (AdoptedWorldObject)worldObject;
+        return new WorldObjectState(
+            handle.Address, handle.Transform, handle.Visible);
+    }
+
+    public void Apply(object worldObject, WorldObjectState state)
+    {
+        var handle = (AdoptedWorldObject)worldObject;
+        handle.Transform = state.Placement;
+        handle.Visible = state.Visible;
+    }
+}
+
 /// <summary>
 /// The ONE seam through which an entity enters or leaves the scene by a user's
 /// act, so that act lands in the SAME history the transforms do.
@@ -233,6 +307,7 @@ public sealed class SceneLifecycleHistory
     private readonly IActorLifecycle _actors;
     private readonly IPropLifecycle _props;
     private readonly IOverlayLifecycle _overlayNodes;
+    private readonly IWorldObjectLifecycle _worldObjects;
 
     /// <summary>Live instance → slot, by reference: the re-binding that makes
     /// every entry about one entity share one slot. Keys are dropped as the
@@ -253,6 +328,9 @@ public sealed class SceneLifecycleHistory
     private readonly Dictionary<object, OverlaySlot> _overlaySlots =
         new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<object, WorldObjectSlot> _worldObjectSlots =
+        new(ReferenceEqualityComparer.Instance);
+
     public SceneLifecycleHistory(
         TransformHistory history,
         ILightingService lighting,
@@ -265,7 +343,8 @@ public sealed class SceneLifecycleHistory
         Dalamud.Plugin.Services.IFramework framework,
         Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,
-        OverlayNodeService overlays)
+        OverlayNodeService overlays,
+        WorldObjectService worldObjects)
         : this(
             history,
             lighting,
@@ -273,7 +352,8 @@ public sealed class SceneLifecycleHistory
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log),
             new PropServiceLifecycle(props),
-            new OverlayServiceLifecycle(overlays))
+            new OverlayServiceLifecycle(overlays),
+            new WorldObjectServiceLifecycle(worldObjects))
     {
     }
 
@@ -286,7 +366,8 @@ public sealed class SceneLifecycleHistory
         IVirtualCameraService cameras,
         IActorLifecycle actors,
         IPropLifecycle props,
-        IOverlayLifecycle overlays)
+        IOverlayLifecycle overlays,
+        IWorldObjectLifecycle worldObjects)
     {
         _history = history;
         _lighting = lighting;
@@ -294,6 +375,7 @@ public sealed class SceneLifecycleHistory
         _actors = actors;
         _props = props;
         _overlayNodes = overlays;
+        _worldObjects = worldObjects;
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -308,6 +390,7 @@ public sealed class SceneLifecycleHistory
         _actorSlots.Clear();
         _propSlots.Clear();
         _overlaySlots.Clear();
+        _worldObjectSlots.Clear();
     }
 
     // ── lights ───────────────────────────────────────────────────────────
@@ -945,6 +1028,129 @@ public sealed class SceneLifecycleHistory
         OverlayNodeKind.Status => "status",
         _ => "dialog",
     };
+
+    // ── adopted world objects ────────────────────────────────────────────
+
+    /// <summary>The live claim, plus the state that takes it again once the
+    /// live one is gone. A claim's whole identity is the ADDRESS it was taken
+    /// at, because the object behind it belongs to the map and outlives every
+    /// claim on it — so both directions are exactly statable and an adoption
+    /// takes an entry.</summary>
+    private sealed class WorldObjectSlot
+    {
+        public object? Live;
+        public WorldObjectState Document;
+        public bool HasDocument;
+    }
+
+    /// <summary>Takes one BG object into the scene, journalled. Undoing it
+    /// RELEASES the claim, which puts the object back exactly where the map
+    /// stood it — an adoption's inverse is never a destroy.</summary>
+    public object? AdoptWorldObject(nint address)
+    {
+        var worldObject = _worldObjects.Adopt(address);
+        if (worldObject == null)
+            return null;
+        var slot = WorldObjectSlotFor(worldObject);
+        _history.Append(new SceneLifecyclePatch(
+            "Add world object",
+            () => ReleaseWorldObjectSlot(slot),
+            () => RestoreWorldObject(slot)));
+        return worldObject;
+    }
+
+    /// <summary>Gives one adopted object back to the map, journalled. Undoing
+    /// it re-adopts the same address and puts back the placement the user had
+    /// given it.</summary>
+    public void ReleaseWorldObject(object worldObject)
+    {
+        var slot = WorldObjectSlotFor(worldObject);
+        if (!ReleaseWorldObjectSlot(slot))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            "Remove world object",
+            () => RestoreWorldObject(slot),
+            () => ReleaseWorldObjectSlot(slot)));
+    }
+
+    /// <summary>Giving the whole list back is ONE act of the user's, so it is
+    /// ONE entry over every slot it took — the prop list's own rule.</summary>
+    public void ReleaseAllWorldObjects()
+    {
+        var worldObjects = _worldObjects.WorldObjects;
+        if (worldObjects.Count == 0)
+            return;
+        var slots = new List<WorldObjectSlot>(worldObjects.Count);
+        foreach (var worldObject in worldObjects)
+            slots.Add(WorldObjectSlotFor(worldObject));
+        if (!ReleaseWorldObjectSlots(slots))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            worldObjects.Count == 1
+                ? "Remove world object"
+                : $"Remove {worldObjects.Count} world objects",
+            () => RestoreWorldObjects(slots),
+            () => ReleaseWorldObjectSlots(slots)));
+    }
+
+    private WorldObjectSlot WorldObjectSlotFor(object worldObject)
+    {
+        if (_worldObjectSlots.TryGetValue(worldObject, out var existing))
+            return existing;
+        var slot = new WorldObjectSlot { Live = worldObject };
+        _worldObjectSlots[worldObject] = slot;
+        return slot;
+    }
+
+    private bool ReleaseWorldObjectSlot(WorldObjectSlot slot)
+    {
+        if (slot.Live is not { } worldObject)
+            return false;
+        if (_worldObjects.IsLive(worldObject))
+        {
+            // Captured HERE, not at adoption: an object the user moved comes
+            // back where they left it. What the RELEASE writes to the game is
+            // the map's own placement — the service captured that at adoption
+            // and this document never touches it.
+            slot.Document = _worldObjects.Read(worldObject);
+            slot.HasDocument = true;
+        }
+        _worldObjects.Release(worldObject);
+        _worldObjectSlots.Remove(worldObject);
+        slot.Live = null;
+        return true;
+    }
+
+    private bool RestoreWorldObject(WorldObjectSlot slot)
+    {
+        if (slot.Live != null)
+            return true;
+        if (!slot.HasDocument)
+            return false;
+        var worldObject = _worldObjects.Adopt(slot.Document.Address);
+        if (worldObject == null)
+            return false;
+        _worldObjects.Apply(worldObject, slot.Document);
+        slot.Live = worldObject;
+        _worldObjectSlots[worldObject] = slot;
+        return true;
+    }
+
+    private bool ReleaseWorldObjectSlots(IReadOnlyList<WorldObjectSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= ReleaseWorldObjectSlot(slot);
+        return landed;
+    }
+
+    private bool RestoreWorldObjects(IReadOnlyList<WorldObjectSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RestoreWorldObject(slot);
+        return landed;
+    }
 
     // ── group removal ────────────────────────────────────────────────────
 
