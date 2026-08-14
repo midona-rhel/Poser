@@ -5,14 +5,16 @@
 > and git has never tracked those filenames on any branch. This file is rebuilt from a fresh
 > three-way source audit; it does not carry over any earlier Done/Not-done rows.
 >
-> Runtime/source basis: Poser code `HEAD` `e6c2c77`; later docs-only candidate
-> commits do not change this runtime truth. Reference basis: Ktisis clone @
+> Runtime/source basis: Poser code `HEAD` `e6c2c77`; rows 2, 9, 12, 13A, and 17
+> plus the polish-table dispositions were re-verified 2026-08-14 against the
+> integration head `42d41bd` (evidence: parity-checklist-disposition, 39 rows).
+> Reference basis: Ktisis clone @
 > `a5ae200d` (0.3.9.2 with the 0.4-style layout) and Brio clone @ `73bb59d`.
 > Inherited documentation snapshots informing this checklist were
 > `docs/validation/poser-feature-gap-audit-2026-08-12.md`,
 > `docs/validation/poser-code-health-audit-2026-08-12.md`,
 > `docs/validation/code-health-remediation-plan-2026-08-12.md`, and
-> `docs/architecture/backend-maintainability-audit.md`; mechanisms were
+> `docs/validation/backend-maintainability-audit.md`; mechanisms were
 > verified against source/reference call sites, not doc claims.
 >
 > **Standing exclusions (user, 2026-08-03):** animation-timeline features (timeline UI,
@@ -36,27 +38,27 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | Gap | Source status |
 |---|---|
 | 1 Redraw pose carryover | **Source-verified; acceptance pending** |
-| 2 Rest poses | **PARTIAL** — A/T done (import surfaces, per user rule 2026-08-08); reference pose backend-complete, deliberately UI-hidden |
+| 2 Rest poses | **Source-verified; acceptance pending** — A/T done (import surfaces, per user rule 2026-08-08); reference pose UI-exposed 2026-08-14 behind a two-step armed confirm in the Presets row |
 | 3 Pose library | **Source-verified; acceptance pending** (exceeds spec) |
 | 4 Auto-save | **Source-verified; acceptance pending** |
 | 5 Freeze-on-import | **Source-verified; acceptance pending** |
 | 6 Target sync | **Source-verified; acceptance pending** |
 | 7 Copy/paste pose UI | **Source-verified; acceptance pending** — stash/apply is the retained UI; clipboard covers cross-session transfer |
 | 8 Gaze fixed-position | **Source-verified; acceptance pending** (ships as "Point" mode, exceeds spec) |
-| 9 IK bake | **Source-verified; acceptance pending** |
+| 9 IK bake | **Implemented, on safety hold** — the convergence brief's standing exclusion governs; not accepted, no live card |
 | 10 Overlay filter wiring | not started |
 | 11 Bone visibility presets | not started |
-| 12 Overworld actor | not started |
+| 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix) |
 | 13A Companion attach UI | **Decision-resolved/source-verified; acceptance pending** — owner-slot attach/current-state display intentionally not exposed |
 | 13B Actor-to-bone attach | not started |
 | 14 Scene save/load | not started |
 | 15 IPC provider | not started |
 | 16 Keybind expansion | not started |
-| 17 Import options | **PARTIAL, accepted as-is** — (a) done, (b) filter-only, (c) not started after the selected-scope precondition was removed |
+| 17 Import options | **PARTIAL** — (a) done, (b) filter-only (parked, user call 2026-08-11), (c) precondition restored by selective import; anchor-positions slice assigned (user decision 2026-08-14: implement now) |
 | 18 Transform lock | not started |
 | 19 Linked-bones toggle | not started |
 | 20 Ray-snap translate | not started |
-| Polish table | nothing started |
+| Polish table | GPose-open/close and dock/tree-guide rows fixed; the eight unscheduled rows joined the small-parity queue (user decision 2026-08-14: schedule all) |
 
 ### 1. Pose is lost when the actor redraws
 
@@ -109,12 +111,14 @@ neutral rest pose; there is no A/T-pose anywhere.
 reset-before-import for A→T→A idempotence), "Presets" row with A-pose/T-pose buttons in the
 import surfaces (`PoseFileInspectorSection.cs:992-999`) reachable from actor context menu,
 titlebar burger, and FILES Import — per user rule 2026-08-08 rest presets live with import,
-not the POSE rail. Reference pose: backend-complete (`CleanPoseFacade.ApplyReferencePose`,
-`Skeleton.CaptureReferencePose`) but **deliberately UI-hidden** until the capture path is
-proven in game (`PoseInspectorPane.cs:1991-1995`) — the one remaining item.
+not the POSE rail.
 
-**User call 2026-08-11: accepted as-is** ("rest poses is fine") — reference pose stays
-UI-hidden; do not reopen without a new user decision.
+**Superseding user decision 2026-08-14 (with the selective-import range): the reference
+pose is UI-exposed.** A "Reference" button sits in the Presets row behind a two-step armed
+confirm — arm shows the visible warning, the second press applies as one undoable edit, and
+a reopened menu disarms (`PoseFileInspectorSection.cs:1047-1052`, `:421`,
+`ApplyReferencePreset`). Placement in the Presets row and session-only toggles were the
+user's explicit calls. Live check rides the combined live card.
 
 **Task:** Embed A-pose and T-pose files (Poser already reads Brio-v3 `.pose`, so Brio's
 embedded files work as-is) and add "A-Pose", "T-Pose" buttons to the POSE rail section plus
@@ -307,7 +311,12 @@ into the pose, so its IK is effectively always baked.
 pose edits, so disarming a chain abandons the solved placement and exports/undo interact
 with a transient state.
 
-**Verified 2026-08-11: DONE.** `Poser.Game/Posing/IkBakeCapture.cs`: Brio's ResetIK order
+**Verified 2026-08-11: implemented — ON SAFETY HOLD (downgraded from "DONE" 2026-08-14).**
+The implementation exists in the tree but is not accepted: the convergence brief's standing
+exclusion ("Do not treat Bake IK as accepted") governs, the rejected diagnostics chain
+(`634fb30`/`5088c27`/`fdae242`) is confirmed absent from the head lineage, the live card
+excludes Bake, and only the user can authorize the tranche that would un-park it.
+Implementation facts: `Poser.Game/Posing/IkBakeCapture.cs`: Brio's ResetIK order
 (export solved skeleton → clear stacks → disarm → re-import), framework-thread guarded,
 refused mid-gesture, full rollback on failure; one history entry "Bake IK"
 (`IkBakeCapture.cs:482`). "Bake" button in the IK rail section
@@ -375,6 +384,15 @@ a GPose copy and forces `SetTargetable(true)` (`Interface/Editor/Popup/Overworld
 **Poser:** absent — the actor list is the GPose object table only
 (`ActorManager.cs:114-177`); spawn/clone operate on scene actors and the local player.
 
+**Verified 2026-08-14: DONE (implemented + reviewed; live acceptance pending).** Read-only
+overworld discovery lives outside the 201–439 write gate
+(`Poser.Game/LegacyRuntime/WorldActorDiscovery.cs`, `Poser.Application/Actors/IWorldActorReadPort.cs`,
+integrated `d7603ca`); the spawn browser gained a World tab — nearest-first snapshot rows,
+clone-on-activate through the typed import, stale refusals restate and re-list (`44cb748`),
+structural row refresh deferred to Draw start (`42d41bd`). The clone is the one crossing
+into the scene and enters through the owned spawn transaction. Live check: rides the spawn
+card as an added step.
+
 **Task:** Add "Add overworld actor…" to the `+` add menu: enumerate the non-GPose object
 table (Pc/BattleNpc/EventNpc), list names (respecting anonymous-name masking), and on pick
 run the existing clone path with that actor as the copy source, then auto-select like
@@ -409,6 +427,13 @@ the sheet, auto-selected, and **automatically classified** by kind
 "Detach companion" remains, gated on `GetCompanionInfo` (its first caller), because clones
 can still arrive with a slot companion; `SetCompanion` survives as internal machinery with
 no UI caller by design. Do not re-add an attach surface without a new user decision.
+
+**Newer user decision 2026-08-14: the gated companion attach picker stays.** The head
+ships an attach surface again — `Poser/UI/Panes/CompanionSection.cs` seeds the picker from
+current state (`GetCompanionInfo` at `:112`, `SetCompanion` at `:141`) and mounts only
+while the companion slot exists; "Detach companion" stays gated on `GetCompanionInfo`
+(`MainWindow.cs:2802`). This supersedes the 2026-08-11 "do not re-add" instruction, and
+closes the write-only-picker / zero-`GetCompanionInfo`-callers holes recorded above.
 Bone attachment (B):
 nothing — no drag-drop anywhere in the repo; the only bone-attach code is the lights path,
 not reusable for charas.
@@ -495,15 +520,18 @@ user decision recorded below.
 (`PoseFileService.cs:242`). (b) filter-only — no dedicated exclude-ears control; an "Ears"
 category exists in the Brio-style bone-filter popup (covers Ktisis' 20 names via prefixes)
 but the filter is disabled whenever Body/Expression typed import is active
-(`:1133-1141`, `:2163-2165`), i.e. exactly the common paths. (c) **NOT STARTED — and its
-precondition was removed**: the Selected-scope/descendants rows were dropped from the
-import UI (user 2026-08-10, `:1124-1125`); selected-bones import is now backend-only dead
-code (`CleanPoseFacade.cs:195-222` has no UI caller passing bones). The import surface was
+(`:1133-1141`, `:2163-2165`), i.e. exactly the common paths. (c) **precondition RESTORED
+(2026-08-14)**: the selective-import range brought Selected-bones/Include-descendants back
+as dialog-only rows with confirm-time freezing (`2465157`), running through the one
+pose-import transaction (`0818dc2`) with Ktisis bypass semantics (`7a13086`). Anchor
+positions itself remains absent at head (no anchor-position capture anywhere in
+`PoseFileService`/inspector). The import surface was
 otherwise rebuilt well beyond this task: Smart import, clipboard both ways, Reapply last,
 From stash, Brio bone-filter popup, live CharaView preview, shared three-mount options band.
 
-**User call 2026-08-11: accepted as-is** ("import is good enough for now") — (b) and (c)
-stay parked; do not reopen without a new user decision.
+**User calls:** (b) stays parked ("import is good enough for now", 2026-08-11); (c) was
+re-decided 2026-08-14 — **implement the anchor-positions checkbox now**; the slice is
+assigned to the selective-import writer.
 
 **Task:** Three additions to the FILES import options: a "Model transform" checkbox wiring
 the existing flag (trivial); an "Exclude ears" checkbox implemented as a name-set filter in
@@ -559,26 +587,26 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 | Gap | Reference | Poser state |
 |---|---|---|
 | Undo/redo tooltips show what will be undone | (Poser's own backend) | `UndoDescription`/`RedoDescription` exist unused (`CleanTransformFacade.cs:31-34`); badges show static text |
-| Mouse-wheel nudge on hovered gizmo rings / numeric fields | Brio `ImGuizmoExtensions.cs:10-45`; Ktisis `TransformTable.cs:200-218` | rail rings have drag-only; numeric wells drag-only |
-| Wheel-cycling the overlay disambiguation popup | Brio `PosingOverlayWindow.cs:342-397`; Ktisis `SelectableGui.cs:63-153` | hover list exists, no wheel cycling |
-| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | Ctrl/Shift multipliers only |
-| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | fixed internal depth, no setting |
-| "Open with GPose / Close with GPose" settings do nothing | (Poser's own settings) | saved (`SettingsWindow.cs:118-119`), no reader — implement or remove |
-| Sidebar/inspector dock + tree-guide settings do nothing | (Poser's own settings) | saved (`SettingsWindow.cs:136-138`), zero readers — implement or remove |
-| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | absent |
-| Custom 2D pose-view images per view | Ktisis `PoseViewConfig` + Settings → Pose View | absent (embedded maps only) |
-| Per-race overlay bone-dot offsets | Ktisis `OffsetConfig` + offset editor | absent |
-| Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | spawn always live; pause is a separate click |
+| Mouse-wheel nudge on hovered gizmo rings / numeric fields | Brio `ImGuizmoExtensions.cs:10-45`; Ktisis `TransformTable.cs:200-218` | rail rings have drag-only; numeric wells drag-only — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Wheel-cycling the overlay disambiguation popup | Brio `PosingOverlayWindow.cs:342-397`; Ktisis `SelectableGui.cs:63-153` | hover list exists, no wheel cycling — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | Ctrl/Shift multipliers only — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | fixed internal depth, no setting — **Scheduled** (user 2026-08-14, small-parity queue) |
+| "Open with GPose / Close with GPose" settings do nothing | (Poser's own settings) | **fixed** — both read now (`UIManager.cs:104,107`, `UiWindowSet.cs:89`) |
+| Sidebar/inspector dock + tree-guide settings do nothing | (Poser's own settings) | **resolved** — `ShowTreeGuides` read (`ShellSidebar.cs:192`); dock settings removed |
+| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Custom 2D pose-view images per view | Ktisis `PoseViewConfig` + Settings → Pose View | absent (embedded maps only) — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Per-race overlay bone-dot offsets | Ktisis `OffsetConfig` + offset editor | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | spawn always live; pause is a separate click — **Scheduled** (user 2026-08-14, small-parity queue) |
 
 ### Explicitly *not* gaps (verified better-or-equal in Poser)
 
 - Weapon/prop/ornament slots in pose files: Poser round-trips MainHand/OffHand/Prop/Ornament;
   Ktisis never writes them (`EntityPoseConverter.cs:33` TODO), Brio does.
 - Import scopes: Poser's per-component + reset-first + Brio type matrix matches both
-  references' popup options (given gap 17's remaining items). *2026-08-11 note:* the
-  Selected/descendants scope this bullet originally credited was removed from the UI on
-  2026-08-10 (user call) — the import surface now mirrors Brio's popup; selected-bones
-  import survives backend-only.
+  references' popup options (given gap 17's remaining items). *2026-08-14 note:*
+  selected/subtree import is UI-reachable again — dialog-only Selected-bones/descendants
+  rows with Ktisis bypass semantics (`2465157`, `7a13086`), superseding the 2026-08-11 note
+  that it survived backend-only.
 - Stance/idle-pose control, weapon drawn, position lock, per-layer speed/pause, physics
   freeze: present with real UI (Animation tab / toolbar).
 - Stash/apply pose transfer: parity with Ktisis' stash, including timestamp.
