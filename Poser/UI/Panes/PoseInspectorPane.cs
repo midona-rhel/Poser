@@ -72,6 +72,12 @@ public class PoseInspectorPane
     public Func<bool>? GetMapMirror;
     public Action<bool>? SetMapMirror;
 
+    /// <summary>Brio's <c>SwapRotationXandY</c> (PosingConfiguration.cs:44):
+    /// the rotation row DISPLAYS and WRITES its first two columns exchanged.
+    /// It is a reading convention, not a different rotation — the quaternion
+    /// underneath and every other surface are untouched.</summary>
+    public Func<bool>? GetSwapRotationXY;
+
     /// <summary>Resolves the same actor nickname/display name used by the scene tree.</summary>
     public Func<IActor, string>? ActorDisplayNameProvider;
 
@@ -99,6 +105,17 @@ public class PoseInspectorPane
 
     // Euler cache while a rotation drag is active (avoids quat→euler snap).
     private Vector3? _dragEuler;
+
+    // Per-row disclosure for Brio's expanded per-axis rows. Row-local, not
+    // persisted: it is a reading posture for the value in front of you, and
+    // carrying it across selections would surprise the next one.
+    private bool _expandTranslation, _expandRotation, _expandScale;
+
+    /// <summary>The copied model transform, shared by every inspector instance
+    /// exactly as Brio's single clipboard slot is. Null until something is
+    /// copied; a paste never invents one.</summary>
+    private static Transform? _transformClipboard;
+    private string? _transformClipboardNote;
     // Display and model baselines for one application-owned transform gesture.
     private Transform? _dragStart;
     private Transform? _cleanModelStart;
@@ -1449,6 +1466,22 @@ public class PoseInspectorPane
         // does not vary with the thing being turned.
         float dragSpeed = Config.ConfigurationService.Instance.Config
             .Transform.For(_entity is IBone);
+
+        // Brio's SwapRotationXandY, applied at the ROW only: the value read out
+        // of the quaternion and the value written back both pass through the
+        // same exchange, so nothing downstream ever sees swapped axes.
+        bool swap = GetSwapRotationXY?.Invoke() == true;
+        static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
+
+        void Expander(Crystarium.ActionScope actions, bool open, Action<bool> set) =>
+            actions.IconButton(
+                open ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
+                () => set(!open),
+                help: open
+                    ? "Collapse back to one row"
+                    : "Give each axis its own full-width row",
+                id: open ? "collapse" : "expand");
+
         form.AxisVector(
             "Translation",
             pos,
@@ -1456,11 +1489,14 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit);
+            disabled: !canEdit,
+            actions: actions => Expander(
+                actions, _expandTranslation, next => _expandTranslation = next),
+            expanded: _expandTranslation);
         form.AxisVector(
             "Rotation",
-            euler,
-            next => Apply(next, DomainOperation.Rotate),
+            swap ? SwapXY(euler) : euler,
+            next => Apply(swap ? SwapXY(next) : next, DomainOperation.Rotate),
             () =>
             {
                 Commit();
@@ -1469,7 +1505,10 @@ public class PoseInspectorPane
             },
             0.5f,
             "0.000",
-            disabled: !canEdit);
+            disabled: !canEdit,
+            actions: actions => Expander(
+                actions, _expandRotation, next => _expandRotation = next),
+            expanded: _expandRotation);
         form.AxisVector(
             "Scale",
             scale,
@@ -1477,10 +1516,68 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit);
+            disabled: !canEdit,
+            actions: actions => Expander(
+                actions, _expandScale, next => _expandScale = next),
+            expanded: _expandScale);
+
+        DrawTransformClipboard(form, transform, canEdit);
 
         if (!canEdit && _entity is IActor)
             form.Status("Freeze the actor's animation to move it.");
+    }
+
+    /// <summary>
+    /// Copy/paste of an actor's MODEL transform — Brio's scope exactly, and
+    /// for its reason: a bone's numbers are meaningless on another bone, so
+    /// Brio disables the control outright whenever a bone is selected
+    /// (PosingTransformEditor.cs:129-134). Poser states the same limit as the
+    /// row's own absence rather than as a disabled ghost, which is how the
+    /// rest of this rail declines.
+    ///
+    /// <para>The paste is a non-interactive absolute write, so it lands as one
+    /// undoable entry and never opens a gesture.</para>
+    /// </summary>
+    private void DrawTransformClipboard(
+        Crystarium.FormScope form,
+        Transform current,
+        bool canEdit)
+    {
+        if (EffectiveSelection()?.Primary is not
+            { Kind: TransformTargetKind.Actor } target)
+            return;
+
+        form.Actions("Transform", actions =>
+        {
+            actions.Button(
+                "Copy",
+                () =>
+                {
+                    _transformClipboard = current;
+                    _transformClipboardNote = null;
+                },
+                help: "Copy this actor's position, rotation and scale");
+            actions.Button(
+                "Paste",
+                () =>
+                {
+                    if (_transformClipboard is not { } copied)
+                        return;
+                    var written = _cleanTransforms.SetAbsolute(
+                        target,
+                        new Domain.Transforms.PoseTransform(
+                            copied.Position, copied.Rotation, copied.Scale),
+                        "Paste transform");
+                    _transformClipboardNote =
+                        written.Success ? null : written.Detail;
+                },
+                disabled: !canEdit || _transformClipboard == null,
+                help: _transformClipboard == null
+                    ? "Nothing has been copied yet"
+                    : "Write the copied position, rotation and scale onto this actor");
+        });
+        if (_transformClipboardNote is { } note)
+            form.Status(note);
     }
 
     // Quiet inline note after an Actor-mode click with no valid target actor.

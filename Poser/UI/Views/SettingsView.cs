@@ -120,6 +120,7 @@ public sealed class SettingsViewModel
 
     public bool DetachedShell;
     public bool TreeGuides = true;
+    public bool SwapRotationXY;
 
     /// <summary>The three Dalamud UI-hide answers. Mirrors
     /// <c>UIConfiguration</c>'s defaults: the two Poser used to force stay on,
@@ -995,6 +996,13 @@ public static class SettingsView
                 next => vm.ShowWhenGameUiHidden = next,
                 "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
         });
+        page.Section("TRANSFORM ROWS", form =>
+            form.Switch(
+                "Swap rotation X and Y",
+                vm.SwapRotationXY,
+                next => vm.SwapRotationXY = next,
+                "Show the rotation row's first two columns exchanged. "
+                    + "The pose itself is unchanged"));
         // Keybinds live in UIConfiguration too, so this reset takes them with
         // it — which is also the row K4 asks for, stated where it is true.
         page.Section("RESET", form => ResetRow(

@@ -155,6 +155,7 @@ public class SettingsWindow : Window
             ShowInGPose = c.UI.ShowInGPose,
             ShowInCutscene = c.UI.ShowInCutscene,
             ShowWhenGameUiHidden = c.UI.ShowWhenGameUiHidden,
+            SwapRotationXY = c.UI.SwapRotationXY,
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
@@ -393,6 +394,7 @@ public class SettingsWindow : Window
         c.UI.ShowInGPose = _vm.ShowInGPose;
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
+        c.UI.SwapRotationXY = _vm.SwapRotationXY;
 
         // Replaced whole, never merged: an action dropped from the registry
         // has no row to clear it from, and a stale entry would keep firing.

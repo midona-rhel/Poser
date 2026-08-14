@@ -47,6 +47,17 @@ public class UIConfiguration
     /// hides the HUD for the shot and Poser goes with it.
     /// </summary>
     public bool ShowWhenGameUiHidden { get; set; }
+
+    /// <summary>
+    /// Show the rotation row's first two columns exchanged — Brio's
+    /// <c>SwapRotationXandY</c> (PosingConfiguration.cs:44), for people whose
+    /// reference tool labels those axes the other way round. Default OFF, the
+    /// order every other Poser surface uses. It is a reading convention: the
+    /// stored rotation is untouched either way, so turning it on cannot alter
+    /// a pose or make one file import differently from another.
+    /// </summary>
+    public bool SwapRotationXY { get; set; }
+
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by

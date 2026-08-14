@@ -588,6 +588,8 @@ public class MainWindow : Window
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection = on;
             Config.ConfigurationService.Instance.Save();
         };
+        _poseInspector.GetSwapRotationXY = () =>
+            Config.ConfigurationService.Instance.Config.UI.SwapRotationXY;
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         appearancePane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
@@ -1300,6 +1302,8 @@ public class MainWindow : Window
         _vm.SelectedBonesOnly = _editorState.ShowSelectedBonesOnly;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
+        _vm.UndoDescription = _cleanTransforms.UndoDescription;
+        _vm.RedoDescription = _cleanTransforms.RedoDescription;
         // Pop-out follows the toolbar actor: any selection that resolves to
         // an actor can be frozen into its own content window.
         _vm.ShowPopOut = toolbarActor != null && !_libraryMode && !_sceneMode;
