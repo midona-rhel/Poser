@@ -116,7 +116,7 @@ public sealed class PortablePoseApplicationContractTests
     }
 
     [Fact]
-    public void ApplyPortable_rejects_mixed_exact_and_unmatched_matches_atomically()
+    public void ApplyPortable_applies_the_intersection_and_names_what_it_skipped()
     {
         var (left, right) = DuplicateBones();
         using var app = Harness(left, right);
@@ -140,13 +140,76 @@ public sealed class PortablePoseApplicationContractTests
             pose,
             "mixed unmatched apply");
 
+        Assert.True(result.Success, result.Detail);
+        Assert.Equal(1, result.Affected);
+        Assert.Equal(
+            "Skipped 1 bone(s) this skeleton does not have: j_missing.",
+            result.Detail);
+        Assert.True(app.History.CanUndo);
+        Assert.Equal(
+            4,
+            app.Runtime.State(TransformTargetId.ForBone(left))
+                .Pose.Layers[0].Delta.Position.X);
+        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(right)).Pose.Layers);
+    }
+
+    [Fact]
+    public void ApplyPortable_refuses_when_the_intersection_is_empty()
+    {
+        var (left, right) = DuplicateBones();
+        using var app = Harness(left, right);
+        var pose = new PortablePose([
+            new PortableBoneEntry(
+                PortableBoneKey.Legacy(
+                    new PortableBoneId(PoseSlot.Character, 0, "j_missing")),
+                PoseAt(8)),
+        ]);
+
+        var result = app.PoseEdits.ApplyPortable(
+            [TransformTargetId.ForBone(left), TransformTargetId.ForBone(right)],
+            pose,
+            "nothing in common");
+
         Assert.False(result.Success);
         Assert.Equal("Unmatched portable bones: j_missing.", result.Detail);
-        Assert.Empty(app.Runtime.CaptureCalls);
-        Assert.Empty(app.Runtime.RestoreCalls);
         Assert.False(app.History.CanUndo);
-        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(left)).Pose.Layers);
-        Assert.Empty(app.Runtime.State(TransformTargetId.ForBone(right)).Pose.Layers);
+        Assert.Empty(app.Runtime.RestoreCalls);
+    }
+
+    [Fact]
+    public void ApplyPortable_truncates_a_long_skipped_bone_list()
+    {
+        var (left, right) = DuplicateBones();
+        using var app = Harness(left, right);
+        var entries = new List<PortableBoneEntry>
+        {
+            new(
+                new PortableBoneKey(
+                    PoseSlot.Character,
+                    left.PartialId,
+                    left.CanonicalName,
+                    new BonePath("root", "left", "j_dup")),
+                PoseAt(4),
+                NativeIndexHint: left.BoneIndex),
+        };
+        for (var index = 0; index < 10; index++)
+            entries.Add(new PortableBoneEntry(
+                PortableBoneKey.Legacy(
+                    new PortableBoneId(PoseSlot.Character, 0, $"j_gone_{index}")),
+                PoseAt(8)));
+
+        var result = app.PoseEdits.ApplyPortable(
+            [TransformTargetId.ForBone(left), TransformTargetId.ForBone(right)],
+            new PortablePose(entries),
+            "many unmatched apply");
+
+        Assert.True(result.Success, result.Detail);
+        Assert.Equal(1, result.Affected);
+        Assert.Equal(
+            "Skipped 10 bone(s) this skeleton does not have: " +
+            "j_gone_0, j_gone_1, j_gone_2, j_gone_3, j_gone_4, " +
+            "j_gone_5, j_gone_6, j_gone_7 and 2 more.",
+            result.Detail);
     }
 
     [Fact]

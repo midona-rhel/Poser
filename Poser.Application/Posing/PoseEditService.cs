@@ -348,8 +348,16 @@ public sealed class PoseEditService
             destinations.Add(destination);
         }
 
+        // AMBIGUITY still refuses wholesale: an entry matching several
+        // destinations has no safe answer, so writing any of them would be a
+        // guess. An UNMATCHED entry has an answer — this skeleton simply does
+        // not have that bone — so the intersection is applied and the skipped
+        // names are reported, which is what both references do (Brio
+        // PoseImporter.cs:33-37, Ktisis PoseContainer.cs:179). Refusing the
+        // whole paste made a pose captured on a richer skeleton (IVCS, tail,
+        // extra partials) unusable on a poorer one.
         var match = pose.Match(destinations);
-        if (match.Ambiguous.Count > 0 || match.Unmatched.Count > 0)
+        if (match.Ambiguous.Count > 0)
             return PoseEditResult.Fail(DescribeMatchFailure(match)!);
 
         var prepared = CaptureBones(targets);
@@ -379,7 +387,10 @@ public sealed class PoseEditService
                 HasOverride = transferred.Layers.Count > 0,
             };
             }).ToArray();
-        return Apply(description, before, desired);
+        var applied = Apply(description, before, desired);
+        return applied.Success && match.Unmatched.Count > 0
+            ? applied with { Detail = DescribeSkipped(match.Unmatched) }
+            : applied;
     }
 
     /// <summary>Every bone of every actor in the scene, by id. Built ONCE
@@ -444,11 +455,31 @@ public sealed class PoseEditService
         var details = new List<string>();
         if (match.Ambiguous.Count > 0)
             details.Add(
-                $"Ambiguous portable bones: {string.Join(", ", match.Ambiguous.Select(item => item.Entry.Key.CanonicalName))}.");
+                $"Ambiguous portable bones: {NameList(match.Ambiguous)}.");
         if (match.Unmatched.Count > 0)
             details.Add(
-                $"Unmatched portable bones: {string.Join(", ", match.Unmatched.Select(item => item.Entry.Key.CanonicalName))}.");
+                $"Unmatched portable bones: {NameList(match.Unmatched)}.");
         return details.Count == 0 ? null : string.Join(" ", details);
+    }
+
+    /// <summary>The success-side half of the refusal vocabulary: the paste
+    /// landed, and this names what it could not carry.</summary>
+    private static string DescribeSkipped(
+        IReadOnlyList<PortableBoneMatchFailure> unmatched) =>
+        $"Skipped {unmatched.Count} bone(s) this skeleton does not have: {NameList(unmatched)}.";
+
+    /// <summary>Bone names, TRUNCATED — a paste from a much richer skeleton
+    /// can miss hundreds of bones and this text reaches a notification.</summary>
+    private static string NameList(
+        IReadOnlyList<PortableBoneMatchFailure> failures)
+    {
+        const int Shown = 8;
+        var names = failures
+            .Take(Shown)
+            .Select(item => item.Entry.Key.CanonicalName);
+        return failures.Count <= Shown
+            ? string.Join(", ", names)
+            : $"{string.Join(", ", names)} and {failures.Count - Shown} more";
     }
 
     private CaptureResult CaptureBones(
