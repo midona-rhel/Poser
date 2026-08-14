@@ -270,7 +270,21 @@ public sealed unsafe class PropSpawnService : IDisposable
             weapon->Position = player.Position;
             weapon->Rotation = Quaternion.Identity;
             weapon->Scale = Vector3.One;
-            CSWorld.Instance()->AddChild((CSObject*)weapon);
+
+            // World.Instance() is null outside a loaded scene; a null deref
+            // here is an AccessViolationException the catch below cannot
+            // catch, and would misreport as "spawning failed". Refusal
+            // destroys the just-created weapon so nothing leaks.
+            var world = CSWorld.Instance();
+            if (world == null)
+            {
+                _log.Warning("PropSpawnService: no world to add the prop to.");
+                weapon->CleanupRender();
+                weapon->Dtor(1);
+                return null;
+            }
+
+            world->AddChild((CSObject*)weapon);
             weapon->OnAddedToWorld();
 
             int id = ++_nextId;

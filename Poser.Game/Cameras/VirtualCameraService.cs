@@ -550,8 +550,16 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _handleInputHook!.Original(a1, a2, a3, mouse, keyboard);
         try
         {
-            if (!_gPose.IsGPosing || _live is not { } live ||
-                RaptureAtkModule.Instance()->AtkModule.IsTextInputActive())
+            if (!_gPose.IsGPosing || _live is not { } live)
+                return;
+
+            // Null-checked BEFORE the deref: a null singleton here is an
+            // AccessViolationException, which .NET never delivers to the
+            // catch below — it would be a process crash inside the game's
+            // input handler. Every other singleton read in this file goes
+            // through the null-checking Native property.
+            var atk = RaptureAtkModule.Instance();
+            if (atk == null || atk->AtkModule.IsTextInputActive())
                 return;
 
             if (live.Kind == CameraKind.Free)
