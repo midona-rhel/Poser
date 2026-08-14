@@ -54,4 +54,13 @@ public class PoserConfiguration : IPluginConfiguration
     /// reference (config sits below the application layer).
     /// </summary>
     public int UndoDepth { get; set; } = 200;
+
+    /// <summary>
+    /// Freeze every actor the spawn browser adds to the scene the moment it
+    /// binds — Brio's <c>SpawnEx(spawnFrozen)</c>, which waits for the actor to
+    /// be ready and then writes an overall animation speed of zero
+    /// (<c>Brio/IPC/API/ActorAPI.cs:87-95</c>). The spawn browser's own toggle
+    /// is what writes this, so the persisted value IS that toggle's state.
+    /// </summary>
+    public bool SpawnFrozen { get; set; } = false;
 }

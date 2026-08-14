@@ -9,7 +9,9 @@ using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
+using Poser.Application.Animation;
 using Poser.Application.Selection;
+using Poser.Config;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -79,6 +81,8 @@ public sealed class SpawnBrowserWindow : Window
     private readonly ISpawnCatalogService _catalog;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
+    private readonly AnimationSession _animation;
+    private readonly ConfigurationService _configuration;
     private readonly ITextureProvider _textures;
     private readonly HashSet<uint> _missingIcons = new();
     private readonly SpawnBrowserViewModel _vm = new();
@@ -164,6 +168,8 @@ public sealed class SpawnBrowserWindow : Window
         ISpawnCatalogService catalog,
         SelectionSession selection,
         StableBindingRegistry bindings,
+        AnimationSession animation,
+        ConfigurationService configuration,
         ITextureProvider textures)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
@@ -180,6 +186,8 @@ public sealed class SpawnBrowserWindow : Window
         _catalog = catalog;
         _selection = selection;
         _bindings = bindings;
+        _animation = animation;
+        _configuration = configuration;
         _textures = textures;
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -200,6 +208,15 @@ public sealed class SpawnBrowserWindow : Window
             _refilter = true;
         };
         _vm.OnPinToggle = () => _pinned = !_pinned;
+        // The toggle IS the setting: there is no second home for it in
+        // Settings, so flipping it here persists immediately.
+        _vm.Frozen = _configuration.Config.SpawnFrozen;
+        _vm.OnFrozenToggle = () =>
+        {
+            _vm.Frozen = !_vm.Frozen;
+            _configuration.Config.SpawnFrozen = _vm.Frozen;
+            _configuration.ApplyChange();
+        };
     }
 
     /// <summary>Opens (or moves) the window AT the invoking affordance — the
@@ -229,6 +246,9 @@ public sealed class SpawnBrowserWindow : Window
         _note = null;
         _lastRow = -1;
         _hadFocus = false;
+        // Re-read rather than trust the cached toggle: a config reset is not
+        // routed through this window.
+        _vm.Frozen = _configuration.Config.SpawnFrozen;
     }
 
     public override void PreDraw()
@@ -827,6 +847,27 @@ public sealed class SpawnBrowserWindow : Window
             return;
         _selection.Select(SelectionId.ForActor(id));
         _pendingSelectSpawned = null;
+        FreezeIfRequested(id);
+    }
+
+    /// <summary>
+    /// Brio's spawn-frozen: an actor added while the toggle is on stops on its
+    /// first frame instead of playing its idle (Brio waits for the character to
+    /// be ready to draw, then writes an overall speed of zero —
+    /// <c>Brio/IPC/API/ActorAPI.cs:87-95</c>). This runs at the SAME seam Brio's
+    /// wait resolves to: the actor is bound here, which is strictly after the
+    /// scene has seen it, so the speed write has a target. Every actor-producing
+    /// row reaches it, the World tab's clones included, because they all park on
+    /// the one pending-select. A failure is reported, not swallowed: an actor
+    /// that silently kept playing would read as the toggle doing nothing.
+    /// </summary>
+    private void FreezeIfRequested(ActorId actor)
+    {
+        if (!_configuration.Config.SpawnFrozen)
+            return;
+        var result = _animation.Pause(actor);
+        if (!result.Success)
+            _note = result.Detail ?? "The new actor could not be frozen.";
     }
 
     /// <summary>

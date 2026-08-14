@@ -65,6 +65,14 @@ public sealed class SpawnBrowserViewModel
 
     public Action? OnPinToggle;
 
+    /// <summary>Whether what this browser adds arrives frozen. It sits in the
+    /// browser's own chrome rather than in Settings because it qualifies the
+    /// act every row here performs — including the World tab's clones — and
+    /// the toggle IS the persisted setting.</summary>
+    public bool Frozen;
+
+    public Action? OnFrozenToggle;
+
     /// <summary>The footer caption: the honest count, or the note explaining
     /// why the last activation did nothing.</summary>
     public string Status = string.Empty;
@@ -144,8 +152,13 @@ public static class SpawnBrowserView
         "World",
     ];
 
-    /// <summary>The pin/close side in the search row.</summary>
+    /// <summary>The freeze/pin/close side in the search row.</summary>
     private const float HeaderButtonSide = 26f;
+
+    /// <summary>How many icons sit right of the search field: the freeze
+    /// toggle, the pin, and the frame's own close. The search field is sized
+    /// around this, so a fourth icon has to be counted here too.</summary>
+    private const int HeaderButtonCount = 3;
 
     /// <summary>The PILL's own height, and the 2px it breathes off each
     /// neighbour — together the pitch the clipper steps at.</summary>
@@ -191,14 +204,27 @@ public static class SpawnBrowserView
 
         vm.List ??= region => DrawRows(vm, region);
         vm.Footer ??= scope => scope.Label(vm.Status);
-        vm.Header ??= right => right.Icon(
-            TablerIcon.Pin,
-            () => vm.OnPinToggle?.Invoke(),
-            vm.Pinned
-                ? "Pinned — the window stays open. Click to unpin."
-                : "Pin the window open — unpinned, it closes when it "
-                    + "loses focus.",
-            style: new ControlStyle { Selected = vm.Pinned });
+        vm.Header ??= right =>
+        {
+            right.Icon(
+                TablerIcon.PlayerPause,
+                () => vm.OnFrozenToggle?.Invoke(),
+                vm.Frozen
+                    ? "New actors arrive frozen on their first frame. Click "
+                        + "to let them play."
+                    : "Freeze what you add — every actor this browser "
+                        + "spawns, clones or captures stops on its first "
+                        + "frame instead of playing.",
+                style: new ControlStyle { Selected = vm.Frozen });
+            right.Icon(
+                TablerIcon.Pin,
+                () => vm.OnPinToggle?.Invoke(),
+                vm.Pinned
+                    ? "Pinned — the window stays open. Click to unpin."
+                    : "Pin the window open — unpinned, it closes when it "
+                        + "loses focus.",
+                style: new ControlStyle { Selected = vm.Pinned });
+        };
         vm.TitleContent ??= rect => DrawSearchInTitle(vm, rect);
 
         // THE window frame, exactly as before the title went: the search
@@ -260,8 +286,8 @@ public static class SpawnBrowserView
         // over the row marks and the search text over the labels.
         float margin = MathF.Max(0f, pillInset + RowPadding - SearchInnerPad);
         float cluster = theme.Floating.HeaderInset
-            + HeaderButtonSide * 2f
-            + theme.Spacing.Three * 2f;
+            + HeaderButtonSide * HeaderButtonCount
+            + theme.Spacing.Three * HeaderButtonCount;
         ImGui.SetCursorScreenPos(bar.Min + new Vector2(
             margin * scale,
             (bar.Size.Y - SearchBandHeight * scale) * 0.5f));
