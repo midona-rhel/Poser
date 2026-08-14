@@ -15,7 +15,17 @@ using Poser.Services;
 namespace Poser.Game;
 
 /// <summary>
-/// Exact native identity of one object-table slot occupant.
+/// Exact native identity of one client-object slot occupant.
+/// <para>
+/// <see cref="Index"/> is the <c>ClientObjectManager</c> slot index — the
+/// number <c>CreateBattleCharacter</c> returns and the only number
+/// <c>GetObjectByIndex</c>/<c>GetIndexByObject</c>/<c>DeleteObjectByIndex</c>
+/// accept. It is NOT <c>GameObject.ObjectIndex</c>: the global object-table
+/// index of a client object is its slot plus 200 (Brio converts explicitly,
+/// <c>EntityActorManager.cs:74</c>, <c>go.ObjectIndex - 200</c>). Mixing the
+/// two spaces means deleting a foreign object, so every index that reaches
+/// this type comes from the ClientObjectManager API and nowhere else.
+/// </para>
 /// <see cref="LifetimeStamp"/> is the destruction-sequence stamp for
 /// <see cref="Address"/> at resolve time. It advances inside the native
 /// Character finalize hook — the game's own lifetime transition — never at
@@ -423,7 +433,14 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         var com = ClientObjectManager.Instance();
         if (com is null)
             return 0xFFFFFFFF;
-        return com->CreateBattleCharacter(reserveCompanionSlot);
+        // param:, never positional. The signature is
+        // CreateBattleCharacter(uint index = uint.MaxValue, byte param = 0):
+        // the FIRST parameter names the slot to create in, and a byte binds to
+        // it silently. Passing the companion flag positionally asked the game
+        // to build the clone in client-object slot 0/1 — object-table 200/201,
+        // the GPose primary — and never reserved the slot. Brio names it for
+        // the same reason (ActorSpawnService.cs:309).
+        return com->CreateBattleCharacter(param: reserveCompanionSlot);
     }
 
     public ulong IndexDestructionStamp(ushort index) => _stamps.IndexStampFor(index);
@@ -436,8 +453,13 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         var native = com->GetObjectByIndex(index);
         if (native is null)
             return null;
+        // The slot we asked for, not native->ObjectIndex: GetObjectByIndex
+        // reads ClientObjectManager's own array, so the occupant's slot IS
+        // `index`, while its ObjectIndex is the global object-table number
+        // (slot + 200). Carrying the global number here fed it straight back
+        // into GetObjectByIndex/DeleteObjectByIndex.
         return new SpawnNativeDescriptor(
-            native->ObjectIndex,
+            index,
             (nint)native,
             native->EntityId,
             _stamps.StampFor((nint)native));
