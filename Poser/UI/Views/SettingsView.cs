@@ -167,6 +167,18 @@ public sealed class SettingsViewModel
 
     public string Version = "dev";
 
+    /// <summary>Non-empty when the stored config could not be read on load —
+    /// the sentence <c>ConfigurationService</c> minted, naming the backup.
+    /// Shown as a warning wherever the reset rows are, because that is the
+    /// page a user who lost their settings ends up on.</summary>
+    public string ConfigLoadFailure = "";
+
+    /// <summary>Which reset is armed, if any. First press arms, second
+    /// applies: wiping settings is not something a stray click gets to do —
+    /// the preset switcher's idiom, for the same reason.</summary>
+    public ConfigResetScope? ResetArmed;
+    public string ResetStatus = "";
+
     public Action? OnSave;
     public Action? OnCancel;
     public Action? OnClose;
@@ -179,6 +191,23 @@ public sealed class SettingsViewModel
     /// created by its own tool).</summary>
     public Action<string>? OnOpenFolder;
     public Action<UITheme, int>? OnThemePreview;
+
+    /// <summary>Applies a confirmed reset and reloads this view model from the
+    /// config it just replaced. Unlike every other row, a reset WRITES
+    /// immediately — it is a discard, so there is nothing for Cancel to keep.
+    /// </summary>
+    public Action<ConfigResetScope>? OnResetConfig;
+}
+
+/// <summary>Which slice of the config a reset row throws away. One per
+/// <c>ConfigurationService</c> reset method, so the four that existed with no
+/// caller each have exactly one button.</summary>
+public enum ConfigResetScope
+{
+    All,
+    Display,
+    Skeleton,
+    UI,
 }
 
 /// <summary>
@@ -509,6 +538,52 @@ public static class SettingsView
             // The folder row moved to POSER FOLDERS, where it is editable
             // rather than merely openable — one place per path.
         });
+        page.Section("RESET", form =>
+        {
+            // The load-failure notice lives here and nowhere else: this is the
+            // page that explains what happened to the settings and the page
+            // that offers to start them over.
+            if (vm.ConfigLoadFailure.Length > 0)
+                form.Status(vm.ConfigLoadFailure, warning: true);
+            ResetRow(
+                vm,
+                form,
+                ConfigResetScope.All,
+                "Everything",
+                "Put every Poser setting back to its shipped default");
+        });
+    }
+
+    /// <summary>One armed reset button. The caption IS the state — "Reset" or
+    /// "Confirm reset" — and arming any row disarms every other, so two rows
+    /// can never both be one click from firing.</summary>
+    private static void ResetRow(
+        SettingsViewModel vm,
+        Crystarium.FormScope form,
+        ConfigResetScope scope,
+        string label,
+        string help)
+    {
+        bool armed = vm.ResetArmed == scope;
+        form.Actions(label, actions => actions.Button(
+            armed ? "Confirm reset" : "Reset",
+            () =>
+            {
+                if (!armed)
+                {
+                    vm.ResetArmed = scope;
+                    vm.ResetStatus =
+                        $"{label} goes back to defaults, discarding anything "
+                        + "unsaved on this page. Press Confirm reset to apply.";
+                    return;
+                }
+                vm.ResetArmed = null;
+                vm.OnResetConfig?.Invoke(scope);
+            },
+            variant: armed ? ButtonVariant.Danger : ButtonVariant.Secondary,
+            help: help));
+        if (vm.ResetStatus.Length > 0)
+            form.Status(vm.ResetStatus, warning: armed);
     }
 
     private static void DrawDisplay(
@@ -583,6 +658,12 @@ public static class SettingsView
                     vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 });
         });
+        page.Section("RESET", form => ResetRow(
+            vm,
+            form,
+            ConfigResetScope.Display,
+            "Display settings",
+            "Put the overlay colors, filters and theme back to their defaults"));
     }
 
     private static void DrawSkeleton(
@@ -666,6 +747,12 @@ public static class SettingsView
                 next => vm.ShowAllVieraEars = next,
                 "Keep all four Viera ear sets, not only the pair the character wears");
         });
+        page.Section("RESET", form => ResetRow(
+            vm,
+            form,
+            ConfigResetScope.Skeleton,
+            "Skeleton settings",
+            "Put the bone dot, line and color settings back to their defaults"));
     }
 
     /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
@@ -783,6 +870,14 @@ public static class SettingsView
                 next => vm.ShowWhenGameUiHidden = next,
                 "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
         });
+        // Keybinds live in UIConfiguration too, so this reset takes them with
+        // it — which is also the row K4 asks for, stated where it is true.
+        page.Section("RESET", form => ResetRow(
+            vm,
+            form,
+            ConfigResetScope.UI,
+            "UI settings",
+            "Put the layout, visibility and keybind settings back to their defaults"));
     }
 
     private static readonly string[] PresetLabels =

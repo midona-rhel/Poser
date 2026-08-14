@@ -150,8 +150,11 @@ public class SettingsWindow : Window
             McdfFolder = c.Library.ResolveMcdfRoot(),
             AutoSaveFolderDraft = c.AutoSave.RootDirectory,
 
+            ConfigLoadFailure = ConfigurationService.Instance.LoadFailure,
+
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
+            OnResetConfig = ResetConfig,
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
@@ -201,6 +204,42 @@ public class SettingsWindow : Window
         // does the library roots.
         _vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
         _vm.BindingRevision++;
+    }
+
+    /// <summary>
+    /// The confirmed reset: the config service replaces the slice, the theme
+    /// is restated because a Display or whole reset may have changed it, and
+    /// the view model is rebuilt from what is now stored. Rebuilding is the
+    /// point — the page must not go on showing the values that were just
+    /// thrown away, and unsaved edits are exactly what a reset discards.
+    /// </summary>
+    private void ResetConfig(ConfigResetScope scope)
+    {
+        var svc = ConfigurationService.Instance;
+        switch (scope)
+        {
+            case ConfigResetScope.Display:
+                svc.ResetDisplay();
+                break;
+            case ConfigResetScope.Skeleton:
+                svc.ResetSkeleton();
+                break;
+            case ConfigResetScope.UI:
+                svc.ResetUI();
+                break;
+            default:
+                svc.Reset();
+                break;
+        }
+
+        int category = _vm.Category;
+        LoadFromConfig();
+        // The reset came from a page; that page stays on screen to show the
+        // result rather than throwing the user back to Display.
+        _vm.Category = category;
+        _vm.ResetStatus = "Reset. These are the shipped defaults.";
+        ThemeSelection.Apply(
+            svc.Config.UI.Theme, svc.Config.UI.AccentIndex);
     }
 
     private void SaveToConfig()
