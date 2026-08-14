@@ -904,7 +904,15 @@ public sealed class McdfFileBoundaryTests
             IReadOnlyDictionary<string, IReadOnlyList<string>> resources,
             CancellationToken cancellation)
         {
-            AllowInspection.Wait(TimeSpan.FromSeconds(5), cancellation);
+            // The release gate is a harness rendezvous, NOT product
+            // behaviour, so it deliberately does not observe the operation's
+            // token: the test cancels BEFORE it opens the gate, and a
+            // cancellable rendezvous let Cancel and Set race to wake this
+            // waiter — whenever the cancel won, the call aborted here and
+            // never recorded that inspection had run off-thread at all.
+            // Cancellation is still observed exactly where the real boundary
+            // observes it: below, once the off-thread entry is recorded.
+            AllowInspection.Wait(TimeSpan.FromSeconds(5));
             InspectionThread = System.Environment.CurrentManagedThreadId;
             InspectionCancellation = cancellation;
             InspectionEntered.Set();
