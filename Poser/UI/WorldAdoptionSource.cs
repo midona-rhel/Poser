@@ -46,6 +46,7 @@ public static class WorldAdoptionClasses
     [
         WorldAdoptionKind.Actor,
         WorldAdoptionKind.Light,
+        WorldAdoptionKind.WorldObject,
     ];
 }
 

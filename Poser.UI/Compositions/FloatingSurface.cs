@@ -277,24 +277,14 @@ public static partial class Crystarium
             if (items.Count == 0)
                 return -1;
             float scale = ImGuiHelpers.GlobalScale;
-            // Brio's metrics were taken as ImGui's DEFAULTS, and at Poser's
-            // type scale that reads oversized: the 8px pad, the body size and
-            // the 26px tree row are the SIDEBAR's proportions, and this is a
-            // transient list at the pointer, not a pane (user 2026-08-15:
-            // "okay but too much padding and too large of a font"). It reads
-            // at the caption size in a row box sized for it — a context
-            // menu's density, about a third off the tree row's — while the
-            // glass chrome, the surface radius and the row's own hover and
-            // selected treatment stay exactly the design system's.
-            float padding = ActiveTheme.Spacing.Three * scale;
-            float labelSize = ActiveTheme.Typography.CaptionSize;
-            // Brio's auto-fit, bounded by the menu's own two widths so a long
-            // bone name cannot run off and a short one cannot read as a sliver.
-            // The row's label sits a fixed slot in from its left edge and is
-            // given the same slot back as trailing breath; the scroll region
-            // reserves its gutter unconditionally, so that comes out of the
-            // width too or the labels would truncate as soon as the list
-            // scrolls.
+            // The list is the names and nearly nothing else (user 2026-08-15:
+            // "make the text bigger, make the padding to the edge like 2
+            // pixels max, and center that shit"): body-size labels, CENTRED
+            // in their rows, inside a box whose edge padding is a hairline.
+            // The glass chrome, the surface radius and the row's own hover
+            // and selected treatment stay exactly the design system's.
+            float padding = 2f * scale;
+            float labelSize = ActiveTheme.Typography.BodySize;
             var labelStyle = new TextStyle
             {
                 Size = labelSize,
@@ -302,16 +292,21 @@ public static partial class Crystarium
             float widest = 0f;
             for (int i = 0; i < items.Count; i++)
                 widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
+            // Auto-fit: the widest name plus symmetric breath, the scroll
+            // gutter reserved only when the list actually scrolls, bounded by
+            // the menu's two widths so a long bone name cannot run off and a
+            // short one cannot read as a sliver.
+            bool scrolls = items.Count > ActiveTheme.Picker.MaximumRows;
             float width = Math.Clamp(
                 widest
-                    + (ActiveTheme.Spacing.Six * 2f
-                        + ActiveTheme.Scrollbar.GutterWidth) * scale
+                    + ActiveTheme.Spacing.Four * 2f * scale
+                    + (scrolls ? ActiveTheme.Scrollbar.GutterWidth * scale : 0f)
                     + padding * 2f,
                 ActiveTheme.Floating.MenuMinWidth * scale,
                 ActiveTheme.Floating.MenuWidth * scale);
-            // The row box is the label plus a few px of breath each side —
-            // the whole difference between a menu row and a tree row.
-            float rowHeight = labelSize + ActiveTheme.Spacing.Three * 2f;
+            // The row box hugs its label: a couple of px of breath each side
+            // is the whole difference between a menu row and a tree row.
+            float rowHeight = labelSize + ActiveTheme.Spacing.Two * 2f;
             int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
             float height = rows * rowHeight * scale
                 + padding * 2f;
@@ -371,7 +366,8 @@ public static partial class Crystarium
                                     {
                                         Height = UiHeight.Fixed(rowHeight),
                                     },
-                                    labelSize: labelSize))
+                                    labelSize: labelSize,
+                                    centerLabel: true))
                                 clicked = i;
                     });
                 Interactive.EndOwner(owner);

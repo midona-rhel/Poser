@@ -287,8 +287,9 @@ public class MainWindow : Window
     /// window: a warm footer frame states help, so it must not build the
     /// sentence.</summary>
     private static ShellWorldClass WorldClassEntry(WorldAdoptionKind kind) =>
-        kind == WorldAdoptionKind.Light
-            ? new ShellWorldClass
+        kind switch
+        {
+            WorldAdoptionKind.Light => new ShellWorldClass
             {
                 Icon = TablerIcon.Bulb,
                 Id = "##world-class-lights",
@@ -296,8 +297,17 @@ public class MainWindow : Window
                     "Mark the world's addable lights — click a mark to take "
                     + "it into the scene",
                 HideHelp = "Stop marking the world's addable lights",
-            }
-            : new ShellWorldClass
+            },
+            WorldAdoptionKind.WorldObject => new ShellWorldClass
+            {
+                Icon = TablerIcon.Square,
+                Id = "##world-class-objects",
+                ShowHelp =
+                    "Mark the map's own objects — click a mark to borrow it "
+                    + "into the scene; releasing it puts it back",
+                HideHelp = "Stop marking the map's own objects",
+            },
+            _ => new ShellWorldClass
             {
                 Icon = TablerIcon.User,
                 Id = "##world-class-actors",
@@ -305,7 +315,8 @@ public class MainWindow : Window
                     "Mark the world's addable actors — click a mark to clone "
                     + "it into the scene",
                 HideHelp = "Stop marking the world's addable actors",
-            };
+            },
+        };
 
     /// <summary>The actor rows, with the snapshot facts a warm frame needs to
     /// restate their live flags without walking the scene again.</summary>

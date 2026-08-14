@@ -47,6 +47,12 @@ public record struct TreeRowProps
     /// sidebar with it.</summary>
     public float? LabelSize;
 
+    /// <summary>Centre the label in its zone instead of seating it at the
+    /// start. Stated only by rows that are NOT the tree — a transient pick
+    /// list at the pointer centres its names (user 2026-08-15); a tree row
+    /// centring under its guides would break the indent grid.</summary>
+    public bool CenterLabel;
+
     /// <summary>Right-aligned mono readout (counts, "you", "spawned").</summary>
     public string? Badge;
 
@@ -421,8 +427,11 @@ public static partial class Crystarium
             if (MeasureText(label, labelStyle).X <= span)
                 TextInBand(
                     labelMin, labelBand, label, labelStyle,
-                    TextAlign.Start, besideIcon: true);
+                    props.CenterLabel ? TextAlign.Center : TextAlign.Start,
+                    besideIcon: true);
             else
+                // An overflowing label truncates from the start either way:
+                // centring a cut run hides both of its ends.
                 TextInBand(
                     labelMin, labelBand, label, labelStyle,
                     TextConstraint.Truncate(span), TextAlign.Start,

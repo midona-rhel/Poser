@@ -77,7 +77,8 @@ public static partial class Crystarium
             IDalamudTextureWrap? iconTexture = null,
             bool iconVisible = true,
             ControlStyle style = default,
-            float? labelSize = null)
+            float? labelSize = null,
+            bool centerLabel = false)
         {
             // A list row is a depth-0 tree row that exposes no expander, so it
             // reserves no chevron and selection is its only reachable outcome —
@@ -93,6 +94,7 @@ public static partial class Crystarium
                     IconTexture = iconTexture,
                     HideIcon = !iconVisible,
                     LabelSize = labelSize,
+                    CenterLabel = centerLabel,
                 },
                 style with { Width = UiWidth.Region(ContentWidth) })
                 == TreeRowAction.Selected;

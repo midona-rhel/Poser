@@ -23,7 +23,7 @@ namespace Poser.ContractTests;
 public class WorldAdoptionFilterContractTests
 {
     private static WorldAdoptionSource Source() =>
-        new(null!, null!, null!, null!, null!, null!, null!);
+        new(null!, null!, null!, null!, null!, null!, null!, null!, null!, null!);
 
     [Fact]
     public void A_session_starts_with_the_world_unmarked()
