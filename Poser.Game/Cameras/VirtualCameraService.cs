@@ -356,6 +356,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         Vector3 objectPosition = resolved.Position;
         target.TargetOffset = drawPosition - objectPosition;
         target.TargetActorName = displayName;
+        target.TargetActor = actor;
         return true;
     }
 
@@ -365,6 +366,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             return;
         target.TargetOffset = Vector3.Zero;
         target.TargetActorName = string.Empty;
+        target.TargetActor = null;
     }
 
     private string NextName(CameraKind kind)

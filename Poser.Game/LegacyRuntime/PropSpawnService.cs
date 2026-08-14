@@ -35,17 +35,23 @@ public sealed unsafe class PropHandle
     private nint _address;
 
     internal PropHandle(
-        PropSpawnService owner, int id, string name, nint address)
+        PropSpawnService owner, int id, string name, nint address,
+        PropModel model)
     {
         _owner = owner;
         Id = id;
         Name = name;
         _address = address;
+        Model = model;
     }
 
     public int Id { get; }
 
     public string Name { get; }
+
+    /// <summary>The model triple this prop was spawned from — what a scene
+    /// file needs to respawn the same prop.</summary>
+    public PropModel Model { get; }
 
     public nint Address => _address;
 
@@ -294,7 +300,8 @@ public sealed unsafe class PropSpawnService : IDisposable
                 model.Name == "Prop"
                     ? "Prop " + id.ToString(CultureInfo.InvariantCulture)
                     : model.Name,
-                (nint)weapon);
+                (nint)weapon,
+                model);
             _props.Add(handle);
             _events.Publish(new PropListChangedEvent());
             return handle;

@@ -70,7 +70,9 @@ public class CameraFileService : ICameraFileService
         }
     }
 
-    private static CameraFile CreateCameraFile(IVirtualCamera camera) => new()
+    /// <summary>The ONE IVirtualCamera → CameraFile mapping; scene capture
+    /// reuses it so a scene camera and a .posercam are the same document.</summary>
+    internal static CameraFile CreateCameraFile(IVirtualCamera camera) => new()
     {
         Name = camera.Name,
         Kind = camera.Kind,
@@ -93,7 +95,9 @@ public class CameraFileService : ICameraFileService
         OrthographicZoom = camera.OrthographicZoom,
     };
 
-    private static void Apply(CameraFile file, IVirtualCamera camera)
+    /// <summary>The ONE CameraFile → IVirtualCamera property application;
+    /// scene load reuses it.</summary>
+    internal static void Apply(CameraFile file, IVirtualCamera camera)
     {
         camera.Name = file.Name;
         camera.Angle = file.Angle;

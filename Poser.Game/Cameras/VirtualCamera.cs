@@ -155,6 +155,11 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public string TargetActorName { get; set; } = string.Empty;
 
+    /// <summary>The exact actor the last target select followed; cleared with
+    /// the target. Entity reference like the light attach — scene capture
+    /// revalidates it against the live actor list before persisting.</summary>
+    internal IActor? TargetActor { get; set; }
+
     public Vector3 WorldPosition
     {
         get

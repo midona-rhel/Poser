@@ -73,7 +73,9 @@ public class LightFileService : ILightFileService
         }
     }
 
-    private static LightFile CreateLightFile(ILight light) => new()
+    /// <summary>The ONE ILight → LightFile mapping; scene capture reuses it
+    /// so a scene light and a .poserlight are the same document.</summary>
+    internal static LightFile CreateLightFile(ILight light) => new()
     {
         Name = light.Name,
         Kind = light.Kind,
@@ -117,7 +119,9 @@ public class LightFileService : ILightFileService
         _log.Warning($"Light file references an unknown gobo: {lightFile.Gobo}");
     }
 
-    private static void Apply(LightFile lightFile, ILight light)
+    /// <summary>The ONE LightFile → ILight property application; scene load
+    /// reuses it (gobo resolution stays with the callers' services).</summary>
+    internal static void Apply(LightFile lightFile, ILight light)
     {
         light.Name = lightFile.Name;
         light.Kind = lightFile.Kind;
