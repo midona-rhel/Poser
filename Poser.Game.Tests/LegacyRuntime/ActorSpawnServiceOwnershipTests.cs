@@ -1,3 +1,4 @@
+using System.Reflection;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Core;
@@ -9,6 +10,12 @@ namespace Poser.Game.Tests.LegacyRuntime;
 
 public sealed class ActorSpawnServiceOwnershipTests
 {
+    /// <summary>The global object-table index of a client object is its
+    /// ClientObjectManager slot plus this (Brio EntityActorManager.cs:74,
+    /// <c>go.ObjectIndex - 200</c>). The two are never interchangeable.</summary>
+    private const ushort GPoseObjectTableBase = 200;
+
+
     [Fact]
     public void Lifetime_stamps_advance_only_at_destruction_and_stay_per_address_and_index()
     {
@@ -506,6 +513,178 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
+    public void Spawn_refuses_once_and_quietly_when_the_adapter_reports_a_foreign_index_space()
+    {
+        // The live failure: CreateBattleCharacter returns a ClientObjectManager
+        // SLOT, and the adapter used to stamp the descriptor with the resolved
+        // object's global object-table index (slot + 200) instead. The
+        // mismatch has to refuse — a descriptor in the wrong index space would
+        // send DeleteObjectByIndex at a foreign object — but it must say so
+        // once, not once per recovery frame.
+        long now = 0;
+        var log = new RecordingLog();
+        var framework = new FakeFramework();
+        var bus = new FakeEventBus();
+        var actor = Actor(0x808);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(8, actor.Address, 88))
+        {
+            ReportsObjectTableIndex = true,
+        };
+        using var service = NewService(
+            native,
+            manager,
+            framework: framework,
+            bus: bus,
+            clock: () => now,
+            log: log.Proxy());
+
+        Assert.Null(service.SpawnNewActor(reserveCompanionSlot: false));
+        var pending = Assert.Single(service.OwnershipSnapshot);
+        Assert.Equal(SpawnOwnershipState.PendingCreate, pending.State);
+        Assert.Equal((ushort)8, pending.CreatedIndex);
+        Assert.Empty(native.Deleted);
+        Assert.Equal("Spawned object index changed", Assert.Single(log.Errors).Split(": ")[^1]);
+
+        // Recovery keeps retrying inside the window without faulting per frame.
+        for (var i = 0; i < 5; i++)
+            framework.RaiseUpdate();
+        Assert.Empty(log.Warnings);
+        Assert.Single(log.Errors);
+        Assert.Equal(
+            SpawnOwnershipState.PendingCreate,
+            Assert.Single(service.OwnershipSnapshot).State);
+
+        // The window closes: exactly one more Error, at the record's creation.
+        now = 6000;
+        framework.RaiseUpdate();
+        Assert.Equal(
+            SpawnOwnershipState.NonRecoverable,
+            Assert.Single(service.OwnershipSnapshot).State);
+        Assert.Equal(2, log.Errors.Count);
+
+        // The retained readout is never re-announced as an error, however many
+        // times the session ends (its slot is still occupied, so it stays).
+        bus.Publish(new GPoseStateChangedEvent(false));
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(service.OwnershipSnapshot);
+        Assert.Equal(2, log.Errors.Count);
+        Assert.Empty(log.Warnings);
+
+        // Positive control: the same fake in a single index space spawns and
+        // binds through the unchanged gates.
+        native.ReportsObjectTableIndex = false;
+        Assert.Same(actor, service.SpawnNewActor(reserveCompanionSlot: false));
+        Assert.True(service.IsSpawnedActor(actor));
+        Assert.Equal(2, service.OwnershipSnapshot.Count);
+    }
+
+    [Fact]
+    public void Non_recoverable_readout_clears_at_session_end_only_on_proof_its_slot_is_vacated()
+    {
+        long now = 0;
+        var framework = new FakeFramework();
+        var bus = new FakeEventBus();
+        var native = new FakeNative(new(9, (nint)0x909, 99))
+        {
+            ResolveReturnsNull = true,
+        };
+        using var service = NewService(
+            native,
+            framework: framework,
+            bus: bus,
+            clock: () => now);
+
+        Assert.Null(service.SpawnNewActor(reserveCompanionSlot: false));
+        now = 6000;
+        framework.RaiseUpdate();
+        Assert.Equal(
+            SpawnOwnershipState.NonRecoverable,
+            Assert.Single(service.OwnershipSnapshot).State);
+
+        // An unavailable manager proves nothing.
+        native.ResolveReturnsNull = false;
+        native.IsAvailableValue = false;
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(service.OwnershipSnapshot);
+
+        // Neither does a resolution fault.
+        native.IsAvailableValue = true;
+        native.ThrowOnResolve = true;
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(service.OwnershipSnapshot);
+
+        // Nor an occupied slot.
+        native.ThrowOnResolve = false;
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(service.OwnershipSnapshot);
+
+        // An empty slot under an available manager is proof: nothing of ours
+        // is there, so the readout stops repeating itself.
+        native.Current = null;
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Empty(service.OwnershipSnapshot);
+        Assert.Empty(native.Deleted);
+    }
+
+    [Fact]
+    public void Non_recoverable_readout_clears_when_the_finalize_hook_saw_its_slot_die()
+    {
+        long now = 0;
+        var framework = new FakeFramework();
+        var bus = new FakeEventBus();
+        var native = new FakeNative(new(10, (nint)0x90A, 100))
+        {
+            ResolveReturnsNull = true,
+        };
+        using var service = NewService(
+            native,
+            framework: framework,
+            bus: bus,
+            clock: () => now);
+
+        Assert.Null(service.SpawnNewActor(reserveCompanionSlot: false));
+        now = 6000;
+        framework.RaiseUpdate();
+        Assert.Equal(
+            SpawnOwnershipState.NonRecoverable,
+            Assert.Single(service.OwnershipSnapshot).State);
+
+        // The slot is occupied again by an object with the IDENTICAL triple,
+        // but the finalize hook recorded a destruction there since our create:
+        // whatever is in the slot is not ours, so the readout is about nothing.
+        native.ResolveReturnsNull = false;
+        native.ExternallyDestroyCurrent();
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Empty(service.OwnershipSnapshot);
+        Assert.Empty(native.Deleted);
+    }
+
+    [Fact]
+    public void Non_recoverable_readout_without_a_created_index_is_never_probed_or_cleared()
+    {
+        var bus = new FakeEventBus();
+        var native = new FakeNative(new(802, (nint)0x802, 82))
+        {
+            ThrowOnCreate = true,
+        };
+        using var service = NewService(native, bus: bus);
+
+        Assert.Null(service.SpawnNewActor(reserveCompanionSlot: true));
+        Assert.Equal(
+            ushort.MaxValue,
+            Assert.Single(service.OwnershipSnapshot).CreatedIndex);
+
+        // No slot was ever known, so vacancy is unprovable and the readout
+        // stays — and ushort.MaxValue is never handed to GetObjectByIndex.
+        native.ResolvedIndexes.Clear();
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(service.OwnershipSnapshot);
+        Assert.Empty(native.ResolvedIndexes);
+        Assert.Empty(native.Deleted);
+    }
+
+    [Fact]
     public void Unknown_create_exception_is_an_explicit_non_recoverable_readout()
     {
         var native = new FakeNative(new(802, (nint)0x802, 82))
@@ -914,14 +1093,15 @@ public sealed class ActorSpawnServiceOwnershipTests
         FakeFramework? framework = null,
         FakeEventBus? bus = null,
         Func<long>? clock = null,
-        Func<nint, EntityId?>? expectedIdentity = null) =>
+        Func<nint, EntityId?>? expectedIdentity = null,
+        IPluginLog? log = null) =>
         new(
             new FakeGPoseService(),
             manager ?? new FakeActorManager(),
             bus ?? new FakeEventBus(),
             native,
             () => (nint)0x100,
-            null,
+            log,
             framework,
             mutate ?? ((_, _, _, _) => { }),
             expectedIdentity ?? (address => new EntityId($"test-{address}")),
@@ -929,6 +1109,38 @@ public sealed class ActorSpawnServiceOwnershipTests
 
     private static void ThrowNativeDelete() =>
         throw new InvalidOperationException("native delete");
+
+    /// <summary>Records Error/Warning message strings off an IPluginLog proxy,
+    /// so "said once, not once per frame" is an assertion.</summary>
+    private sealed class RecordingLog
+    {
+        public List<string> Errors { get; } = new();
+        public List<string> Warnings { get; } = new();
+
+        public IPluginLog Proxy()
+        {
+            var proxy = DispatchProxy.Create<IPluginLog, LogProxy>();
+            ((LogProxy)(object)proxy).Owner = this;
+            return proxy;
+        }
+
+        private class LogProxy : DispatchProxy
+        {
+            public RecordingLog Owner = null!;
+
+            protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            {
+                if (args?.FirstOrDefault(a => a is string) is string message)
+                {
+                    if (targetMethod?.Name == "Error")
+                        Owner.Errors.Add(message);
+                    else if (targetMethod?.Name == "Warning")
+                        Owner.Warnings.Add(message);
+                }
+                return null;
+            }
+        }
+    }
 
     private sealed class FakeNative : IActorSpawnNativeAdapter
     {
@@ -946,6 +1158,18 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool ThrowOnCreate { get; set; }
         public bool ThrowOnResolve { get; set; }
         public bool ResolveReturnsNull { get; set; }
+
+        /// <summary>Reproduces the pre-fix live adapter: the descriptor is
+        /// stamped with the resolved object's GLOBAL object-table index
+        /// (client-object slot + 200) instead of the slot that was asked for.
+        /// The service must refuse rather than act on a descriptor whose index
+        /// belongs to a different index space.</summary>
+        public bool ReportsObjectTableIndex { get; set; }
+
+        /// <summary>Every slot the service asked the ClientObjectManager
+        /// about, in order — a readout with no created index must never probe
+        /// one (65535 is off the end of the 249-slot array).</summary>
+        public List<ushort> ResolvedIndexes { get; } = new();
         public int CreateCalls { get; private set; }
         public List<SpawnNativeDescriptor> Deleted { get; } = new();
         public SpawnNativeDescriptor? Current { get; set; }
@@ -987,13 +1211,17 @@ public sealed class ActorSpawnServiceOwnershipTests
 
         public SpawnNativeDescriptor? ResolveByIndex(ushort index)
         {
+            ResolvedIndexes.Add(index);
             if (ThrowOnResolve)
                 throw new InvalidOperationException("resolve");
             if (!IsAvailableValue || ResolveReturnsNull)
                 return null;
-            return Current is { } current && current.Index == index
-                ? current with { LifetimeStamp = Stamps.StampFor(current.Address) }
-                : null;
+            if (Current is not { } current || current.Index != index)
+                return null;
+            var resolved = current with { LifetimeStamp = Stamps.StampFor(current.Address) };
+            return ReportsObjectTableIndex
+                ? resolved with { Index = (ushort)(index + GPoseObjectTableBase) }
+                : resolved;
         }
 
         public SpawnNativeDescriptor? ResolveActor(nint address)

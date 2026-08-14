@@ -148,12 +148,25 @@ internal sealed class SpawnOwnershipRecord
     public bool Visible { get; private set; } = true;
     public SpawnOwnershipState State { get; private set; } = SpawnOwnershipState.PendingCreate;
 
-    public void Resolve(SpawnNativeDescriptor descriptor)
+    /// <summary>Adopts an identity resolved for <see cref="CreatedIndex"/>.
+    /// The slot check is an invariant assertion, not a policy: the adapter
+    /// resolves BY that slot, so a differing slot means the descriptor was
+    /// built in the wrong index space and nothing about it can be trusted.
+    /// Returns false instead of throwing so the per-frame recovery tick can
+    /// treat it as "outcome still unknown" without faulting every frame.</summary>
+    public bool TryResolve(SpawnNativeDescriptor descriptor)
     {
         if (descriptor.Index != CreatedIndex)
-            throw new InvalidOperationException("Spawned object index changed");
+            return false;
         Descriptor = descriptor;
         State = SpawnOwnershipState.Live;
+        return true;
+    }
+
+    public void Resolve(SpawnNativeDescriptor descriptor)
+    {
+        if (!TryResolve(descriptor))
+            throw new InvalidOperationException("Spawned object index changed");
     }
 
     public void Bind(IActor actor)
@@ -298,6 +311,19 @@ internal sealed class SpawnOwnershipLedger
     {
         if (!_records.TryGetValue(token, out var record)
             || record.State != SpawnOwnershipState.PendingCreate)
+            return false;
+        _records.Remove(token);
+        return true;
+    }
+
+    /// <summary>Drops a readout the caller has proven is about nothing: only
+    /// legal for a NonRecoverable record, and the caller owes the proof that
+    /// its created slot is vacated (the record never had a descriptor, so
+    /// there is nothing native to clean either way).</summary>
+    public bool RetireNonRecoverable(Guid token)
+    {
+        if (!_records.TryGetValue(token, out var record)
+            || record.State != SpawnOwnershipState.NonRecoverable)
             return false;
         _records.Remove(token);
         return true;
@@ -1060,7 +1086,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // Unchanged destruction stamp: the occupant is the object our create
         // call made, so its identity is now authoritative. The spawn already
         // failed, so the record promotes straight to exact pending deletion.
-        ownership.Resolve(current.Value);
+        if (!ownership.TryResolve(current.Value))
+            return false;
         ownership.MarkPending();
         TryDelete(ownership);
         return true;
@@ -1074,6 +1101,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
             return; // GPose-exit/dispose cleanup still promotes synchronously.
 
         var deadline = _clock() + CreateRecoveryTimeoutMs;
+        // The tick runs every frame until a terminal outcome; a fault that
+        // reproduces every frame must be said once, not once per frame.
+        var faultLogged = false;
         void Tick(IFramework fw)
         {
             try
@@ -1091,8 +1121,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
             }
             catch (Exception ex)
             {
-                _log?.Warning(
-                    $"ActorSpawnService: pending-create recovery for index {ownership.CreatedIndex} faulted: {ex.Message}");
+                if (!faultLogged)
+                {
+                    faultLogged = true;
+                    _log?.Warning(
+                        $"ActorSpawnService: pending-create recovery for index {ownership.CreatedIndex} faulted: {ex.Message}");
+                }
             }
             if (_clock() > deadline)
             {
@@ -1563,6 +1597,32 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
+    /// <summary>
+    /// Proof that a readout record is about nothing that still exists: the
+    /// finalize hook recorded a destruction at the created slot since create,
+    /// or the slot resolves empty while the manager is available. Absence of
+    /// proof — no index was ever known, the manager is unavailable, the
+    /// resolve faults, or the slot is still occupied — is never vacancy.
+    /// </summary>
+    private bool IsCreatedIndexProvablyVacated(SpawnOwnershipRecord ownership)
+    {
+        if (ownership.CreatedIndex == ushort.MaxValue)
+            return false;
+        try
+        {
+            if (!_native.IsAvailable)
+                return false;
+            if (_native.IndexDestructionStamp(ownership.CreatedIndex)
+                != ownership.CreateIndexStamp)
+                return true;
+            return _native.ResolveByIndex(ownership.CreatedIndex) is null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void DestroyAllSpawned()
     {
         _log?.Debug("ActorSpawnService: Destroying all spawned actors");
@@ -1572,8 +1632,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
         {
             if (ownership.State == SpawnOwnershipState.NonRecoverable)
             {
-                _log?.Debug(
-                    $"ActorSpawnService: non-recoverable record retained for readout (index {ownership.CreatedIndex})");
+                if (IsCreatedIndexProvablyVacated(ownership)
+                    && _ownership.RetireNonRecoverable(ownership.Token))
+                    _log?.Debug(
+                        $"ActorSpawnService: non-recoverable readout cleared - created index {ownership.CreatedIndex} is vacated");
+                else
+                    _log?.Debug(
+                        $"ActorSpawnService: non-recoverable record retained for readout (index {ownership.CreatedIndex})");
                 continue;
             }
             if (ownership.State == SpawnOwnershipState.PendingCreate)
