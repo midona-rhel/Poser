@@ -57,7 +57,7 @@ Judged, not skipped. Every one of these is tracked on `codex/release-prep` today
 | `tools/Test-PoserLiveRun.ps1`, `tools/count-lines.ps1` | **KEEP** | Developer scripts, no secrets. |
 | `PosingCore/Data/RestPoses/*.pose`, `Data/BoneCategories/BoneCategories.json`, `Poser.Game/Data/Festivals.json`, `Poser.Game/Data/props.json` | **KEEP** | Upstream GPL-3.0 data files that Poser embeds and *must* ship for the plugin to work. Attributed per file in `THIRD-PARTY-LICENSES.md`; the copyleft is honoured because Poser is GPL-3.0-only. |
 | `Poser/LICENSE` | **KEEP (corrected)** | Was an MIT notice contradicting the root license; now a GPLv3 notice pointing at the root `LICENSE`. |
-| `Poser/README.md` | **KEEP, but fix** | Currently a one-line stub (`# Poser`). Harmless, but it is a visible empty file; fold it into the root README or give it a sentence before publishing. |
+| `Poser/README.md` | **KEEP (fixed 2026-08-15)** | Was a one-line stub (`# Poser`). Now says what the project directory is and points at the root README, `AGENTS.md` and `docs/`. |
 
 ## 5. Pre-publish placeholders that must be replaced
 

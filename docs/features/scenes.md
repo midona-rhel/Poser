@@ -1,7 +1,8 @@
 # Scenes
 
 `.poserscene` saves and restores an entire scene — actors, props, lights,
-cameras, the environment, and the relationships between them. Per-entity file
+cameras, overlay text nodes, the map objects the session borrowed, the
+environment, and the relationships between them. Per-entity file
 formats, the atomic-write discipline they share, and per-actor pose auto-save
 are defined once in [files-and-transfer.md](files-and-transfer.md); this file
 states only what is durable about the WHOLE-SCENE layer.
@@ -140,11 +141,40 @@ states only what is durable about the WHOLE-SCENE layer.
   spawn/admit actors and props → readiness barrier → character files →
   readiness barrier again → relationships → companion-body barrier →
   animation → pose and transforms (owner, then companion) → presentation and
-  gaze → cameras → lights → environment and the session-wide toggles.
+  gaze → cameras → lights → overlay nodes → borrowed map objects →
+  environment and the session-wide toggles.
 
   Character files come first because their import redraws the actor and takes
   its skeletons with it. Environment last matches both references. Entities are
   added; nothing pre-existing is destroyed.
+- A BORROWED MAP OBJECT is the one scene entity a load cannot create. The scene
+  records it by what outlives the session — the model resource path plus the
+  position the MAP stands it at, matched within a tolerance because a float that
+  has been through a codec is not the float that went in — alongside where the
+  user left it and whether it was visible. Never a pointer or an object index.
+  Because only the map that is already standing an object can give it back, the
+  load gates the whole class on the SESSION's territory rather than on any load
+  option: a scene opened in the wrong zone leaves its borrowed entries alone and
+  says so by place name, and lands everything else. Individual refusals here are
+  NAMED, never structural — the map may have been rebuilt, the object may
+  already be borrowed, or it may simply not be where the scene recorded it, and
+  a scene is still a scene without it. Rollback releases every claim, which puts
+  the map back; the restore contract for a claim ending any other way lives with
+  `WorldObjectService`.
+- A load takes OPTIONS, and every default is the load that existed before
+  options did, so `SceneLoadOptions.Default` and no options at all are the same
+  load. The set is the union of both references' import options narrowed to what
+  Poser's loader can honour: an opt-in clear of the current session (Poser stays
+  additive by default where both references destroy by default), six per-category
+  includes, and one relative-placement toggle. The relative choice is ONE choice,
+  not per-category as in Brio: a scene half-rebased is a scene whose entities no
+  longer stand where they stood beside each other. The clear is deliberately
+  OUTSIDE the transaction — rollback restores what the load created, and nothing
+  can resurrect an actor the user asked to be rid of — so a load that clears says
+  so in its outcome. The rebase runs once, on the deserialized document, before
+  any native work, which is why the wire format stays absolute; borrowed map
+  objects are exempt, because a borrowed object's identity IS the point the map
+  stands it at and shoving it by an offset would hang a pillar over a field.
 - Failure is typed, and the terminal state says exactly what the session is
   left holding. A STRUCTURAL refusal (a failed actor spawn, a readiness
   timeout, cancellation, a replaced session) rolls back everything THIS

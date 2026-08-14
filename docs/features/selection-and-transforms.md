@@ -42,4 +42,11 @@
   from the mask rather than stored beside it — the check marks and the overlay
   cannot disagree, and the mask stays the single writer.
 - Precision wells: drag with modifiers, double-click for numeric entry,
-  Escape cancels, the wheel only scrolls. X/Y/Z are literal axes.
+  Escape cancels. X/Y/Z are literal axes. A wheel notch over a well is a
+  discrete step scaled by that well's own drag modifiers, so a notch and a drag
+  pixel obey one rule; it has no release to wait for, so it commits itself and
+  one notch is one undo step. The wheel is CLAIMED, not merely read
+  (`SetItemUsingMouseWheel`) — an unclaimed notch would step the value and
+  scroll the shell out from under the pointer at the same time — and the claim
+  only holds while the well is the hovered item, so a notch anywhere else
+  scrolls normally.

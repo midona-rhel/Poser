@@ -6,6 +6,27 @@ A posing and scene tool for FINAL FANTASY XIV's group pose, written as a
 Poser is a **beta — a first release candidate**. It is not stable and it is not
 finished.
 
+## What it does
+
+- Pose actors bone by bone: overlay handles, a graphical body map, and numeric
+  transforms — every change one undo step. IK on any bone with a parent.
+- Fill the frame: spawn actors and objects, or click a world handle to bring
+  what is already standing there into the scene. The map's own objects are
+  borrowed by reference and given back untouched.
+- Stage the whole shot: save actors, objects, lights, camera and environment as
+  one scene, and restore it with load options and a progress report.
+- Light and shoot: custom lights, camera control, a free camera, snapping,
+  group pivot and group moves.
+- Faces: five gaze modes and one-click expressions.
+- Compose: dialogue panels, chat bubbles and status lines drawn with the game's
+  own UI nodes; reference pictures as floating, aspect-locked windows.
+- Keep your work: a pose library with tags, authors and search; MCDF import and
+  export; twenty-five rebindable actions with Poser, Brio and Ktisis presets.
+
+The full release notes, and the list of what this beta does **not** do, are in
+[docs/release/CHANGELOG.md](docs/release/CHANGELOG.md). The normative
+documentation set is under [docs/](docs/).
+
 ## Attribution
 
 Poser is derivative of, and heavily inspired by, **Anamnesis**, **Ktisis** and

@@ -29,7 +29,7 @@ exists, nothing user-facing calls it; **command-only**: chat command only (count
 per standing rule); **absent**: no code. Ordered by workflow importance. Each task is sized
 for a single focused session.
 
-### Source-verified / acceptance-pending pass 2026-08-12 (against code `HEAD` `e6c2c77`; only the user calls live behavior Accepted)
+### Source-verified / acceptance-pending pass 2026-08-12, re-swept 2026-08-15 for the first-beta release (only the user calls live behavior Accepted)
 
 In this table, **Source-verified** means the implementation or product decision
 is resolved by source inspection and/or an explicit user decision. It does not
@@ -46,18 +46,18 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 7 Copy/paste pose UI | **Source-verified; acceptance pending** — stash/apply is the retained UI; clipboard covers cross-session transfer |
 | 8 Gaze fixed-position | **Source-verified; acceptance pending** (ships as "Point" mode, exceeds spec) |
 | 9 IK bake | **Implemented, on safety hold** — the convergence brief's standing exclusion governs; not accepted, no live card |
-| 10 Overlay filter wiring | not started |
-| 11 Bone visibility presets | not started |
+| 10 Overlay filter wiring | **DONE (source-verified 2026-08-15); acceptance pending** — every one of the seven sub-items is live: `ShowSelectedBonesOnly` is written (keybind `UIManager.cs:184`, Settings) and filters (`SkeletonOverlayWindow.cs:568`), `SkeletonViewMode` is written (cycle keybind `UIManager.cs:186`, Settings) and switched on (`:586`), `ShowSkeletonLines` (`:591`), `IkChainColor` (`:1328`) and `MirroredBoneColor` (`:1330`) all have readers, `ShowNsfwBones` filters the matrix, the maps, the inspector and the overlay (`BoneMatrixBuilder.cs:47`, `GraphicalBonePane.cs:265,613`, `PoseInspectorPane.cs:1375`, `MainWindow.cs:2522`, `SkeletonOverlayWindow.cs:470`), and the dead `BoneDisplayMode`/`DebugMode` state is gone |
+| 11 Bone visibility presets | **DONE (source-verified 2026-08-15); acceptance pending** — `Poser/UI/BoneVisibilityPresetService.cs` with the preset store in `SkeletonConfiguration`, registered in `ServiceRegistration.cs`, applied from `MainWindow`, covered by `Poser.ContractTests/BoneVisibilityPresetContractTests.cs` |
 | 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix); the tab was removed 2026-08-15 and the adoption is the viewport's own handles, marked by the sidebar footer's class glyphs (`58892b3`) |
 | 13A Companion attach UI | **Source-verified; acceptance pending** — gated attach picker + detach live in the actor context menu (user decision 2026-08-14 supersedes the 2026-08-11 "do not re-add") |
 | 13B Actor-to-bone attach | not started |
-| 14 Scene save/load | not started |
+| 14 Scene save/load | **DONE (source-verified 2026-08-15); acceptance pending** — the whole subsystem ships: capture, ordered load with per-step outcomes and `SceneLoadOptions`, autosave, and the Scene pane (`Poser.Game/Scene/SceneCaptureService.cs`, `SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneRuntimeAdapter.cs`, `Poser/UI/Panes/ScenePane.cs`), tested in `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. Scenes also record borrowed world objects and take them back on load in the same zone |
 | 15 IPC provider | not started |
 | 16 Keybind expansion | **PARTIAL** — dual slots, 24 actions, Poser/Brio/Ktisis presets and conflict flagging shipped; Esc-clear-selection, flip, sibling select and per-actor pause still unbound |
 | 17 Import options | **PARTIAL** — (a) done, (b) filter-only (parked, user call 2026-08-11), (c) precondition restored by selective import; anchor-positions slice assigned (user decision 2026-08-14: implement now) |
 | 18 Transform lock | not started |
-| 19 Linked-bones toggle | not started |
-| 20 Ray-snap translate | not started |
+| 19 Linked-bones toggle | **DONE (source-verified 2026-08-15); acceptance pending** — `BoneLinkCatalog` (Anamnesis' same-delta groups) behind `IBonePosingService.LinkedBonesEnabled`, written from the shell toggle (`MainWindow.cs:1344`) and honoured by the gizmo (`GizmoOverlayWindow.cs:1405`) and the inspector (`PoseInspectorPane.cs:2485,2848`); the runtime port suspends it for its own writes (`TransformRuntimePort.cs:96-115`) |
+| 20 Ray-snap translate | **DONE (source-verified 2026-08-15); acceptance pending** — `GizmoConfiguration.AllowRaySnap` (off by default) is read during a translate drag and Shift runs the snap after the increment snap, matching Ktisis' precedence (`GizmoOverlayWindow.cs:1508,1565,1569`); the switch is in Settings |
 | Polish table | GPose-open/close and dock/tree-guide rows fixed; the eight unscheduled rows joined the small-parity queue (user decision 2026-08-14: schedule all) |
 
 ### 1. Pose is lost when the actor redraws
@@ -345,10 +345,20 @@ never written (`:248-259`); `Skeleton.ShowSkeletonLines`, `IkChainColor`,
 reader** — the NSFW toggle silently does nothing while IVCS rows always render
 (`AnamnesisMatrixTable.cs:98-104`); `BoneDisplayMode`/`DebugMode` are dead state.
 
-**Verified 2026-08-11: NOT STARTED** (all seven sub-items; the cited line numbers drifted —
-the read-never-written sites are now `SkeletonOverlayWindow.cs:337-338` and `:349-359` —
-but every finding still holds; `Display.ShowNsfwBones` now even defaults **off** while IVCS
-rows still render unconditionally, so the shipped default state lies).
+**Verified 2026-08-15: DONE (source-verified; live acceptance pending).** All seven
+sub-items are closed, superseding the 2026-08-11 "NOT STARTED" finding.
+`ShowSelectedBonesOnly` is now written by the "Selected bones only" keybind
+(`UIManager.cs:184-185`) and by Settings (`SettingsWindow.cs:119,345`), and it filters the
+dot pass (`SkeletonOverlayWindow.cs:568`, cached predicate at `:801`). `SkeletonViewMode`
+is written by the "Cycle skeleton view" keybind (`UIManager.cs:186-191`) and by Settings
+(`SettingsWindow.cs:118,343`), and it selects the shape (`SkeletonOverlayWindow.cs:586-591`).
+`ShowSkeletonLines` (`:67,591`), `IkChainColor` (`:64,1328`) and `MirroredBoneColor`
+(`:65,1330`) all have readers. `Display.ShowNsfwBones` now genuinely filters — the matrix
+(`BoneMatrixBuilder.cs:47`, `MainWindow.cs:2522`), the graphical maps
+(`GraphicalBonePane.cs:265,613`), the inspector (`PoseInspectorPane.cs:1375`), the overlay
+(`SkeletonOverlayWindow.cs:470`) and the curated categories (`BoneInfoService.cs:73,88`) —
+so the default-off state no longer lies. `BoneDisplayMode` and `Skeleton.DebugMode` were
+deleted rather than wired; no reference to either survives.
 
 **Task:** One wiring session: add a small overlay-options popup on the Armature titlebar
 toggle (right-click): view mode selector, "Selected bones only" switch, and a category
@@ -368,6 +378,12 @@ context menu "Presets…", default-on-spawn presets, a manager in Settings
 
 **Poser:** absent — per-row eye toggles only; no way to name, save, or re-apply a visibility
 set, and no one-click "face only" workflow.
+
+**Verified 2026-08-15: DONE (source-verified; live acceptance pending).** The preset store
+lives in `SkeletonConfiguration`, the service that names, saves, applies and seeds the
+built-ins is `Poser/UI/BoneVisibilityPresetService.cs` (registered in
+`Poser/Composition/ServiceRegistration.cs`), and the presets are reachable from
+`MainWindow`. Contract coverage: `Poser.ContractTests/BoneVisibilityPresetContractTests.cs`.
 
 **Task:** Add a preset store to config (`name → bone-name set`), a "Presets…" submenu on the
 actor context menu listing presets with checked state + "Save current as…", and application
@@ -459,6 +475,16 @@ actors, forces speed 0, applies pose/appearance (`Game/Scene/SceneService.cs:155
 **Poser:** absent — and the shell's project affordance is hard-disabled
 (`MainWindow.cs:410` sets `ShowProject = false`; `AppShellView.cs:416-422` renders it only
 when enabled).
+
+**Verified 2026-08-15: DONE (source-verified; live acceptance pending)** — and it exceeds
+the v-slice below. Capture, an ordered load with per-step outcomes and caller-chosen
+`SceneLoadOptions`, autosave on a cadence, and a versioned file with typed refusals for
+too-old/too-new/damaged documents all ship (`Poser.Game/Scene/SceneCaptureService.cs`,
+`SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneRuntimeAdapter.cs`,
+`PosingCore/Files/SceneFileValidation.cs`), driven from `Poser/UI/Panes/ScenePane.cs` and
+covered by `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. A scene carries actors, lights,
+camera, environment and the world objects it borrowed — appearance and gaze targets stay
+out, per the standing exclusion. `docs/features/scenes.md` is the normative description.
 
 **Task:** A pose-scene v-slice honoring the appearance exclusion (appearance stays
 Glamourer's): serialize spawned-actor list with nickname, world-transform override, pause
@@ -590,17 +616,17 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 
 | Gap | Reference | Poser state |
 |---|---|---|
-| Undo/redo tooltips show what will be undone | (Poser's own backend) | `UndoDescription`/`RedoDescription` exist unused (`CleanTransformFacade.cs:31-34`); badges show static text |
-| Mouse-wheel nudge on hovered gizmo rings / numeric fields | Brio `ImGuizmoExtensions.cs:10-45`; Ktisis `TransformTable.cs:200-218` | rail rings have drag-only; numeric wells drag-only — **Scheduled** (user 2026-08-14, small-parity queue) |
-| Wheel-cycling the overlay disambiguation popup | Brio `PosingOverlayWindow.cs:342-397`; Ktisis `SelectableGui.cs:63-153` | hover list exists, no wheel cycling — **Scheduled** (user 2026-08-14, small-parity queue) |
-| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | Ctrl/Shift multipliers only — **Scheduled** (user 2026-08-14, small-parity queue) |
-| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | fixed internal depth, no setting — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Undo/redo tooltips show what will be undone | (Poser's own backend) | **fixed** — both descriptions are pumped into the shell view-model (`MainWindow.cs:1348-1349`) and are what the undo/redo affordances say (`AppShellView.cs:790,799,1483,1492`) |
+| Mouse-wheel nudge on hovered gizmo rings / numeric fields | Brio `ImGuizmoExtensions.cs:10-45`; Ktisis `TransformTable.cs:200-218` | **half fixed** — numeric wells take the wheel with ImGui's own claim (`Poser.UI/Primitives/Tags/AxisWell.cs:52-85`, `PoseFileInspectorSection.cs:1865-1898`); the gizmo's rail rings are still drag-only — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Wheel-cycling the overlay disambiguation popup | Brio `PosingOverlayWindow.cs:342-397`; Ktisis `SelectableGui.cs:63-153` | **fixed** — the hover list cycles on the wheel (`SkeletonOverlayWindow.cs:685-688`) |
+| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | **fixed** — separate `EntitySpeed`/`BoneSpeed` chosen per edited thing (`PosingCore/Config/TransformConfiguration.cs:18-26`), both in Settings as the "Transform Slider Speed" pair |
+| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | **fixed** — `UndoDepth` in config, wired at registration (`ServiceRegistration.cs`) and exposed in Settings; recovery-tested (`PosingCore.Tests/Core/ConfigurationRecoveryTests.cs`) |
 | "Open with GPose / Close with GPose" settings do nothing | (Poser's own settings) | **fixed** — both read now (`UIManager.cs:104,107`, `UiWindowSet.cs:89`) |
 | Sidebar/inspector dock + tree-guide settings do nothing | (Poser's own settings) | **resolved** — `ShowTreeGuides` read (`ShellSidebar.cs:192`); dock settings removed |
-| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | **fixed** — reference pictures are floating, aspect-locked, opacity-dimmed windows that join the Overlays group and persist across leaving GPose (`Poser/UI/Windows/ReferenceImageWindow.cs`, `ReferenceImageSession.cs`, `ReferenceImageGeometry.cs`, `PosingCore/Config/ReferenceImageConfiguration.cs`), covered by `Poser.ContractTests/ReferenceImageContractTests.cs` |
 | Custom 2D pose-view images per view | Ktisis `PoseViewConfig` + Settings → Pose View | absent (embedded maps only) — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Per-race overlay bone-dot offsets | Ktisis `OffsetConfig` + offset editor | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
-| Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | spawn always live; pause is a separate click — **Scheduled** (user 2026-08-14, small-parity queue) |
+| Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | **fixed** — `PoserConfiguration.SpawnFrozen` applies to every actor Poser adds, the spawn browser's own rows and world adoption alike (`WorldAdoptionSource.cs:369-377`) |
 
 ### Explicitly *not* gaps (verified better-or-equal in Poser)
 

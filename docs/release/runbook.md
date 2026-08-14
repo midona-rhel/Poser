@@ -57,11 +57,14 @@ if ($placeholders) {
 Lane branches merge into the integration head first. The gate below is the
 authoritative one; it is the same pair of commands every lane ran.
 
-`docs/release/CHANGELOG.md` is written for the **fully converged** head — it
-credits reference pictures and the on-screen text nodes, which arrive on their
-own lanes. If you cut the release before every lane lands, re-read the changelog
-against what is actually in the tree and delete what is not there. Over-claiming
-in a first beta is the one release defect users notice immediately.
+`docs/release/CHANGELOG.md` is written for the **fully converged** head. It was
+re-swept against the tree on 2026-08-15, when reference pictures, the on-screen
+text nodes and world-object borrowing had all landed. If you cut the release
+from a head that is missing a lane, re-read the changelog against what is
+actually in the tree and delete what is not there. Over-claiming in a first beta
+is the one release defect users notice immediately. `Poser/Poser.json`'s
+`Description` and `Changelog` are the same claims in the installer's own words —
+if you change one, change both.
 
 ```powershell
 Set-Location $Src
