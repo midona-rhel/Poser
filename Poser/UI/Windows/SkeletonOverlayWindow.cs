@@ -240,11 +240,15 @@ public class SkeletonOverlayWindow : Window
         SizeCondition = ImGuiCond.Always;
     }
 
-    /// <summary>The titlebar Armature toggle. With the toggle Off the
+    /// <summary>The toolbar's master overlay switch. With the toggle Off the
     /// overlay still anchors the current selection: selected bones and
     /// selected actor origins stay visible on their own, so an edit made
     /// from the workspace never loses its on-screen anchor. Everything
-    /// unselected stays hidden and non-interactive.</summary>
+    /// unselected stays hidden and non-interactive.
+    ///
+    /// <para>It starts ON for each session (see <c>UiWindowSet</c>), so the
+    /// sidebar's per-bone eyes are what normally decides, and this is how the
+    /// whole armature is taken away at once.</para></summary>
     public bool UserVisible { get; set; }
 
     private bool AnySelectionAnchor()
@@ -319,7 +323,8 @@ public class SkeletonOverlayWindow : Window
         // handle is the only route to it from the viewport, so it draws
         // whenever the scene holds lights — Ktisis and Brio both draw their
         // light handles unconditionally. Alt still hides everything.
-        bool drawArmature = _presentation.AnyVisible || AnySelectionAnchor();
+        bool drawArmature =
+            (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor();
 
         var selectedIds = _selectedIds;
         selectedIds.Clear();
@@ -470,9 +475,11 @@ public class SkeletonOverlayWindow : Window
             boneWorldPositions.Clear();
             foreach (var bone in descriptors)
             {
-                // Opted-in bones draw; a SELECTED bone draws regardless —
-                // the anchor rule.
-                bool shown = _presentation.IsVisible(bone.Id);
+                // Opted-in bones draw while the master switch is on; a
+                // SELECTED bone draws regardless — the anchor rule, which is
+                // what stops the switch stranding an edit with no on-screen
+                // handle.
+                bool shown = UserVisible && _presentation.IsVisible(bone.Id);
                 if (bone.IsHidden
                     || (!shown && !selectedIds.Contains(
                         SelectionId.ForBone(bone.Id))))

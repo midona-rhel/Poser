@@ -116,14 +116,16 @@ public sealed class UiWindowSet : IDisposable
             window.IsOpen = isOpen;
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
-        // The window itself follows the session like the gizmo overlay; the
-        // Armature toggle starts Off each GPose/UI session and a bone
-        // selection forces the armature visible regardless of the toggle.
-        // Session end resets the toggle so the next session starts Off.
+        // The window itself follows the session like the gizmo overlay, and a
+        // bone selection forces the armature visible regardless of the toggle.
         SkeletonOverlay.IsOpen = isOpen;
+        // The master switch starts ON for each session — Ktisis ships
+        // Overlay.Visible = true — so the sidebar's eyes drive the armature
+        // exactly as they always have and the switch is the way to take the
+        // whole thing away. Session end puts it back where it started.
+        SkeletonOverlay.UserVisible = isOpen;
         if (!isOpen)
         {
-            SkeletonOverlay.UserVisible = false;
             _overlayPresentation.Clear();
             // The adoption layer is session state for the same reason the
             // Armature toggle is: the next session starts with the world
