@@ -290,12 +290,30 @@ public sealed class GraphicalBonePane : IDisposable
             : ICustomizeReadRuntimePort.DefaultHeadSection;
         if (!_config.PoseImages.TryGetValue(headSection, out var section) ||
             string.IsNullOrEmpty(section.Image))
+        {
+            // No head map resolves for this model — a minion, a mount, a
+            // creature. Brio says so where it happens; drawing nothing reads
+            // as a broken page (PosingGraphicalWindow.cs:534-543). Brio also
+            // offers "Make Human", which is an APPEARANCE action and stays
+            // with Glamourer under the standing exclusion.
+            DrawFaceEmptyState(
+                contentArea,
+                "This model has no face map. Face posing here is for "
+                    + "humanoid characters; the bone list and the matrix "
+                    + "still reach every bone it has.");
             return;
+        }
         var texture = GetTexture(section.Image);
-        // A missing or failed image will never land: keep the page empty as
-        // before. Only an in-flight decode reserves.
         if (texture == null && !_pendingTextures.ContainsKey(section.Image))
+        {
+            // The section names an image the build cannot decode. That is a
+            // packaging fault rather than a property of the actor, and it is
+            // worth saying out loud instead of leaving a blank rectangle.
+            DrawFaceEmptyState(
+                contentArea,
+                "The face map for this model could not be loaded.");
             return;
+        }
 
         float s = ImGuiHelpers.GlobalScale;
         float margin = 12f * s;
@@ -329,6 +347,32 @@ public sealed class GraphicalBonePane : IDisposable
                 imageSize.Y),
             drawMirrors: true,
             skeleton);
+    }
+
+    /// <summary>The map's empty state, centred in the page's own content box.
+    /// The maps draw with raw draw-list calls and hold no page scope, so this
+    /// reproduces the form's hint tone rather than borrowing
+    /// <c>PageScope.EmptyState</c>.</summary>
+    private static void DrawFaceEmptyState(Vector2 contentArea, string text)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        var style = new TextStyle
+        {
+            Size = Crystarium.ActiveTheme.Typography.LabelSize,
+            Color = Crystarium.ActiveTheme.FormHint,
+        };
+        // Wrapped to a comfortable measure and centred horizontally; the run
+        // sits at the page's upper third, where a reader looks first, rather
+        // than at a vertical centre that would need the wrapped height.
+        float wrap = MathF.Max(1f, MathF.Min(contentArea.X - 32f * s, 360f * s));
+        var origin = ImGui.GetCursorScreenPos();
+        Crystarium.TextAt(
+            origin + new Vector2(
+                (contentArea.X - wrap) * 0.5f,
+                contentArea.Y * 0.35f),
+            text,
+            style,
+            TextConstraint.Wrap(wrap / s, alignment: TextAlign.Center));
     }
 
     private void DrawBoneSectionAt(
