@@ -53,7 +53,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 13B Actor-to-bone attach | not started |
 | 14 Scene save/load | not started |
 | 15 IPC provider | not started |
-| 16 Keybind expansion | not started |
+| 16 Keybind expansion | **PARTIAL** — dual slots, 24 actions, Poser/Brio/Ktisis presets and conflict flagging shipped; Esc-clear-selection, flip, sibling select and per-actor pause still unbound |
 | 17 Import options | **PARTIAL** — (a) done, (b) filter-only (parked, user call 2026-08-11), (c) precondition restored by selective import; anchor-positions slice assigned (user decision 2026-08-14: implement now) |
 | 18 Transform lock | not started |
 | 19 Linked-bones toggle | not started |
@@ -492,17 +492,18 @@ overlay, toggle world/local (`Config/InputManagerConfiguration.cs:9-49`). Ktisis
 Ctrl+F, select mirrored sibling `\`, gizmo ops Ctrl+T/R/S/U, world/local Ctrl+X, overlay
 Ctrl+O, gizmo toggle Ctrl+G (`Actions/Handlers/*`).
 
-**Poser:** 7 actions (Undo, Redo, 4 tool modes, Hide UI — `PoserKeybinds.cs:13-22`), plus a
-hardcoded Alt-hides-dots in the overlay. Esc only cancels a live gizmo drag. No binds for
-overlay toggle, clear selection, flip, symmetry cycle, pause actor, space toggle, sibling
-select.
+**Poser:** 24 actions with a PRIMARY and a SECONDARY chord each, listed once in
+`KeybindRegistry` and dispatched from `UIManager.BuildKeybinds`. The settings page rebinds
+both slots by capture-on-click, flags a chord bound twice on both of its rows, and switches
+the whole table between Poser, Brio and Ktisis chord sets. Config v3 turns a pre-existing
+single binding into that action's primary. Still a hardcoded Alt-hides-dots in the overlay;
+Esc still only cancels a live gizmo drag.
 
-**Task:** Extend the keybind action set with: Toggle skeleton overlay, Clear selection
-(Esc, plus swallow game ESC while a bone is selected, per Brio's `AllowEscape` pattern —
-verify the input-suppression mechanism first), Toggle space, Cycle symmetry, Flip bone,
-Pause/resume actor, Select mirrored bone. All targets are existing commands; the work is
-`PoserKeybinds` entries, `UIManager` dispatch, and Settings rebind rows, which already
-generalize.
+**Remaining:** Clear selection (Esc, plus swallowing the game's ESC while a bone is
+selected, per Brio's `AllowEscape` pattern — verify the input-suppression mechanism first),
+Flip bone, Select mirrored bone, and per-actor pause. Each needs its command surfaced to
+`UIManager` first; the registry, the dispatch table and the rebind rows all take a new
+action by one entry.
 
 ### 17. Import options: model transform, ear exclusion, anchor positions
 
