@@ -55,6 +55,10 @@ public sealed class PoseLibraryEntry
 
     public string? Author { get; init; }
 
+    /// <summary>Invariant lowercase copy of <see cref="Author"/> for search;
+    /// empty when the file names no author.</summary>
+    public string AuthorLower { get; init; } = string.Empty;
+
     private IReadOnlyList<string> _tags = Array.Empty<string>();
     private IReadOnlyList<string> _tagsLower = Array.Empty<string>();
 

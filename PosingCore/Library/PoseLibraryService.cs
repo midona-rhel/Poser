@@ -352,6 +352,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
             var name = Path.GetFileName(subdirectory);
             if (string.IsNullOrEmpty(name))
                 continue;
+            // Quarantined files are evidence, not library content: the
+            // quarantine verb moves a bad file here precisely so the next
+            // complete pass publishes without it.
+            if (name.Equals(
+                    PoseLibraryFileActions.QuarantineFolderName,
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
 
             var childRelative = relativePath.Length == 0 ? name : Path.Combine(relativePath, name);
             var child = BuildNode(
@@ -435,7 +442,6 @@ public sealed class PoseLibraryService : IPoseLibraryService
             && Path.GetExtension(filePath).Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase);
 
         string? author = null;
-        string? version = null;
         IReadOnlyList<string> tags = [];
         IReadOnlyList<string> tagsLower = [];
         var hasThumbnail = false;
@@ -450,23 +456,13 @@ public sealed class PoseLibraryService : IPoseLibraryService
             if (metadata.Succeeded)
             {
                 author = metadata.Author;
-                version = metadata.Version;
                 tags = metadata.Tags;
                 tagsLower = tags.Select(tag => tag.ToLowerInvariant()).ToArray();
                 hasThumbnail = metadata.HasThumbnail;
-                if (!string.IsNullOrWhiteSpace(version))
-                {
-                    status = PoseLibraryMetadataStatus.Future;
-                    detail = $"Pose version '{version}' is not supported.";
-                }
             }
-            else
-            {
-                status = metadata.Failure?.Kind == PoseFileStoreFailureKind.SizeLimit
-                    ? PoseLibraryMetadataStatus.Oversized
-                    : PoseLibraryMetadataStatus.Corrupt;
-                detail = metadata.Failure?.Detail ?? "The pose metadata could not be read.";
-            }
+            // The ONE mapping — shared with the retry probe, so a "Retry"
+            // answers exactly what the next scan would.
+            (status, detail) = PoseLibraryFileActions.Classify(metadata);
         }
 
         return new PoseLibraryEntry
@@ -479,6 +475,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Modified = modified,
             Folder = folderIndex,
             Author = author,
+            AuthorLower = author?.ToLowerInvariant() ?? string.Empty,
             Tags = tags,
             TagsLower = tagsLower,
             MetadataStatus = status,

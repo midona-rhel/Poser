@@ -87,6 +87,73 @@ public sealed class PoseLibraryServiceTests
     }
 
     [Fact]
+    public void Author_search_fields_are_minted_lowercase_at_scan_time()
+    {
+        using var fixture = new LibraryFixture();
+        var pose = PoseFilePersistenceTests.ValidPose();
+        pose.Author = "MiDoNa";
+        pose.Tags = ["TagOne"];
+        fixture.WritePose("authored", pose);
+
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        var entry = service.Snapshot.Entries.Single(e => e.Name == "authored");
+        Assert.Equal("MiDoNa", entry.Author);
+        Assert.Equal("midona", entry.AuthorLower);
+        Assert.Equal(new[] { "tagone" }, entry.TagsLower);
+    }
+
+    [Fact]
+    public void Quarantine_folders_are_never_indexed_and_a_round_trip_restores_the_corrupt_entry()
+    {
+        using var fixture = new LibraryFixture();
+        fixture.WritePose("valid", PoseFilePersistenceTests.ValidPose());
+        fixture.WriteRaw("broken", "{ nope");
+        var sub = Path.Combine(fixture.Root, "sub");
+        Directory.CreateDirectory(sub);
+        var subPose = PoseFilePersistenceTests.ValidPose();
+        AtomicPoseFileStore.Default.Write(subPose, Path.Combine(sub, "nested.pose"));
+
+        using var service = fixture.CreateService();
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        // The corrupt entry is VISIBLE, typed, and carries its folder index.
+        var broken = service.Snapshot.Entries.Single(e => e.Name == "broken");
+        Assert.Equal(PoseLibraryMetadataStatus.Corrupt, broken.MetadataStatus);
+        Assert.InRange(broken.Folder, 0, service.Snapshot.Folders.Count - 1);
+
+        var quarantined = PoseLibraryFileActions.Default.Quarantine(broken.FilePath);
+        Assert.True(quarantined.Succeeded, quarantined.Detail);
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        // The quarantine folder is neither a library folder nor a source of
+        // entries, and the remaining tree keeps coherent grouped indices.
+        Assert.DoesNotContain(
+            service.Snapshot.Entries, e => e.Name == "broken");
+        Assert.DoesNotContain(
+            service.Snapshot.Folders,
+            f => f.Label.Contains(
+                PoseLibraryFileActions.QuarantineFolderName,
+                StringComparison.OrdinalIgnoreCase));
+        Assert.All(
+            service.Snapshot.Entries,
+            e => Assert.InRange(e.Folder, 0, service.Snapshot.Folders.Count - 1));
+
+        var restored = PoseLibraryFileActions.Default.Restore(quarantined.ResultPath!);
+        Assert.True(restored.Succeeded, restored.Detail);
+        service.RequestScan();
+        WaitUntil(() => !service.IsScanning);
+
+        var back = service.Snapshot.Entries.Single(e => e.Name == "broken");
+        Assert.Equal(PoseLibraryMetadataStatus.Corrupt, back.MetadataStatus);
+        Assert.NotEmpty(back.MetadataDetail);
+    }
+
+    [Fact]
     public void Deep_traversal_aborts_without_publishing_a_partial_snapshot()
     {
         using var fixture = new LibraryFixture();
