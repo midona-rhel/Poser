@@ -467,6 +467,12 @@ internal interface IActorSpawnNativeAdapter
     bool DeleteExact(SpawnNativeDescriptor descriptor);
 
     bool SetDrawState(SpawnNativeDescriptor descriptor, bool visible);
+
+    /// <summary>Writes the character's alpha. This is how an actor is HIDDEN;
+    /// see <see cref="ActorSpawnNativeAdapter.SetAlpha"/> for why it is not
+    /// <see cref="SetDrawState"/>.</summary>
+    bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
+
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer
@@ -627,6 +633,34 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
             gameObject->EnableDraw();
         else
             gameObject->DisableDraw();
+        return true;
+    }
+
+    /// <summary>
+    /// Writes the character's alpha, which is how an actor is HIDDEN.
+    ///
+    /// <para>Not <see cref="SetDrawState"/>: <c>DisableDraw</c> tears the draw
+    /// object down, and the skeleton — with the user's whole pose on it — goes
+    /// with it, so re-showing rebuilt the actor standing in its animation's
+    /// pose. Both references hide by fading instead, and both land on this
+    /// same field: Brio writes <c>ExtendedAppearance.Transparency</c>
+    /// (Capabilities/Actor/ActorAppearanceCapability.cs ToggleHide), Ktisis
+    /// writes <c>CharacterEx-&gt;Opacity</c> (Scene/Entities/Game/
+    /// ActorEntity.cs IsHidden). The draw object survives, so the pose does.
+    /// </para>
+    ///
+    /// <para>The field's provenance is stated once, in
+    /// <c>PresentationRuntimePort</c> (Brio's <c>Character.Alpha</c>,
+    /// CS-named); this is the same field the Opacity slider drives, which is
+    /// exactly the relationship both references have between their hide verb
+    /// and their transparency control.</para>
+    /// </summary>
+    public bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha)
+    {
+        var character = (Character*)Revalidate(descriptor);
+        if (character == null)
+            return false;
+        character->Alpha = Math.Clamp(alpha, 0f, 1f);
         return true;
     }
 
@@ -1544,7 +1578,10 @@ public unsafe class ActorSpawnService : IActorSpawnService
         {
             if (!TryResolveActorForOperation(actor, out var descriptor, out var ownership))
                 return;
-            if (!_native.SetDrawState(descriptor, visible))
+            // Fade, never tear down — see IActorSpawnNativeAdapter.SetAlpha.
+            // The remembered flag below stays the record of what the USER
+            // asked for; the alpha is only how the game is told.
+            if (!_native.SetAlpha(descriptor, visible ? 1f : 0f))
                 return;
 
             if (ownership is not null)

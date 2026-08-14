@@ -223,8 +223,16 @@ public sealed class SceneWorkflowTests
             return GazeFailure?.Invoke(data);
         }
 
-        public void SetActorVisibility(object actor, bool visible) =>
+        /// <summary>What each actor's visibility was last written to, by
+        /// actor name — the load's ordering is only half the fact, the value
+        /// is the other half.</summary>
+        public readonly Dictionary<string, bool> VisibleSet = new();
+
+        public void SetActorVisibility(object actor, bool visible)
+        {
+            VisibleSet[((Token)actor).Name["actor:".Length..]] = visible;
             Record("SetActorVisibility");
+        }
 
         public object? SpawnProp(SceneProp data, out string? detail)
         {
@@ -587,6 +595,9 @@ public sealed class SceneWorkflowTests
                 "ActorReady",
                 // relationships
                 "AttachCompanion:Lead",
+                // visibility BEFORE the pose: an actor saved hidden must not
+                // be hidden on top of the pose the loader just applied to it
+                "SetActorVisibility",
                 // animation BEFORE the pose: the pose is authored on top of
                 // whatever was playing, so a replayed timeline must not land
                 // after it and animate over it
@@ -597,7 +608,6 @@ public sealed class SceneWorkflowTests
                 // presentation — gaze rides here, after the pose, because the
                 // look-at re-drives its channels every frame and its target is
                 // another restored actor
-                "SetActorVisibility",
                 "ApplyActorGaze:Lead",
                 // cameras, lights, environment last
                 "ApplyDefaultCamera",
@@ -613,6 +623,31 @@ public sealed class SceneWorkflowTests
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    /// <summary>
+    /// The regression this ordering exists for: hiding used to run in the
+    /// presentation phase, AFTER the pose, and hiding used to tear the draw
+    /// object down — so an actor saved hidden lost the pose the loader had
+    /// just applied to it. Hiding is a fade now, but the load states the
+    /// ordering itself so no later change to how an actor hides can undo it.
+    /// </summary>
+    [Fact]
+    public async Task An_actor_saved_hidden_is_hidden_before_its_pose_is_applied()
+    {
+        var hidden = Actor("Lead", out _);
+        hidden.Visible = false;
+        var runtime = new FakeRuntime { ReadResult = SceneWith(hidden) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        int hide = runtime.Calls.IndexOf("SetActorVisibility");
+        int pose = runtime.Calls.IndexOf("ArmPoseImport:Lead");
+        Assert.True(hide >= 0 && pose >= 0);
+        Assert.True(hide < pose, "visibility must be written before the pose");
+        Assert.False(runtime.VisibleSet["Lead"]);
     }
 
     // ── session-wide toggles ─────────────────────────────────────────────

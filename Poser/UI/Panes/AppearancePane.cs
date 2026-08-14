@@ -484,7 +484,8 @@ public sealed class AppearancePane
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
             help: "Fade the whole actor, 0 invisible to 1 solid. "
-                + "This is separate from hiding it in the actor list.");
+                + "Hiding it in the actor list is this same fade at its two "
+                + "ends, so either control moves the other.");
 
         form.ColorWells("Tint", wells =>
         {

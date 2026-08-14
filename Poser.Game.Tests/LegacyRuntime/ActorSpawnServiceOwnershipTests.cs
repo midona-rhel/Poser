@@ -1077,8 +1077,39 @@ public sealed class ActorSpawnServiceOwnershipTests
         service.SetVisibility(actor, false);
         Assert.Empty(bus.Published);
         Assert.Null(native.DrawEnabled);
+        Assert.Equal(0, native.AlphaWrites);
         Assert.False(service.SetCompanion(actor, new(CompanionKind.Companion, 5)));
         Assert.Equal(0, service.GetModelCharaId(actor));
+    }
+
+    /// <summary>
+    /// Hiding an actor may never take its skeleton with it. <c>DisableDraw</c>
+    /// destroys the draw object, so a hidden actor lost the user's pose and
+    /// came back in its animation's; both references fade instead, and so
+    /// does this. The draw state is the SPAWN's to write, never the eye's.
+    /// </summary>
+    [Fact]
+    public void Hiding_an_actor_fades_it_and_never_touches_the_draw_state()
+    {
+        var actor = Actor(0x940);
+        var native = new FakeNative(new(940, actor.Address, 940))
+        {
+            ReadyToDraw = true,
+        };
+        using var service = NewService(native);
+
+        service.SetVisibility(actor, visible: false);
+
+        Assert.Equal(0f, native.Alpha);
+        Assert.Equal(1, native.AlphaWrites);
+        Assert.Null(native.DrawEnabled);
+        Assert.False(service.IsVisible(actor));
+
+        service.SetVisibility(actor, visible: true);
+
+        Assert.Equal(1f, native.Alpha);
+        Assert.Null(native.DrawEnabled);
+        Assert.True(service.IsVisible(actor));
     }
 
     [Fact]
@@ -1093,7 +1124,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         using var service = NewService(native, bus: bus);
 
         service.SetVisibility(actor, visible: false);
-        Assert.False(native.DrawEnabled);
+        Assert.Equal(0f, native.Alpha);
+        Assert.Null(native.DrawEnabled);
         Assert.Single(bus.Published);
         // The override is read back even though the native object reports
         // ready-to-draw (legacy-compatible store).
@@ -1764,6 +1796,22 @@ public sealed class ActorSpawnServiceOwnershipTests
             if (!Gate(descriptor))
                 return false;
             DrawEnabled = visible;
+            return true;
+        }
+
+        /// <summary>What the alpha was last written to, and how many times.
+        /// A hide that reached the DRAW state instead would leave this
+        /// untouched and <see cref="DrawEnabled"/> false.</summary>
+        public float Alpha { get; private set; } = 1f;
+
+        public int AlphaWrites { get; private set; }
+
+        public bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha)
+        {
+            if (!Gate(descriptor))
+                return false;
+            Alpha = alpha;
+            AlphaWrites++;
             return true;
         }
 

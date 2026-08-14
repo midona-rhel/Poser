@@ -647,6 +647,15 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 foreach (var actor in scene.Actors)
                 {
+                    // VISIBILITY BEFORE THE POSE, and the ordering is the
+                    // invariant, not the mechanism. Hiding is a fade today
+                    // (ActorSpawnNativeAdapter.SetAlpha) and a fade cannot
+                    // cost an actor its skeleton — but this phase used to run
+                    // after the pose, so when hiding WAS a draw-state
+                    // teardown a scene saved with a hidden actor threw away
+                    // the pose it had just applied to it. Stated here so no
+                    // later change to how an actor hides can bring that back.
+                    _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
                     var detail = _runtime.ApplyActorAnimation(
                         actorTokens[actor.Key], actor);
                     if (detail != null)
@@ -710,7 +719,8 @@ public sealed class SceneWorkflow : IDisposable
                 Step(ScenePhase.ApplyingPose);
             }
 
-            // Phase 6 — presentation.
+            // Phase 6 — presentation. Visibility is NOT here; it rode with the
+            // animation, before the pose (see phase 4b).
             Step(ScenePhase.ApplyingPresentation);
             var presentationFailure = await _runtime.OnFramework(() =>
             {
@@ -718,7 +728,6 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 foreach (var actor in scene.Actors)
                 {
-                    _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
                     // Gaze comes AFTER the pose: the look-at re-drives its
                     // channels every frame, and its Entity target is another
                     // RESTORED actor, so it needs every token to exist. The
