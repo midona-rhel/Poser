@@ -168,7 +168,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
                 return Position;
             var native = Live;
             if (native != null)
-                return native->Camera.CameraBase.SceneCamera.Position;
+                return native->GetPosition();
             return _lastWorldPosition;
         }
     }
@@ -255,8 +255,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         _zoom = native->Distance;
         _fov = native->Zoom;
         _zoomLimits = new Vector2(native->MinDistance, native->MaxDistance);
-        _lastWorldPosition =
-            native->Camera.CameraBase.SceneCamera.Position;
+        _lastWorldPosition = native->GetPosition();
     }
 
     /// <summary>Writes the parked fields onto the native camera — the first
@@ -286,13 +285,15 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     /// <summary>Seeds a free camera from the current view: real position, and
     /// the orbit rotation so the first frame looks the same way (Brio's
-    /// ToFreeCam + rotation carry-over).</summary>
+    /// ToFreeCam + rotation carry-over). The position comes off the rendered
+    /// view matrix, so seeding from a live FREE camera carries where the shot
+    /// actually is instead of the orbit position it left behind.</summary>
     internal void SeedFreeCam()
     {
         var native = _service.Native;
         if (native == null)
             return;
-        Position = native->Camera.CameraBase.SceneCamera.Position;
+        Position = native->GetPosition();
         SpawnPosition = Position;
         Rotation = native->RotationAsVector3;
     }

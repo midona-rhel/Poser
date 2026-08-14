@@ -40,6 +40,13 @@ public sealed class WorldGizmoProjection
 {
     public Matrix4x4 ViewProj;
     public Matrix4x4 InvViewProj;
+    /// <summary>The eye the view matrix in <see cref="ViewProj"/> projects
+    /// from, inverted out of that very matrix rather than asked for
+    /// separately. Everything below — the view direction, the measured
+    /// world scale, the drag-plane ray origin — is geometry ABOUT that
+    /// projection, so a camera position sourced anywhere else can disagree
+    /// with the picture on screen and make the handles resize or the drags
+    /// land off-target while nothing visibly moves.</summary>
     public Vector3 CameraPosition;
     public Vector2 DisplayCenter;
     /// <summary>The gizmo pivot in world space.</summary>
@@ -85,6 +92,8 @@ public sealed class WorldGizmoProjection
         var viewProj = view * projection;
         if (!Matrix4x4.Invert(viewProj, out var invViewProj))
             return null;
+        if (!Matrix4x4.Invert(view, out var invView))
+            return null;
         if (!Matrix4x4.Decompose(view, out _, out var viewRotation, out _))
             return null;
 
@@ -92,7 +101,7 @@ public sealed class WorldGizmoProjection
         {
             ViewProj = viewProj,
             InvViewProj = invViewProj,
-            CameraPosition = camera.GetCameraPosition(),
+            CameraPosition = invView.Translation,
             DisplayCenter = displaySize / 2f,
             Pivot = pivotWorld,
             ViewRotation = viewRotation,

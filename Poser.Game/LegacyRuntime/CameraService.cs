@@ -42,18 +42,22 @@ public class CameraService : ICameraService
         return proj;
     }
 
-    public unsafe Vector3 GetCameraPosition()
+    /// <summary>
+    /// The camera position the frame is actually RENDERED from: the inverse
+    /// of the view matrix, Brio's CameraExtensions.GetPosition. Never the
+    /// scene camera's Position field — a free camera replaces the view matrix
+    /// while the game keeps orbiting that field under the native input a free
+    /// camera does not consume (only the right-drag look and the movement
+    /// keys are eaten), so the field is a second, drifting camera that
+    /// nothing renders. Everything sized or aimed from "the camera" reads
+    /// this, or it silently tracks the wrong one.
+    /// </summary>
+    public Vector3 GetCameraPosition()
     {
-        var cameraManager = CameraManager.Instance();
-        if (cameraManager == null)
-            return Vector3.Zero;
-
-        var camera = cameraManager->GetActiveCamera();
-        if (camera == null)
-            return Vector3.Zero;
-
-        var pos = camera->CameraBase.SceneCamera.Position;
-        return new Vector3(pos.X, pos.Y, pos.Z);
+        var view = GetViewMatrix();
+        return Matrix4x4.Invert(view, out var inverted)
+            ? inverted.Translation
+            : Vector3.Zero;
     }
 
     public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
@@ -155,7 +159,10 @@ public class CameraService : ICameraService
             return Vector3.Zero;
 
         var rayDir = rayVec / rayLength;
-        var cameraPos = new Vector3(sceneCamera.Position.X, sceneCamera.Position.Y, sceneCamera.Position.Z);
+        // The ray was unprojected through the rendered view matrix, so its
+        // origin must be that matrix's camera too — not the scene camera's
+        // Position field, which a live free camera leaves behind.
+        var cameraPos = GetCameraPosition();
 
         // Return point at specified depth along the ray
         return cameraPos + rayDir * depth;

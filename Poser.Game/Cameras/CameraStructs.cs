@@ -44,6 +44,20 @@ public struct NativeCamera
     /// state: yaw from angle minus pan, pitch negated.</summary>
     public readonly Vector3 RotationAsVector3 =>
         new(Angle.X - Pan.X, -Angle.Y - Pan.Y, 0f);
+
+    /// <summary>Brio's RealPosition (CameraExtensions.GetPosition): the eye
+    /// the frame is RENDERED from, inverted out of the view matrix. The
+    /// scene camera's Position field is not it — a free camera replaces the
+    /// view matrix and never writes that field, which the game goes on
+    /// orbiting under the native input a free camera leaves to it.</summary>
+    public readonly Vector3 GetPosition()
+    {
+        var view = Camera.CameraBase.SceneCamera.ViewMatrix;
+        view.M44 = 1f;
+        return Matrix4x4.Invert(view, out var inverted)
+            ? inverted.Translation
+            : Camera.CameraBase.SceneCamera.Position;
+    }
 }
 
 /// <summary>
