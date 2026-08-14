@@ -114,6 +114,13 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.CollectionSize,
                 $"The scene contains {overlayList.Count} overlays (limit {SceneFileLimits.MaxOverlays}).");
 
+        // The borrowed-object list is optional for the same reason the overlay
+        // list is: absent is a scene that borrowed nothing.
+        if (scene.WorldObjects is { } worldObjectList &&
+            worldObjectList.Count > SceneFileLimits.MaxWorldObjects)
+            return Fail(SceneFileValidationFailureKind.CollectionSize,
+                $"The scene contains {worldObjectList.Count} world objects (limit {SceneFileLimits.MaxWorldObjects}).");
+
         if (!ValidateText(scene.Author, "Author", out var textFailure) ||
             !ValidateText(scene.Description, "Description", out textFailure) ||
             !ValidateText(scene.PlaceName, "PlaceName", out textFailure))
@@ -155,6 +162,16 @@ public static class SceneFileValidation
             foreach (var overlay in overlays)
             {
                 if (ValidateOverlay(overlay, keys) is { } failure)
+                    return failure;
+            }
+        }
+
+        if (scene.WorldObjects is { } worldObjects)
+        {
+            keys.Clear();
+            foreach (var worldObject in worldObjects)
+            {
+                if (ValidateWorldObject(worldObject, keys) is { } failure)
                     return failure;
             }
         }
@@ -433,6 +450,35 @@ public static class SceneFileValidation
         if (!ValidateRequiredName(prop.Name, $"Prop {prop.Key:N}", out var nameFailure))
             return nameFailure;
         if (ValidateTransform(prop.Transform, $"Prop '{prop.Name}'") is { } failure)
+            return failure;
+        return null;
+    }
+
+    private static SceneFileValidationOutcome? ValidateWorldObject(
+        SceneWorldObject? worldObject, HashSet<Guid> keys)
+    {
+        if (worldObject is null)
+            return Fail(SceneFileValidationFailureKind.Document,
+                "The scene contains a null world object entry.");
+        if (worldObject.Key == Guid.Empty)
+            return Fail(SceneFileValidationFailureKind.Identity,
+                "A world object has no key.");
+        if (!keys.Add(worldObject.Key))
+            return Fail(SceneFileValidationFailureKind.Identity,
+                $"The scene contains duplicate world object key {worldObject.Key:N}.");
+        // The path is HALF THE IDENTITY, not a label: an entry without one
+        // names nothing a load could ever match.
+        if (!ValidateRequiredName(
+                worldObject.Path,
+                $"World object {worldObject.Key:N}",
+                out var nameFailure))
+            return nameFailure;
+        if (!IsFinite(worldObject.MapPosition))
+            return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,
+                $"World object '{worldObject.Path}' map position is not finite.");
+        if (ValidateTransform(
+                worldObject.Transform,
+                $"World object '{worldObject.Path}'") is { } failure)
             return failure;
         return null;
     }

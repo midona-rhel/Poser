@@ -106,6 +106,21 @@ public class SceneFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneOverlay>? Overlays { get; set; }
 
+    /// <summary>The map's own objects the scene had BORROWED. ABSENT rather
+    /// than empty when the scene had none, which is every scene written before
+    /// world objects could be adopted: an older file reads back byte-identical
+    /// and a scene that borrowed nothing writes no list at all.
+    ///
+    /// <para>These entries are the one part of a scene that only means
+    /// something WHERE IT WAS TAKEN. A BG object has no id that survives a
+    /// session — its address is this process's — so an entry names it by the
+    /// model path plus the point the MAP stands it at, and a load outside
+    /// <see cref="TerritoryId"/> refuses every entry BY NAME rather than
+    /// re-adopting whatever happens to share a path in another zone.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<SceneWorldObject>? WorldObjects { get; set; }
+
     // The same wire style every Poser document uses — numerics as
     // comma-space strings, enums by name, PascalCase, pretty printing,
     // relaxed escaping, tolerated trailing commas and unknown members.
@@ -136,6 +151,10 @@ public static class SceneFileLimits
     public const int MaxJsonDepth = 64;
     public const int MaxActors = 100;
     public const int MaxProps = 100;
+
+    /// <summary>A scene borrows map objects one click at a time; the cap is the
+    /// props' own, for the same reason.</summary>
+    public const int MaxWorldObjects = 100;
     public const int MaxLights = 50;
     public const int MaxCameras = 50;
     public const int MaxOverlays = 50;
@@ -419,6 +438,39 @@ public class SceneOverlay
     /// <summary>The node's whole state. Required — an overlay entry without
     /// one names nothing.</summary>
     public OverlayNodeState? Node { get; set; }
+}
+
+/// <summary>
+/// One BORROWED map object: which object it is, and what the user did to it.
+///
+/// <para>Identity is the pair <see cref="Path"/> and <see cref="MapPosition"/>
+/// — the model file the object draws, and the point the MAP stands it at. It is
+/// deliberately not the address the claim was taken at: that address belongs to
+/// one run of one process. The map position is captured from the object's own
+/// pre-adoption placement, so it is the same value on every visit to the same
+/// territory and it does not move when the user drags the object.</para>
+/// </summary>
+[Serializable]
+public class SceneWorldObject
+{
+    public Guid Key { get; set; }
+
+    /// <summary>The model resource path. Half of the identity; also the row's
+    /// name.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>Where the MAP stands this object, before any adoption. The
+    /// other half of the identity, matched within a small tolerance because a
+    /// float that has been through a codec is not the float that went in.
+    /// </summary>
+    public Vector3 MapPosition { get; set; }
+
+    /// <summary>Where the USER left it. Absolute, like every other placement in
+    /// this document.</summary>
+    public LightFile.TransformData Transform { get; set; } =
+        LightFile.TransformData.Identity;
+
+    public bool Visible { get; set; } = true;
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's
