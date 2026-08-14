@@ -12,6 +12,12 @@ public static partial class Crystarium
     private static float _axisEditValue;
     private static bool _axisEditNeedsFocus;
 
+    /// <summary>One wheel notch is worth this many drag pixels. Four puts the
+    /// step within a hair of Ktisis' own (its 0.2°/px rotation speed × 10 =
+    /// 2.0° a notch; Poser's 0.5°/px × 4 = 2.0°) without giving any caller a
+    /// second speed to keep in sync with its drag rate.</summary>
+    private const float WheelStepPixels = 4f;
+
     public static bool AxisWell(
         string id,
         string axis,
@@ -40,6 +46,13 @@ public static partial class Crystarium
                 pos, size, scale);
 
         var hit = Interactive.Reserve(id, size, disabled);
+        // The wheel has to be CLAIMED, not merely read: every well sits inside
+        // the shell's scrolling child, and an unclaimed notch would step the
+        // value AND scroll the page out from under the pointer.
+        // SetItemUsingMouseWheel is ImGui's own claim and it only takes hold
+        // while the item is the hovered one, so a notch anywhere else still
+        // scrolls normally.
+        ImGuiP.SetItemUsingMouseWheel();
         bool changed = false;
         if (hit.DoubleClicked)
         {
@@ -64,6 +77,22 @@ public static partial class Crystarium
         if (hit.DragEnded)
             onCommit?.Invoke();
 
+        // Wheel stepping (Brio ImBrio.Drag.cs:105-109, Ktisis
+        // TransformTable.cs:210-228) with THIS control's own modifiers, so a
+        // notch and a drag pixel scale by the same rule. A notch is a discrete
+        // edit with no release to wait for, so it commits itself — one notch
+        // is one undo step, which is what a stepper means.
+        float wheel = ImGui.GetIO().MouseWheel;
+        if (wheel != 0f && hit.Hovered && _axisEditId == null)
+        {
+            float next = value + wheel * perPixel * WheelStepPixels
+                * DragModifierMultiplier(ImGui.GetIO());
+            onChange(next);
+            value = next;
+            changed = true;
+            onCommit?.Invoke();
+        }
+
         // The label follows the adaptive three-digit rule when asked; the
         // EDIT above always carries the full value — precision belongs to
         // typing, not to the resting label.
@@ -75,7 +104,7 @@ public static partial class Crystarium
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
             HoverHelp.Explain(id, pos, pos + size,
-                "Drag to adjust · Ctrl fine ×0.1 · Shift coarse ×10 · Double-click to type");
+                "Drag or scroll to adjust · Ctrl fine ×0.1 · Shift coarse ×10 · Double-click to type");
         }
         return changed;
     }

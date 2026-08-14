@@ -1322,6 +1322,11 @@ public static partial class Crystarium
         /// line. The strip is taken out of the band BEFORE the three-way
         /// split, so the wells shrink to make room; in the stacked variant it
         /// rides the wells line, not the label line.</param>
+        /// <param name="expanded">Brio's expanded drag row (ImBrio.Drag.cs:
+        /// 63-89): the three axes become three full-width rows so a value that
+        /// will not fit a third of the band gets the whole of it. This is the
+        /// caller's disclosure, not a width fallback — the STACKED variant
+        /// below is the width fallback and the two are independent.</param>
         public void AxisVector(
             string label,
             Vector3 value,
@@ -1332,8 +1337,17 @@ public static partial class Crystarium
             string? help = null,
             bool disabled = false,
             bool fullWidth = false,
-            Action<ActionScope>? actions = null)
+            Action<ActionScope>? actions = null,
+            bool expanded = false)
         {
+            if (expanded)
+            {
+                ExpandedAxisRows(
+                    label, value, onChange, onCommit, perPixel, format,
+                    help, disabled, actions);
+                return;
+            }
+
             string id = Id(label);
             var row = _page.BeginRow(fullWidth ? string.Empty : label);
             var actionScope = new ActionScope();
@@ -1426,6 +1440,87 @@ public static partial class Crystarium
                 stacked
                     ? ActiveTheme.Controls.FormRowHeight * 2f
                     : null);
+        }
+
+        /// <summary>Three full-width rows, one per axis. The actions strip
+        /// rides the FIRST row alone: it annotates the vector, not the X
+        /// axis, and repeating it three times would read as three separate
+        /// controls. The help likewise lands once, on the last row, so the
+        /// hover region covers the block's bottom edge rather than
+        /// re-explaining each axis.</summary>
+        private void ExpandedAxisRows(
+            string label,
+            Vector3 value,
+            Action<Vector3> onChange,
+            Action? onCommit,
+            float perPixel,
+            string format,
+            string? help,
+            bool disabled,
+            Action<ActionScope>? actions)
+        {
+            string[] axes = ["X", "Y", "Z"];
+            var accents = new[]
+            {
+                ActiveTheme.Palette.AxisX,
+                ActiveTheme.Palette.AxisY,
+                ActiveTheme.Palette.AxisZ,
+            };
+            for (int i = 0; i < axes.Length; i++)
+            {
+                int axis = i;
+                string rowLabel = string.IsNullOrEmpty(label)
+                    ? axes[i]
+                    : $"{label} {axes[i]}";
+                string rowId = Id(rowLabel);
+                var row = _page.BeginRow(rowLabel);
+                var actionScope = new ActionScope();
+                if (i == 0)
+                    actions?.Invoke(actionScope);
+                float available = row.ControlWidth;
+                float actionWidth = actionScope.Items.Count == 0
+                    ? 0f
+                    : MeasureActions(actionScope.Items, row.Scale, available);
+                float well = actionScope.Items.Count == 0
+                    ? available
+                    : MathF.Max(0f, available - actionWidth
+                        - ActiveTheme.Page.ActionGap * row.Scale);
+                ImGui.SetCursorScreenPos(new(
+                    row.ControlOrigin.X,
+                    row.CenterControl(
+                        ActiveTheme.Controls.WorkspaceHeight).Y));
+                Crystarium.AxisWell(
+                    Ids.Join(rowId, "-", axes[i]),
+                    axes[i],
+                    axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
+                    next =>
+                    {
+                        var changed = value;
+                        if (axis == 0) changed.X = next;
+                        else if (axis == 1) changed.Y = next;
+                        else changed.Z = next;
+                        value = changed;
+                        onChange(changed);
+                    },
+                    onCommit,
+                    accents[i],
+                    perPixel,
+                    format,
+                    ControlStyle.Workspace with
+                    {
+                        Width = UiWidth.Region(well / row.Scale),
+                    },
+                    disabled);
+                if (actionScope.Items.Count > 0)
+                    DrawActions(
+                        actionScope.Items,
+                        row.ControlOrigin.X + available - actionWidth,
+                        actionWidth,
+                        row.Origin.Y,
+                        true,
+                        rowId);
+                _page.EndRow(row, rowId, i == axes.Length - 1 ? help : null);
+            }
         }
 
         private string Id(string label) => _page.RowId(_section, label);
