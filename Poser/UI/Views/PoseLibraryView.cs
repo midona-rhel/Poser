@@ -101,8 +101,20 @@ public sealed class PoseLibraryTileRow
     /// <summary>Index into <see cref="PoseLibraryViewModel.Folders"/>.
     /// </summary>
     public int Folder;
+
+    /// <summary>Whether the entry's metadata probe refused it — corrupt,
+    /// future-versioned, or oversized. The tile carries a warning badge and
+    /// the info strip states <see cref="StatusText"/> instead of author and
+    /// tags; the entry itself stays fully visible and selectable.</summary>
+    public bool Flagged;
+
+    /// <summary>The pre-minted status line for a flagged tile
+    /// ("Unreadable: …"). Empty on a healthy tile.</summary>
+    public string StatusText = string.Empty;
+
     internal TextFit LabelFit;
     internal TextFit SubFit;
+    internal TextFit StatusFit;
 }
 
 /// <summary>
@@ -325,12 +337,12 @@ public sealed class PoseLibraryViewModel
     internal int BuiltColumns = -1;
     internal float BuiltPitch = -1f;
 
-    // The context menu's target and its frozen rows. The array is allocated
-    // with the model and REWRITTEN at open, so even the cold right-click path
-    // allocates nothing: ContextMenuItem is a struct.
+    // The context menu's target. The BINDER opens and pumps the menu (its
+    // rows depend on tab type, metadata status, and the recovery verbs the
+    // entry qualifies for — binder knowledge); the view only reports the
+    // right-click here.
     internal int MenuTile = -1;
     internal bool MenuRequested;
-    internal readonly ContextMenuItem[] MenuItems = new ContextMenuItem[3];
 }
 
 /// <summary>
@@ -355,7 +367,6 @@ public static class PoseLibraryView
     private const string ActiveTagId = "##pose-library-active-tag";
     private const string SliderId = "##pose-library-icon-size";
     private const string SettingsId = "##pose-library-open-settings";
-    private const string MenuId = "##pose-library-tile-menu";
     private const string ActionRowId = "pose-library-actions";
 
     // Per-tile ids. They are constants because every tile pushes its own path
@@ -476,7 +487,6 @@ public static class PoseLibraryView
         DrawRail(vm, rects.Rail, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
         DrawActionRow(vm, rects.Footer, scale, theme);
-        DrawMenu(vm);
 
         if (submit && vm.CanApply && vm.Selected >= 0
             && vm.Selected < vm.Tiles.Count)
@@ -1276,6 +1286,19 @@ public static class PoseLibraryView
             DrawThumbnail(vm, tile, min, size, icon, pad, scale, theme);
             DrawCaption(tile, min, size, icon, pad, hovered, scale, theme);
 
+            if (tile.Flagged)
+            {
+                // The warning badge, top-left (the star owns the top-right):
+                // the entry is stated as damaged right on the tile, and the
+                // info strip carries the full typed reason on selection.
+                var flagMin = new Vector2(min.X + pad, min.Y + pad);
+                Crystarium.IconIn(
+                    flagMin,
+                    flagMin + new Vector2(star),
+                    TablerIcon.AlertTriangle,
+                    theme.Warning);
+            }
+
             if (tile.Favorite && vm.CanFavorite)
             {
                 // A favorite is FILLED and warning-yellow; the stroked icon
@@ -1496,6 +1519,24 @@ public static class PoseLibraryView
         float x = strip.Min.X + inset;
         float limit = strip.Max.X - inset;
 
+        if (tile.Flagged && tile.StatusText.Length > 0)
+        {
+            // A flagged entry's strip is its diagnosis: the typed status and
+            // its detail, in the badge's own color, instead of author/tags a
+            // refused probe never produced.
+            Fitted(
+                ref tile.StatusFit,
+                new Vector2(x, strip.Min.Y),
+                new Vector2(limit - x, strip.Size.Y),
+                tile.StatusText,
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.Warning,
+                });
+            return;
+        }
+
         if (tile.Author is { Length: > 0 } author)
         {
             var style = new TextStyle
@@ -1573,54 +1614,6 @@ public static class PoseLibraryView
     }
 
     // ---- Footer -----------------------------------------------------
-
-    // ---- Context menu -----------------------------------------------
-
-    /// <summary>
-    /// The tile menu, pumped OUTSIDE the grid's scroll child so the floating
-    /// surface hosts itself at the top level. The rows are rewritten into the
-    /// model's own array at open, so the cold path allocates nothing either.
-    /// </summary>
-    private static void DrawMenu(PoseLibraryViewModel vm)
-    {
-        if (vm.MenuRequested)
-        {
-            // The request is consumed whether or not it can still be served:
-            // a stale target must not re-open the menu every frame.
-            vm.MenuRequested = false;
-            if (vm.MenuTile >= 0 && vm.MenuTile < vm.Tiles.Count)
-            {
-                var tile = vm.Tiles[vm.MenuTile];
-                vm.MenuItems[0] = new ContextMenuItem(
-                    "Apply", TablerIcon.Check, disabled: !vm.CanApply);
-                vm.MenuItems[1] = new ContextMenuItem(
-                    "Spawn as new actor",
-                    TablerIcon.UserPlus,
-                    disabled: !vm.CanSpawn);
-                vm.MenuItems[2] = new ContextMenuItem(
-                    tile.Favorite ? "Unfavorite" : "Favorite",
-                    TablerIcon.Star);
-                Crystarium.FloatingMenu.Open(
-                    MenuId, ImGui.GetMousePos(), vm.MenuItems);
-            }
-        }
-
-        int clicked = Crystarium.FloatingMenu.Draw(MenuId);
-        if (clicked < 0 || vm.MenuTile < 0 || vm.MenuTile >= vm.Tiles.Count)
-            return;
-        switch (clicked)
-        {
-            case 0:
-                vm.OnApplyTile?.Invoke(vm.MenuTile);
-                break;
-            case 1:
-                vm.OnSpawnTile?.Invoke(vm.MenuTile);
-                break;
-            case 2:
-                vm.OnToggleFavorite?.Invoke(vm.MenuTile);
-                break;
-        }
-    }
 
     // ---- Shared -----------------------------------------------------
 

@@ -182,6 +182,14 @@ public sealed class PoseLibraryPane
     /// tile index; this is the parallel the pass reads instead.</summary>
     private readonly List<IReadOnlyList<string>> _tileTags = [];
 
+    /// <summary>Lower-cased author per TILE, empty when the file names none —
+    /// the search matches it alongside the name and the tags.</summary>
+    private readonly List<string> _tileAuthors = [];
+
+    /// <summary>Typed metadata status per TILE. The context menu reads it to
+    /// decide which recovery verbs an entry qualifies for.</summary>
+    private readonly List<PoseLibraryMetadataStatus> _tileStatus = [];
+
     /// <summary>The snapshot revision the rows were built from. A type switch
     /// resets it: each type builds its own rail and tiles from the same
     /// snapshot.</summary>
@@ -221,6 +229,65 @@ public sealed class PoseLibraryPane
     private double _lastAppliedAt;
 
     private bool _iconSizeDirty;
+
+    // ── the tile context menu and its file actions ───────────────────────
+    // The BINDER owns the tile menu now: its rows depend on the tab, the
+    // entry's typed metadata status, and which authoring/recovery verbs
+    // apply — none of which the view knows. Disk actions go through the
+    // typed PoseLibraryFileActions verbs; every outcome lands in _note and a
+    // successful mutation requests a rescan, never edits the snapshot.
+
+    private const string TileMenuId = "##pose-library-tile-menu";
+    private const string MoveMenuId = "##pose-library-move-menu";
+
+    /// <summary>What each context-menu row DOES; separators carry
+    /// <see cref="TileMenuAction.None"/> so the row indices stay aligned with
+    /// the clicked index the menu answers.</summary>
+    private enum TileMenuAction
+    {
+        None,
+        Apply,
+        Spawn,
+        Favorite,
+        Retry,
+        Quarantine,
+        EditMetadata,
+        Rename,
+        MoveTo,
+        Reveal,
+        Delete,
+    }
+
+    private readonly List<ContextMenuItem> _menuItems = [];
+    private readonly List<TileMenuAction> _menuActionRows = [];
+
+    /// <summary>The move-to menu's destinations, parallel to its rows, and
+    /// the file it would move — both frozen at the submenu's open.</summary>
+    private readonly List<string> _moveDestinations = [];
+    private string? _movePath;
+
+    // The three file modals. Each freezes its target PATH at open: tile
+    // indices do not survive a refilter, paths do.
+    private bool _renameOpen;
+    private string _renamePath = string.Empty;
+    private string _renameName = string.Empty;
+    private string _renameCandidate = string.Empty;
+    private bool _renameTaken;
+
+    private bool _metaOpen;
+    private string _metaPath = string.Empty;
+    private string _metaAuthor = string.Empty;
+    private string _metaTags = string.Empty;
+
+    private bool _deleteOpen;
+    private string _deletePath = string.Empty;
+    private string _deleteName = string.Empty;
+
+    /// <summary>The auto-save tab's minted status line and the observation
+    /// key it was minted from — one format per CHANGE, not per frame.</summary>
+    private string _autoStatusText = string.Empty;
+    private (DateTime? Save, DateTime? Updated, AutoSaveHealthStatus? Health,
+        AutoSaveTerminalStatus Terminal, bool Enabled) _autoStatusKey;
 
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of
@@ -380,6 +447,11 @@ public sealed class PoseLibraryPane
         _vm.ChromeWidth = size.X;
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
         DrawApplyMenu();
+        DrawTileMenu();
+        DrawMoveMenu();
+        DrawRenameModal();
+        DrawMetadataModal();
+        DrawDeleteModal();
     }
 
     /// <summary>The footer primary's actor picker: every scene actor
@@ -420,6 +492,553 @@ public sealed class PoseLibraryPane
         int clicked = Crystarium.FloatingMenu.Draw("##library-apply-target");
         if (clicked >= 0 && clicked < _applyTargets.Count)
             ApplyTo(_vm.Selected, _applyTargets[clicked]);
+    }
+
+    // ── the tile menu ────────────────────────────────────────────────────
+
+    /// <summary>The tile context menu: the apply/spawn/favorite verbs every
+    /// tile always had, plus the authoring verbs (edit metadata, rename,
+    /// move) and — on a flagged entry — the recovery verbs (retry,
+    /// quarantine). Rows are decided HERE because they depend on the tab and
+    /// the entry's typed status; the view only reports the right-click.
+    /// </summary>
+    private void DrawTileMenu()
+    {
+        if (_vm.MenuRequested)
+        {
+            // The request is consumed whether or not it can still be served:
+            // a stale target must not re-open the menu every frame.
+            _vm.MenuRequested = false;
+            if (_vm.MenuTile >= 0 && _vm.MenuTile < _vm.Tiles.Count)
+            {
+                BuildTileMenu(_vm.MenuTile);
+                Crystarium.FloatingMenu.Open(
+                    TileMenuId, ImGui.GetMousePos(), _menuItems.ToArray());
+            }
+        }
+
+        int clicked = Crystarium.FloatingMenu.Draw(TileMenuId);
+        if (clicked < 0 || clicked >= _menuActionRows.Count
+            || _vm.MenuTile < 0 || _vm.MenuTile >= _vm.Tiles.Count)
+            return;
+        Dispatch(_menuActionRows[clicked], _vm.MenuTile);
+    }
+
+    private void BuildTileMenu(int index)
+    {
+        _menuItems.Clear();
+        _menuActionRows.Clear();
+        var tile = _vm.Tiles[index];
+
+        Row(TileMenuAction.Apply, new ContextMenuItem(
+            "Apply", TablerIcon.Check, disabled: !_vm.CanApply));
+        Row(TileMenuAction.Spawn, new ContextMenuItem(
+            "Spawn as new actor", TablerIcon.UserPlus,
+            disabled: !_vm.CanSpawn));
+        if (_vm.CanFavorite)
+            Row(TileMenuAction.Favorite, new ContextMenuItem(
+                tile.Favorite ? "Unfavorite" : "Favorite", TablerIcon.Star));
+
+        bool poses = _type == LibraryType.Poses;
+        var status = _tileStatus[index];
+        if (poses && status != PoseLibraryMetadataStatus.Valid)
+        {
+            Separator();
+            Row(TileMenuAction.Retry, new ContextMenuItem(
+                "Retry read", TablerIcon.Refresh,
+                help: "Probe the file again — one that finished writing "
+                    + "since the scan reads cleanly now."));
+            Row(TileMenuAction.Quarantine, new ContextMenuItem(
+                "Quarantine", TablerIcon.Shield,
+                help: "Move the file into this folder's "
+                    + PoseLibraryFileActions.QuarantineFolderName
+                    + " folder: out of the library, kept as evidence."));
+        }
+
+        // The auto-save tab's files belong to retention — renaming or moving
+        // one would break the save-event grouping it prunes by, so the
+        // authoring verbs stay off that tab.
+        if (_type != LibraryType.AutoSaves)
+        {
+            Separator();
+            bool legacy = tile.ThumbKey.EndsWith(
+                ".cmp", StringComparison.OrdinalIgnoreCase);
+            if (poses && !legacy
+                && status is PoseLibraryMetadataStatus.Valid
+                    or PoseLibraryMetadataStatus.Future)
+                Row(TileMenuAction.EditMetadata, new ContextMenuItem(
+                    "Edit metadata…", TablerIcon.FileText,
+                    help: "Author and tags, written back into the file."));
+            Row(TileMenuAction.Rename, new ContextMenuItem(
+                "Rename…", TablerIcon.Edit));
+            Row(TileMenuAction.MoveTo, new ContextMenuItem(
+                "Move to folder…", TablerIcon.Folder));
+        }
+
+        Separator();
+        Row(TileMenuAction.Reveal, new ContextMenuItem(
+            "Reveal in Explorer", TablerIcon.ExternalLink));
+        Row(TileMenuAction.Delete, new ContextMenuItem(
+            "Delete…", TablerIcon.Trash, danger: true));
+
+        void Row(TileMenuAction action, ContextMenuItem item)
+        {
+            _menuItems.Add(item);
+            _menuActionRows.Add(action);
+        }
+
+        void Separator()
+        {
+            _menuItems.Add(ContextMenuItem.Separator);
+            _menuActionRows.Add(TileMenuAction.None);
+        }
+    }
+
+    private void Dispatch(TileMenuAction action, int index)
+    {
+        var tile = _vm.Tiles[index];
+        var path = tile.ThumbKey;
+        switch (action)
+        {
+            case TileMenuAction.Apply:
+                Select(index);
+                _applyMenuRequested = true;
+                break;
+            case TileMenuAction.Spawn:
+                Spawn(index);
+                break;
+            case TileMenuAction.Favorite:
+                ToggleFavorite(index);
+                break;
+            case TileMenuAction.Retry:
+                RetryProbe(path);
+                break;
+            case TileMenuAction.Quarantine:
+                QuarantineFile(path);
+                break;
+            case TileMenuAction.EditMetadata:
+                _metaPath = path;
+                _metaAuthor = tile.Author ?? string.Empty;
+                _metaTags = string.Join(", ", tile.Tags);
+                _metaOpen = true;
+                break;
+            case TileMenuAction.Rename:
+                _renamePath = path;
+                _renameName = System.IO.Path.GetFileNameWithoutExtension(path);
+                _renameCandidate = string.Empty;
+                _renameTaken = false;
+                _renameOpen = true;
+                break;
+            case TileMenuAction.MoveTo:
+                OpenMoveMenu(path);
+                break;
+            case TileMenuAction.Reveal:
+                RevealFile(path);
+                break;
+            case TileMenuAction.Delete:
+                _deletePath = path;
+                _deleteName = System.IO.Path.GetFileName(path);
+                _deleteOpen = true;
+                break;
+        }
+    }
+
+    // ── the recovery and authoring verbs ─────────────────────────────────
+    // Disk work happens on the click, exactly as an apply's file load does;
+    // every outcome is TYPED and lands in the footer note, and a successful
+    // mutation asks the scan for a fresh complete pass rather than editing
+    // the published snapshot.
+
+    private void RetryProbe(string path)
+    {
+        var result = PoseLibraryFileActions.Default.Probe(path);
+        if (!result.Succeeded)
+        {
+            _note = "Retry: " + result.Detail;
+            return;
+        }
+        _note = result.ProbeStatus == PoseLibraryMetadataStatus.Valid
+            ? "The file reads cleanly now."
+            : "Retry: " + StatusText(result.ProbeStatus!.Value, result.Detail);
+        // Either way the badge restates the CURRENT truth.
+        _library.RequestScan();
+    }
+
+    private void QuarantineFile(string path)
+    {
+        var result = PoseLibraryFileActions.Default.Quarantine(path);
+        if (!result.Succeeded)
+        {
+            _note = "Quarantine: " + result.Detail;
+            return;
+        }
+        FavoritePathChanged(path, null);
+        _note = "Moved into "
+            + PoseLibraryFileActions.QuarantineFolderName + ".";
+        _library.RequestScan();
+    }
+
+    /// <summary>The move-to submenu: every scanned folder except the file's
+    /// own, labeled root-first so two same-named subfolders stay apart.
+    /// Destinations are frozen at open, resolved from the CURRENT config by
+    /// the snapshot's source index — a source deleted since the scan simply
+    /// contributes no row.</summary>
+    private void OpenMoveMenu(string path)
+    {
+        _moveDestinations.Clear();
+        var items = new List<ContextMenuItem>();
+        string current = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
+        var sources = _config.Config.Library.Sources;
+        foreach (var folder in _library.Snapshot.Folders)
+        {
+            int bar = folder.Key.IndexOf('|');
+            if (bar < 0
+                || !int.TryParse(folder.Key.AsSpan(0, bar), out int source)
+                || source < 0 || source >= sources.Count)
+                continue;
+            var relative = folder.Key[(bar + 1)..];
+            var directory = relative.Length == 0
+                ? sources[source].Path
+                : System.IO.Path.Combine(sources[source].Path, relative);
+            if (string.Equals(
+                    directory, current, StringComparison.OrdinalIgnoreCase))
+                continue;
+            string root = string.IsNullOrWhiteSpace(sources[source].Name)
+                ? $"Source {source + 1}"
+                : sources[source].Name;
+            _moveDestinations.Add(directory);
+            items.Add(new ContextMenuItem(
+                relative.Length == 0 ? root : root + "\\" + relative,
+                TablerIcon.Folder));
+        }
+
+        if (items.Count == 0)
+        {
+            _note = "No other folder to move to.";
+            return;
+        }
+        _movePath = path;
+        Crystarium.FloatingMenu.Open(
+            MoveMenuId, ImGui.GetMousePos(), items.ToArray());
+    }
+
+    private void DrawMoveMenu()
+    {
+        int clicked = Crystarium.FloatingMenu.Draw(MoveMenuId);
+        if (clicked < 0 || clicked >= _moveDestinations.Count
+            || _movePath is not { } path)
+            return;
+        _movePath = null;
+        var result = PoseLibraryFileActions.Default.Move(
+            path, _moveDestinations[clicked]);
+        if (result.Succeeded)
+        {
+            FavoritePathChanged(path, result.ResultPath);
+            _note = null;
+            _library.RequestScan();
+        }
+        else
+            _note = "Move: " + result.Detail;
+    }
+
+    /// <summary>Opens Explorer with the file selected. A refusal is stated,
+    /// never swallowed — the shell can decline.</summary>
+    private void RevealFile(string path)
+    {
+        try
+        {
+            if (!System.IO.File.Exists(path))
+            {
+                _note = "Reveal: the file no longer exists.";
+                return;
+            }
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(
+                    "explorer.exe", $"/select,\"{path}\"")
+                {
+                    UseShellExecute = true,
+                });
+        }
+        catch (Exception ex)
+        {
+            _note = "Reveal: " + ex.Message;
+        }
+    }
+
+    /// <summary>Favourites key on the absolute path, so a path-changing verb
+    /// carries the favourite along (or drops it with the file). Saves only
+    /// when something actually changed.</summary>
+    private void FavoritePathChanged(string oldPath, string? newPath)
+    {
+        var favorites = _config.Config.Library.Favorites;
+        if (!favorites.Remove(oldPath))
+            return;
+        if (newPath is not null)
+            favorites.Add(newPath);
+        _config.Save();
+    }
+
+    // ── the file modals ──────────────────────────────────────────────────
+
+    /// <summary>Strips every character Windows refuses in a file NAME —
+    /// typed or pasted, the input simply never holds one (the export
+    /// modal's rule).</summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        if (name.IndexOfAny(invalid) < 0)
+            return name;
+        var kept = new char[name.Length];
+        int count = 0;
+        foreach (var c in name)
+            if (Array.IndexOf(invalid, c) < 0)
+                kept[count++] = c;
+        return new string(kept, 0, count);
+    }
+
+    /// <summary>The rename modal: name input, inline validation (required,
+    /// no silent overwrite), Rename/Cancel. The typed result lands in the
+    /// footer note and a success rescans.</summary>
+    private void DrawRenameModal()
+    {
+        if (!_renameOpen)
+            return;
+        Crystarium.Modal(
+            "##library-rename",
+            _renameOpen,
+            next => _renameOpen = next,
+            "Rename file",
+            height: 200f,
+            body: () =>
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            var theme = Crystarium.ActiveTheme;
+            var captionStyle = new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = theme.FormHint,
+            };
+            float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
+            float rowGap = 8f * scale;
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), "Name", captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            Crystarium.TextInput(
+                "##library-rename-name", _renameName,
+                next => _renameName = SanitizeFileName(next),
+                placeholder: "File name");
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            string trimmed = _renameName.Trim();
+            string candidate = trimmed.Length == 0
+                ? string.Empty
+                : System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(_renamePath) ?? string.Empty,
+                    trimmed + System.IO.Path.GetExtension(_renamePath));
+            if (!string.Equals(
+                    candidate, _renameCandidate,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _renameCandidate = candidate;
+                _renameTaken = candidate.Length > 0
+                    && !string.Equals(
+                        candidate, _renamePath,
+                        StringComparison.OrdinalIgnoreCase)
+                    && System.IO.File.Exists(candidate);
+            }
+            string? problem = trimmed.Length == 0
+                ? "A name is required."
+                : _renameTaken
+                    ? "That name already exists here."
+                    : null;
+            if (problem is not null)
+            {
+                Crystarium.TextAt(
+                    ImGui.GetCursorScreenPos(), problem, captionStyle);
+                ImGui.Dummy(new Vector2(1f, captionAdvance));
+            }
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            float gap = theme.Page.ActionGap * scale;
+            float half = (ImGui.GetContentRegionAvail().X - gap) * 0.5f / scale;
+            var pairStyle = new ControlStyle
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, half)),
+            };
+            if (Crystarium.Button(
+                    "Rename",
+                    variant: ButtonVariant.Primary,
+                    style: pairStyle,
+                    disabled: problem is not null,
+                    help: problem,
+                    id: "library-rename-confirm"))
+            {
+                var result = PoseLibraryFileActions.Default.Rename(
+                    _renamePath, trimmed);
+                if (result.Succeeded)
+                {
+                    FavoritePathChanged(_renamePath, result.ResultPath);
+                    _note = null;
+                    _library.RequestScan();
+                }
+                else
+                    _note = "Rename: " + result.Detail;
+                _renameOpen = false;
+            }
+            ImGui.SameLine(0f, gap);
+            if (Crystarium.Button(
+                    "Cancel", style: pairStyle, id: "library-rename-cancel"))
+                _renameOpen = false;
+        });
+    }
+
+    /// <summary>The metadata modal: author and comma-separated tags, written
+    /// back into the pose file through the atomic store (Brio's
+    /// SaveMetadata flow). The core normalizes the tags; the typed outcome
+    /// lands in the note.</summary>
+    private void DrawMetadataModal()
+    {
+        if (!_metaOpen)
+            return;
+        Crystarium.Modal(
+            "##library-metadata",
+            _metaOpen,
+            next => _metaOpen = next,
+            "Edit metadata",
+            height: 240f,
+            body: () =>
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            var theme = Crystarium.ActiveTheme;
+            var captionStyle = new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = theme.FormHint,
+            };
+            float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
+            float rowGap = 8f * scale;
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), "Author", captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            Crystarium.TextInput(
+                "##library-metadata-author", _metaAuthor,
+                next => _metaAuthor = next,
+                placeholder: "Author");
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(),
+                "Tags (comma-separated)", captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            Crystarium.TextInput(
+                "##library-metadata-tags", _metaTags,
+                next => _metaTags = next,
+                placeholder: "tag, tag");
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            float gap = theme.Page.ActionGap * scale;
+            float half = (ImGui.GetContentRegionAvail().X - gap) * 0.5f / scale;
+            var pairStyle = new ControlStyle
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, half)),
+            };
+            if (Crystarium.Button(
+                    "Save",
+                    variant: ButtonVariant.Primary,
+                    style: pairStyle,
+                    id: "library-metadata-confirm"))
+            {
+                var result = PoseLibraryFileActions.Default.EditMetadata(
+                    _metaPath, _metaAuthor, _metaTags.Split(','));
+                if (result.Succeeded)
+                {
+                    _note = null;
+                    _library.RequestScan();
+                }
+                else
+                    _note = "Metadata: " + result.Detail;
+                _metaOpen = false;
+            }
+            ImGui.SameLine(0f, gap);
+            if (Crystarium.Button(
+                    "Cancel", style: pairStyle, id: "library-metadata-cancel"))
+                _metaOpen = false;
+        });
+    }
+
+    /// <summary>The delete confirm: destructive, so it is never a bare menu
+    /// click. Deleting an auto-save re-enumerates that tab; anything else
+    /// rescans the library.</summary>
+    private void DrawDeleteModal()
+    {
+        if (!_deleteOpen)
+            return;
+        Crystarium.Modal(
+            "##library-delete",
+            _deleteOpen,
+            next => _deleteOpen = next,
+            "Delete file",
+            height: 180f,
+            body: () =>
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            var theme = Crystarium.ActiveTheme;
+            var captionStyle = new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = theme.FormHint,
+            };
+            float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
+            float rowGap = 8f * scale;
+
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), _deleteName,
+                new TextStyle
+                {
+                    Size = theme.Typography.BodySize,
+                    Color = theme.Text,
+                });
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(),
+                "This permanently deletes the file from disk.",
+                captionStyle);
+            ImGui.Dummy(new Vector2(1f, captionAdvance));
+            ImGui.Dummy(new Vector2(0f, rowGap));
+
+            float gap = theme.Page.ActionGap * scale;
+            float half = (ImGui.GetContentRegionAvail().X - gap) * 0.5f / scale;
+            var pairStyle = new ControlStyle
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, half)),
+            };
+            if (Crystarium.Button(
+                    "Delete",
+                    variant: ButtonVariant.Danger,
+                    style: pairStyle,
+                    id: "library-delete-confirm"))
+            {
+                var result = PoseLibraryFileActions.Default.Delete(_deletePath);
+                if (result.Succeeded)
+                {
+                    FavoritePathChanged(_deletePath, null);
+                    _note = null;
+                    if (_type == LibraryType.AutoSaves)
+                        _autoDirty = true;
+                    else
+                        _library.RequestScan();
+                }
+                else
+                    _note = "Delete: " + result.Detail;
+                _deleteOpen = false;
+            }
+            ImGui.SameLine(0f, gap);
+            if (Crystarium.Button(
+                    "Cancel", style: pairStyle, id: "library-delete-cancel"))
+                _deleteOpen = false;
+        });
     }
 
     /// <summary>
@@ -645,6 +1264,8 @@ public sealed class PoseLibraryPane
         var tiles = _vm.Tiles;
         tiles.Clear();
         _tileTags.Clear();
+        _tileAuthors.Clear();
+        _tileStatus.Clear();
         // Labels are minted with or without the extension HERE; the search
         // keeps matching the bare name either way.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
@@ -654,6 +1275,10 @@ public sealed class PoseLibraryPane
             if (entry.Kind != kind)
                 continue;
             _tileTags.Add(entry.TagsLower);
+            _tileAuthors.Add(entry.AuthorLower);
+            _tileStatus.Add(entry.MetadataStatus);
+            bool flagged =
+                entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
             tiles.Add(new PoseLibraryTileRow
             {
                 Id = entry.FilePath,
@@ -673,6 +1298,10 @@ public sealed class PoseLibraryPane
                 Author = entry.Author,
                 Tags = entry.Tags,
                 Folder = _folderRows[entry.Folder],
+                Flagged = flagged,
+                StatusText = flagged
+                    ? StatusText(entry.MetadataStatus, entry.MetadataDetail)
+                    : string.Empty,
             });
         }
 
@@ -760,6 +1389,8 @@ public sealed class PoseLibraryPane
             _vm.Folders.Clear();
             _vm.Tiles.Clear();
             _tileTags.Clear();
+            _tileAuthors.Clear();
+            _tileStatus.Clear();
             _vm.Selected = -1;
             _vm.EmptyText = ScanningText;
             _refilter = true;
@@ -923,6 +1554,8 @@ public sealed class PoseLibraryPane
         folders.Clear();
         tiles.Clear();
         _tileTags.Clear();
+        _tileAuthors.Clear();
+        _tileStatus.Clear();
 
         PoseLibraryFolderRow? dayRow = null;
         for (int s = 0; s < scan.Count; s++)
@@ -949,6 +1582,8 @@ public sealed class PoseLibraryPane
             {
                 var entry = entries[e];
                 _tileTags.Add(Array.Empty<string>());
+                _tileAuthors.Add(string.Empty);
+                _tileStatus.Add(PoseLibraryMetadataStatus.Valid);
                 tiles.Add(new PoseLibraryTileRow
                 {
                     Id = entry.FilePath,
@@ -1110,7 +1745,12 @@ public sealed class PoseLibraryPane
                 continue;
             if (query)
             {
-                if (!tile.LabelLower.Contains(_queryLower, StringComparison.Ordinal))
+                // A query is a lookup across everything the entry SAYS about
+                // itself: the name, the author, and the tags — all matched
+                // against runs the snapshot already lowercased.
+                if (!tile.LabelLower.Contains(_queryLower, StringComparison.Ordinal)
+                    && !_tileAuthors[i].Contains(_queryLower, StringComparison.Ordinal)
+                    && !AnyTagContains(_tileTags[i], _queryLower))
                     continue;
             }
             else if (folder >= 2)
@@ -1189,6 +1829,37 @@ public sealed class PoseLibraryPane
         return false;
     }
 
+    /// <summary>The query's tag test: a SUBSTRING match, unlike the tag
+    /// chip's exact filter — a query is a lookup, a chip is a selection.
+    /// </summary>
+    private static bool AnyTagContains(
+        IReadOnlyList<string> tagsLower, string queryLower)
+    {
+        for (int i = 0; i < tagsLower.Count; i++)
+            if (tagsLower[i].Contains(queryLower, StringComparison.Ordinal))
+                return true;
+        return false;
+    }
+
+    /// <summary>The flagged tile's minted diagnosis: the classification word,
+    /// then the codec's own detail.</summary>
+    private static string StatusText(
+        PoseLibraryMetadataStatus status, string detail)
+    {
+        var word = status switch
+        {
+            PoseLibraryMetadataStatus.Corrupt => "Unreadable",
+            PoseLibraryMetadataStatus.Future => "Unsupported version",
+            PoseLibraryMetadataStatus.Oversized => "Too large",
+            _ => string.Empty,
+        };
+        return detail.Length == 0
+            ? word
+            : word.Length == 0
+                ? detail
+                : word + ": " + detail;
+    }
+
     private void SyncStatus()
     {
         // Each tab states its OWN enumeration. The auto-save tab browses no
@@ -1205,9 +1876,62 @@ public sealed class PoseLibraryPane
             return;
         }
 
+        // The auto-save tab's idle caption is the service's own health: the
+        // last accepted save, or the recovery-required detail — the typed
+        // status is never hidden behind an empty footer.
+        if (_type == LibraryType.AutoSaves && !scanning)
+        {
+            _vm.Status = AutoSaveStatusText();
+            return;
+        }
+
         // No counter (user: pointless beside the single action row) — the
         // caption carries only the scan state, and notes above win.
         _vm.Status = scanning ? ScanningText : string.Empty;
+    }
+
+    /// <summary>The auto-save status line, minted once per observation
+    /// CHANGE: an error outranks the last-success stamp, and the stamp only
+    /// claims what <see cref="IAutoSaveService.LastSaveUtc"/> claims —
+    /// dispatch acceptance, not durable success, which is exactly why the
+    /// recovery branches read the health record first.</summary>
+    private string AutoSaveStatusText()
+    {
+        var record = _autoSave.LastHealthRecord;
+        var terminal = _autoSave.LastTerminalResult;
+        var lastSave = _autoSave.LastSaveUtc;
+        bool enabled = _config.Config.AutoSave.Enabled;
+        var key = (lastSave, record?.UpdatedUtc, record?.Status,
+            terminal.Status, enabled);
+        if (key == _autoStatusKey && _autoStatusText.Length > 0)
+            return _autoStatusText;
+        _autoStatusKey = key;
+
+        string text;
+        if (terminal.Status == AutoSaveTerminalStatus.RecoveryRequired)
+            text = "Auto-save needs recovery: "
+                + Trim(terminal.Detail, "see the health record.");
+        else if (record is { Status: AutoSaveHealthStatus.RecoveryRequired })
+            text = "Auto-save needs recovery: "
+                + Trim(record.Detail ?? record.FailurePhase, "see the health record.");
+        else if (lastSave is { } utc)
+            text = "Last auto-save "
+                + utc.ToLocalTime().ToString(
+                    "HH:mm:ss", CultureInfo.InvariantCulture);
+        else if (!enabled)
+            text = "Auto-save is off.";
+        else
+            text = "No auto-save yet this session.";
+        return _autoStatusText = text;
+
+        // The health record's detail is bounded at 4096; the footer is one
+        // caption line.
+        static string Trim(string? detail, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(detail))
+                return fallback;
+            return detail.Length <= 160 ? detail : detail[..160] + "…";
+        }
     }
 
     // ── the target actor ─────────────────────────────────────────────────
