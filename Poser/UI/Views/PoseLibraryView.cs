@@ -215,9 +215,18 @@ public sealed class PoseLibraryViewModel
     /// is rebuilt off THIS, never off a per-frame comparison.</summary>
     public int LayoutRevision;
 
-    /// <summary>Whether the folder rail is seated at all; the auto-save tab
-    /// carries its structure in the grid's own headers instead.</summary>
+    /// <summary>Whether the folder rail is seated at all.</summary>
     public bool ShowRail = true;
+
+    /// <summary>
+    /// How many SYNTHETIC heads the rail leads with before its real rows: two
+    /// on a scanned tab ("All …" then "Favorites"), one on the auto-save tab,
+    /// whose snapshots are not curated entries and which therefore has no
+    /// favourites row. Every positional rail rule — the star glyph here, the
+    /// subtree range and the favourites filter in the binder — reads THIS
+    /// rather than the literal, so the two shapes cannot drift apart.
+    /// </summary>
+    public int RailHeads = 2;
 
     /// <summary>Whether the body states the no-sources configuration answer
     /// instead of the grid.</summary>
@@ -282,6 +291,11 @@ public sealed class PoseLibraryViewModel
     /// where scenes are found, so capturing the current one belongs beside
     /// them rather than only behind a menu.</summary>
     public bool ShowSaveScene;
+
+    /// <summary>Whether a whole-scene transaction owns the session right now.
+    /// The save affordance is the same one the scene workspace carries, so it
+    /// wears the same gate on both surfaces.</summary>
+    public bool SceneBusy;
 
     /// <summary>Whether the action row leads with the import toggles.
     /// Character files never travel the pose import pipeline, so the MCDF
@@ -677,8 +691,14 @@ public static class PoseLibraryView
                 "Spawn as new",
                 vm.SpawnClick!,
                 disabled: none || !vm.CanSpawn);
+        // The gate travels with the verb: the workspace's twin is disabled
+        // while a scene transaction runs, and one browser reached from two
+        // surfaces must not be openable from only one of them mid-flight.
         if (vm.ShowSaveScene)
-            scope.Button("Save scene…", vm.SaveSceneClick!);
+            scope.Button(
+                "Save scene…",
+                vm.SaveSceneClick!,
+                disabled: vm.SceneBusy);
         // Author and tags, stated in the row a user is already looking at.
         // The context menu keeps the same verb; this is the one that is seen.
         if (vm.ShowEditMetadata)
@@ -876,10 +896,13 @@ public static class PoseLibraryView
                 ImGui.SetCursorScreenPos(new Vector2(origin.X, pos.Y));
                 if (FolderRow(
                         vm.Folders[i],
-                        // The two synthetic heads are positional by contract,
-                        // so the favourites row can carry its own mark without
-                        // the binder having to state one per row.
-                        i == 1 ? TablerIcon.Star : TablerIcon.Folder,
+                        // The synthetic heads are positional by contract, so
+                        // the favourites row can carry its own mark without the
+                        // binder having to state one per row — and only a rail
+                        // that HAS a favourites head has one at index 1.
+                        i == 1 && vm.RailHeads > 1
+                            ? TablerIcon.Star
+                            : TablerIcon.Folder,
                         vm.SelectedFolder == i,
                         width,
                         gutter * scale,

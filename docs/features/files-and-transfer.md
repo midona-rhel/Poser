@@ -174,6 +174,14 @@ interchange with Brio and (via name conversion) Anamnesis.
   recovered file flows through the standard import pipeline. Settings
   (General → AUTO-SAVE): enabled, interval 10–600 s, kept count (free
   numeric input, floor 1, no cap), clean-on-exit — read live each tick.
+- Every pose a snapshot writes records WHERE it was taken — the territory id
+  and the place name resolved at capture, through the ONE resolution whole-scene
+  capture uses ([scenes.md](scenes.md)). Both members are optional and are
+  omitted when unset, so an ordinary export's bytes are unchanged and a snapshot
+  written before this shipped carries neither. The library's auto-save tab is
+  filed by a left RAIL, one row per day AND place ("2026-08-14 – Limsa
+  Lominsa"); selecting a row filters the grid, which keeps tiles only. A file
+  recording no place gathers under its day alone — no place is ever inferred.
 - The library's auto-save tab states the service's health on its footer:
   a `RecoveryRequired` terminal result or health record outranks the
   last-accepted-save stamp (which claims dispatch acceptance only, exactly

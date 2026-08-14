@@ -75,6 +75,10 @@ internal sealed class AutoSaveHarness : IDisposable
     /// <summary>Optional health store seam for admission/startup fault tests.</summary>
     public AutoSaveHealthStore? HealthStoreOverride { get; set; }
 
+    /// <summary>Where the snapshot is taken. Null is the composition with no
+    /// game data, which records no place — the legacy shape.</summary>
+    public IPlaceService? Place { get; set; }
+
     public AutoSaveConfiguration Settings => Configuration.Config.AutoSave;
 
     public AutoSaveHarness()
@@ -124,7 +128,8 @@ internal sealed class AutoSaveHarness : IDisposable
         Root,
         () => NowUtc,
         Dispatch,
-        HealthStoreOverride);
+        HealthStoreOverride,
+        Place);
 
     /// <summary>
     /// A minimal but genuine pose: two bones, so <c>PoseFile.Save</c> produces

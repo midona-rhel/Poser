@@ -351,6 +351,10 @@ internal static class ServiceRegistration
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
         services.AddSingleton<ICameraFileService, CameraFileService>();
+        // The ONE territory -> place resolution, shared by whole-scene capture
+        // and pose auto-save so a recorded place means the same thing in both
+        // documents.
+        services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
         // The lazy final-capture port breaks the eager construction cycle while
         // the legacy event subscribers remain independent teardown owners.
         services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
@@ -362,6 +366,7 @@ internal static class ServiceRegistration
             sp.GetRequiredService<IBonePosingService>,
             sp.GetRequiredService<IPoseFileService>,
             sp.GetRequiredService<ConfigurationService>(),
+            sp.GetRequiredService<IPlaceService>(),
             sp.GetRequiredService<IDalamudPluginInterface>()));
 
         // The whole-scene vertical. The workflow owns the ONE scene

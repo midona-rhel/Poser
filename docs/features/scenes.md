@@ -25,7 +25,14 @@ states only what is durable about the WHOLE-SCENE layer.
   resolve an id with; a listing must be able to say where a scene was taken
   with the game shut. Both are OPTIONAL: a file written before scenes recorded
   a place carries neither member, loads unchanged, and groups in the library
-  under its day alone. No place is ever inferred for such a file.
+  under its day alone. No place is ever inferred for such a file. The
+  `TerritoryType` → `PlaceName` resolution itself (Brio `CatalogWindow.cs:545`)
+  has ONE home, `IPlaceService`, which pose auto-save stamps its own documents
+  from — a recorded place means the same thing in both file kinds.
+- The library groups scenes by the place and the day the DOCUMENT records; the
+  file's modified time is the fallback for a scene that records no capture
+  time, never a preference, so a copied or synced file does not file under a
+  day it was never captured on.
 - `SceneId` is the document's stable identity across re-saves and is the exact
   identity a scene operation's `OperationReceipt` targets: a whole-scene
   operation has no single target actor. Receipts, epochs and session

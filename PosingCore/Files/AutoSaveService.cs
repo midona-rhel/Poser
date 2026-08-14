@@ -72,6 +72,11 @@ public class AutoSaveService : IAutoSaveService
     private readonly Func<Action, bool> _dispatch;
     private readonly AutoSaveHealthStore _health;
 
+    /// <summary>Where the snapshot is being taken, stamped onto every pose a
+    /// snapshot writes. Optional: a composition without game data (the test
+    /// harness) records no place, which is exactly the legacy shape.</summary>
+    private readonly IPlaceService? _place;
+
     private DateTime? _nextDueUtc;
     private bool _disposed;
 
@@ -160,6 +165,7 @@ public class AutoSaveService : IAutoSaveService
         Func<IBonePosingService> bonePosing,
         Func<IPoseFileService> poseFiles,
         ConfigurationService configuration,
+        IPlaceService place,
         IDalamudPluginInterface pluginInterface)
         : this(
             log,
@@ -170,7 +176,8 @@ public class AutoSaveService : IAutoSaveService
             bonePosing,
             poseFiles,
             configuration,
-            Path.Combine(pluginInterface.GetPluginConfigDirectory(), AutoSaveFolderName))
+            Path.Combine(pluginInterface.GetPluginConfigDirectory(), AutoSaveFolderName),
+            place: place)
     {
     }
 
@@ -191,8 +198,10 @@ public class AutoSaveService : IAutoSaveService
         string rootDirectory,
         Func<DateTime>? utcClock = null,
         Func<Action, bool>? dispatch = null,
-        AutoSaveHealthStore? healthStore = null)
+        AutoSaveHealthStore? healthStore = null,
+        IPlaceService? place = null)
     {
+        _place = place;
         _log = log;
         _framework = framework;
         _gpose = gpose;
@@ -613,6 +622,13 @@ public class AutoSaveService : IAutoSaveService
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             string? captureFailure = null;
 
+            // Read ONCE, here: every file a snapshot writes was taken in the
+            // same place, and this is the capture thread — the worker half
+            // never touches game state. A composition with no place service
+            // leaves both members unset, which is the "no place recorded"
+            // shape a pre-2026-08-14 auto-save already has.
+            var place = _place?.Current ?? default;
+
             foreach (var actor in _actors().Actors)
             {
                 try
@@ -622,10 +638,12 @@ public class AutoSaveService : IAutoSaveService
 
                     // Both halves of the capture read live game state, so both
                     // stay here; only the resulting PoseFile crosses over.
+                    var pose = _poseFiles().CreatePoseFile(_skeletons().GetSkeletons(actor));
+                    Stamp(pose, place);
                     captured.Add(new CapturedPose(
                         actor.Name,
                         UniqueFileName(actor.Name, used) + ".pose",
-                        _poseFiles().CreatePoseFile(_skeletons().GetSkeletons(actor))));
+                        pose));
                 }
                 catch (Exception ex)
                 {
@@ -801,6 +819,24 @@ public class AutoSaveService : IAutoSaveService
             return AutoSaveCaptureResult.Failure(
                 $"Auto-save ({reason}) failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Records where a captured pose was taken. Absent members are how a file
+    /// says no place was recorded, so an unresolved place writes NOTHING.
+    ///
+    /// <para>The provider's declared contract is non-null; one that breaks it
+    /// must still fail in the WRITE half, where a single bad entry cannot
+    /// abort the rest of the snapshot. Stamping must not turn that into a
+    /// capture failure that silently skips the actor, so the null is tolerated
+    /// here rather than at the call site.</para>
+    /// </summary>
+    private static void Stamp(PoseFile pose, CapturePlace place)
+    {
+        if (pose is null)
+            return;
+        pose.TerritoryId = place.TerritoryId;
+        pose.PlaceName = place.PlaceName;
     }
 
     private bool EnsureWriterLocked()

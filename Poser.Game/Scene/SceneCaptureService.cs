@@ -2,14 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
-using Lumina.Excel;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Cameras;
 using Poser.Game.Posing;
 using Poser.Services;
-using TerritoryRow = Lumina.Excel.Sheets.TerritoryType;
 
 namespace Poser.Game.Scene;
 
@@ -66,11 +64,7 @@ public sealed class SceneCaptureService
     private readonly IEnvironmentService _environment;
     private readonly StableBindingRegistry _bindings;
     private readonly CleanPoseFacade _poses;
-    private readonly IClientState _clientState;
-
-    /// <summary>The territory sheet, resolved once. Excel rows are immutable
-    /// data, so holding the sheet costs nothing per capture.</summary>
-    private readonly ExcelSheet<TerritoryRow>? _territories;
+    private readonly IPlaceService _place;
 
     public SceneCaptureService(
         IFramework framework,
@@ -84,11 +78,9 @@ public sealed class SceneCaptureService
         IEnvironmentService environment,
         StableBindingRegistry bindings,
         CleanPoseFacade poses,
-        IClientState clientState,
-        IDataManager data)
+        IPlaceService place)
     {
-        _clientState = clientState;
-        _territories = data.GetExcelSheet<TerritoryRow>();
+        _place = place;
         _framework = framework;
         _actors = actors;
         _skeletons = skeletons;
@@ -149,28 +141,17 @@ public sealed class SceneCaptureService
 
     /// <summary>
     /// Where the capture ran. The id is the durable machine fact; the NAME is
-    /// resolved here and persisted with it, because the listing that groups
-    /// scenes by place runs in PosingCore, which has no game data to resolve
-    /// an id with.
-    ///
-    /// <para>Resolution follows Brio's own (CatalogWindow.cs:545): the
-    /// TerritoryType row's PlaceName link, read through ValueNullable because
-    /// a territory row can carry an unpopulated link, and ExtractText because
-    /// the sheet string is payload-encoded. A territory that resolves to
-    /// nothing writes NO name rather than a placeholder — an absent place is
-    /// how a listing knows to group by the day alone.</para>
+    /// persisted beside it, because the listing that groups scenes by place
+    /// runs in PosingCore, which has no game data to resolve an id with. The
+    /// resolution itself lives in <see cref="IPlaceService"/>, which pose
+    /// auto-save stamps from too — a place must mean the same thing in both
+    /// documents.
     /// </summary>
     private void CaptureTerritory(SceneFile scene)
     {
-        uint territory = _clientState.TerritoryType;
-        scene.TerritoryId = territory;
-        if (territory == 0 || _territories is null)
-            return;
-        if (_territories.GetRowOrDefault(territory) is not { } row)
-            return;
-        var name = row.PlaceName.ValueNullable?.Name.ExtractText();
-        if (!string.IsNullOrWhiteSpace(name))
-            scene.PlaceName = name;
+        var place = _place.Current;
+        scene.TerritoryId = place.TerritoryId;
+        scene.PlaceName = place.PlaceName;
     }
 
     private Dictionary<IActor, Guid> CaptureActors(

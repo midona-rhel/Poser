@@ -86,6 +86,14 @@ public sealed class PoseFileMetadataReadOutcome
     public string? Version { get; }
     public IReadOnlyList<string> Tags { get; }
     public bool HasThumbnail { get; }
+
+    /// <summary>Where the document says it was captured, or null when it
+    /// records no place. Only the NAME is projected: the id is a durable
+    /// machine fact nothing indexing reads, so the streaming projection skips
+    /// it with every other number rather than growing a numeric capture path
+    /// for a value no listing shows.</summary>
+    public string? PlaceName { get; }
+
     public PoseFileStoreFailure? Failure { get; }
 
     private PoseFileMetadataReadOutcome(
@@ -93,6 +101,7 @@ public sealed class PoseFileMetadataReadOutcome
         string? version,
         IReadOnlyList<string> tags,
         bool hasThumbnail,
+        string? placeName,
         PoseFileStoreFailure? failure)
     {
         Succeeded = failure is null;
@@ -100,6 +109,7 @@ public sealed class PoseFileMetadataReadOutcome
         Version = version;
         Tags = tags;
         HasThumbnail = hasThumbnail;
+        PlaceName = placeName;
         Failure = failure;
     }
 
@@ -114,10 +124,11 @@ public sealed class PoseFileMetadataReadOutcome
             pose.Version,
             Array.AsReadOnly((pose.Tags ?? []).ToArray()),
             hasThumbnail,
+            pose.PlaceName,
             null);
 
     internal static PoseFileMetadataReadOutcome Failed(PoseFileStoreFailure failure) =>
-        new(null, null, Array.Empty<string>(), false, failure);
+        new(null, null, Array.Empty<string>(), false, null, failure);
 }
 
 public sealed class PoseFileWriteOutcome
@@ -809,6 +820,9 @@ public sealed class AtomicPoseFileStore
                     break;
                 case nameof(PoseFile.Version):
                     _pose.Version = ParseNullableString();
+                    break;
+                case nameof(PoseFile.PlaceName):
+                    _pose.PlaceName = ParseNullableString();
                     break;
                 case nameof(PoseFile.Base64Image):
                     _hasThumbnail = ParseNullableStringLength() > 0;

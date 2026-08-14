@@ -820,6 +820,55 @@ public class AutoSaveServiceSnapshotTests
         Assert.Equal(new[] { $"{h.PrefixNow()} Last.pose" }, h.SnapshotFiles(h.DayNow()));
     }
 
+    [Fact]
+    public void Every_pose_in_a_snapshot_records_where_it_was_taken()
+    {
+        var place = Substitute.For<IPlaceService>();
+        place.Current.Returns(new CapturePlace(129u, "Limsa Lominsa Lower Decks"));
+        using var h = new AutoSaveHarness { Place = place };
+        h.AddActor("Alpha");
+        h.AddActor("Beta");
+
+        Assert.Equal(2, h.Service.SaveNow("place"));
+        h.WaitForWrite();
+
+        foreach (var name in h.SnapshotFiles(h.DayNow()))
+        {
+            var path = Path.Combine(h.Root, h.DayNow(), name);
+            var read = AtomicPoseFileStore.Default.Read(path);
+            Assert.True(read.Succeeded);
+            Assert.Equal(129u, read.Pose!.TerritoryId);
+            Assert.Equal("Limsa Lominsa Lower Decks", read.Pose.PlaceName);
+
+            // The library's rail reads the METADATA probe, not the document.
+            var metadata = AtomicPoseFileStore.Default.ReadMetadata(path);
+            Assert.True(metadata.Succeeded);
+            Assert.Equal("Limsa Lominsa Lower Decks", metadata.PlaceName);
+        }
+    }
+
+    [Fact]
+    public void A_snapshot_taken_with_no_place_service_writes_neither_member()
+    {
+        // The legacy shape, and the shape a listing must group by day alone:
+        // ABSENT, not null and not a placeholder.
+        using var h = new AutoSaveHarness();
+        h.AddActor("Alpha");
+
+        Assert.Equal(1, h.Service.SaveNow("no-place"));
+        h.WaitForWrite();
+
+        var name = Assert.Single(h.SnapshotFiles(h.DayNow()));
+        var json = File.ReadAllText(Path.Combine(h.Root, h.DayNow(), name));
+        Assert.DoesNotContain(nameof(PoseFile.PlaceName), json, StringComparison.Ordinal);
+        Assert.DoesNotContain(nameof(PoseFile.TerritoryId), json, StringComparison.Ordinal);
+
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(
+            Path.Combine(h.Root, h.DayNow(), name));
+        Assert.True(metadata.Succeeded);
+        Assert.Null(metadata.PlaceName);
+    }
+
     private sealed class FailingHealthFileSystem : IAutoSaveHealthFileSystem
     {
         private readonly IAutoSaveHealthFileSystem _inner =

@@ -99,6 +99,16 @@ public sealed class PoseLibraryEntry
     /// groups those by their day alone rather than inventing a place.</summary>
     public string ScenePlace { get; init; } = string.Empty;
 
+    /// <summary>When a <see cref="PoseLibraryEntryKind.Scene"/> entry says it
+    /// was captured, as its own document recorded it. Null for every other
+    /// kind, and for a scene written before scenes recorded it — a listing
+    /// then falls back to <see cref="Modified"/>, which is when the FILE last
+    /// changed rather than when the scene was taken. Both halves of a "where
+    /// and when" heading must come from the document wherever the document
+    /// answers, or a copied file files under a day it was never captured on.
+    /// </summary>
+    public DateTimeOffset? SceneCapturedAt { get; init; }
+
     /// <summary>A <c>.pose</c> file with a non-empty embedded preview image.</summary>
     public bool HasThumbnail { get; init; }
 

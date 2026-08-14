@@ -69,6 +69,7 @@ public sealed class PoseLibraryPane
     private const string AllLabel = "All poses";
     private const string AllFilesLabel = "All character files";
     private const string AllScenesLabel = "All scenes";
+    private const string AllAutoSavesLabel = "All auto-saves";
     private const string FavoritesLabel = "Favorites";
 
     /// <summary>The auto-save folder name's own format
@@ -78,8 +79,20 @@ public sealed class PoseLibraryPane
     /// <summary>The stamp every tile shows.</summary>
     private const string StampFormat = "yyyy-MM-dd HH:mm";
 
-    /// <summary>The auto-save tab's day headers.</summary>
+    /// <summary>The day part of an auto-save rail row and of a scene section.
+    /// </summary>
     private const string DayFormat = "yyyy-MM-dd";
+
+    /// <summary>What joins a day to the place it was taken in. One separator
+    /// for both surfaces: a scene section heading reads "place – day", an
+    /// auto-save rail row "day – place".</summary>
+    private const string PlaceSeparator = " – ";
+
+    /// <summary>Separates the two halves of an auto-save rail row's KEY. A
+    /// unit separator cannot occur in a day or a place name, so a key is
+    /// unambiguous even where a place name contains the visible separator.
+    /// </summary>
+    private const char KeySeparator = '\u001f';
 
     private const string PoseExtension = ".pose";
 
@@ -1378,6 +1391,13 @@ public sealed class PoseLibraryPane
             _tileStatus.Add(entry.MetadataStatus);
             bool flagged =
                 entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
+            // Minted ONCE. A scene's key and its heading are the same run —
+            // the split exists because a folder's differ — and this loop runs
+            // per entry per rebuild, where a second identical string is a
+            // defect rather than a rounding error.
+            string section = kind == PoseLibraryEntryKind.Scene
+                ? SceneSectionLabel(entry)
+                : string.Empty;
             tiles.Add(new PoseLibraryTileRow
             {
                 Id = entry.FilePath,
@@ -1404,12 +1424,8 @@ public sealed class PoseLibraryPane
                 Author = entry.Author,
                 Tags = entry.Tags,
                 Folder = _folderRows[entry.Folder],
-                SectionKey = kind == PoseLibraryEntryKind.Scene
-                    ? SceneSectionLabel(entry)
-                    : string.Empty,
-                SectionLabel = kind == PoseLibraryEntryKind.Scene
-                    ? SceneSectionLabel(entry)
-                    : string.Empty,
+                SectionKey = section,
+                SectionLabel = section,
                 Flagged = flagged,
                 StatusText = flagged
                     ? StatusText(entry.MetadataStatus, entry.MetadataDetail)
@@ -1421,6 +1437,7 @@ public sealed class PoseLibraryPane
         // selection; a rail row that no longer exists falls back to "All".
         _vm.Selected = -1;
         _vm.ShowRail = true;
+        _vm.RailHeads = 2;
         _vm.ShowNoSources = folders.Count <= 2;
         _vm.EmptyText = "No matches.";
         // The rows standing from here on are the SCANNED library's, so an
@@ -1449,7 +1466,8 @@ public sealed class PoseLibraryPane
         /// what the newest-first ordering broke its ties on.</summary>
         public required string Directory { get; init; }
 
-        /// <summary>The day header this snapshot groups under.</summary>
+        /// <summary>The day this snapshot's files were taken on — half of the
+        /// rail row they fall under.</summary>
         public required string Day { get; init; }
 
         /// <summary>Its <c>.pose</c> files, already ordered. Never empty: a
@@ -1473,6 +1491,15 @@ public sealed class PoseLibraryPane
 
         /// <summary>The modified stamp, already formatted.</summary>
         public required string Stamp { get; init; }
+
+        /// <summary>Where the file says it was captured, or empty when it
+        /// records no place. Read per FILE rather than per folder because a
+        /// day folder spans a whole session: a snapshot taken in Limsa and one
+        /// taken in Gridania land in the same folder and must not share a row.
+        /// Empty is legacy — every auto-save written before 2026-08-14, and
+        /// any file whose document no longer reads — and gathers under its day
+        /// alone. No place is ever inferred.</summary>
+        public required string Place { get; init; }
     }
 
     /// <summary>
@@ -1490,14 +1517,20 @@ public sealed class PoseLibraryPane
         // thread, and a setting flipped mid-flight re-dirties on its own.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
 
-        _vm.ShowRail = false;
+        // The rail is the auto-save tab's structure too now, with ONE head:
+        // a snapshot is not a curated entry, so there is no favourites row.
+        _vm.ShowRail = true;
+        _vm.RailHeads = 1;
         _vm.ShowNoSources = false;
-        _vm.SelectedFolder = 0;
-        _rangeStart = -1;
-        _rangeEnd = -1;
 
+        // Rows that stand keep their rail row and its span: a kick that leaves
+        // them showing must not filter them out from under the user while the
+        // worker runs.
         if (!_autoRows)
         {
+            _rangeStart = -1;
+            _rangeEnd = -1;
+            _vm.SelectedFolder = 0;
             _vm.Folders.Clear();
             _vm.Tiles.Clear();
             _tileTags.Clear();
@@ -1621,6 +1654,7 @@ public sealed class PoseLibraryPane
                     NameLower = name.ToLowerInvariant(),
                     Stamp = SafeFileTime(file).ToString(
                         StampFormat, CultureInfo.InvariantCulture),
+                    Place = SafePlace(file),
                 });
             }
 
@@ -1650,15 +1684,34 @@ public sealed class PoseLibraryPane
     }
 
     /// <summary>
-    /// The rows, from what the worker read. One header per DAY, not per
-    /// snapshot (user call): the snapshots arrive newest-first, so a day is a
-    /// contiguous run that closes when the date string changes, and each tile
-    /// keeps its own full stamp. List writes and a favourites lookup only.
+    /// The rows, from what the worker read. The tab's structure is its RAIL:
+    /// one head, then one row per DAY AND PLACE — "2026-08-14 – Limsa
+    /// Lominsa" — because a day folder spans a whole session and a session
+    /// visits more than one zone. The grid keeps tiles only; selecting a rail
+    /// row is what filters them.
+    ///
+    /// <para>Rows appear in FIRST-ENCOUNTER order, which is the scan's own
+    /// newest-first order, so the newest day leads and the newest place inside
+    /// a day leads. Tiles stay in pure scan order — an auto-save browser is a
+    /// recovery tool, so "All auto-saves" must read newest-first rather than
+    /// in place blocks. A row's tiles are therefore NOT contiguous, which is
+    /// fine: the folder filter is a range test over the ROW index, never over
+    /// tile positions.</para>
+    ///
+    /// <para>List writes, a favourites lookup and a dictionary probe only —
+    /// every string a row shows was minted by the worker.</para>
     /// </summary>
     private void MintAutoSaves(List<AutoSaveFolder> scan)
     {
         _autoPending = false;
         _autoRows = true;
+
+        // The rail row the user was standing on, held by KEY: the rows are
+        // rebuilt from scratch on every pass, so an index would silently point
+        // at a different day after a prune.
+        string? held = _vm.SelectedFolder > 0 && _vm.SelectedFolder < _vm.Folders.Count
+            ? _vm.Folders[_vm.SelectedFolder].Key
+            : null;
 
         var favorites = _config.Config.Library.Favorites;
         var folders = _vm.Folders;
@@ -1669,30 +1722,51 @@ public sealed class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
 
-        PoseLibraryFolderRow? dayRow = null;
+        // Day-and-place -> rail row index, for this pass only: a mint runs on
+        // tab entry and on an explicit rescan, never per frame.
+        var rows = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        int total = 0;
+        for (int s = 0; s < scan.Count; s++)
+            total += scan[s].Entries.Count;
+
+        // One synthetic head, positional by the rail's own contract.
+        folders.Add(new PoseLibraryFolderRow
+        {
+            Key = AllKey,
+            Label = AllAutoSavesLabel,
+            LabelLower = "all",
+            Depth = 0,
+            Count = total,
+            CountText = Count(total),
+        });
+
         for (int s = 0; s < scan.Count; s++)
         {
             var snapshot = scan[s];
-            if (dayRow is null
-                || !string.Equals(dayRow.Key, snapshot.Day, StringComparison.Ordinal))
-            {
-                dayRow = new PoseLibraryFolderRow
-                {
-                    Key = snapshot.Day,
-                    Label = snapshot.Day,
-                    LabelLower = string.Empty,
-                    Depth = 0,
-                };
-                folders.Add(dayRow);
-            }
-
             var entries = snapshot.Entries;
-            dayRow.Count += entries.Count;
-
-            int group = folders.Count - 1;
             for (int e = 0; e < entries.Count; e++)
             {
                 var entry = entries[e];
+                string key = snapshot.Day + KeySeparator + entry.Place;
+                if (!rows.TryGetValue(key, out int group))
+                {
+                    group = folders.Count;
+                    rows.Add(key, group);
+                    folders.Add(new PoseLibraryFolderRow
+                    {
+                        Key = key,
+                        // A file that records no place claims nothing about
+                        // where it was taken: it reads as the bare day.
+                        Label = entry.Place.Length > 0
+                            ? snapshot.Day + PlaceSeparator + entry.Place
+                            : snapshot.Day,
+                        LabelLower = string.Empty,
+                        Depth = 0,
+                    });
+                }
+
+                folders[group].Count++;
                 _tileTags.Add(Array.Empty<string>());
                 _tileAuthors.Add(string.Empty);
                 _tileStatus.Add(PoseLibraryMetadataStatus.Valid);
@@ -1715,18 +1789,21 @@ public sealed class PoseLibraryPane
             }
         }
 
-        // The day totals are known only once every snapshot has landed in
-        // its run, so the readouts are minted here.
-        for (int i = 0; i < folders.Count; i++)
+        // A row's total is known only once every file has landed in it, so the
+        // readouts are minted here. The head already carries its own.
+        for (int i = 1; i < folders.Count; i++)
             folders[i].CountText = Count(folders[i].Count);
 
         _vm.Selected = -1;
-        _vm.SelectedFolder = 0;
-        _vm.ShowRail = false;
+        _vm.SelectedFolder =
+            held is not null && rows.TryGetValue(held, out int standing)
+                ? standing
+                : 0;
+        _vm.ShowRail = true;
+        _vm.RailHeads = 1;
         _vm.ShowNoSources = false;
         _vm.EmptyText = NoAutoSavesText;
-        _rangeStart = -1;
-        _rangeEnd = -1;
+        SyncFolderRange();
         _refilter = true;
     }
 
@@ -1783,6 +1860,31 @@ public sealed class PoseLibraryPane
         }
     }
 
+    /// <summary>
+    /// Where an auto-saved pose says it was taken. Read through the ordinary
+    /// pose codec's own metadata probe — the same seam the scanned library
+    /// indexes every <c>.pose</c> with, so the auto-save tab is not a second
+    /// JSON contract. Worker thread only: the probe validates a whole bounded
+    /// document per file.
+    ///
+    /// <para>Anything that does not answer a place is EMPTY, never a guess: a
+    /// file written before auto-saves recorded one, and a file whose document
+    /// no longer reads, are both "no place recorded" and gather under the day
+    /// alone.</para>
+    /// </summary>
+    private static string SafePlace(string file)
+    {
+        try
+        {
+            var metadata = AtomicPoseFileStore.Default.ReadMetadata(file);
+            return metadata.Succeeded ? metadata.PlaceName ?? string.Empty : string.Empty;
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
     private static string Count(int value) =>
         value.ToString(CultureInfo.InvariantCulture);
 
@@ -1800,9 +1902,9 @@ public sealed class PoseLibraryPane
         var matching = entries.Where(entry => entry.Kind == kind);
         return kind == PoseLibraryEntryKind.Scene
             ? matching
-                .OrderByDescending(entry => entry.Modified.Date)
+                .OrderByDescending(entry => SceneDay(entry).Date)
                 .ThenBy(entry => entry.ScenePlace, StringComparer.OrdinalIgnoreCase)
-                .ThenByDescending(entry => entry.Modified)
+                .ThenByDescending(entry => SceneDay(entry))
             : matching;
     }
 
@@ -1812,11 +1914,21 @@ public sealed class PoseLibraryPane
     /// heading that claims nothing about where they were taken.</summary>
     private static string SceneSectionLabel(PoseLibraryEntry entry)
     {
-        string day = entry.Modified.ToString(DayFormat, CultureInfo.InvariantCulture);
+        string day = SceneDay(entry).ToString(DayFormat, CultureInfo.InvariantCulture);
         return entry.ScenePlace.Length > 0
-            ? entry.ScenePlace + " – " + day
+            ? entry.ScenePlace + PlaceSeparator + day
             : day;
     }
+
+    /// <summary>The day a scene claims it was taken on. The heading pairs a
+    /// place the DOCUMENT recorded with a day, so the day comes from the
+    /// document too wherever it answers; a file's mtime is when the file last
+    /// changed, which a copy or a sync moves. The mtime is the fallback for a
+    /// scene that records no capture time, never a preference — and the grid's
+    /// own ordering reads this same day, so heading and order cannot
+    /// disagree.</summary>
+    private static DateTime SceneDay(PoseLibraryEntry entry) =>
+        entry.SceneCapturedAt?.ToLocalTime().DateTime ?? entry.Modified;
 
     private void SyncQuery()
     {
@@ -1832,12 +1944,13 @@ public sealed class PoseLibraryPane
 
     /// <summary>The selected rail row's descendant span. Depth-first flattening
     /// makes a subtree contiguous, so a folder test is a range test rather than
-    /// a walk.</summary>
+    /// a walk. A synthetic head has no span — it is not a filter — and how many
+    /// heads there are is the rail's own, per-tab, count.</summary>
     private void SyncFolderRange()
     {
         int selected = _vm.SelectedFolder;
         var folders = _vm.Folders;
-        if (selected < 2 || selected >= folders.Count)
+        if (selected < _vm.RailHeads || selected >= folders.Count)
         {
             _rangeStart = -1;
             _rangeEnd = -1;
@@ -1886,11 +1999,14 @@ public sealed class PoseLibraryPane
         // directory they happen to sit in; the rail still filters by folder,
         // so the two structures coexist rather than replace each other.
         bool sectioned = _type == LibraryType.Scenes;
+        // Only a rail that HAS a favourites head can be standing on it; the
+        // auto-save rail's row 1 is a day and a place.
+        int heads = _vm.RailHeads;
 
         for (int i = 0; i < tiles.Count; i++)
         {
             var tile = tiles[i];
-            if (folder == 1 && !tile.Favorite)
+            if (heads > 1 && folder == 1 && !tile.Favorite)
                 continue;
             if (query)
             {
@@ -1902,7 +2018,7 @@ public sealed class PoseLibraryPane
                     && !AnyTagContains(_tileTags[i], _queryLower))
                     continue;
             }
-            else if (folder >= 2)
+            else if (folder >= heads)
             {
                 int row = tile.Folder;
                 if (row < _rangeStart || row >= _rangeEnd)
@@ -1952,11 +2068,12 @@ public sealed class PoseLibraryPane
         for (int g = 0; g < groupCount; g++)
             groups[g].CountText = Count(groups[g].Count);
 
-        // One group states nothing the rail has not already said — except
-        // where the header IS the structure: the auto-save tab's day, and a
-        // scene's place and day, neither of which any rail states.
-        _vm.Grouped =
-            groupCount > 1 || _type == LibraryType.AutoSaves || sectioned;
+        // One group states nothing the rail has not already said — and the
+        // auto-save tab now says ALL of it in its rail, so its grid keeps
+        // tiles only. A scene's place-and-day section is the one header no
+        // rail states, since the scene rail is still the directory tree.
+        _vm.Grouped = _type != LibraryType.AutoSaves
+            && (groupCount > 1 || sectioned);
         _vm.LayoutRevision++;
 
         // A selection the filter dropped is no longer on screen, so it stops
@@ -2224,11 +2341,14 @@ public sealed class PoseLibraryPane
     /// </summary>
     private void SyncPreview()
     {
-        // Every tab whose entries are pose files — auto-saves included, whose
-        // tiles key on the .pose path exactly as the library's do. Character
-        // files never travel the import pipeline at all, so the MCDF tab has
-        // nothing to preview and its eye is disabled.
-        _vm.PreviewAvailable = _type != LibraryType.Mcdf;
+        // A WHITELIST, stated as one: every tab whose entries are pose files —
+        // auto-saves included, whose tiles key on the .pose path exactly as
+        // the library's do. Written as an exclusion this silently admitted the
+        // next tab added; scenes did exactly that, feeding .poserscene paths
+        // into the pose preview binder. Character files never travel the
+        // import pipeline, and a scene is not a pose file at all: it has no
+        // single skeleton to stand on a preview body.
+        _vm.PreviewAvailable = _type is LibraryType.Poses or LibraryType.AutoSaves;
         // No eye anymore (user 2026-08-11): the preview is always live on a
         // tab that can preview, so availability alone gates it.
         bool wanted = _vm.PreviewAvailable
@@ -2346,6 +2466,7 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn = _type != LibraryType.Scenes;
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
+        _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;
         _vm.CanEditMetadata = CanEditMetadata(_vm.Selected);
         bool auto = _type == LibraryType.AutoSaves;
@@ -2512,8 +2633,8 @@ public sealed class PoseLibraryPane
         _config.Save();
 
         // Only the scanned rails carry the synthetic Favorites head; the
-        // auto-save tab's row 1 is a snapshot.
-        var row = _type != LibraryType.AutoSaves && _vm.Folders.Count > 1
+        // auto-save tab's row 1 is a day and a place.
+        var row = _vm.RailHeads > 1 && _vm.Folders.Count > 1
             ? _vm.Folders[1]
             : null;
         if (row is not null)

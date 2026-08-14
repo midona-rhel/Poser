@@ -48,6 +48,25 @@ public class PoseFile
     public string? RaceSexId { get; set; }
     public int? FaceID { get; set; }
 
+    /// <summary>
+    /// Where the capture ran, when the writer recorded one — the same pair a
+    /// scene document carries, and for the same reason: the NAME is persisted
+    /// beside the id because the listings that read it run with no game data
+    /// to resolve an id with (see <c>docs/features/scenes.md</c>).
+    ///
+    /// <para>Both are OMITTED when unset, so a document with no place is
+    /// byte-identical to one written before these members existed and Poser's
+    /// ordinary exports keep exactly the Brio-compatible member set they had.
+    /// ABSENT is the only way a file says "no place was recorded"; a listing
+    /// then groups it by its day alone and infers nothing.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public uint TerritoryId { get; set; }
+
+    /// <inheritdoc cref="TerritoryId"/>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public string? PlaceName { get; set; }
+
     public BoneData ModelDifference { get; set; } = BoneData.Identity;
     public BoneData ModelAbsoluteValues { get; set; } = BoneData.Identity;
 

@@ -813,6 +813,11 @@ public sealed class LifecycleContractTests
             services.AddSingleton<IFramework>(framework);
             services.AddSingleton<IPluginLog>(log);
             services.AddSingleton<IDalamudPluginInterface>(pluginInterface);
+            // Auto-save now stamps every captured pose with where it was
+            // taken, so constructing it reaches the territory sheet. A
+            // substituted data manager resolves none, which is exactly the
+            // "records no place" path this composition should take.
+            services.AddSingleton<IDataManager>(Substitute.For<IDataManager>());
             services.AddPoserCore();
             services.AddPoserFeatures();
             services.AddSingleton<PoseImportCapture>(importHarness.Imports);
