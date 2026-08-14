@@ -11,16 +11,32 @@ namespace Poser.UI;
 /// <summary>
 /// One reference picture, floating over the game.
 ///
-/// <para>THE WINDOW IS THE PICTURE. Unhovered it carries nothing but the
-/// image, wearing the same rounded corners and the same glass edge every
-/// Poser window wears — <see cref="Crystarium.FloatingSurface.DrawChrome"/>
-/// with its fill and blur off, because a fill under a picture the user can
-/// make translucent would be a second image. Hovered, the standard title bar
-/// FADES IN over the top of the picture — the same
+/// <para>THE WINDOW IS THE PICTURE, corner to corner. The image is drawn from
+/// <c>GetWindowPos()</c> to <c>GetWindowPos() + GetWindowSize()</c> with the
+/// window's padding and border pushed to zero, so there is NO inset between
+/// the chrome edge and the picture — which is also what lets
+/// <see cref="ReferenceImageGeometry.ResolveAspect"/> clamp the WINDOW's size
+/// to the PICTURE's ratio directly: with zero insets the two rectangles are
+/// the same rectangle, and no inset has to be subtracted before the ratio is
+/// taken or added back after.</para>
+///
+/// <para>THE OPACITY GOVERNS THE WHOLE WINDOW, because seeing through the
+/// picture is the point. Under a picture there is no ground of any kind: no
+/// glass fill, no backdrop blur, and NO ELEVATION SHADOW — a blurred shadow
+/// is a solid rect behind the box plus a feather reaching a dozen logical
+/// pixels past it, which is both the mat behind the picture and the margin
+/// around it. Only the 1px glass edge survives, and it is drawn under the
+/// picture's own alpha so a picture at the floor wears a floor-alpha edge.
+/// Hovered, the standard title bar FADES IN over the top — the same
 /// <see cref="Crystarium.WindowFrame"/> bar every floating surface wears,
 /// carrying the picture's name, its opacity control and the close action. The
 /// bar overlays; it never takes layout, so the aspect ratio is the whole
-/// window's and the picture is never letterboxed.</para>
+/// window's and the picture is never letterboxed. It keeps its own opacity:
+/// the bar is only up while the user is working it, and a control they cannot
+/// read is not a control.</para>
+///
+/// <para>With no picture up there is nothing to see through, and the empty
+/// state stands on the full chassis — fill, blur, shadow and edge.</para>
 ///
 /// <para>The fade is the overlay-tooltip idiom without the pop: a
 /// constant-rate ramp eased on <see cref="Transition.PictoDefault"/>, applied
@@ -209,36 +225,63 @@ public sealed class ReferenceImageWindow : Window
             _ownerId, InteractionLayer.FloatingWindow, min, max);
         try
         {
-            bool hasImage = _image.Handle != 0;
-            // Edge ONLY while a picture is up: the glass fill and its blur
-            // would sit under an image the user can make translucent, and two
-            // grounds read as neither. With no picture the empty state needs
-            // the full chassis to stand on.
-            Crystarium.FloatingSurface.DrawChrome(
-                draw, min, max, theme.Radii.Window,
-                shadow: true,
-                blur: !hasImage,
-                fill: !hasImage);
-
-            if (hasImage)
-                draw.AddImageRounded(
-                    new ImTextureID(_image.Handle),
-                    min,
-                    max,
-                    Vector2.Zero,
-                    Vector2.One,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(
-                            new Vector4(1f, 1f, 1f, _image.Entry.Opacity))),
-                    theme.Radii.Window * scale);
+            if (_image.Handle != 0)
+                DrawPicture(draw, min, max, scale);
             else
+            {
+                // Nothing to see through: the empty state stands on the full
+                // chassis.
+                Crystarium.FloatingSurface.DrawChrome(
+                    draw, min, max, theme.Radii.Window);
                 DrawEmptyState(min, size);
+            }
 
             DrawTitleBar(min, size, scale, draw);
         }
         finally
         {
             Interactive.EndOwner(owner);
+        }
+    }
+
+    /// <summary>
+    /// The picture, edge to edge, and its edge — in that order and nothing
+    /// else. Both wear the SAME alpha: the image multiplies its tint by the
+    /// stored opacity, and the edge is drawn under a style alpha scaled by the
+    /// same number, which is the one path <c>ColorEx.ApplyAlpha</c> already
+    /// carries every chrome colour through. Anything that would ground the
+    /// picture — the glass fill, the backdrop blur, the elevation shadow — is
+    /// off, so at the opacity floor the world behind shows through the whole
+    /// window and not through a mat.
+    /// </summary>
+    private void DrawPicture(
+        ImDrawListPtr draw, Vector2 min, Vector2 max, float scale)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float opacity = _image.Entry.Opacity;
+        draw.AddImageRounded(
+            new ImTextureID(_image.Handle),
+            min,
+            max,
+            Vector2.Zero,
+            Vector2.One,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(new Vector4(1f, 1f, 1f, opacity))),
+            theme.Radii.Window * scale);
+
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * opacity);
+        try
+        {
+            Crystarium.FloatingSurface.DrawChrome(
+                draw, min, max, theme.Radii.Window,
+                shadow: false,
+                blur: false,
+                fill: false);
+        }
+        finally
+        {
+            ImGui.PopStyleVar();
         }
     }
 
