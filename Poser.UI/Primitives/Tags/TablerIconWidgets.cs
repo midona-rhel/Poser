@@ -41,21 +41,30 @@ public static partial class Crystarium
             Tabler.Get(icon), min, max, color, contentScale, opacity,
             disabled, flipX, strokeWidth);
 
+    /// <summary><paramref name="filled"/> asks for the glyph's SOLID twin —
+    /// the latched on-state's whole vocabulary. It falls back to the outline
+    /// when Tabler ships no filled variant, so a caller never has to know
+    /// which glyphs have one.</summary>
     private static void IconInComposited(
         Vector2 min, Vector2 max, TablerIcon icon,
         float opacity = 1f, Vector4 background = default,
-        bool flipX = false, float? strokeWidth = null)
+        bool flipX = false, float? strokeWidth = null,
+        bool filled = false)
         => DrawIconBox(
-            Tabler.Get(icon), min, max, null, 1f, 1f,
+            filled ? Tabler.GetFilled(icon) : Tabler.Get(icon),
+            min, max, null, 1f, 1f,
             false, flipX, strokeWidth, compositeStroke: true,
             groupOpacity: opacity, groupBackground: background);
 
+    /// <inheritdoc cref="IconInComposited(Vector2, Vector2, TablerIcon, float, Vector4, bool, float?, bool)"/>
     private static void IconInComposited(
         Vector2 min, Vector2 max, string name,
         float opacity = 1f, Vector4 background = default,
-        bool flipX = false, float? strokeWidth = null)
+        bool flipX = false, float? strokeWidth = null,
+        bool filled = false)
         => DrawIconBox(
-            Tabler.Get(name), min, max, null, 1f, 1f,
+            filled ? Tabler.GetFilled(name) : Tabler.Get(name),
+            min, max, null, 1f, 1f,
             false, flipX, strokeWidth, compositeStroke: true,
             groupOpacity: opacity, groupBackground: background);
 

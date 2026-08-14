@@ -80,7 +80,7 @@ public static partial class Crystarium
             help,
             (min, max, opacity, background) => DrawButtonIcon(
                 min, max, icon, iconSize, opacity, background, flipX,
-                strokeWidth),
+                strokeWidth, filled: style.Selected),
             onClick);
     }
 
@@ -108,7 +108,7 @@ public static partial class Crystarium
             help,
             (min, max, opacity, background) => DrawButtonIcon(
                 min, max, icon, iconSize, opacity, background, flipX,
-                strokeWidth),
+                strokeWidth, filled: style.Selected),
             onClick);
     }
 
@@ -445,7 +445,13 @@ public static partial class Crystarium
         // Picto's :active rule changes only the background. Opacity is
         // controlled exclusively by :hover, so dragging a held button
         // outside returns the complete element group to its resting .8.
-        float targetOpacity = hit.Hovered ? 1f : 0.8f;
+        //
+        // A LATCHED button is the exception: its whole on-state is the glyph
+        // going SOLID in the theme's high-contrast neutral, so it sits at full
+        // presence whether or not the pointer is on it. Off is the same glyph
+        // outlined at the resting .8 — the fill and the contrast carry the
+        // state together, and neither needs a chip behind them to say it.
+        float targetOpacity = selected || hit.Hovered ? 1f : 0.8f;
         // One group under one identity: the background and the opacity
         // share a clock, so pressing a button that is still fading in
         // restarts both together, exactly like the CSS element does.
@@ -475,28 +481,6 @@ public static partial class Crystarium
         draw.PushClipRect(hit.ScreenMin, hit.ScreenMax, true);
         try
         {
-            // A LATCHED icon button reads the way every other on-state in the
-            // app reads: the accent wash with the 1px accent edge that pairs
-            // with it (the same pair the rail's selected pill wears). It sits
-            // under the hover/active overlay, so pointing at a latched button
-            // still lightens it.
-            if (selected && !disabled)
-            {
-                draw.AddRectFilled(
-                    hit.ScreenMin,
-                    hit.ScreenMax,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(theme.Chrome.AccentFill)),
-                    radius);
-                draw.AddRect(
-                    hit.ScreenMin,
-                    hit.ScreenMax,
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(theme.Chrome.AccentFillBorder)),
-                    radius,
-                    ImDrawFlags.None,
-                    MathF.Max(1f, scale));
-            }
             draw.AddRectFilled(
                 hit.ScreenMin,
                 hit.ScreenMax,
@@ -530,7 +514,8 @@ public static partial class Crystarium
         float opacity,
         Vector4 background,
         bool flipX,
-        float strokeWidth)
+        float strokeWidth,
+        bool filled = false)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
             min, max, logicalSize);
@@ -539,7 +524,8 @@ public static partial class Crystarium
             opacity: opacity,
             background: background,
             flipX: flipX,
-            strokeWidth: strokeWidth);
+            strokeWidth: strokeWidth,
+            filled: filled);
     }
 
     private static void DrawButtonIcon(
@@ -550,7 +536,8 @@ public static partial class Crystarium
         float opacity,
         Vector4 background,
         bool flipX,
-        float strokeWidth)
+        float strokeWidth,
+        bool filled = false)
     {
         var (iconMin, iconMax) = CenteredIconBounds(
             min, max, logicalSize);
@@ -559,7 +546,8 @@ public static partial class Crystarium
             opacity: opacity,
             background: background,
             flipX: flipX,
-            strokeWidth: strokeWidth);
+            strokeWidth: strokeWidth,
+            filled: filled);
     }
 
     private static (Vector2 Min, Vector2 Max) CenteredIconBounds(

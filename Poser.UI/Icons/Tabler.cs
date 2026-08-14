@@ -128,6 +128,25 @@ public static class Tabler
         }
     }
 
+    /// <summary>
+    /// The FILLED twin of an outline glyph, or the outline itself when Tabler
+    /// ships no filled variant for it. Tabler's own naming is the whole
+    /// mapping — every filled icon is its outline sibling's name plus
+    /// <c>-filled</c> — so a lane gains its filled state by landing a
+    /// <c>&lt;name&gt;-filled</c> source and nothing else.
+    ///
+    /// <para>Falling back to the outline rather than to null is what lets the
+    /// latched on-state be stated once, at the primitive: a toggle whose glyph
+    /// has no filled twin yet still draws, reading its on-state from the
+    /// neutral tint alone until the twin arrives.</para>
+    /// </summary>
+    public static SvgDocument? GetFilled(string name) =>
+        Get(name + "-filled") ?? Get(name);
+
+    /// <inheritdoc cref="GetFilled(string)"/>
+    public static SvgDocument? GetFilled(TablerIcon icon) =>
+        GetFilled(NameFor(icon));
+
     /// <summary>Register a plugin-specific icon by name + raw SVG XML.</summary>
     public static void Register(string name, string svgXml)
     {
