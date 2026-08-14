@@ -241,6 +241,14 @@ public sealed class GraphicalBonePane : IDisposable
         }
     }
 
+    /// <summary>The last face map's source dimensions: the reservation
+    /// aspect while a face decode is in flight, so the image lands inside an
+    /// already reserved rect instead of popping the canvas in a frame late.
+    /// The config records no image sizes, so before any face map has ever
+    /// decoded the reservation is square — every head map is near-square.
+    /// </summary>
+    private Vector2 _faceSourceSize = Vector2.One;
+
     private void DrawFacePage(ISkeleton skeleton, ActorId? actorId, Vector2 contentArea)
     {
         // Face-map variant (race → head section) is a native customize read
@@ -253,7 +261,9 @@ public sealed class GraphicalBonePane : IDisposable
             string.IsNullOrEmpty(section.Image))
             return;
         var texture = GetTexture(section.Image);
-        if (texture == null)
+        // A missing or failed image will never land: keep the page empty as
+        // before. Only an in-flight decode reserves.
+        if (texture == null && !_pendingTextures.ContainsKey(section.Image))
             return;
 
         float s = ImGuiHelpers.GlobalScale;
@@ -262,13 +272,23 @@ public sealed class GraphicalBonePane : IDisposable
         var available = Vector2.Max(
             Vector2.One,
             contentArea - new Vector2(margin * 2f));
-        var sourceSize = new Vector2(texture.Width, texture.Height);
+        var sourceSize = texture != null
+            ? new Vector2(texture.Width, texture.Height)
+            : _faceSourceSize;
         float fit = MathF.Min(
             available.X / sourceSize.X,
             available.Y / sourceSize.Y);
         var imageSize = sourceSize * fit;
         var imageOrigin =
             viewportOrigin + (contentArea - imageSize) * 0.5f;
+        if (texture == null)
+        {
+            // Reserve the map's rect and paint a quiet fill in it: the
+            // decode's arrival must not shift a single pixel of layout.
+            DrawPendingFill(imageOrigin, imageSize);
+            return;
+        }
+        _faceSourceSize = sourceSize;
         DrawBoneSectionAt(
             headSection,
             new Vector4(
@@ -290,11 +310,20 @@ public sealed class GraphicalBonePane : IDisposable
             string.IsNullOrEmpty(section.Image))
             return;
         var texture = GetTexture(section.Image);
-        if (texture == null)
-            return;
-
         var min = new Vector2(rect.X, rect.Y);
         var size = new Vector2(rect.Z, rect.W);
+        if (texture == null)
+        {
+            // The slot's rect is computable without the texture, so an
+            // in-flight decode reserves it with a quiet fill instead of
+            // dropping the section — the image pops into an already
+            // reserved area and nothing shifts. A missing or failed image
+            // stays absent, exactly as before.
+            if (_pendingTextures.ContainsKey(section.Image))
+                DrawPendingFill(min, size);
+            return;
+        }
+
         var max = min + size;
         ImGui.GetWindowDrawList().AddImage(texture.Handle, min, max);
         var sourceSize = new Vector2(texture.Width, texture.Height);
@@ -396,6 +425,19 @@ public sealed class GraphicalBonePane : IDisposable
                 mouse + new Vector2(4f, 4f),
                 hoveredName);
         }
+    }
+
+    /// <summary>The reserved rect's fill while its decode is in flight: the
+    /// theme's raised surface, so a pending map reads as a surface rather
+    /// than a hole, and its arrival changes pixels but never layout.</summary>
+    private static void DrawPendingFill(Vector2 min, Vector2 size)
+    {
+        ImGui.GetWindowDrawList().AddRectFilled(
+            min,
+            min + size,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                Crystarium.ActiveTheme.SurfaceRaised)),
+            Crystarium.ActiveTheme.Radii.Surface * ImGuiHelpers.GlobalScale);
     }
 
     private IDalamudTextureWrap? GetTexture(string imageName)
