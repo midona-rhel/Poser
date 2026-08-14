@@ -35,7 +35,8 @@ public sealed class GraphicalBonePane : IDisposable
     // Marquee (Anamnesis MouseCanvas): dot positions recorded per frame,
     // drag on empty canvas selects everything inside the rectangle.
     private readonly System.Collections.Generic.List<(SelectionId Id, Vector2 Pos)> _frameDots = new();
-    private readonly List<(SelectionId Id, Vector2 Pos, string Name)> _dotCandidates = new();
+    private readonly List<(SelectionId Id, Vector2 Pos, string Name, bool Matches)>
+        _dotCandidates = new();
     private Vector2? _marqueeStart;
     private readonly IActorManager _actorManager;
     private readonly ISkeletonService _skeletonService;
@@ -57,6 +58,16 @@ public sealed class GraphicalBonePane : IDisposable
     /// or overlay.
     /// </summary>
     public bool SidesSwapped { get; set; }
+
+    /// <summary>
+    /// The map's own bone filter — Brio's <c>BoneSearchControl</c>, which its
+    /// graphical window reaches from the same top bar. A map cannot hide a dot
+    /// by removing a row, so a dot the filter rejects stays where the drawing
+    /// puts it and goes quiet: faint, unhoverable, and outside the marquee.
+    /// Held here rather than by the host so both hosts get it, and so it
+    /// survives a tab change the way the sidebar's filter does.
+    /// </summary>
+    private string _filter = "";
 
     private float _closestHoverDistance;
     private SelectionId? _hoveredBone;
@@ -107,16 +118,36 @@ public sealed class GraphicalBonePane : IDisposable
         if (skeleton == null)
             return false;
 
-        var origin = ImGui.GetCursorScreenPos();
+        var bandOrigin = ImGui.GetCursorScreenPos();
+        var theme = Crystarium.ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        float bandHeight =
+            theme.Controls.WorkspaceHeight * scale + theme.Page.ActionGap * scale;
+        ImGui.SetCursorScreenPos(bandOrigin);
+        Crystarium.FilterPill(
+            "##graphical-bone-filter",
+            _filter,
+            next => _filter = next,
+            "Filter bones",
+            ControlStyle.Workspace with
+            {
+                Width = UiWidth.Region(MathF.Min(
+                    theme.Matrix.FilterWidth, contentArea.X / scale)),
+            });
+
+        var origin = bandOrigin + new Vector2(0f, bandHeight);
+        var mapArea = new Vector2(
+            contentArea.X, MathF.Max(1f, contentArea.Y - bandHeight));
+        ImGui.SetCursorScreenPos(origin);
 
         if (page == 0)
-            DrawBodyPage(skeleton, contentArea);
+            DrawBodyPage(skeleton, mapArea);
         else
-            DrawFacePage(skeleton, actorId, contentArea);
+            DrawFacePage(skeleton, actorId, mapArea);
         ResolveAndDrawDots();
 
         bool hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows)
-            && ImGui.IsMouseHoveringRect(origin, origin + contentArea);
+            && ImGui.IsMouseHoveringRect(origin, origin + mapArea);
 
         if (_hoveredBone is { } hoveredId && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && hovered)
         {
@@ -364,8 +395,33 @@ public sealed class GraphicalBonePane : IDisposable
         // selection command.
         if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
             return;
-        _dotCandidates.Add((selectionId, screenPos, bone.Name));
-        _frameDots.Add((selectionId, screenPos));
+        bool matches = MatchesFilter(bone.Name, bone.BoneName);
+        _dotCandidates.Add((selectionId, screenPos, bone.Name, matches));
+        // A filtered-out dot is outside the marquee too: dragging a box over
+        // the map must select what the map is offering, not what it is
+        // greying.
+        if (matches)
+            _frameDots.Add((selectionId, screenPos));
+    }
+
+    /// <summary>Brio's <c>BoneSearchControl</c> matcher: the friendly name or
+    /// the raw skeleton name, case-insensitively, and an empty filter matches
+    /// everything.</summary>
+    private bool MatchesFilter(string displayName, string canonicalName) =>
+        _filter.Length == 0
+        || displayName.Contains(_filter, StringComparison.OrdinalIgnoreCase)
+        || canonicalName.Contains(_filter, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>How present a dot the filter rejected stays: enough to keep
+    /// the map readable as a map, not enough to be mistaken for an
+    /// offer.</summary>
+    private const float FilteredDotOpacity = 0.25f;
+
+    private static uint FadeU32(uint color, float factor)
+    {
+        uint alpha = (uint)Math.Clamp(
+            ((color >> 24) & 0xFF) * factor, 0f, 255f);
+        return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
     private void ResolveAndDrawDots()
@@ -375,6 +431,8 @@ public sealed class GraphicalBonePane : IDisposable
         for (int i = 0; i < _dotCandidates.Count; i++)
         {
             var candidate = _dotCandidates[i];
+            if (!candidate.Matches)
+                continue;
             float distance = Vector2.Distance(mouse, candidate.Pos);
             if (distance < HitRadius * s && distance < _closestHoverDistance)
             {
@@ -398,6 +456,11 @@ public sealed class GraphicalBonePane : IDisposable
                 : isHovered
                     ? ImGui.GetColorU32(ImGuiCol.Text)
                     : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+            // A dot the filter rejects keeps its place — the map is a
+            // drawing and its dots ARE the anatomy — and goes faint, which
+            // is a map's way of saying what a list says by not listing a row.
+            if (!candidate.Matches)
+                circleColor = FadeU32(circleColor, FilteredDotOpacity);
             drawList.AddCircleFilled(
                 candidate.Pos, CircleRadius * s,
                 ImGui.GetColorU32(ImGuiCol.ChildBg));
