@@ -95,6 +95,7 @@ public class SettingsWindow : Window
             CloseWithGPose = c.CloseWithGPose,
             PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
             RelativeSecondaryBones = c.RelativeSecondaryBones,
+            LinkSiblingBones = c.LinkSiblingBones,
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
             UndoDepth = c.UndoDepth,
@@ -294,6 +295,7 @@ public class SettingsWindow : Window
         c.CloseWithGPose = _vm.CloseWithGPose;
         c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
         c.RelativeSecondaryBones = _vm.RelativeSecondaryBones;
+        c.LinkSiblingBones = _vm.LinkSiblingBones;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
         // Clamped, not trusted: the slider is bounded but the stored value is

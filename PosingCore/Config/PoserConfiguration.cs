@@ -71,6 +71,18 @@ public class PoserConfiguration : IPluginConfiguration
     public bool RelativeSecondaryBones { get; set; } = false;
 
     /// <summary>
+    /// Selecting a bone also selects its <c>_l</c>/<c>_r</c> counterpart, for
+    /// the whole session — Ktisis' <c>EditorConfig.PersistentSiblingLink</c>
+    /// (SelectManager.cs:209-223), a MODE rather than the one-shot "Select
+    /// mirrored bone" command Poser already has. It also arms
+    /// <c>IBonePosingService.LinkedBonesEnabled</c>, the same-delta catalog
+    /// (both eyes, the Viera ear-variant chains) whose partners are not
+    /// <c>_l</c>/<c>_r</c> pairs and so cannot be reached by co-selection.
+    /// Off by default, which is the behaviour Poser has always had.
+    /// </summary>
+    public bool LinkSiblingBones { get; set; } = false;
+
+    /// <summary>
     /// How many edits the undo history keeps, read live on every recorded edit
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the

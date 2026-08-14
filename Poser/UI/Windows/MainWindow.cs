@@ -590,6 +590,7 @@ public class MainWindow : Window
         };
         _poseInspector.GetSwapRotationXY = () =>
             Config.ConfigurationService.Instance.Config.UI.SwapRotationXY;
+        _selection.Live.CompanionResolver = ResolveSiblingBone;
         _poseInspector.DescriptorDisplayName = ActorDisplayName;
         appearancePane.DisplayNameProvider = ActorDisplayName;
         // Transitional: the inspector still takes entity display lookups until
@@ -1300,6 +1301,13 @@ public class MainWindow : Window
             _ => 0,
         };
         _vm.SelectedBonesOnly = _editorState.ShowSelectedBonesOnly;
+        // The sibling-link mode's second half. Co-selection reaches every
+        // _l/_r pair; the same-delta CATALOG (both eyes, the Viera ear-variant
+        // chains) pairs bones that are not _l/_r counterparts and cannot be
+        // reached that way, so the one switch arms both. Read here rather than
+        // wired once, so a Settings change takes effect on the next frame.
+        _bonePosingService.LinkedBonesEnabled =
+            Config.ConfigurationService.Instance.Config.LinkSiblingBones;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         _vm.UndoDescription = _cleanTransforms.UndoDescription;
@@ -2500,6 +2508,54 @@ public class MainWindow : Window
     private static bool IsBoneSuppressed(BoneDescriptor bone)
         => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
             && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName);
+
+    /// <summary>
+    /// The <c>_l</c>/<c>_r</c> counterpart the sibling-link mode co-selects,
+    /// or null when the mode is off or the bone has none. Resolution never
+    /// leaves the bone's OWN skeleton or partial: a name alone matches across
+    /// slots, and pairing a character hand with a weapon bone of the same
+    /// name would be a different bone entirely.
+    /// </summary>
+    private SelectionId? ResolveSiblingBone(SelectionId id)
+    {
+        if (!Config.ConfigurationService.Instance.Config.LinkSiblingBones ||
+            id is not { Kind: SceneEntityKind.Bone, Bone: { } bone })
+            return null;
+
+        string name = bone.CanonicalName;
+        string partner =
+            name.EndsWith("_l", StringComparison.Ordinal)
+                ? string.Concat(name.AsSpan(0, name.Length - 2), "_r")
+                : name.EndsWith("_r", StringComparison.Ordinal)
+                    ? string.Concat(name.AsSpan(0, name.Length - 2), "_l")
+                    : string.Empty;
+        if (partner.Length == 0)
+            return null;
+
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != bone.Skeleton.Actor.LogicalId)
+                continue;
+            foreach (var skeleton in actor.Skeletons)
+            {
+                if (skeleton.Id != bone.Skeleton)
+                    continue;
+                foreach (var candidate in skeleton.Bones)
+                {
+                    if (candidate.Id.PartialId == bone.PartialId &&
+                        string.Equals(
+                            candidate.Id.CanonicalName,
+                            partner,
+                            StringComparison.Ordinal))
+                        return SelectionId.ForBone(candidate.Id);
+                }
+            }
+
+            return null;
+        }
+
+        return null;
+    }
 
     /// <summary>Nickname, else the anonymous mask when enabled, else the
     /// cleaned snapshot name — one stable-id display API for every surface,

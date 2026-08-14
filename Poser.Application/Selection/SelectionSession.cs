@@ -38,6 +38,22 @@ public sealed class SelectionScope
 
     public SelectionId? Anchor => _anchor;
 
+    /// <summary>
+    /// A persistent companion for every selection — Ktisis' sibling link
+    /// (SelectManager.cs:209-223), which resolves a bone's <c>_l</c>/<c>_r</c>
+    /// counterpart so an edit, a reset or a flip covers both sides without a
+    /// second click. Null (the default) is no companion at all.
+    ///
+    /// <para>Two properties this scope guarantees and the resolver must not
+    /// have to think about: the companion joins BEFORE the change is
+    /// published, so no listener ever observes the half-selection; and it
+    /// never takes the ANCHOR, so a shift-range that follows still runs from
+    /// the row the user actually clicked. Removal is symmetric — the pair
+    /// leaves together, or the mode could strand a half-pair no click could
+    /// have produced.</para>
+    /// </summary>
+    public Func<SelectionId, SelectionId?>? CompanionResolver { get; set; }
+
     public bool IsSelected(SelectionId id) => _selected.Contains(id);
 
     public void Select(SelectionId id)
@@ -45,6 +61,7 @@ public sealed class SelectionScope
         _selected.Clear();
         _selected.Add(id);
         _anchor = id;
+        AddCompanion(id);
         NotifyChanged();
     }
 
@@ -59,6 +76,7 @@ public sealed class SelectionScope
         if (!_selected.Contains(id))
             _selected.Add(id);
         _anchor = id;
+        AddCompanion(id);
         NotifyChanged();
     }
 
@@ -78,7 +96,9 @@ public sealed class SelectionScope
         if (!_selected.Remove(id))
             return;
 
-        if (_anchor == id)
+        if (CompanionResolver?.Invoke(id) is { } companion && companion != id)
+            _selected.Remove(companion);
+        if (_anchor is not { } anchor || anchor == id || !_selected.Contains(anchor))
             _anchor = Primary;
         NotifyChanged();
     }
@@ -166,6 +186,16 @@ public sealed class SelectionScope
             ? kept
             : _selected.Count == 0 ? null : _selected[0];
         return true;
+    }
+
+    private void AddCompanion(SelectionId id)
+    {
+        if (CompanionResolver?.Invoke(id) is not { } companion ||
+            companion == id ||
+            _selected.Contains(companion) ||
+            (_selected.Count > 0 && !IsCompatible(_selected[0], companion)))
+            return;
+        _selected.Add(companion);
     }
 
     private void NotifyChanged() => _changed?.Invoke();
