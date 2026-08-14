@@ -490,7 +490,9 @@ public sealed class ScenePane
         if (metadata.SavedAt is { } saved)
         {
             Line(
-                saved.ToLocalTime().ToString("yyyy-MM-dd HH:mm"),
+                saved.ToLocalTime().ToString(
+                    LibraryStamp.DateTimeFormat,
+                    System.Globalization.CultureInfo.InvariantCulture),
                 theme.FormHint,
                 theme.Typography.CaptionSize);
         }

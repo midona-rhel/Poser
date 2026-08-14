@@ -79,9 +79,9 @@ public static partial class Crystarium
         private const float NavActionSize = 24f;
 
         /// <summary>The modified column. Wide enough for
-        /// <c>yyyy-MM-dd HH:mm</c> in the mono readout face, which is the one
-        /// string it ever holds.</summary>
-        private const float ModifiedColumnWidth = 104f;
+        /// <see cref="ModifiedFormat"/> in the mono readout face, which is the
+        /// one string it ever holds.</summary>
+        private const float ModifiedColumnWidth = 92f;
 
         /// <summary>A row's leading mark, on the list-row band.</summary>
         private const float EntryIconSlot = 22f;
@@ -890,8 +890,18 @@ public static partial class Crystarium
         private string? SelectedFile =>
             _selectedIsDirectory ? null : _selectedPath;
 
+        /// <summary>The modified column's one string. Crystarium cannot see
+        /// the app's <c>LibraryStamp</c> — it references nothing — so the
+        /// format is restated here; it must stay identical, a browser row and
+        /// a library tile show the same fact about the same file.</summary>
+        private const string ModifiedFormat = "yy-MM-dd HH:mm";
+
         private static string Modified(DateTime stamp) =>
-            stamp == default ? "—" : stamp.ToString("yyyy-MM-dd HH:mm");
+            stamp == default
+                ? "—"
+                : stamp.ToString(
+                    ModifiedFormat,
+                    System.Globalization.CultureInfo.InvariantCulture);
 
         // ── dispatch ─────────────────────────────────────────────────────────
 

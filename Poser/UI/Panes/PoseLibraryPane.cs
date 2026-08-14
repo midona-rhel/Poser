@@ -76,12 +76,22 @@ public sealed class PoseLibraryPane
     /// (<c>AutoSaveService.CreateSnapshotFolder</c>), which is UTC.</summary>
     private const string SnapshotFolderFormat = "yyyy-MM-dd HH-mm-ss'Z'";
 
-    /// <summary>The stamp every tile shows.</summary>
-    private const string StampFormat = "yyyy-MM-dd HH:mm";
+    /// <summary>The stamp every tile shows —
+    /// <see cref="LibraryStamp.DateTimeFormat"/>, the same one the scan mints
+    /// <c>ModifiedText</c> with, so an auto-save entry and a pose tile read
+    /// alike.</summary>
+    private const string StampFormat = LibraryStamp.DateTimeFormat;
 
     /// <summary>The day part of an auto-save rail row and of a scene section.
+    /// DISPLAY only — never used to read a name off disk.</summary>
+    private const string DayFormat = LibraryStamp.DateFormat;
+
+    /// <summary>The auto-save DAY folder's own name
+    /// (<c>AutoSaveService.DayFolderFormat</c>). A stored name is parsed back,
+    /// so it keeps its century where the caption drops it — and it is a
+    /// separate constant from <see cref="DayFormat"/> for exactly that reason.
     /// </summary>
-    private const string DayFormat = "yyyy-MM-dd";
+    private const string SnapshotDayFolderFormat = "yyyy-MM-dd";
 
     /// <summary>What joins a day to the place it was taken in. One separator
     /// for both surfaces: a scene section heading reads "place – day", an
@@ -1802,16 +1812,17 @@ public sealed class PoseLibraryPane
     {
         var name = System.IO.Path.GetFileName(directory);
 
-        // The per-day layout: the folder name IS the (local) day. Taken
-        // verbatim rather than through the mtime fallback, which a later
-        // prune deleting siblings inside the folder would silently bump.
+        // The per-day layout: the folder name IS the (local) day. Read off the
+        // NAME rather than through the mtime fallback, which a later prune
+        // deleting siblings inside the folder would silently bump — then
+        // restated in the caption's own format, which is not the disk's.
         if (DateTime.TryParseExact(
                 name,
-                DayFormat,
+                SnapshotDayFolderFormat,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
-                out _))
-            return name!;
+                out var named))
+            return named.ToString(DayFormat, CultureInfo.InvariantCulture);
 
         var time = DateTime.TryParseExact(
             name,

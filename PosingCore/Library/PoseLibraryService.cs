@@ -509,7 +509,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             FilePath = filePath,
             Name = name,
             NameLower = name.ToLowerInvariant(),
-            ModifiedText = modified.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+            ModifiedText = modified.ToString(
+                LibraryStamp.DateTimeFormat, CultureInfo.InvariantCulture),
             Modified = modified,
             Folder = folderIndex,
             Author = author,

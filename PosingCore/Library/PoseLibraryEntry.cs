@@ -23,6 +23,25 @@ public enum PoseLibraryEntryKind : byte
     Scene,
 }
 
+/// <summary>
+/// The ONE way Poser writes a timestamp a user reads. Two-digit year: a tile
+/// caption, a rail heading and a metadata line are all narrow, and the century
+/// is the least informative part of a date nobody reads from 1900. Sortable
+/// order (year first) is kept, because these strings sit in lists.
+/// <para>A format that names a file or folder ON DISK is NOT one of these —
+/// those stay four-digit, because a stored name is parsed back and a two-digit
+/// year is ambiguous forever.</para>
+/// </summary>
+public static class LibraryStamp
+{
+    /// <summary>Day and time: every tile, rail entry and metadata line.</summary>
+    public const string DateTimeFormat = "yy-MM-dd HH:mm";
+
+    /// <summary>Day alone: an auto-save rail day, a scene section heading.
+    /// </summary>
+    public const string DateFormat = "yy-MM-dd";
+}
+
 /// <summary>Why a pose metadata probe did or did not produce metadata.</summary>
 public enum PoseLibraryMetadataStatus : byte
 {
@@ -50,7 +69,8 @@ public sealed class PoseLibraryEntry
     /// <summary>Invariant lowercase copy of <see cref="Name"/> for search.</summary>
     public required string NameLower { get; init; }
 
-    /// <summary>Last write time pre-formatted as <c>yyyy-MM-dd HH:mm</c>.</summary>
+    /// <summary>Last write time pre-formatted through
+    /// <see cref="LibraryStamp.DateTimeFormat"/>.</summary>
     public required string ModifiedText { get; init; }
 
     public required DateTime Modified { get; init; }
