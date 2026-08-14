@@ -2334,6 +2334,19 @@ public class PoseInspectorPane
             }
             return ("Camera", "camera", 0);
         }
+        // A prop names itself for the same reason a light does: the rail's
+        // TRANSLATION rows underneath the head are live for a selected prop,
+        // so a head reading "Nothing selected" contradicted the very rows it
+        // stands over.
+        if (_primary is { Kind: SceneEntityKind.Prop, Prop: { } primaryProp })
+        {
+            foreach (var prop in _scene.Snapshot.Props)
+            {
+                if (prop.Id.Equals(primaryProp))
+                    return (prop.Name, prop.Visible ? "prop" : "prop · hidden", 0);
+            }
+            return ("Prop", "prop", 0);
+        }
         return ("", "", 0);
     }
 

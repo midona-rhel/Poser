@@ -355,6 +355,31 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
+    public void Cloning_a_prop_copies_where_it_stands_but_not_what_it_is_called()
+    {
+        var world = new World();
+        var source = world.Lifecycle.SpawnProp(Apple)!;
+        var moved = Transform.Identity;
+        moved.Position = new Vector3(4f, 0f, 1f);
+        world.Props.Apply(source, new PropState("Fruit", Apple, moved, false));
+
+        var clone = world.Lifecycle.CloneProp(source);
+
+        Assert.NotNull(clone);
+        Assert.Equal(2, world.Props.Live.Count);
+        var state = world.Props.Read(clone!);
+        Assert.Equal(moved.Position, state.Transform.Position);
+        Assert.False(state.Visible);
+        Assert.Equal(Apple.Model, state.Model.Model);
+        // A spawn names itself; only the undo of a REMOVAL puts a user's own
+        // name back.
+        Assert.Equal("Apple", state.Name);
+        Assert.Equal("Clone prop 'Fruit'", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Single(world.Props.Live);
+    }
+
+    [Fact]
     public void A_spawn_the_game_refuses_records_no_prop_entry()
     {
         var world = new World { Props = { RefuseSpawn = true } };
@@ -836,6 +861,7 @@ public sealed class SceneLifecycleHistoryTests
         public void Apply(object prop, PropState state) =>
             ((FakeProp)prop).State = ((FakeProp)prop).State with
             {
+                Name = state.Name,
                 Transform = state.Transform,
                 Visible = state.Visible,
             };

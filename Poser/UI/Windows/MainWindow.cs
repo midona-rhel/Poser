@@ -739,6 +739,12 @@ public class MainWindow : Window
                 _ctxCameraId = ctxCamera;
                 _cameraCtxOpenRequested = true;
             }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Prop, Prop: { } ctxProp })
+            {
+                _ctxPropId = ctxProp;
+                _propCtxOpenRequested = true;
+            }
             else if (row.OverlayBones != null)
             {
                 _ctxOverlayBones = row.OverlayBones;
@@ -1120,6 +1126,7 @@ public class MainWindow : Window
         DrawOverlayContextMenu();
         DrawLightContextMenu();
         DrawCameraContextMenu();
+        DrawPropContextMenu();
         DrawRenameModal();
         DrawEntityRenameModal();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
@@ -3418,17 +3425,19 @@ public class MainWindow : Window
         }
     }
 
-    // ── light / camera context menus ────────────────────────────────────
+    // ── light / camera / prop context menus ─────────────────────────────
 
     private LightId? _ctxLightId;
     private bool _lightCtxOpenRequested;
     private CameraId? _ctxCameraId;
     private bool _cameraCtxOpenRequested;
+    private PropId? _ctxPropId;
+    private bool _propCtxOpenRequested;
 
-    /// <summary>The entity rename modal's state: lights and cameras carry
-    /// their name ON the entity, so one modal writes whichever apply hook the
-    /// opening menu handed it — unlike the actor modal, which writes a
-    /// nickname beside a name the game owns.</summary>
+    /// <summary>The entity rename modal's state: lights, cameras and props
+    /// carry their name ON the entity, so one modal writes whichever apply
+    /// hook the opening menu handed it — unlike the actor modal, which writes
+    /// a nickname beside a name the game owns.</summary>
     private bool _entityRenameOpen;
     private string _entityRenameValue = "";
     private string _entityRenameTitle = "";
@@ -3496,6 +3505,69 @@ public class MainWindow : Window
         }
         int clicked = Crystarium.FloatingMenu.Draw("##light-ctx");
         if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>
+    /// Right-click prop menu: the same lifetime family the light menu speaks,
+    /// in the prop's vocabulary. A prop was the one entity row whose right
+    /// click did nothing at all, while actors, bones, categories, lights and
+    /// cameras all answered.
+    ///
+    /// <para>There is no "Save to file…" row because a prop has no document
+    /// of its own — its whole identity is the model triple, which the scene
+    /// file carries. Every lifetime verb goes through the history seam, so a
+    /// clone and a destroy are steps of the user's history exactly as the
+    /// light's are.</para>
+    /// </summary>
+    private void DrawPropContextMenu()
+    {
+        if (_ctxPropId is not { } propId)
+            return;
+        var resolved = _bindings.Resolve(propId);
+        if (!resolved.Success || resolved.Value is not { IsValid: true } prop)
+        {
+            _ctxPropId = null;
+            Crystarium.FloatingMenu.Dismiss("##prop-ctx");
+            return;
+        }
+
+        var items = new ContextMenuItem[]
+        {
+            new(prop.Visible ? "Hide" : "Show",
+                prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new("Rename", TablerIcon.Edit),
+            new("Clone", TablerIcon.Stack2),
+            ContextMenuItem.Separator,
+            new("Destroy", TablerIcon.Trash, danger: true),
+        };
+        var actions = new Action?[]
+        {
+            () => prop.Visible = !prop.Visible,
+            () => OpenEntityRename(
+                "Rename prop", prop.Name, next => prop.Name = next),
+            () =>
+            {
+                if (_lifecycle.CloneProp(prop) is Game.PropHandle clone &&
+                    _bindings.GetPropId(clone) is { } cloneId)
+                    _selection.Select(SelectionId.ForProp(cloneId));
+            },
+            null, // separator
+            () =>
+            {
+                _lifecycle.DestroyProp(prop);
+                _selection.Clear();
+            },
+        };
+
+        if (_propCtxOpenRequested)
+        {
+            _propCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##prop-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##prop-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
             actions[clicked]?.Invoke();
     }
 

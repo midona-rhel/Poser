@@ -33,6 +33,7 @@ public sealed unsafe class PropHandle
 {
     private readonly PropSpawnService _owner;
     private nint _address;
+    private string _name;
 
     internal PropHandle(
         PropSpawnService owner, int id, string name, nint address,
@@ -40,14 +41,27 @@ public sealed unsafe class PropHandle
     {
         _owner = owner;
         Id = id;
-        Name = name;
+        _name = name;
         _address = address;
         Model = model;
     }
 
     public int Id { get; }
 
-    public string Name { get; }
+    /// <summary>The row's display name. Settable for the same reason a
+    /// light's is: the prop context menu renames it and the scene snapshot
+    /// carries the name, so a write here republishes the row on the next
+    /// refresh. A blank name is refused rather than leaving a nameless row.
+    /// </summary>
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                _name = value.Trim();
+        }
+    }
 
     /// <summary>The model triple this prop was spawned from — what a scene
     /// file needs to respawn the same prop.</summary>

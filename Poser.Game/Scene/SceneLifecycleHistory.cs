@@ -76,6 +76,7 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
     public void Apply(object prop, PropState state)
     {
         var handle = (PropHandle)prop;
+        handle.Name = state.Name;
         handle.Transform = state.Transform;
         handle.Visible = state.Visible;
     }
@@ -583,6 +584,28 @@ public sealed class SceneLifecycleHistory
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
             $"Add prop '{_props.Read(prop).Name}'",
+            () => RemoveProp(slot),
+            () => RestoreProp(slot)));
+        return prop;
+    }
+
+    /// <summary>
+    /// A prop's clone is its model triple spawned again, standing where the
+    /// source stands and showing what the source shows. The NAME is the one
+    /// thing it does not take: a spawn names itself, exactly as a cloned
+    /// light takes a freshly generated name rather than the source's
+    /// (LightingService.SpawnInternal).
+    /// </summary>
+    public object? CloneProp(object source)
+    {
+        var state = _props.Read(source);
+        var prop = _props.Spawn(state.Model);
+        if (prop == null)
+            return null;
+        _props.Apply(prop, state with { Name = _props.Read(prop).Name });
+        var slot = SlotFor(prop);
+        _history.Append(new SceneLifecyclePatch(
+            $"Clone prop '{state.Name}'",
             () => RemoveProp(slot),
             () => RestoreProp(slot)));
         return prop;
