@@ -94,6 +94,7 @@ public sealed class SceneSession
     private Dictionary<LightId, LightDescriptor> _lights = new();
     private Dictionary<CameraId, CameraDescriptor> _cameras = new();
     private Dictionary<PropId, PropDescriptor> _props = new();
+    private Dictionary<WorldObjectId, WorldObjectDescriptor> _worldObjects = new();
     private Dictionary<OverlayId, OverlayDescriptor> _overlays = new();
 
     // These floors live for this SceneSession, including through removals and
@@ -105,6 +106,7 @@ public sealed class SceneSession
     private readonly Dictionary<Guid, uint> _lightGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _cameraGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _propGenerationFloors = new();
+    private readonly Dictionary<Guid, uint> _worldObjectGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _overlayGenerationFloors = new();
     private int _refreshGate;
 
@@ -157,6 +159,7 @@ public sealed class SceneSession
                     out var lights,
                     out var cameras,
                     out var props,
+                    out var worldObjects,
                     out var overlays,
                     out var validationError))
                 return Invalid(validationError!);
@@ -174,6 +177,7 @@ public sealed class SceneSession
             _lights = lights;
             _cameras = cameras;
             _props = props;
+            _worldObjects = worldObjects;
             _overlays = overlays;
             _snapshot = snapshot;
             RecordGenerationFloors(snapshot);
@@ -266,6 +270,11 @@ public sealed class SceneSession
                 ? SelectionId.ForProp(currentProp.Id)
                 : null;
 
+        if (id.Kind == SceneEntityKind.WorldObject && id.WorldObject is { } worldObject)
+            return TryFindWorldObject(worldObject.LogicalId, out var currentWorldObject)
+                ? SelectionId.ForWorldObject(currentWorldObject.Id)
+                : null;
+
         if (id.Kind == SceneEntityKind.Overlay && id.Overlay is { } overlay)
             return TryFindOverlay(overlay.LogicalId, out var currentOverlay)
                 ? SelectionId.ForOverlay(currentOverlay.Id)
@@ -291,6 +300,9 @@ public sealed class SceneSession
                 target.Light is { } light && _lights.ContainsKey(light),
             TransformTargetKind.Prop =>
                 target.Prop is { } prop && _props.ContainsKey(prop),
+            TransformTargetKind.WorldObject =>
+                target.WorldObject is { } worldObject &&
+                _worldObjects.ContainsKey(worldObject),
             _ => false,
         };
 
@@ -304,6 +316,7 @@ public sealed class SceneSession
         out Dictionary<LightId, LightDescriptor> lights,
         out Dictionary<CameraId, CameraDescriptor> cameras,
         out Dictionary<PropId, PropDescriptor> props,
+        out Dictionary<WorldObjectId, WorldObjectDescriptor> worldObjects,
         out Dictionary<OverlayId, OverlayDescriptor> overlays,
         out string? validationError)
     {
@@ -312,6 +325,7 @@ public sealed class SceneSession
         lights = new();
         cameras = new();
         props = new();
+        worldObjects = new();
         overlays = new();
         validationError = null;
 
@@ -445,6 +459,8 @@ public sealed class SceneSession
                 out validationError))
             return false;
         if (!TryBuildPropIndexes(snapshot, props, out validationError))
+            return false;
+        if (!TryBuildWorldObjectIndexes(snapshot, worldObjects, out validationError))
             return false;
         if (!TryBuildOverlayIndexes(snapshot, overlays, out validationError))
             return false;
@@ -681,6 +697,38 @@ public sealed class SceneSession
         return true;
     }
 
+    /// <summary>Same shape as the prop index and for the same reason: one
+    /// lineage per borrowed object, one descriptor per id. A borrowed map
+    /// object is not spawned, but the scene addresses it exactly as it
+    /// addresses a prop — through an id the session must be able to answer
+    /// for, or every transform against it is refused as stale.</summary>
+    private static bool TryBuildWorldObjectIndexes(
+        SceneSnapshot snapshot,
+        Dictionary<WorldObjectId, WorldObjectDescriptor> worldObjects,
+        out string? validationError)
+    {
+        var lineages = new HashSet<Guid>();
+        foreach (var worldObject in snapshot.WorldObjects)
+        {
+            if (worldObject is null)
+                return Fail(
+                    "Scene contains a null world-object descriptor.",
+                    out validationError);
+            if (!IsValidWorldObjectId(worldObject.Id))
+                return Fail(
+                    $"World object id {worldObject.Id} is invalid.",
+                    out validationError);
+            if (!lineages.Add(worldObject.Id.LogicalId) ||
+                !worldObjects.TryAdd(worldObject.Id, worldObject))
+                return Fail(
+                    $"Scene contains duplicate world object {worldObject.Id.LogicalId:N}.",
+                    out validationError);
+        }
+
+        validationError = null;
+        return true;
+    }
+
     private static bool TryBuildOverlayIndexes(
         SceneSnapshot snapshot,
         Dictionary<OverlayId, OverlayDescriptor> overlays,
@@ -808,6 +856,14 @@ public sealed class SceneSession
                 out validationError))
             return false;
         if (!TryValidateObjectGenerationFloors(
+                snapshot.WorldObjects,
+                _worldObjectGenerationFloors,
+                static worldObject =>
+                    (worldObject.Id.LogicalId, worldObject.Id.Generation),
+                "world object",
+                out validationError))
+            return false;
+        if (!TryValidateObjectGenerationFloors(
                 snapshot.Overlays,
                 _overlayGenerationFloors,
                 static overlay => (overlay.Id.LogicalId, overlay.Id.Generation),
@@ -864,6 +920,11 @@ public sealed class SceneSession
             RaiseFloor(_cameraGenerationFloors, camera.Id.LogicalId, camera.Id.Generation);
         foreach (var prop in snapshot.Props)
             RaiseFloor(_propGenerationFloors, prop.Id.LogicalId, prop.Id.Generation);
+        foreach (var worldObject in snapshot.WorldObjects)
+            RaiseFloor(
+                _worldObjectGenerationFloors,
+                worldObject.Id.LogicalId,
+                worldObject.Id.Generation);
         foreach (var overlay in snapshot.Overlays)
             RaiseFloor(
                 _overlayGenerationFloors,
@@ -926,6 +987,9 @@ public sealed class SceneSession
     private static bool IsValidCameraId(CameraId id) => id.LogicalId != Guid.Empty;
 
     private static bool IsValidPropId(PropId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsValidWorldObjectId(WorldObjectId id) =>
+        id.LogicalId != Guid.Empty;
 
     private static bool IsValidOverlayId(OverlayId id) =>
         id.LogicalId != Guid.Empty;
@@ -992,6 +1056,23 @@ public sealed class SceneSession
         }
 
         prop = null!;
+        return false;
+    }
+
+    private bool TryFindWorldObject(
+        Guid logicalId,
+        out WorldObjectDescriptor worldObject)
+    {
+        foreach (var candidate in _worldObjects.Values)
+        {
+            if (candidate.Id.LogicalId == logicalId)
+            {
+                worldObject = candidate;
+                return true;
+            }
+        }
+
+        worldObject = null!;
         return false;
     }
 
