@@ -93,17 +93,25 @@ public static partial class Crystarium
         string Label, Action OnClick, ControlStyle Style,
         string? Help, bool Disabled,
         ButtonVariant Variant = ButtonVariant.Secondary,
-        TablerIcon? Icon = null);
+        TablerIcon? Icon = null,
+        string? Id = null);
 
     public sealed class ActionScope
     {
         private readonly List<ActionItem> _items = new();
 
+        /// <param name="id">The button's identity where its CAPTION is not a
+        /// stable one. Two actions on one row whose captions can coincide —
+        /// two keybind slots both reading "Unbound" — would otherwise share a
+        /// seat. Defaults to the caption, exactly as
+        /// <see cref="IconButton"/>'s defaults to its glyph name.</param>
         public void Button(string label, Action onClick,
             ControlStyle style = default, bool disabled = false,
             string? help = null,
-            ButtonVariant variant = ButtonVariant.Secondary) =>
-            _items.Add(new(label, onClick, style, help, disabled, variant));
+            ButtonVariant variant = ButtonVariant.Secondary,
+            string? id = null) =>
+            _items.Add(new(
+                label, onClick, style, help, disabled, variant, Id: id));
 
         /// <summary>A square icon action seated in the row like a text
         /// button — for a glyph-stated toggle (a lock) whose word would
@@ -1070,7 +1078,12 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        public void Status(string text, string? help = null)
+        /// <param name="warning">The line reports something the user has to
+        /// resolve — a conflict, a value that will not take — rather than
+        /// explaining the rows above it, and takes the theme's warning tone
+        /// instead of the hint tone.</param>
+        public void Status(
+            string text, string? help = null, bool warning = false)
         {
             string id = UnlabelledId("status", ref _statusRows);
             var row = _page.BeginRow(string.Empty);
@@ -1081,7 +1094,7 @@ public static partial class Crystarium
                 new TextStyle
                 {
                     Size = ActiveTheme.Typography.CaptionSize,
-                    Color = FormHintColor,
+                    Color = warning ? ActiveTheme.Warning : FormHintColor,
                 });
             _page.EndRow(row, id, help);
         }
@@ -1837,7 +1850,7 @@ public static partial class Crystarium
                 width / scale,
                 action.Disabled,
                 action.Help,
-                Ids.Join(id, "-", action.Label),
+                Ids.Join(id, "-", action.Id ?? action.Label),
                 action.Variant);
             x += width + gap;
         }
