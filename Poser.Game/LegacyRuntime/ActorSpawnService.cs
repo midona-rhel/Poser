@@ -16,16 +16,9 @@ namespace Poser.Game;
 
 /// <summary>
 /// Exact native identity of one client-object slot occupant.
-/// <para>
-/// <see cref="Index"/> is the <c>ClientObjectManager</c> slot index — the
-/// number <c>CreateBattleCharacter</c> returns and the only number
-/// <c>GetObjectByIndex</c>/<c>GetIndexByObject</c>/<c>DeleteObjectByIndex</c>
-/// accept. It is NOT <c>GameObject.ObjectIndex</c>: the global object-table
-/// index of a client object is its slot plus 200 (Brio converts explicitly,
-/// <c>EntityActorManager.cs:74</c>, <c>go.ObjectIndex - 200</c>). Mixing the
-/// two spaces means deleting a foreign object, so every index that reaches
-/// this type comes from the ClientObjectManager API and nowhere else.
-/// </para>
+/// <see cref="Index"/> is the ClientObjectManager slot, never
+/// <c>GameObject.ObjectIndex</c> — see
+/// <c>docs/architecture/posing-runtime.md</c> for the index-space rule.
 /// <see cref="LifetimeStamp"/> is the destruction-sequence stamp for
 /// <see cref="Address"/> at resolve time. It advances inside the native
 /// Character finalize hook — the game's own lifetime transition — never at
@@ -352,6 +345,96 @@ internal sealed class SpawnOwnershipLedger
 }
 
 /// <summary>
+/// One client object as ClientObjectManager reports it. It carries BOTH
+/// numbers the native object has — the slot it was resolved by and its global
+/// <see cref="ObjectIndex"/> — because they genuinely differ (see
+/// <c>docs/architecture/posing-runtime.md</c>), so a test ClientObjectManager
+/// reproduces the difference and picking the wrong one fails a test instead of
+/// a live spawn.
+/// </summary>
+internal readonly record struct ClientObjectSnapshot(
+    nint Address,
+    ulong EntityId,
+    ushort ObjectIndex);
+
+/// <summary>
+/// The four ClientObjectManager entry points the spawn transaction needs.
+/// <see cref="CreateBattleCharacter"/> is declared WITHOUT default arguments on
+/// purpose: the native signature is
+/// <c>CreateBattleCharacter(uint index = uint.MaxValue, byte param = 0)</c>,
+/// where a lone <c>byte</c> binds silently to <c>index</c> — the slot to build
+/// in — instead of the companion flag. Both arguments are mandatory here, so
+/// that mistake cannot compile.
+/// </summary>
+internal interface IClientObjectManagerNative
+{
+    uint CreateBattleCharacter(uint index, byte param);
+    ClientObjectSnapshot? GetObjectByIndex(ushort index);
+    uint GetIndexByObject(nint address);
+    void DeleteObjectByIndex(ushort index, byte param);
+}
+
+/// <summary>
+/// Client-object identity and lifetime bookkeeping: the production logic
+/// behind the adapter's index members, kept off <c>unsafe</c> so tests run it
+/// against a ClientObjectManager whose two index spaces really differ.
+/// </summary>
+internal sealed class SpawnClientObjects
+{
+    public const uint NoIndex = 0xFFFFFFFF;
+
+    /// <summary>Let the game pick the slot. Naming one is how the clone ended
+    /// up aimed at slot 0 — the GPose primary.</summary>
+    private const uint NextAvailableSlot = uint.MaxValue;
+
+    private readonly IClientObjectManagerNative _com;
+
+    public SpawnClientObjects(IClientObjectManagerNative com) => _com = com;
+
+    /// <summary>Destruction bookkeeping; the real adapter feeds it from the
+    /// Character finalize hook.</summary>
+    public SpawnLifetimeStamps Stamps { get; } = new();
+
+    public uint CreateBattleCharacter(byte reserveCompanionSlot) =>
+        _com.CreateBattleCharacter(NextAvailableSlot, reserveCompanionSlot);
+
+    public ulong IndexDestructionStamp(ushort index) => Stamps.IndexStampFor(index);
+
+    public SpawnNativeDescriptor? ResolveByIndex(ushort index)
+    {
+        if (_com.GetObjectByIndex(index) is not { } native)
+            return null;
+        return new SpawnNativeDescriptor(
+            index,
+            native.Address,
+            native.EntityId,
+            Stamps.StampFor(native.Address));
+    }
+
+    public SpawnNativeDescriptor? ResolveActor(nint address)
+    {
+        if (address == nint.Zero)
+            return null;
+        var index = _com.GetIndexByObject(address);
+        if (index == NoIndex)
+            return null;
+        var current = ResolveByIndex((ushort)index);
+        return current is { } descriptor && descriptor.Address == address
+            ? descriptor
+            : null;
+    }
+
+    public bool DeleteExact(SpawnNativeDescriptor descriptor)
+    {
+        var current = ResolveByIndex(descriptor.Index);
+        if (current is null || current.Value != descriptor)
+            return false;
+        _com.DeleteObjectByIndex(descriptor.Index, 0);
+        return true;
+    }
+}
+
+/// <summary>
 /// The sole native boundary for spawn ownership. Every dereference primitive
 /// revalidates the exact descriptor immediately before touching memory and
 /// refuses on any mismatch — unresolved identity is never permission.
@@ -390,6 +473,48 @@ internal interface IActorSpawnNativeAdapter
     bool WriteModelCharaIdAndBeginRedraw(SpawnNativeDescriptor descriptor, int modelCharaId);
 }
 
+/// <summary>The live ClientObjectManager. The only place a client object's
+/// global <c>ObjectIndex</c> is read.</summary>
+internal unsafe sealed class ClientObjectManagerNative : IClientObjectManagerNative
+{
+    public bool IsAvailable => ClientObjectManager.Instance() is not null;
+
+    public uint CreateBattleCharacter(uint index, byte param)
+    {
+        var com = ClientObjectManager.Instance();
+        return com is null
+            ? SpawnClientObjects.NoIndex
+            : com->CreateBattleCharacter(index, param);
+    }
+
+    public ClientObjectSnapshot? GetObjectByIndex(ushort index)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is null)
+            return null;
+        var native = com->GetObjectByIndex(index);
+        if (native is null)
+            return null;
+        return new ClientObjectSnapshot(
+            (nint)native, native->EntityId, native->ObjectIndex);
+    }
+
+    public uint GetIndexByObject(nint address)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is null || address == nint.Zero)
+            return SpawnClientObjects.NoIndex;
+        return com->GetIndexByObject((GameObject*)address);
+    }
+
+    public void DeleteObjectByIndex(ushort index, byte param)
+    {
+        var com = ClientObjectManager.Instance();
+        if (com is not null)
+            com->DeleteObjectByIndex(index, param);
+    }
+}
+
 internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter, IDisposable
 {
     // Brio ObjectMonitorService.cs: the native Character destructor. Hooking
@@ -402,7 +527,8 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
 
     private delegate nint CharacterFinalizeDelegate(Character* chara);
 
-    private readonly SpawnLifetimeStamps _stamps = new();
+    private readonly ClientObjectManagerNative _com = new();
+    private readonly SpawnClientObjects _objects;
     private readonly Hook<CharacterFinalizeDelegate>? _finalizeHook;
     private readonly string? _lifetimeAuthorityDetail;
 
@@ -411,6 +537,7 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         IGameInteropProvider hooking,
         IPluginLog? log)
     {
+        _objects = new SpawnClientObjects(_com);
         try
         {
             var address = sigScanner.ScanText(CharacterFinalizeSig);
@@ -429,7 +556,7 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         }
     }
 
-    public bool IsAvailable => ClientObjectManager.Instance() is not null;
+    public bool IsAvailable => _com.IsAvailable;
     public bool IsLifetimeAuthoritative => _finalizeHook is not null;
     public string? LifetimeAuthorityDetail => _lifetimeAuthorityDetail;
 
@@ -437,15 +564,10 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
     {
         try
         {
-            ushort? index = null;
-            var com = ClientObjectManager.Instance();
-            if (com is not null)
-            {
-                var i = com->GetIndexByObject((GameObject*)chara);
-                if (i != 0xFFFFFFFF)
-                    index = (ushort)i;
-            }
-            _stamps.NoteDestroyed((nint)chara, index);
+            var slot = _com.GetIndexByObject((nint)chara);
+            _objects.Stamps.NoteDestroyed(
+                (nint)chara,
+                slot == SpawnClientObjects.NoIndex ? null : (ushort)slot);
         }
         catch
         {
@@ -454,71 +576,20 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         return _finalizeHook!.Original(chara);
     }
 
-    public uint CreateBattleCharacter(byte reserveCompanionSlot)
-    {
-        var com = ClientObjectManager.Instance();
-        if (com is null)
-            return 0xFFFFFFFF;
-        // param:, never positional. The signature is
-        // CreateBattleCharacter(uint index = uint.MaxValue, byte param = 0):
-        // the FIRST parameter names the slot to create in, and a byte binds to
-        // it silently. Passing the companion flag positionally asked the game
-        // to build the clone in client-object slot 0/1 — object-table 200/201,
-        // the GPose primary — and never reserved the slot. Brio names it for
-        // the same reason (ActorSpawnService.cs:309).
-        return com->CreateBattleCharacter(param: reserveCompanionSlot);
-    }
+    public uint CreateBattleCharacter(byte reserveCompanionSlot) =>
+        _objects.CreateBattleCharacter(reserveCompanionSlot);
 
-    public ulong IndexDestructionStamp(ushort index) => _stamps.IndexStampFor(index);
+    public ulong IndexDestructionStamp(ushort index) =>
+        _objects.IndexDestructionStamp(index);
 
-    public SpawnNativeDescriptor? ResolveByIndex(ushort index)
-    {
-        var com = ClientObjectManager.Instance();
-        if (com is null)
-            return null;
-        var native = com->GetObjectByIndex(index);
-        if (native is null)
-            return null;
-        // The slot we asked for, not native->ObjectIndex: GetObjectByIndex
-        // reads ClientObjectManager's own array, so the occupant's slot IS
-        // `index`, while its ObjectIndex is the global object-table number
-        // (slot + 200). Carrying the global number here fed it straight back
-        // into GetObjectByIndex/DeleteObjectByIndex.
-        return new SpawnNativeDescriptor(
-            index,
-            (nint)native,
-            native->EntityId,
-            _stamps.StampFor((nint)native));
-    }
+    public SpawnNativeDescriptor? ResolveByIndex(ushort index) =>
+        _objects.ResolveByIndex(index);
 
-    public SpawnNativeDescriptor? ResolveActor(nint address)
-    {
-        if (address == nint.Zero)
-            return null;
-        var com = ClientObjectManager.Instance();
-        if (com is null)
-            return null;
-        var native = (GameObject*)address;
-        var index = com->GetIndexByObject(native);
-        if (index == 0xFFFFFFFF)
-            return null;
-        var current = ResolveByIndex((ushort)index);
-        return current is { } descriptor && descriptor.Address == address
-            ? descriptor
-            : null;
-    }
+    public SpawnNativeDescriptor? ResolveActor(nint address) =>
+        _objects.ResolveActor(address);
 
-    public bool DeleteExact(SpawnNativeDescriptor descriptor)
-    {
-        var com = ClientObjectManager.Instance();
-        if (com is null)
-            return false;
-        var current = ResolveByIndex(descriptor.Index);
-        if (current is null || current.Value != descriptor)
-            return false;
-        com->DeleteObjectByIndex(descriptor.Index, 0);
-        return true;
-    }
+    public bool DeleteExact(SpawnNativeDescriptor descriptor) =>
+        _objects.DeleteExact(descriptor);
 
     /// <summary>Revalidates the exact descriptor and returns the live native
     /// object, or null when identity cannot be proven right now.</summary>
@@ -1101,9 +1172,10 @@ public unsafe class ActorSpawnService : IActorSpawnService
             return; // GPose-exit/dispose cleanup still promotes synchronously.
 
         var deadline = _clock() + CreateRecoveryTimeoutMs;
-        // The tick runs every frame until a terminal outcome; a fault that
-        // reproduces every frame must be said once, not once per frame.
-        var faultLogged = false;
+        // The tick runs every frame until a terminal outcome, so a fault that
+        // reproduces every frame is said once — but keyed by type and message,
+        // because a NEW fault inside the window is news, not the same line.
+        string? lastFault = null;
         void Tick(IFramework fw)
         {
             try
@@ -1121,11 +1193,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
             }
             catch (Exception ex)
             {
-                if (!faultLogged)
+                var fault = $"{ex.GetType().FullName}: {ex.Message}";
+                if (fault != lastFault)
                 {
-                    faultLogged = true;
+                    lastFault = fault;
                     _log?.Warning(
-                        $"ActorSpawnService: pending-create recovery for index {ownership.CreatedIndex} faulted: {ex.Message}");
+                        $"ActorSpawnService: pending-create recovery for index {ownership.CreatedIndex} faulted: {fault}");
                 }
             }
             if (_clock() > deadline)
@@ -1267,11 +1340,12 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     private static string ToPoserName(int index)
     {
-        // Simple naming: "Poser One", "Poser Two", etc.
+        // Simple naming: "Poser One", "Poser Two", etc. Slot 0 has no word
+        // (and is a real slot the game can hand back), so it takes the number.
         string[] ones = { "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
                          "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen" };
 
-        if (index < 20)
+        if (index > 0 && index < ones.Length)
             return $"Poser {ones[index]}";
 
         return $"Poser {index}";

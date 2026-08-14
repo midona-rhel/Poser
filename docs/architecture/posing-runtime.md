@@ -19,8 +19,19 @@ guard, never portable identity. Exact actor, skeleton, slot, and bone
 generations are re-resolved immediately before a write; failed resolution is
 explicit, and no native object or address is handed to Application or UI.
 
+A spawned client object has two different indices and they are never
+interchangeable. The **ClientObjectManager slot** is what `CreateBattleCharacter`
+returns and the only number `GetObjectByIndex`, `GetIndexByObject`, and
+`DeleteObjectByIndex` accept; it is the sole index used for identity, deletion,
+destruction stamps, and naming. `GameObject.ObjectIndex` is the global
+object-table number — a client object's is its slot plus 200, which is why the
+GPose range starts at 200 — and it is read in exactly one place, the
+ClientObjectManager seam that reports it. Feeding an object-table index back
+into a slot-taking call deletes a foreign object; the seam keeps both numbers
+visible so a test ClientObjectManager reproduces the difference.
+
 Spawned actors follow the same boundary: the service owns one private record
-per operation, keyed by a service token plus the exact native index, address,
+per operation, keyed by a service token plus the exact slot, address,
 verified `GameObject.EntityId`, and a destruction stamp advanced inside a
 native `Character` finalize hook — the same authoritative lifetime transition
 Brio's ObjectMonitorService consumes. Because the stamp advances at the native
@@ -37,10 +48,15 @@ operation, and all operations refuse off the framework thread. Binding also comp
 `EntityId` against the production minting formula, never address alone.
 Post-create and GPose-exit deletion is exact and retryable: successful
 deletion or verified absence retires one record, uncertain or failed deletion
-remains pending, a created index whose first resolve failed is retried on
+remains pending, a created slot whose first resolve failed is retried on
 framework ticks and promoted to exact pending deletion once its create-time
-index stamp proves the occupant, and a create that faulted without an index is
-an explicit non-recoverable readout. Non-owned visibility overrides live in a
+slot stamp proves the occupant, and a create that never yielded a usable
+identity is an explicit non-recoverable readout: it never touches native state,
+is announced once when the record is made, and is dropped at session end only
+once its slot is provably vacated — a destruction stamped there since create,
+or an empty slot under an available manager. Absence of proof is never vacancy,
+and a readout that never had a slot is never probed. Non-owned visibility
+overrides live in a
 separate descriptor-keyed store that dies with the native lifetime and the
 GPose session. Records are session-only and never become a public handle or
 background retry mechanism. This preserves Brio's

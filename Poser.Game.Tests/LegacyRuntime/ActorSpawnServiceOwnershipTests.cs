@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Core;
@@ -513,70 +514,109 @@ public sealed class ActorSpawnServiceOwnershipTests
     }
 
     [Fact]
-    public void Spawn_refuses_once_and_quietly_when_the_adapter_reports_a_foreign_index_space()
+    public void Recovery_says_each_distinct_fault_once_and_the_readout_only_at_its_creation()
     {
-        // The live failure: CreateBattleCharacter returns a ClientObjectManager
-        // SLOT, and the adapter used to stamp the descriptor with the resolved
-        // object's global object-table index (slot + 200) instead. The
-        // mismatch has to refuse — a descriptor in the wrong index space would
-        // send DeleteObjectByIndex at a foreign object — but it must say so
-        // once, not once per recovery frame.
         long now = 0;
         var log = new RecordingLog();
         var framework = new FakeFramework();
         var bus = new FakeEventBus();
-        var actor = Actor(0x808);
-        var manager = new FakeActorManager(actor);
-        var native = new FakeNative(new(8, actor.Address, 88))
+        var native = new FakeNative(new(8, (nint)0x808, 88))
         {
-            ReportsObjectTableIndex = true,
+            ResolveReturnsNull = true,
         };
         using var service = NewService(
             native,
-            manager,
             framework: framework,
             bus: bus,
             clock: () => now,
             log: log.Proxy());
 
         Assert.Null(service.SpawnNewActor(reserveCompanionSlot: false));
-        var pending = Assert.Single(service.OwnershipSnapshot);
-        Assert.Equal(SpawnOwnershipState.PendingCreate, pending.State);
-        Assert.Equal((ushort)8, pending.CreatedIndex);
-        Assert.Empty(native.Deleted);
-        Assert.Equal("Spawned object index changed", Assert.Single(log.Errors).Split(": ")[^1]);
-
-        // Recovery keeps retrying inside the window without faulting per frame.
-        for (var i = 0; i < 5; i++)
-            framework.RaiseUpdate();
-        Assert.Empty(log.Warnings);
-        Assert.Single(log.Errors);
         Assert.Equal(
             SpawnOwnershipState.PendingCreate,
             Assert.Single(service.OwnershipSnapshot).State);
 
-        // The window closes: exactly one more Error, at the record's creation.
+        // A fault that reproduces every frame is one line, not one per frame.
+        native.ThrowOnIndexStamp = true;
+        for (var i = 0; i < 5; i++)
+            framework.RaiseUpdate();
+        Assert.Equal(1, log.Warnings.Count(w => w.Contains("faulted")));
+        Assert.Empty(log.Errors);
+
+        // A DIFFERENT fault inside the same window is news, not a repeat.
+        native.IndexStampFault = true;
+        for (var i = 0; i < 3; i++)
+            framework.RaiseUpdate();
+        Assert.Equal(2, log.Warnings.Count(w => w.Contains("faulted")));
+
+        // The window closes: the readout is announced exactly once, when the
+        // record is made.
         now = 6000;
         framework.RaiseUpdate();
         Assert.Equal(
             SpawnOwnershipState.NonRecoverable,
             Assert.Single(service.OwnershipSnapshot).State);
-        Assert.Equal(2, log.Errors.Count);
+        Assert.Contains("could not be recovered", Assert.Single(log.Errors));
 
-        // The retained readout is never re-announced as an error, however many
-        // times the session ends (its slot is still occupied, so it stays).
+        // However many times the session ends afterwards, the retained readout
+        // is never re-announced as an error or a warning.
         bus.Publish(new GPoseStateChangedEvent(false));
         bus.Publish(new GPoseStateChangedEvent(false));
         Assert.Single(service.OwnershipSnapshot);
-        Assert.Equal(2, log.Errors.Count);
-        Assert.Empty(log.Warnings);
+        Assert.Single(log.Errors);
+        Assert.Equal(2, log.Warnings.Count(w => w.Contains("faulted")));
+    }
 
-        // Positive control: the same fake in a single index space spawns and
-        // binds through the unchanged gates.
-        native.ReportsObjectTableIndex = false;
-        Assert.Same(actor, service.SpawnNewActor(reserveCompanionSlot: false));
-        Assert.True(service.IsSpawnedActor(actor));
-        Assert.Equal(2, service.OwnershipSnapshot.Count);
+    [Fact]
+    public void Source_guard_keeps_the_native_index_spaces_apart_at_their_only_seam()
+    {
+        // Stopgap for what the type system cannot state: the fake reproduces
+        // the two spaces structurally, but nothing stops new code in the
+        // adapter from reading the global ObjectIndex or aiming a create at a
+        // named slot again.
+        var source = ReadSpawnServiceSource();
+
+        // A client object's global ObjectIndex may be read in exactly one
+        // place: the seam that reports it. Everywhere else it is the wrong
+        // number for identity, deletion, and destruction stamps.
+        Assert.Single(Regex.Matches(source, "->ObjectIndex"));
+        Assert.Contains(
+            "->ObjectIndex",
+            MemberBody(source, "public ClientObjectSnapshot? GetObjectByIndex"));
+
+        // Every native CreateBattleCharacter call names its companion flag or
+        // passes both arguments; a lone positional byte binds to `index`, the
+        // slot to build in.
+        var calls = Regex.Matches(source, @"->CreateBattleCharacter\(([^)]*)\)");
+        Assert.NotEmpty(calls);
+        foreach (Match call in calls)
+        {
+            var arguments = call.Groups[1].Value;
+            Assert.True(
+                arguments.Contains(',') || arguments.Contains("param:"),
+                $"single positional argument binds to index: {call.Value}");
+        }
+    }
+
+    private static string ReadSpawnServiceSource()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null
+            && !File.Exists(Path.Combine(directory.FullName, "Poser.slnx")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        var path = Path.Combine(
+            directory!.FullName, "Poser.Game", "LegacyRuntime", "ActorSpawnService.cs");
+        Assert.True(File.Exists(path), path);
+        return File.ReadAllText(path);
+    }
+
+    private static string MemberBody(string source, string header)
+    {
+        var start = source.IndexOf(header, StringComparison.Ordinal);
+        Assert.True(start >= 0, header);
+        var end = source.IndexOf("\n    public ", start + header.Length, StringComparison.Ordinal);
+        return end < 0 ? source[start..] : source[start..end];
     }
 
     [Fact]
@@ -1142,37 +1182,137 @@ public sealed class ActorSpawnServiceOwnershipTests
         }
     }
 
-    private sealed class FakeNative : IActorSpawnNativeAdapter
+    /// <summary>
+    /// A ClientObjectManager whose two index spaces really differ: the occupant
+    /// of slot N reports object-table index N + 200, exactly as the game does.
+    /// The production identity logic runs against this, so a descriptor built
+    /// from the wrong number fails every ownership test rather than every live
+    /// spawn.
+    /// </summary>
+    private sealed class FakeClientObjectManager : IClientObjectManagerNative
     {
-        public FakeNative(SpawnNativeDescriptor descriptor) => Current = descriptor;
+        public FakeClientObjectManager(SpawnNativeDescriptor occupant) =>
+            Current = occupant;
 
-        /// <summary>The PRODUCTION destruction-stamp transition logic the real
-        /// adapter feeds from the Character finalize hook; the fake feeds it
-        /// from the same events (external destruction, exact deletion).</summary>
-        public SpawnLifetimeStamps Stamps { get; } = new();
+        /// <summary>The single occupied slot, or null for an empty manager.
+        /// Its <c>Index</c> is the slot; its object-table index is derived.</summary>
+        public SpawnNativeDescriptor? Current { get; set; }
 
-        public bool IsAvailableValue { get; set; } = true;
-        public bool IsLifetimeAuthoritativeValue { get; set; } = true;
-        public bool DeleteResult { get; set; } = true;
-        public bool ThrowOnDelete { get; set; }
+        public bool IsAvailable { get; set; } = true;
         public bool ThrowOnCreate { get; set; }
         public bool ThrowOnResolve { get; set; }
         public bool ResolveReturnsNull { get; set; }
 
-        /// <summary>Reproduces the pre-fix live adapter: the descriptor is
-        /// stamped with the resolved object's GLOBAL object-table index
-        /// (client-object slot + 200) instead of the slot that was asked for.
-        /// The service must refuse rather than act on a descriptor whose index
-        /// belongs to a different index space.</summary>
-        public bool ReportsObjectTableIndex { get; set; }
-
-        /// <summary>Every slot the service asked the ClientObjectManager
-        /// about, in order — a readout with no created index must never probe
-        /// one (65535 is off the end of the 249-slot array).</summary>
+        /// <summary>Every slot the service asked about, in order — a readout
+        /// with no created slot must never probe one (65535 is off the end of
+        /// the 249-slot array).</summary>
         public List<ushort> ResolvedIndexes { get; } = new();
+
+        /// <summary>The Character finalize the real deletion runs, which the
+        /// real adapter's hook observes.</summary>
+        public Action<nint, ushort?>? OnDestroyed { get; set; }
+
+        public uint CreateBattleCharacter(uint index, byte param)
+        {
+            if (ThrowOnCreate)
+                throw new InvalidOperationException("create");
+            if (!IsAvailable)
+                return SpawnClientObjects.NoIndex;
+            // The game builds in the slot it is named; uint.MaxValue means
+            // "next available", which here is the seeded occupant's slot.
+            var slot = index == uint.MaxValue ? Current?.Index : (ushort)index;
+            return slot ?? SpawnClientObjects.NoIndex;
+        }
+
+        public ClientObjectSnapshot? GetObjectByIndex(ushort index)
+        {
+            ResolvedIndexes.Add(index);
+            if (ThrowOnResolve)
+                throw new InvalidOperationException("resolve");
+            if (!IsAvailable || ResolveReturnsNull)
+                return null;
+            if (Current is not { } current || current.Index != index)
+                return null;
+            return new ClientObjectSnapshot(
+                current.Address,
+                current.EntityId,
+                (ushort)(current.Index + GPoseObjectTableBase));
+        }
+
+        public uint GetIndexByObject(nint address)
+        {
+            if (ThrowOnResolve)
+                throw new InvalidOperationException("resolve");
+            if (!IsAvailable)
+                return SpawnClientObjects.NoIndex;
+            return Current is { } current && current.Address == address
+                ? current.Index
+                : SpawnClientObjects.NoIndex;
+        }
+
+        public void DeleteObjectByIndex(ushort index, byte param)
+        {
+            if (Current is not { } current || current.Index != index)
+                return;
+            Current = null;
+            OnDestroyed?.Invoke(current.Address, index);
+        }
+    }
+
+    /// <summary>
+    /// Fault injection plus the still-native members (draw, companion, model).
+    /// Create/resolve/delete and the destruction stamps are the PRODUCTION
+    /// <see cref="SpawnClientObjects"/> running on
+    /// <see cref="FakeClientObjectManager"/>, so index-space and argument-order
+    /// mistakes in that logic are test failures here.
+    /// </summary>
+    private sealed class FakeNative : IActorSpawnNativeAdapter
+    {
+        public FakeNative(SpawnNativeDescriptor descriptor)
+        {
+            Com = new FakeClientObjectManager(descriptor);
+            Objects = new SpawnClientObjects(Com);
+            Com.OnDestroyed = Objects.Stamps.NoteDestroyed;
+        }
+
+        public FakeClientObjectManager Com { get; }
+        public SpawnClientObjects Objects { get; }
+        public SpawnLifetimeStamps Stamps => Objects.Stamps;
+        public List<ushort> ResolvedIndexes => Com.ResolvedIndexes;
+
+        public bool IsAvailableValue
+        {
+            get => Com.IsAvailable;
+            set => Com.IsAvailable = value;
+        }
+        public bool IsLifetimeAuthoritativeValue { get; set; } = true;
+        public bool DeleteResult { get; set; } = true;
+        public bool ThrowOnDelete { get; set; }
+        public bool ThrowOnIndexStamp { get; set; }
+        public bool IndexStampFault { get; set; }
+        public bool ThrowOnCreate
+        {
+            get => Com.ThrowOnCreate;
+            set => Com.ThrowOnCreate = value;
+        }
+        public bool ThrowOnResolve
+        {
+            get => Com.ThrowOnResolve;
+            set => Com.ThrowOnResolve = value;
+        }
+        public bool ResolveReturnsNull
+        {
+            get => Com.ResolveReturnsNull;
+            set => Com.ResolveReturnsNull = value;
+        }
+
         public int CreateCalls { get; private set; }
         public List<SpawnNativeDescriptor> Deleted { get; } = new();
-        public SpawnNativeDescriptor? Current { get; set; }
+        public SpawnNativeDescriptor? Current
+        {
+            get => Com.Current;
+            set => Com.Current = value;
+        }
 
         public bool HasSlot { get; set; } = true;
         public CompanionAttachment? Companion { get; set; }
@@ -1182,14 +1322,14 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool ReadyToDraw { get; set; } = true;
         public bool? DrawEnabled { get; private set; }
 
-        public bool IsAvailable => IsAvailableValue;
+        public bool IsAvailable => Com.IsAvailable;
         public bool IsLifetimeAuthoritative => IsLifetimeAuthoritativeValue;
         public string? LifetimeAuthorityDetail =>
             IsLifetimeAuthoritativeValue ? null : "test authority unavailable";
 
         /// <summary>External delete observed by the finalize hook; by default
         /// the slot is immediately reused by an object with the IDENTICAL
-        /// index/address/EntityId triple.</summary>
+        /// slot/address/EntityId triple.</summary>
         public void ExternallyDestroyCurrent(bool reuseIdenticalTriple = true)
         {
             if (Current is not { } current)
@@ -1202,50 +1342,32 @@ public sealed class ActorSpawnServiceOwnershipTests
         public uint CreateBattleCharacter(byte reserveCompanionSlot)
         {
             CreateCalls++;
-            if (ThrowOnCreate)
-                throw new InvalidOperationException("create");
-            return Current?.Index ?? 0xFFFFFFFF;
+            return Objects.CreateBattleCharacter(reserveCompanionSlot);
         }
 
-        public ulong IndexDestructionStamp(ushort index) => Stamps.IndexStampFor(index);
-
-        public SpawnNativeDescriptor? ResolveByIndex(ushort index)
+        public ulong IndexDestructionStamp(ushort index)
         {
-            ResolvedIndexes.Add(index);
-            if (ThrowOnResolve)
-                throw new InvalidOperationException("resolve");
-            if (!IsAvailableValue || ResolveReturnsNull)
-                return null;
-            if (Current is not { } current || current.Index != index)
-                return null;
-            var resolved = current with { LifetimeStamp = Stamps.StampFor(current.Address) };
-            return ReportsObjectTableIndex
-                ? resolved with { Index = (ushort)(index + GPoseObjectTableBase) }
-                : resolved;
+            if (ThrowOnIndexStamp)
+                throw new InvalidOperationException(
+                    IndexStampFault ? "stamp fault B" : "stamp fault A");
+            return Objects.IndexDestructionStamp(index);
         }
 
-        public SpawnNativeDescriptor? ResolveActor(nint address)
-        {
-            if (ThrowOnResolve)
-                throw new InvalidOperationException("resolve");
-            if (!IsAvailableValue || ResolveReturnsNull)
-                return null;
-            return Current is { } current && current.Address == address
-                ? current with { LifetimeStamp = Stamps.StampFor(current.Address) }
-                : null;
-        }
+        public SpawnNativeDescriptor? ResolveByIndex(ushort index) =>
+            Objects.ResolveByIndex(index);
+
+        public SpawnNativeDescriptor? ResolveActor(nint address) =>
+            Objects.ResolveActor(address);
 
         public bool DeleteExact(SpawnNativeDescriptor descriptor)
         {
             if (ThrowOnDelete)
                 throw new InvalidOperationException("native delete");
-            if (!DeleteResult)
+            // DeleteResult false is the native call not taking effect - a
+            // failure the production path cannot observe for itself.
+            if (!DeleteResult || !Objects.DeleteExact(descriptor))
                 return false;
             Deleted.Add(descriptor);
-            // Mirror the real adapter: native deletion runs the Character
-            // finalize, which the hook observes.
-            Stamps.NoteDestroyed(descriptor.Address, descriptor.Index);
-            Current = null;
             return true;
         }
 
