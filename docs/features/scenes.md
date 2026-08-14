@@ -53,13 +53,19 @@ states only what is durable about the WHOLE-SCENE layer.
   snapshot must never occupy the single-flight slot or overwrite the progress a
   user is reading, and it skips by name while a scene operation runs so it can
   never capture a half-restored scene.
-- UI: the scene is a workspace MODE beside the library (burger menu → "Save or
-  load a scene"), never a property of the current selection. The page carries
-  save, load, live progress with cancel, the terminal outcome with every named
-  refusal and surviving recovery file, recent scenes, and the automatic
-  snapshots. The load dialog's side panel runs the highlighted file through the
-  same codec the load runs, so corrupt and future files are visible before
-  opening.
+- UI: the scene is a workspace MODE, never a property of the current selection,
+  and it is reached from TWO places that mean the same thing — the sidebar's
+  own SCENE section, which stands above the environment because the environment
+  is one of the things a scene contains, and the library's Scenes tab, which
+  lists `.poserscene` files beside the poses with the same folders, search and
+  verbs. A scene tile's primary LOADS (there is no target to pick), and saving
+  the current scene is an action on that tab rather than a menu entry. The
+  workspace page still carries save, load, live progress with cancel, the
+  terminal outcome with every named refusal and surviving recovery file, recent
+  scenes, and the automatic snapshots. The load dialog's side panel runs the
+  highlighted file through the same codec the load runs, so corrupt and future
+  files are visible before opening; the probe is a background read, so the
+  frame never waits on a document that may be tens of megabytes.
 
 Reference divergence: Brio (`SceneService`) and Ktisis (`SceneDataService`) are
 both destructive-by-default and best-effort — they clear the session first,

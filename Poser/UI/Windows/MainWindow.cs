@@ -137,6 +137,17 @@ public class MainWindow : Window
         Selectable = true,
     };
 
+    /// <summary>The scene as a whole, seated at the very top of the tree: the
+    /// thing everything below it belongs to. Like the library's and the
+    /// environment's, its HEADER is the affordance — there is one scene and
+    /// nothing creates or destroys it — and it carries no rows.</summary>
+    private readonly ShellSidebarSection _sceneSection = new()
+    {
+        Title = "SCENE",
+        ShowPlus = false,
+        Selectable = true,
+    };
+
     /// <summary>The scene's environment, seated above the actors. It is the one
     /// scene entity that is always there and there is only ever ONE of it, so
     /// the header IS the affordance — exactly like the library's — rather than a
@@ -236,6 +247,7 @@ public class MainWindow : Window
         new() { Label = "Poses" },
         new() { Label = "Auto-saves" },
         new() { Label = "MCDF" },
+        new() { Label = "Scenes" },
     ];
 
     /// <summary>The scene workspace's one tab, retained like every other
@@ -306,25 +318,30 @@ public class MainWindow : Window
     /// </summary>
     private const int LibrarySectionIndex = 0;
 
-    /// <summary>The environment stands second, and its header is the second of
-    /// the two selectable ones.</summary>
-    private const int EnvironmentSectionIndex = 1;
+    /// <summary>The whole scene stands second — above the environment, which is
+    /// one of the things it contains.</summary>
+    private const int SceneSectionIndex = 1;
 
-    /// <summary>The sections are stated in a fixed order — library,
-    /// environment, actors, lights — so the actors section is index 2. Its
-    /// header and the lights header are the only two whose plus creates
-    /// anything; the environment is never created or destroyed.</summary>
-    private const int ActorsSectionIndex = 2;
+    /// <summary>The environment stands third, under the scene it belongs to.
+    /// </summary>
+    private const int EnvironmentSectionIndex = 2;
+
+    /// <summary>The sections are stated in a fixed order — library, scene,
+    /// environment, actors, props, lights, cameras — so the actors section is
+    /// index 3. Its header and the lights header are the only two whose plus
+    /// creates anything; neither the scene nor the environment is ever created
+    /// or destroyed.</summary>
+    private const int ActorsSectionIndex = 3;
 
     /// <summary>Props stand between the actors and the lights: scene
     /// furniture, owned by nobody.</summary>
-    private const int PropsSectionIndex = 3;
+    private const int PropsSectionIndex = 4;
 
     /// <summary>Lights stand under the actors they light.</summary>
-    private const int LightsSectionIndex = 4;
+    private const int LightsSectionIndex = 5;
 
     /// <summary>Cameras stand last: they look at everything above them.</summary>
-    private const int CamerasSectionIndex = 5;
+    private const int CamerasSectionIndex = 6;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -421,6 +438,10 @@ public class MainWindow : Window
         // The library's "Add source…" and its empty state both mean the same
         // thing the titlebar gear does, so they travel the one settings route.
         _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
+        // Saving from the scenes tab is the scene workspace's own dialog: one
+        // destination browser and one description field, wherever it is asked
+        // for.
+        _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestSave();
         _poseFileSection = poseFileSection;
         // The import menus resolve their target actor through the same
         // binding registry the context menus use.
@@ -541,6 +562,8 @@ public class MainWindow : Window
         {
             if (index == LibrarySectionIndex)
                 ShowLibrary();
+            else if (index == SceneSectionIndex)
+                ShowSceneFiles();
             else if (index == EnvironmentSectionIndex)
             {
                 // The exits restate nothing; the resync at the end of this
@@ -1280,6 +1303,9 @@ public class MainWindow : Window
         // The library is a place in the sidebar, not a window: its header IS
         // the affordance, and it stands above the scene it poses.
         _vm.Sections.Add(_librarySection);
+        // The whole scene stands above everything it contains — the user reads
+        // the tree top down as scene, then environment, then the entities.
+        _vm.Sections.Add(_sceneSection);
         // The environment stands above the actors: it is the one scene entity
         // that is always there, and — being a singleton — its HEADER is the
         // affordance, so the section carries no rows at all.
@@ -1399,6 +1425,7 @@ public class MainWindow : Window
     private void RefreshSidebarFlags()
     {
         _librarySection.Active = _libraryMode;
+        _sceneSection.Active = _sceneMode;
         // The environment's header wears the selection, exactly as the row it
         // replaced did: both selectable headers state their own flag here.
         _environmentSection.Active = _selection.IsSelected(EnvironmentSelection);
@@ -2432,10 +2459,14 @@ public class MainWindow : Window
         // environment's lighting tab, and both are pages, so the layout answer
         // is the same either way. WHICH pane draws it is decided by the
         // selection in DrawTabContent, never by this label.
+        // The scene workspace is a Page like the rest of them; it was the one
+        // page missing from this list, so the shell was insetting it a second
+        // time on top of the Page's own.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Prop" or "Light"
                 or "Shadows"
                 or "Camera"
+                or "Scene"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
     }
 
@@ -2635,7 +2666,6 @@ public class MainWindow : Window
     private enum ShellCommand
     {
         ShowLibrary,
-        ShowShot,
         SpawnActor,
         ImportPose,
         ExportPose,
@@ -2695,10 +2725,6 @@ public class MainWindow : Window
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
-        // The whole scene: one command, because save, load, progress and
-        // recovery all live on the one page it opens.
-        _shellMenuItems[(int)ShellCommand.ShowShot] =
-            new ContextMenuItem("Save or load a scene", TablerIcon.Movie);
         _shellMenuItems[(int)ShellCommand.SpawnActor] =
             new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
         _shellMenuItems[(int)ShellCommand.ImportPose] =
@@ -2756,9 +2782,6 @@ public class MainWindow : Window
         {
             case ShellCommand.ShowLibrary:
                 ShowLibrary();
-                break;
-            case ShellCommand.ShowShot:
-                ShowSceneFiles();
                 break;
             case ShellCommand.SpawnActor:
                 // Reached FROM the burger menu, so the burger's own anchor is

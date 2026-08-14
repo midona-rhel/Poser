@@ -93,10 +93,26 @@ public sealed class ScenePane
         _snapshotBrowser.SidePanels.Add(verdict);
     }
 
+    /// <summary>Asks for the save destination from ANOTHER surface — the
+    /// library's scene tab, which is where a user goes looking for scenes. The
+    /// open is deferred to the browser pump rather than run inline: the caller
+    /// is mid-draw inside its own pane, and a dialog opened there claims the
+    /// frame a pane is still using.</summary>
+    public void RequestSave() => _saveRequested = true;
+
+    private bool _saveRequested;
+
     /// <summary>Pumped every frame by the window: a dialog must survive the
-    /// frames in which this pane's mode is not the one being drawn.</summary>
+    /// frames in which this pane's mode is not the one being drawn. Deferred
+    /// opens run HERE, at the root pump, before anything claims the frame.
+    /// </summary>
     public void DrawBrowsers()
     {
+        if (_saveRequested)
+        {
+            _saveRequested = false;
+            OpenSave();
+        }
         _saveBrowser.Draw();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();

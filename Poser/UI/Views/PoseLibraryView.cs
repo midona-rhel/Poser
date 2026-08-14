@@ -254,6 +254,16 @@ public sealed class PoseLibraryViewModel
     /// a button that disappears mid-operation reads as a bug.</summary>
     public bool CanCancelImport;
 
+    /// <summary>Whether the footer carries "Spawn as new" at all. A scene is
+    /// restored whole into the session, never spawned as an actor, so its tab
+    /// does not wear the verb greyed — it does not wear it.</summary>
+    public bool ShowSpawn = true;
+
+    /// <summary>Whether the footer carries the save affordance. The library is
+    /// where scenes are found, so capturing the current one belongs beside
+    /// them rather than only behind a menu.</summary>
+    public bool ShowSaveScene;
+
     /// <summary>Whether the action row leads with the import toggles.
     /// Character files never travel the pose import pipeline, so the MCDF
     /// tab hides them.</summary>
@@ -306,6 +316,9 @@ public sealed class PoseLibraryViewModel
     /// <summary>Stops the character-file apply this pane started.</summary>
     public Action? OnCancelImport;
 
+    /// <summary>The footer's save request, raised by the scenes tab.</summary>
+    public Action? OnSaveScene;
+
     /// <summary>Whether tiles carry the favorite star — the poses library
     /// only; an auto-save snapshot is not a curated entry.</summary>
     public bool CanFavorite = true;
@@ -341,6 +354,7 @@ public sealed class PoseLibraryViewModel
     internal Action? ImportMenuClick;
     internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
+    internal Action? SaveSceneClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -494,6 +508,7 @@ public static class PoseLibraryView
         vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
+        vm.SaveSceneClick ??= () => vm.OnSaveScene?.Invoke();
 
         float chromeMaxX = origin.X
             + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
@@ -632,10 +647,13 @@ public static class PoseLibraryView
         scope.Button(
             "Add source",
             vm.SettingsClick!);
-        scope.Button(
-            "Spawn as new",
-            vm.SpawnClick!,
-            disabled: none || !vm.CanSpawn);
+        if (vm.ShowSpawn)
+            scope.Button(
+                "Spawn as new",
+                vm.SpawnClick!,
+                disabled: none || !vm.CanSpawn);
+        if (vm.ShowSaveScene)
+            scope.Button("Save scene…", vm.SaveSceneClick!);
         // The primary opens the ACTOR PICKER — the pose applies to whoever
         // is chosen there, not silently to the selection.
         scope.Button(

@@ -19,6 +19,7 @@ using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Posing;
 using Poser.Game.Preview;
+using Poser.Game.Scene;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
@@ -66,6 +67,7 @@ public sealed class PoseLibraryPane
     private const string FavoritesKey = "##pose-library-favorites";
     private const string AllLabel = "All poses";
     private const string AllFilesLabel = "All character files";
+    private const string AllScenesLabel = "All scenes";
     private const string FavoritesLabel = "Favorites";
 
     /// <summary>The auto-save folder name's own format
@@ -96,6 +98,7 @@ public sealed class PoseLibraryPane
         Poses,
         AutoSaves,
         Mcdf,
+        Scenes,
     }
 
     private readonly ConfigurationService _config;
@@ -103,6 +106,7 @@ public sealed class PoseLibraryPane
     private readonly PoseThumbnailCache _thumbs;
     private readonly CleanPoseFacade _poseFacade;
     private readonly IActorSpawnService _spawnService;
+    private readonly SceneWorkflow _scenes;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
     private readonly ActorIntegrationSession _integration;
@@ -318,6 +322,11 @@ public sealed class PoseLibraryPane
     /// "Add source…"; the UI manager owns the settings window.</summary>
     public event Action? OnSettingsRequested;
 
+    /// <summary>Raised by the scenes tab's save affordance. The scene
+    /// workspace owns the destination dialog and the description that goes
+    /// into the file, so it is asked rather than duplicated here.</summary>
+    public event Action? OnSaveSceneRequested;
+
     public PoseLibraryPane(
         ConfigurationService config,
         IPoseLibraryService library,
@@ -330,13 +339,15 @@ public sealed class PoseLibraryPane
         IAutoSaveService autoSave,
         PoseFileInspectorSection files,
         IActorManager actors,
-        PosePreviewService preview)
+        PosePreviewService preview,
+        SceneWorkflow scenes)
     {
         _config = config;
         _library = library;
         _thumbs = thumbs;
         _poseFacade = poseFacade;
         _spawnService = spawnService;
+        _scenes = scenes;
         _selection = selection;
         _bindings = bindings;
         _integration = integration;
@@ -349,14 +360,10 @@ public sealed class PoseLibraryPane
         _vm.OnSelectFolder = SelectFolder;
         _vm.OnToggleGroup = ToggleGroup;
         _vm.OnSelect = Select;
-        // Every apply goes through the actor picker — one workflow, the
-        // target always explicit (a lone eligible actor skips the menu).
-        _vm.OnApplyTile = index =>
-        {
-            Select(index);
-            _applyMenuAnchor = ImGui.GetMousePos();
-            _applyMenuRequested = true;
-        };
+        // Every apply that HAS a target goes through the actor picker — one
+        // workflow, the target always explicit (a lone eligible actor skips
+        // the menu). A scene has no target and loads outright.
+        _vm.OnApplyTile = ActivateTile;
         _vm.OnSpawnTile = Spawn;
         _vm.OnToggleFavorite = ToggleFavorite;
         _vm.OnTagFilter = TagFilter;
@@ -376,6 +383,11 @@ public sealed class PoseLibraryPane
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {
+            if (_type == LibraryType.Scenes)
+            {
+                LoadScene(_vm.Selected);
+                return;
+            }
             _applyMenuAnchor = Crystarium.ButtonSeat;
             _applyMenuRequested = true;
         };
@@ -383,6 +395,7 @@ public sealed class PoseLibraryPane
         // starts, so this pane also carries its stop — the same cooperative
         // cancel the appearance pane's progress row calls.
         _vm.OnCancelImport = _integration.CancelMcdf;
+        _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -548,11 +561,17 @@ public sealed class PoseLibraryPane
         _menuActionRows.Clear();
         var tile = _vm.Tiles[index];
 
+        bool scenes = _type == LibraryType.Scenes;
+        // A scene is restored whole into the session; it has no actor to be
+        // applied TO, so it states the verb it actually performs.
         Row(TileMenuAction.Apply, new ContextMenuItem(
-            "Apply", TablerIcon.Check, disabled: !_vm.CanApply));
-        Row(TileMenuAction.Spawn, new ContextMenuItem(
-            "Spawn as new actor", TablerIcon.UserPlus,
-            disabled: !_vm.CanSpawn));
+            scenes ? "Load scene" : "Apply",
+            scenes ? TablerIcon.Movie : TablerIcon.Check,
+            disabled: !_vm.CanApply));
+        if (!scenes)
+            Row(TileMenuAction.Spawn, new ContextMenuItem(
+                "Spawn as new actor", TablerIcon.UserPlus,
+                disabled: !_vm.CanSpawn));
         if (_vm.CanFavorite)
             Row(TileMenuAction.Favorite, new ContextMenuItem(
                 tile.Favorite ? "Unfavorite" : "Favorite", TablerIcon.Star));
@@ -614,6 +633,37 @@ public sealed class PoseLibraryPane
         }
     }
 
+    /// <summary>The tile's primary verb. A pose or a character file needs a
+    /// TARGET, so it opens the actor picker; a scene is the whole session and
+    /// has no target, so it starts its own transaction straight away.</summary>
+    /// <summary>What activating a TILE means: a scene loads outright, and
+    /// everything else opens the actor picker. A tile is not a button, so the
+    /// picker hangs at the pointer that opened it rather than at a seat.
+    /// </summary>
+    private void ActivateTile(int index)
+    {
+        Select(index);
+        if (_type == LibraryType.Scenes)
+        {
+            LoadScene(index);
+            return;
+        }
+        _applyMenuAnchor = ImGui.GetMousePos();
+        _applyMenuRequested = true;
+    }
+
+    /// <summary>Restores a highlighted scene through the ONE scene workflow —
+    /// the same single-flight transaction the scene workspace starts, so a
+    /// refusal reads the same on either surface.</summary>
+    private void LoadScene(int index)
+    {
+        if (index < 0 || index >= _vm.Tiles.Count)
+            return;
+        var started = _scenes.BeginLoad(_vm.Tiles[index].ThumbKey);
+        if (!started.Success)
+            _note = started.Detail;
+    }
+
     private void Dispatch(TileMenuAction action, int index)
     {
         var tile = _vm.Tiles[index];
@@ -621,9 +671,7 @@ public sealed class PoseLibraryPane
         switch (action)
         {
             case TileMenuAction.Apply:
-                Select(index);
-                _applyMenuAnchor = ImGui.GetMousePos();
-                _applyMenuRequested = true;
+                ActivateTile(index);
                 break;
             case TileMenuAction.Spawn:
                 Spawn(index);
@@ -1178,7 +1226,7 @@ public sealed class PoseLibraryPane
     /// the new type starts on its whole library.</summary>
     public void SelectType(int index)
     {
-        if (index < 0 || index > (int)LibraryType.Mcdf
+        if (index < 0 || index > (int)LibraryType.Scenes
             || index == (int)_type)
             return;
         _type = (LibraryType)index;
@@ -1214,9 +1262,12 @@ public sealed class PoseLibraryPane
 
         var favorites = _config.Config.Library.Favorites;
         var entries = snapshot.Entries;
-        var kind = _type == LibraryType.Mcdf
-            ? PoseLibraryEntryKind.Mcdf
-            : PoseLibraryEntryKind.Pose;
+        var kind = _type switch
+        {
+            LibraryType.Mcdf => PoseLibraryEntryKind.Mcdf,
+            LibraryType.Scenes => PoseLibraryEntryKind.Scene,
+            _ => PoseLibraryEntryKind.Pose,
+        };
 
         int total = 0;
         int favored = 0;
@@ -1236,7 +1287,12 @@ public sealed class PoseLibraryPane
         folders.Add(new PoseLibraryFolderRow
         {
             Key = AllKey,
-            Label = kind == PoseLibraryEntryKind.Mcdf ? AllFilesLabel : AllLabel,
+            Label = kind switch
+            {
+                PoseLibraryEntryKind.Mcdf => AllFilesLabel,
+                PoseLibraryEntryKind.Scene => AllScenesLabel,
+                _ => AllLabel,
+            },
             LabelLower = "all",
             Depth = 0,
             Count = total,
@@ -1258,9 +1314,12 @@ public sealed class PoseLibraryPane
         for (int i = 0; i < scanned.Count; i++)
         {
             var folder = scanned[i];
-            int count = kind == PoseLibraryEntryKind.Mcdf
-                ? folder.McdfCount
-                : folder.PoseCount;
+            int count = kind switch
+            {
+                PoseLibraryEntryKind.Mcdf => folder.McdfCount,
+                PoseLibraryEntryKind.Scene => folder.SceneCount,
+                _ => folder.PoseCount,
+            };
             // A subfolder with none of this kind has no descendant of it
             // either, so dropping it drops a WHOLE subtree — the flattened tree
             // stays depth-first and the subtree range test stays a range test.
@@ -1307,15 +1366,22 @@ public sealed class PoseLibraryPane
                     ? entry.Name + System.IO.Path.GetExtension(entry.FilePath)
                     : entry.Name,
                 LabelLower = entry.NameLower,
-                Sub = entry.ModifiedText,
+                // A scene's own line is what is INSIDE it — "3 actors, 2
+                // lights" tells a user which scene this is; a stamp does not.
+                Sub = entry.SceneContents.Length > 0
+                    ? entry.SceneContents
+                    : entry.ModifiedText,
                 ThumbKey = entry.FilePath,
                 HasThumbnail = entry.HasThumbnail,
                 Favorite = favorites.Contains(entry.FilePath),
-                Fallback = entry.Kind == PoseLibraryEntryKind.Mcdf
-                    ? TablerIcon.UserCircle
-                    : entry.IsLegacy
+                Fallback = entry.Kind switch
+                {
+                    PoseLibraryEntryKind.Mcdf => TablerIcon.UserCircle,
+                    PoseLibraryEntryKind.Scene => TablerIcon.Movie,
+                    _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
+                },
                 Author = entry.Author,
                 Tags = entry.Tags,
                 Folder = _folderRows[entry.Folder],
@@ -2040,7 +2106,17 @@ public sealed class PoseLibraryPane
 
         // A character file is applied to an actor that already exists; there is
         // no "spawn and dress" path in v1.
-        _vm.CanSpawn = _type != LibraryType.Mcdf;
+        _vm.CanSpawn = _type != LibraryType.Mcdf && _type != LibraryType.Scenes;
+
+        // A scene has no target to pick: it IS the session. Its primary needs
+        // a highlighted file and nothing else, and it names the transaction it
+        // starts rather than the picker it does not open.
+        if (_type == LibraryType.Scenes)
+        {
+            _vm.CanApply = true;
+            _vm.ApplyLabel = "Load scene";
+            return;
+        }
 
         // The primary opens the actor picker; its caption is constant.
         _vm.ApplyLabel = "Apply to";
@@ -2186,6 +2262,10 @@ public sealed class PoseLibraryPane
         _vm.ShowImportToggles = _type == LibraryType.AutoSaves;
         _vm.ShowImportMenus = false;
         _vm.CanFavorite = _type == LibraryType.Poses;
+        // A scene is not spawned as an actor, and saving one belongs where
+        // scenes are found rather than behind a menu.
+        _vm.ShowSpawn = _type != LibraryType.Scenes;
+        _vm.ShowSaveScene = _type == LibraryType.Scenes;
         bool auto = _type == LibraryType.AutoSaves;
         _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
         _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
