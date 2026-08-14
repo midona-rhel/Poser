@@ -277,4 +277,46 @@ public static class ImportBoneCategories
             options.ApplyOrnament = false;
         return options;
     }
+
+    /// <summary>
+    /// Ktisis' ear set, its exact 22 bones (PoseUtil.cs:6-21): the six
+    /// standard ear bones plus the sixteen Viera ear-variant bones. Only the
+    /// variant matching the actor's ear id is present on any one skeleton, so
+    /// naming all four variants costs nothing and covers every Viera.
+    ///
+    /// <para>Whole bone names, used as PREFIXES. No other bone begins with any
+    /// of them, so the prefix test the exclusion set performs is an exact
+    /// match here.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> EarBones = Array.AsReadOnly(
+        new[]
+        {
+            "j_mimi_l", "j_mimi_r",
+            "n_ear_a_l", "n_ear_a_r",
+            "n_ear_b_l", "n_ear_b_r",
+            "j_zera_a_l", "j_zera_b_l", "j_zera_a_r", "j_zera_b_r",
+            "j_zerb_a_l", "j_zerb_b_l", "j_zerb_a_r", "j_zerb_b_r",
+            "j_zerc_a_l", "j_zerc_b_l", "j_zerc_a_r", "j_zerc_b_r",
+            "j_zerd_a_l", "j_zerd_b_l", "j_zerd_a_r", "j_zerd_b_r",
+        });
+
+    /// <summary>
+    /// Ktisis' standalone "Exclude ear bones" (PoseImportDialog.cs:176,
+    /// PosingManager.cs:230-231), folded into whatever exclusions the build
+    /// already carries. Deliberately independent of the category menu: that
+    /// menu is dead the moment Body or Expression is checked, which is exactly
+    /// when a user most wants the ears held back, so routing this through the
+    /// existing "ears" category row would put it out of reach on the two
+    /// common typed paths.
+    /// </summary>
+    public static PoseImportOptions ExcludeEarBones(PoseImportOptions options)
+    {
+        var prefixes = options.ExcludedBonePrefixes is { } existing
+            ? new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var bone in EarBones)
+            prefixes.Add(bone);
+        options.ExcludedBonePrefixes = prefixes;
+        return options;
+    }
 }

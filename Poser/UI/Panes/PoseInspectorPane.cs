@@ -244,7 +244,47 @@ public class PoseInspectorPane
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _editorState = editorState;
+        // The import dialog's IK banner. The section owns no IK port and the
+        // pane already resolves an actor's chains for the bulk buttons, so the
+        // one enumeration answers both.
+        _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
+    }
+
+    /// <summary>Whether any chain of the actor the rail is pointed at is
+    /// solving. False with nothing selected: a warning about a limb nobody is
+    /// looking at is noise.</summary>
+    private bool AnyIkArmedOnSelection()
+    {
+        if (OwnerBone() is not { } owner)
+            return false;
+        foreach (var chain in ActorIkChains(owner))
+            if (_ikPort.Get(chain)?.Enabled == true)
+                return true;
+        return false;
+    }
+
+    /// <summary>Any bone of the actor the rail is pointed at — the chain
+    /// enumeration keys on an actor lineage and only reads the bone for
+    /// that.</summary>
+    private BoneId? OwnerBone()
+    {
+        if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } selected })
+            return selected;
+        if (OwningActor() is not { } actor ||
+            _bindings.GetActorId(actor) is not { } actorId)
+            return null;
+        foreach (var descriptor in _scene.Snapshot.Actors)
+        {
+            if (descriptor.Id.LogicalId != actorId.LogicalId)
+                continue;
+            foreach (var skeleton in descriptor.Skeletons)
+                if (skeleton.Bones.Count > 0)
+                    return skeleton.Bones[0].Id;
+            return null;
+        }
+
+        return null;
     }
 
     private readonly IActorSpawnService _spawnService;

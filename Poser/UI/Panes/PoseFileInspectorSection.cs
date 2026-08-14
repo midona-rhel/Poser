@@ -84,6 +84,17 @@ public sealed class PoseFileInspectorSection
     // SelectiveImportAppliesPosition): the selective set keeps its
     // positions, the file contributes rotation/scale.
     private bool _selectiveAnchor;
+    // Ktisis' standalone "Exclude ear bones" (PoseImportDialog.cs:176). It
+    // rides EVERY path — the category menu it would otherwise live in goes
+    // dead the moment Body or Expression is checked, which is exactly when
+    // ears most need holding back. Default off, Ktisis' default too.
+    private bool _excludeEars;
+    // Ktisis' "Apply on selection" (PoseImportDialog.cs:44-51): picking a file
+    // in the dialog applies it there and then. Default off. The last path the
+    // armed checkbox applied, so re-drawing the same selection does not
+    // re-import it every frame.
+    private bool _applyOnSelect;
+    private string? _appliedOnSelectPath;
     // Two-step reference-pose confirm: the first press arms and shows the
     // visible warning, the second applies. Any other preset disarms.
     private bool _referenceArmed;
@@ -652,6 +663,12 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private IActor? _importTarget;
 
+    /// <summary>The exact slot skeleton the dialog was opened from, held
+    /// beside the target actor so apply-on-select can dispatch the same
+    /// ImportFromPath the Load button does rather than re-resolving one.
+    /// </summary>
+    private ISkeleton? _importSkeleton;
+
     /// <summary>Whether the dialog was driving the shared preview last frame —
     /// the edge <see cref="ReleaseImportPreview"/> hands the seat back on.
     /// </summary>
@@ -703,6 +720,12 @@ public sealed class PoseFileInspectorSection
     private void DrawImportOptionsBand(
         Vector2 origin, Vector2 size, string? highlighted)
     {
+        // Both run BEFORE the columns draw: the transform column greys itself
+        // off the .cmp verdict, and an armed apply-on-select must land the
+        // import on the frame the highlight moved, not the frame after.
+        SyncCmpComponentLock(highlighted);
+        SyncFaceWarning(highlighted);
+        SyncApplyOnSelect(highlighted);
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Page.Inset;
@@ -798,6 +821,123 @@ public sealed class PoseFileInspectorSection
     /// MUTATES the type pair, and merely highlighting a file must never flip
     /// the checkboxes beside it.</para>
     /// </summary>
+    /// <summary>
+    /// Whether the highlighted file is a legacy CMTool pose, and therefore
+    /// whether the component trio has anything left to decide.
+    /// </summary>
+    private bool _cmpHighlighted;
+
+    /// <summary>The file the dialog is highlighting this frame, so arming
+    /// apply-on-select can adopt it as "already seen" instead of importing
+    /// whatever the cursor happened to be resting on.</summary>
+    private string? _lastHighlighted;
+
+    /// <summary>The face-generation warning for the highlighted file, and the
+    /// path it was computed for. Cached against the PATH because the verdict
+    /// costs a file read and the highlight is restated every frame.</summary>
+    private string? _faceWarning;
+    private string? _faceWarningPath;
+
+    /// <summary>Whether any IK chain on the import target is armed — set by
+    /// the host, which owns the IK port. Ktisis warns because a live solver
+    /// overrides the limbs an import has just placed
+    /// (PoseImportDialog.cs:178-183).</summary>
+    public Func<bool>? IsAnyIkArmed;
+
+    /// <summary>
+    /// Ktisis' face-compat warning (PoseImportDialog.cs:168-173), computed
+    /// once per highlighted file. Poser's protection is finer than Ktisis' —
+    /// it withholds face POSITIONS and keeps their rotations where Ktisis
+    /// drops the whole face — so the pre-Dawntrail direction reports a repair
+    /// rather than a hazard. The other direction has no repair and says so.
+    /// </summary>
+    private void SyncFaceWarning(string? highlighted)
+    {
+        if (string.Equals(
+                highlighted, _faceWarningPath, StringComparison.Ordinal))
+            return;
+        _faceWarningPath = highlighted;
+        _faceWarning = null;
+        if (highlighted is null
+            || !IsPoseFile(highlighted)
+            || _importSkeleton is not { } skeleton)
+            return;
+
+        bool isCmp = highlighted.EndsWith(
+            ".cmp", StringComparison.OrdinalIgnoreCase);
+        if (LoadForSmartRouting(highlighted, isCmp) is not { } file)
+            return;
+        _faceWarning =
+            PoseFileService.CompareFaceGeneration(file, skeleton) switch
+            {
+                PoseFileService.FaceGenerationMatch
+                        .PreDawntrailFileOnDawntrailSkeleton =>
+                    "This pose predates the Dawntrail face. Its face rotations "
+                        + "will apply; its face positions will not, because "
+                        + "they would deform this face.",
+                PoseFileService.FaceGenerationMatch
+                        .DawntrailFileOnOlderSkeleton =>
+                    "This pose carries a Dawntrail face and this model does "
+                        + "not have one. Its face bones may land badly or not "
+                        + "at all.",
+                _ => null,
+            };
+    }
+
+    /// <summary>The trio as the user left it before a .cmp clamped it. Held so
+    /// browsing past a .cmp in a mixed folder does not quietly rewrite the
+    /// import that follows it.</summary>
+    private (bool Rotation, bool Position, bool Scale)? _preCmpComponents;
+
+    /// <summary>
+    /// Ktisis force-clears Position and Scale for a .cmp and disables both
+    /// (PoseImportDialog.cs:114-125). Poser clamps the WHOLE trio, because a
+    /// .cmp is rotation-only end to end: the format carries no positions at
+    /// all, its scale strings are the ones that leave a bone at zero when a
+    /// rotation has no matching size (CMToolPoseFile.StringToBone), and the
+    /// engine already substitutes the rotation-only preset for a typed .cmp.
+    /// A greyed row that still fed live values would be a lie, so the values
+    /// move with the greying and come back when the highlight does.
+    /// </summary>
+    private void SyncCmpComponentLock(string? highlighted)
+    {
+        _lastHighlighted = highlighted;
+        bool cmp = highlighted is { } path
+            && path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
+        _cmpHighlighted = cmp;
+        if (cmp && _preCmpComponents == null)
+        {
+            _preCmpComponents = (_rotation, _position, _scale);
+            _rotation = true;
+            _position = false;
+            _scale = false;
+        }
+        else if (!cmp && _preCmpComponents is { } restored)
+        {
+            (_rotation, _position, _scale) = restored;
+            _preCmpComponents = null;
+        }
+    }
+
+    /// <summary>
+    /// Ktisis' "Apply on selection" (PoseImportDialog.cs:44-51): while armed,
+    /// highlighting a pose file imports it there and then, so a folder can be
+    /// auditioned by arrow key. Guarded on the PATH rather than on a frame
+    /// edge — the highlight is restated every frame the dialog draws, and an
+    /// unguarded arm would re-import continuously.
+    /// </summary>
+    private void SyncApplyOnSelect(string? highlighted)
+    {
+        if (!_applyOnSelect || highlighted is null || !IsPoseFile(highlighted))
+            return;
+        if (string.Equals(
+                highlighted, _appliedOnSelectPath, StringComparison.Ordinal))
+            return;
+        _appliedOnSelectPath = highlighted;
+        if (_importSkeleton is { } skeleton)
+            ImportFromPath(skeleton, highlighted, fromDialog: true);
+    }
+
     private void SyncImportPreview(string? highlighted)
     {
         if (highlighted is null
@@ -846,7 +986,15 @@ public sealed class PoseFileInspectorSection
         if (!_importPreviewOwned)
             return;
         _importPreviewOwned = false;
+        // The dialog is gone, so no file is highlighted: the .cmp lock lets
+        // the user's own component trio back and the apply-on-select guard
+        // forgets what it applied.
+        SyncCmpComponentLock(null);
+        _appliedOnSelectPath = null;
+        _faceWarning = null;
+        _faceWarningPath = null;
         _importTarget = null;
+        _importSkeleton = null;
         if (PreviewClaimed)
             _importPreview.StandDown();
         else
@@ -1246,6 +1394,21 @@ public sealed class PoseFileInspectorSection
                     new Crystarium.CheckItem(
                         "Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
+                // Ktisis' "Apply on selection" (PoseImportDialog.cs:44-51),
+                // and only in the DIALOG: it needs a file list to select in,
+                // and the quick popup has none.
+                if (selective)
+                    form.Checkbox(
+                        "Apply on select", _applyOnSelect,
+                        next =>
+                        {
+                            _applyOnSelect = next;
+                            // Arming must not re-apply whatever is already
+                            // highlighted; the next MOVE is what applies.
+                            _appliedOnSelectPath = next ? _lastHighlighted : null;
+                        },
+                        help: "Import a file the moment it is highlighted, "
+                            + "instead of waiting for Load");
                 // Ktisis hides the mode checkboxes during selective import
                 // without descendants (PoseImportDialog.cs:158): directly
                 // selected bones bypass the type gates entirely, so the row
@@ -1277,6 +1440,18 @@ public sealed class PoseFileInspectorSection
                             ? typeLockedWhy
                             : "Import the face as an expression — always every "
                                 + "component"));
+                // Both warnings land in the DIALOG only: they are properties
+                // of the highlighted file and the live target, and the quick
+                // popup has neither a file list nor room to say so.
+                if (selective)
+                {
+                    if (_faceWarning is { } faceWarning)
+                        form.Status(faceWarning);
+                    if (IsAnyIkArmed?.Invoke() == true)
+                        form.Status(
+                            "Live IK is on. It will keep solving after the "
+                            + "import and override the limbs the pose places.");
+                }
             },
             divider: divider,
             dense: dense);
@@ -1304,10 +1479,17 @@ public sealed class PoseFileInspectorSection
                 // toggle sits only under the OUTER Smart disable, like
                 // Brio's model-transform icon, which is exactly the per-item
                 // disable Crystarium.CheckItem carries.
-                bool locked = _typeExpression || _smartImport;
-                string? why = locked
-                    ? "Expression imports always apply every component"
-                    : null;
+                // A highlighted .cmp outranks both: the format is rotation-only
+                // end to end, so the trio has nothing left to decide and its
+                // values have already been clamped to say so
+                // (SyncCmpComponentLock).
+                bool locked = _cmpHighlighted || _typeExpression || _smartImport;
+                string? why = _cmpHighlighted
+                    ? "CMTool poses carry rotations only — there is no "
+                        + "position or scale in the file to apply"
+                    : locked
+                        ? "Expression imports always apply every component"
+                        : null;
                 // The row itself is never dead: the trio and Model die on
                 // different facts, which is the whole reason they can share
                 // one row at all.
@@ -1400,6 +1582,16 @@ public sealed class PoseFileInspectorSection
                     "Reset first", _reset, next => _reset = next,
                     "Clear every bone in scope before importing, "
                         + "including ones the file does not contain"));
+                // Ktisis' own row (PoseImportDialog.cs:176), live on every
+                // path — the bone filter below it is dead under a checked
+                // type, and that is the state this switch exists for. Folded
+                // into the scope cluster: it is a scope statement like the
+                // rest of them.
+                scope.Add(new Crystarium.CheckItem(
+                    "Exclude ear bones", _excludeEars,
+                    next => _excludeEars = next,
+                    "Leave ears where they are — the six standard ear "
+                        + "bones and the Viera ear chains"));
                 // ONE labelled cluster, however many of them this mount
                 // carries: four stacked rows here was the tallest column of
                 // the options band and half the rail's option stack.
@@ -2030,6 +2222,7 @@ public sealed class PoseFileInspectorSection
         // column borrows this same actor's appearance, so what the highlight
         // shows stands on the body the confirm will pose.
         _importTarget = skeleton.Actor;
+        _importSkeleton = skeleton;
         // A fresh session: nothing has been stated yet, so the preview box
         // shows the backing until a highlight poses something — and the
         // DIALOG's fade ramp starts from zero rather than fading the stale
@@ -2610,10 +2803,19 @@ public sealed class PoseFileInspectorSection
         // ImportModelPose outright (FileUIHelpers.cs:710,
         // PosingCapability.cs:235).
         options.ApplyModelTransform = _modelTransform && !options.AsExpression;
-        return _typeBody || _typeExpression
-            ? options
-            : ApplyCategoryFilter(options);
+        return ApplyEarExclusion(
+            _typeBody || _typeExpression
+                ? options
+                : ApplyCategoryFilter(options));
     }
+
+    /// <summary>The ear switch, folded in LAST so it survives every route: the
+    /// typed paths skip the category filter entirely, which is the whole
+    /// reason Ktisis ships this as its own checkbox.</summary>
+    private PoseImportOptions ApplyEarExclusion(PoseImportOptions options) =>
+        _excludeEars
+            ? ImportBoneCategories.ExcludeEarBones(options)
+            : options;
 
     /// <summary>
     /// Re-derive a build as a different type pair, keeping the switches that
@@ -2634,7 +2836,7 @@ public sealed class PoseFileInspectorSection
         routed.FreezeOnImport = built.FreezeOnImport;
         routed.ApplyModelTransform =
             built.ApplyModelTransform && !routed.AsExpression;
-        return routed;
+        return ApplyEarExclusion(routed);
     }
 
     /// <summary>
