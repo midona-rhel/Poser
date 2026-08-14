@@ -28,7 +28,35 @@ public class UIConfiguration
     public bool DetachedShell { get; set; }
     public bool ShowTreeGuides { get; set; } = true;
     public bool MapMirrorSelection { get; set; }
+    /// <summary>
+    /// The pre-dual-slot single binding per action. Kept so a config written
+    /// before the second slot existed still deserializes; emptied by
+    /// <see cref="MigrateKeybindsToSlots"/> the first time such a config
+    /// loads, and never written again — one live home for a binding.
+    /// </summary>
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
+
+    /// <summary>Each action's primary and secondary chords. Absent actions
+    /// take <see cref="KeybindRegistry.Default"/>; an EMPTY slot is a
+    /// deliberate unbind and outranks the default.</summary>
+    public System.Collections.Generic.Dictionary<string, KeybindSlots> Bindings { get; set; } = new();
+
+    /// <summary>
+    /// Config v3: an existing single binding becomes that action's PRIMARY
+    /// chord and its secondary starts empty. A binding already carried in
+    /// <see cref="Bindings"/> wins — the migration only fills gaps, so
+    /// running it twice cannot undo an edit made after the first run.
+    /// </summary>
+    public void MigrateKeybindsToSlots()
+    {
+        foreach (var (action, chord) in Keybinds)
+        {
+            if (string.IsNullOrWhiteSpace(chord) || Bindings.ContainsKey(action))
+                continue;
+            Bindings[action] = new KeybindSlots(chord);
+        }
+        Keybinds.Clear();
+    }
 
     // Background colors
     public UIColorEntry Background { get; set; } = new(ImGuiCol.WindowBg);

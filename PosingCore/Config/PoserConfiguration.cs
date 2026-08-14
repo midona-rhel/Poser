@@ -11,7 +11,14 @@ public class PoserConfiguration : IPluginConfiguration
 {
     // 2: overlay color redesign — stored overlay colors reset once on load
     // (ConfigurationService.MigrateConfig); sizes/opacity keep user values.
-    public int Version { get; set; } = 2;
+    // 3: keybinds gain a second slot — the stored single chord becomes the
+    // action's primary (UIConfiguration.MigrateKeybindsToSlots).
+    public int Version { get; set; } = LatestVersion;
+
+    /// <summary>The version a config written by THIS build carries. A stored
+    /// config below it goes through <c>ConfigurationService.MigrateConfig</c>
+    /// once, in ascending step order.</summary>
+    public const int LatestVersion = 3;
 
     public SkeletonConfiguration Skeleton { get; set; } = new();
     public DisplayConfiguration Display { get; set; } = new();

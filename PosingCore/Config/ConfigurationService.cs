@@ -33,25 +33,40 @@ public class ConfigurationService : IDisposable
     }
 
     /// <summary>
-    /// Version 2: the overlay color redesign replaces the old defaults, so
-    /// stored overlay colors reset once to the new palette (this also
-    /// re-enables accent-following for selected/hovered). Sizes, opacity,
-    /// and every non-color setting keep their stored values.
+    /// The stored config walks UP to <see cref="PoserConfiguration.LatestVersion"/>
+    /// one step at a time, so a config that skipped a release still receives
+    /// every step in order.
+    ///
+    /// <para>Version 2: the overlay color redesign replaces the old defaults,
+    /// so stored overlay colors reset once to the new palette (this also
+    /// re-enables accent-following for selected/hovered). Sizes, opacity, and
+    /// every non-color setting keep their stored values.</para>
+    ///
+    /// <para>Version 3: the single keybind per action becomes a primary and a
+    /// secondary slot; the stored chord becomes the primary.</para>
     /// </summary>
     private void MigrateConfig()
     {
-        if (Config.Version >= 2)
+        if (Config.Version >= PoserConfiguration.LatestVersion)
             return;
-        var defaults = new SkeletonConfiguration();
-        var skeleton = Config.Skeleton;
-        skeleton.BoneColor = defaults.BoneColor;
-        skeleton.BoneOutlineColor = defaults.BoneOutlineColor;
-        skeleton.SelectedBoneColor = defaults.SelectedBoneColor;
-        skeleton.ModifiedBoneColor = defaults.ModifiedBoneColor;
-        skeleton.HoveredBoneColor = defaults.HoveredBoneColor;
-        skeleton.IkChainColor = defaults.IkChainColor;
-        skeleton.MirroredBoneColor = defaults.MirroredBoneColor;
-        Config.Version = 2;
+
+        if (Config.Version < 2)
+        {
+            var defaults = new SkeletonConfiguration();
+            var skeleton = Config.Skeleton;
+            skeleton.BoneColor = defaults.BoneColor;
+            skeleton.BoneOutlineColor = defaults.BoneOutlineColor;
+            skeleton.SelectedBoneColor = defaults.SelectedBoneColor;
+            skeleton.ModifiedBoneColor = defaults.ModifiedBoneColor;
+            skeleton.HoveredBoneColor = defaults.HoveredBoneColor;
+            skeleton.IkChainColor = defaults.IkChainColor;
+            skeleton.MirroredBoneColor = defaults.MirroredBoneColor;
+        }
+
+        if (Config.Version < 3)
+            Config.UI.MigrateKeybindsToSlots();
+
+        Config.Version = PoserConfiguration.LatestVersion;
         Save();
     }
 
