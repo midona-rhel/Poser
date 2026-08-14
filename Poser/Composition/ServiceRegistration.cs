@@ -229,6 +229,12 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Application.Integration.IMcdfFileBoundary, Game.Mcdf.McdfFileBoundary>();
+        // The lazy registry hand-off breaks the load-time cycle
+        // StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort →
+        // IntegrationRuntimePort → StableBindingRegistry: the port resolves
+        // the registry on first use, never during construction.
+        services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
+            sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());

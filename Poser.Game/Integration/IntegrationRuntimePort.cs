@@ -60,7 +60,12 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
 
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IFramework _framework;
-    private readonly StableBindingRegistry _bindings;
+    // LAZY BY NECESSITY, not by taste: the registry's own graph reaches this
+    // port (StableBindingRegistry → IActorSpawnService → ISpawnCollectionPort
+    // → here), so taking the instance in the constructor closes a dependency
+    // cycle that blocks the whole plugin load. The port only ever reads the
+    // registry at call time — the three Resolve sites — never while loading.
+    private readonly Lazy<StableBindingRegistry> _bindings;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
 
@@ -114,7 +119,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     public IntegrationRuntimePort(
         IDalamudPluginInterface pluginInterface,
         IFramework framework,
-        StableBindingRegistry bindings,
+        Lazy<StableBindingRegistry> bindings,
         IActorManager actors,
         IObjectTable objects)
     {
@@ -246,7 +251,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return false;
-        var resolved = _bindings.Resolve(actor);
+        var resolved = _bindings.Value.Resolve(actor);
         return resolved.Success && resolved.Value is { } legacy && legacy.Address != nint.Zero;
     }
 
@@ -269,7 +274,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
             detail = "External integration calls must run on the framework thread.";
             return -1;
         }
-        var resolved = _bindings.Resolve(actor);
+        var resolved = _bindings.Value.Resolve(actor);
         if (!resolved.Success || resolved.Value is not { } legacy || legacy.Address == nint.Zero)
         {
             detail = resolved.Detail ?? "The actor is no longer available.";
@@ -455,7 +460,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 return IntegrationPortResult.Fail("The operation was cancelled.");
             var state = await OnFrameworkThread(() =>
             {
-                var resolved = _bindings.Resolve(actor);
+                var resolved = _bindings.Value.Resolve(actor);
                 if (!resolved.Success || resolved.Value is not { } legacy
                     || legacy.Address == nint.Zero)
                     return (Gone: true, Drawable: false);
