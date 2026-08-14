@@ -206,30 +206,8 @@ public sealed class CleanPoseFacade
         IReadOnlyList<BoneId>? selectedBones = null,
         Action<OperationReceipt>? onReceipt = null)
     {
-        // Selected scope: the frozen BoneIds must all belong to the exact
-        // actor generation this import was opened for, and each must still
-        // resolve. Only then do they reduce to the slot-qualified filter —
-        // a stale or cross-actor selection fails instead of turning into a
-        // name-based selection on another actor.
-        if (selectedBones != null)
-        {
-            if (_bindings.GetActorId(actor) is not { } target)
-                return PoseEditResult.Fail("The actor could not be resolved.");
-            var filter = new HashSet<(PoseSlot Slot, string Name)>();
-            foreach (var bone in selectedBones)
-            {
-                if (!bone.Skeleton.Actor.Equals(target))
-                    return PoseEditResult.Fail(
-                        "The selection contains bones from a different actor than this import's target.");
-                var resolvedBone = _bindings.Resolve(bone);
-                if (!resolvedBone.Success)
-                    return PoseEditResult.Fail(
-                        resolvedBone.Detail ?? $"Selected bone {bone.CanonicalName} is stale.");
-                filter.Add((bone.Skeleton.Slot, bone.CanonicalName));
-            }
-            options = options.Clone();
-            options.BoneFilter = filter;
-        }
+        if (ReduceSelectedScope(actor, selectedBones, ref options) is { } refused)
+            return refused;
 
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
@@ -240,18 +218,60 @@ public sealed class CleanPoseFacade
 
     /// <summary>In-memory variant of the file import — same plan builder,
     /// same pause bracket, same in-pass application, one history entry named
-    /// <paramref name="description"/>. The rest-pose presets apply through
-    /// here without a disk path.</summary>
+    /// <paramref name="description"/>. The rest-pose presets and the
+    /// reference-pose action apply through here without a disk path.</summary>
     public PoseEditResult ImportPose(
         IActor actor,
         PoseFile poseFile,
         PoseImportOptions options,
         string description,
-        Action<OperationReceipt>? onReceipt = null)
+        Action<OperationReceipt>? onReceipt = null,
+        IReadOnlyList<BoneId>? selectedBones = null)
     {
+        if (ReduceSelectedScope(actor, selectedBones, ref options) is { } refused)
+            return refused;
+
         var plan = _poseFiles.BuildImportPlan(
             _skeletons.GetSkeletons(actor), poseFile, options);
         return BeginImport(actor, plan, options, description, onReceipt);
+    }
+
+    /// <summary>
+    /// Selected scope: the frozen BoneIds must all belong to the exact
+    /// actor generation this import was opened for, and each must still
+    /// resolve. Only then do they reduce to the slot-qualified filter —
+    /// an empty, stale, or cross-actor selection fails instead of silently
+    /// importing nothing or turning into a name-based selection on another
+    /// actor. The reduction works on a clone; the caller's options object
+    /// is never mutated. Returns the typed refusal, or null to proceed.
+    /// </summary>
+    private PoseEditResult? ReduceSelectedScope(
+        IActor actor,
+        IReadOnlyList<BoneId>? selectedBones,
+        ref PoseImportOptions options)
+    {
+        if (selectedBones == null)
+            return null;
+        if (selectedBones.Count == 0)
+            return PoseEditResult.Fail(
+                "No bones are selected on this actor; select bones or turn off the selected-bones scope.");
+        if (_bindings.GetActorId(actor) is not { } target)
+            return PoseEditResult.Fail("The actor could not be resolved.");
+        var filter = new HashSet<(PoseSlot Slot, string Name)>();
+        foreach (var bone in selectedBones)
+        {
+            if (!bone.Skeleton.Actor.Equals(target))
+                return PoseEditResult.Fail(
+                    "The selection contains bones from a different actor than this import's target.");
+            var resolvedBone = _bindings.Resolve(bone);
+            if (!resolvedBone.Success)
+                return PoseEditResult.Fail(
+                    resolvedBone.Detail ?? $"Selected bone {bone.CanonicalName} is stale.");
+            filter.Add((bone.Skeleton.Slot, bone.CanonicalName));
+        }
+        options = options.Clone();
+        options.BoneFilter = filter;
+        return null;
     }
 
     /// <summary>
@@ -297,7 +317,8 @@ public sealed class CleanPoseFacade
     /// Ktisis memento's transform mask; auxiliary slots keep their animation,
     /// matching Ktisis' per-skeleton scope.
     /// </summary>
-    public PoseEditResult ApplyReferencePose(IActor actor)
+    public PoseEditResult ApplyReferencePose(
+        IActor actor, Action<OperationReceipt>? onReceipt = null)
     {
         const string description = "Reference pose";
         if (_skeletons.GetSkeleton(actor) is not { } character)
@@ -329,7 +350,7 @@ public sealed class CleanPoseFacade
             ApplyModelTransform = false
         };
         return Report(description,
-            ImportPose(actor, poseFile, options, description));
+            ImportPose(actor, poseFile, options, description, onReceipt));
     }
 
     /// <summary>The import tail shared by every source of a plan: the pause

@@ -356,6 +356,11 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     public int BeginCalls => Runtime.ApplyCalls.Count;
     public int RestoreArmCalls { get; private set; }
 
+    /// <summary>Sets the plan the substituted file service hands the next
+    /// facade-level import — selective/reference tests arm real plans
+    /// without a disk file.</summary>
+    public void SetNextPlan(PoseImportPlan plan) => _nextPlan = plan;
+
     public PoseEditResult ArmModelImport(
         float positionX,
         Action<OperationReceipt> onReceipt)
