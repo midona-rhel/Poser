@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -297,17 +297,6 @@ public sealed class PoseLibraryViewModel
     /// wears the same gate on both surfaces.</summary>
     public bool SceneBusy;
 
-    /// <summary>Whether the action row leads with the import toggles.
-    /// Character files never travel the pose import pipeline, so the MCDF
-    /// tab hides them.</summary>
-    public bool ShowImportToggles;
-
-    /// <summary>The active tab's import components. Binder-owned, one set per
-    /// tab; the view only states and toggles them.</summary>
-    public bool ImportPosition;
-    public bool ImportRotation;
-    public bool ImportScale;
-
     /// <summary>Whether the action row carries the two menu buttons —
     /// import options and the bone filter — the Poses tab only.</summary>
     public bool ShowImportMenus;
@@ -371,9 +360,6 @@ public sealed class PoseLibraryViewModel
     public Action<float>? OnIconSize;
     public Action? OnRefresh;
     public Action? OnOpenSettings;
-    public Action<bool>? OnImportPosition;
-    public Action<bool>? OnImportRotation;
-    public Action<bool>? OnImportScale;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // every one of these closes over nothing but this model.
@@ -385,9 +371,6 @@ public sealed class PoseLibraryViewModel
     internal Action? ApplyClick;
     internal Action? SettingsClick;
     internal Action<float>? IconSizeChange;
-    internal Action<bool>? PositionToggle;
-    internal Action<bool>? RotationToggle;
-    internal Action<bool>? ScaleToggle;
     internal Action? ImportMenuClick;
     internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
@@ -417,8 +400,8 @@ public sealed class PoseLibraryViewModel
 /// The pose library, drawn INSIDE the shell's content rect: there is no window
 /// and no chassis to inherit, so the view lays its own bands out in the
 /// rectangle it is handed — the search band, the folder rail, the tile grid
-/// with its info strip, and the action row (which leads with the import
-/// toggles).
+/// with its info strip, and the action row. Every tab lays out the SAME four
+/// bands: no tab earns an extra bar.
 ///
 /// <para>The rail is the SOURCE tree, which is small and never clipped; the
 /// body is the tile grid, which is a catalog and always is. The body's grid
@@ -540,9 +523,6 @@ public static class PoseLibraryView
         vm.SettingsClick ??= () => vm.OnOpenSettings?.Invoke();
         vm.IconSizeChange ??= next => vm.OnIconSize?.Invoke(
             Math.Clamp(next, MinimumIconSize, MaximumIconSize));
-        vm.PositionToggle ??= value => vm.OnImportPosition?.Invoke(value);
-        vm.RotationToggle ??= value => vm.OnImportRotation?.Invoke(value);
-        vm.ScaleToggle ??= value => vm.OnImportScale?.Invoke(value);
         vm.ImportMenuClick ??= () => vm.OnImportMenu?.Invoke();
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
@@ -566,9 +546,8 @@ public static class PoseLibraryView
     /// <summary>
     /// The pane's bands, and the ink that separates them. This is pane
     /// STRUCTURE, not window chrome: two rules and the rail's raised slab, all
-    /// measured from the handed rectangle. The import toggles share the
-    /// action row (one bottom block), so the body's bottom rule sits
-    /// directly above it.
+    /// measured from the handed rectangle. There is exactly ONE bottom row on
+    /// every tab, so the body's bottom rule sits directly above it.
     /// </summary>
     private static WindowFrameRects Bands(
         PoseLibraryViewModel vm,
@@ -586,9 +565,8 @@ public static class PoseLibraryView
         float bandBottom = MathF.Min(max.Y, origin.Y + BandHeight * scale);
         float rowTop = MathF.Max(
             bandBottom, max.Y - theme.Floating.ModalBarHeight * scale);
-        // ONE bottom row: the import toggles share the action bar
-        // (user: everything on one row), so no second band exists.
-        float togglesTop = rowTop;
+        // ONE bottom row on every tab (user: everything on one row), so no
+        // second band exists and no tab can grow one.
         // The rail never takes more than half the pane: a narrow workspace
         // keeps a grid rather than becoming a folder list.
         float railWidth = vm.ShowRail
@@ -602,20 +580,20 @@ public static class PoseLibraryView
             new Vector2(chromeMaxX, bandBottom),
             separator);
         draw.AddRectFilled(
-            new Vector2(origin.X, togglesTop),
-            new Vector2(chromeMaxX, togglesTop + rule),
+            new Vector2(origin.X, rowTop),
+            new Vector2(chromeMaxX, rowTop + rule),
             separator);
 
         var rail = new WindowFrameRect(
             new Vector2(origin.X, bandBottom),
-            new Vector2(origin.X + railWidth - rule, togglesTop));
+            new Vector2(origin.X + railWidth - rule, rowTop));
         if (railWidth > rule)
         {
             draw.AddRectFilled(
                 rail.Min, rail.Max, Packed(theme.SurfaceRaised));
             draw.AddRectFilled(
                 new Vector2(rail.Max.X, bandBottom),
-                new Vector2(rail.Max.X + rule, togglesTop),
+                new Vector2(rail.Max.X + rule, rowTop),
                 separator);
         }
 
@@ -626,11 +604,9 @@ public static class PoseLibraryView
             Rail = rail,
             Body = new WindowFrameRect(
                 new Vector2(origin.X + railWidth, bandBottom),
-                new Vector2(max.X, togglesTop)),
+                new Vector2(max.X, rowTop)),
             Footer = new WindowFrameRect(
-                new Vector2(
-                    origin.X,
-                    togglesTop < rowTop ? rowTop : rowTop + rule),
+                new Vector2(origin.X, rowTop + rule),
                 new Vector2(chromeMaxX, max.Y)),
         };
     }
@@ -657,13 +633,10 @@ public static class PoseLibraryView
     private static void Actions(
         PoseLibraryViewModel vm, Crystarium.ActionBarScope scope)
     {
-        // The import components and the two menus lead the ONE bottom row.
-        if (vm.ShowImportToggles)
-        {
-            scope.Checkbox("Position", vm.ImportPosition, vm.PositionToggle!);
-            scope.Checkbox("Rotation", vm.ImportRotation, vm.RotationToggle!);
-            scope.Checkbox("Scale", vm.ImportScale, vm.ScaleToggle!);
-        }
+        // The menus lead the ONE bottom row. Component toggles do NOT live
+        // here: the inspector owns which of position/rotation/scale a pose
+        // applies, and a second set on one tab's footer made that tab read as
+        // a bar taller than every other (user 2026-08-14, twice).
         if (vm.ShowImportMenus)
             scope.Button("Options", vm.ImportMenuClick!);
         // A character file applies as a long transaction from THIS pane, so

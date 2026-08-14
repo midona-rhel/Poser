@@ -182,11 +182,15 @@ interchange with Brio and (via name conversion) Anamnesis.
   filed by a left RAIL, one row per day AND place ("2026-08-14 – Limsa
   Lominsa"); selecting a row filters the grid, which keeps tiles only. A file
   recording no place gathers under its day alone — no place is ever inferred.
-- The library's auto-save tab states the service's health on its footer:
-  a `RecoveryRequired` terminal result or health record outranks the
-  last-accepted-save stamp (which claims dispatch acceptance only, exactly
-  what `LastSaveUtc` claims), then "Auto-save is off." / "No auto-save yet
-  this session." — the typed status is never hidden behind an empty caption.
+- The library's auto-save tab's footer is a REFUSAL channel, not a health
+  readout: it speaks only for a `RecoveryRequired` terminal result or health
+  record, and says nothing otherwise. A working cadence is not news, and
+  narrating it (a last-accepted-save stamp, an off state, an empty session)
+  gave that one tab a bar of chrome no other library tab carries. Every
+  library tab lays out the same four bands and the same single action row —
+  no tab carries component toggles of its own, because the inspector owns
+  which of position/rotation/scale a pose applies and an auto-save restore is
+  full-fidelity by contract.
 - The WHOLE SCENE has its own snapshot on the same cadence and its own root;
   see [scenes.md](scenes.md).
 

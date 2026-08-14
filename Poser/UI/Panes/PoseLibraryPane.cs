@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -147,19 +147,6 @@ public sealed class PoseLibraryPane
     /// all three, because a restore reproduces what was saved. The MCDF tab
     /// has no set: character files never travel the pose import pipeline.
     /// </summary>
-    // All components by default — Brio's REAL import path: with both
-    // import types selected (the popup's normal state) it uses
-    // DefaultIPCImporterOptions, TransformComponents.All on every bone with
-    // the transform icons ignored (FileUIHelpers.cs:697-701). The
-    // rotation-only default this replaced matched DefaultImporterOptions, a
-    // fallback Brio's own popup path never takes; DT faces NEED positions.
-    private bool _posesPosition = true;
-    private bool _posesRotation = true;
-    private bool _posesScale = true;
-    private bool _autoPosition = true;
-    private bool _autoRotation = true;
-    private bool _autoScale = true;
-
     /// <summary>Collapsed group keys. Session state, cleared on entry; poses
     /// and character files share a folder's key deliberately — it is the same
     /// folder either way.</summary>
@@ -307,11 +294,11 @@ public sealed class PoseLibraryPane
     private string _deletePath = string.Empty;
     private string _deleteName = string.Empty;
 
-    /// <summary>The auto-save tab's minted status line and the observation
+    /// <summary>The auto-save tab's minted recovery line and the observation
     /// key it was minted from — one format per CHANGE, not per frame.</summary>
     private string _autoStatusText = string.Empty;
-    private (DateTime? Save, DateTime? Updated, AutoSaveHealthStatus? Health,
-        AutoSaveTerminalStatus Terminal, bool Enabled) _autoStatusKey;
+    private (DateTime? Updated, AutoSaveHealthStatus? Health,
+        AutoSaveTerminalStatus Terminal) _autoStatusKey;
 
     /// <summary>This pane's drive of the ONE shared preview: whose appearance,
     /// which file, which options, and the compare that re-poses it when any of
@@ -383,9 +370,6 @@ public sealed class PoseLibraryPane
         _vm.OnTagFilter = TagFilter;
         _vm.OnIconSize = SetIconSize;
         _vm.OnRefresh = Refresh;
-        _vm.OnImportPosition = SetImportPosition;
-        _vm.OnImportRotation = SetImportRotation;
-        _vm.OnImportScale = SetImportScale;
         // The two Brio menus, opened from the action row; the shared state
         // lives on the FILES section so both surfaces read one filter. The
         // library mount opens the import menu WITHOUT presets — rest poses
@@ -761,8 +745,12 @@ public sealed class PoseLibraryPane
             _note = "Retry: " + result.Detail;
             return;
         }
+        // A clean read says nothing: the badge that prompted the retry simply
+        // goes, which IS the answer (user 2026-08-14 — the confirmations were
+        // restating what the tile already showed). Only a still-bad read has
+        // something the tile cannot say on its own.
         _note = result.ProbeStatus == PoseLibraryMetadataStatus.Valid
-            ? "The file reads cleanly now."
+            ? null
             : "Retry: " + StatusText(result.ProbeStatus!.Value, result.Detail);
         // Either way the badge restates the CURRENT truth.
         _library.RequestScan();
@@ -2198,12 +2186,14 @@ public sealed class PoseLibraryPane
             return;
         }
 
-        // The auto-save tab's idle caption is the service's own health: the
-        // last accepted save, or the recovery-required detail — the typed
-        // status is never hidden behind an empty footer.
+        // The auto-save tab's idle caption is a REFUSAL channel, nothing
+        // more: it speaks only when auto-save needs recovery, because that is
+        // the one state where a silent footer would hide that the tab's own
+        // source has stopped filling. A healthy cadence says nothing, so this
+        // tab's footer reads exactly like every other tab's.
         if (_type == LibraryType.AutoSaves && !scanning)
         {
-            _vm.Status = AutoSaveStatusText();
+            _vm.Status = AutoSaveRecoveryText();
             return;
         }
 
@@ -2212,20 +2202,19 @@ public sealed class PoseLibraryPane
         _vm.Status = scanning ? ScanningText : string.Empty;
     }
 
-    /// <summary>The auto-save status line, minted once per observation
-    /// CHANGE: an error outranks the last-success stamp, and the stamp only
-    /// claims what <see cref="IAutoSaveService.LastSaveUtc"/> claims —
-    /// dispatch acceptance, not durable success, which is exactly why the
-    /// recovery branches read the health record first.</summary>
-    private string AutoSaveStatusText()
+    /// <summary>The auto-save tab's ONE caption, minted once per observation
+    /// CHANGE: the recovery-required detail, or nothing. Health narration —
+    /// the last-success stamp, the off state, the empty-session line — was
+    /// removed (user 2026-08-14): a cadence that is working is not news, and
+    /// stating it gave this tab a bar of chrome no other tab carries. A
+    /// recovery obligation stays, because a tab whose source has stopped
+    /// filling must not look merely empty.</summary>
+    private string AutoSaveRecoveryText()
     {
         var record = _autoSave.LastHealthRecord;
         var terminal = _autoSave.LastTerminalResult;
-        var lastSave = _autoSave.LastSaveUtc;
-        bool enabled = _config.Config.AutoSave.Enabled;
-        var key = (lastSave, record?.UpdatedUtc, record?.Status,
-            terminal.Status, enabled);
-        if (key == _autoStatusKey && _autoStatusText.Length > 0)
+        var key = (record?.UpdatedUtc, record?.Status, terminal.Status);
+        if (key == _autoStatusKey)
             return _autoStatusText;
         _autoStatusKey = key;
 
@@ -2236,14 +2225,8 @@ public sealed class PoseLibraryPane
         else if (record is { Status: AutoSaveHealthStatus.RecoveryRequired })
             text = "Auto-save needs recovery: "
                 + Trim(record.Detail ?? record.FailurePhase, "see the health record.");
-        else if (lastSave is { } utc)
-            text = "Last auto-save "
-                + utc.ToLocalTime().ToString(
-                    "HH:mm:ss", CultureInfo.InvariantCulture);
-        else if (!enabled)
-            text = "Auto-save is off.";
         else
-            text = "No auto-save yet this session.";
+            text = string.Empty;
         return _autoStatusText = text;
 
         // The health record's detail is bounded at 4096; the footer is one
@@ -2451,15 +2434,16 @@ public sealed class PoseLibraryPane
 
     // ── the import components ────────────────────────────────────────────
 
-    /// <summary>The action row's import toggles: the active tab's set,
-    /// hidden on the MCDF tab.</summary>
+    /// <summary>The action row's per-tab affordances. NO component toggles
+    /// live here: the inspector owns which of position/rotation/scale a pose
+    /// applies, and an auto-save restore is full-fidelity by contract, so the
+    /// second set this row used to carry was both redundant and the reason
+    /// that one tab's footer read taller than every other (user 2026-08-14).
+    /// </summary>
     private void SyncImportToggles()
     {
-        // The poses tab's options live in the inspector rail now; the
-        // row keeps component toggles only where they still govern (the
-        // auto-save tab's restore). Favorites are the poses library's —
-        // an auto-save snapshot is not a curated entry.
-        _vm.ShowImportToggles = _type == LibraryType.AutoSaves;
+        // Favorites are the poses library's — an auto-save snapshot is not a
+        // curated entry.
         _vm.ShowImportMenus = false;
         _vm.CanFavorite = _type == LibraryType.Poses;
         // A scene is not spawned as an actor, and saving one belongs where
@@ -2469,34 +2453,6 @@ public sealed class PoseLibraryPane
         _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;
         _vm.CanEditMetadata = CanEditMetadata(_vm.Selected);
-        bool auto = _type == LibraryType.AutoSaves;
-        _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
-        _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
-        _vm.ImportScale = auto ? _autoScale : _posesScale;
-    }
-
-    private void SetImportPosition(bool value)
-    {
-        if (_type == LibraryType.AutoSaves)
-            _autoPosition = value;
-        else
-            _posesPosition = value;
-    }
-
-    private void SetImportRotation(bool value)
-    {
-        if (_type == LibraryType.AutoSaves)
-            _autoRotation = value;
-        else
-            _posesRotation = value;
-    }
-
-    private void SetImportScale(bool value)
-    {
-        if (_type == LibraryType.AutoSaves)
-            _autoScale = value;
-        else
-            _posesScale = value;
     }
 
     /// <summary>The library's own import options: full scope with the active
@@ -2550,16 +2506,17 @@ public sealed class PoseLibraryPane
     /// section's own build only reads its checkbox state.</summary>
     private PoseImportOptions BuildImportOptionsCore()
     {
-        bool auto = _type == LibraryType.AutoSaves;
         // Poses apply with the SHARED menu options (the rail hosts them in
         // library mode) plus the library's load semantics; an auto-save
-        // restore keeps its own full-fidelity toggles.
-        var options = auto
+        // restore is full-fidelity — every component, no control to say
+        // otherwise, because a recovery that silently dropped a component
+        // would not be a recovery.
+        var options = _type == LibraryType.AutoSaves
             ? new PoseImportOptions
             {
-                ApplyPosition = _autoPosition,
-                ApplyRotation = _autoRotation,
-                ApplyScale = _autoScale,
+                ApplyPosition = true,
+                ApplyRotation = true,
+                ApplyScale = true,
             }
             : _files.BuildImportOptions();
         options.ResetBeforeImport = true;

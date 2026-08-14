@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -1467,21 +1467,21 @@ public sealed class PoseFileInspectorSection
                 TextAlign.Center);
         }
 
-        // Anything the service has to SAY while a render stands. BOTH channels
-        // land here, because the well above can only speak when there is no
-        // texture and by the time either of these fires the body is on screen:
-        // a refused import leaves it exactly where the last successful stage
-        // left it, and a wait leaves whatever already stood. Either way the
-        // render keeps showing a perfectly good pose while nothing says a word
-        // about the one the user picked — the silence this exists to end. The
-        // notice rides a scrim along the bottom rather than replacing the
-        // render, because the standing pose is still the truthful thing to show.
+        // ONE channel speaks over a standing render: the REFUSAL. A refused
+        // import leaves the body exactly where the last successful stage left
+        // it, so without this the render shows a perfectly good pose while
+        // nothing says a word about the one the user picked — the silence this
+        // exists to end. The notice rides a scrim along the bottom rather than
+        // replacing the render, because the standing pose is still the
+        // truthful thing to show.
         //
-        // A refusal outranks a wait: it is about the pose in hand, where a wait
-        // is only about the machinery behind it.
+        // The WAIT channel deliberately does not land here: it is about the
+        // machinery, not about the pose in hand, and narrating it over a good
+        // render was chatter the user never asked for (2026-08-14). It still
+        // fills the empty box above, where it is the only thing that can
+        // explain why there is nothing to look at.
         if (showRender && handle != 0
-            && (_preview.RefusalText ?? _preview.StatusText)
-                is { Length: > 0 } notice)
+            && _preview.RefusalText is { Length: > 0 } notice)
             DrawPreviewNotice(boxMin, boxSize, radius, scale, theme, notice);
 
         Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
