@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Poser.Application.Scene;
 using Poser.Core;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
@@ -10,7 +11,6 @@ using Poser.Game;
 using Poser.Game.Animation;
 using Poser.Game.Bindings;
 using Poser.Game.Scene;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Game.Tests;
@@ -171,14 +171,14 @@ public sealed class SceneProducerIntegrationTests
         public IActor? SpawnCatalogActor(SpawnCatalogEntry entry) => null;
         public int GetModelCharaId(IActor actor) => 0;
         public void SetModelCharaId(IActor actor, int modelCharaId) { }
-        public CompanionKind GetSpawnedKind(IActor actor) => CompanionKind.None;
+        public CompanionKind? GetSpawnedKind(IActor actor) => null;
         public bool DestroyActor(IActor actor) => false;
         public void SetVisibility(IActor actor, bool visible) { }
         public bool IsVisible(IActor actor) => true;
         public bool IsSpawnedActor(IActor actor) => false;
-        public bool SetCompanion(IActor owner, CompanionAttachment container) => false;
+        public bool SetCompanion(IActor owner, CompanionAttachment? container) => false;
         public void DestroyCompanion(IActor owner) { }
-        public CompanionAttachment GetCompanionInfo(IActor owner) => CompanionAttachment.None;
+        public CompanionAttachment? GetCompanionInfo(IActor owner) => null;
         public bool HasCompanionSlot(IActor actor) => false;
     }
 

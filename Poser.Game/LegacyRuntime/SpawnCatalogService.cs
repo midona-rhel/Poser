@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
-using Poser.Game.Types;
+using Poser.Domain.Companions;
 using Poser.Services;
 
 namespace Poser.Game;

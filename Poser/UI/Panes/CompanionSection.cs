@@ -11,8 +11,6 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
-using Attachment = Poser.Game.Types.CompanionAttachment;
-using AttachmentKind = Poser.Game.Types.CompanionKind;
 
 namespace Poser.UI;
 
@@ -23,10 +21,6 @@ namespace Poser.UI;
 /// pane section — standalone creatures come from the spawn browser, and the
 /// slot only matters for riding a mount or carrying an ornament, so the
 /// surface stays out of the way until asked for.
-///
-/// <para>The catalog's kind and the native container's kind are DIFFERENT
-/// enums — a catalog row is always attachable, so it has no None — and they
-/// are mapped explicitly here, at the only place both are in scope.</para>
 /// </summary>
 public sealed class CompanionSection
 {
@@ -110,9 +104,9 @@ public sealed class CompanionSection
             return;
         _pickOwner = ownerId;
         var current = _spawn.GetCompanionInfo(owner);
-        if (ToCatalog(current.Kind) is { } seed)
+        if (current is { } attached)
         {
-            int index = Array.IndexOf(KindValues, (CompanionKind?)seed);
+            int index = Array.IndexOf(KindValues, (CompanionKind?)attached.Kind);
             _kindIndex = index < 0 ? 0 : index;
         }
         _picker.Open(
@@ -140,7 +134,7 @@ public sealed class CompanionSection
         // item that opens this surface is gated on the slot existing.
         _spawn.SetCompanion(
             owner,
-            new Attachment(ToAttachment(chosen.Item.Kind), chosen.Item.Id));
+            new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id));
     }
 
     private PickerOptions<CompanionEntry> Options() => new()
@@ -171,27 +165,6 @@ public sealed class CompanionSection
         return _memo;
     }
 
-    // ── kind mapping ─────────────────────────────────────────────────────
-
-    /// <summary>Catalog kind to container kind. Total: every catalog row is
-    /// attachable, which is what having no None means.</summary>
-    private static AttachmentKind ToAttachment(CompanionKind kind) => kind switch
-    {
-        CompanionKind.Mount => AttachmentKind.Mount,
-        CompanionKind.Ornament => AttachmentKind.Ornament,
-        _ => AttachmentKind.Companion,
-    };
-
-    /// <summary>Container kind to catalog kind, null for the empty slot —
-    /// nothing attached has no catalog row.</summary>
-    private static CompanionKind? ToCatalog(AttachmentKind kind) => kind switch
-    {
-        AttachmentKind.Companion => CompanionKind.Companion,
-        AttachmentKind.Mount => CompanionKind.Mount,
-        AttachmentKind.Ornament => CompanionKind.Ornament,
-        _ => null,
-    };
-
     // ── helpers ──────────────────────────────────────────────────────────
 
     private IActor? Resolve(ActorId id)
@@ -200,9 +173,11 @@ public sealed class CompanionSection
         return resolved.Success ? resolved.Value : null;
     }
 
-    private CompanionEntry? Known(Attachment current) =>
-        ToCatalog(current.Kind) is { } kind
-            ? _catalog.Find(kind, current.Id)
+    /// <summary>The catalog row the slot currently carries, if any — an
+    /// empty slot has no row.</summary>
+    private CompanionEntry? Known(CompanionAttachment? current) =>
+        current is { } attached
+            ? _catalog.Find(attached.Kind, attached.Id)
             : null;
 
     /// <summary>A minion row is named by its id and the others by what they

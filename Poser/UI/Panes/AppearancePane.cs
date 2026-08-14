@@ -418,7 +418,7 @@ public sealed class AppearancePane
         var resolved = _bindings.Resolve(id);
         if (!resolved.Success || resolved.Value is not { } live)
             return false;
-        return _spawn.GetSpawnedKind(live) != Game.Types.CompanionKind.None
+        return _spawn.GetSpawnedKind(live) is not null
             || _spawn.GetModelCharaId(live) != 0;
     }
 

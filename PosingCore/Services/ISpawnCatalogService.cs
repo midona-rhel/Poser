@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using Poser.Game.Types;
+using Poser.Domain.Companions;
 
 namespace Poser.Services;
 

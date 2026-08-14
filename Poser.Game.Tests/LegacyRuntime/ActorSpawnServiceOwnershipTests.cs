@@ -1,8 +1,8 @@
 using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Core;
+using Poser.Domain.Companions;
 using Poser.Game;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Game.Tests.LegacyRuntime;
@@ -189,7 +189,7 @@ public sealed class ActorSpawnServiceOwnershipTests
 
         Assert.Same(catalogActor, catalog);
         Assert.Equal(CompanionKind.Mount, service.GetSpawnedKind(catalogActor));
-        Assert.Equal(CompanionKind.None, service.GetSpawnedKind(actor));
+        Assert.Null(service.GetSpawnedKind(actor));
         Assert.False(service.IsSpawnedActor(actor));
     }
 
@@ -279,7 +279,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.False(service.DestroyActor(actor));
         Assert.Empty(native.Deleted);
         Assert.False(service.IsSpawnedActor(actor));
-        Assert.Equal(CompanionKind.None, service.GetSpawnedKind(actor));
+        Assert.Null(service.GetSpawnedKind(actor));
 
         var ran = false;
         Assert.False(service.InvokeOwnedCallbackForTests(
@@ -555,7 +555,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.Null(native.DrawEnabled);
         Assert.False(service.IsVisible(actor));
         Assert.False(service.SetCompanion(actor, new(CompanionKind.Companion, 5)));
-        Assert.Equal(CompanionAttachment.None, service.GetCompanionInfo(actor));
+        Assert.Null(service.GetCompanionInfo(actor));
         Assert.False(service.HasCompanionSlot(actor));
         Assert.Equal(0, service.GetModelCharaId(actor));
 
@@ -728,8 +728,8 @@ public sealed class ActorSpawnServiceOwnershipTests
     public void Plain_companion_and_catalog_records_keep_their_own_metadata()
     {
         var ledger = new SpawnOwnershipLedger();
-        var plain = ledger.Add(new(201, (nint)0x201, 11), CompanionKind.None, false);
-        var companion = ledger.Add(new(202, (nint)0x202, 12), CompanionKind.None, true);
+        var plain = ledger.Add(new(201, (nint)0x201, 11), null, false);
+        var companion = ledger.Add(new(202, (nint)0x202, 12), null, true);
         var catalog = ledger.Add(new(203, (nint)0x203, 13), CompanionKind.Mount, false);
 
         Assert.False(plain.HasCompanionSlot);
@@ -743,7 +743,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     {
         var ledger = new SpawnOwnershipLedger();
         var actor = Actor(0x301);
-        var record = ledger.Add(new(301, actor.Address, 31), CompanionKind.None, false);
+        var record = ledger.Add(new(301, actor.Address, 31), null, false);
 
         // Wrong logical identity refuses even at the right address.
         Assert.False(ledger.Bind(record.Token, actor, new EntityId("someone-else")));
@@ -773,7 +773,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         var replacement = new SpawnNativeDescriptor(401, (nint)0x402, 42);
 
         Assert.False(ledger.TryGetExact(oldActor, replacement, out _));
-        Assert.Equal(CompanionKind.None, ledger.GetKind(oldActor, replacement));
+        Assert.Null(ledger.GetKind(oldActor, replacement));
         Assert.False(ledger.TryRetire(old.Token, replacement));
         Assert.Single(ledger.Snapshot);
     }
@@ -807,7 +807,7 @@ public sealed class ActorSpawnServiceOwnershipTests
             var ledger = new SpawnOwnershipLedger();
             var record = ledger.Add(
                 new(550, (nint)0x550, 55),
-                stage == "model" ? CompanionKind.Mount : CompanionKind.None,
+                stage == "model" ? CompanionKind.Mount : (CompanionKind?)null,
                 stage == "gpose");
             ledger.MarkPending(record.Token);
             var native = new FakeNative(record.Descriptor!.Value);
@@ -823,7 +823,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     public void Delete_false_throw_manager_unavailable_and_reuse_mismatch_all_retain_pending()
     {
         var ledger = new SpawnOwnershipLedger();
-        var record = ledger.Add(new(560, (nint)0x560, 56), CompanionKind.None, false);
+        var record = ledger.Add(new(560, (nint)0x560, 56), null, false);
         var native = new FakeNative(record.Descriptor!.Value);
 
         native.DeleteResult = false;
@@ -852,7 +852,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     public void Identical_triple_reuse_between_observations_refuses_ledger_cleanup()
     {
         var ledger = new SpawnOwnershipLedger();
-        var record = ledger.Add(new(565, (nint)0x565, 56), CompanionKind.None, false);
+        var record = ledger.Add(new(565, (nint)0x565, 56), null, false);
         var native = new FakeNative(record.Descriptor!.Value);
 
         // Same triple, but the finalize hook observed the destruction.
@@ -866,8 +866,8 @@ public sealed class ActorSpawnServiceOwnershipTests
     public void Unresolved_manager_does_not_clear_ownership_and_bulk_cleanup_is_partial()
     {
         var ledger = new SpawnOwnershipLedger();
-        var first = ledger.Add(new(501, (nint)0x501, 51), CompanionKind.None, false);
-        var second = ledger.Add(new(502, (nint)0x502, 52), CompanionKind.None, false);
+        var first = ledger.Add(new(501, (nint)0x501, 51), null, false);
+        var second = ledger.Add(new(502, (nint)0x502, 52), null, false);
 
         ledger.MarkPending(first.Token);
         var snapshot = ledger.Snapshot;
@@ -884,7 +884,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     {
         var ledger = new SpawnOwnershipLedger();
         var actor = Actor(0x601);
-        var record = ledger.Add(new(601, actor.Address, 61), CompanionKind.None, false);
+        var record = ledger.Add(new(601, actor.Address, 61), null, false);
         Assert.True(ledger.Bind(record.Token, actor, actor.Id));
 
         Assert.True(ledger.TrySetVisibility(actor, record.Descriptor!.Value, false));
@@ -899,7 +899,7 @@ public sealed class ActorSpawnServiceOwnershipTests
     {
         var ledger = new SpawnOwnershipLedger();
         actor = Actor(0x701);
-        record = ledger.Add(new(701, actor.Address, 71), CompanionKind.None, false);
+        record = ledger.Add(new(701, actor.Address, 71), null, false);
         Assert.True(ledger.Bind(record.Token, actor, actor.Id));
         return ledger;
     }
@@ -951,7 +951,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         public SpawnNativeDescriptor? Current { get; set; }
 
         public bool HasSlot { get; set; } = true;
-        public CompanionAttachment Companion { get; set; } = CompanionAttachment.None;
+        public CompanionAttachment? Companion { get; set; }
         public bool CompanionReady { get; set; }
         public bool CompanionDrawEnabled { get; private set; }
         public int ModelId { get; set; }
@@ -1047,16 +1047,22 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool HasCompanionSlot(SpawnNativeDescriptor descriptor) =>
             Gate(descriptor) && HasSlot;
 
-        public CompanionAttachment? ReadCompanion(SpawnNativeDescriptor descriptor) =>
-            Gate(descriptor) ? Companion : null;
+        public bool TryReadCompanion(
+            SpawnNativeDescriptor descriptor,
+            out CompanionAttachment? attachment)
+        {
+            bool readable = Gate(descriptor);
+            attachment = readable ? Companion : null;
+            return readable;
+        }
 
         public bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id)
         {
             if (!Gate(descriptor))
                 return false;
             Companion = id == 0
-                ? CompanionAttachment.None
-                : new(kind, (ushort)id);
+                ? null
+                : new CompanionAttachment(kind, (ushort)id);
             return true;
         }
 

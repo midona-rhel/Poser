@@ -10,11 +10,11 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Application.Selection;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Bindings;
-using Poser.Game.Types;
 using Poser.Services;
 using Poser.UI.Views;
 

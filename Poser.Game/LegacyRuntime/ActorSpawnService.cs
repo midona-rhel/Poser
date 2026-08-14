@@ -8,8 +8,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
+using Poser.Domain.Companions;
 using Poser.Entities;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Game;
@@ -106,7 +106,7 @@ internal sealed class SpawnOwnershipRecord
         Guid token,
         ushort createdIndex,
         SpawnNativeDescriptor? descriptor,
-        CompanionKind kind,
+        CompanionKind? kind,
         bool hasCompanionSlot,
         ulong createIndexStamp = 0)
     {
@@ -126,7 +126,9 @@ internal sealed class SpawnOwnershipRecord
     /// <summary>Wrapper logical identity captured at bind; later exact
     /// lookups require both the same instance and the same id.</summary>
     public EntityId? BoundId { get; private set; }
-    public CompanionKind Kind { get; }
+    /// <summary>The catalog kind this record was spawned as, or null for a
+    /// plain spawn or clone — those are actors, not catalog entries.</summary>
+    public CompanionKind? Kind { get; }
     public bool HasCompanionSlot { get; }
 
     /// <summary>Per-index destruction stamp at create time. Unchanged means
@@ -163,7 +165,7 @@ internal sealed class SpawnOwnershipLedger
 
     public SpawnOwnershipRecord Add(
         SpawnNativeDescriptor descriptor,
-        CompanionKind kind,
+        CompanionKind? kind,
         bool hasCompanionSlot)
     {
         var record = new SpawnOwnershipRecord(
@@ -179,7 +181,7 @@ internal sealed class SpawnOwnershipLedger
 
     public SpawnOwnershipRecord AddPending(
         ushort index,
-        CompanionKind kind,
+        CompanionKind? kind,
         bool hasCompanionSlot,
         ulong createIndexStamp)
     {
@@ -195,7 +197,7 @@ internal sealed class SpawnOwnershipLedger
     }
 
     public SpawnOwnershipRecord AddNonRecoverable(
-        CompanionKind kind,
+        CompanionKind? kind,
         bool hasCompanionSlot)
     {
         var record = new SpawnOwnershipRecord(
@@ -250,10 +252,10 @@ internal sealed class SpawnOwnershipLedger
         return record is not null;
     }
 
-    public CompanionKind GetKind(IActor actor, SpawnNativeDescriptor descriptor) =>
+    public CompanionKind? GetKind(IActor actor, SpawnNativeDescriptor descriptor) =>
         TryGetExact(actor, descriptor, out var record)
             ? record.Kind
-            : CompanionKind.None;
+            : null;
 
     public bool TrySetVisibility(
         IActor actor,
@@ -337,7 +339,14 @@ internal interface IActorSpawnNativeAdapter
     bool SetDrawState(SpawnNativeDescriptor descriptor, bool visible);
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
-    CompanionAttachment? ReadCompanion(SpawnNativeDescriptor descriptor);
+    /// <summary>Reads the slot. False when the descriptor no longer
+    /// revalidates — an unreadable actor is NOT an empty slot, and only the
+    /// empty slot may be written over. On true, a null
+    /// <paramref name="attachment"/> is the empty slot.</summary>
+    bool TryReadCompanion(
+        SpawnNativeDescriptor descriptor,
+        out CompanionAttachment? attachment);
+
     bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id);
     bool IsCompanionReady(SpawnNativeDescriptor descriptor, CompanionAttachment want);
     bool EnableCompanionDraw(SpawnNativeDescriptor descriptor);
@@ -499,12 +508,16 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         return character != null && character->ChildObject != null;
     }
 
-    public CompanionAttachment? ReadCompanion(SpawnNativeDescriptor descriptor)
+    public bool TryReadCompanion(
+        SpawnNativeDescriptor descriptor,
+        out CompanionAttachment? attachment)
     {
+        attachment = null;
         var character = (Character*)Revalidate(descriptor);
         if (character == null)
-            return null;
-        return ReadCompanionInfo(character);
+            return false;
+        attachment = ReadCompanionInfo(character);
+        return true;
     }
 
     public bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id)
@@ -570,19 +583,23 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         return true;
     }
 
-    private static CompanionAttachment ReadCompanionInfo(Character* native)
+    private static CompanionAttachment? ReadCompanionInfo(Character* native)
     {
         if (native->ChildObject == null)
-            return CompanionAttachment.None;
+            return null;
 
         if (native->OrnamentData.OrnamentObject != null)
-            return new(CompanionKind.Ornament, native->OrnamentData.OrnamentId);
+            return new CompanionAttachment(
+                CompanionKind.Ornament, native->OrnamentData.OrnamentId);
         if (native->Mount.MountObject != null)
-            return new(CompanionKind.Mount, (ushort)native->Mount.MountId);
+            return new CompanionAttachment(
+                CompanionKind.Mount, (ushort)native->Mount.MountId);
         if (native->CompanionData.CompanionObject != null)
-            return new(CompanionKind.Companion, (ushort)native->CompanionData.CompanionObject->Character.GameObject.BaseId);
+            return new CompanionAttachment(
+                CompanionKind.Companion,
+                (ushort)native->CompanionData.CompanionObject->Character.GameObject.BaseId);
 
-        return CompanionAttachment.None;
+        return null;
     }
 
     public void Dispose() => _finalizeHook?.Dispose();
@@ -841,20 +858,20 @@ public unsafe class ActorSpawnService : IActorSpawnService
         return actor;
     }
 
-    public CompanionKind GetSpawnedKind(IActor actor)
+    public CompanionKind? GetSpawnedKind(IActor actor)
     {
         if (actor.Address == nint.Zero || !OnOwnerThread)
-            return CompanionKind.None;
+            return null;
         try
         {
             var descriptor = _native.ResolveActor(actor.Address);
             return descriptor is { } current
                 ? _ownership.GetKind(actor, current)
-                : CompanionKind.None;
+                : null;
         }
         catch
         {
-            return CompanionKind.None;
+            return null;
         }
     }
 
@@ -864,7 +881,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         bool reserveCompanionSlot,
         int modelCharaId = 0,
         string? name = null,
-        CompanionKind kind = CompanionKind.None)
+        CompanionKind? kind = null)
     {
         SpawnOwnershipRecord? ownership = null;
         try
@@ -1295,7 +1312,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         }
     }
 
-    public bool SetCompanion(IActor owner, CompanionAttachment container)
+    public bool SetCompanion(IActor owner, CompanionAttachment? container)
     {
         if (!OnOwnerThread)
             return false;
@@ -1308,28 +1325,28 @@ public unsafe class ActorSpawnService : IActorSpawnService
             return false;
         }
 
-        var existing = _native.ReadCompanion(descriptor);
-        if (existing is null)
+        // An unreadable slot is not an empty one: only a slot we could read
+        // may be emptied and refilled.
+        if (!_native.TryReadCompanion(descriptor, out var existing))
             return false;
-        if (existing.Value.Kind != CompanionKind.None
-            && !_native.WriteCompanion(descriptor, existing.Value.Kind, 0))
+        if (existing is { } attached
+            && !_native.WriteCompanion(descriptor, attached.Kind, 0))
             return false;
-        if (container.Kind == CompanionKind.None)
+        if (container is not { } want)
             return true;
 
-        if (!_native.WriteCompanion(descriptor, container.Kind, (short)container.Id))
+        if (!_native.WriteCompanion(descriptor, want.Kind, (short)want.Id))
             return false;
 
         // The companion needs a few frames before it can draw. Bounded poll (with a
         // hard timeout + log), not a blind tick delay — matches the redraw policy.
-        var want = container;
         PollUntil(
             ownership,
             descriptor,
             () => _native.IsCompanionReady(descriptor, want),
             () => _native.EnableCompanionDraw(descriptor),
             timeoutMs: 1000,
-            what: $"companion {container.Kind} {container.Id}");
+            what: $"companion {want.Kind} {want.Id}");
 
         return true;
     }
@@ -1341,19 +1358,19 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (!TryResolveActorForOperation(owner, out var descriptor, out _))
             return;
 
-        var info = _native.ReadCompanion(descriptor);
-        if (info is null || info.Value.Kind == CompanionKind.None)
+        if (!_native.TryReadCompanion(descriptor, out var info)
+            || info is not { } attached)
             return;
-        _native.WriteCompanion(descriptor, info.Value.Kind, 0);
+        _native.WriteCompanion(descriptor, attached.Kind, 0);
     }
 
-    public CompanionAttachment GetCompanionInfo(IActor owner)
+    public CompanionAttachment? GetCompanionInfo(IActor owner)
     {
         if (!OnOwnerThread)
-            return CompanionAttachment.None;
+            return null;
         if (!TryResolveActorForOperation(owner, out var descriptor, out _))
-            return CompanionAttachment.None;
-        return _native.ReadCompanion(descriptor) ?? CompanionAttachment.None;
+            return null;
+        return _native.TryReadCompanion(descriptor, out var info) ? info : null;
     }
 
     public bool HasCompanionSlot(IActor actor)

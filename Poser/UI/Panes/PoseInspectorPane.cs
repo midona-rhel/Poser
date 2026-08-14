@@ -11,7 +11,6 @@ using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Transforms;
 using Poser.Game.Posing;
-using Poser.Game.Types;
 using Poser.Services;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
@@ -235,8 +234,7 @@ public class PoseInspectorPane
     /// or a catalog spawn (minion/mount/accessory) gets neither section.
     /// </summary>
     private bool IsCreature(IActor actor) =>
-        actor.IsCompanion ||
-        _spawnService.GetSpawnedKind(actor) != CompanionKind.None;
+        actor.IsCompanion || _spawnService.GetSpawnedKind(actor) is not null;
 
     // Retained resolution. The resolver reads exactly two things — the ordered
     // selection and the scene snapshot — and building its answer costs a

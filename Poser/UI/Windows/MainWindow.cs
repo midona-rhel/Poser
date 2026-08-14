@@ -15,8 +15,8 @@ using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Bindings;
 using Poser.Game.Transforms;
+using Poser.Domain.Companions;
 using Poser.Game.Posing;
-using Poser.Game.Types;
 using Poser.Services;
 using Poser.UI.Controls;
 using Poser.UI.Views;
@@ -2230,7 +2230,7 @@ public class MainWindow : Window
         var resolved = _bindings.Resolve(actor.Id);
         var kind = resolved.Success && resolved.Value is { } live
             ? _spawnService.GetSpawnedKind(live)
-            : CompanionKind.None;
+            : null;
         return kind switch
         {
             CompanionKind.Companion => TablerIcon.Paw,
@@ -2799,8 +2799,7 @@ public class MainWindow : Window
                     ? "Attach a minion, mount or ornament to this actor"
                     : "Only actors spawned with a companion slot can attach one"),
             new("Detach companion", TablerIcon.X,
-                disabled: _spawnService.GetCompanionInfo(actor).Kind
-                    == CompanionKind.None),
+                disabled: _spawnService.GetCompanionInfo(actor) is null),
         };
         var actions = new List<Action?>
         {

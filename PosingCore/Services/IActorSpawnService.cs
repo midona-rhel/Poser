@@ -1,7 +1,7 @@
 using System;
 using Poser.Entities;
 
-using Poser.Game.Types;
+using Poser.Domain.Companions;
 
 namespace Poser.Services;
 
@@ -44,10 +44,10 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     void SetModelCharaId(IActor actor, int modelCharaId);
 
-    /// <summary>The kind a spawned actor was classified as at spawn; None
+    /// <summary>The kind a spawned actor was classified as at spawn; null
     /// for plain spawns, clones, and actors not spawned by this service.
     /// </summary>
-    CompanionKind GetSpawnedKind(IActor actor);
+    CompanionKind? GetSpawnedKind(IActor actor);
 
     /// <summary>
     /// Destroy a spawned actor.
@@ -71,16 +71,17 @@ public interface IActorSpawnService : IDisposable
 
     /// <summary>
     /// Attach a companion/mount/ornament to a character actor. Replaces any
-    /// existing one; <see cref="CompanionAttachment.None"/> detaches. The actor
-    /// must have a companion slot (clones spawn with one reserved).
+    /// existing one; null detaches. The actor must have a companion slot
+    /// (clones spawn with one reserved).
     /// </summary>
-    bool SetCompanion(IActor owner, CompanionAttachment container);
+    bool SetCompanion(IActor owner, CompanionAttachment? container);
 
     /// <summary>Detach the actor's companion/mount/ornament.</summary>
     void DestroyCompanion(IActor owner);
 
-    /// <summary>Current companion attachment (None when empty or no slot).</summary>
-    CompanionAttachment GetCompanionInfo(IActor owner);
+    /// <summary>Current companion attachment; null when the slot is empty,
+    /// absent, or unreadable.</summary>
+    CompanionAttachment? GetCompanionInfo(IActor owner);
 
     /// <summary>
     /// Whether the actor reserved a companion slot when it spawned. Without
