@@ -21,8 +21,9 @@ explicit, and no native object or address is handed to Application or UI.
 
 Spawned actors follow the same boundary: the service owns one private record
 per operation, keyed by a service token plus the current native index, address,
-and native identity descriptor. Every later classification, visibility
-override, or deletion re-resolves that descriptor; index reuse or unavailable
+verified `GameObject.EntityId`, and an owner-thread slot-generation observation.
+Every later classification, visibility override, or deletion re-resolves that
+descriptor; index reuse, an observed generation change, or unavailable
 identity fails closed. Post-create and GPose-exit deletion is exact and
 retryable: successful deletion or verified absence retires one record, while
 uncertain or failed deletion remains pending. Records are session-only and
