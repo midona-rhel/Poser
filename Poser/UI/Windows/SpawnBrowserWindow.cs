@@ -68,14 +68,9 @@ public sealed class SpawnBrowserWindow : Window
         "No overworld light is close enough to capture — capture works in "
         + "GPose, near a light the world itself places.";
 
-    private const string NoWorldActorsNote =
-        "No visible overworld actor is nearby — discovery works in GPose, "
-        + "and lists only characters the world is currently drawing.";
-
     private static readonly string[] KindBadges = ["Minion", "Mount", "Accessory"];
 
     private readonly IActorSpawnService _spawnService;
-    private readonly Game.WorldActorDiscovery _worldActors;
     private readonly Game.PropSpawnService _propService;
     private readonly Game.Overlays.OverlayNodeService _overlayService;
     private readonly OverlayPane _overlayPane;
@@ -109,25 +104,6 @@ public sealed class SpawnBrowserWindow : Window
     /// key are minted here rather than per frame.</summary>
     private sealed record WorldLightChoice(
         WorldLightCandidate Candidate, string Label, string Key);
-
-    /// <summary>Where the world-actor rows begin in the row list. Everything
-    /// from here on is the snapshot region RefreshWorldActors rebuilds; the
-    /// rows before it are minted once per session.</summary>
-    private int _worldRowStart;
-
-    /// <summary>The candidates behind the world rows, parallel to the rows
-    /// after the tab's refresh row. Pointer-free snapshots — a stale one is
-    /// refused by the discovery service, never dereferenced.</summary>
-    private readonly List<WorldActorCandidate> _worldCandidates = new();
-
-    /// <summary>The world listing re-reads on the NEXT Draw, never inside the
-    /// current one: every trigger (open, entering the World tab from the tab
-    /// strip, the refresh row, a stale refusal) fires while the frame is
-    /// walking <see cref="SpawnBrowserViewModel.Visible"/> indices into
-    /// <see cref="SpawnBrowserViewModel.Rows"/>, and a synchronous rebuild
-    /// that shrinks the listing would leave those indices dangling. Consumed
-    /// at Draw start, beside the refilter it then requests.</summary>
-    private bool _refreshWorldPending;
 
     private bool _built;
     private string _query = string.Empty;
@@ -171,7 +147,6 @@ public sealed class SpawnBrowserWindow : Window
 
     public SpawnBrowserWindow(
         IActorSpawnService spawnService,
-        Game.WorldActorDiscovery worldActors,
         Game.PropSpawnService propService,
         Game.Overlays.OverlayNodeService overlayService,
         OverlayPane overlayPane,
@@ -194,7 +169,6 @@ public sealed class SpawnBrowserWindow : Window
             ImGuiWindowFlags.NoResize)
     {
         _spawnService = spawnService;
-        _worldActors = worldActors;
         _propService = propService;
         _overlayService = overlayService;
         _overlayPane = overlayPane;
@@ -221,11 +195,6 @@ public sealed class SpawnBrowserWindow : Window
             if (_vm.Tab == next)
                 return;
             _vm.Tab = next;
-            // The world listing is a snapshot; entering its tab is one of
-            // the two implicit refresh points (the other is window open).
-            // Deferred: this fires from the tab strip mid-draw.
-            if ((SpawnBrowserTab)next == SpawnBrowserTab.World)
-                _refreshWorldPending = true;
             _refilter = true;
         };
         _vm.OnPinToggle = () => _pinned = !_pinned;
@@ -260,7 +229,6 @@ public sealed class SpawnBrowserWindow : Window
     {
         BuildRows();
         RefreshWorldLights();
-        _refreshWorldPending = true;
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
@@ -303,14 +271,6 @@ public sealed class SpawnBrowserWindow : Window
     public override void Draw()
     {
         ReconcilePendingSpawn();
-        // The one structural mutation point for the world rows: before any
-        // index into Rows exists this frame, and before the refilter it asks
-        // for. Mid-draw triggers only set the flag.
-        if (_refreshWorldPending)
-        {
-            _refreshWorldPending = false;
-            RefreshWorldActors();
-        }
         SyncQuery();
         if (_refilter)
             Refilter();
@@ -501,79 +461,8 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
-        // The world-actor snapshot region begins after every once-per-session
-        // row; RefreshWorldActors rebuilds everything from here on.
-        _worldRowStart = rows.Count;
         _refilter = true;
     }
-
-    /// <summary>Re-reads the visible overworld actors and rebuilds the world
-    /// rows: the tab's refresh row first, then one row per candidate, nearest
-    /// first. A candidate is a snapshot of this moment — activation refuses
-    /// stale ones — and the triggers (open, entering the tab, the refresh
-    /// row, a stale refusal) request it through
-    /// <see cref="_refreshWorldPending"/>; the ONLY caller is Draw start,
-    /// because this structurally mutates the row list.</summary>
-    private void RefreshWorldActors()
-    {
-        if (!_built)
-            return;
-        _vm.Rows.RemoveRange(
-            _worldRowStart, _vm.Rows.Count - _worldRowStart);
-        _rowTabs.RemoveRange(
-            _worldRowStart, _rowTabs.Count - _worldRowStart);
-        _worldCandidates.Clear();
-        _worldCandidates.AddRange(_worldActors.RefreshCandidates());
-
-        _vm.Rows.Add(ActionRow(
-            "##spawn-world-actors-refresh",
-            "Refresh nearby actors",
-            TablerIcon.Refresh,
-            help: "Re-scan the world for visible actors to clone"));
-        _rowTabs.Add(SpawnBrowserTab.World);
-
-        if (_worldCandidates.Count == 0)
-        {
-            _vm.Rows.Add(ActionRow(
-                "##spawn-world-actors-empty",
-                "No nearby actors",
-                TablerIcon.User,
-                disabled: true,
-                help: NoWorldActorsNote));
-            _rowTabs.Add(SpawnBrowserTab.World);
-        }
-        else
-        {
-            for (int i = 0; i < _worldCandidates.Count; i++)
-            {
-                var candidate = _worldCandidates[i];
-                _vm.Rows.Add(new SpawnBrowserRow(
-                    "##spawn-world-actor-"
-                        + i.ToString(CultureInfo.InvariantCulture),
-                    candidate.Name,
-                    candidate.Name.ToLowerInvariant(),
-                    WorldGlyph(candidate.Kind),
-                    0u,
-                    string.Format(
-                        CultureInfo.CurrentCulture,
-                        "{0:0.0}m",
-                        candidate.DistanceFromPlayer),
-                    false,
-                    "Clone this actor into the scene — the original is "
-                        + "left untouched"));
-                _rowTabs.Add(SpawnBrowserTab.World);
-            }
-        }
-        _refilter = true;
-    }
-
-    private static TablerIcon WorldGlyph(WorldActorKind kind) => kind switch
-    {
-        WorldActorKind.Player => TablerIcon.User,
-        WorldActorKind.Retainer => TablerIcon.UserCircle,
-        WorldActorKind.Companion => TablerIcon.Paw,
-        _ => TablerIcon.Walk,
-    };
 
     /// <summary>How many creature-catalog rows precede the prop library in
     /// the row list; activation splits the shared range on it.</summary>
@@ -807,23 +696,6 @@ public sealed class SpawnBrowserWindow : Window
                 return;
         }
 
-        // World rows are the snapshot region at the end of the list: the
-        // refresh row first, then one row per listed candidate.
-        if (index >= _worldRowStart)
-        {
-            if (index == _worldRowStart)
-            {
-                // Deferred to the next Draw: activation fires from a row the
-                // frame is still walking.
-                _refreshWorldPending = true;
-                return;
-            }
-            int candidate = index - _worldRowStart - 1;
-            if (candidate >= 0 && candidate < _worldCandidates.Count)
-                CloneWorldActor(_worldCandidates[candidate]);
-            return;
-        }
-
         // Prop library rows follow the creature catalog: each spawns its
         // weapon model as a scene prop, listed under the PROPS section.
         if (index - ActionRows >= _actorEntryCount)
@@ -848,33 +720,6 @@ public sealed class SpawnBrowserWindow : Window
             return;
         }
         SelectSpawned(spawned);
-    }
-
-    /// <summary>Clones a listed world actor through the typed import. Success
-    /// selects the clone through the same pending-select every spawn row
-    /// uses; a stale refusal states why and re-lists, so the rows never keep
-    /// naming something that is gone.</summary>
-    private void CloneWorldActor(WorldActorCandidate candidate)
-    {
-        var result = _worldActors.CloneCandidate(candidate.Id, out var spawned);
-        switch (result.Status)
-        {
-            case WorldActorImportStatus.Success:
-                SelectSpawned(spawned);
-                return;
-            case WorldActorImportStatus.StaleCandidate:
-                _refreshWorldPending = true;
-                _notices.Refused(
-                    "That actor is no longer there — the list was refreshed.");
-                return;
-            case WorldActorImportStatus.SpawnFailed:
-                _notices.Failed(result.Detail ?? SpawnFailedNote);
-                return;
-            default:
-                _notices.Failed(result.Detail
-                    ?? "Cloning a world actor works only inside GPose.");
-                return;
-        }
     }
 
     /// <summary>The selection's actor — a bone selection resolves to the actor
@@ -934,8 +779,7 @@ public sealed class SpawnBrowserWindow : Window
     /// <c>Brio/IPC/API/ActorAPI.cs:87-95</c>). This runs at the SAME seam Brio's
     /// wait resolves to: the actor is bound here, which is strictly after the
     /// scene has seen it, so the speed write has a target. Every actor-producing
-    /// row reaches it, the World tab's clones included, because they all park on
-    /// the one pending-select. A failure is reported, not swallowed: an actor
+    /// row reaches it, because they all park on the one pending-select. A failure is reported, not swallowed: an actor
     /// that silently kept playing would read as the toggle doing nothing.
     /// </summary>
     private void FreezeIfRequested(ActorId actor)

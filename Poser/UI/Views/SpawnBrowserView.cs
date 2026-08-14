@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -29,10 +29,10 @@ public enum SpawnBrowserTab
     /// are named for what they add, and what this adds is an image.</summary>
     Images,
 
-    /// <summary>Visible overworld actors offered for cloning into the scene.
-    /// The rows are a snapshot: refreshed on open, on switching here, and by
-    /// the tab's own refresh row — never per frame.</summary>
-    World,
+    // The world had a tab here — a refreshable list of nearby actors to clone.
+    // It is gone (user 2026-08-15: "the world thing on the plus should just be
+    // removed"). The world is answered IN the world now: the footer's class
+    // glyphs mark what is addable and the marks themselves are the rows.
 }
 
 /// <summary>
@@ -77,8 +77,8 @@ public sealed class SpawnBrowserViewModel
 
     /// <summary>Whether what this browser adds arrives frozen. It sits in the
     /// browser's own chrome rather than in Settings because it qualifies the
-    /// act every row here performs — including the World tab's clones — and
-    /// the toggle IS the persisted setting.</summary>
+    /// act every row here performs, and the toggle IS the persisted setting.
+    /// </summary>
     public bool Frozen;
 
     public Action? OnFrozenToggle;
@@ -161,7 +161,6 @@ public static class SpawnBrowserView
         "Props",
         "Overlays",
         "Images",
-        "World",
     ];
 
     /// <summary>The freeze/pin/close side in the search row.</summary>

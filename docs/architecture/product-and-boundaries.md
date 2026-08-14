@@ -1,4 +1,4 @@
-# Product scope and boundaries
+﻿# Product scope and boundaries
 
 Poser is a focused FFXIV GPose posing and scene-control tool. Anything not
 listed as retained is not part of the active product surface.
@@ -16,9 +16,11 @@ listed as retained is not part of the active product surface.
   ../features/files-and-transfer.md)), and outbound Open-in-Glamourer through
   one integration port. Animation may run while posing. Props, lights, virtual
   cameras, the pose/MCDF library, and AutoSave are retained workspace surfaces.
-  The spawn browser's World tab clones a visible overworld actor into the
-  scene (read-only discovery; the clone enters through the owned spawn
-  transaction — [posing-runtime.md](posing-runtime.md)).
+  The world's own addable things are marked in the viewport rather than
+  listed in a browser: the sidebar footer's class glyphs decide which classes
+  mark, and clicking a mark adopts it — an actor is cloned, a light captured
+  (read-only discovery; the clone enters through the owned spawn transaction —
+  [posing-runtime.md](posing-runtime.md)).
   The environment is a selectable scene entity: time, weather, the eight
   holdable environment sections, water rendering, and festival slots.
   Whole-scene save and restore ships as its own workspace, reached from the

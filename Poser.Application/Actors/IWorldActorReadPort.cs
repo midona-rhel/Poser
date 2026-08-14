@@ -1,4 +1,4 @@
-namespace Poser.Application.Actors;
+﻿namespace Poser.Application.Actors;
 
 /// <summary>
 /// Opaque identity of one discovered overworld actor. It carries no pointer,
@@ -9,7 +9,7 @@ namespace Poser.Application.Actors;
 /// now"; an id whose object is gone is a typed stale refusal.
 ///
 /// Ids outlive a refresh on purpose: two surfaces list candidates at their own
-/// cadences (the spawn browser's World tab, the overlay's adoption handles),
+/// cadences (the overlay's adoption handles),
 /// and per-pass minting would have each one's refresh silently invalidate the
 /// other's rows.
 /// </summary>

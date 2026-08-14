@@ -1,4 +1,4 @@
-using Dalamud.Plugin.Services;
+﻿using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Core;
 using Poser.Entities;
@@ -65,7 +65,7 @@ public sealed class WorldActorDiscoveryTests
 
     /// <summary>An id belongs to an exact identity, not to an enumeration
     /// pass: two surfaces list candidates on their own cadences (the spawn
-    /// browser's World tab, the overlay's adoption handles) and neither
+    /// overlay's adoption handles) and neither
     /// refresh may invalidate the other's rows. What an id must NEVER do is
     /// survive a change of occupant — that is the whole safety property, and
     /// it is asserted here beside the reuse.</summary>

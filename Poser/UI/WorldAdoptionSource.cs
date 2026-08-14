@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
@@ -55,8 +55,8 @@ public readonly record struct WorldAdoptionCandidate(
 /// thing into the scene.
 ///
 /// <para>Adoption never writes to the world entity. An actor is CLONED — the
-/// same typed import the spawn browser's World tab performs, which lands a
-/// Poser-owned body in the GPose band where the character write gate admits
+/// typed world import, which lands a Poser-owned body in the GPose band where
+/// the character write gate admits
 /// it; a reference-adopted overworld actor would keep its sub-201 index and
 /// every posing write would refuse it. A light is CAPTURED — a Poser-owned
 /// copy plus the copy-and-suppress contract that restores the original when
