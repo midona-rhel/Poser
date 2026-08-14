@@ -259,6 +259,15 @@ public sealed class PoseLibraryViewModel
     /// does not wear the verb greyed — it does not wear it.</summary>
     public bool ShowSpawn = true;
 
+    /// <summary>Whether the footer carries the metadata verb at all — only the
+    /// tab whose files HAVE author and tags. Editing them was reachable by
+    /// right-click alone, which is not a way anyone finds a feature.</summary>
+    public bool ShowEditMetadata;
+
+    /// <summary>Whether the highlighted file can actually be edited: a valid,
+    /// non-legacy document, the same gate the context menu applies.</summary>
+    public bool CanEditMetadata;
+
     /// <summary>Whether the footer carries the save affordance. The library is
     /// where scenes are found, so capturing the current one belongs beside
     /// them rather than only behind a menu.</summary>
@@ -319,6 +328,10 @@ public sealed class PoseLibraryViewModel
     /// <summary>The footer's save request, raised by the scenes tab.</summary>
     public Action? OnSaveScene;
 
+    /// <summary>The footer's metadata request, for the highlighted tile.
+    /// </summary>
+    public Action<int>? OnEditMetadata;
+
     /// <summary>Whether tiles carry the favorite star — the poses library
     /// only; an auto-save snapshot is not a curated entry.</summary>
     public bool CanFavorite = true;
@@ -355,6 +368,7 @@ public sealed class PoseLibraryViewModel
     internal Action? BoneFilterClick;
     internal Action? ApplyMenuClick;
     internal Action? SaveSceneClick;
+    internal Action? EditMetadataClick;
 
     // The grid's band list and the clipper's slot map — the ShellSidebar cache,
     // held on the model because the view itself is static. Rebuilt only when
@@ -509,6 +523,7 @@ public static class PoseLibraryView
         vm.BoneFilterClick ??= () => vm.OnBoneFilterMenu?.Invoke();
         vm.ApplyMenuClick ??= () => vm.OnApplyMenu?.Invoke();
         vm.SaveSceneClick ??= () => vm.OnSaveScene?.Invoke();
+        vm.EditMetadataClick ??= () => vm.OnEditMetadata?.Invoke(vm.Selected);
 
         float chromeMaxX = origin.X
             + (vm.ChromeWidth > 0f ? vm.ChromeWidth : size.X);
@@ -654,6 +669,13 @@ public static class PoseLibraryView
                 disabled: none || !vm.CanSpawn);
         if (vm.ShowSaveScene)
             scope.Button("Save scene…", vm.SaveSceneClick!);
+        // Author and tags, stated in the row a user is already looking at.
+        // The context menu keeps the same verb; this is the one that is seen.
+        if (vm.ShowEditMetadata)
+            scope.Button(
+                "Edit metadata…",
+                vm.EditMetadataClick!,
+                disabled: none || !vm.CanEditMetadata);
         // The primary opens the ACTOR PICKER — the pose applies to whoever
         // is chosen there, not silently to the selection.
         scope.Button(

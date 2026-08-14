@@ -396,6 +396,7 @@ public sealed class PoseLibraryPane
         // cancel the appearance pane's progress row calls.
         _vm.OnCancelImport = _integration.CancelMcdf;
         _vm.OnSaveScene = () => OnSaveSceneRequested?.Invoke();
+        _vm.OnEditMetadata = OpenMetadataEditor;
         _vm.OnOpenSettings = () => OnSettingsRequested?.Invoke();
         _vm.ResolveThumbnail = ResolveThumbnail;
         // Spawning needs no selection and no scene state; the service answers
@@ -598,13 +599,11 @@ public sealed class PoseLibraryPane
         if (_type != LibraryType.AutoSaves)
         {
             Separator();
-            bool legacy = tile.ThumbKey.EndsWith(
-                ".cmp", StringComparison.OrdinalIgnoreCase);
             // Valid only. Editing rewrites the whole document, and a Future
             // entry is one whose schema Poser has already said it does not
             // support; the core refuses it as well, this keeps the menu from
             // offering a verb that would only answer a refusal.
-            if (poses && !legacy && status is PoseLibraryMetadataStatus.Valid)
+            if (CanEditMetadata(index))
                 Row(TileMenuAction.EditMetadata, new ContextMenuItem(
                     "Edit metadata…", TablerIcon.FileText,
                     help: "Author and tags, written back into the file."));
@@ -632,6 +631,31 @@ public sealed class PoseLibraryPane
             _menuActionRows.Add(TileMenuAction.None);
         }
     }
+
+    /// <summary>Author and tags for one tile. Reached from the context menu
+    /// AND from the action row, because a verb that exists only under a
+    /// right-click is a verb most users never find.</summary>
+    private void OpenMetadataEditor(int index)
+    {
+        if (index < 0 || index >= _vm.Tiles.Count)
+            return;
+        var tile = _vm.Tiles[index];
+        _metaPath = tile.ThumbKey;
+        _metaAuthor = tile.Author ?? string.Empty;
+        _metaTags = string.Join(", ", tile.Tags);
+        _metaOpen = true;
+    }
+
+    /// <summary>Whether the highlighted tile is an editable document: the ONE
+    /// gate, read by the context menu and the action row alike.</summary>
+    private bool CanEditMetadata(int index) =>
+        _type == LibraryType.Poses
+        && index >= 0
+        && index < _vm.Tiles.Count
+        && index < _tileStatus.Count
+        && _tileStatus[index] == PoseLibraryMetadataStatus.Valid
+        && !_vm.Tiles[index].ThumbKey.EndsWith(
+            ".cmp", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The tile's primary verb. A pose or a character file needs a
     /// TARGET, so it opens the actor picker; a scene is the whole session and
@@ -686,10 +710,7 @@ public sealed class PoseLibraryPane
                 QuarantineFile(path);
                 break;
             case TileMenuAction.EditMetadata:
-                _metaPath = path;
-                _metaAuthor = tile.Author ?? string.Empty;
-                _metaTags = string.Join(", ", tile.Tags);
-                _metaOpen = true;
+                OpenMetadataEditor(index);
                 break;
             case TileMenuAction.Rename:
                 _renamePath = path;
@@ -2266,6 +2287,8 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn = _type != LibraryType.Scenes;
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
+        _vm.ShowEditMetadata = _type == LibraryType.Poses;
+        _vm.CanEditMetadata = CanEditMetadata(_vm.Selected);
         bool auto = _type == LibraryType.AutoSaves;
         _vm.ImportPosition = auto ? _autoPosition : _posesPosition;
         _vm.ImportRotation = auto ? _autoRotation : _posesRotation;
