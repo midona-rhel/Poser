@@ -23,6 +23,12 @@ public unsafe class PosingService : IPosingService
     private readonly IFramework _framework;
     private readonly IGPoseService _gPoseService;
     private readonly IEventBus _eventBus;
+    private readonly Dalamud.Plugin.Services.IObjectTable _objectTable;
+
+    /// <summary>Reused per-frame buffer for entries whose stored address no
+    /// longer resolves in the object table (single-threaded framework tick;
+    /// a per-frame ToArray would charge the steady state one array per frame).</summary>
+    private readonly List<nint> _staleOverrideBuffer = new();
 
     // Hook for intercepting position resets
     private delegate void SetPositionDelegate(StructsGameObject* gameObject, float x, float y, float z);
@@ -40,12 +46,14 @@ public unsafe class PosingService : IPosingService
         IFramework framework,
         IGPoseService gPoseService,
         IEventBus eventBus,
-        IGameInteropProvider hooking)
+        IGameInteropProvider hooking,
+        Dalamud.Plugin.Services.IObjectTable objectTable)
     {
         _log = log;
         _framework = framework;
         _gPoseService = gPoseService;
         _eventBus = eventBus;
+        _objectTable = objectTable;
 
         // Hook SetPosition to intercept game reset attempts (like Brio does)
         try
@@ -99,10 +107,28 @@ public unsafe class PosingService : IPosingService
             return;
 
         // Apply ALL overrides every frame as backup
-        // The hook handles most cases, but this ensures persistence
+        // The hook handles most cases, but this ensures persistence.
+        // Deref-time revalidation (spawn/gaze standard): a stored address is
+        // only a claim — between an external despawn and the next
+        // ActorListChangedEvent prune, the write would land in freed/reused
+        // object memory. Unresolved is refusal, and the entry is dropped so
+        // the stale claim cannot be replayed next frame.
+        _staleOverrideBuffer.Clear();
         foreach (var (actorAddress, transform) in _transformOverrides)
         {
+            if (_objectTable.CreateObjectReference(actorAddress) == null)
+            {
+                _staleOverrideBuffer.Add(actorAddress);
+                continue;
+            }
+
             ApplyTransformToActor(actorAddress, transform);
+        }
+
+        foreach (var address in _staleOverrideBuffer)
+        {
+            _transformOverrides.Remove(address);
+            _originalTransforms.Remove(address);
         }
     }
 
