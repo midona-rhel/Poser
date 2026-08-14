@@ -252,33 +252,67 @@ public sealed class AppearancePane
                 + "and ornaments by name or model id; Reset restores the "
                 + "model it came in with.");
 
-        form.TextInput(
+        // ONE row: the number, the steppers that walk it, and the apply that
+        // commits it (user 2026-08-15). The "Current" readout that used to
+        // stand under the field is gone with it — the selector above already
+        // names what the actor draws as, so the readout restated it, and the
+        // field itself is re-seeded from the actor on every apply.
+        form.TextInputActions(
             "Model id",
             _modelText,
             next => _modelText = next,
-            help: "The ModelChara row this actor draws as. 0 is the human base; applying redraws the actor.");
-        form.ReadOnlyWithActions(
-            "Current",
-            ModelIdText(current),
-            actions => actions.Button(
-                "Apply",
-                () =>
-                {
-                    if (int.TryParse(
-                            _modelText,
-                            System.Globalization.NumberStyles.Integer,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            out var next)
-                        && next >= 0)
-                    {
-                        ReportModel(_model.Apply(id, next), "Model id");
-                    }
-                    else
-                    {
-                        _notices.Refused("Model id must be a whole number.");
-                    }
-                },
-                help: "Write the model id and redraw the actor"));
+            actions =>
+            {
+                actions.IconButton(
+                    TablerIcon.Minus,
+                    () => StepModelId(-1),
+                    help: "The row before this one");
+                actions.IconButton(
+                    TablerIcon.Plus,
+                    () => StepModelId(1),
+                    help: "The row after this one");
+                actions.Button(
+                    "Apply",
+                    () => ApplyModelId(id),
+                    help: "Write the model id and redraw the actor");
+            },
+            help: "The ModelChara row this actor draws as. 0 is the human "
+                + "base; the steppers walk the draft and Apply redraws the "
+                + "actor.",
+            style: new ControlStyle
+            {
+                Width = UiWidth.Fixed(
+                    Crystarium.ActiveTheme.Form.AxisWellMinimumWidth),
+            });
+    }
+
+    /// <summary>Walks the DRAFT, never the actor: an apply is a full redraw,
+    /// so a stepper that applied would redraw once per click.</summary>
+    private void StepModelId(int delta)
+    {
+        int value = int.TryParse(
+            _modelText,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsed)
+            ? parsed
+            : 0;
+        _modelText = ModelIdText(Math.Max(0, value + delta));
+    }
+
+    private void ApplyModelId(ActorId id)
+    {
+        if (int.TryParse(
+                _modelText,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var next)
+            && next >= 0)
+        {
+            ReportModel(_model.Apply(id, next), "Model id");
+            return;
+        }
+        _notices.Refused("Model id must be a whole number.");
     }
 
     /// <summary>Applies a model outcome and re-seeds the numeric buffer
