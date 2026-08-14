@@ -388,6 +388,76 @@ public sealed class PoseLibraryFileActionsTests
         Assert.Empty(metadata.Tags);
     }
 
+    [Fact]
+    public void EditMetadata_round_trips_the_description_and_the_preview_image()
+    {
+        using var fixture = new ActionsFixture();
+        var path = fixture.WritePose("described", new PoseFile
+        {
+            Description = "old words",
+            Base64Image = "b2xkaW1hZ2U=",
+        });
+
+        var set = PoseLibraryFileActions.Default.EditMetadata(
+            path, "Midona", Array.Empty<string>(),
+            description: "  new words  ",
+            image: PosePreviewImageEdit.Set("bmV3aW1hZ2U="));
+
+        Assert.True(set.Succeeded, set.Detail);
+        var written = AtomicPoseFileStore.Default.Read(path);
+        Assert.True(written.Succeeded, written.Failure?.Detail);
+        Assert.Equal("new words", written.Pose!.Description);
+        Assert.Equal("bmV3aW1hZ2U=", written.Pose.Base64Image);
+
+        var cleared = PoseLibraryFileActions.Default.EditMetadata(
+            path, "Midona", Array.Empty<string>(),
+            description: "   ",
+            image: PosePreviewImageEdit.Cleared);
+
+        Assert.True(cleared.Succeeded, cleared.Detail);
+        var after = AtomicPoseFileStore.Default.Read(path);
+        Assert.True(after.Succeeded, after.Failure?.Detail);
+        Assert.Null(after.Pose!.Description);
+        Assert.Null(after.Pose.Base64Image);
+    }
+
+    [Fact]
+    public void EditMetadata_leaves_the_description_and_image_alone_by_omission()
+    {
+        // A caller that shows neither control must not erase either one.
+        using var fixture = new ActionsFixture();
+        var path = fixture.WritePose("kept", new PoseFile
+        {
+            Description = "keep me",
+            Base64Image = "a2VlcG1l",
+        });
+
+        var result = PoseLibraryFileActions.Default.EditMetadata(
+            path, "Midona", new[] { "standing" });
+
+        Assert.True(result.Succeeded, result.Detail);
+        var after = AtomicPoseFileStore.Default.Read(path);
+        Assert.True(after.Succeeded, after.Failure?.Detail);
+        Assert.Equal("keep me", after.Pose!.Description);
+        Assert.Equal("a2VlcG1l", after.Pose.Base64Image);
+    }
+
+    [Fact]
+    public void ReadPreviewImage_refuses_an_image_past_the_document_budget()
+    {
+        using var fixture = new ActionsFixture();
+        var big = Path.Combine(fixture.Root, "huge.png");
+        File.WriteAllBytes(
+            big,
+            new byte[PoseLibraryFileActions.MaxPreviewImageBytes + 1]);
+
+        var result = PoseLibraryFileActions.ReadPreviewImage(big, out var encoded);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(encoded);
+        Assert.Contains("limited to", result.Detail);
+    }
+
     // ── fixture ──────────────────────────────────────────────────────────
 
     private sealed class ActionsFixture : IDisposable

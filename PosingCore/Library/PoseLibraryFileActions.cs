@@ -18,6 +18,23 @@ public enum PoseLibraryFileActionKind : byte
 }
 
 /// <summary>
+/// What a metadata edit does to a pose's stored preview image. The default is
+/// "leave it alone", so a caller that shows no image control cannot erase one
+/// by omission — the same rule the description follows.
+/// </summary>
+public readonly record struct PosePreviewImageEdit(bool Remove, string? Base64)
+{
+    /// <summary>Leave whatever the file already carries.</summary>
+    public static PosePreviewImageEdit Keep => default;
+
+    /// <summary>Drop the stored image.</summary>
+    public static PosePreviewImageEdit Cleared => new(true, null);
+
+    /// <summary>Store this base64 image, adding or replacing.</summary>
+    public static PosePreviewImageEdit Set(string base64) => new(false, base64);
+}
+
+/// <summary>
 /// The typed answer of one library file action. Every action answers one of
 /// these — a refusal carries its reason in <see cref="Detail"/> and never a
 /// thrown exception, because the browser states the outcome on its own status
@@ -333,8 +350,18 @@ public sealed class PoseLibraryFileActions
     /// refused here even though it parses, because "parses" is not
     /// "understood".</para>
     /// </summary>
+    /// <param name="description">The pose's own description. NULL leaves the
+    /// stored value alone — a caller that does not show the field must not
+    /// clear it — and an empty string clears it, exactly like the author.
+    /// </param>
+    /// <param name="image">What to do with the stored preview image; the
+    /// default leaves it untouched.</param>
     public PoseLibraryFileActionResult EditMetadata(
-        string path, string? author, IReadOnlyList<string> tags)
+        string path,
+        string? author,
+        IReadOnlyList<string> tags,
+        string? description = null,
+        PosePreviewImageEdit image = default)
     {
         const PoseLibraryFileActionKind kind = PoseLibraryFileActionKind.EditMetadata;
         try
@@ -358,6 +385,18 @@ public sealed class PoseLibraryFileActions
             var cleaned = NormalizeTags(tags);
             pose.Tags = cleaned.Count == 0 ? null : cleaned;
 
+            if (description is not null)
+            {
+                var trimmed = description.Trim();
+                pose.Description =
+                    string.IsNullOrEmpty(trimmed) ? null : trimmed;
+            }
+
+            if (image.Remove)
+                pose.Base64Image = null;
+            else if (image.Base64 is { Length: > 0 } encoded)
+                pose.Base64Image = encoded;
+
             var write = _store.Write(pose, path);
             return write.Succeeded
                 ? Succeeded(kind, path)
@@ -368,6 +407,44 @@ public sealed class PoseLibraryFileActions
         catch (Exception ex)
         {
             return Refused(kind, $"Editing the metadata failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The largest source image an edit will encode into a pose document. A
+    /// preview is a thumbnail; a multi-megabyte source would inflate by a
+    /// third in base64 and ride inside every read of that pose from then on.
+    /// </summary>
+    public const long MaxPreviewImageBytes = 2L * 1024 * 1024;
+
+    /// <summary>
+    /// Reads an image off disk as the base64 a pose document stores, or
+    /// refuses with a reason fit to show. The bytes are never inspected beyond
+    /// their size: the format the file claims is the viewer's problem, and
+    /// pretending to validate one here would be theatre.
+    /// </summary>
+    public static PoseLibraryFileActionResult ReadPreviewImage(
+        string path, out string? base64)
+    {
+        const PoseLibraryFileActionKind kind =
+            PoseLibraryFileActionKind.EditMetadata;
+        base64 = null;
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+                return Refused(kind, "The image no longer exists.");
+            if (info.Length > MaxPreviewImageBytes)
+                return Refused(
+                    kind,
+                    $"The image is {info.Length / 1024} KB; a pose preview is " +
+                    $"limited to {MaxPreviewImageBytes / 1024} KB.");
+            base64 = Convert.ToBase64String(File.ReadAllBytes(path));
+            return Succeeded(kind, path);
+        }
+        catch (Exception ex)
+        {
+            return Refused(kind, $"The image could not be read: {ex.Message}");
         }
     }
 
