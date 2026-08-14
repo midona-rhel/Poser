@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Render;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Poser.Core;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
@@ -89,6 +90,11 @@ public sealed unsafe class PosePreviewService : IDisposable
     private readonly object _gate = new();
     private nint _requestedSource;
 
+    /// <summary>The identity of the actor whose address <see cref="Open"/>
+    /// named, read off the IActor itself. Paired with the address so a proof
+    /// can say "still the same actor", not merely "still someone".</summary>
+    private EntityId? _requestedSourceId;
+
     /// <summary>Why the standing request could not be shown, or null. A refused
     /// import leaves the body exactly where the last successful stage left it,
     /// so without this the surface shows a perfectly good render and says
@@ -139,9 +145,10 @@ public sealed unsafe class PosePreviewService : IDisposable
     private ulong _provenObjectId;
 
     /// <summary>Consecutive ticks the standing stage has waited on the preview
-    /// body's skeleton. The wait is correct but must not be endless AND silent.
-    /// </summary>
+    /// body's skeleton, and on the appearance source proving itself. Both waits
+    /// are correct but neither may be endless AND silent.</summary>
     private int _skeletonWaitTicks;
+    private int _proveWaitTicks;
 
     private uint _counter = 1;
 
@@ -243,17 +250,24 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         }
 
-        // The address is RECORDED here and PROVEN in CopyAppearance. This runs
-        // on the draw thread, every frame, and the object table is only
-        // coherent on the framework tick: a resolve here would be reading the
-        // table off its own phase, and a null from that unsynchronised read
-        // would veto the whole lifecycle below — no _open, no auxiliary
-        // registration, no framework subscription — for a preview that is
-        // perfectly alive. Naming a source is a draw-thread statement;
-        // dereferencing one is not.
+        // The address AND THE IDENTITY are recorded here and proven in
+        // CopyAppearance. Both are reads of the IActor the caller already
+        // holds — no table access — because this runs on the draw thread every
+        // frame while the object table is coherent only on the framework tick:
+        // a resolve here would read the table off its own phase, and a null
+        // from that unsynchronised read would veto the whole lifecycle below —
+        // no _open, no auxiliary registration, no framework subscription — for
+        // a preview that is perfectly alive. Naming a source is a draw-thread
+        // statement; dereferencing one is not.
+        //
+        // The ID is what makes the address a claim about a PARTICULAR actor.
+        // Without it a recycled address is refused once and then simply proven
+        // again as whoever now occupies it, and the preview quietly wears a
+        // stranger's appearance — the same hole, one tick later.
         lock (_gate)
         {
             _requestedSource = appearanceSource.Address;
+            _requestedSourceId = appearanceSource.Id;
         }
 
         if (_open)
@@ -411,6 +425,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         lock (_gate)
         {
             _requestedSource = nint.Zero;
+            _requestedSourceId = null;
             _requestedFirst = null;
             _requestedSecond = null;
             _requestSerial++;
@@ -443,6 +458,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _counter = 1;
         _refusedSource = nint.Zero;
         _skeletonWaitTicks = 0;
+        _proveWaitTicks = 0;
         ForgetProvenSource();
         ForgetAppliedPose();
         ClearPanBase();
@@ -457,6 +473,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _initialized = false;
         _refusedSource = nint.Zero;
         _skeletonWaitTicks = 0;
+        _proveWaitTicks = 0;
         ForgetProvenSource();
         ForgetAppliedPose();
         _counter = 1;
@@ -473,11 +490,13 @@ public sealed unsafe class PosePreviewService : IDisposable
     private void CopyAppearance(AgentInspect* agent)
     {
         nint source;
+        EntityId? sourceId;
         lock (_gate)
         {
             source = _requestedSource;
+            sourceId = _requestedSourceId;
         }
-        if (source == nint.Zero)
+        if (source == nint.Zero || sourceId is not { } named)
             return;
 
         // PROVE ONCE, then REVALIDATE EVERY TICK — both on this thread, where
@@ -492,8 +511,9 @@ public sealed unsafe class PosePreviewService : IDisposable
         // successful copy would leave the CharaView with empty ModelData — no
         // body ever spawns at slot 441, TryApplyPendingPose is never reached,
         // and every stated pose is dropped in silence.
-        if (source != _provenSource && !ProveSource(source))
+        if (source != _provenSource && !ProveSource(source, named))
             return;
+        _proveWaitTicks = 0;
         if (!ProvenSourceStillStands())
         {
             // The proof no longer holds. _copiedSource goes with it: leaving it
@@ -518,15 +538,26 @@ public sealed unsafe class PosePreviewService : IDisposable
     }
 
     /// <summary>
-    /// Finds the object-table slot HOLDING this address and records the
-    /// identity there. The search is by ADDRESS over the table
-    /// (<c>GetObjectAddress</c> reads each slot's own pointer), so the suspect
-    /// pointer is never dereferenced to find out where it lives — which is the
-    /// whole point: asking the address which slot it occupies is asking the
-    /// thing under test to vouch for itself.
+    /// Proves that <paramref name="source"/> is still the actor
+    /// <paramref name="named"/>, and records where it lives. TWO independent
+    /// accounts have to agree: the SCENE must still know that address as that
+    /// actor, and the object TABLE must have a slot holding it.
+    ///
+    /// <para>The table search is by ADDRESS (<c>GetObjectAddress</c> reads each
+    /// slot's own pointer), so the suspect pointer is never dereferenced to
+    /// find out where it lives — asking an address which slot it occupies is
+    /// asking the thing under test to vouch for itself.</para>
     /// </summary>
-    private bool ProveSource(nint source)
+    private bool ProveSource(nint source, EntityId named)
     {
+        // Identity first, and off the SCENE rather than the table — a second,
+        // independently maintained account of who lives at this address. It is
+        // also the cheap half: a source that has genuinely gone is refused here
+        // without walking ~599 slots every tick.
+        if (!SceneStillNames(source, named))
+            return Unproven(
+                source, "the scene no longer names that actor at that address");
+
         for (var index = 0; index < _objectTable.Length; index++)
         {
             if (_objectTable.GetObjectAddress(index) != source)
@@ -539,13 +570,36 @@ public sealed unsafe class PosePreviewService : IDisposable
             return true;
         }
 
+        return Unproven(source, "no object-table slot holds it");
+    }
+
+    /// <summary>Whether the scene still knows this exact address as the actor
+    /// that was NAMED. A recycled address fails: the scene has a different
+    /// actor there, or none.</summary>
+    private bool SceneStillNames(nint source, EntityId named)
+    {
+        var actors = _actors.Actors;
+        for (var i = 0; i < actors.Count; i++)
+            if (actors[i].Address == source)
+                return actors[i].Id == named;
+        return false;
+    }
+
+    /// <summary>A source that cannot be proven is WAITED on, never spent: it is
+    /// routinely a body still coming up. Logged once per source; the tick count
+    /// is what <see cref="OnFrameworkUpdate"/> turns into a spoken wait past the
+    /// same bound the skeleton wait uses, rather than staring back in
+    /// silence.</summary>
+    private bool Unproven(nint source, string why)
+    {
         if (_refusedSource != source)
         {
             _refusedSource = source;
             _log.Debug(
-                "PosePreviewService: appearance source occupies no object-table "
-                + "slot; copy refused until it does");
+                $"PosePreviewService: appearance source unproven — {why}; "
+                + "the copy waits");
         }
+        _proveWaitTicks++;
         return false;
     }
 
@@ -622,6 +676,12 @@ public sealed unsafe class PosePreviewService : IDisposable
 
         _rendering = previewAddress != nint.Zero;
         _statusText = _rendering ? null : "Preparing preview…";
+        // The frame's own status is written first and the WAITS speak over it:
+        // CopyAppearance ran before this line and TryApplyPendingPose runs
+        // after it, so a wait recorded either side has to be applied here or
+        // it would be overwritten by the very next tick's "Preparing preview…".
+        if (_proveWaitTicks > SkeletonWaitTicks)
+            _statusText = "Preview source not found — waiting…";
 
         if (previewAddress != nint.Zero)
             TryApplyPendingPose(previewAddress);

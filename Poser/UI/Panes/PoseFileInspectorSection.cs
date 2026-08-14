@@ -1467,19 +1467,22 @@ public sealed class PoseFileInspectorSection
                 TextAlign.Center);
         }
 
-        // A REFUSED pose is otherwise invisible. The import leaves the body
-        // exactly where the last successful stage left it, so the render keeps
-        // showing a perfectly good pose and nothing anywhere says the picked
-        // one was rejected (user 2026-08-14: "I keep selecting new poses and
-        // nothing just loads" — a folder of creature poses, every one of them
-        // refused for sharing no bone name with a human preview body). The
-        // verdict rides a scrim along the bottom of the render rather than
-        // replacing it: the standing pose is still the truthful thing to show,
-        // and the empty well already carries its own reason, so this only
-        // dresses a LIVE render.
+        // Anything the service has to SAY while a render stands. BOTH channels
+        // land here, because the well above can only speak when there is no
+        // texture and by the time either of these fires the body is on screen:
+        // a refused import leaves it exactly where the last successful stage
+        // left it, and a wait leaves whatever already stood. Either way the
+        // render keeps showing a perfectly good pose while nothing says a word
+        // about the one the user picked — the silence this exists to end. The
+        // notice rides a scrim along the bottom rather than replacing the
+        // render, because the standing pose is still the truthful thing to show.
+        //
+        // A refusal outranks a wait: it is about the pose in hand, where a wait
+        // is only about the machinery behind it.
         if (showRender && handle != 0
-            && _preview.RefusalText is { Length: > 0 } refusal)
-            DrawPreviewRefusal(boxMin, boxSize, radius, scale, theme, refusal);
+            && (_preview.RefusalText ?? _preview.StatusText)
+                is { Length: > 0 } notice)
+            DrawPreviewNotice(boxMin, boxSize, radius, scale, theme, notice);
 
         Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
     }
@@ -1488,9 +1491,9 @@ public sealed class PoseFileInspectorSection
     /// of the render, inside the box's own rounding so it reads as part of the
     /// image rather than a row under it — the box does not reflow and no
     /// mount has to make room.</summary>
-    private static void DrawPreviewRefusal(
+    private static void DrawPreviewNotice(
         Vector2 boxMin, Vector2 boxSize, float radius, float scale,
-        Theme theme, string refusal)
+        Theme theme, string notice)
     {
         var style = new TextStyle
         {
@@ -1498,7 +1501,7 @@ public sealed class PoseFileInspectorSection
             Color = theme.Warning,
         };
         float inset = theme.Page.Inset * scale;
-        float band = Crystarium.MeasureText(refusal, style).Y + inset;
+        float band = Crystarium.MeasureText(notice, style).Y + inset;
         float width = MathF.Max(1f, boxSize.X - inset * 2f);
         var bandMin = new Vector2(boxMin.X, boxMin.Y + boxSize.Y - band);
         // The theme's own scrim-over-content token, so the band tracks polarity
@@ -1513,7 +1516,7 @@ public sealed class PoseFileInspectorSection
         Crystarium.TextInBand(
             new Vector2(bandMin.X + inset, bandMin.Y),
             new Vector2(width, band),
-            refusal,
+            notice,
             style,
             TextConstraint.Truncate(width, TextAlign.Center),
             TextAlign.Center);
