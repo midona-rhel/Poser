@@ -19,8 +19,6 @@ public class EventBus : IEventBus
     private readonly object _lock = new();
     private readonly IPluginLog? _log;
 
-    public EventBus() { }
-
     public EventBus(IPluginLog log)
     {
         _log = log;

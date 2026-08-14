@@ -21,15 +21,10 @@ public sealed class CompanionCatalog
     public int Count => _entries.Count;
     public IReadOnlyList<CompanionEntry> Entries => _entries;
 
-    /// <summary>Raised once the catalog has rows, so an open selector can
-    /// stop showing its loading state.</summary>
-    public event Action? Loaded;
-
     public void Publish(IReadOnlyList<CompanionEntry> entries)
     {
         _entries = entries;
         IsLoaded = true;
-        Loaded?.Invoke();
     }
 
     /// <summary>

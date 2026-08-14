@@ -41,10 +41,6 @@ public sealed class ActorPresentationSession
         _port = port;
     }
 
-    /// <summary>Raised after any owned state changes, so surfaces can
-    /// re-read without polling.</summary>
-    public event Action? Changed;
-
     public bool IsSupported(ActorId actor) => _port.IsSupported(actor);
 
     public PresentationReading? Read(ActorId actor) => _port.Read(actor);
@@ -59,7 +55,6 @@ public sealed class ActorPresentationSession
             _overrides[actor] = updated;
         else
             _overrides.Remove(actor);
-        Changed?.Invoke();
     }
 
     // ── Opacity ───────────────────────────────────────────────────────
@@ -201,7 +196,6 @@ public sealed class ActorPresentationSession
         {
             _overrides.Remove(actor);
             _port.ClearOwned(actor);
-            Changed?.Invoke();
             return PresentationResult.Ok();
         }
 
@@ -234,7 +228,6 @@ public sealed class ActorPresentationSession
             _overrides.Remove(actor);
             _port.ClearOwned(actor);
         }
-        Changed?.Invoke();
 
         return failures.Count == 0
             ? PresentationResult.Ok()

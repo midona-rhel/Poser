@@ -60,10 +60,6 @@ public sealed class AnimationSession
         _port = port;
     }
 
-    /// <summary>Raised after any owned state changes, so surfaces can
-    /// re-read without polling.</summary>
-    public event Action? Changed;
-
     public IReadOnlyCollection<ActorId> OwnedActors => _overrides.Keys;
 
     public AnimationOverrides OverridesFor(ActorId actor) =>
@@ -85,14 +81,12 @@ public sealed class AnimationSession
         CommandsSuspended = true;
         // Armed loops would replay animations into the settling baseline.
         _port.LoopsSuspended = true;
-        Changed?.Invoke();
     }
 
     public void ResumeCommands()
     {
         CommandsSuspended = false;
         _port.LoopsSuspended = false;
-        Changed?.Invoke();
     }
 
     private AnimationResult? Suspended() => CommandsSuspended
@@ -110,7 +104,6 @@ public sealed class AnimationSession
             _overrides[actor] = updated;
         else
             _overrides.Remove(actor);
-        Changed?.Invoke();
         return updated;
     }
 
@@ -485,7 +478,6 @@ public sealed class AnimationSession
             _physicsOwners.Add(actor);
         else
             _physicsOwners.Remove(actor);
-        Changed?.Invoke();
         return AnimationResult.Ok();
     }
 
@@ -555,7 +547,6 @@ public sealed class AnimationSession
         }
 
         _scrub = new ScrubGesture(actor, control, target.Duration, token, wasPaused);
-        Changed?.Invoke();
         return AnimationResult.Ok();
     }
 
@@ -580,7 +571,6 @@ public sealed class AnimationSession
             return AnimationResult.Ok();
 
         _scrub = null;
-        Changed?.Invoke();
         return AnimationResult.Fail(result.Detail ?? "Scrub cancelled.");
     }
 
@@ -590,7 +580,6 @@ public sealed class AnimationSession
     public void EndScrub()
     {
         _scrub = null;
-        Changed?.Invoke();
     }
 
     // ── Expression hold ──────────────────────────────────────────────────
@@ -812,7 +801,6 @@ public sealed class AnimationSession
 
         if (_physicsOwners.Remove(actor))
             ReleasePhysicsIfUnowned();
-        Changed?.Invoke();
 
         return failures.Count == 0
             ? AnimationResult.Ok()
@@ -832,7 +820,6 @@ public sealed class AnimationSession
         }
         _physicsOwners.Clear();
         ReleasePhysicsIfUnowned();
-        Changed?.Invoke();
         return failures.Count == 0
             ? AnimationResult.Ok()
             : AnimationResult.Fail(string.Join("; ", failures));

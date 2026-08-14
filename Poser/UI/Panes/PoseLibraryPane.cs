@@ -199,12 +199,6 @@ public sealed class PoseLibraryPane
     private int _rangeStart = -1;
     private int _rangeEnd = -1;
 
-    // The caption is a STRING PER COUNT, not per frame: it is rebuilt only when
-    // the number it states or the mode it states it in changes.
-    private string _caption = string.Empty;
-    private int _captionCount = -1;
-    private bool _captionScanning;
-
     // Resize stepping state (StepResize). Only the WIDTH is ever stepped, so
     // the standing layout is a single X.
     private Vector2 _handedSize;

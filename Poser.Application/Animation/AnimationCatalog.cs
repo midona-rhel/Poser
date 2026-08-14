@@ -22,15 +22,10 @@ public sealed class AnimationCatalog
     public int Count => _entries.Count;
     public IReadOnlyList<TimelineEntry> Entries => _entries;
 
-    /// <summary>Raised once the catalog has rows, so an open selector can
-    /// stop showing its loading state.</summary>
-    public event Action? Loaded;
-
     public void Publish(IReadOnlyList<TimelineEntry> entries)
     {
         _entries = entries;
         IsLoaded = true;
-        Loaded?.Invoke();
     }
 
     /// <summary>
