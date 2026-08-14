@@ -1120,9 +1120,14 @@ public sealed class AnimationPane
                 "##anim-scene-menu",
                 _sceneMenuAnchor,
                 [
+                    // The icon carries the VERB the row performs, exactly as
+                    // the per-actor freeze row's does (MainWindow's actor
+                    // context menu, and the spawn browser's freeze toggle):
+                    // freezing IS pausing, so it wears pause. Both rows wore
+                    // play, which told the user nothing about either.
                     new ContextMenuItem(
                         "Freeze all",
-                        TablerIcon.PlayerPlay),
+                        TablerIcon.PlayerPause),
                     new ContextMenuItem(
                         "Resume all",
                         TablerIcon.PlayerPlay),
