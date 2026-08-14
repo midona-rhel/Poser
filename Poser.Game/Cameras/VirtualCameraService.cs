@@ -92,6 +92,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private Vector3? _trackedPivot;
     private readonly HashSet<Skeleton> _trackRefreshed = new();
 
+    // Set when GPose was entered before the native camera manager was ready;
+    // the per-tick handler retries the default-camera mint until it lands or
+    // GPose ends. One pointer read per frame, no scans, no new subscriptions.
+    private bool _defaultCameraPending;
+
+    // Test seam: replaces the CameraManager singleton read so the retry
+    // policy is drivable without the game. Null in production.
+    private readonly Func<nint>? _nativeCameraOverride;
+
     private bool _disposed;
 
     public VirtualCameraService(
@@ -155,6 +164,28 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _framework.Update += OnFrameworkUpdate;
     }
 
+    /// <summary>Test ctor: no signature scans, no hooks; availability and the
+    /// native camera presence are supplied so the default-camera retry policy
+    /// runs its production path without the game.</summary>
+    internal VirtualCameraService(
+        IFramework framework,
+        IPluginLog log,
+        IGPoseService gPose,
+        IEventBus events,
+        Func<nint> nativeCameraOverride,
+        bool isAvailable)
+    {
+        _log = log;
+        _framework = framework;
+        _gPose = gPose;
+        _events = events;
+        _nativeCameraOverride = nativeCameraOverride;
+        IsAvailable = isAvailable;
+
+        _events.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
+        _framework.Update += OnFrameworkUpdate;
+    }
+
     public bool IsAvailable { get; }
 
     public IReadOnlyList<IVirtualCamera> Cameras => _cameras;
@@ -166,6 +197,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         get
         {
+            if (_nativeCameraOverride is { } custom)
+                return (NativeCamera*)custom();
             var manager = CameraManager.Instance();
             if (manager == null)
                 return null;
@@ -736,10 +769,40 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
 
     // ── per-tick upkeep ──────────────────────────────────────────────────
 
+    /// <summary>Mints the "Main Camera" over the game's orbit camera. False
+    /// when the native manager is not up yet — the caller decides whether
+    /// that means "retry" (GPose entry) or nothing.</summary>
+    private bool TryMintDefaultCamera()
+    {
+        if (_cameras.Exists(camera => camera.IsDefault))
+            return true;
+        if (Native == null)
+            return false;
+        var defaultCamera =
+            new VirtualCamera(this, CameraKind.Game, isDefault: true)
+            {
+                Name = "Main Camera",
+            };
+        defaultCamera.SaveState();
+        _cameras.Add(defaultCamera);
+        _live = defaultCamera;
+        defaultCamera.IsLive = true;
+        Publish();
+        return true;
+    }
+
     /// <summary>Derives the tracked pivot for the frame and drops bones whose
     /// skeletons died — the same per-tick shape the light attach uses.</summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
+        if (_defaultCameraPending)
+        {
+            if (!_gPose.IsGPosing)
+                _defaultCameraPending = false;
+            else if (TryMintDefaultCamera())
+                _defaultCameraPending = false;
+        }
+
         if (!_gPose.IsGPosing || _live is not { IsTracking: true } live ||
             live.TrackedBones.Count == 0)
         {
@@ -778,22 +841,19 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     {
         if (evt.IsGPosing)
         {
-            if (!IsAvailable || Native == null)
+            if (!IsAvailable)
                 return;
-            var defaultCamera =
-                new VirtualCamera(this, CameraKind.Game, isDefault: true)
-                {
-                    Name = "Main Camera",
-                };
-            defaultCamera.SaveState();
-            _cameras.Add(defaultCamera);
-            _live = defaultCamera;
-            defaultCamera.IsLive = true;
-            Publish();
+            // The native camera manager can lag GPose entry. A miss here is
+            // retried per framework tick instead of freezing the capability
+            // for the whole session — Brio's DrawWhenReady/RunUntilSatisfied
+            // treat native readiness the same tick-gated way.
+            if (!TryMintDefaultCamera())
+                _defaultCameraPending = true;
             return;
         }
 
         // Leaving GPose: the native camera goes back to the game untouched.
+        _defaultCameraPending = false;
         RestoreNativeOverrides();
         foreach (var camera in _cameras)
         {
