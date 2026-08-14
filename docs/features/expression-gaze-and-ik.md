@@ -66,8 +66,17 @@ live during pose application: an armed chain's translation delta becomes the
 solver target; rotation/scale never start a solve. The solve itself is never
 stored — undo and export stay pure deltas — while per-chain configuration
 persists for the session, keyed by the exact skeleton instance (a replacement
-never inherits it). The four endpoints (`j_te_l/r`, `j_asi_d_l/r`) resolve
-their Ktisis chains inside their own slot; no actor-wide arming exists.
+never inherits it). No actor-wide arming exists.
+
+Which bones can be armed is a SKELETON fact, not a name test (Brio's
+`EligibleForIK`): any bone with a parent that is not hidden. The four declared
+endpoints (`j_te_l/r`, `j_asi_d_l/r`) additionally resolve their Ktisis Two
+Joint chains inside their own slot; every other bone is CCD only, because CCD
+needs nothing but the endpoint's own parent walk while Two Joint needs a
+definition's named joints and twists. `IIkConfigurationPort.Chains` enumerates
+a skeleton's configured chains with the bones each solver moves — the one read
+every all-chains surface uses, since probing bone by bone would now mean
+probing the whole skeleton.
 
 - One validated `IkChainConfig` per chain carries BOTH solver settings
   (switching never discards tuning); invalid values never reach the native
@@ -79,7 +88,8 @@ their Ktisis chains inside their own slot; no actor-wide arming exists.
   mode changes never jump and undo/redo still moves the target. Joint
   gains, cosine-converted hinge limits, normalized axis, twist bones, and
   optional end-rotation enforcement (never applied a second time). CCD:
-  depth clamped to the chain, iterations, configured gain.
+  depth clamped to the chain, iterations, configured gain — Brio's defaults
+  are depth 3 and 8 iterations.
 - Bake (Brio's "Set IK Changes") turns one solve into ordinary pose edits:
   it captures the affected chain bones' `LastRawTransform` while the solve is
   visible, disarms the chain, lets the pose settle two framework ticks, then

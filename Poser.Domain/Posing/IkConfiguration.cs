@@ -69,6 +69,20 @@ public sealed record IkChainConfig(
         return null;
     }
 
+    /// <summary>
+    /// Why this configuration cannot be armed on a bone that heads no declared
+    /// chain; null when it can. Two Joint needs a definition's named joints and
+    /// twists, so an undeclared bone is CCD only — Brio's rule exactly, where
+    /// every bone gets CCD options and Two Joint is offered additionally for
+    /// <c>j_te*</c> / <c>j_asi_d*</c> (<c>Brio/Game/Posing/PoseInfo.cs:249-283</c>).
+    /// CCD needs no definition at all: the solver walks the endpoint's own
+    /// parents to <see cref="CcdDepth"/>.
+    /// </summary>
+    public string? ValidateUndeclared() =>
+        Solver != IkSolver.Ccd
+            ? "Only the CCD solver works on a bone with no arm or leg chain."
+            : Validate();
+
     /// <summary>The same valid configuration with a normalized hinge axis.</summary>
     public IkChainConfig Normalized()
     {
@@ -129,6 +143,13 @@ public sealed record IkChainConfig(
         HingeMaxDegrees: 180f,
         HingeAxis: isArm ? Vector3.UnitZ : -Vector3.UnitZ,
         EnforceEndRotation: false);
+
+    /// <summary>Defaults for a bone with no declared chain: CCD, at Brio's
+    /// depth 3 and iterations 8 (<c>Brio/Game/Posing/PoseInfo.cs:291-295</c>).
+    /// The Two Joint fields keep their harmless values so switching back to a
+    /// declared chain never meets an unvalidatable hinge.</summary>
+    public static IkChainConfig DefaultsForCcd(bool enabled = false) =>
+        DefaultsFor(isArm: true, enabled) with { Solver = IkSolver.Ccd };
 }
 
 /// <summary>

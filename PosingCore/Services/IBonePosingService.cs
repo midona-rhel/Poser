@@ -28,6 +28,16 @@ public readonly record struct TransitiveActionOutcome(
     bool Executed);
 
 /// <summary>
+/// One bone carrying stored IK configuration, with the bones its solver moves
+/// — the endpoint's declared joints and twists for Two Joint, or the parents
+/// CCD walks into at the configured depth.
+/// </summary>
+public readonly record struct IkConfiguredChain(
+    IBone Endpoint,
+    Poser.Domain.Posing.IkChainConfig Config,
+    IReadOnlyList<string> Bones);
+
+/// <summary>
 /// Service for manipulating bone transforms.
 /// Simple delta-based system like Brio - bones rotate around themselves.
 /// </summary>
@@ -75,10 +85,17 @@ public interface IBonePosingService : IDisposable
     /// </summary>
     void RestorePoseStacks(IBone bone, IReadOnlyList<BonePoseTransformInfo> stacks);
 
-    /// <summary>The bone's current chain configuration (stored value or
-    /// chain defaults); null when the bone is not a supported, resolvable
-    /// IK endpoint on its own skeleton.</summary>
+    /// <summary>The bone's current chain configuration (stored value or its
+    /// defaults); null when IK cannot be armed here at all — a virtual bone,
+    /// or a bone with no parent for CCD to walk into.</summary>
     Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone);
+
+    /// <summary>Every bone of the skeleton that carries stored IK
+    /// configuration, armed or not, each with the bones its solver moves.
+    /// One enumeration per skeleton is what keeps the overlay and any
+    /// all-on/all-off control off a per-bone probe now that CCD can be armed
+    /// on any bone.</summary>
+    IReadOnlyList<IkConfiguredChain> GetIkChains(ISkeleton skeleton);
 
     /// <summary>Validates and stores the chain configuration; returns null
     /// on success or the rejection reason. Entering Fixed mode or enabling

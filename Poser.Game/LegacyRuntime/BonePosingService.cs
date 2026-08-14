@@ -1129,17 +1129,82 @@ public unsafe class BonePosingService : IBonePosingService
 
     }
 
+    /// <summary>Brio's <c>EligibleForIK</c> — a parent for the solver to walk
+    /// into, and not a hidden one (<c>Brio/Game/Posing/Skeletons/Bone.cs:68</c>).
+    /// A bone that heads no declared chain is armable on this rule alone,
+    /// because CCD needs nothing but the parent walk.</summary>
+    private static bool IsCcdEligible(IBone bone) =>
+        bone is not VirtualBone &&
+        bone.ParentBone is { IsHiddenBone: false };
+
     public Poser.Domain.Posing.IkChainConfig? GetIkConfiguration(IBone bone)
     {
         if (bone is VirtualBone)
             return null;
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
-        if (definition == null)
+        if (definition == null && !IsCcdEligible(bone))
             return null;
         var key = ChainKey(bone);
-        return _ikChains.TryGetValue(key, out var state)
-            ? state.Config
+        if (_ikChains.TryGetValue(key, out var state))
+            return state.Config;
+        return definition == null
+            ? Poser.Domain.Posing.IkChainConfig.DefaultsForCcd()
             : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
+    }
+
+    public IReadOnlyList<Poser.Services.IkConfiguredChain> GetIkChains(
+        ISkeleton skeleton)
+    {
+        var key = SkeletonKey.Of(skeleton);
+        List<Poser.Services.IkConfiguredChain>? chains = null;
+        foreach (var (chainKey, state) in _ikChains)
+        {
+            if (chainKey.Skeleton != key)
+                continue;
+            var endpoint = (skeleton as Skeleton)?
+                .GetBone(chainKey.Partial, chainKey.Bone);
+            if (endpoint == null)
+                continue;
+            (chains ??= new()).Add(new Poser.Services.IkConfiguredChain(
+                endpoint,
+                state.Config,
+                ChainMemberNames(endpoint, state.Config)));
+        }
+        return (IReadOnlyList<Poser.Services.IkConfiguredChain>?)chains
+            ?? Array.Empty<Poser.Services.IkConfiguredChain>();
+    }
+
+    /// <summary>Which bones the configured solver actually moves. CCD walks
+    /// the endpoint's own parents to the configured depth — the same walk
+    /// IKService.GetBonesToDepth and IkBakeCapture.AffectedBones make, because
+    /// the chain is not declared anywhere to read it from.</summary>
+    private static IReadOnlyList<string> ChainMemberNames(
+        IBone endpoint,
+        Poser.Domain.Posing.IkChainConfig config)
+    {
+        var names = new List<string> { endpoint.BoneName };
+        if (config.Solver == Poser.Domain.Posing.IkSolver.Ccd)
+        {
+            var current = endpoint.ParentBone;
+            while (current != null && names.Count < config.CcdDepth + 1)
+            {
+                names.Add(current.BoneName);
+                current = current.ParentBone;
+            }
+            return names;
+        }
+
+        if (Poser.Domain.Posing.IkChains.ForEndpoint(endpoint.BoneName)
+            is not { } definition)
+            return names;
+        names.Add(definition.Endpoint);
+        names.Add(definition.FirstJoint);
+        names.Add(definition.SecondJoint);
+        if (definition.FirstTwist != null)
+            names.Add(definition.FirstTwist);
+        if (definition.SecondTwist != null)
+            names.Add(definition.SecondTwist);
+        return names;
     }
 
     public string? SetIkConfiguration(IBone bone, Poser.Domain.Posing.IkChainConfig config)
@@ -1148,14 +1213,33 @@ public unsafe class BonePosingService : IBonePosingService
             return "Virtual bones cannot use IK.";
         var definition = Poser.Domain.Posing.IkChains.ForEndpoint(bone.BoneName);
         if (definition == null)
-            return $"{bone.BoneName} is not a supported IK endpoint.";
+        {
+            if (!IsCcdEligible(bone))
+                return $"{bone.BoneName} has no parent for IK to bend.";
+            if (config.ValidateUndeclared() is { } rejected)
+                return rejected;
+            return StoreIkConfiguration(
+                bone,
+                config,
+                // CCD reads only the endpoint; the joint slots stay unresolved
+                // so nothing can mistake this for a Two Joint chain.
+                new Poser.Domain.Posing.IkResolvedChain(
+                    -1, -1, -1, -1, (short)bone.BoneIndex));
+        }
         if (config.Validate() is { } invalid)
             return invalid;
         var chain = ResolveChain(bone, definition);
         if (config.Solver == Poser.Domain.Posing.IkSolver.TwoJoint &&
             !chain.TwoJointAvailable)
             return "The Two Joint chain does not resolve on this skeleton.";
+        return StoreIkConfiguration(bone, config, chain);
+    }
 
+    private string? StoreIkConfiguration(
+        IBone bone,
+        Poser.Domain.Posing.IkChainConfig config,
+        Poser.Domain.Posing.IkResolvedChain chain)
+    {
         var key = ChainKey(bone);
         _ikChains.TryGetValue(key, out var previous);
         var state = previous ?? new IkChainState { Config = config };

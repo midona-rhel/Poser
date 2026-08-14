@@ -744,6 +744,17 @@ public sealed class StableBindingRegistry
                 Detail: $"Actor {id.LogicalId:N} is not present.");
     }
 
+    /// <summary>The live skeleton behind an exact skeleton generation, reached
+    /// through the bones bound to it — the registry keys on bones, and a
+    /// skeleton with no bound bone is one nothing can be asked about.</summary>
+    public ISkeleton? ResolveSkeleton(SkeletonId id)
+    {
+        foreach (var (boneId, live) in _boneBindings)
+            if (boneId.Skeleton == id)
+                return live.Skeleton;
+        return null;
+    }
+
     public BindingResult<IBone> Resolve(BoneId id)
     {
         if (_boneBindings.TryGetValue(id, out var bone))

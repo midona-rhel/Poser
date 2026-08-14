@@ -33,10 +33,25 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         _log = log;
     }
 
-    public bool IsSupported(TransformTargetId target) =>
-        target.Bone is { } boneId &&
-        IkChains.IsSupportedEndpoint(boneId.CanonicalName) &&
-        _bindings.Resolve(boneId).Success;
+    /// <summary>Eligibility is the runtime's own answer rather than a name
+    /// test: it alone knows whether the bone has a parent for CCD to bend.</summary>
+    public bool IsSupported(TransformTargetId target) => Get(target) != null;
+
+    public IReadOnlyList<IkChainSummary> Chains(SkeletonId skeleton)
+    {
+        if (_bindings.ResolveSkeleton(skeleton) is not { } resolved)
+            return Array.Empty<IkChainSummary>();
+        List<IkChainSummary>? summaries = null;
+        foreach (var chain in _bonePosing.GetIkChains(resolved))
+        {
+            if (_bindings.GetBoneId(chain.Endpoint) is not { } endpoint)
+                continue;
+            (summaries ??= new()).Add(
+                new IkChainSummary(endpoint, chain.Config, chain.Bones));
+        }
+        return (IReadOnlyList<IkChainSummary>?)summaries
+            ?? Array.Empty<IkChainSummary>();
+    }
 
     public bool IsTwoJointAvailable(TransformTargetId target)
     {
@@ -84,17 +99,16 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
     {
         if (target.Bone is not { } boneId)
             return IkPortResult.Fail("IK configuration requires a bone target.");
-        var definition = IkChains.ForEndpoint(boneId.CanonicalName);
-        if (definition == null)
-            return IkPortResult.Fail(
-                $"{boneId.CanonicalName} is not a supported IK endpoint.");
         var current = Get(target);
         if (current == null)
             return IkPortResult.Fail(
-                $"Bone {boneId.CanonicalName} did not resolve.");
-        // Reset Defaults preserves the chain's Enabled state.
-        return Set(target, IkChainConfig.DefaultsFor(
-            definition.IsArm,
-            current.Enabled));
+                $"Bone {boneId.CanonicalName} cannot use IK.");
+        // Reset Defaults preserves the chain's Enabled state. A bone with no
+        // declared chain resets to the CCD defaults, which are the only ones
+        // it can hold.
+        var definition = IkChains.ForEndpoint(boneId.CanonicalName);
+        return Set(target, definition == null
+            ? IkChainConfig.DefaultsForCcd(current.Enabled)
+            : IkChainConfig.DefaultsFor(definition.IsArm, current.Enabled));
     }
 }

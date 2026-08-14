@@ -423,7 +423,7 @@ public class SkeletonOverlayWindow : Window
             if (_viewport.GetSkeletonModelMatrix(descriptors[0].Id) is not { } modelMatrix)
                 continue;
 
-            var armedIkBones = CollectArmedIkBones(descriptors);
+            var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
 
             var boneScreenPositions = _boneScreenPositions;
@@ -1085,31 +1085,19 @@ public class SkeletonOverlayWindow : Window
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
     /// <summary>Canonical names of every member of an ARMED IK chain on this
-    /// exact skeleton — endpoint, both joints, and the optional twists. Null
-    /// when no chain on the skeleton is enabled.</summary>
-    private HashSet<string>? CollectArmedIkBones(
-        IReadOnlyList<Domain.Scene.BoneDescriptor> descriptors)
+    /// exact skeleton. Null when no chain on the skeleton is enabled. ONE port
+    /// read per skeleton per frame: since CCD can be armed on any bone, asking
+    /// bone by bone would be a probe of the whole skeleton.</summary>
+    private HashSet<string>? CollectArmedIkBones(Domain.Identity.SkeletonId skeleton)
     {
         HashSet<string>? names = null;
-        foreach (var bone in descriptors)
+        foreach (var chain in _ikPort.Chains(skeleton))
         {
-            // Only endpoints carry configuration, so at most four port reads
-            // per skeleton per frame.
-            var definition = Domain.Posing.IkChains.ForEndpoint(bone.Id.CanonicalName);
-            if (definition == null)
+            if (!chain.Config.Enabled)
                 continue;
-            if (_ikPort.Get(TransformTargetId.ForBone(bone.Id)) is not { Enabled: true })
-                continue;
-
             names ??= new HashSet<string>();
-            names.Add(bone.Id.CanonicalName);
-            names.Add(definition.Endpoint);
-            names.Add(definition.FirstJoint);
-            names.Add(definition.SecondJoint);
-            if (definition.FirstTwist != null)
-                names.Add(definition.FirstTwist);
-            if (definition.SecondTwist != null)
-                names.Add(definition.SecondTwist);
+            foreach (var bone in chain.Bones)
+                names.Add(bone);
         }
         return names;
     }

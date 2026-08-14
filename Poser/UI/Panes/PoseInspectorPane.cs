@@ -670,8 +670,9 @@ public class PoseInspectorPane
 
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {
-            // A bone without an IK chain gets no section at all rather than a
-            // disabled ghost — the rail states what this bone can do.
+            // A bone IK cannot reach — a partial root with no parent — gets no
+            // section at all rather than a disabled ghost; the rail states what
+            // this bone can do.
             if (_ikPort.IsSupported(TransformTargetId.ForBone(railBone)))
                 stack.Section(
                     "ik",
@@ -1928,8 +1929,8 @@ public class PoseInspectorPane
             },
             disabled: !eligible,
             help: eligible
-                ? "Bend the whole limb to follow this bone as you move it"
-                : "This bone has no IK chain — select a hand or foot");
+                ? "Bend the bones above this one to follow it as you move it"
+                : "This bone has no parent for IK to bend");
         // The armed bake's own progress/failure wins: it outlives the click
         // that started it, while _ikBakeNote only ever holds an up-front
         // refusal.
@@ -1990,11 +1991,14 @@ public class PoseInspectorPane
                 help: "Make the solver keep this bone's own rotation, not just its position");
 
             // The three gain rows swap their captions between arm and leg
-            // chains; both triples are fixed text.
+            // chains; both triples are fixed text. Two Joint only ever renders
+            // for a declared chain, so the arm reading is the fallback that
+            // cannot be reached rather than a guess.
             var definition =
-                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName)!;
-            var labels = definition.IsArm ? ArmJointLabels : LegJointLabels;
-            var helps = definition.IsArm ? ArmJointHelp : LegJointHelp;
+                Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName);
+            bool isArm = definition?.IsArm ?? true;
+            var labels = isArm ? ArmJointLabels : LegJointLabels;
+            var helps = isArm ? ArmJointHelp : LegJointHelp;
             form.Slider(
                 labels[0],
                 config.FirstJointGain,
