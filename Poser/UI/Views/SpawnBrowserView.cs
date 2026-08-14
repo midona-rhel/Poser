@@ -19,15 +19,15 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
-    /// <summary>The three game-UI overlay nodes: the dialogue panel, the chat
-    /// bubble and the status line.</summary>
+    /// <summary>Everything this browser lays OVER the game rather than into
+    /// the scene: the three game-UI overlay nodes — the dialogue panel, the
+    /// chat bubble and the status line — and the reference picture, which is
+    /// an overlay by the same test (user 2026-08-14: "shouldn't these spawn
+    /// images be under overlays? It's technically an overlay"). Brio files the
+    /// picture under its spawn menu's "Other" group instead
+    /// (<c>Brio/UI/Controls/Editors/SpawnMenu.cs:268-280</c>); a group named
+    /// for one entry is not a group.</summary>
     Overlays,
-
-    /// <summary>Reference pictures pinned over the game. Brio files the same
-    /// entry under its spawn menu's "Other" group
-    /// (<c>Brio/UI/Controls/Editors/SpawnMenu.cs:268-280</c>); Poser's groups
-    /// are named for what they add, and what this adds is an image.</summary>
-    Images,
 
     // The world had a tab here — a refreshable list of nearby actors to clone.
     // It is gone (user 2026-08-15: "the world thing on the plus should just be
@@ -168,7 +168,6 @@ public static class SpawnBrowserView
         "Cameras",
         "Props",
         "Overlays",
-        "Images",
     ];
 
     /// <summary>The freeze/pin/close side in the search row.</summary>

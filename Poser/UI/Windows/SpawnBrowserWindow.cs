@@ -414,20 +414,22 @@ public sealed class SpawnBrowserWindow : Window
 
         // Tab per action row, by the fixed row order above. The prop entry
         // is its own tab (a prop catalog arrives later); everything the
-        // companion catalog spawns is an ACTOR, so it files under Actors.
+        // companion catalog spawns is an ACTOR, so it files under Actors; and
+        // the reference picture files under Overlays with the game-UI nodes,
+        // because what it adds is laid OVER the game rather than into the
+        // scene. It keeps its place at the end of the fixed row order, so in
+        // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i == RowReferenceImage
-                ? SpawnBrowserTab.Images
-                : i == RowProp
-                    ? SpawnBrowserTab.Props
-                    : i < RowProp
-                        ? SpawnBrowserTab.Actors
-                        : i <= RowOverlayStatus
-                            ? SpawnBrowserTab.Overlays
-                            : i <= RowWorldLight
-                                ? SpawnBrowserTab.Lights
-                                : SpawnBrowserTab.Cameras);
+            _rowTabs.Add(i == RowProp
+                ? SpawnBrowserTab.Props
+                : i < RowProp
+                    ? SpawnBrowserTab.Actors
+                    : i <= RowOverlayStatus || i == RowReferenceImage
+                        ? SpawnBrowserTab.Overlays
+                        : i <= RowWorldLight
+                            ? SpawnBrowserTab.Lights
+                            : SpawnBrowserTab.Cameras);
 
         var entries = _catalog.Entries;
         _actorEntryCount = entries.Count;
