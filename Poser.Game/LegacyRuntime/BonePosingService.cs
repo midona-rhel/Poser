@@ -135,6 +135,15 @@ public unsafe class BonePosingService : IBonePosingService
     private readonly List<(SkeletonKey Skeleton, int Partial, int Bone)>
         _observationRemovalBuffer = new();
 
+    /// <summary>Reused snapshot buffers for the finalize pass — same hazard,
+    /// same idiom as <see cref="_updatePassBuffer"/>: UpdateSkeletonCache →
+    /// GetSkeleton can publish SkeletonChangedEvent synchronously, whose
+    /// handler mutates BOTH live sets (PurgeSkeletonState / re-Add), which
+    /// would throw mid-enumeration inside the FinalizeSkeletons native frame.
+    /// Single-threaded (render detour), never nested.</summary>
+    private readonly List<SkeletonKey> _finalizePassBuffer = new();
+    private readonly List<SkeletonKey> _finalizeCachePassBuffer = new();
+
     private bool _isUpdating = false;
 
     public BonePosingService(
@@ -1273,15 +1282,30 @@ public unsafe class BonePosingService : IBonePosingService
 
         // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
         // This takes a final snapshot now the engine is done touching skeletons.
-        foreach (var slotKey in _skeletonsToUpdate)
+        // Both sets are snapshotted FIRST: UpdateSkeletonCache → GetSkeleton
+        // publishes SkeletonChangedEvent synchronously when a slot vanished or
+        // was replaced, and OnSkeletonChanged mutates both live sets — the
+        // same mutation-during-enumeration hazard ApplyAllBoneTransforms
+        // already snapshots against.
+        _finalizePassBuffer.Clear();
+        foreach (var key in _skeletonsToUpdate)
+            _finalizePassBuffer.Add(key);
+        _finalizeCachePassBuffer.Clear();
+        foreach (var key in _skeletonsToUpdateCache)
+            _finalizeCachePassBuffer.Add(key);
+
+        for (var i = 0; i < _finalizePassBuffer.Count; i++)
         {
-            UpdateSkeletonCache(slotKey);
+            UpdateSkeletonCache(_finalizePassBuffer[i]);
         }
 
-        // Also update overlay-only skeletons that don't have modifications
-        foreach (var slotKey in _skeletonsToUpdateCache)
+        // Also update overlay-only skeletons that don't have modifications.
+        // Dedupe against the SNAPSHOT, not the live set: an entry the event
+        // handler re-adds during the first loop was not updated by it.
+        for (var i = 0; i < _finalizeCachePassBuffer.Count; i++)
         {
-            if (!_skeletonsToUpdate.Contains(slotKey))
+            var slotKey = _finalizeCachePassBuffer[i];
+            if (!_finalizePassBuffer.Contains(slotKey))
             {
                 UpdateSkeletonCache(slotKey);
             }
