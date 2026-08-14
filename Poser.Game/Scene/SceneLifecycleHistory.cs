@@ -8,6 +8,77 @@ using Poser.Services;
 
 namespace Poser.Game.Scene;
 
+/// <summary>What a prop entry has to put back: the model it was spawned from
+/// plus everything the user can change about it afterwards. Captured at the
+/// MOMENT OF REMOVAL, for the same reason a light's document is.</summary>
+internal readonly record struct PropState(
+    string Name,
+    PropModel Model,
+    Transform Transform,
+    bool Visible);
+
+/// <summary>
+/// The prop half of <see cref="SceneLifecycleHistory"/>. A spawned prop is a
+/// native graphics-scene object with no entity interface of its own — the
+/// scene runtime already names one by an opaque token for exactly that reason
+/// — so this states only the acts an entry performs on that token.
+/// <see cref="PropServiceLifecycle"/> is the sole production implementation;
+/// the indirection is what lets an entry's two directions be proven without
+/// the game.
+/// </summary>
+internal interface IPropLifecycle
+{
+    IReadOnlyList<object> Props { get; }
+
+    object? Spawn(PropModel model);
+
+    bool IsLive(object prop);
+
+    void Destroy(object prop);
+
+    PropState Read(object prop);
+
+    void Apply(object prop, PropState state);
+}
+
+internal sealed class PropServiceLifecycle : IPropLifecycle
+{
+    private readonly PropSpawnService _props;
+
+    public PropServiceLifecycle(PropSpawnService props) => _props = props;
+
+    public IReadOnlyList<object> Props
+    {
+        get
+        {
+            var live = new List<object>(_props.Props.Count);
+            foreach (var prop in _props.Props)
+                live.Add(prop);
+            return live;
+        }
+    }
+
+    public object? Spawn(PropModel model) => _props.SpawnProp(model);
+
+    public bool IsLive(object prop) => ((PropHandle)prop).IsValid;
+
+    public void Destroy(object prop) => _props.Destroy((PropHandle)prop);
+
+    public PropState Read(object prop)
+    {
+        var handle = (PropHandle)prop;
+        return new PropState(
+            handle.Name, handle.Model, handle.Transform, handle.Visible);
+    }
+
+    public void Apply(object prop, PropState state)
+    {
+        var handle = (PropHandle)prop;
+        handle.Transform = state.Transform;
+        handle.Visible = state.Visible;
+    }
+}
+
 /// <summary>
 /// The ONE seam through which an entity enters or leaves the scene by a user's
 /// act, so that act lands in the SAME history the transforms do.
@@ -36,6 +107,12 @@ namespace Poser.Game.Scene;
 /// restores the entity as the user last had it, not as it was born: an edited
 /// light that is deleted and undone comes back edited.</para>
 ///
+/// <para>A PROP is the one entity whose removal is as invertible as its
+/// addition: its whole identity is the model triple it was spawned from, so a
+/// removal captures that plus the transform and visibility the user gave it
+/// and comes back as itself. Clearing the list is one act of the user's, so it
+/// is one entry over every slot it took.</para>
+///
 /// <para>Only OWNED entities are recorded. A captured world light is borrowed,
 /// not spawned, and its release is a restoration of the game's own object; the
 /// default GPose camera cannot be destroyed at all. Neither has an inverse
@@ -56,6 +133,7 @@ public sealed class SceneLifecycleHistory
     private readonly ILightingService _lighting;
     private readonly IVirtualCameraService _cameras;
     private readonly IActorSpawnService _actors;
+    private readonly IPropLifecycle _props;
 
     /// <summary>Live instance → slot, by reference: the re-binding that makes
     /// every entry about one entity share one slot. Keys are dropped as the
@@ -70,16 +148,33 @@ public sealed class SceneLifecycleHistory
     private readonly Dictionary<object, ActorSlot> _actorSlots =
         new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<object, PropSlot> _propSlots =
+        new(ReferenceEqualityComparer.Instance);
+
     public SceneLifecycleHistory(
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        IActorSpawnService actors)
+        IActorSpawnService actors,
+        PropSpawnService props)
+        : this(history, lighting, cameras, actors, new PropServiceLifecycle(props))
+    {
+    }
+
+    /// <summary>Test seam: the prop half as a port, so the entry's two
+    /// directions can be exercised without a native scene object.</summary>
+    internal SceneLifecycleHistory(
+        TransformHistory history,
+        ILightingService lighting,
+        IVirtualCameraService cameras,
+        IActorSpawnService actors,
+        IPropLifecycle props)
     {
         _history = history;
         _lighting = lighting;
         _cameras = cameras;
         _actors = actors;
+        _props = props;
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -92,6 +187,7 @@ public sealed class SceneLifecycleHistory
         _lightSlots.Clear();
         _cameraSlots.Clear();
         _actorSlots.Clear();
+        _propSlots.Clear();
     }
 
     // ── lights ───────────────────────────────────────────────────────────
@@ -395,5 +491,126 @@ public sealed class SceneLifecycleHistory
         slot.Live = actor;
         _actorSlots[actor] = slot;
         return true;
+    }
+
+    // ── props ────────────────────────────────────────────────────────────
+
+    /// <summary>The live prop token, plus the state that rebuilds it once the
+    /// live one is gone. A prop's whole identity is its model triple, so —
+    /// unlike an actor — a removal IS invertible and takes an entry.</summary>
+    private sealed class PropSlot
+    {
+        public object? Live;
+        public PropState Document;
+        public bool HasDocument;
+    }
+
+    /// <summary>Brio's default prop, for the row that names no model.</summary>
+    public object? SpawnProp() =>
+        SpawnProp(new PropModel("Prop", 9001, 249, 1, string.Empty));
+
+    public object? SpawnProp(PropModel model)
+    {
+        var prop = _props.Spawn(model);
+        if (prop == null)
+            return null;
+        var slot = SlotFor(prop);
+        _history.Append(new SceneLifecyclePatch(
+            $"Add prop '{_props.Read(prop).Name}'",
+            () => RemoveProp(slot),
+            () => RestoreProp(slot)));
+        return prop;
+    }
+
+    public void DestroyProp(object prop)
+    {
+        string description = $"Remove prop '{_props.Read(prop).Name}'";
+        var slot = SlotFor(prop);
+        if (!RemoveProp(slot))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            description,
+            () => RestoreProp(slot),
+            () => RemoveProp(slot)));
+    }
+
+    /// <summary>
+    /// Clearing the prop list is ONE act of the user's, so it is ONE entry
+    /// over every slot it took. Each direction reports the truth for the whole
+    /// set: a partial restore answers false and leaves the entry where it was,
+    /// exactly as a refused single spawn does, so the step is retried rather
+    /// than consumed.
+    /// </summary>
+    public void DestroyAllProps()
+    {
+        var props = _props.Props;
+        if (props.Count == 0)
+            return;
+        var slots = new List<PropSlot>(props.Count);
+        foreach (var prop in props)
+            slots.Add(SlotFor(prop));
+        if (!RemoveProps(slots))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            props.Count == 1 ? "Remove prop" : $"Remove {props.Count} props",
+            () => RestoreProps(slots),
+            () => RemoveProps(slots)));
+    }
+
+    private PropSlot SlotFor(object prop)
+    {
+        if (_propSlots.TryGetValue(prop, out var existing))
+            return existing;
+        var slot = new PropSlot { Live = prop };
+        _propSlots[prop] = slot;
+        return slot;
+    }
+
+    private bool RemoveProp(PropSlot slot)
+    {
+        if (slot.Live is not { } prop)
+            return false;
+        if (_props.IsLive(prop))
+        {
+            // Captured HERE, not at spawn: a prop the user moved comes back
+            // where they left it.
+            slot.Document = _props.Read(prop);
+            slot.HasDocument = true;
+            _props.Destroy(prop);
+        }
+        _propSlots.Remove(prop);
+        slot.Live = null;
+        return true;
+    }
+
+    private bool RestoreProp(PropSlot slot)
+    {
+        if (slot.Live != null)
+            return true;
+        if (!slot.HasDocument)
+            return false;
+        var prop = _props.Spawn(slot.Document.Model);
+        if (prop == null)
+            return false;
+        _props.Apply(prop, slot.Document);
+        slot.Live = prop;
+        _propSlots[prop] = slot;
+        return true;
+    }
+
+    private bool RemoveProps(IReadOnlyList<PropSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RemoveProp(slot);
+        return landed;
+    }
+
+    private bool RestoreProps(IReadOnlyList<PropSlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RestoreProp(slot);
+        return landed;
     }
 }

@@ -234,6 +234,134 @@ public sealed class SceneLifecycleHistoryTests
         Assert.False(world.History.CanUndo);
     }
 
+    // ── props ────────────────────────────────────────────────────────────
+
+    private static readonly PropModel Apple =
+        new("Apple", 9001, 249, 1, "The default prop");
+
+    [Fact]
+    public void Adding_a_prop_leaves_one_undoable_entry_that_destroys_it()
+    {
+        var world = new World();
+
+        var prop = world.Lifecycle.SpawnProp(Apple);
+
+        Assert.NotNull(prop);
+        Assert.Equal("Add prop 'Apple'", world.History.UndoDescription);
+        Assert.Single(world.Props.Live);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Props.Live);
+        Assert.False(world.History.CanUndo);
+        Assert.True(world.History.CanRedo);
+    }
+
+    [Fact]
+    public void Redoing_an_add_restores_the_prop_where_the_user_left_it()
+    {
+        var world = new World();
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+        var moved = Transform.Identity;
+        moved.Position = new Vector3(3f, 1f, -2f);
+        world.Props.Apply(prop, new PropState("Apple", Apple, moved, false));
+
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+
+        var restored = Assert.Single(world.Props.Live);
+        Assert.NotSame(prop, restored);
+        var state = world.Props.Read(restored);
+        Assert.Equal(moved.Position, state.Transform.Position);
+        Assert.False(state.Visible);
+        Assert.Equal(Apple.Model, state.Model.Model);
+    }
+
+    [Fact]
+    public void Removing_a_prop_is_undone_by_bringing_the_same_prop_back()
+    {
+        var world = new World();
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+
+        world.Lifecycle.DestroyProp(prop);
+
+        Assert.Empty(world.Props.Live);
+        Assert.Equal("Remove prop 'Apple'", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Single(world.Props.Live);
+    }
+
+    [Fact]
+    public void Undo_past_a_prop_removal_destroys_the_prop_the_removal_restored()
+    {
+        var world = new World();
+        var original = world.Lifecycle.SpawnProp(Apple)!;
+        world.Lifecycle.DestroyProp(original);
+
+        Assert.True(world.Undo());
+        Assert.NotSame(original, Assert.Single(world.Props.Live));
+        Assert.True(world.Undo());
+        Assert.Empty(world.Props.Live);
+    }
+
+    [Fact]
+    public void A_prop_the_game_refuses_to_respawn_keeps_its_entry()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnProp(Apple);
+        Assert.True(world.Undo());
+
+        world.Props.RefuseSpawn = true;
+        Assert.False(world.Redo());
+
+        Assert.True(world.History.CanRedo);
+        Assert.Empty(world.Props.Live);
+        world.Props.RefuseSpawn = false;
+        Assert.True(world.Redo());
+        Assert.Single(world.Props.Live);
+    }
+
+    [Fact]
+    public void A_prop_that_left_by_another_path_undoes_without_a_dead_write()
+    {
+        var world = new World();
+        var prop = world.Lifecycle.SpawnProp(Apple)!;
+
+        world.Props.VanishWithoutNotice(prop);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Props.Live);
+        Assert.False(world.Redo());
+    }
+
+    /// <summary>Clearing the list is ONE act, so it is ONE step of the user's
+    /// history however many props it took.</summary>
+    [Fact]
+    public void Removing_every_prop_is_one_entry_that_brings_them_all_back()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnProp(Apple);
+        world.Lifecycle.SpawnProp(Apple with { Name = "Lamp" });
+
+        world.Lifecycle.DestroyAllProps();
+
+        Assert.Empty(world.Props.Live);
+        Assert.Equal("Remove 2 props", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal(2, world.Props.Live.Count);
+        // And the two adds are still there behind it.
+        Assert.Equal("Add prop 'Lamp'", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void A_spawn_the_game_refuses_records_no_prop_entry()
+    {
+        var world = new World { Props = { RefuseSpawn = true } };
+
+        Assert.Null(world.Lifecycle.SpawnProp(Apple));
+
+        Assert.False(world.History.CanUndo);
+    }
+
     // ── the shared stack ─────────────────────────────────────────────────
 
     [Fact]
@@ -262,6 +390,7 @@ public sealed class SceneLifecycleHistoryTests
         world.Lifecycle.SpawnLight(LightKind.Spot);
         world.Lifecycle.CreateCamera(CameraKind.Free);
         world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("A"));
+        world.Lifecycle.SpawnProp(Apple);
         Assert.Single(Slots(world.Lifecycle, "_lightSlots"));
 
         world.History.Clear();
@@ -269,6 +398,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Empty(Slots(world.Lifecycle, "_lightSlots"));
         Assert.Empty(Slots(world.Lifecycle, "_cameraSlots"));
         Assert.Empty(Slots(world.Lifecycle, "_actorSlots"));
+        Assert.Empty(Slots(world.Lifecycle, "_propSlots"));
     }
 
     /// <summary>
@@ -321,6 +451,7 @@ public sealed class SceneLifecycleHistoryTests
         public FakeLighting Lighting { get; } = new();
         public FakeCameras Cameras { get; } = new();
         public FakeActors Actors { get; } = new();
+        public FakeProps Props { get; } = new();
         public SceneLifecycleHistory Lifecycle { get; }
 
         /// <param name="capacity">Undo depth; below 1 is undo switched off.
@@ -329,7 +460,7 @@ public sealed class SceneLifecycleHistoryTests
         {
             History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
-                History, Lighting, Cameras, Actors);
+                History, Lighting, Cameras, Actors, Props);
         }
 
         public bool Undo()
@@ -508,6 +639,56 @@ public sealed class SceneLifecycleHistoryTests
         public CameraTrackingMode TrackingMode { get; set; }
         public IList<IBone> TrackedBones { get; } = new List<IBone>();
         public void ResetProperties() { }
+    }
+
+    /// <summary>The prop half at its port: a token per spawned prop, with the
+    /// state an entry reads and writes back.</summary>
+    private sealed class FakeProps : IPropLifecycle
+    {
+        private readonly List<object> _props = new();
+
+        public bool RefuseSpawn { get; set; }
+        public IReadOnlyList<object> Live => _props;
+        public IReadOnlyList<object> Props => _props.ToList();
+
+        public object? Spawn(PropModel model)
+        {
+            if (RefuseSpawn)
+                return null;
+            var prop = new FakeProp
+            {
+                State = new PropState(model.Name, model, Transform.Identity, true),
+            };
+            _props.Add(prop);
+            return prop;
+        }
+
+        public bool IsLive(object prop) => ((FakeProp)prop).IsValid;
+
+        public void Destroy(object prop)
+        {
+            _props.Remove(prop);
+            ((FakeProp)prop).IsValid = false;
+        }
+
+        /// <summary>The prop leaves without this seam's knowledge — a scene
+        /// import, or the game.</summary>
+        public void VanishWithoutNotice(object prop) => Destroy(prop);
+
+        public PropState Read(object prop) => ((FakeProp)prop).State;
+
+        public void Apply(object prop, PropState state) =>
+            ((FakeProp)prop).State = ((FakeProp)prop).State with
+            {
+                Transform = state.Transform,
+                Visible = state.Visible,
+            };
+    }
+
+    private sealed class FakeProp
+    {
+        public bool IsValid { get; set; } = true;
+        public PropState State { get; set; }
     }
 
     private sealed class FakeActors : IActorSpawnService

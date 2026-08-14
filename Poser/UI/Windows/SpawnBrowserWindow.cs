@@ -681,7 +681,8 @@ public sealed class SpawnBrowserWindow : Window
                         () => _spawnService.CloneActor(source)));
                 return;
             case RowProp:
-                _propService.SpawnProp();
+                if (_lifecycle.SpawnProp() == null)
+                    _note = SpawnFailedNote;
                 return;
             case RowLightSpot:
             case RowLightPoint:
@@ -764,7 +765,7 @@ public sealed class SpawnBrowserWindow : Window
             var models = _propService.Catalog;
             int modelIndex = index - ActionRows - _actorEntryCount;
             if (modelIndex >= 0 && modelIndex < models.Count &&
-                _propService.SpawnProp(models[modelIndex]) == null)
+                _lifecycle.SpawnProp(models[modelIndex]) == null)
                 _note = SpawnFailedNote;
             return;
         }

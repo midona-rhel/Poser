@@ -5,6 +5,7 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Game;
 using Poser.Game.Bindings;
+using Poser.Game.Scene;
 
 namespace Poser.UI;
 
@@ -19,9 +20,14 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PropsPane
 {
-    private readonly PropSpawnService _props;
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
+
+    /// <summary>Destroying a prop is a scene-lifecycle act, so it goes through
+    /// the seam that files one in the same history the transforms use — not
+    /// through the spawn service, which owns the native object and no
+    /// history.</summary>
+    private readonly SceneLifecycleHistory _lifecycle;
 
     private bool _openProp = true;
 
@@ -30,13 +36,13 @@ public sealed class PropsPane
     private Action? _pending;
 
     public PropsPane(
-        PropSpawnService props,
         SceneSession scene,
-        StableBindingRegistry bindings)
+        StableBindingRegistry bindings,
+        SceneLifecycleHistory lifecycle)
     {
-        _props = props;
         _scene = scene;
         _bindings = bindings;
+        _lifecycle = lifecycle;
     }
 
     public void Draw(Vector2 origin, Vector2 size)
@@ -79,7 +85,7 @@ public sealed class PropsPane
                 "Delete",
                 () => _pending = () =>
                 {
-                    prop.Destroy();
+                    _lifecycle.DestroyProp(prop);
                     _scene.Selection.Clear();
                 },
                 variant: ButtonVariant.Danger,
@@ -88,7 +94,7 @@ public sealed class PropsPane
                 "Remove all",
                 () => _pending = () =>
                 {
-                    _props.DestroyAll();
+                    _lifecycle.DestroyAllProps();
                     _scene.Selection.Clear();
                 },
                 variant: ButtonVariant.Danger,
