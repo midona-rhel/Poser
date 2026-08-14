@@ -112,6 +112,14 @@ public class GizmoOverlayWindow : Window
     private Vector3 _dragPivotWorld;
     private Quaternion _dragRingFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
+    // The engaged layout's axis-flip signs, latched at Begin and fed back
+    // into every per-frame rebuild while the gesture lives: presentation
+    // follows the live camera, so without the latch a translate carrying
+    // the pivot across the camera plane (or an orbit mid-drag) would flip
+    // the drawn arrow away from the frozen drag mapping. Stock ImGuizmo
+    // latches mAxisFactor while mbUsing for exactly this.
+    private float[]? _dragTranslateSigns;
+    private float[]? _dragScaleSigns;
     private Vector3 _ringAxisModel;
     private Vector2 _ringTangent;
     private Vector2 _dragMouseOrigin;
@@ -153,6 +161,13 @@ public class GizmoOverlayWindow : Window
         // mouse, injecting a delta the user never asked for.
         public required WorldGizmoProjection Projection { get; init; }
         public required Vector3 AxisWorld { get; init; }
+        /// <summary>The layout's axis-flip signs at Begin, fed back into
+        /// every rebuild while the drag lives — presentation follows the
+        /// live camera, so without this latch a drag that carries the
+        /// anchor across the camera plane would flip the drawn arrow away
+        /// from the frozen mapping (stock ImGuizmo latches mAxisFactor
+        /// while mbUsing for the same reason).</summary>
+        public required float[] TranslateSigns { get; init; }
         public required Vector3 PlanePoint { get; init; }
         public required Vector3 PlaneNormal { get; init; }
         /// <summary>The anchor position at Begin; the total offset applies to
@@ -366,7 +381,11 @@ public class GizmoOverlayWindow : Window
             ? WorldGizmo.Build(
                 projection, TransformTool.Move,
                 Quaternion.Identity, Quaternion.Identity, Quaternion.Identity,
-                uiScale)
+                uiScale,
+                // A live drag pins the axis-flip signs it began with, so the
+                // anchor crossing the camera plane mid-drag cannot flip the
+                // drawn arrow away from the frozen mapping.
+                _gazeGesture?.TranslateSigns)
             : null;
 
         var io = ImGui.GetIO();
@@ -396,8 +415,9 @@ public class GizmoOverlayWindow : Window
         }
 
         if (_gazeGesture == null && hover is { } grab && projection != null &&
+            layout != null &&
             ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !_beginSuppressed)
-            BeginGazeGesture(grab, projection, part, anchor, mouse);
+            BeginGazeGesture(grab, layout, projection, part, anchor, mouse);
 
         if (_gazeGesture is not { } active)
             return;
@@ -546,12 +566,15 @@ public class GizmoOverlayWindow : Window
     /// </summary>
     private void BeginGazeGesture(
         WorldHandleHit grab,
+        WorldGizmo.Layout layout,
         WorldGizmoProjection projection,
         GazePart part,
         Vector3 anchor,
         Vector2 mouse)
     {
-        var axisWorld = WorldGizmo.FrameAxis(Quaternion.Identity, grab.Handle.Axis);
+        // The LAYOUT's signed axis, not a re-derived FrameAxis: the drag
+        // must map along the same vector the grabbed arrow was drawn with.
+        var axisWorld = layout.SignedTranslateAxis(grab.Handle.Axis);
         Vector3 planeNormal;
         switch (grab.Handle.Kind)
         {
@@ -580,6 +603,7 @@ public class GizmoOverlayWindow : Window
             Part = part,
             Projection = projection,
             AxisWorld = axisWorld,
+            TranslateSigns = (float[])layout.TranslateSign.Clone(),
             PlanePoint = anchor,
             PlaneNormal = planeNormal,
             Start = anchor,
@@ -868,7 +892,9 @@ public class GizmoOverlayWindow : Window
             _cameraService, ImGui.GetIO().DisplaySize, pivotWorld, 80f * uiScale);
         WorldGizmo.Layout? layout = projection != null
             ? WorldGizmo.Build(
-                projection, tool, translateFrame, scaleFrame, ringFrame, uiScale)
+                projection, tool, translateFrame, scaleFrame, ringFrame, uiScale,
+                _gesture != null ? _dragTranslateSigns : null,
+                _gesture != null ? _dragScaleSigns : null)
             : null;
 
         var io = ImGui.GetIO();
@@ -1139,10 +1165,12 @@ public class GizmoOverlayWindow : Window
             case WorldHandleKind.TranslateAxis:
             case WorldHandleKind.ScaleAxis:
             {
-                var frame = kind == WorldHandleKind.TranslateAxis
-                    ? translateFrame
-                    : scaleFrame;
-                axisWorld = WorldGizmo.FrameAxis(frame, axisIndex);
+                // The LAYOUT's signed axis, not a re-derived FrameAxis: the
+                // grabbed arrow was drawn along the camera-facing sign, and
+                // the frozen mapping must be the same vector.
+                axisWorld = kind == WorldHandleKind.TranslateAxis
+                    ? layout.SignedTranslateAxis(axisIndex)
+                    : layout.SignedScaleAxis(axisIndex);
                 // The drag plane contains the axis and faces the camera.
                 var normal = projection.ViewDirection -
                     axisWorld * Vector3.Dot(projection.ViewDirection, axisWorld);
@@ -1162,7 +1190,10 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.TranslatePlane:
             {
-                planeNormal = WorldGizmo.FrameAxis(translateFrame, axisIndex);
+                // Sign-transparent for the plane itself (a plane and its
+                // mirror normal intersect identically), consumed from the
+                // layout anyway so every gesture axis has one origin.
+                planeNormal = layout.SignedTranslateAxis(axisIndex);
                 if (projection.RayPlane(mouse, pivotWorld, planeNormal) is not { } hit)
                     return;
                 initialHit = hit;
@@ -1287,6 +1318,8 @@ public class GizmoOverlayWindow : Window
         _dragPivotWorld = pivotWorld;
         _dragRingFrame = ringFrame;
         _dragAxisWorld = axisWorld;
+        _dragTranslateSigns = (float[])layout.TranslateSign.Clone();
+        _dragScaleSigns = (float[])layout.ScaleSign.Clone();
         _ringAxisModel = Vector3.Normalize(Vector3.Transform(
             axisWorld, Quaternion.Inverse(actorRotation)));
         _ringTangent = ringTangent;

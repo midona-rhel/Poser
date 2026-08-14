@@ -288,6 +288,21 @@ public static class WorldGizmo
         public float RingWorldRadius;
         public float UiScale;
 
+        /// <summary>Per-axis camera-facing signs (stock ImGuizmo
+        /// AllowAxisFlip parity — Ktisis ships it default-ON). The drag
+        /// mapping MUST take its axis from <see cref="SignedTranslateAxis"/>
+        /// / <see cref="SignedScaleAxis"/> rather than re-deriving
+        /// <see cref="FrameAxis"/>, so the arrow drawn and the axis dragged
+        /// are one vector. Rotation rings take no sign, also as stock.</summary>
+        public float[] TranslateSign = [1f, 1f, 1f];
+        public float[] ScaleSign = [1f, 1f, 1f];
+
+        public Vector3 SignedTranslateAxis(int axis) =>
+            FrameAxis(TranslateFrame, axis) * TranslateSign[axis];
+
+        public Vector3 SignedScaleAxis(int axis) =>
+            FrameAxis(ScaleFrame, axis) * ScaleSign[axis];
+
         public bool TranslateActive;
         public Vector2[] ShaftStart = new Vector2[3];
         public Vector2[] ShaftEnd = new Vector2[3];
@@ -305,14 +320,23 @@ public static class WorldGizmo
 
     /// <summary>Builds the layout for the given tool. Handles whose
     /// projection degenerates (behind camera, edge-on plane, shaft shorter
-    /// than a few pixels) are marked invisible: not drawn, not hittable.</summary>
+    /// than a few pixels) are marked invisible: not drawn, not hittable.
+    /// Translate and scale handles extend along whichever of ±axis faces
+    /// the camera (<see cref="AxisFlipSign"/>); an engaged gesture passes
+    /// its latched signs back through <paramref name="heldTranslateSigns"/>
+    /// / <paramref name="heldScaleSigns"/> so a mid-drag pivot or camera
+    /// move never flips the drawn handle away from the frozen drag mapping
+    /// — the same latch stock ImGuizmo keeps in mAxisFactor while
+    /// mbUsing.</summary>
     public static Layout Build(
         WorldGizmoProjection projection,
         TransformTool tool,
         Quaternion translateFrame,
         Quaternion scaleFrame,
         Quaternion ringFrame,
-        float uiScale)
+        float uiScale,
+        float[]? heldTranslateSigns = null,
+        float[]? heldScaleSigns = null)
     {
         var layout = new Layout { Projection = projection, UiScale = uiScale };
         layout.TranslateFrame = translateFrame;
@@ -324,8 +348,11 @@ public static class WorldGizmo
         {
             layout.TranslateActive = true;
             for (int a = 0; a < 3; a++)
+                layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
+                    FrameAxis(translateFrame, a), projection.ViewDirection);
+            for (int a = 0; a < 3; a++)
             {
-                var axis = FrameAxis(translateFrame, a);
+                var axis = layout.SignedTranslateAxis(a);
                 bool ok = projection.Project(
                     projection.Pivot + axis * (ShaftInner * s), out var start);
                 ok &= projection.Project(
@@ -336,9 +363,11 @@ public static class WorldGizmo
                     Vector2.Distance(start, end) > 6f * uiScale;
 
                 // Plane handle a lies between the OTHER two axes; its world
-                // normal is axis a. Edge-on planes disappear.
-                var u = FrameAxis(translateFrame, (a + 1) % 3);
-                var v = FrameAxis(translateFrame, (a + 2) % 3);
+                // normal is axis a. Edge-on planes disappear. The pair takes
+                // each member's own flip sign (ImGuizmo's mulAxisX/mulAxisY),
+                // so the quad always opens toward the camera.
+                var u = layout.SignedTranslateAxis((a + 1) % 3);
+                var v = layout.SignedTranslateAxis((a + 2) % 3);
                 bool facing = MathF.Abs(Vector3.Dot(
                     axis, projection.ViewDirection)) > 0.08f;
                 var quad = new Vector2[4];
@@ -359,8 +388,11 @@ public static class WorldGizmo
             layout.UniformActive = true;
             float knobDistance = universal ? UniversalKnobDistance : ShaftOuter;
             for (int a = 0; a < 3; a++)
+                layout.ScaleSign[a] = heldScaleSigns?[a] ?? AxisFlipSign(
+                    FrameAxis(scaleFrame, a), projection.ViewDirection);
+            for (int a = 0; a < 3; a++)
             {
-                var axis = FrameAxis(scaleFrame, a);
+                var axis = layout.SignedScaleAxis(a);
                 bool ok = projection.Project(
                     projection.Pivot + axis * (ShaftInner * s), out var start);
                 ok &= projection.Project(
@@ -382,6 +414,25 @@ public static class WorldGizmo
         }
         return layout;
     }
+
+    /// <summary>Inside this dot-product band of exactly edge-on, the sign
+    /// stays +1 — the analytic twin of ImGuizmo's FLT_EPSILON tie test, so
+    /// a camera resting on an axis plane can never flap the sign frame to
+    /// frame.</summary>
+    private const float AxisFlipEpsilon = 1e-6f;
+
+    /// <summary>
+    /// Stock ImGuizmo AllowAxisFlip semantics (upstream
+    /// ComputeTripodAxisAndVisibility): a linear handle is drawn along
+    /// whichever of ±axis projects LONGER on screen — the end nearer the
+    /// camera (`mulAxis = lenDir &lt; lenDirMinus ? -1 : 1`, tie-broken by
+    /// FLT_EPSILON toward +1). At the pivot, "nearer" is exactly
+    /// dot(axis, camera→pivot) &lt; 0, so the sign flips when the axis
+    /// points away past the epsilon band. Rotation rings never take a
+    /// sign, also as stock.
+    /// </summary>
+    public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewDirection) =>
+        Vector3.Dot(axisWorld, viewDirection) > AxisFlipEpsilon ? -1f : 1f;
 
     public static Vector3 FrameAxis(Quaternion frame, int axis) =>
         Vector3.Normalize(Vector3.Transform(
