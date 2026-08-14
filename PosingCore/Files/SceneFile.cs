@@ -35,6 +35,10 @@ public class SceneFile
     /// of guessing at unknown semantics.</summary>
     public const int CurrentVersion = 1;
 
+    /// <summary>The one extension every scene reader, writer and listing
+    /// filters on.</summary>
+    public const string Extension = ".poserscene";
+
     public string TypeName { get; set; } = "Poser Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
