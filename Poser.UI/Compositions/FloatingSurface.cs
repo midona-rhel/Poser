@@ -277,13 +277,16 @@ public static partial class Crystarium
             if (items.Count == 0)
                 return -1;
             float scale = ImGuiHelpers.GlobalScale;
-            // The list is the names and nearly nothing else (user 2026-08-15:
-            // "make the text bigger, make the padding to the edge like 2
-            // pixels max, and center that shit"): body-size labels, CENTRED
-            // in their rows, inside a box whose edge padding is a hairline.
-            // The glass chrome, the surface radius and the row's own hover
-            // and selected treatment stay exactly the design system's.
-            float padding = 2f * scale;
+            // The list is the names in a symmetric frame (user 2026-08-15):
+            // body-size labels, LEFT-aligned, with the box's left, top and
+            // bottom padding all equal to the scrollbar lane's own width — and
+            // the lane itself, HALF the shell's, reserved on the right whether
+            // or not the list scrolls, so the frame reads the same guttered
+            // way empty or full. The glass chrome, the surface radius and the
+            // row's own hover and selected treatment stay the design
+            // system's.
+            float gutter = ActiveTheme.Scrollbar.GutterWidth * 0.5f;
+            float padding = gutter * scale;
             float labelSize = ActiveTheme.Typography.BodySize;
             var labelStyle = new TextStyle
             {
@@ -292,16 +295,11 @@ public static partial class Crystarium
             float widest = 0f;
             for (int i = 0; i < items.Count; i++)
                 widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
-            // Auto-fit: the widest name plus symmetric breath, the scroll
-            // gutter reserved only when the list actually scrolls, bounded by
-            // the menu's two widths so a long bone name cannot run off and a
-            // short one cannot read as a sliver.
-            bool scrolls = items.Count > ActiveTheme.Picker.MaximumRows;
+            // Auto-fit: the widest name between the left pad and the right
+            // lane, bounded by the menu's two widths so a long bone name
+            // cannot run off and a short one cannot read as a sliver.
             float width = Math.Clamp(
-                widest
-                    + ActiveTheme.Spacing.Four * 2f * scale
-                    + (scrolls ? ActiveTheme.Scrollbar.GutterWidth * scale : 0f)
-                    + padding * 2f,
+                widest + padding * 2f + ActiveTheme.Spacing.Two * scale,
                 ActiveTheme.Floating.MenuMinWidth * scale,
                 ActiveTheme.Floating.MenuWidth * scale);
             // The row box hugs its label: a couple of px of breath each side
@@ -322,7 +320,11 @@ public static partial class Crystarium
 
             ImGui.SetNextWindowPos(min);
             ImGui.SetNextWindowSize(max - min);
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding));
+            // Vertical padding only: the left inset is the cursor seat below,
+            // so the RIGHT edge stays the scroll lane's own — the box reads
+            // pad, names, lane, edge, with all three pads the lane's width.
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.WindowPadding, new Vector2(0f, padding));
             bool visible = ImGui.Begin(
                 id,
                 ImGuiWindowFlags.NoTitleBar
@@ -346,9 +348,10 @@ public static partial class Crystarium
                     max,
                     ActiveTheme.Radii.Surface);
                 ImGui.SetNextFrameWantCaptureMouse(true);
+                ImGui.SetCursorPosX(padding);
                 ScrollRegion(
                     $"{id}-rows",
-                    (width - padding * 2f) / scale,
+                    (width - padding) / scale,
                     (height - padding * 2f) / scale,
                     region =>
                     {
@@ -366,10 +369,10 @@ public static partial class Crystarium
                                     {
                                         Height = UiHeight.Fixed(rowHeight),
                                     },
-                                    labelSize: labelSize,
-                                    centerLabel: true))
+                                    labelSize: labelSize))
                                 clicked = i;
-                    });
+                    },
+                    gutterWidth: gutter);
                 Interactive.EndOwner(owner);
             }
             ImGui.End();
