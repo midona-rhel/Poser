@@ -60,7 +60,7 @@ public readonly record struct WorldAdoptionCandidate(
     WorldAdoptionKind Kind,
     string Name,
     Vector3 Position,
-    float DistanceFromPlayer,
+    float DistanceFromCamera,
     WorldActorCandidateId Actor = default,
     WorldLightCandidate Light = default,
     nint WorldObject = default);
@@ -101,12 +101,39 @@ public sealed class WorldAdoptionSource
     /// whatever the camera is actually looking at.</summary>
     public const float RangeYalms = 30f;
 
+    /// <summary>
+    /// Ktisis measures the adoption range FROM THE CAMERA, and horizontally —
+    /// <c>Ktisis/Interface/Overlay/SceneDraw.cs:326-334</c> builds a Vector2 of
+    /// the camera's X and Z and compares against the candidate's X and Z, and
+    /// the setting behind it is named <c>WorldCameraRange</c>
+    /// (<c>Data/Config/Sections/OverlayConfig.cs:32</c>). Both halves are
+    /// deliberate: the handles are for what you are LOOKING AT, not for what
+    /// you are standing near — in GPose the two are routinely a zone apart —
+    /// and a ground-plane radius keeps a balcony two floors up from vanishing
+    /// while its neighbour on your own floor stays.
+    ///
+    /// <para>The distance the discovery services hand over is from the PLAYER,
+    /// which is a different question (the spawn browser's list asks it, and is
+    /// right to). It is recomputed here, once, for all three classes: two
+    /// classes culling from one point while the third culls from another is
+    /// exactly the inconsistency one shared range is for.</para>
+    /// </summary>
+    private static float HorizontalDistance(Vector3 point, Vector3 camera)
+    {
+        float x = point.X - camera.X;
+        float z = point.Z - camera.Z;
+        return MathF.Sqrt((x * x) + (z * z));
+    }
+
     // The concrete discovery service, for the same reason the spawn browser
     // takes it: the import overload that hands the clone wrapper back — the
     // thing a pending-select needs — is not on the read port.
     private readonly Game.WorldActorDiscovery _worldActors;
     private readonly ILightingService _lighting;
     private readonly Game.WorldObjects.WorldObjectService _worldObjects;
+
+    // The point every handle's range is measured from. Never the player's.
+    private readonly ICameraService _camera;
 
     // Adopting a MAP object is a scene-lifecycle act with an exact inverse
     // (release-and-restore), so it goes through the seam that files one in the
@@ -129,6 +156,7 @@ public sealed class WorldAdoptionSource
         Game.WorldActorDiscovery worldActors,
         ILightingService lighting,
         Game.WorldObjects.WorldObjectService worldObjects,
+        ICameraService camera,
         Game.Scene.SceneLifecycleHistory lifecycle,
         StableBindingRegistry bindings,
         SelectionSession selection,
@@ -139,6 +167,7 @@ public sealed class WorldAdoptionSource
         _worldActors = worldActors;
         _lighting = lighting;
         _worldObjects = worldObjects;
+        _camera = camera;
         _lifecycle = lifecycle;
         _bindings = bindings;
         _selection = selection;
@@ -353,17 +382,19 @@ public sealed class WorldAdoptionSource
         // A class that is off is not enumerated at all: the filter is not a
         // draw-time skip over a listing nobody asked for — the enumeration is
         // the expensive half.
+        var eye = _camera.GetCameraPosition();
         if (ShowActors)
         {
             foreach (var actor in _worldActors.RefreshCandidates())
             {
-                if (actor.DistanceFromPlayer > RangeYalms)
+                float range = HorizontalDistance(actor.Position, eye);
+                if (range > RangeYalms)
                     continue;
                 _candidates.Add(new WorldAdoptionCandidate(
                     WorldAdoptionKind.Actor,
                     actor.Name,
                     actor.Position,
-                    actor.DistanceFromPlayer,
+                    range,
                     Actor: actor.Id));
             }
         }
@@ -372,29 +403,39 @@ public sealed class WorldAdoptionSource
         {
             foreach (var light in _lighting.GetWorldLightCandidates())
             {
-                if (light.DistanceFromPlayer > RangeYalms)
+                float range = HorizontalDistance(light.Position, eye);
+                if (range > RangeYalms)
                     continue;
                 _candidates.Add(new WorldAdoptionCandidate(
                     WorldAdoptionKind.Light,
                     "World light",
                     light.Position,
-                    light.DistanceFromPlayer,
+                    range,
                     Light: light));
             }
         }
 
-        if (!ShowWorldObjects)
-            return;
-        foreach (var worldObject in _worldObjects.GetCandidates())
+        if (ShowWorldObjects)
         {
-            if (worldObject.DistanceFromPlayer > RangeYalms)
-                continue;
-            _candidates.Add(new WorldAdoptionCandidate(
-                WorldAdoptionKind.WorldObject,
-                worldObject.Name,
-                worldObject.Position,
-                worldObject.DistanceFromPlayer,
-                WorldObject: worldObject.Address));
+            foreach (var worldObject in _worldObjects.GetCandidates())
+            {
+                float range = HorizontalDistance(worldObject.Position, eye);
+                if (range > RangeYalms)
+                    continue;
+                _candidates.Add(new WorldAdoptionCandidate(
+                    WorldAdoptionKind.WorldObject,
+                    worldObject.Name,
+                    worldObject.Position,
+                    range,
+                    WorldObject: worldObject.Address));
+            }
         }
+
+        // Nearest first, across all three classes together. The services each
+        // sort by their own distance-from-player, which is not the order these
+        // were culled in — and the nearest handle is the one a click between
+        // two overlapping dots should mean.
+        _candidates.Sort(static (left, right) =>
+            left.DistanceFromCamera.CompareTo(right.DistanceFromCamera));
     }
 }

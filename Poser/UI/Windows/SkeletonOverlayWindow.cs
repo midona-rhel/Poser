@@ -358,7 +358,7 @@ public class SkeletonOverlayWindow : Window
                 ScreenPos = viewportPos + screen,
                 CameraDistance = Vector3.Distance(
                     cameraPosition, candidate.Position),
-                Radius = AdoptRadius(candidate.DistanceFromPlayer),
+                Radius = AdoptRadius(candidate.DistanceFromCamera),
             });
         }
 
