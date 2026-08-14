@@ -230,6 +230,10 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
+        // The same port seen by address rather than by stable id: a clone has
+        // no binding yet at the moment it needs the source's collection.
+        services.AddSingleton<Game.Integration.ISpawnCollectionPort>(
+            sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
         services.AddSingleton<Application.Integration.ActorIntegrationSession>(sp =>
         {
             // The session owns the concrete McdfTransaction; the session

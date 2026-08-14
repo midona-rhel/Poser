@@ -28,7 +28,7 @@ namespace Poser.Game.Integration;
 /// 0f3dfba (API 6.x). Glamourer flag words: Once 0x1, Equipment 0x2,
 /// Customization 0x4, Lock 0x8.
 /// </summary>
-public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
+public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnCollectionPort
 {
     /// <summary>Poser's Glamourer lock key ("POSR"). Passing it on every
     /// state call succeeds on unlocked and Poser-locked states and fails
@@ -481,6 +481,57 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
                     $"The actor did not finish redrawing within {timeout.TotalSeconds:0} seconds.");
             await Task.Delay(100, CancellationToken.None);
         }
+    }
+
+    // ── Penumbra: spawn collection inheritance ───────────────────────────
+
+    public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
+        Guarded(Penumbra, "Inherit collection", () =>
+        {
+            if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
+                return refusal;
+            // The source's EFFECTIVE collection: Penumbra answers the
+            // individual assignment when there is one and the collection it
+            // actually resolves otherwise, which is what "looks the same"
+            // means. A temporary collection from another plugin (a Mare
+            // sync, say) answers here too but is not in Penumbra's storage,
+            // so the assignment below refuses with CollectionMissing rather
+            // than silently half-applying.
+            var (valid, _, (id, name)) =
+                _getCollectionForObject.InvokeFunc(IndexOf(sourceAddress));
+            if (!valid)
+                return IntegrationPortResult.Fail(
+                    "Penumbra cannot identify the actor this clone was copied from.");
+            var (ec, _) = _setCollectionForObject.InvokeFunc(
+                IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
+            return PenumbraResult(ec, $"assigning the source's collection \"{name}\" to the clone");
+        });
+
+    public IntegrationPortResult ReleaseCollection(nint cloneAddress) =>
+        Guarded(Penumbra, "Release collection", () =>
+        {
+            if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
+                return refusal;
+            // Null collection with allowDelete removes Poser's individual
+            // assignment outright; NothingChanged means it is already gone,
+            // which is a completed release.
+            var (ec, _) = _setCollectionForObject.InvokeFunc(
+                IndexOf(cloneAddress), null, /*allowCreateNew*/ false, /*allowDelete*/ true);
+            return PenumbraResult(ec, "releasing the clone's collection assignment");
+        });
+
+    /// <summary>The shared preconditions of the address-addressed calls: the
+    /// framework thread, and two addresses that are actually objects. The
+    /// stable-id calls get both from actor resolution, which by definition
+    /// cannot run for a clone that has no binding yet.</summary>
+    private IntegrationPortResult? AddressPair(nint first, nint second)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return IntegrationPortResult.Fail(
+                "External integration calls must run on the framework thread.");
+        return first == nint.Zero || second == nint.Zero
+            ? IntegrationPortResult.Fail("The clone or its source has no address.")
+            : null;
     }
 
     // ── Glamourer ────────────────────────────────────────────────────────

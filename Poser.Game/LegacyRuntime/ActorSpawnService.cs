@@ -9,7 +9,9 @@ using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Poser.Core;
 using Poser.Domain.Companions;
+using Poser.Domain.Integration;
 using Poser.Entities;
+using Poser.Game.Integration;
 using Poser.Services;
 
 namespace Poser.Game;
@@ -141,6 +143,12 @@ internal sealed class SpawnOwnershipRecord
     public bool Visible { get; private set; } = true;
     public SpawnOwnershipState State { get; private set; } = SpawnOwnershipState.PendingCreate;
 
+    /// <summary>Whether the spawn assigned this clone a Penumbra collection.
+    /// It is ownership, not appearance state: only a record that took the
+    /// assignment is allowed to release one, so a foreign assignment on a
+    /// reused identifier is never deleted on our behalf.</summary>
+    public bool CollectionAssigned { get; private set; }
+
     /// <summary>Adopts an identity resolved for <see cref="CreatedIndex"/>.
     /// The slot check is an invariant assertion, not a policy: the adapter
     /// resolves BY that slot, so a differing slot means the descriptor was
@@ -167,6 +175,9 @@ internal sealed class SpawnOwnershipRecord
         Actor = actor;
         BoundId = actor.Id;
     }
+
+    public void MarkCollectionAssigned() => CollectionAssigned = true;
+    public void MarkCollectionReleased() => CollectionAssigned = false;
 
     public void MarkPending() => State = SpawnOwnershipState.PendingDelete;
     public void MarkNonRecoverable() => State = SpawnOwnershipState.NonRecoverable;
@@ -729,7 +740,9 @@ internal static class SpawnOwnershipCleanup
     public static bool TryDelete(
         SpawnOwnershipLedger ledger,
         IActorSpawnNativeAdapter native,
-        SpawnOwnershipRecord ownership)
+        SpawnOwnershipRecord ownership,
+        ISpawnCollectionPort? collections = null,
+        IPluginLog? log = null)
     {
         try
         {
@@ -743,9 +756,18 @@ internal static class SpawnOwnershipCleanup
 
             var current = native.ResolveByIndex(ownership.Descriptor.Value.Index);
             if (current is null)
+            {
+                if (ownership.CollectionAssigned)
+                    log?.Warning(
+                        $"ActorSpawnService: the clone at index {ownership.CreatedIndex} was already gone, so its Penumbra collection assignment could not be released");
                 return ledger.TryRetire(ownership);
+            }
             if (current.Value != ownership.Descriptor.Value)
                 return false;
+            // Released against the PROVEN identity and on the last frame it
+            // still exists: Penumbra keys the assignment on the object's own
+            // identifier, so after the delete there is nothing left to name.
+            ReleaseCollection(ownership, collections, log);
             if (!native.DeleteExact(ownership.Descriptor.Value))
                 return false;
             return ledger.TryRetire(ownership);
@@ -753,6 +775,32 @@ internal static class SpawnOwnershipCleanup
         catch
         {
             return false;
+        }
+    }
+
+    private static void ReleaseCollection(
+        SpawnOwnershipRecord ownership,
+        ISpawnCollectionPort? collections,
+        IPluginLog? log)
+    {
+        if (!ownership.CollectionAssigned || collections is null)
+            return;
+        try
+        {
+            var released = collections.ReleaseCollection(ownership.Descriptor!.Value.Address);
+            if (released.Success)
+                ownership.MarkCollectionReleased();
+            else
+                log?.Warning(
+                    $"ActorSpawnService: the clone's Penumbra collection assignment was not released: {released.Detail}");
+        }
+        catch (Exception ex)
+        {
+            // A failing external call never blocks the delete: the object
+            // has to go either way, and the leftover assignment is named
+            // after the clone, not after anything the user owns.
+            log?.Warning(
+                $"ActorSpawnService: releasing the clone's Penumbra collection assignment failed: {ex.Message}");
         }
     }
 }
@@ -776,6 +824,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private readonly bool _ownsAdapter;
 
     private readonly IActorSpawnNativeAdapter _native;
+    private readonly ISpawnCollectionPort? _collections;
     private readonly Action<SpawnOwnershipRecord, nint, int, string?> _applySpawnMutations;
     private readonly SpawnOwnershipLedger _ownership = new();
 
@@ -801,7 +850,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         IPluginLog log,
         IFramework framework,
         ISigScanner sigScanner,
-        IGameInteropProvider hooking)
+        IGameInteropProvider hooking,
+        ISpawnCollectionPort collections)
         : this(
             gPoseService,
             actorManager,
@@ -813,6 +863,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
             null,
             address => ExpectedWrapperIdentity(objectTable, address),
             null,
+            collections,
             ownsAdapter: true)
     {
     }
@@ -828,9 +879,11 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Action<SpawnOwnershipRecord, nint, int, string?>? applySpawnMutations = null,
         Func<nint, EntityId?>? expectedWrapperIdentity = null,
         Func<long>? clock = null,
+        ISpawnCollectionPort? collections = null,
         bool ownsAdapter = false)
     {
         _framework = framework;
+        _collections = collections;
         _gPoseService = gPoseService;
         _actorManager = actorManager;
         _eventBus = eventBus;
@@ -1039,6 +1092,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 sourceAddress,
                 modelCharaId,
                 name ?? ToPoserName(descriptor.Value.Index));
+            InheritSourceCollection(ownership, sourceAddress, descriptor.Value);
             DrawWhenReady(ownership, descriptor.Value);
 
             _log?.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
@@ -1254,7 +1308,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
     private bool TryDelete(SpawnOwnershipRecord ownership)
     {
-        var result = SpawnOwnershipCleanup.TryDelete(_ownership, _native, ownership);
+        var result = SpawnOwnershipCleanup.TryDelete(
+            _ownership, _native, ownership, _collections, _log);
         if (!result)
             _log?.Warning($"ActorSpawnService: Exact delete pending at index {ownership.CreatedIndex}");
         return result;
@@ -1311,6 +1366,51 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         // The draw is NOT started here: see DrawWhenReady, which the spawn
         // transaction runs once the mutations are done.
+    }
+
+    /// <summary>
+    /// The clone wears the source's MODS, not just its raw appearance.
+    /// Penumbra resolves a GPose actor through the parent index its
+    /// CopyCharacter hook recorded (Penumbra CutsceneService.cs:123-130), and
+    /// the second, self-directed CharacterSetup copy above points that parent
+    /// at the clone itself — so the clone resolves under its own name and
+    /// inherits nothing. Brio's clone path never repairs that (its
+    /// ActorSpawnService.cs:108-172 makes no Penumbra call at all) and leaves
+    /// the user to pick a collection by hand afterwards
+    /// (Brio ActorAppearanceCapability.cs:210-235); Poser copies the source's
+    /// effective collection instead.
+    ///
+    /// It runs INSIDE the deferred-draw window, before the draw object is
+    /// ever built, which is the same window the copy itself needs. A refusal
+    /// is reported and never fails the spawn: an unmodded clone is still a
+    /// clone. The self-copy is also what makes this safe — without it the
+    /// assignment would land on the SOURCE's identifier and rewrite the
+    /// user's own character collection.
+    /// </summary>
+    private void InheritSourceCollection(
+        SpawnOwnershipRecord ownership,
+        nint sourceAddress,
+        SpawnNativeDescriptor descriptor)
+    {
+        if (_collections is null || sourceAddress == nint.Zero)
+            return;
+        EnsureCurrent(ownership);
+        IntegrationPortResult result;
+        try
+        {
+            result = _collections.InheritCollection(sourceAddress, descriptor.Address);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning(
+                $"ActorSpawnService: the clone could not inherit the source's Penumbra collection: {ex.Message}");
+            return;
+        }
+        if (result.Success)
+            ownership.MarkCollectionAssigned();
+        else
+            _log?.Warning(
+                $"ActorSpawnService: the clone could not inherit the source's Penumbra collection: {result.Detail}");
     }
 
     /// <summary>

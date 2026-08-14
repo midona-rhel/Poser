@@ -4,7 +4,9 @@ using Dalamud.Plugin.Services;
 using Poser.Entities;
 using Poser.Core;
 using Poser.Domain.Companions;
+using Poser.Domain.Integration;
 using Poser.Game;
+using Poser.Game.Integration;
 using Poser.Services;
 
 namespace Poser.Game.Tests.LegacyRuntime;
@@ -215,6 +217,159 @@ public sealed class ActorSpawnServiceOwnershipTests
 
         Assert.Equal(new[] { actor.Address }, copiedFrom.ToArray());
         Assert.True(native.DrawEnabled);
+    }
+
+    // ── clone mods: the appearance copy carries the source's BODY, never its
+    // Penumbra collection — Penumbra resolves a GPose actor through the parent
+    // index its CopyCharacter hook recorded (Penumbra CutsceneService.cs:123-
+    // 130) and the second, self-directed copy points that at the clone itself.
+    // Brio never repairs this (ActorSpawnService.cs:108-172 makes no Penumbra
+    // call) and sells the fix as a manual picker (ActorAppearanceCapability
+    // .cs:210-235). Poser assigns the source's effective collection instead,
+    // and owes the release.
+
+    [Fact]
+    public void A_clone_inherits_the_sources_collection_before_it_ever_draws()
+    {
+        var actor = Actor(0x8A1);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A1, actor.Address, 0x8A1)) { ReadyToDraw = false };
+        var framework = new FakeFramework();
+        var collections = new FakeCollections
+        {
+            // The assignment has to land while the draw object still does not
+            // exist; that window is the whole point of the deferred draw.
+            OnInherit = () => Assert.Null(native.DrawEnabled),
+        };
+        using var service = NewService(
+            native, manager, framework: framework, collections: collections);
+
+        Assert.Same(actor, service.CloneActor(actor));
+
+        Assert.Equal(
+            new[] { (actor.Address, actor.Address) },
+            collections.Inherited.ToArray());
+        Assert.Empty(collections.Released);
+        Assert.True(Assert.Single(service.OwnershipSnapshot).CollectionAssigned);
+    }
+
+    [Fact]
+    public void Destroying_a_clone_releases_the_collection_it_was_given()
+    {
+        var actor = Actor(0x8A2);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A2, actor.Address, 0x8A2));
+        var collections = new FakeCollections();
+        using var service = NewService(native, manager, collections: collections);
+
+        Assert.Same(actor, service.CloneActor(actor));
+        Assert.True(service.DestroyActor(actor));
+
+        // Released against the proven identity, on the last frame the clone
+        // still existed — Penumbra keys the assignment on the object.
+        Assert.Equal(new[] { actor.Address }, collections.Released.ToArray());
+        Assert.Empty(service.OwnershipSnapshot);
+    }
+
+    [Fact]
+    public void Leaving_gpose_releases_the_collection_of_every_clone_it_destroys()
+    {
+        var actor = Actor(0x8A3);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A3, actor.Address, 0x8A3));
+        var bus = new FakeEventBus();
+        var collections = new FakeCollections();
+        using var service = NewService(native, manager, bus: bus, collections: collections);
+
+        Assert.Same(actor, service.CloneActor(actor));
+        bus.Publish(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(new[] { actor.Address }, collections.Released.ToArray());
+        Assert.Empty(service.OwnershipSnapshot);
+
+        // The release is not repeated for a record that no longer exists.
+        bus.Publish(new GPoseStateChangedEvent(false));
+        Assert.Single(collections.Released);
+    }
+
+    [Fact]
+    public void A_collection_that_could_not_be_assigned_is_never_released()
+    {
+        var actor = Actor(0x8A4);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A4, actor.Address, 0x8A4));
+        var log = new RecordingLog();
+        var collections = new FakeCollections
+        {
+            InheritFailure = "Penumbra failed assigning the collection (code 2).",
+        };
+        using var service = NewService(
+            native, manager, collections: collections, log: log.Proxy());
+
+        // An unmodded clone is still a clone: the spawn stands and draws.
+        Assert.Same(actor, service.CloneActor(actor));
+        Assert.True(native.DrawEnabled);
+        Assert.False(Assert.Single(service.OwnershipSnapshot).CollectionAssigned);
+        Assert.Contains(log.Warnings, w => w.Contains("inherit"));
+
+        // Nothing was taken, so nothing is deleted out from under whatever
+        // assignment the identifier may already carry.
+        Assert.True(service.DestroyActor(actor));
+        Assert.Empty(collections.Released);
+    }
+
+    [Fact]
+    public void A_faulting_collection_port_takes_down_neither_the_spawn_nor_the_delete()
+    {
+        var actor = Actor(0x8A5);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A5, actor.Address, 0x8A5));
+        var log = new RecordingLog();
+        var collections = new FakeCollections { ThrowOnInherit = true };
+        using var service = NewService(
+            native, manager, collections: collections, log: log.Proxy());
+
+        Assert.Same(actor, service.CloneActor(actor));
+        Assert.False(Assert.Single(service.OwnershipSnapshot).CollectionAssigned);
+
+        // A throwing release is equally powerless: the object still goes.
+        collections.ThrowOnInherit = false;
+        collections.ThrowOnRelease = true;
+        var second = Actor(0x8A6);
+        var secondManager = new FakeActorManager(second);
+        var secondNative = new FakeNative(new(0x8A6, second.Address, 0x8A6));
+        using var secondService = NewService(
+            secondNative, secondManager, collections: collections, log: log.Proxy());
+
+        Assert.Same(second, secondService.CloneActor(second));
+        Assert.True(secondService.DestroyActor(second));
+        Assert.Empty(secondService.OwnershipSnapshot);
+        Assert.Single(secondNative.Deleted);
+    }
+
+    [Fact]
+    public void A_release_that_fails_keeps_the_assignment_owned_for_the_readout()
+    {
+        var actor = Actor(0x8A7);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(0x8A7, actor.Address, 0x8A7));
+        var log = new RecordingLog();
+        var collections = new FakeCollections
+        {
+            ReleaseFailure = "Penumbra failed releasing the assignment (code 7).",
+        };
+        using var service = NewService(
+            native, manager, collections: collections, log: log.Proxy());
+
+        Assert.Same(actor, service.CloneActor(actor));
+        var record = Assert.Single(service.OwnershipSnapshot);
+
+        // The delete is never blocked by an external refusal, but the failure
+        // is said out loud rather than swallowed.
+        Assert.True(service.DestroyActor(actor));
+        Assert.Single(collections.Released);
+        Assert.True(record.CollectionAssigned);
+        Assert.Contains(log.Warnings, w => w.Contains("not released"));
     }
 
     [Fact]
@@ -1311,7 +1466,8 @@ public sealed class ActorSpawnServiceOwnershipTests
         FakeEventBus? bus = null,
         Func<long>? clock = null,
         Func<nint, EntityId?>? expectedIdentity = null,
-        IPluginLog? log = null) =>
+        IPluginLog? log = null,
+        FakeCollections? collections = null) =>
         new(
             new FakeGPoseService(),
             manager ?? new FakeActorManager(),
@@ -1322,10 +1478,53 @@ public sealed class ActorSpawnServiceOwnershipTests
             framework,
             mutate ?? ((_, _, _, _) => { }),
             expectedIdentity ?? (address => new EntityId($"test-{address}")),
-            clock);
+            clock,
+            collections);
 
     private static void ThrowNativeDelete() =>
         throw new InvalidOperationException("native delete");
+
+    /// <summary>
+    /// A faithful <see cref="ISpawnCollectionPort"/>: it records the exact
+    /// address pairs it was handed, answers with the port's own result type,
+    /// and — like the real Penumbra boundary — can refuse or throw without
+    /// being allowed to take the spawn or the delete down with it.
+    /// </summary>
+    private sealed class FakeCollections : ISpawnCollectionPort
+    {
+        public List<(nint Source, nint Clone)> Inherited { get; } = new();
+        public List<nint> Released { get; } = new();
+
+        public string? InheritFailure { get; set; }
+        public string? ReleaseFailure { get; set; }
+        public bool ThrowOnInherit { get; set; }
+        public bool ThrowOnRelease { get; set; }
+
+        /// <summary>Observed by the spawn transaction to prove the
+        /// assignment lands inside the deferred-draw window.</summary>
+        public Action? OnInherit { get; set; }
+
+        public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress)
+        {
+            if (ThrowOnInherit)
+                throw new InvalidOperationException("penumbra inherit");
+            OnInherit?.Invoke();
+            Inherited.Add((sourceAddress, cloneAddress));
+            return InheritFailure is { } detail
+                ? IntegrationPortResult.Fail(detail)
+                : IntegrationPortResult.Ok();
+        }
+
+        public IntegrationPortResult ReleaseCollection(nint cloneAddress)
+        {
+            if (ThrowOnRelease)
+                throw new InvalidOperationException("penumbra release");
+            Released.Add(cloneAddress);
+            return ReleaseFailure is { } detail
+                ? IntegrationPortResult.Fail(detail)
+                : IntegrationPortResult.Ok();
+        }
+    }
 
     /// <summary>Records Error/Warning message strings off an IPluginLog proxy,
     /// so "said once, not once per frame" is an assertion.</summary>
