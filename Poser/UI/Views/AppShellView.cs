@@ -425,6 +425,32 @@ public static class AppShellView
             // floating surface calls (user 2026-08-11: one chrome everywhere).
             Crystarium.FloatingSurface.DrawChrome(dl, min, max, radius);
 
+            // Attached, the workspace is a WELL: the one column the window's
+            // glass shows through, framed by a panel on either side — the
+            // sidebar's chassis and the rail's. Detached, the sidebar is a
+            // window of its own, so the workspace becomes the window's own
+            // left column and the frame is gone: the glass' backdrop bleed
+            // stood against the rail's flat panel instead of between two of
+            // them, and the left half of the window read brighter than its
+            // right (user 2026-08-14: "you should be using the same colour
+            // that the inspector has on the RIGHT side, on the left side").
+            // It therefore takes the RAIL'S OWN token, in one pass from the
+            // titlebar to the window's bottom, so the column is one material
+            // top to bottom exactly as the sidebar's and the rail's are.
+            if (vm.Detached && !vm.Collapsed)
+            {
+                float panelRail = vm.DrawRail != null ? RailWidth * s : 0f;
+                dl.AddRectFilled(
+                    min,
+                    new Vector2(max.X - panelRail, max.Y),
+                    U32(Crystarium.ActiveTheme.SurfaceRaised),
+                    radius * s,
+                    panelRail > 0f
+                        ? ImDrawFlags.RoundCornersTopLeft
+                            | ImDrawFlags.RoundCornersBottomLeft
+                        : ImDrawFlags.RoundCornersAll);
+            }
+
             SyncKeybindHelp();
             DrawTitlebar(vm, min, max, s, dl);
 
@@ -486,7 +512,10 @@ public static class AppShellView
         // below wear the same second coat, and the bar over the workspace
         // wears the window's own single coat. Collapsed and detached have no
         // sidebar cell, so the bar is the workspace's the whole way across and
-        // paints nothing — the strip those two states used to lay edge to edge
+        // paints nothing HERE — detached, the workspace column already laid
+        // its own tone through this band in Draw, which is what keeps a column
+        // one material from the bar to the window's bottom edge. The strip
+        // those two states used to lay edge to edge instead
         // stacked the same translucent fill on itself, which reads flat
         // instead of glass and, over a dark backdrop, brighter than the window
         // it sits on; its rounded BOTTOM corners also scalloped that band away
