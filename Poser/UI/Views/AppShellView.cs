@@ -49,16 +49,6 @@ public sealed class ShellSidebarRow
     public bool CameraLive;
     public bool CameraLocked;
 
-    /// <summary>A WORLD class row's one action slot: the eye deciding whether
-    /// that class of addable world thing draws its handle. The row is not an
-    /// entity — nothing selects — so the row body throws the same eye.
-    /// </summary>
-    public bool WorldClassActions;
-    public bool WorldClassOn;
-    /// <summary>The class row's two hover cards, minted with the row: a warm
-    /// sidebar frame states help, so it must not build the sentence.</summary>
-    public string WorldClassShowHelp = "";
-    public string WorldClassHideHelp = "";
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
     /// <summary>Last child of its parent → curved-L branch instead of T.</summary>
@@ -82,6 +72,31 @@ public sealed class ShellSidebarSection
     public List<ShellSidebarRow> Rows = new();
 }
 
+/// <summary>
+/// One class of thing the world holds that the scene does not, as the footer
+/// states it: a glyph that is lit while that class marks the world with
+/// clickable handles and faded while it does not.
+///
+/// <para>The classes were rows under a WORLD section once. They are not scene
+/// entities — nothing selects, nothing expands — so a tree row was the wrong
+/// shape for them, and the section existed only to hold them (user 2026-08-15:
+/// "you have actors and world as options under World — put that at the footer
+/// instead"). The footer is where the shell states what is TRUE right now, and
+/// which classes are marked is exactly that.</para>
+/// </summary>
+public sealed class ShellWorldClass
+{
+    public TablerIcon Icon = TablerIcon.Circle;
+    public bool On;
+    /// <summary>The two hover cards, minted with the class: a warm frame states
+    /// help, so it must not build the sentence.</summary>
+    public string ShowHelp = "";
+    public string HideHelp = "";
+    /// <summary>The ImGui seat, stable across frames and distinct per class.
+    /// </summary>
+    public string Id = "";
+}
+
 public sealed class ShellTab
 {
     public string Label = "";
@@ -97,6 +112,10 @@ public sealed class AppShellViewModel
     public string SidebarSearch = "";
     public string StatusLeft = "2 actors";
     public string StatusRight = "142 bones · 60 fps";
+
+    /// <summary>The world-adoption classes, in the source's own order. Retained
+    /// by the binder and restated in place, never rebuilt per frame.</summary>
+    public List<ShellWorldClass> WorldClasses = new();
 
     public List<ShellTab> Tabs = new();
 
@@ -245,10 +264,9 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
-    /// <summary>A WORLD class row's eye: show or hide that class of addable
-    /// world thing. The row body raises it too — the row IS the toggle.
-    /// </summary>
-    public Action<ShellSidebarRow>? OnWorldClassToggle;
+    /// <summary>A footer world-class glyph was clicked, told its index into
+    /// <see cref="WorldClasses"/>.</summary>
+    public Action<int>? OnWorldClassToggle;
     /// <summary>A row's overlay state as one of three: 0 none, 1 partial,
     /// 2 all — <c>OverlayVisibility</c>'s declaration order. The eye reads
     /// three states because a category row covers many bones and "some of
@@ -408,6 +426,11 @@ public static class AppShellView
     public static float RowHeight => Crystarium.ActiveTheme.Controls.ListRowHeight;
     public static float ToolbarHeight => Crystarium.ActiveTheme.Shell.ToolbarHeight;
     public static float StatusbarHeight => Crystarium.ActiveTheme.Shell.StatusbarHeight;
+
+    /// <summary>The sidebar's whole footer: the world-class band over the
+    /// status band. Two bands of the one height, so a glyph sits in its band
+    /// exactly as the live dot sits in the one below.</summary>
+    public static float FooterHeight => StatusbarHeight * 2f;
     public static float ScrollbarWidth => Crystarium.ActiveTheme.Scrollbar.GutterWidth;
     public static float ScrollbarRadius => Crystarium.ActiveTheme.Scrollbar.Radius;
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
@@ -1008,23 +1031,64 @@ public static class AppShellView
             new Vector2(max.X - rule, min.Y), max, U32(BorderPrimary));
 
         float bodyRight = max.X - rule;
-        float statusTop = max.Y - StatusbarHeight * s;
+        float footerTop = max.Y - FooterHeight * s;
         // The search band and the tree; the chassis, the divider rule and the
-        // status bar are the shell's.
+        // footer are the shell's.
         Sidebar.Draw(
             vm,
             min,
             new Vector2(
                 max.X - min.X,
-                statusTop - theme.Spacing.One * s - min.Y));
+                footerTop - theme.Spacing.One * s - min.Y));
 
         dl.AddRectFilled(
-            new Vector2(min.X, statusTop),
-            new Vector2(bodyRight, statusTop + rule),
+            new Vector2(min.X, footerTop),
+            new Vector2(bodyRight, footerTop + rule),
             U32(BorderSecondary));
-        DrawStatusbar(
-            vm, new Vector2(min.X, statusTop + rule),
+        DrawFooter(
+            vm, new Vector2(min.X, footerTop + rule),
             new Vector2(bodyRight, max.Y), s, dl);
+    }
+
+    /// <summary>The sidebar's footer: the world-class glyph band, then the
+    /// status band — actor count and frame rate.</summary>
+    private static void DrawFooter(
+        AppShellViewModel vm, Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
+    {
+        float split = max.Y - StatusbarHeight * s;
+        DrawWorldClasses(vm, min, new Vector2(max.X, split), s);
+        DrawStatusbar(vm, new Vector2(min.X, split), max, s, dl);
+    }
+
+    /// <summary>The world-adoption classes as lit-or-faded glyphs, on the
+    /// status band's own left inset. Faded is off — the one engaged/faded
+    /// language every action glyph in the shell speaks.</summary>
+    private static void DrawWorldClasses(
+        AppShellViewModel vm, Vector2 min, Vector2 max, float s)
+    {
+        if (vm.WorldClasses.Count == 0)
+            return;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.SwitchHeight;
+        float step = (side + theme.Page.ActionGap) * s;
+        float y = min.Y + (max.Y - min.Y - side * s) * 0.5f;
+        float x = min.X + StatusInset * s;
+        for (int i = 0; i < vm.WorldClasses.Count; i++)
+        {
+            var entry = vm.WorldClasses[i];
+            ImGui.SetCursorScreenPos(new Vector2(x, y));
+            // Captured per glyph: the callback outlives this loop iteration.
+            int index = i;
+            if (Crystarium.TemporaryIconToggle(
+                    entry.Icon,
+                    selected: false,
+                    style: ControlStyle.Square(side),
+                    help: entry.On ? entry.HideHelp : entry.ShowHelp,
+                    id: entry.Id,
+                    dimmed: !entry.On))
+                vm.OnWorldClassToggle?.Invoke(index);
+            x += step;
+        }
     }
 
     /// <summary>Status information only: actor count and frame rate.</summary>
@@ -1292,19 +1356,19 @@ public static class AppShellView
         var theme = Crystarium.ActiveTheme;
         var dl = ImGui.GetWindowDrawList();
         float rule = 1f * s;
-        float statusTop = max.Y - StatusbarHeight * s;
+        float footerTop = max.Y - FooterHeight * s;
         Sidebar.Draw(
             vm,
             min,
             new Vector2(
                 max.X - min.X,
-                statusTop - theme.Spacing.One * s - min.Y));
+                footerTop - theme.Spacing.One * s - min.Y));
         dl.AddRectFilled(
-            new Vector2(min.X, statusTop),
-            new Vector2(max.X, statusTop + rule),
+            new Vector2(min.X, footerTop),
+            new Vector2(max.X, footerTop + rule),
             U32(BorderSecondary));
-        DrawStatusbar(
-            vm, new Vector2(min.X, statusTop + rule), max, s, dl);
+        DrawFooter(
+            vm, new Vector2(min.X, footerTop + rule), max, s, dl);
     }
 
     // ── shared seats ─────────────────────────────────────────────────────

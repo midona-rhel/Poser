@@ -20,6 +20,20 @@ public enum WorldAdoptionKind
     Light,
 }
 
+/// <summary>The kinds this source can actually list, in the order the shell
+/// states them. Declared beside the enum rather than read off it: the enum
+/// names what a candidate CAN be, and a lane that has no discovery behind it
+/// yet would draw a glyph that cannot change anything (world props are the
+/// pending one). A lane becomes a footer glyph by landing here.</summary>
+public static class WorldAdoptionClasses
+{
+    public static readonly WorldAdoptionKind[] All =
+    [
+        WorldAdoptionKind.Actor,
+        WorldAdoptionKind.Light,
+    ];
+}
+
 /// <summary>
 /// One thing in the world that is NOT in the scene yet, as a pointer-free row
 /// for the overlay: a world point to project, a name to say, and exactly one
@@ -83,8 +97,6 @@ public sealed class WorldAdoptionSource
     private readonly IPluginLog _log;
 
     private readonly List<WorldAdoptionCandidate> _candidates = new();
-    private int _actorCount;
-    private int _lightCount;
     private long _nextRefreshMs;
     private IActor? _pendingSelectActor;
     private ILight? _pendingSelectLight;
@@ -153,19 +165,11 @@ public sealed class WorldAdoptionSource
         ShowActors = false;
         ShowLights = false;
         _candidates.Clear();
-        _actorCount = 0;
-        _lightCount = 0;
     }
 
     /// <summary>The current listing, nearest first. Empty whenever every class
     /// is off, so nothing is enumerated for a hidden layer.</summary>
     public IReadOnlyList<WorldAdoptionCandidate> Candidates => _candidates;
-
-    /// <summary>How many of one class the last listing offered — the number
-    /// the sidebar's class row badges. Zero while that class is off, because
-    /// nothing was enumerated for it.</summary>
-    public int CountOf(WorldAdoptionKind kind) =>
-        kind == WorldAdoptionKind.Light ? _lightCount : _actorCount;
 
     /// <summary>Pumped once per overlay frame: re-lists on the cadence and
     /// finishes any adoption whose entity the scene has now bound.</summary>
@@ -175,8 +179,6 @@ public sealed class WorldAdoptionSource
         if (!Enabled)
         {
             _candidates.Clear();
-            _actorCount = 0;
-            _lightCount = 0;
             return;
         }
         long now = Environment.TickCount64;
@@ -271,8 +273,6 @@ public sealed class WorldAdoptionSource
     private void Refresh()
     {
         _candidates.Clear();
-        _actorCount = 0;
-        _lightCount = 0;
         // A class that is off is not enumerated at all: the filter is not a
         // draw-time skip over a listing nobody asked for — the enumeration is
         // the expensive half.
@@ -288,7 +288,6 @@ public sealed class WorldAdoptionSource
                     actor.Position,
                     actor.DistanceFromPlayer,
                     Actor: actor.Id));
-                _actorCount++;
             }
         }
 
@@ -304,7 +303,6 @@ public sealed class WorldAdoptionSource
                 light.Position,
                 light.DistanceFromPlayer,
                 Light: light));
-            _lightCount++;
         }
     }
 }

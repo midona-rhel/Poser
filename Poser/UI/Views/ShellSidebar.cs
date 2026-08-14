@@ -272,7 +272,6 @@ public sealed class ShellSidebar
                     row.ActorActions ? 4
                         : row.CameraActions ? 2
                         : row.LightActions ? 2
-                        : row.WorldClassActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -749,25 +748,6 @@ public sealed class ShellSidebar
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
-                return;
-            }
-
-            // One slot, the light eye's twin: whether this CLASS of addable
-            // world thing marks the world at all. Faded when hidden — the one
-            // engaged/faded language every action slot speaks.
-            if (row.WorldClassActions)
-            {
-                ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
-                        TablerIcon.Eye,
-                        selected: false,
-                        style: square,
-                        help: row.WorldClassOn
-                            ? row.WorldClassHideHelp
-                            : row.WorldClassShowHelp,
-                        id: "##world-class",
-                        dimmed: !row.WorldClassOn))
-                    _vm.OnWorldClassToggle?.Invoke(row);
                 return;
             }
 

@@ -241,49 +241,59 @@ public class MainWindow : Window
     };
 
     /// <summary>
-    /// The world the scene was made in, seated under everything the scene
-    /// holds: the entry point for ADDING to the tree above it. Its plus opens
-    /// the spawn browser's World tab like every other section plus opens its
-    /// own; its rows are the adoptable CLASSES, and each class's eye decides
-    /// whether that class marks the world with handles you can click.
+    /// The world-adoption classes as the FOOTER states them: one lit-or-faded
+    /// glyph each, retained with their kind because they carry no per-scene
+    /// data at all — a warm frame restates the lit flag and never rebuilds
+    /// them.
     ///
-    /// <para>Props are absent rather than inert: nothing upstream can adopt a
-    /// world prop yet, and a checkbox that cannot change anything is chrome
-    /// pretending to be a control (user 2026-08-14). The list gains the row
-    /// when the adoption does.</para>
+    /// <para>These were rows under a WORLD section, and the section held
+    /// nothing else (user 2026-08-15: "you have actors and world as options
+    /// under World — put that at the footer instead"). A class is not a scene
+    /// entity: nothing selects it, nothing expands under it, and a tree row
+    /// promises both. The footer is where the shell says what is true right
+    /// now, and which classes are marking the world is exactly that.</para>
+    ///
+    /// <para>World props are ABSENT rather than faded-forever: nothing
+    /// upstream can adopt one yet, and a glyph that cannot change anything is
+    /// chrome pretending to be a control (user 2026-08-14). The set comes from
+    /// <see cref="WorldAdoptionClasses.All"/>, so the lane arrives here the
+    /// day its discovery does.</para>
     /// </summary>
-    private readonly ShellSidebarSection _worldSection = new()
-    {
-        Title = "WORLD",
-        ShowPlus = true,
-    };
+    private readonly (WorldAdoptionKind Kind, ShellWorldClass Entry)[]
+        _worldClasses = BuildWorldClasses();
 
-    /// <summary>The two class rows, retained with their kind: they carry no
-    /// per-scene data at all, so a warm frame restates their eye and their
-    /// count and never rebuilds them.</summary>
-    private readonly (WorldAdoptionKind Kind, ShellSidebarRow Row)[] _worldRows =
-    [
-        (WorldAdoptionKind.Actor, new ShellSidebarRow
-        {
-            Label = "Actors",
-            Icon = TablerIcon.User,
-            WorldClassActions = true,
-            WorldClassShowHelp =
-                "Mark the world's addable actors — click a mark to clone it "
-                + "into the scene",
-            WorldClassHideHelp = "Stop marking the world's addable actors",
-        }),
-        (WorldAdoptionKind.Light, new ShellSidebarRow
-        {
-            Label = "Lights",
-            Icon = TablerIcon.Bulb,
-            WorldClassActions = true,
-            WorldClassShowHelp =
-                "Mark the world's addable lights — click a mark to take it "
-                + "into the scene",
-            WorldClassHideHelp = "Stop marking the world's addable lights",
-        }),
-    ];
+    private static (WorldAdoptionKind, ShellWorldClass)[] BuildWorldClasses()
+    {
+        var classes = WorldAdoptionClasses.All;
+        var built = new (WorldAdoptionKind, ShellWorldClass)[classes.Length];
+        for (int i = 0; i < classes.Length; i++)
+            built[i] = (classes[i], WorldClassEntry(classes[i]));
+        return built;
+    }
+
+    /// <summary>One class's glyph and its two hover cards. Minted once with the
+    /// window: a warm footer frame states help, so it must not build the
+    /// sentence.</summary>
+    private static ShellWorldClass WorldClassEntry(WorldAdoptionKind kind) =>
+        kind == WorldAdoptionKind.Light
+            ? new ShellWorldClass
+            {
+                Icon = TablerIcon.Bulb,
+                Id = "##world-class-lights",
+                ShowHelp =
+                    "Mark the world's addable lights — click a mark to take "
+                    + "it into the scene",
+                HideHelp = "Stop marking the world's addable lights",
+            }
+            : new ShellWorldClass
+            {
+                Icon = TablerIcon.User,
+                Id = "##world-class-actors",
+                ShowHelp =
+                    "Mark the world's addable actors — click a mark to clone "
+                    + "it into the scene",
+                HideHelp = "Stop marking the world's addable actors",
+            };
 
     /// <summary>The actor rows, with the snapshot facts a warm frame needs to
     /// restate their live flags without walking the scene again.</summary>
@@ -437,10 +447,6 @@ public class MainWindow : Window
     /// that lives on the SCREEN rather than in the scene, so they sit outside
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
-
-    /// <summary>The world stands last of all — under everything the scene
-    /// holds, because it is where the next of them comes from.</summary>
-    private const int WorldSectionIndex = 8;
 
     /// <summary>Reports whether the skeleton overlay window is open (titlebar toggle state).</summary>
     public Func<bool>? GetSkeletonOverlayOn { get; set; }
@@ -631,6 +637,10 @@ public class MainWindow : Window
         // animating actor was selected made a scene-wide control hostage to
         // the selection (user 2026-08-14).
         _vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
+        // The footer's class glyphs are minted once and restated in place; the
+        // list never changes shape, so the shell never rebuilds it.
+        foreach (var (_, entry) in _worldClasses)
+            _vm.WorldClasses.Add(entry);
         _vm.OnWorldClassToggle = ToggleWorldClass;
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
@@ -688,12 +698,6 @@ public class MainWindow : Window
             else if (index == OverlaysSectionIndex)
                 OnSpawnBrowserRequested?.Invoke(
                     anchor, SpawnBrowserTab.Overlays);
-            // The world's plus is the same affordance on the same surface: the
-            // browser's World tab is the LIST of what the handles mark, so the
-            // section offers both ways in — a list from the plus, handles in
-            // the viewport from the class eyes.
-            else if (index == WorldSectionIndex)
-                OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.World);
         };
         // The LIBRARY, SCENE and ENVIRONMENT headers are the selectable ones,
         // so no other index can arrive. The library and the scene workspace are
@@ -1492,7 +1496,6 @@ public class MainWindow : Window
         // at. The world stands under everything — it is where the next of the
         // scene comes from.
         _vm.Sections.Add(_overlaysSection);
-        _vm.Sections.Add(_worldSection);
         _actorsSection.Rows.Clear();
         _propsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
@@ -1501,17 +1504,6 @@ public class MainWindow : Window
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
-
-        // The world's class rows are fixed — the classes do not come and go —
-        // so they are restated, never minted, and the filter reads them like
-        // any other row's label.
-        _worldSection.Rows.Clear();
-        foreach (var (_, worldRow) in _worldRows)
-        {
-            if (filtering && !MatchesSidebarFilter(filter, worldRow.Label))
-                continue;
-            _worldSection.Rows.Add(worldRow);
-        }
 
         var actors = _actorsSection;
         var snapshot = _scene.Snapshot.Actors;
@@ -1647,51 +1639,24 @@ public class MainWindow : Window
         _ => TablerIcon.Spotlight,
     };
 
+    /// <summary>Flips one world class's handles. The glyph's own flag is
+    /// restated immediately so it lights with the click rather than on the
+    /// next refresh.</summary>
+    private void ToggleWorldClass(int index)
+    {
+        if (index < 0 || index >= _worldClasses.Length)
+            return;
+        var (kind, entry) = _worldClasses[index];
+        _worldAdoption.SetShown(kind, !_worldAdoption.IsShown(kind));
+        entry.On = _worldAdoption.IsShown(kind);
+    }
+
     /// <summary>
     /// The warm frame's entire sidebar cost: the retained rows' live flags.
     /// Nothing is created and no string is built — a display name that really
     /// changed re-arms the rebuild gate, and only while a filter is active,
     /// where the name decides whether the row is listed at all.
     /// </summary>
-    /// <summary>
-    /// The badge for one class's candidate count. Small counts come from a
-    /// cached table because a warm sidebar frame restates every badge and must
-    /// not mint a string to do it; nothing at all badges as nothing, so an
-    /// empty world reads as an empty world rather than as a zero.
-    /// </summary>
-    private static string WorldCountBadge(int count) =>
-        count <= 0 ? ""
-            : count < WorldCountBadges.Length ? WorldCountBadges[count]
-            : count.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-    private static readonly string[] WorldCountBadges = BuildWorldCountBadges();
-
-    private static string[] BuildWorldCountBadges()
-    {
-        // Well past what the adoption range can hold; the fallback above
-        // covers a zone that somehow holds more.
-        var badges = new string[128];
-        for (int i = 0; i < badges.Length; i++)
-            badges[i] = i.ToString(
-                System.Globalization.CultureInfo.InvariantCulture);
-        return badges;
-    }
-
-    /// <summary>Flips one world class's handles. The row's own flag is
-    /// restated immediately so the eye moves with the click rather than on the
-    /// next refresh.</summary>
-    private void ToggleWorldClass(ShellSidebarRow row)
-    {
-        foreach (var (kind, worldRow) in _worldRows)
-        {
-            if (!ReferenceEquals(worldRow, row))
-                continue;
-            _worldAdoption.SetShown(kind, !_worldAdoption.IsShown(kind));
-            worldRow.WorldClassOn = _worldAdoption.IsShown(kind);
-            return;
-        }
-    }
-
     private void RefreshSidebarFlags()
     {
         _librarySection.Active = _libraryMode;
@@ -1708,21 +1673,11 @@ public class MainWindow : Window
         // cameras only exist inside a GPose session.
         _camerasSection.ShowPlus =
             _cameraService.IsAvailable && _gPoseService.IsGPosing;
-        // Adoption is a GPose act — a clone lands in the GPose band, a
-        // captured light is a GPose light — so out of a session the world
-        // offers nothing and the plus is absent rather than inert.
-        _worldSection.ShowPlus = _gPoseService.IsGPosing;
-
-        // The class eyes and their counts read the adoption source LIVE, for
-        // the same reason every other action glyph does: waiting for a
-        // republish would leave the eye behind the click that flipped it, and
-        // the count moves on the source's own half-second cadence, which no
-        // scene revision carries.
-        foreach (var (kind, worldRow) in _worldRows)
-        {
-            worldRow.WorldClassOn = _worldAdoption.IsShown(kind);
-            worldRow.Count = WorldCountBadge(_worldAdoption.CountOf(kind));
-        }
+        // The class glyphs read the adoption source LIVE, for the same reason
+        // every other action glyph does: waiting for a republish would leave
+        // the glyph behind the click that flipped it.
+        foreach (var (kind, entry) in _worldClasses)
+            entry.On = _worldAdoption.IsShown(kind);
 
         var cameraRows = _camerasSection.Rows;
         for (int i = 0; i < cameraRows.Count; i++)
@@ -2877,15 +2832,6 @@ public class MainWindow : Window
 
     private void ApplyRowClick(ShellSidebarRow row)
     {
-        // A WORLD class row is not a thing in the scene: it names a class of
-        // thing OUTSIDE it, so its body throws its own eye and leaves both the
-        // selection and the workspace exactly where they were.
-        if (row.WorldClassActions)
-        {
-            ToggleWorldClass(row);
-            return;
-        }
-
         // Touching anything in the scene tree is leaving the library or the
         // scene workspace: they are alternatives in one workspace. A selecting
         // click leaves through the selection itself; a bare category
