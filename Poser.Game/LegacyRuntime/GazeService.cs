@@ -139,10 +139,14 @@ public unsafe class GazeService : IGazeService, IDisposable
         public bool HeadLocked;
         public bool BodyLocked;
 
-        // Release contract: NONE (Brio parity). Removing a part simply stops
-        // the per-frame writes for it; the game's own loop re-takes the slot.
-        // Both write-on-release variants were tried and pinned the part to a
-        // stale target instead (user 2026-08-04/07).
+        /// <summary>Channels Poser currently claims — the set the detour is
+        /// enforcing. Only a claimed channel can be owed a hand-back.</summary>
+        public GazeTargetType ClaimedParts;
+
+        /// <summary>Channels owed ONE disable write. Booked by the transition
+        /// that dropped them and delivered by the detour on the native
+        /// thread, which is the only place _updateLookAt may be called.</summary>
+        public GazeTargetType PendingRelease;
     }
 
     private readonly object _sync = new();
@@ -274,15 +278,20 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     /// <summary>
     /// What the detour actually enforces. No participating part means Poser
-    /// writes nothing at all and the game's own look-at loop owns every
-    /// channel — release is cessation, exactly as in Brio, where a channel
-    /// outside the mask gets no _updateLookAt call and the original loop runs
-    /// unconditionally afterwards.
+    /// writes nothing at all — a channel outside the mask gets no
+    /// _updateLookAt call, exactly as in Brio, where the original loop then
+    /// runs unconditionally.
     /// </summary>
     private static GazeTargetMode EffectiveMode(GazeEntry entry) =>
         entry.Parts == GazeTargetType.None
             ? GazeTargetMode.None
             : SeedMode(entry);
+
+    /// <summary>The channels the detour will enforce on its next pass.</summary>
+    private static GazeTargetType EnforcedParts(GazeEntry entry) =>
+        EffectiveMode(entry) == GazeTargetMode.None
+            ? GazeTargetType.None
+            : entry.Parts;
 
     /// <summary>
     /// The channels the detour will enforce for this actor on its next pass.
@@ -293,12 +302,46 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         lock (_sync)
         {
-            if (!_entries.TryGetValue(gameObjectId, out var entry))
-                return GazeTargetType.None;
-            return EffectiveMode(entry) == GazeTargetMode.None
-                ? GazeTargetType.None
-                : entry.Parts;
+            return _entries.TryGetValue(gameObjectId, out var entry)
+                ? EnforcedParts(entry)
+                : GazeTargetType.None;
         }
+    }
+
+    /// <summary>
+    /// The channels owed a one-shot hand-back on the detour's next pass. The
+    /// other half of the release contract, and likewise what the tests assert.
+    /// </summary>
+    internal GazeTargetType PendingRelease(ulong gameObjectId)
+    {
+        lock (_sync)
+        {
+            return _entries.TryGetValue(gameObjectId, out var entry)
+                ? entry.PendingRelease
+                : GazeTargetType.None;
+        }
+    }
+
+    /// <summary>
+    /// Books the hand-back this transition owes. Ceasing to write a channel is
+    /// NOT a release: _updateLookAt copies into the controller's persistent
+    /// per-channel slot (Ktisis names the same native call
+    /// <c>ActorLookAt(ActorGaze* writeTo, Gaze* readFrom, GazeControl part)</c>
+    /// — Scene/Modules/Actors/ActorModule.cs:231), so a channel Poser stops
+    /// writing keeps aiming at the last target it was given. Each dropped
+    /// channel is therefore owed exactly one INACTIVE write; Brio spells that
+    /// released value out in StopLookAt as LookMode.None on every part
+    /// (Brio/Game/Actor/ActorLookAtService.cs:101-108) and Ktisis calls the
+    /// same value GazeMode.Disabled (Ktisis/Structs/Actors/ActorGaze.cs:75).
+    /// A channel that comes straight back cancels its debt, because the active
+    /// write supersedes the disable. Callers hold <see cref="_sync"/>.
+    /// </summary>
+    private static void BookRelease(GazeEntry entry)
+    {
+        var enforced = EnforcedParts(entry);
+        entry.PendingRelease =
+            (entry.PendingRelease | (entry.ClaimedParts & ~enforced)) & ~enforced;
+        entry.ClaimedParts = enforced;
     }
 
     /// <summary>
@@ -391,6 +434,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                 {
                     GazeTargetMode mode = GazeTargetMode.None;
                     GazeTargetType parts = GazeTargetType.None;
+                    GazeTargetType pendingRelease = GazeTargetType.None;
                     LookAtSource lookAt = default;
                     bool known = false;
                     bool eyesLocked = false, headLocked = false, bodyLocked = false;
@@ -401,6 +445,7 @@ public unsafe class GazeService : IGazeService, IDisposable
                             known = true;
                             mode = EffectiveMode(entry);
                             parts = entry.Parts;
+                            pendingRelease = entry.PendingRelease;
                             // Copy to locals (like Brio) — the native calls
                             // below run outside the lock.
                             lookAt = entry.Target;
@@ -410,14 +455,39 @@ public unsafe class GazeService : IGazeService, IDisposable
                         }
                     }
 
-                    // Off performs no Poser write at all — release is pure
-                    // cessation (Brio parity): the game's own update re-takes
-                    // any slot Poser stops writing.
-                    if (!known || mode == GazeTargetMode.None)
+                    // An actor Poser has never touched is the game's alone.
+                    if (!known)
                         return _actorLookAtLoop!.Original(args);
 
                     var lookAtController =
                         &((Character*)targetActor.Address)->LookAt.Controller;
+
+                    // The hand-back: one INACTIVE write per released channel,
+                    // on the native thread, before this pass's own writes.
+                    // Without it the controller keeps the last target Poser
+                    // gave the channel and the actor stays frozen mid-gaze.
+                    if (pendingRelease != GazeTargetType.None)
+                    {
+                        var release = new LookAtTarget { LookMode = LookMode.None };
+                        if (pendingRelease.HasFlag(GazeTargetType.Body))
+                            _updateLookAt(lookAtController, &release, LookAtIndex_Body, 0);
+                        if (pendingRelease.HasFlag(GazeTargetType.Head))
+                            _updateLookAt(lookAtController, &release, LookAtIndex_Head, 0);
+                        if (pendingRelease.HasFlag(GazeTargetType.Eyes))
+                            _updateLookAt(lookAtController, &release, LookAtIndex_Eyes, 0);
+                        lock (_sync)
+                        {
+                            // Only what this pass delivered is settled; a debt
+                            // booked meanwhile is still owed.
+                            if (_entries.TryGetValue(targetActor.GameObjectId, out var entry))
+                                entry.PendingRelease &= ~pendingRelease;
+                        }
+                    }
+
+                    // Off performs no further write: every channel has been
+                    // handed back and the game's own update owns them again.
+                    if (mode == GazeTargetMode.None)
+                        return _actorLookAtLoop!.Original(args);
 
                     // Camera and Forward are position sources refreshed each
                     // loop for unlocked parts; Entity carries the target id in
@@ -538,6 +608,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (mode == GazeTargetMode.Position && previousMode != GazeTargetMode.Position)
                 entry.Position = CameraLerpPoint(actor);
             ReseedUnlockedParts(entry);
+            BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
             pendingTarget = PendingTargetWrite(entry, writable);
         }
@@ -580,6 +651,10 @@ public unsafe class GazeService : IGazeService, IDisposable
             // so the mode and the chosen target are still there to resume from
             // the moment a part comes back.
             ReseedUnlockedParts(entry);
+            // The untoggled channel is owed its hand-back here: the remembered
+            // mode and target survive, but the controller must stop aiming the
+            // channel Poser just gave up.
+            BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
             pendingTarget = PendingTargetWrite(entry, writable);
         }
@@ -627,6 +702,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (entry.Parts == GazeTargetType.None)
                 entry.Parts = GazeTargetType.All;
             ReseedUnlockedParts(entry);
+            BookRelease(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
             pendingTarget = PendingTargetWrite(entry, writable);
         }
@@ -789,15 +865,27 @@ public unsafe class GazeService : IGazeService, IDisposable
         ulong? pendingTarget = null;
         lock (_sync)
         {
-            // Release is cessation: dropping the entry stops every write in
-            // the same transition. This is Brio's RemoveObjectFromLook — the
-            // ONE path that forgets the remembered target, as opposed to the
-            // toggles, which keep it.
-            bool known = _entries.TryGetValue(gameObject.GameObjectId, out var entry);
-            modeChanged = known && EffectiveMode(entry!) != GazeTargetMode.None;
-            if (known && entry!.AppliedTargetId != 0 && OnOwnerThread)
+            // Brio's RemoveObjectFromLook — the ONE path that forgets the
+            // remembered target, as opposed to the toggles, which keep it. The
+            // entry itself is cleared in place rather than dropped: it is the
+            // ledger the detour reads to deliver the hand-back, and dropping it
+            // would strand every claimed channel at its last gaze.
+            if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry))
+                return;
+            modeChanged = EffectiveMode(entry) != GazeTargetMode.None;
+            if (entry.AppliedTargetId != 0 && OnOwnerThread)
+            {
                 pendingTarget = 0;
-            _entries.Remove(gameObject.GameObjectId);
+                entry.AppliedTargetId = 0;
+            }
+            entry.Mode = GazeTargetMode.None;
+            entry.Parts = GazeTargetType.All;
+            entry.TargetId = 0;
+            entry.TargetStale = false;
+            entry.Position = default;
+            ClearPartLock(entry, GazeTargetType.All);
+            ReseedUnlockedParts(entry);
+            BookRelease(entry);
         }
         WriteCharacterTarget(gameObject, pendingTarget);
         // A dropped entry that was already effectively Off changed nothing.
@@ -996,6 +1084,9 @@ public unsafe class GazeService : IGazeService, IDisposable
                 if (entry.Mode != GazeTargetMode.Entity)
                     continue;
                 ClearPartLock(entry, GazeTargetType.All);
+                // A stale target stops enforcement, so every claimed channel
+                // is owed its hand-back — the same debt an untoggle books.
+                BookRelease(entry);
                 _log.Debug(
                     $"GazeService: gaze target of {id} despawned — remembered as stale.");
                 modeChanged = true;

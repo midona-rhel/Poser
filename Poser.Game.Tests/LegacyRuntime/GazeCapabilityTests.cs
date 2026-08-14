@@ -130,8 +130,11 @@ public sealed class GazeCapabilityTests
 
     // ── channel release: Brio ActorLookAtService.cs:89-98 ────────────────
     // A channel outside the mask gets no _updateLookAt call, and the original
-    // loop runs unconditionally afterwards, so the game re-takes it. Release is
-    // cessation — nothing is restored and no override flag is cleared.
+    // loop runs unconditionally afterwards. Ceasing is not enough on its own:
+    // _updateLookAt copies into the controller's persistent per-channel slot,
+    // so a dropped channel is additionally owed ONE inactive write — Brio's
+    // released value (StopLookAt, ActorLookAtService.cs:101-108, LookMode.None
+    // on every part), which Ktisis calls GazeMode.Disabled.
 
     [Fact]
     public void Disabling_one_channel_stops_writing_only_that_channel()
@@ -157,6 +160,101 @@ public sealed class GazeCapabilityTests
         Assert.Equal(GazeTargetType.None, scene.Written());
         Assert.False(scene.Service.IsGazeEnabled(scene.Actor));
         Assert.False(scene.Service.GetGazeState(scene.Actor).Active);
+    }
+
+    // ── the hand-back debt ───────────────────────────────────────────────
+
+    [Fact]
+    public void Untoggling_one_channel_owes_that_channel_a_hand_back()
+    {
+        using var scene = GazeScene.Create();
+        // The reported case: an actor target is set, so every channel is
+        // aiming at it, and only head is untoggled.
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        Assert.Equal(GazeTargetType.None, scene.Released());
+
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Eyes | GazeTargetType.Body);
+
+        Assert.Equal(GazeTargetType.Head, scene.Released());
+        // The other two keep tracking, and the remembered target survives.
+        Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Body, scene.Written());
+        Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
+    }
+
+    [Fact]
+    public void Untoggling_every_channel_owes_all_three_a_hand_back()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
+
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
+
+        Assert.Equal(GazeTargetType.All, scene.Released());
+        Assert.Equal(GazeTargetType.None, scene.Written());
+    }
+
+    [Fact]
+    public void Turning_the_mode_off_owes_every_claimed_channel_a_hand_back()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
+
+        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.None);
+
+        Assert.Equal(GazeTargetType.All, scene.Released());
+    }
+
+    [Fact]
+    public void A_channel_coming_straight_back_cancels_its_hand_back()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Body);
+        Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Head, scene.Released());
+
+        // The active write supersedes the disable, so re-adding head settles
+        // its debt and leaves the eyes still owed.
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Body | GazeTargetType.Head);
+
+        Assert.Equal(GazeTargetType.Eyes, scene.Released());
+    }
+
+    [Fact]
+    public void A_channel_Poser_never_claimed_is_never_handed_back()
+    {
+        using var scene = GazeScene.Create();
+
+        // No mode was ever chosen, so nothing was ever enforced: writing an
+        // inactive target here would disable a gaze the game owns.
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
+
+        Assert.Equal(GazeTargetType.None, scene.Released());
+    }
+
+    [Fact]
+    public void Resetting_gaze_hands_every_claimed_channel_back()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+
+        scene.Service.ResetGaze(scene.Actor);
+
+        // The entry survives the reset precisely so the detour can deliver
+        // this; dropping it would strand the actor at its last gaze.
+        Assert.Equal(GazeTargetType.All, scene.Released());
+        Assert.Equal(GazeTargetType.None, scene.Written());
+    }
+
+    [Fact]
+    public void A_despawned_target_hands_the_claimed_channels_back()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+
+        scene.DespawnTarget();
+
+        Assert.Equal(GazeTargetType.All, scene.Released());
     }
 
     // ── target retention: Brio SetTargetType rewrites the mask and nothing
@@ -559,6 +657,10 @@ public sealed class GazeCapabilityTests
 
         /// <summary>The channels the detour would enforce on its next pass.</summary>
         public GazeTargetType Written() => Service.WrittenParts(ActorId);
+
+        /// <summary>The channels owed a one-shot inactive write on that same
+        /// pass — the hand-back the detour is the only place to deliver.</summary>
+        public GazeTargetType Released() => Service.PendingRelease(ActorId);
 
         /// <summary>Every address a character-target write landed on.</summary>
         public nint[] WrittenAddresses() =>
