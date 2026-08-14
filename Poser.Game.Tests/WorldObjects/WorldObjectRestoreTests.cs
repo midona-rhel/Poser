@@ -301,19 +301,36 @@ public sealed class WorldObjectRestoreTests
         Assert.Single(world.Service.GetCandidates());
     }
 
+    /// <summary>
+    /// The listing is neither ranged nor ranked here. The adoption range is
+    /// measured from the CAMERA and is shared by the three adoption classes, so
+    /// it belongs to the overlay's one listing pass; ordering by a distance
+    /// from the PLAYER over every BG object in the zone would only be work the
+    /// overlay throws away and redoes.
+    ///
+    /// <para>What this service does owe is the whole listing, with its world
+    /// points intact, so the overlay has something to measure.</para>
+    /// </summary>
     [Fact]
-    public void The_listing_stands_nearest_first()
+    public void The_listing_is_whole_and_carries_the_points_the_overlay_ranges_by()
     {
         var world = new World();
         var far = world.Port.Add(
-            "bg/far.mdl", new Transform(new Vector3(50f, 0f, 0f), Quaternion.Identity, Vector3.One));
+            "bg/far.mdl",
+            new Transform(new Vector3(50f, 0f, 0f), Quaternion.Identity, Vector3.One));
         var near = world.Port.Add(
-            "bg/near.mdl", new Transform(new Vector3(2f, 0f, 0f), Quaternion.Identity, Vector3.One));
+            "bg/near.mdl",
+            new Transform(new Vector3(2f, 0f, 0f), Quaternion.Identity, Vector3.One));
 
         var candidates = world.Service.GetCandidates();
 
-        Assert.Equal(near, candidates[0].Address);
-        Assert.Equal(far, candidates[1].Address);
+        Assert.Equal(2, candidates.Count);
+        Assert.Equal(
+            new Vector3(50f, 0f, 0f),
+            Assert.Single(candidates, c => c.Address == far).Position);
+        Assert.Equal(
+            new Vector3(2f, 0f, 0f),
+            Assert.Single(candidates, c => c.Address == near).Position);
     }
 
     // ── a scene load's re-adoption ───────────────────────────────────────
@@ -492,6 +509,88 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(0, world.Service.Count);
     }
 
+    // ── how a claim appears in the list ──────────────────────────────────
+
+    /// <summary>The label is the model's own stem, not the path and not the
+    /// address. The full path stays available as the object pane's detail.
+    /// </summary>
+    [Fact]
+    public void A_claim_is_named_by_its_model_stem_and_not_its_path()
+    {
+        var world = new World();
+        var address = world.Port.Add(
+            "bg/ffxiv/fst_f1/twn/f1t2/bgparts/f1t2_a1_bals1.mdl", Placed);
+
+        var adopted = world.Service.Adopt(address)!;
+
+        Assert.Equal("f1t2_a1_bals1", adopted.Name);
+        Assert.Equal(
+            "bg/ffxiv/fst_f1/twn/f1t2/bgparts/f1t2_a1_bals1.mdl", adopted.Path);
+    }
+
+    /// <summary>A map stands dozens of copies of one model. Three identical
+    /// rows in the tree is three rows the user cannot tell apart — so repeats
+    /// are numbered, and the FIRST is not.</summary>
+    [Fact]
+    public void Repeats_of_one_model_are_numbered_and_the_first_is_not()
+    {
+        var world = new World();
+        var first = world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+        var second = world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+        var third = world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+
+        Assert.Equal("chair", first.Name);
+        Assert.Equal("chair 2", second.Name);
+        Assert.Equal("chair 3", third.Name);
+    }
+
+    [Fact]
+    public void A_different_model_starts_its_own_numbering()
+    {
+        var world = new World();
+        world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed));
+        var table = world.Service.Adopt(world.Port.Add("bg/table.mdl", Placed))!;
+
+        Assert.Equal("table", table.Name);
+    }
+
+    /// <summary>The suffix is the lowest free one, not a running count: giving
+    /// the middle of three back and borrowing another must reuse the gap rather
+    /// than mint a name the list already shows.</summary>
+    [Fact]
+    public void Releasing_one_frees_its_number_for_the_next_claim()
+    {
+        var world = new World();
+        world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed));
+        var second = world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+        var third = world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+        Assert.Equal("chair 3", third.Name);
+
+        world.Service.Release(second);
+        var replacement =
+            world.Service.Adopt(world.Port.Add("bg/chair.mdl", Placed))!;
+
+        Assert.Equal("chair 2", replacement.Name);
+        // And nothing in the list shares a name.
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var claim in world.Service.Adopted)
+            Assert.True(names.Add(claim.Name), $"duplicate row name: {claim.Name}");
+    }
+
+    /// <summary>An object with no loaded model names itself by its address
+    /// (Ktisis does the same, WorldObject.cs:32) — still a row, never a
+    /// blank.</summary>
+    [Fact]
+    public void An_object_with_no_model_still_has_a_name()
+    {
+        var world = new World();
+        var address = world.Port.Add(string.Empty, Placed);
+
+        var adopted = world.Service.Adopt(address)!;
+
+        Assert.False(string.IsNullOrWhiteSpace(adopted.Name));
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────
 
     private sealed class World
@@ -504,7 +603,6 @@ public sealed class WorldObjectRestoreTests
             Service = new WorldObjectService(
                 Port,
                 Events,
-                DispatchProxy.Create<IObjectTable, NullTable>(),
                 DispatchProxy.Create<IPluginLog, SilentLog>());
     }
 
@@ -654,12 +752,6 @@ public sealed class WorldObjectRestoreTests
                 foreach (var handler in list.ToArray())
                     ((Action<T>)handler)(evt);
         }
-    }
-
-    private class NullTable : DispatchProxy
-    {
-        protected override object? Invoke(
-            MethodInfo? targetMethod, object?[]? args) => null;
     }
 
     private class SilentLog : DispatchProxy

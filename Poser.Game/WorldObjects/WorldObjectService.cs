@@ -161,7 +161,6 @@ public sealed class WorldObjectService : IDisposable
 {
     private readonly IWorldObjectPort _port;
     private readonly IEventBus _events;
-    private readonly IObjectTable _objects;
     private readonly IPluginLog _log;
     private readonly List<AdoptedWorldObject> _adopted = new();
 
@@ -171,12 +170,10 @@ public sealed class WorldObjectService : IDisposable
     public WorldObjectService(
         IWorldObjectPort port,
         IEventBus events,
-        IObjectTable objects,
         IPluginLog log)
     {
         _port = port;
         _events = events;
-        _objects = objects;
         _log = log;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
     }
@@ -192,11 +189,17 @@ public sealed class WorldObjectService : IDisposable
     public bool IsAvailable => !_disposed && _port.IsAvailable;
 
     /// <summary>
-    /// Everything the world holds that the scene has not taken, nearest first.
-    /// Already-adopted objects are filtered out by address, which is what makes
-    /// an adopted object's handle disappear from the viewport the moment it
-    /// joins the scene (Ktisis does the same filter at draw time,
+    /// Everything the world holds that the scene has not taken, UNRANGED and
+    /// UNSORTED. Already-adopted objects are filtered out by address, which is
+    /// what makes an adopted object's handle disappear from the viewport the
+    /// moment it joins the scene (Ktisis does the same filter at draw time,
     /// <c>Ktisis/Interface/Overlay/SceneDraw.cs:201</c>).
+    ///
+    /// <para>Neither ranged nor ordered here ON PURPOSE. The range is measured
+    /// from the CAMERA and the three adoption classes share one of them, so it
+    /// belongs to the overlay's own listing pass and not to this service —
+    /// which would otherwise measure a distance from the player, over every BG
+    /// object in the zone, for the overlay to throw away and redo.</para>
     /// </summary>
     public IReadOnlyList<WorldObjectCandidate> GetCandidates()
     {
@@ -206,7 +209,6 @@ public sealed class WorldObjectService : IDisposable
         if (rows.Count == 0)
             return Array.Empty<WorldObjectCandidate>();
 
-        var origin = _objects.LocalPlayer?.Position ?? Vector3.Zero;
         var candidates = new List<WorldObjectCandidate>(rows.Count);
         foreach (var row in rows)
         {
@@ -216,11 +218,8 @@ public sealed class WorldObjectService : IDisposable
                 row.Address,
                 row.Path,
                 DisplayName(row.Path),
-                Vector3.Distance(row.Placement.Position, origin),
                 row.Placement.Position));
         }
-        candidates.Sort(static (left, right) =>
-            left.DistanceFromPlayer.CompareTo(right.DistanceFromPlayer));
         return candidates;
     }
 
@@ -271,7 +270,7 @@ public sealed class WorldObjectService : IDisposable
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
-            DisplayName(path),
+            UniqueName(DisplayName(path)),
             path,
             address,
             placement,
@@ -478,10 +477,25 @@ public sealed class WorldObjectService : IDisposable
         return address.ToString("X", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>The row label: the model file's own name without its folder or
-    /// extension, which is the only part of a BG object path a human reads.
-    /// Brio names its BG objects the same way
-    /// (<c>BGOObject.FriendlyPath</c>, <c>Brio/Game/WorldObjects/Objects/BGOObject.cs:26</c>).
+    /// <summary>
+    /// The row label: the model file's own name without its folder or
+    /// extension.
+    ///
+    /// <para>It is the best name a BG object actually carries, and both
+    /// references land on it. Brio prefers a real name from its bundled path
+    /// database and falls back to exactly this when the path is not in it
+    /// (<c>BGOObject.FriendlyPath</c>,
+    /// <c>Brio/Game/WorldObjects/Objects/BGOObject.cs:18-31</c>); Poser has no
+    /// such database, so it starts where Brio ends up. Ktisis does WORSE — its
+    /// builder falls back to the object TYPE, so every BG object in its tree is
+    /// literally called "BgObject"
+    /// (<c>Ktisis/Scene/Factory/Builders/ObjectBuilder.cs:74</c>), which is why
+    /// the naming here follows Brio and not the reference.</para>
+    ///
+    /// <para>The stem is kept VERBATIM rather than prettified. These are opaque
+    /// asset codes (<c>f1t2_a1_bals1</c>); title-casing one into "F1t2 A1
+    /// Bals1" makes it no more human and stops it matching what the user would
+    /// search a path for. The full path is the object pane's to show.</para>
     /// </summary>
     public static string DisplayName(string path)
     {
@@ -489,6 +503,39 @@ public sealed class WorldObjectService : IDisposable
             return "World object";
         string name = System.IO.Path.GetFileNameWithoutExtension(path);
         return string.IsNullOrWhiteSpace(name) ? path : name;
+    }
+
+    /// <summary>
+    /// The label with a number when, and only when, it repeats. A map stands
+    /// dozens of copies of one model, so borrowing three of them without this
+    /// puts three identical rows in the tree and the user cannot tell which is
+    /// which.
+    ///
+    /// <para>The FIRST is unnumbered — unlike a light, whose every name is
+    /// generic and therefore numbered from one (<c>LightingService.UniqueName</c>).
+    /// A world object's name is already distinctive; numbering a lone one is
+    /// noise. The suffix is the lowest that is free, not a count, so releasing
+    /// the middle of three and borrowing again reuses the gap rather than
+    /// colliding.</para>
+    /// </summary>
+    private string UniqueName(string baseName)
+    {
+        if (!IsNameTaken(baseName))
+            return baseName;
+        for (int suffix = 2; ; suffix++)
+        {
+            string candidate = $"{baseName} {suffix}";
+            if (!IsNameTaken(candidate))
+                return candidate;
+        }
+    }
+
+    private bool IsNameTaken(string name)
+    {
+        foreach (var adopted in _adopted)
+            if (string.Equals(adopted.Name, name, StringComparison.Ordinal))
+                return true;
+        return false;
     }
 
     private void OnGPoseChanged(GPoseStateChangedEvent evt)

@@ -1617,7 +1617,12 @@ public class MainWindow : Window
             {
                 Label = worldObject.Name,
                 Count = "",
-                Icon = TablerIcon.Home,
+                // The square is the handle this row arrived through: Ktisis
+                // draws a BG object's node as a 4-gon and an actor's as a
+                // 5-gon (SceneDraw.cs:207, :251), and Poser's overlay follows.
+                // A row whose mark is the shape the user clicked is a row they
+                // can find without reading it.
+                Icon = TablerIcon.Square,
                 Tag = SelectionId.ForWorldObject(worldObject.Id),
                 LightActions = true,
                 LightOn = worldObject.Visible,
