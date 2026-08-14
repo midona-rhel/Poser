@@ -477,7 +477,14 @@ public sealed class StableBindingRegistry
             lightDescriptors,
             cameraDescriptors,
             propDescriptors,
-            Overlays: overlayDescriptors),
+            Overlays: overlayDescriptors,
+            // Built a dozen lines up and, until now, dropped on the floor: the
+            // snapshot defaulted WorldObjects to empty for the plugin's whole
+            // life. Everything downstream reads the snapshot, so a borrowed
+            // object was adopted, claimed and saved to file while being
+            // invisible to the sidebar, to the lifecycle's own signature, and
+            // therefore to the binding publish that a pending-select waits on.
+            WorldObjects: worldObjectDescriptors),
             lineages,
             actorBindings,
             boneBindings,
