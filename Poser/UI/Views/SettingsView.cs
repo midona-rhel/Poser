@@ -1381,7 +1381,6 @@ public static class SettingsView
             form.Status(
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);
-<<<<<<< HEAD
 
         // The same attribution the first-run notice carries, from the same
         // list — Settings is where a user goes looking for it afterwards.

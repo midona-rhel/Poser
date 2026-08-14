@@ -95,5 +95,4 @@ public enum ActiveActorSource
     Target,
     Selection,
     Both,
->>>>>>> 05feabf (Overlay and gizmo options gain a home: two config sections carry the reference switches, the settings page grows a Gizmo category, and every default is what the tool already did)
 }

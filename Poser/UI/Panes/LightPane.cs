@@ -755,7 +755,6 @@ public sealed class LightPane
         var doomed = new List<ILight>(_lighting.Lights);
         foreach (var light in doomed)
             _lifecycle.DestroyLight(light);
-        _status = string.Empty;
     }
 
     /// <summary>Brio's "move to camera": the light takes the camera's world

@@ -756,7 +756,6 @@ public sealed class CameraPane
                 doomed.Add(candidate);
         foreach (var candidate in doomed)
             _lifecycle.DestroyCamera(candidate);
-        _status = string.Empty;
     }
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)
