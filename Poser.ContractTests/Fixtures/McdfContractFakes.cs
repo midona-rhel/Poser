@@ -12,6 +12,11 @@ namespace Poser.ContractTests.Fixtures;
 /// ordering; RedrawAndWait is held open per call through a queue of
 /// completion sources so tests control exactly when the redraw-complete
 /// barrier releases.
+///
+/// Because the inline OnFrameworkThread does not model the product's
+/// single-thread confinement, a test must never let the background task
+/// advance while it is itself inside a session call: the parked barrier is
+/// the only release point, and only the test completes it.
 /// </summary>
 internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
 {
@@ -161,8 +166,16 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
         }
         if (held == null)
             return Task.FromResult(DefaultRedrawResult);
-        cancellation.Register(() =>
-            held.TrySetResult(IntegrationPortResult.Fail("The operation was cancelled.")));
+        // A held barrier is released ONLY by the test completing its
+        // source. The real port observes cancellation by polling the token
+        // at the top of its wait loop, between off-thread delays — it never
+        // registers a callback, so it never completes the wait on the
+        // canceller's own thread. Registering one here would resume the
+        // background task re-entrantly from inside McdfTransaction.Cancel,
+        // running its framework phases concurrently with the caller that is
+        // still mid-invalidation; the test completes the source itself to
+        // model the poll observing the cancel.
+        _ = cancellation;
         return held.Task;
     }
 

@@ -239,10 +239,21 @@ public sealed class McdfTransaction
     /// </summary>
     internal void InvalidateInFlight()
     {
-        Cancel();
         if (_inFlight is not { Invalidated: false } operation)
+        {
+            // Nothing to invalidate — a read-only export, or an import
+            // already invalidated — but the cooperative cancel still applies.
+            Cancel();
             return;
+        }
+        // The flag flips BEFORE the token, per the order above: cancelling
+        // first would let anything the token releases (a cancellation
+        // callback, a port whose parked wait completes from inside Cancel)
+        // resume the background task against a record that still reads as
+        // live, and its own rollback would then run against the pieces this
+        // one is still releasing.
         operation.Invalidated = true;
+        Cancel();
         Rollback(operation);
     }
 
