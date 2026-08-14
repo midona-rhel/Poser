@@ -127,17 +127,20 @@ public sealed class AppShellViewModel
     public bool ContentUsesPage;
 
     /// <summary>
-    /// The content ScrollRegion's identity, keyed by the ACTIVE TAB: ImGui
-    /// persists scroll offset and extent per child id, so one shared id would
-    /// carry tab A's offset into tab B's first frame and clamp-jump on the
-    /// next. Minted by the active tab's owner ON TAB SWITCH, never per frame.
+    /// The content ScrollRegion's identity, keyed by the ACTIVE STRIP and
+    /// TAB: ImGui persists scroll offset and extent per child id, so one
+    /// shared id would carry tab A's offset into tab B's first frame and
+    /// clamp-jump on the next — and strips reuse labels ("Light" is a light's
+    /// whole editor AND the environment's lighting tab), so the tab key alone
+    /// would still share scroll memory across strips. Minted by the active
+    /// tab's owner ON STRIP/TAB SWITCH, never per frame.
     /// </summary>
-    public string ContentScrollId = ContentScrollIdFor("Pose");
+    public string ContentScrollId = ContentScrollIdFor("actor", "Pose");
 
-    /// <summary>The per-tab scroll identity derivation — the one home for the
-    /// id shape, so hosts cannot drift apart.</summary>
-    public static string ContentScrollIdFor(string tabKey) =>
-        "##shell-content-scroll/" + tabKey;
+    /// <summary>The per-strip, per-tab scroll identity derivation — the one
+    /// home for the id shape, so hosts cannot drift apart.</summary>
+    public static string ContentScrollIdFor(string stripKey, string tabKey) =>
+        "##shell-content-scroll/" + stripKey + "/" + tabKey;
 
     /// <summary>
     /// The pane owns its internal scrolling and needs the shell viewport to

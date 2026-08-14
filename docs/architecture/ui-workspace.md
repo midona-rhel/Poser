@@ -99,9 +99,10 @@ into what it hands them and never rebuild any of it locally.
 - The inset is measured from the viewport CHILD, not the panel: the child is
   1 px narrower than the panel (the glass border pixel) and the bar hugs the
   child's right edge.
-- Scroll identity is per TAB: the content ScrollRegion id carries the active
-  tab key (minted on tab switch), so scroll offset and extent bookkeeping never
-  leak across navigation.
+- Scroll identity is per STRIP and TAB: the content ScrollRegion id carries
+  the active strip and tab keys (minted on switch), so scroll offset and
+  extent bookkeeping never leak across navigation — including between
+  same-labeled tabs on different selection strips ("Light").
 - A pane declares which of the three hostings it wants:
   `ContentOwnsViewport` (the pane scrolls internally and the shell viewport
   stays fixed — Pose uses this for its fixed mode tabs and footer),

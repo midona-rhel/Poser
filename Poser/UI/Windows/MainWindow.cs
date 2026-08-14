@@ -105,6 +105,13 @@ public class MainWindow : Window
     internal AppShellViewModel ShellVm => _vm;
     private string _activeTab = "Pose";
 
+    /// <summary>Which selection strip the tab set belongs to, recorded by
+    /// <see cref="BuildTabs"/> from the same switch that picks the strip.
+    /// Joins the tab key in the content scroll identity: strips reuse labels
+    /// ("Light"), and a same-labeled tab on another strip is another place.
+    /// Library mode leaves it untouched, exactly as it leaves the tab.</summary>
+    private string _activeStrip = "actor";
+
     /// <summary>The workspace is showing the pose library instead of the
     /// selection's tabs. The SELECTION is untouched — the library applies to
     /// whatever actor was selected before the mode was entered.</summary>
@@ -2125,17 +2132,21 @@ public class MainWindow : Window
         // The strip is a function of the SELECTION TYPE: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
-        var tabs = primary switch
+        var (tabs, strip) = primary switch
         {
-            { Kind: SceneEntityKind.Environment } => _environmentTabs,
-            { Kind: SceneEntityKind.Light } => _lightTabs,
-            { Kind: SceneEntityKind.Camera } => _cameraTabs,
-            { Kind: SceneEntityKind.Prop } => _propTabs,
+            { Kind: SceneEntityKind.Environment } => (_environmentTabs, "environment"),
+            { Kind: SceneEntityKind.Light } => (_lightTabs, "light"),
+            { Kind: SceneEntityKind.Camera } => (_cameraTabs, "camera"),
+            { Kind: SceneEntityKind.Prop } => (_propTabs, "prop"),
             // Creatures share the actor strip: their skeleton poses, their
             // battle-chara body animates, and the Appearance pane hides the
             // humanoid-only sections itself.
-            _ => _selectionTabs,
+            _ => (_selectionTabs, "actor"),
         };
+        // Same-labeled tabs on DIFFERENT strips are different places: the
+        // strip key joins the scroll identity in ApplyTabLayout, which runs
+        // right after this method on the per-frame path.
+        _activeStrip = strip;
         // The active tab is preserved WITHIN a strip, so a selection change
         // inside the actor set cannot silently throw the user back to Pose; a
         // strip that does not carry it falls to that strip's first tab.
@@ -2254,20 +2265,27 @@ public class MainWindow : Window
         ApplyTabLayout(label);
     }
 
-    /// <summary>The tab whose scroll identity <see cref="AppShellViewModel.ContentScrollId"/>
-    /// currently carries; the id string is minted only when this moves.</summary>
+    /// <summary>The (strip, tab) pair whose scroll identity
+    /// <see cref="AppShellViewModel.ContentScrollId"/> currently carries; the
+    /// id string is minted only when the pair moves.</summary>
+    private string _scrollIdStrip = "";
     private string _scrollIdTab = "";
 
     private void ApplyTabLayout(string tab)
     {
-        // Scroll identity is per TAB (audit R1): one shared id would carry
-        // the previous tab's scroll offset and extent into the next tab's
-        // first frame. Minted on tab switch only — this method also runs on
-        // the warm per-frame path.
-        if (!string.Equals(_scrollIdTab, tab, StringComparison.Ordinal))
+        // Scroll identity is per STRIP and TAB (audit R1): one shared id
+        // would carry the previous tab's scroll offset and extent into the
+        // next tab's first frame, and strips reuse labels ("Light" on the
+        // light strip vs the environment strip), so the label alone would
+        // still share scroll memory across strips. Minted on switch only —
+        // this method also runs on the warm per-frame path.
+        if (!string.Equals(_scrollIdTab, tab, StringComparison.Ordinal) ||
+            !string.Equals(_scrollIdStrip, _activeStrip, StringComparison.Ordinal))
         {
+            _scrollIdStrip = _activeStrip;
             _scrollIdTab = tab;
-            _vm.ContentScrollId = AppShellViewModel.ContentScrollIdFor(tab);
+            _vm.ContentScrollId =
+                AppShellViewModel.ContentScrollIdFor(_activeStrip, tab);
         }
         // The library paints its own bands and rules, so it takes the
         // viewport wall to wall; Pose keeps the shell-inset fixed viewport.
