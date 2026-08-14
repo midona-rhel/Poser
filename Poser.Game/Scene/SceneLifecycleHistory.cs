@@ -955,13 +955,12 @@ public sealed class SceneLifecycleHistory
     /// set: a partial restore answers false and leaves the entry where it was,
     /// so the step is retried rather than consumed.
     ///
-    /// <para>ACTORS are the exception, and deliberately: a despawn has no
-    /// inverse this seam can state (see <see cref="ActorSlot"/>), so selected
-    /// actors are destroyed OUTSIDE the entry rather than journaled as a
-    /// removal whose undo would mint a blank stand-in. A selection is
-    /// homogeneous by construction, so in practice an entry is over one kind;
-    /// the signature takes them all because the seam must not depend on that
-    /// staying true.</para>
+    /// <para>ACTORS route through <see cref="DespawnActor"/>, which journals
+    /// the removal when this seam recorded the spawn and names the unundoable
+    /// classes otherwise — the group op inherits exactly the single-actor
+    /// rule. A selection is homogeneous by construction, so in practice an
+    /// entry is over one kind; the signature takes them all because the seam
+    /// must not depend on that staying true.</para>
     ///
     /// <para>Returns how many entities it removed, so a caller can say what
     /// happened without counting live handles that no longer exist.</para>
@@ -975,13 +974,15 @@ public sealed class SceneLifecycleHistory
     {
         int removed = 0;
 
-        // Outside the entry, for the reason ActorSlot states.
+        // Actors route through the journaled despawn: an entry exists exactly
+        // when this seam recorded the spawn, and DespawnActor already names
+        // the unundoable classes instead of skipping them.
         foreach (var actor in actors ?? Array.Empty<IActor>())
         {
-            if (!_actors.IsSpawnedActor(actor))
+            if (!_actors.IsSpawned(actor))
                 continue;
-            if (_actors.DestroyActor(actor))
-                removed++;
+            DespawnActor(actor);
+            removed++;
         }
 
         var propSlots = new List<PropSlot>();

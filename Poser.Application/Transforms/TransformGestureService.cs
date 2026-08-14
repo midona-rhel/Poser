@@ -149,7 +149,6 @@ public sealed class TransformGestureService : IDisposable
             PivotMode.Primary => captured[0].Transform.Position,
             PivotMode.Centroid => Centroid(captured),
             PivotMode.Custom => command.CustomPivot!.Value,
-            PivotMode.Centroid => Centroid(captured),
             _ => captured[0].Transform.Position,
         };
 
@@ -268,15 +267,12 @@ public sealed class TransformGestureService : IDisposable
                 PivotMode.PerTarget => false,
                 PivotMode.Primary => index != 0,
                 // The centroid is nobody's own origin, so EVERY target swings
-                // about it — including the primary, unlike Primary mode.
+                // about it — including the primary, unlike Primary mode:
+                // exempting index 0 would pin one member of the group in
+                // place and swing the rest around it, the exact behaviour the
+                // centroid exists to replace.
                 PivotMode.Centroid => true,
                 PivotMode.Custom => true,
-                // EVERY target orbits a centroid, the first one included:
-                // unlike Primary, no target sits on the pivot, so exempting
-                // index 0 would pin one member of the group in place and swing
-                // the rest around it — the exact behaviour the centroid exists
-                // to replace.
-                PivotMode.Centroid => true,
                 _ => false,
             };
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
@@ -641,16 +637,6 @@ public sealed class TransformGestureService : IDisposable
         {
             Recovery = recovery,
         };
-
-    /// <summary>The mean of the captured target positions — the middle of the
-    /// selection as it stood when the gesture began.</summary>
-    private static Vector3 Centroid(IReadOnlyList<TransformTargetState> captured)
-    {
-        var sum = Vector3.Zero;
-        foreach (var state in captured)
-            sum += state.Transform.Position;
-        return sum / captured.Count;
-    }
 
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)

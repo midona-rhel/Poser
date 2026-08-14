@@ -1124,7 +1124,7 @@ public sealed class PoseLibraryPane
                         if (read.Succeeded && encoded is { Length: > 0 })
                             _metaImage = PosePreviewImageEdit.Set(encoded);
                         else
-                            _note = "Preview image: " + read.Detail;
+                            _notices.Failed("Preview image: " + read.Detail);
                     });
             ImGui.SameLine(0f, gap);
             if (Crystarium.Button(
