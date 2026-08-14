@@ -233,6 +233,12 @@ public sealed class TransformGestureService : IDisposable
                 PivotMode.PerTarget => false,
                 PivotMode.Primary => index != 0,
                 PivotMode.Custom => true,
+                // EVERY target orbits a centroid, the first one included:
+                // unlike Primary, no target sits on the pivot, so exempting
+                // index 0 would pin one member of the group in place and swing
+                // the rest around it — the exact behaviour the centroid exists
+                // to replace.
+                PivotMode.Centroid => true,
                 _ => false,
             };
             var pivot = active.Command.PivotMode == PivotMode.PerTarget
