@@ -329,11 +329,12 @@ internal static class ServiceRegistration
         services.AddSingleton<Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();
-            // The shipped scenes root is a CONFIGURED root, and a root the
-            // scan cannot observe aborts the whole pass — so it has to exist
+            // Every Poser home is a CONFIGURED root, and a root the scan
+            // cannot observe aborts the whole pass — so they have to exist
             // before the library can be asked anything, not after the first
-            // scene is saved into it.
-            config.Config.Library.EnsureSceneRootExists();
+            // document is saved into one. Creation follows the CONFIGURED
+            // value, so a repointed home is the folder that gets made.
+            config.Config.Library.EnsureHomeRootsExist();
             return new Library.PoseLibraryService(config);
         });
         return services;

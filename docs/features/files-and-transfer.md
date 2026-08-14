@@ -70,6 +70,39 @@ interchange with Brio and (via name conversion) Anamnesis.
   confirmation; the target actor freezes at dialog open. In-memory
   copy/stash uses `PortablePose` and is equally history-integrated.
 
+## Poser's home folders
+
+- Poser owns FOUR home folders and every one of them is a configured value the
+  Settings page edits: **Poses**, **Scenes** and **MCDFs** default to
+  `Documents/Poser/<leaf>`, and **Auto-saves** defaults to the shipped
+  `<pluginConfigDir>/AutoSaves`. Under Documents rather than the plugin config
+  directory for the first three: a pose, a scene and a character file are
+  documents a user shares and backs up, not plugin state.
+- The first three are stored AS library sources (`LibraryConfiguration.Homes`
+  names them), so a home is by construction a scanned root: a document saved
+  into one appears in its tab without the user navigating anywhere. Each is
+  seeded on its OWN flag, never the shipped-defaults one — every existing
+  configuration already has that set, so a home gated on it would never reach
+  an existing install. They are created BEFORE the library service is
+  constructed and creation follows the CONFIGURED value, because a configured
+  root the scan cannot observe aborts the whole pass and would take every tab
+  down with it. They resolve through the source, so a repointed home keeps the
+  user's choice and a deleted one falls back to the shipped path rather than to
+  a folder nothing scans.
+- The homes are absent from the Settings page's extra-folders list: one path,
+  one editor. Re-pointing one writes the source back (re-adding it when the
+  user had removed it), and the library re-roots live off its source signature.
+- The auto-save root is NOT a library source — auto-saves are written and
+  swept, not scanned — and it is read once in the service's constructor, so a
+  change to it takes effect on the next plugin load. The Settings row says so
+  whenever the draft and the running root differ. It is stored blank until the
+  composition root resolves it against the shipped path, seeded in memory the
+  way the library's shipped sources are.
+- Every file browser opens at the matching home: pose import/export, scene
+  save/load, and character-file import/export. Choosing elsewhere is still
+  allowed and sticks for the session. The light and camera file dialogs still
+  open at Documents — those two document kinds have no home and no library tab.
+
 ## Pose library indexing
 
 - Library scans run off-thread and publish one immutable snapshot only after a
@@ -125,7 +158,8 @@ interchange with Brio and (via name conversion) Anamnesis.
   semantics) is synchronously detached with
   `IPoseFileService.CreatePoseFile`; the owned worker then serializes and writes
   that immutable data into
-  `<pluginConfigDir>/AutoSaves/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose`
+  `<auto-save home>/<yyyy-MM-dd>/<HH-mm-ss> <actor>.pose` — the configured
+  home, shipped as `<pluginConfigDir>/AutoSaves`
   (one folder per LOCAL day — user call 2026-08-08, replacing the
   references' folder-per-save clutter; 24-hour prefix keeps name order ==
   time order within a day; names sanitized, same-snapshot duplicates and

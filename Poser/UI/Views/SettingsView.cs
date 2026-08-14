@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
+using Poser.Library;
 
 namespace Poser.UI.Views;
 
@@ -76,7 +77,18 @@ public sealed class SettingsViewModel
     public bool DetachedShell;
     public bool TreeGuides = true;
 
+    /// <summary>The EXTRA scanned folders. The Poser homes are edited on their
+    /// own rows and are deliberately absent from this list, so each of the four
+    /// paths has exactly ONE place it can be changed.</summary>
     public List<LibrarySourceVm> LibrarySources = [];
+
+    /// <summary>The four Poser home folders, as editable drafts. Blank means
+    /// "the shipped default", which the binder resolves on Save.</summary>
+    public string PoseFolder = "";
+    public string SceneFolder = "";
+    public string McdfFolder = "";
+    public string AutoSaveFolderDraft = "";
+
     public bool UseLibraryWhenImporting;
     public bool LibraryShowExtensions;
     public string LibraryNewName = "";
@@ -460,11 +472,8 @@ public static class SettingsView
                 vm.AutoSaveCleanOnExit,
                 next => vm.AutoSaveCleanOnExit = next,
                 "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
-            form.Actions("Folder", actions => actions.Button(
-                "Open in Explorer",
-                () => vm.OnOpenFolder?.Invoke(vm.AutoSaveFolder),
-                disabled: vm.AutoSaveFolder.Length == 0,
-                help: "Show the auto-save snapshot folders in Windows Explorer"));
+            // The folder row moved to POSER FOLDERS, where it is editable
+            // rather than merely openable — one place per path.
         });
     }
 
@@ -757,6 +766,43 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
+        page.Section("POSER FOLDERS", form =>
+        {
+            // The four homes Poser owns. Poses, Scenes and MCDFs are SCANNED
+            // roots, so a save that lands in one shows up in its tab without
+            // the user navigating anywhere; auto-saves are written rather than
+            // scanned, and the service reads its root once at load.
+            HomeFolder(
+                form, vm, "Poses", vm.PoseFolder,
+                next => vm.PoseFolder = next,
+                LibraryConfiguration.DefaultPoseRoot,
+                "Where saved poses go, and the folder the Poses tab scans");
+            HomeFolder(
+                form, vm, "Scenes", vm.SceneFolder,
+                next => vm.SceneFolder = next,
+                LibraryConfiguration.DefaultSceneRoot,
+                "Where saved scenes go, and the folder the Scenes tab scans");
+            HomeFolder(
+                form, vm, "Character files", vm.McdfFolder,
+                next => vm.McdfFolder = next,
+                LibraryConfiguration.DefaultMcdfRoot,
+                "Where exported character files go, and the folder the MCDF tab scans");
+            HomeFolder(
+                form, vm, "Auto-saves", vm.AutoSaveFolderDraft,
+                next => vm.AutoSaveFolderDraft = next,
+                vm.AutoSaveFolder,
+                "Where auto-save snapshot folders are written");
+            if (vm.AutoSaveFolder.Length > 0 &&
+                !string.Equals(
+                    vm.AutoSaveFolderDraft.Trim(),
+                    vm.AutoSaveFolder,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                form.Status(
+                    "Auto-saves keep writing to " + vm.AutoSaveFolder
+                    + " until Poser is reloaded.");
+            }
+        }, divider: false);
         page.Section("POSE LIBRARY", form =>
         {
             form.Switch(
@@ -825,6 +871,41 @@ public static class SettingsView
                 form.Status(
                     "Folder does not exist yet — it is scanned once it does.");
         });
+    }
+
+    /// <summary>
+    /// One Poser home: the path is typed, the button opens it, and the row
+    /// below states the only two things that can be wrong with a typed path —
+    /// it is blank (the shipped folder is used) or it does not exist yet. There
+    /// is no folder PICKER in the codebase and a file dialog cannot return a
+    /// directory, so validation stands in for browsing.
+    /// </summary>
+    private static void HomeFolder(
+        Crystarium.FormScope form,
+        SettingsViewModel vm,
+        string label,
+        string value,
+        Action<string> onChange,
+        string shipped,
+        string help)
+    {
+        form.TextInputActions(
+            label,
+            value,
+            onChange,
+            actions => actions.Button(
+                "Open",
+                () => vm.OnOpenFolder?.Invoke(
+                    value.Trim().Length == 0 ? shipped : value.Trim()),
+                help: "Show this folder in Windows Explorer"),
+            placeholder: shipped,
+            help: help);
+
+        string typed = value.Trim();
+        if (typed.Length == 0)
+            form.Status("Using " + shipped);
+        else if (!System.IO.Directory.Exists(typed))
+            form.Status("Folder does not exist yet — Poser creates it.");
     }
 
     /// <summary>Commits the add-source drafts, naming the source after its

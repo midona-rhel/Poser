@@ -109,8 +109,13 @@ public sealed class AppearancePane
         new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
-    private string _mcdfPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    /// <summary>Where the character-file browsers open. It starts at the
+    /// library's MCDFs home — the one folder the MCDF tab is guaranteed to be
+    /// scanning — so an exported character file appears in the tab the user
+    /// goes looking for it in without them having to navigate anywhere.
+    /// Choosing another folder is still allowed and sticks for the rest of the
+    /// session.</summary>
+    private string _mcdfPath;
     private ActorId? _mcdfActor;
     private string _mcdfDescription = string.Empty;
 
@@ -125,8 +130,10 @@ public sealed class AppearancePane
         SceneSession scene,
         IActorSpawnService spawn,
         StableBindingRegistry bindings,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        Config.ConfigurationService config)
     {
+        _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
         _presentation = presentation;
         _model = model;
         _modelCatalog = modelCatalog;

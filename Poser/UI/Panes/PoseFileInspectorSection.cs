@@ -51,8 +51,12 @@ public sealed class PoseFileInspectorSection
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _exportBrowser =
         new("Export Pose", new[] { ".pose" }, isSaveMode: true);
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    /// <summary>Where the pose browsers open. It starts at the library's POSES
+    /// home — the one folder the Poses tab is guaranteed to be scanning — so an
+    /// exported pose appears in the tab the user goes looking for it in without
+    /// them having to navigate anywhere. Choosing another folder is still
+    /// allowed and sticks for the rest of the session.</summary>
+    private string _lastPath;
     // Rotation-only by default, matching Brio's DefaultImporterOptions and
     // Ktisis's ImportPoseTransforms: Translation/Scale are opt-in because a
     // file's baked positions/scales fight IK and Customize+ scaling.
@@ -136,6 +140,7 @@ public sealed class PoseFileInspectorSection
         _library = library;
         _importPreview = new PosePreviewBinder(preview, poseFacade);
         _freeze = config.Config.FreezeActorOnPoseImport;
+        _lastPath = config.Config.Library.EnsurePoseRootExists();
 
         // The import dialog's shape (user 2026-08-10): the three columns —
         // quick access, file list, live preview — on top, and the options in

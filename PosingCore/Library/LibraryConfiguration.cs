@@ -53,6 +53,12 @@ public class LibraryConfiguration
     public bool ShowFileExtensions { get; set; }
 
     /// <summary>
+    /// Set once the shipped poses root has been appended. Its OWN flag for the
+    /// same reason <see cref="SceneRootSeeded"/> has one.
+    /// </summary>
+    public bool PoseRootSeeded { get; set; }
+
+    /// <summary>
     /// Set once the shipped scenes root has been appended. Its OWN flag, not
     /// <see cref="DefaultsSeeded"/>: every existing configuration already has
     /// that one set, so a scenes root gated on it would never reach anybody
@@ -60,51 +66,115 @@ public class LibraryConfiguration
     /// </summary>
     public bool SceneRootSeeded { get; set; }
 
+    /// <summary>
+    /// Set once the shipped character-file root has been appended. Its OWN
+    /// flag for the same reason <see cref="SceneRootSeeded"/> has one.
+    /// </summary>
+    public bool McdfRootSeeded { get; set; }
+
+    /// <summary>The shipped poses root's source name.</summary>
+    public const string PoseSourceName = "Poser Poses";
+
     /// <summary>The shipped scenes root's source name.</summary>
     public const string SceneSourceName = "Poser Scenes";
 
-    /// <summary>
-    /// Where a saved scene goes by default, and therefore the ONE place the
-    /// library's Scenes tab is guaranteed to be looking. Under Documents
-    /// beside the other tools' roots rather than in the plugin config
-    /// directory: a scene is a document a user shares and backs up, not
-    /// plugin state.
-    /// </summary>
-    public static string DefaultSceneRoot => System.IO.Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
-        "Poser",
-        "Scenes");
+    /// <summary>The shipped character-file root's source name.</summary>
+    public const string McdfSourceName = "Poser MCDFs";
 
     /// <summary>
-    /// The scanned root a scene save should land in: the shipped scenes source
-    /// when it is still configured and enabled, else the shipped path itself.
-    /// A user who repointed or renamed that source keeps their choice; one who
-    /// deleted it gets the shipped path back rather than a save that lands
-    /// somewhere the Scenes tab cannot see.
+    /// The three shipped home sources, in the order they seat on the rail.
+    /// One table so a surface that has to walk the homes — the settings page,
+    /// the composition root's pre-scan creation — cannot go out of step with
+    /// the seeding.
     /// </summary>
-    public string ResolveSceneRoot()
+    public static IReadOnlyList<(string Name, string Shipped)> Homes { get; } =
+    [
+        (PoseSourceName, DefaultPoseRoot),
+        (SceneSourceName, DefaultSceneRoot),
+        (McdfSourceName, DefaultMcdfRoot),
+    ];
+
+    /// <summary>
+    /// Where Poser's own documents live by default: under Documents beside the
+    /// other tools' roots rather than in the plugin config directory. A pose,
+    /// a scene and a character file are documents a user shares and backs up,
+    /// not plugin state.
+    /// </summary>
+    private static string HomeRoot(string leaf) => System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        "Poser",
+        leaf);
+
+    /// <inheritdoc cref="HomeRoot"/>
+    public static string DefaultPoseRoot => HomeRoot("Poses");
+
+    /// <inheritdoc cref="HomeRoot"/>
+    public static string DefaultSceneRoot => HomeRoot("Scenes");
+
+    /// <inheritdoc cref="HomeRoot"/>
+    public static string DefaultMcdfRoot => HomeRoot("MCDFs");
+
+    /// <summary>
+    /// The scanned root a save of that kind should land in: the shipped home
+    /// source when it is still configured and enabled, else the shipped path
+    /// itself. A user who repointed that source keeps their choice; one who
+    /// deleted it gets the shipped path back rather than a save that lands
+    /// somewhere the matching library tab cannot see.
+    /// </summary>
+    public string ResolveHomeRoot(string sourceName, string shipped)
     {
         foreach (var source in Sources)
         {
             if (source.Enabled &&
-                string.Equals(source.Name, SceneSourceName, StringComparison.Ordinal) &&
+                string.Equals(source.Name, sourceName, StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(source.Path))
                 return source.Path;
         }
-        return DefaultSceneRoot;
+        return shipped;
+    }
+
+    /// <inheritdoc cref="ResolveHomeRoot"/>
+    public string ResolvePoseRoot() =>
+        ResolveHomeRoot(PoseSourceName, DefaultPoseRoot);
+
+    /// <inheritdoc cref="ResolveHomeRoot"/>
+    public string ResolveSceneRoot() =>
+        ResolveHomeRoot(SceneSourceName, DefaultSceneRoot);
+
+    /// <inheritdoc cref="ResolveHomeRoot"/>
+    public string ResolveMcdfRoot() =>
+        ResolveHomeRoot(McdfSourceName, DefaultMcdfRoot);
+
+    /// <summary>
+    /// Re-points one home at <paramref name="path"/>, re-adding the source
+    /// when it is missing so the new path is a SCANNED root and not merely a
+    /// place saves disappear into. A blank path means the shipped one.
+    /// </summary>
+    public void SetHomeRoot(string sourceName, string shipped, string? path)
+    {
+        var chosen = string.IsNullOrWhiteSpace(path) ? shipped : path!.Trim();
+        foreach (var source in Sources)
+        {
+            if (!string.Equals(source.Name, sourceName, StringComparison.Ordinal))
+                continue;
+            source.Path = chosen;
+            source.Enabled = true;
+            return;
+        }
+        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = chosen });
     }
 
     /// <summary>
-    /// Makes the scenes root exist and answers with the path a save should
-    /// open at. It is a CONFIGURED library root and the scan refuses to
-    /// publish a partial snapshot — a root it cannot observe aborts the whole
-    /// pass — so a shipped root that has never been created would take the
-    /// Poses tab down with it. Creation failures fall back to Documents, which
-    /// always exists. Idempotent; every surface that needs the root calls it.
+    /// Makes one home exist and answers with the path a save should open at.
+    /// It is a CONFIGURED library root and the scan refuses to publish a
+    /// partial snapshot — a root it cannot observe aborts the whole pass — so
+    /// a home that has never been created would take every tab down with it.
+    /// Creation failures fall back to Documents, which always exists.
+    /// Idempotent; every surface that needs a home calls it.
     /// </summary>
-    public string EnsureSceneRootExists()
+    public string EnsureHomeRootExists(string sourceName, string shipped)
     {
-        var root = ResolveSceneRoot();
+        var root = ResolveHomeRoot(sourceName, shipped);
         try
         {
             System.IO.Directory.CreateDirectory(root);
@@ -116,23 +186,43 @@ public class LibraryConfiguration
         }
     }
 
+    /// <inheritdoc cref="EnsureHomeRootExists"/>
+    public string EnsurePoseRootExists() =>
+        EnsureHomeRootExists(PoseSourceName, DefaultPoseRoot);
+
+    /// <inheritdoc cref="EnsureHomeRootExists"/>
+    public string EnsureSceneRootExists() =>
+        EnsureHomeRootExists(SceneSourceName, DefaultSceneRoot);
+
+    /// <inheritdoc cref="EnsureHomeRootExists"/>
+    public string EnsureMcdfRootExists() =>
+        EnsureHomeRootExists(McdfSourceName, DefaultMcdfRoot);
+
+    /// <summary>
+    /// Creates every home before the library service is constructed. The scan
+    /// aborts on the FIRST configured root it cannot observe, so one missing
+    /// home is every tab missing.
+    /// </summary>
+    public void EnsureHomeRootsExist()
+    {
+        foreach (var (name, shipped) in Homes)
+            EnsureHomeRootExists(name, shipped);
+    }
+
     /// <summary>
     /// Appends the shipped Brio and Anamnesis roots the first time only, and
-    /// the scenes root under its own flag.
+    /// each Poser home under its own flag.
     /// </summary>
     public void EnsureDefaults()
     {
         var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
-        if (!SceneRootSeeded)
-        {
-            Sources.Add(new LibrarySourceConfig
-            {
-                Name = SceneSourceName,
-                Path = DefaultSceneRoot
-            });
-            SceneRootSeeded = true;
-        }
+        SeedHome(PoseSourceName, DefaultPoseRoot, PoseRootSeeded,
+            () => PoseRootSeeded = true);
+        SeedHome(SceneSourceName, DefaultSceneRoot, SceneRootSeeded,
+            () => SceneRootSeeded = true);
+        SeedHome(McdfSourceName, DefaultMcdfRoot, McdfRootSeeded,
+            () => McdfRootSeeded = true);
 
         if (DefaultsSeeded)
             return;
@@ -150,5 +240,14 @@ public class LibraryConfiguration
         });
 
         DefaultsSeeded = true;
+    }
+
+    private void SeedHome(
+        string sourceName, string shipped, bool seeded, Action markSeeded)
+    {
+        if (seeded)
+            return;
+        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = shipped });
+        markSeeded();
     }
 }

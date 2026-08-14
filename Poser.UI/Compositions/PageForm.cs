@@ -977,6 +977,49 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>An editable value with right-anchored actions; the field
+        /// takes whatever the actions leave it. The text counterpart of
+        /// <see cref="SwitchActions"/> and <see cref="ReadOnlyWithActions"/> —
+        /// a path row whose value is typed AND whose folder can be opened is
+        /// one row, not a field row followed by a button row.</summary>
+        public void TextInputActions(
+            string label,
+            string value,
+            Action<string> onChange,
+            Action<ActionScope> actions,
+            string? placeholder = null,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            var actionScope = new ActionScope();
+            actions(actionScope);
+            float actionWidth = MeasureActions(
+                actionScope.Items, row.Scale, row.ControlWidth);
+            float gap = actionScope.Items.Count > 0
+                ? ActiveTheme.Page.ActionGap * row.Scale
+                : 0f;
+            float fieldWidth =
+                MathF.Max(0f, row.ControlWidth - actionWidth - gap);
+            var controlStyle =
+                WorkspaceInRegion(style, fieldWidth / row.Scale);
+            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.WorkspaceHeight)));
+            Crystarium.TextInput(id, value, onChange,
+                controlStyle, placeholder, disabled);
+            DrawActions(
+                actionScope.Items,
+                row.ControlOrigin.X + row.ControlWidth - actionWidth,
+                actionWidth,
+                row.Origin.Y,
+                true,
+                id,
+                row.RowHeight);
+            _page.EndRow(row, id, help);
+        }
+
         /// <param name="fullWidth">The buttons span the WHOLE row, label column
         /// included — for a set that cannot fit a control cell. Callers pass an
         /// empty label with it and state the caption on a

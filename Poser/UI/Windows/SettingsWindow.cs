@@ -118,6 +118,14 @@ public class SettingsWindow : Window
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
 
+            // The homes are drafts of the CONFIGURED value, not of the shipped
+            // one: a user who never touched them sees the shipped path as the
+            // field's placeholder and Save leaves it shipped.
+            PoseFolder = c.Library.ResolvePoseRoot(),
+            SceneFolder = c.Library.ResolveSceneRoot(),
+            McdfFolder = c.Library.ResolveMcdfRoot(),
+            AutoSaveFolderDraft = c.AutoSave.RootDirectory,
+
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
             OnCancel = () => IsOpen = false,
@@ -149,14 +157,20 @@ public class SettingsWindow : Window
         };
 
         // Library sources: edited as copies, so Cancel leaves the configured
-        // roots untouched.
+        // roots untouched. The Poser homes are NOT among them — they have
+        // their own rows, and listing them twice would give one path two
+        // editors that disagree.
         foreach (var source in c.Library.Sources)
+        {
+            if (IsHomeSource(source.Name))
+                continue;
             _vm.LibrarySources.Add(new LibrarySourceVm
             {
                 Name = source.Name,
                 Path = source.Path,
                 Enabled = source.Enabled,
             });
+        }
 
         // Keybinds: the stored slots filled out to the whole registry and
         // COPIED, so Cancel leaves the live bindings untouched exactly as it
@@ -235,11 +249,28 @@ public class SettingsWindow : Window
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
         c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
         c.Library.Sources.Clear();
+        // The homes lead the rebuilt list — they seat first on the rail, and
+        // SetHomeRoot appends the ones an empty list has none of. Blank drafts
+        // land on the shipped path rather than on nothing.
+        c.Library.SetHomeRoot(
+            LibraryConfiguration.PoseSourceName,
+            LibraryConfiguration.DefaultPoseRoot,
+            _vm.PoseFolder);
+        c.Library.SetHomeRoot(
+            LibraryConfiguration.SceneSourceName,
+            LibraryConfiguration.DefaultSceneRoot,
+            _vm.SceneFolder);
+        c.Library.SetHomeRoot(
+            LibraryConfiguration.McdfSourceName,
+            LibraryConfiguration.DefaultMcdfRoot,
+            _vm.McdfFolder);
         foreach (var source in _vm.LibrarySources)
         {
             string path = source.Path.Trim();
             string name = source.Name.Trim();
             if (path.Length == 0 && name.Length == 0)
+                continue;
+            if (IsHomeSource(name))
                 continue;
             c.Library.Sources.Add(new LibrarySourceConfig
             {
@@ -248,10 +279,30 @@ public class SettingsWindow : Window
                 Enabled = source.Enabled,
             });
         }
+        // The homes are CONFIGURED roots and the scan aborts on the first one
+        // it cannot observe, so a freshly typed path exists before the config
+        // change that re-roots the library reaches the scanner.
+        c.Library.EnsureHomeRootsExist();
+
+        // Read once at load by the auto-save service, so this is the stored
+        // value the NEXT session starts on; the settings page says so.
+        c.AutoSave.RootDirectory = _vm.AutoSaveFolderDraft.Trim().Length == 0
+            ? _autoSave.RootDirectory
+            : _vm.AutoSaveFolderDraft.Trim();
 
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
         svc.ApplyChange();
         IsOpen = false;
+    }
+
+    /// <summary>Whether a source name is one of the Poser homes, which the
+    /// extra-folders list neither shows nor writes.</summary>
+    private static bool IsHomeSource(string name)
+    {
+        foreach (var (home, _) in LibraryConfiguration.Homes)
+            if (string.Equals(name, home, StringComparison.Ordinal))
+                return true;
+        return false;
     }
 }

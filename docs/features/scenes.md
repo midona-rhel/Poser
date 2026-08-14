@@ -163,15 +163,12 @@ states only what is durable about the WHOLE-SCENE layer.
   user-driven save does, and defers by name when the user's own export holds
   that slot — a snapshot yielding to the user is the right trade against filing
   bone values the game never showed.
-- A scene SAVES into the library's scenes root by default — a shipped library
-  source under `Documents/Poser/Scenes`, so a freshly saved scene appears in
-  the Scenes tab without navigating anywhere. The root is seeded on its OWN
-  flag, not the shipped-defaults one, because every existing configuration
-  already has that set; it is created before the library can be asked
-  anything, since a configured root the scan cannot observe aborts the whole
-  pass; and it is resolved through the SOURCE, so a user who repoints or
-  renames it keeps their choice. The save dialog still allows choosing
-  elsewhere, and the choice sticks for the session.
+- A scene SAVES into the library's SCENES home by default, so a freshly saved
+  scene appears in the Scenes tab without navigating anywhere. The home is one
+  of Poser's four configurable folders; its shape, seeding and creation order
+  are specified once in `files-and-transfer.md` ("Poser's home folders"). The
+  save dialog still allows choosing elsewhere, and the choice sticks for the
+  session.
 - UI: the scene is a workspace MODE, never a property of the current selection,
   and it is reached from TWO places that mean the same thing — the sidebar's
   own SCENE section, which stands above the environment because the environment

@@ -44,4 +44,27 @@ public class AutoSaveConfiguration
     /// <summary>How many whole-scene snapshots are retained on disk. Floored
     /// at 1 by the service.</summary>
     public int MaxSceneSnapshots { get; set; } = 5;
+
+    /// <summary>
+    /// Where the per-actor snapshot folders are written. BLANK means the
+    /// shipped <c>&lt;configDir&gt;/AutoSaves</c> — the composition root fills
+    /// it in with that resolved path the first time it constructs the service,
+    /// so the settings page always shows a real folder rather than an empty
+    /// field that means something. Unlike the library homes this is read ONCE,
+    /// in the service's constructor, so a change to it needs a plugin reload.
+    /// </summary>
+    public string RootDirectory { get; set; } = "";
+
+    /// <summary>
+    /// Answers the effective root, seeding a blank one with the shipped path.
+    /// Seeded in memory only, exactly as the library's shipped sources are: it
+    /// persists with the next save the user causes rather than writing the
+    /// configuration file on every startup.
+    /// </summary>
+    public string EnsureRoot(string shipped)
+    {
+        if (string.IsNullOrWhiteSpace(RootDirectory))
+            RootDirectory = shipped;
+        return RootDirectory;
+    }
 }

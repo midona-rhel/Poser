@@ -18,52 +18,117 @@ namespace Poser.Tests.Library;
 public sealed class PoseLibraryServiceTests
 {
     /// <summary>
-    /// The scenes root is seeded on its OWN flag. Every configuration that
-    /// predates it already has <c>DefaultsSeeded</c> set, so a scenes root
-    /// gated on that flag would never reach an existing install — and a scene
-    /// saved outside every scanned root is a scene the Scenes tab cannot see.
+    /// Every Poser home is seeded on its OWN flag. A configuration that
+    /// predates the homes already has <c>DefaultsSeeded</c> set, and one that
+    /// predates only the poses/MCDFs homes already has
+    /// <c>SceneRootSeeded</c> set — so a home gated on either of those would
+    /// never reach an existing install, and a document saved outside every
+    /// scanned root is a document its tab cannot see.
     /// </summary>
     [Fact]
-    public void The_scenes_root_seeds_into_a_configuration_that_already_has_defaults()
+    public void Every_home_seeds_into_a_configuration_that_already_has_defaults()
     {
-        var config = new LibraryConfiguration { DefaultsSeeded = true };
+        var config = new LibraryConfiguration
+        {
+            DefaultsSeeded = true,
+            SceneRootSeeded = true,
+        };
+        config.Sources.Add(new LibrarySourceConfig
+        {
+            Name = LibraryConfiguration.SceneSourceName,
+            Path = LibraryConfiguration.DefaultSceneRoot,
+        });
 
         config.EnsureDefaults();
 
-        var source = Assert.Single(config.Sources);
-        Assert.Equal(LibraryConfiguration.SceneSourceName, source.Name);
-        Assert.Equal(LibraryConfiguration.DefaultSceneRoot, source.Path);
-        Assert.Equal(LibraryConfiguration.DefaultSceneRoot, config.ResolveSceneRoot());
-        // Seeded once: a second pass must not append it again.
+        Assert.Equal(3, config.Sources.Count);
+        foreach (var (name, shipped) in LibraryConfiguration.Homes)
+        {
+            var source = Assert.Single(config.Sources, s => s.Name == name);
+            Assert.Equal(shipped, source.Path);
+            Assert.Equal(shipped, config.ResolveHomeRoot(name, shipped));
+        }
+        // Seeded once: a second pass must not append any of them again.
         config.EnsureDefaults();
-        Assert.Single(config.Sources);
+        Assert.Equal(3, config.Sources.Count);
     }
 
-    /// <summary>A user who repointed the scenes source keeps their choice —
-    /// saves follow the source, not the shipped path.</summary>
+    /// <summary>A user who repointed a home keeps their choice — saves follow
+    /// the source, not the shipped path.</summary>
     [Fact]
-    public void A_repointed_scenes_source_is_where_a_scene_save_lands()
+    public void A_repointed_home_is_where_a_save_of_that_kind_lands()
     {
         var config = new LibraryConfiguration();
         config.EnsureDefaults();
         config.Sources
             .Single(source => source.Name == LibraryConfiguration.SceneSourceName)
-            .Path = @"D:\Shots";
+            .Path = @"D:\Scenes";
 
-        Assert.Equal(@"D:\Shots", config.ResolveSceneRoot());
+        Assert.Equal(@"D:\Scenes", config.ResolveSceneRoot());
+        Assert.Equal(LibraryConfiguration.DefaultPoseRoot, config.ResolvePoseRoot());
+        Assert.Equal(LibraryConfiguration.DefaultMcdfRoot, config.ResolveMcdfRoot());
     }
 
-    /// <summary>A deleted or disabled scenes source falls back to the shipped
-    /// path rather than to a folder nothing scans.</summary>
+    /// <summary>A deleted or disabled home falls back to the shipped path
+    /// rather than to a folder nothing scans.</summary>
     [Fact]
-    public void A_removed_scenes_source_falls_back_to_the_shipped_root()
+    public void A_removed_home_falls_back_to_the_shipped_root()
     {
         var config = new LibraryConfiguration();
         config.EnsureDefaults();
         config.Sources.RemoveAll(
-            source => source.Name == LibraryConfiguration.SceneSourceName);
+            source => source.Name == LibraryConfiguration.McdfSourceName);
 
+        Assert.Equal(LibraryConfiguration.DefaultMcdfRoot, config.ResolveMcdfRoot());
+    }
+
+    /// <summary>Re-pointing a home from the settings page writes a SCANNED
+    /// root: the source is updated in place, or put back when the user had
+    /// removed it, so the new path is somewhere the tab looks.</summary>
+    [Fact]
+    public void Setting_a_home_root_keeps_it_a_scanned_source()
+    {
+        var config = new LibraryConfiguration();
+        config.EnsureDefaults();
+
+        config.SetHomeRoot(
+            LibraryConfiguration.PoseSourceName,
+            LibraryConfiguration.DefaultPoseRoot,
+            @"D:\Poses");
+        Assert.Equal(@"D:\Poses", config.ResolvePoseRoot());
+
+        config.Sources.RemoveAll(
+            source => source.Name == LibraryConfiguration.McdfSourceName);
+        config.SetHomeRoot(
+            LibraryConfiguration.McdfSourceName,
+            LibraryConfiguration.DefaultMcdfRoot,
+            @"D:\Chars");
+        Assert.Equal(@"D:\Chars", config.ResolveMcdfRoot());
+        Assert.Contains(
+            config.Sources,
+            source => source.Name == LibraryConfiguration.McdfSourceName);
+
+        // A blank draft means the shipped path, never a source with no path.
+        config.SetHomeRoot(
+            LibraryConfiguration.SceneSourceName,
+            LibraryConfiguration.DefaultSceneRoot,
+            "   ");
         Assert.Equal(LibraryConfiguration.DefaultSceneRoot, config.ResolveSceneRoot());
+    }
+
+    /// <summary>The auto-save root is stored blank until something resolves it
+    /// against the shipped plugin-config folder; after that the stored value is
+    /// what the next session starts on.</summary>
+    [Fact]
+    public void A_blank_auto_save_root_seeds_with_the_shipped_folder()
+    {
+        var config = new AutoSaveConfiguration();
+
+        Assert.Equal(@"C:\cfg\AutoSaves", config.EnsureRoot(@"C:\cfg\AutoSaves"));
+        Assert.Equal(@"C:\cfg\AutoSaves", config.RootDirectory);
+
+        config.RootDirectory = @"D:\Recovery";
+        Assert.Equal(@"D:\Recovery", config.EnsureRoot(@"C:\cfg\AutoSaves"));
     }
 
     [Fact]

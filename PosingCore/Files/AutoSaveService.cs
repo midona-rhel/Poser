@@ -176,7 +176,8 @@ public class AutoSaveService : IAutoSaveService
             bonePosing,
             poseFiles,
             configuration,
-            Path.Combine(pluginInterface.GetPluginConfigDirectory(), AutoSaveFolderName),
+            configuration.Config.AutoSave.EnsureRoot(Path.Combine(
+                pluginInterface.GetPluginConfigDirectory(), AutoSaveFolderName)),
             place: place)
     {
     }
