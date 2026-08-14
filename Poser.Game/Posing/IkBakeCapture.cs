@@ -361,7 +361,7 @@ public sealed class IkBakeCapture : IDisposable
             // propagation (PoseImporter.cs:35 → PoseInfo.Apply's `propagation`
             // argument), so a baked bone carries its children with it exactly
             // as the pose it replaced did.
-            if (poseInfo.Apply(desired, basis, Poser.Core.TransformComponents.All) == null)
+            if (poseInfo.Apply(desired, basis, TransformComponents.All) == null)
             {
                 bake.Failure ??=
                     $"{bone.BoneName} produced a non-finite bake delta.";

@@ -7,6 +7,7 @@ using Dalamud.Interface.Utility;
 using Poser.Application.Transforms;
 using Poser.Application.Posing;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Game;
 using Poser.Game.Transforms;
@@ -1155,15 +1156,15 @@ public class PoseInspectorPane
                 {
                     (
                         "Pos",
-                        Core.TransformComponents.Position,
+                        TransformComponents.Position,
                         "Carry child bones along when a bone is moved"),
                     (
                         "Rot",
-                        Core.TransformComponents.Rotation,
+                        TransformComponents.Rotation,
                         "Turn child bones along when a bone is rotated"),
                     (
                         "Scale",
-                        Core.TransformComponents.Scale,
+                        TransformComponents.Scale,
                         "Resize child bones along when a bone is scaled"),
                 })
                 {
@@ -2203,7 +2204,7 @@ public class PoseInspectorPane
                 // Linked partners resolve within the primary bone's OWN slot.
                 var siblings = SlotBonesOf(bone);
                 int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
-                    ? 1 + Domain.Posing.BoneLinkCatalog.GetLinked(bone.CanonicalName).Count(linkName =>
+                    ? 1 + BoneLinkCatalog.GetLinked(bone.CanonicalName).Count(linkName =>
                         siblings.Any(candidate =>
                             candidate.Id.CanonicalName == linkName &&
                             candidate.Id.PartialId == bone.PartialId))

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 
 namespace Poser.Files;

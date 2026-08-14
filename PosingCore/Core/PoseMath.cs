@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Poser.Domain.Posing;
 
 namespace Poser.Core;
 

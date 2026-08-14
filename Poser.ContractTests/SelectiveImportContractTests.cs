@@ -2,6 +2,7 @@ using NSubstitute;
 using Poser.Application.Operations;
 using Poser.ContractTests.Fixtures;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Files;

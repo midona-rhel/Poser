@@ -14,6 +14,7 @@ using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Entities;

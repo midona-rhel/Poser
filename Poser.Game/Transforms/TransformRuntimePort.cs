@@ -6,9 +6,7 @@ using Poser.Domain.Transforms;
 using Poser.Entities;
 using Poser.Game.Bindings;
 using Poser.Services;
-using DomainComponents = Poser.Domain.Posing.TransformComponents;
 using DomainTransform = Poser.Domain.Transforms.PoseTransform;
-using LegacyComponents = Poser.Core.TransformComponents;
 using LegacyLayer = Poser.Core.BonePoseTransformInfo;
 using LegacyTransform = Poser.Transform;
 
@@ -324,13 +322,9 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
     private static IReadOnlyList<LegacyLayer> ToLegacyLayers(BonePose pose) =>
         pose.InteractiveOnly().Layers.Select(layer =>
             new LegacyLayer(
-                ToLegacyComponents(layer.Propagation),
+                layer.Propagation,
                 new LegacyTransform(
                     layer.Delta.Position,
                     layer.Delta.Rotation,
                     layer.Delta.Scale))).ToArray();
-
-    private static LegacyComponents ToLegacyComponents(
-        DomainComponents components) =>
-        (LegacyComponents)(int)components;
 }

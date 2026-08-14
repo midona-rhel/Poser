@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Files;
 
 namespace Poser.Tests.Core;

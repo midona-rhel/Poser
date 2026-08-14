@@ -12,6 +12,7 @@ using FFXIVClientStructs.Havok.Common.Base.Math.QsTransform;
 using FFXIVClientStructs.Havok.Common.Base.Math.Quaternion;
 using FFXIVClientStructs.Havok.Common.Base.Math.Vector;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Domain.Identity;
 using Poser.Services;
@@ -1034,7 +1035,7 @@ public unsafe class BonePosingService : IBonePosingService
         // of the link set. Re-entrancy guard stops link chains from ping-ponging.
         if (LinkedBonesEnabled && !_propagatingLinks)
         {
-            var links = Poser.Domain.Posing.BoneLinkCatalog.GetLinked(bone.BoneName);
+            var links = BoneLinkCatalog.GetLinked(bone.BoneName);
             if (links.Count > 0)
             {
                 var delta = BonePoseInfo.Diff(newTransform, originalTransform);

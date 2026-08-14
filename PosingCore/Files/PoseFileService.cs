@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
 using Poser.Entities;

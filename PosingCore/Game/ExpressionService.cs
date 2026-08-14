@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Dalamud.Plugin.Services;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Services;
 

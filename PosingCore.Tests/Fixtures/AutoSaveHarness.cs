@@ -13,6 +13,7 @@ using NSubstitute;
 using NSubstitute.Core;
 using Poser.Config;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;

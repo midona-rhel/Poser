@@ -8,6 +8,7 @@ using Poser.Application.Operations;
 using Poser.Application.Scene;
 using Poser.Application.Transforms;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
@@ -682,7 +683,7 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             import.MutationStarted = true;
             if (poseInfo.Apply(
                     desired, basis,
-                    Poser.Core.TransformComponents.All,
+                    TransformComponents.All,
                     entry.Components,
                     forceNewStack: true) == null)
             {

@@ -5,7 +5,6 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
-using DomainComponents = Poser.Domain.Posing.TransformComponents;
 using LegacyLayer = Poser.Core.BonePoseTransformInfo;
 
 namespace Poser.Game.Transforms;
@@ -35,7 +34,7 @@ internal static class LegacyPoseStackConverter
             if (stack.Layer != null)
                 continue;
 
-            var propagation = (DomainComponents)(int)stack.PropagateComponents;
+            var propagation = stack.PropagateComponents;
             if (!TransformComponentsPolicy.IsDefined(propagation))
                 return TransformPortResult.Fail(
                     TransformPortStatus.Rejected,

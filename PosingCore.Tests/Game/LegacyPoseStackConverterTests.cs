@@ -6,8 +6,6 @@ using Poser.Domain.Identity;
 using Poser.Domain.Posing;
 using Poser.Domain.Transforms;
 using Poser.Game.Transforms;
-using DomainComponents = Poser.Domain.Posing.TransformComponents;
-using LegacyComponents = Poser.Core.TransformComponents;
 
 namespace Poser.Tests.Game;
 
@@ -25,7 +23,7 @@ public sealed class LegacyPoseStackConverterTests
         var target = BoneTarget();
         var stacks = new[]
         {
-            Layer((LegacyComponents)mask),
+            Layer((TransformComponents)mask),
         };
 
         var result = LegacyPoseStackConverter.Convert(
@@ -36,7 +34,7 @@ public sealed class LegacyPoseStackConverterTests
 
         Assert.True(result.Success, result.Detail);
         var layer = Assert.Single(result.State!.Pose.Layers);
-        Assert.Equal((DomainComponents)mask, layer.Propagation);
+        Assert.Equal((TransformComponents)mask, layer.Propagation);
         Assert.Equal("legacy-0", layer.Id.Name);
     }
 
@@ -57,9 +55,9 @@ public sealed class LegacyPoseStackConverterTests
         var secondScale = new Vector3(2.5f, -3.25f, 4.75f);
         var stacks = new[]
         {
-            Layer(LegacyComponents.All, layer: "expression"),
+            Layer(TransformComponents.All, layer: "expression"),
             Layer(
-                LegacyComponents.Position,
+                TransformComponents.Position,
                 new Transform(
                     firstPosition,
                     new Quaternion(
@@ -68,9 +66,9 @@ public sealed class LegacyPoseStackConverterTests
                         0,
                         float.MaxValue),
                     firstScale)),
-            Layer(LegacyComponents.None, layer: "gaze"),
+            Layer(TransformComponents.None, layer: "gaze"),
             Layer(
-                LegacyComponents.Rotation | LegacyComponents.Scale,
+                TransformComponents.Rotation | TransformComponents.Scale,
                 new Transform(
                     secondPosition,
                     new Quaternion(0, -float.MaxValue, 0, 0),
@@ -97,7 +95,7 @@ public sealed class LegacyPoseStackConverterTests
                 Assert.Equal(
                     new PoseLayerId(PoseLayerKind.Manual, "legacy-1"),
                     layer.Id);
-                Assert.Equal(DomainComponents.Position, layer.Propagation);
+                Assert.Equal(TransformComponents.Position, layer.Propagation);
                 Assert.Equal(firstPosition, layer.Delta.Position);
                 Assert.Equal(
                     new Quaternion(normalizedHalf, 0, 0, normalizedHalf),
@@ -110,7 +108,7 @@ public sealed class LegacyPoseStackConverterTests
                     new PoseLayerId(PoseLayerKind.Manual, "legacy-3"),
                     layer.Id);
                 Assert.Equal(
-                    DomainComponents.Rotation | DomainComponents.Scale,
+                    TransformComponents.Rotation | TransformComponents.Scale,
                     layer.Propagation);
                 Assert.Equal(secondPosition, layer.Delta.Position);
                 Assert.Equal(new Quaternion(0, -1, 0, 0), layer.Delta.Rotation);
@@ -130,7 +128,7 @@ public sealed class LegacyPoseStackConverterTests
             Quaternion.CreateFromYawPitchRoll(0.5f, -0.25f, 0.125f);
         var stacks = new[]
         {
-            Layer(LegacyComponents.All, layer: "expression"),
+            Layer(TransformComponents.All, layer: "expression"),
         };
 
         var result = LegacyPoseStackConverter.Convert(
@@ -155,8 +153,8 @@ public sealed class LegacyPoseStackConverterTests
         var target = BoneTarget();
         var stacks = new[]
         {
-            Layer(LegacyComponents.All, layer: "expression"),
-            Layer((LegacyComponents)8),
+            Layer(TransformComponents.All, layer: "expression"),
+            Layer((TransformComponents)8),
         };
         TransformPortResult result = default;
 
@@ -173,7 +171,7 @@ public sealed class LegacyPoseStackConverterTests
         Assert.Contains(target.ToString(), result.Detail!, StringComparison.Ordinal);
         Assert.Contains("stack 1", result.Detail!, StringComparison.Ordinal);
         Assert.Contains("0x00000008", result.Detail!, StringComparison.Ordinal);
-        Assert.Equal((LegacyComponents)8, stacks[1].PropagateComponents);
+        Assert.Equal((TransformComponents)8, stacks[1].PropagateComponents);
     }
 
     [Fact]
@@ -182,9 +180,9 @@ public sealed class LegacyPoseStackConverterTests
         var target = BoneTarget();
         var stacks = new[]
         {
-            Layer(LegacyComponents.All, layer: "gaze"),
+            Layer(TransformComponents.All, layer: "gaze"),
             Layer(
-                LegacyComponents.None,
+                TransformComponents.None,
                 new Transform(
                     new Vector3(float.NaN, 2, 3),
                     Quaternion.Identity,
@@ -217,7 +215,7 @@ public sealed class LegacyPoseStackConverterTests
         var stacks = new[]
         {
             Layer(
-                LegacyComponents.Rotation,
+                TransformComponents.Rotation,
                 new Transform(
                     Vector3.Zero,
                     Quaternion.Zero,
@@ -242,7 +240,7 @@ public sealed class LegacyPoseStackConverterTests
     }
 
     private static BonePoseTransformInfo Layer(
-        LegacyComponents components,
+        TransformComponents components,
         Transform? transform = null,
         string? layer = null) =>
         new(

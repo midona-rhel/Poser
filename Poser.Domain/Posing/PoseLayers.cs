@@ -2,6 +2,8 @@ using System.Numerics;
 
 namespace Poser.Domain.Posing;
 
+/// <summary>Which components of a bone's transform propagate to its child
+/// bones when that bone is edited.</summary>
 [Flags]
 public enum TransformComponents
 {

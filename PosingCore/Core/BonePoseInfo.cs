@@ -1,21 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Posing;
 
 namespace Poser.Core;
-
-/// <summary>
-/// Which transform components to propagate to child bones.
-/// </summary>
-[Flags]
-public enum TransformComponents
-{
-    None = 0,
-    Position = 1 << 0,
-    Rotation = 1 << 1,
-    Scale = 1 << 2,
-    All = Position | Rotation | Scale
-}
 
 /// <summary>
 /// The frame a stack delta is expressed in when the runtime applies it.

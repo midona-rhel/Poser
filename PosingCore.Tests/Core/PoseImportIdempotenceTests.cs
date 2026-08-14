@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Plugin.Services;
 using NSubstitute;
 using Poser.Core;
+using Poser.Domain.Posing;
 using Poser.Domain.Identity;
 using Poser.Entities;
 using Poser.Files;
