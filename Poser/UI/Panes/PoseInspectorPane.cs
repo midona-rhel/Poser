@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -893,9 +893,21 @@ public class PoseInspectorPane
         return DrawMatrixSurface(cursor, width, viewportHeight, s);
     }
 
-    /// <summary>The bounded band a workspace surface draws in: one page
+    /// <summary>The bounded band a SECTION surface draws in: one page
     /// action-gap under the mode strip, one page inset above the footer.
-    /// False when the viewport leaves the band no area.</summary>
+    /// False when the viewport leaves the band no area.
+    ///
+    /// <para>The band reaches the workspace's own right edge, not the width
+    /// the shell handed the pane. The Pose tab is
+    /// <c>ContentOwnsViewport</c>: the shell has ALREADY taken the scroll
+    /// gutter and both page insets off that width, and a surface that then
+    /// opens its own <see cref="Crystarium.ScrollRegion"/> inside it pays for
+    /// a second gutter and a second trailing inset — which is why these
+    /// surfaces' sections stopped short of every Page-hosted inspector's.
+    /// Adding the two back makes the region span exactly what the shell's own
+    /// scroll region spans for a Page, so the scrollbar sits where a Page's
+    /// does and one trailing inset inside it lands the content where a Page's
+    /// content lands.</para></summary>
     private static bool SurfaceBand(
         Vector2 cursor,
         float width,
@@ -906,19 +918,29 @@ public class PoseInspectorPane
     {
         var theme = Crystarium.ActiveTheme;
         min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
-        max = cursor + new Vector2(width, viewportHeight)
+        max = cursor
+            + new Vector2(
+                width
+                    + (AppShellView.ScrollbarWidth
+                        + AppShellView.MainHorizontalPadding) * s,
+                viewportHeight)
             - new Vector2(0f, theme.Page.Inset * s);
         return max.X > min.X && max.Y > min.Y;
     }
 
     /// <summary>
-    /// One scrolling workspace surface: the region spans min→max, the
-    /// content keeps <paramref name="insets"/> page insets clear of the
-    /// scrollbar (the Expression/Actor surfaces double it — one inset reads
-    /// as touching the bar, user 2026-08-04), and the height the body
+    /// One scrolling workspace surface: the region spans min→max, the content
+    /// keeps ONE page inset clear of the scrollbar, and the height the body
     /// reports is registered as the scroll extent. A body that drew only an
     /// empty-state note reports 0 and registers nothing, exactly as the
     /// hand-rolled stanzas did.
+    ///
+    /// <para>One inset, not a per-surface count: <see cref="Crystarium.Page"/>
+    /// keeps exactly one, and a section surface that keeps a different number
+    /// is a section surface whose right edge does not line up with the
+    /// light, camera, prop or appearance inspector beside it. The band
+    /// (<see cref="SurfaceBand"/>) is what makes one inset land where a Page's
+    /// does.</para>
     /// </summary>
     /// <param name="body">Handed the content origin and the content width in
     /// SCREEN px; returns the consumed height in screen px.</param>
@@ -927,7 +949,6 @@ public class PoseInspectorPane
         Vector2 min,
         Vector2 max,
         float s,
-        int insets,
         Func<Vector2, float, float> body)
     {
         var theme = Crystarium.ActiveTheme;
@@ -940,7 +961,7 @@ public class PoseInspectorPane
             {
                 var origin = ImGui.GetCursorScreenPos();
                 float contentWidth = MathF.Max(
-                    0f, region.ContentWidth - theme.Page.Inset * insets) * s;
+                    0f, region.ContentWidth - theme.Page.Inset) * s;
                 float consumed = body(origin, contentWidth);
                 if (consumed <= 0f)
                     return;
@@ -964,7 +985,7 @@ public class PoseInspectorPane
 
         var actor = OwningActor();
         InsetScrollSurface(
-            "##pose-expression-scroll", min, max, s, insets: 2,
+            "##pose-expression-scroll", min, max, s,
             (origin, contentWidth) =>
             {
                 if (actor == null ||
@@ -1010,7 +1031,7 @@ public class PoseInspectorPane
         var actor = OwningActor();
         var skeleton = OwningSkeleton();
         InsetScrollSurface(
-            "##pose-actor-scroll", min, max, s, insets: 2,
+            "##pose-actor-scroll", min, max, s,
             (origin, contentWidth) =>
             {
                 if (actor == null && skeleton == null)
@@ -1136,7 +1157,7 @@ public class PoseInspectorPane
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         InsetScrollSurface(
-            "##pose-matrix-scroll", viewMin, viewMax, s, insets: 1,
+            "##pose-matrix-scroll", viewMin, viewMax, s,
             (contentOrigin, contentWidth) => BoneMatrixView.Draw(
                 _matrixVm,
                 contentOrigin,
