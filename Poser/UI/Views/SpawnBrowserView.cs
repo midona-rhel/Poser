@@ -145,9 +145,17 @@ public static class SpawnBrowserView
     /// natural search height.</summary>
     private const float SearchBandHeight = 36f;
 
-    /// <summary>The tab strip's row above the search, inside the same band.
+    /// <summary>The tab strip's row above the search, inside the same band:
+    /// the pill's own measured height plus one spacing step above and below,
+    /// so the strip breathes off the title bar over it and the list under it
+    /// instead of sitting hard against both (user 2026-08-15: "add a little
+    /// top and bottom padding for the tabs"). Measured rather than stated, so
+    /// the padding stays the padding whatever the pill's height becomes.
     /// </summary>
-    private const float TabBandHeight = 34f;
+    private static float TabBandHeight =>
+        Crystarium.MeasureSegmentedControl(TabLabels).Y
+            / ImGuiHelpers.GlobalScale
+        + Crystarium.ActiveTheme.Spacing.Three * 2f;
 
     /// <summary>The tab strip is the SAME segmented pill every other tab
     /// strip uses (the shell's workspace tabs), not hand-drawn buttons.
