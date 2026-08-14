@@ -29,10 +29,46 @@ namespace Poser.Game.Overlays;
 /// <see cref="OverlayShapeNode.State"/> is assigned whole and the node
 /// re-states itself on its next update, which is what keeps the handle's
 /// document and the drawn node the same thing.</para>
+///
+/// <para>THE DRAG SURFACE. The library's move mode hangs an edit overlay off
+/// the node sized <c>Size + 32</c> and that overlay IS the grab region
+/// (<c>KamiToolKit/NodeBase/NodeBase.Edit.cs</c>: <c>EnableEditMode</c>, and
+/// the <c>MouseDown</c> arm that begins a move on its collision). A node whose
+/// children are sized but which never sizes ITSELF is 0×0, so the grab region
+/// is the 32px margin alone — a stamp in the corner of a dialogue plate.
+/// Ktisis leaves it there; Poser states the drawn extent, so the whole face of
+/// the node is the handle. The size is set in the constructor because the edit
+/// overlay is minted the first time move mode goes on and keeps the size it
+/// was minted with.</para>
+///
+/// <para>THE WRITE-BACK. A drag moves the NATIVE node, and nothing upstream
+/// hears about it: the handle's document still says where the node used to be,
+/// so the next write of ANY field — the drag toggle going off, a rename, a
+/// scale — re-states that stale position and the node snaps home. The
+/// library's own move-complete callback is the seam that closes it, and it is
+/// raised on the framework thread the whole port already runs on.</para>
 /// </summary>
 internal abstract class OverlayShapeNode : OverlayNode
 {
     private OverlayNodeState _state = new();
+
+    protected OverlayShapeNode(OverlayNodeKind kind)
+    {
+        Size = OverlayNodeGeometry.DesignSize(kind);
+        OnMoveComplete = _ =>
+        {
+            // The node is already where the pointer left it, so this states the
+            // fact rather than re-applying it: the document catches up, and
+            // nothing is written back down.
+            _state = _state with { Position = Position };
+            Moved?.Invoke(Position);
+        };
+    }
+
+    /// <summary>The pointer finished dragging this node to the given screen
+    /// position. Set by the port, which is the only thing that knows which
+    /// handle the node belongs to.</summary>
+    public Action<Vector2>? Moved { get; set; }
 
     public sealed override OverlayLayer OverlayLayer =>
         OverlayLayer.BehindUserInterface;
@@ -92,7 +128,7 @@ internal sealed class TalkShapeNode : OverlayShapeNode
 
     /// <summary>Unsafe for one reason: the speaker plate's nine-grid part is
     /// added through a pointer-taking overload.</summary>
-    public unsafe TalkShapeNode()
+    public unsafe TalkShapeNode() : base(OverlayNodeKind.Talk)
     {
         _background = new SimpleImageNode
         {
@@ -225,7 +261,7 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
     private readonly SimpleImageNode _arrow;
     private readonly TextNode _text;
 
-    public BalloonShapeNode()
+    public BalloonShapeNode() : base(OverlayNodeKind.Balloon)
     {
         _frame = Band();
         _gradient = Band();
@@ -320,7 +356,7 @@ internal sealed class StatusShapeNode : OverlayShapeNode
     private readonly SimpleImageNode _icon;
     private readonly TextNode _text;
 
-    public StatusShapeNode()
+    public StatusShapeNode() : base(OverlayNodeKind.Status)
     {
         _icon = new SimpleImageNode
         {

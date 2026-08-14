@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Poser.Domain.Presentation;
 
 namespace Poser.Game.Overlays;
@@ -48,4 +49,17 @@ public interface IOverlayNodePort : IDisposable
 
     /// <summary>Detaches and frees one node. Safe to call twice.</summary>
     void Destroy(object node);
+
+    /// <summary>
+    /// The pointer itself finished dragging a node, told the node's token and
+    /// where it now sits. The one INBOUND edge of this port: a drag is the only
+    /// way a node's state changes without a caller asking for it, and a
+    /// document that does not hear about it re-states the old position on the
+    /// next write of any field.
+    ///
+    /// <para>Raised on the game's own thread, inside the frame the drag ended
+    /// in. Set by the service above; a port with nothing listening simply drops
+    /// the news.</para>
+    /// </summary>
+    Action<object, Vector2>? Moved { get; set; }
 }

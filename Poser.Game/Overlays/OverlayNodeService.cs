@@ -158,6 +158,12 @@ public sealed class OverlayNodeHandle
 
     public void Destroy() => _owner.Destroy(this);
 
+    /// <summary>The pointer dragged this node and the game has ALREADY moved
+    /// it: the document catches up without writing anything back down. Called
+    /// by the service, which hears it from the port.</summary>
+    internal void AdoptDraggedPosition(Vector2 position) =>
+        _state = (_state with { Position = position }).Normalized();
+
     /// <summary>The node behind this handle is gone. Called by the service
     /// AFTER the port has freed it, and never by anything else.</summary>
     internal void Invalidate() => _node = null;
@@ -196,7 +202,22 @@ public sealed class OverlayNodeService : IDisposable
         _port = port;
         _events = events;
         _log = log;
+        _port.Moved = OnNodeMoved;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+    }
+
+    /// <summary>A drag landed: find whose node it was and let that document
+    /// catch up. Reference identity, like everything else that speaks in
+    /// tokens; a token nobody still holds is simply ignored.</summary>
+    private void OnNodeMoved(object node, Vector2 position)
+    {
+        for (int i = 0; i < _nodes.Count; i++)
+        {
+            if (!ReferenceEquals(_nodes[i].Node, node))
+                continue;
+            _nodes[i].AdoptDraggedPosition(position);
+            return;
+        }
     }
 
     /// <summary>The live handle list. It is the service's own list, so a
@@ -381,6 +402,7 @@ public sealed class OverlayNodeService : IDisposable
         if (_disposed)
             return;
         _disposed = true;
+        _port.Moved = null;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         DestroyAll();
         // The port's own dispose is the last line of defence: it frees

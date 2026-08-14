@@ -161,8 +161,9 @@ public sealed class OverlayPane
             "Drag on screen",
             node.Draggable,
             next => node.Draggable = next,
-            help: "Let the pointer drag the overlay directly. Off by default: "
-                + "a draggable overlay eats clicks meant for the scene.");
+            help: "Grab the overlay anywhere on its face and drag it. Off by "
+                + "default: a draggable overlay eats clicks meant for the "
+                + "scene.");
 
         var position = node.Position;
         form.Cells(cells =>
@@ -448,18 +449,11 @@ public sealed class OverlayPane
     private static Vector2 Centred(OverlayNodeHandle node)
     {
         var viewport = ImGui.GetMainViewport().Size;
-        var extent = DesignSize(node.Kind) * node.Scale;
+        // The same extent the node layer gives the game as the node's own size,
+        // so the middle a node is centred on is the middle you can grab it by.
+        var extent = OverlayNodeGeometry.DesignSize(node.Kind) * node.Scale;
         return (viewport - extent) * 0.5f;
     }
-
-    /// <summary>Each node's own drawn extent, which is what centring has to
-    /// measure against — the node reports no bounds of its own.</summary>
-    private static Vector2 DesignSize(OverlayNodeKind kind) => kind switch
-    {
-        OverlayNodeKind.Balloon => new Vector2(200f, 90f),
-        OverlayNodeKind.Status => new Vector2(247f, 32f),
-        _ => new Vector2(680f, 180f),
-    };
 
     // ── state ────────────────────────────────────────────────────────────
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -63,6 +64,8 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
 
     public bool IsAvailable => !_disposed && !_failed;
 
+    public Action<object, Vector2>? Moved { get; set; }
+
     public object? Create(OverlayNodeState state)
     {
         if (!TryGetController(out var controller))
@@ -74,6 +77,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             OverlayNodeKind.Status => new StatusShapeNode(),
             _ => new TalkShapeNode(),
         };
+        // Bound to the node, not to the port's listener: the node knows nothing
+        // about tokens, and the token is what the service upstream indexes by.
+        node.Moved = position => Moved?.Invoke(node, position);
         try
         {
             Write(node, state);
@@ -235,6 +241,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
 
     private void TryDispose(OverlayShapeNode node)
     {
+        // Cut the inbound edge first: a node being freed must not raise a move
+        // against a token the service has already forgotten.
+        node.Moved = null;
         try
         {
             node.Dispose();

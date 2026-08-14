@@ -252,6 +252,27 @@ public sealed class OverlayNodeServiceTests
         Assert.Equal(StatusKind.Falloff, restored.StatusKind);
     }
 
+    [Fact]
+    public void A_dragged_node_keeps_where_the_pointer_left_it()
+    {
+        var world = new World();
+        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
+        var node = Assert.Single(world.Port.Live);
+
+        world.Port.Drag(node, new Vector2(320f, 240f));
+
+        // The document caught up without a write: the node was never re-stated.
+        Assert.Equal(new Vector2(320f, 240f), handle.Position);
+
+        // The toggle the user reaches for after dragging — and the bug it used
+        // to carry: this write re-stated the position the node had BEFORE the
+        // drag, and the node snapped home.
+        handle.Draggable = false;
+
+        Assert.Equal(new Vector2(320f, 240f), handle.Position);
+        Assert.Equal(new Vector2(320f, 240f), node.State.Position);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────
 
     private sealed class World
@@ -284,6 +305,16 @@ public sealed class OverlayNodeServiceTests
         public IReadOnlyList<FakeNode> Live => _live;
 
         public bool IsAvailable => !Disposed && !RefuseCreate;
+
+        public Action<object, Vector2>? Moved { get; set; }
+
+        /// <summary>The pointer's own drag, as the game performs it: the node
+        /// moves, the port says so, and nothing is written back down.</summary>
+        public void Drag(FakeNode node, Vector2 to)
+        {
+            node.State = node.State with { Position = to };
+            Moved?.Invoke(node, to);
+        }
 
         public object? Create(OverlayNodeState state)
         {

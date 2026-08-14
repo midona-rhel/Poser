@@ -209,6 +209,28 @@ public sealed record OverlayNodeState
         value.Length <= maximum ? value : value[..maximum];
 }
 
+/// <summary>
+/// Each kind's DRAWN extent, at scale 1, in the node's own screen pixels.
+///
+/// <para>A node reports no bounds of its own — the native subtree sizes its
+/// children, never itself — so the extent has to be stated, and it has to be
+/// stated ONCE: the editor measures against it to centre a node, and the node
+/// layer gives it to the game as the node's own size, which is what decides how
+/// much of the node the pointer can grab. Two copies of these numbers is a
+/// centred node that cannot be dragged by its middle.</para>
+/// </summary>
+public static class OverlayNodeGeometry
+{
+    /// <summary>The dialogue plate at its own 1.25 scale (544×144 → 680×180),
+    /// the bubble's band, and the status line's icon-plus-name run.</summary>
+    public static Vector2 DesignSize(OverlayNodeKind kind) => kind switch
+    {
+        OverlayNodeKind.Balloon => new Vector2(200f, 90f),
+        OverlayNodeKind.Status => new Vector2(247f, 32f),
+        _ => new Vector2(680f, 180f),
+    };
+}
+
 /// <summary>Hard bounds on an overlay node's free values. Stated once here so
 /// the editor, the codec and the native port agree without restating.
 /// </summary>
