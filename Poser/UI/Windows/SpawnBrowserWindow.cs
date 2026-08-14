@@ -107,6 +107,15 @@ public sealed class SpawnBrowserWindow : Window
     /// refused by the discovery service, never dereferenced.</summary>
     private readonly List<WorldActorCandidate> _worldCandidates = new();
 
+    /// <summary>The world listing re-reads on the NEXT Draw, never inside the
+    /// current one: every trigger (open, entering the World tab from the tab
+    /// strip, the refresh row, a stale refusal) fires while the frame is
+    /// walking <see cref="SpawnBrowserViewModel.Visible"/> indices into
+    /// <see cref="SpawnBrowserViewModel.Rows"/>, and a synchronous rebuild
+    /// that shrinks the listing would leave those indices dangling. Consumed
+    /// at Draw start, beside the refilter it then requests.</summary>
+    private bool _refreshWorldPending;
+
     private bool _built;
     private string _query = string.Empty;
     private string _queryLower = string.Empty;
@@ -185,8 +194,9 @@ public sealed class SpawnBrowserWindow : Window
             _note = null;
             // The world listing is a snapshot; entering its tab is one of
             // the two implicit refresh points (the other is window open).
+            // Deferred: this fires from the tab strip mid-draw.
             if ((SpawnBrowserTab)next == SpawnBrowserTab.World)
-                RefreshWorldActors();
+                _refreshWorldPending = true;
             _refilter = true;
         };
         _vm.OnPinToggle = () => _pinned = !_pinned;
@@ -212,7 +222,7 @@ public sealed class SpawnBrowserWindow : Window
     {
         BuildRows();
         RefreshWorldLights();
-        RefreshWorldActors();
+        _refreshWorldPending = true;
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
@@ -253,6 +263,14 @@ public sealed class SpawnBrowserWindow : Window
     public override void Draw()
     {
         ReconcilePendingSpawn();
+        // The one structural mutation point for the world rows: before any
+        // index into Rows exists this frame, and before the refilter it asks
+        // for. Mid-draw triggers only set the flag.
+        if (_refreshWorldPending)
+        {
+            _refreshWorldPending = false;
+            RefreshWorldActors();
+        }
         SyncQuery();
         if (_refilter)
             Refilter();
@@ -427,8 +445,10 @@ public sealed class SpawnBrowserWindow : Window
     /// <summary>Re-reads the visible overworld actors and rebuilds the world
     /// rows: the tab's refresh row first, then one row per candidate, nearest
     /// first. A candidate is a snapshot of this moment — activation refuses
-    /// stale ones — so the list refreshes on open, on entering the tab, and
-    /// on the refresh row, never per frame.</summary>
+    /// stale ones — and the triggers (open, entering the tab, the refresh
+    /// row, a stale refusal) request it through
+    /// <see cref="_refreshWorldPending"/>; the ONLY caller is Draw start,
+    /// because this structurally mutates the row list.</summary>
     private void RefreshWorldActors()
     {
         if (!_built)
@@ -697,7 +717,9 @@ public sealed class SpawnBrowserWindow : Window
         {
             if (index == _worldRowStart)
             {
-                RefreshWorldActors();
+                // Deferred to the next Draw: activation fires from a row the
+                // frame is still walking.
+                _refreshWorldPending = true;
                 return;
             }
             int candidate = index - _worldRowStart - 1;
@@ -744,7 +766,7 @@ public sealed class SpawnBrowserWindow : Window
                 SelectSpawned(spawned);
                 return;
             case WorldActorImportStatus.StaleCandidate:
-                RefreshWorldActors();
+                _refreshWorldPending = true;
                 _note = "That actor is no longer there — the list was "
                     + "refreshed.";
                 return;
