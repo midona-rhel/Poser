@@ -126,6 +126,7 @@ public class SettingsWindow : Window
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
+        _vm.OnOpenUrl = url => Dalamud.Utility.Util.OpenLink(url);
         _vm.OnOpenFolder = path =>
         {
             if (string.IsNullOrWhiteSpace(path))

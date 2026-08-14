@@ -129,6 +129,9 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
+    /// <summary>Opens one of the credited upstream repositories in the
+    /// browser.</summary>
+    public Action<string>? OnOpenUrl;
     /// <summary>Opens a folder in the OS file explorer, creating it first when
     /// it does not exist yet (a seeded Brio/Anamnesis root may never have been
     /// created by its own tool).</summary>
@@ -861,8 +864,26 @@ public static class SettingsView
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));
             form.Status(
-                "Design system transcribed from Picto. Brio and Ktisis are interaction references.");
+                "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);
+
+        // The same attribution the first-run notice carries, from the same
+        // list — Settings is where a user goes looking for it afterwards.
+        page.Section("DERIVED FROM", form =>
+        {
+            form.Actions("Repositories", actions =>
+            {
+                foreach (var project in Config.FirstRunNotice.Upstream)
+                    actions.Button(
+                        project.Name,
+                        () => vm.OnOpenUrl?.Invoke(project.Url),
+                        help: project.Url);
+            });
+            foreach (var project in Config.FirstRunNotice.Upstream)
+                form.ReadOnly(project.Name, project.Credit);
+            form.Status(
+                "Poser is derivative of and heavily inspired by these projects.");
+        });
     }
 
     /// <summary>
