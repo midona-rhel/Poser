@@ -18,6 +18,11 @@ public enum SpawnBrowserTab
     Lights,
     Cameras,
     Props,
+
+    /// <summary>Visible overworld actors offered for cloning into the scene.
+    /// The rows are a snapshot: refreshed on open, on switching here, and by
+    /// the tab's own refresh row — never per frame.</summary>
+    World,
 }
 
 /// <summary>
@@ -136,6 +141,7 @@ public static class SpawnBrowserView
         "Lights",
         "Cameras",
         "Props",
+        "World",
     ];
 
     /// <summary>The pin/close side in the search row.</summary>
