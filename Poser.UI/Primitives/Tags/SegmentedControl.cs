@@ -207,14 +207,14 @@ public static partial class Crystarium
                 layout.TabHeight);
             ImGui.SetCursorScreenPos(tabMin);
             var hit = Interactive.Reserve(
-                $"{id}##{i}",
+                Ids.Join(id, "##", i),
                 tabMax - tabMin,
                 disabled);
             string? help = itemHelp?.Invoke(i);
             if (!string.IsNullOrEmpty(help)
                 && HoverHelp.Gate(hit, disabled, tabMin, tabMax))
                 HoverHelp.Explain(
-                    $"{id}##help-{i}",
+                    Ids.Join(id, "##help-", i),
                     tabMin,
                     tabMax,
                     help);

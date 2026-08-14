@@ -89,7 +89,7 @@ public static partial class Crystarium
         string? previewText, bool reselectFires)
     {
         if (items.Length == 0) return false;
-        string popupId = $"{id}_popup";
+        string popupId = Ids.Join(id, "_popup");
         bool changed = false;
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
@@ -108,7 +108,7 @@ public static partial class Crystarium
 
         ImGui.SetCursorScreenPos(pos);
         var trigger = Interactive.Reserve(
-            $"{id}_value", new Vector2(totalWidth, height), disabled);
+            Ids.Join(id, "_value"), new Vector2(totalWidth, height), disabled);
         bool valueHovered = trigger.Hovered;
         if (trigger.Clicked)
             OpenPopover(popupId);
@@ -147,7 +147,8 @@ public static partial class Crystarium
 
         // Truncation-only preview: same chrome, no explanatory delay.
         if (labelClipped && valueHovered)
-            HoverHelp.Preview($"{id}-full", valueMin, valueMax, currentText);
+            HoverHelp.Preview(
+                Ids.Join(id, "-full"), valueMin, valueMax, currentText);
 
         // .btnChevron: <IconSelector size={14} /> centered in the 20px slot.
         float iconSpan = theme.Controls.SmallIconSize * scale;
@@ -194,7 +195,7 @@ public static partial class Crystarium
 
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
                 ScrollRegion(
-                    $"{popupId}-scroll",
+                    Ids.Join(popupId, "-scroll"),
                     regionWidth,
                     itemListHeight / scale,
                     region =>
@@ -250,7 +251,7 @@ public static partial class Crystarium
                             }
                             if (optClipped && itemHovered)
                                 HoverHelp.Preview(
-                                    $"{id}-item-{i}",
+                                    Ids.Join(id, "-item-", i),
                                     itemPos,
                                     itemPos + hitSize,
                                     items[i]);

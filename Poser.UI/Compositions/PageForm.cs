@@ -167,7 +167,7 @@ public static partial class Crystarium
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
                 FormHintColor, text);
             float height = ActiveTheme.Page.StatusLineHeight * _scale;
-            RegisterHelp($"{_id}-status", new(_origin.X, top),
+            RegisterHelp(Ids.Join(_id, "-status"), new(_origin.X, top),
                 new(_origin.X + _width, top + height), help);
             _y += ActiveTheme.Page.StatusLineHeight;
         }
@@ -237,7 +237,7 @@ public static partial class Crystarium
             uint headerIdentity = 0;
             if (onOpenChanged != null)
             {
-                string headerId = $"{_id}-section-{title}";
+                string headerId = Ids.Join(_id, "-section-", title);
                 ImGui.SetCursorScreenPos(new(_origin.X, headerTop));
                 hit = Interactive.Reserve(headerId,
                     new(_width, headerHeight), disabled: false);
@@ -293,7 +293,7 @@ public static partial class Crystarium
             float? logicalHeight = null)
         {
             float height = logicalHeight ?? RowHeight;
-            RegisterHelp($"{id}-row", row.Origin,
+            RegisterHelp(Ids.Join(id, "-row"), row.Origin,
                 row.Origin + new Vector2(row.Width,
                     height * row.Scale), help);
             _y += height;
@@ -310,7 +310,7 @@ public static partial class Crystarium
             DrawSection(title, open, onOpenChanged, content, divider);
 
         internal string RowId(string section, string label) =>
-            $"##{_id}-{section}-{label}";
+            Ids.Row(_id, section, label);
 
         internal void Complete(Vector2 pageOrigin, float pageWidth)
         {
@@ -395,7 +395,7 @@ public static partial class Crystarium
                     bandOrigin.X,
                     row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
                 Crystarium.AxisWell(
-                    $"{id}-value",
+                    Ids.Join(id, "-value"),
                     "",
                     displayedValue,
                     next =>
@@ -542,7 +542,8 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new(
                     itemX, row.Origin.Y + (rowHeight - boxSide) * 0.5f));
                 Crystarium.Checkbox(
-                    $"{id}-{caption}", value, onChange, default, disabled, help);
+                    Ids.Join(id, "-", caption), value, onChange, default,
+                    disabled, help);
                 float captionX = itemX + boxSide + gap * 0.75f;
                 float captionWidth =
                     Crystarium.MeasureText(caption, captionStyle).X;
@@ -572,7 +573,7 @@ public static partial class Crystarium
             bool partial = false,
             bool indent = false)
         {
-            string id = Id($"check-{caption}");
+            string id = Id(Ids.Join("check-", caption));
             var row = _page.BeginRow(string.Empty);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
@@ -760,7 +761,7 @@ public static partial class Crystarium
                 Crystarium.Button(
                     "Reset", reset, style: resetStyle,
                     help: $"Restore the {label.ToLowerInvariant()} this actor had before Poser changed it",
-                    id: $"{id}-reset");
+                    id: Ids.Join(id, "-reset"));
             }
             _page.EndRow(row, id, help);
         }
@@ -828,7 +829,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
             Crystarium.AxisWell(
-                $"{id}-value",
+                Ids.Join(id, "-value"),
                 "",
                 value,
                 onChange,
@@ -869,7 +870,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
             Crystarium.AxisWell(
-                $"{id}-value",
+                Ids.Join(id, "-value"),
                 "",
                 value,
                 next =>
@@ -891,7 +892,7 @@ public static partial class Crystarium
                 row.ControlOrigin.X + wellWidth * row.Scale + gap,
                 row.CenterControl(ActiveTheme.Controls.SliderHeight).Y));
             Crystarium.Slider(
-                $"{id}-slider",
+                Ids.Join(id, "-slider"),
                 displayed,
                 minimum,
                 maximum,
@@ -1112,7 +1113,7 @@ public static partial class Crystarium
         {
             ArgumentNullException.ThrowIfNull(drawLeft);
             ArgumentNullException.ThrowIfNull(drawRight);
-            string id = Id($"{leftLabel}-{rightLabel}");
+            string id = Id(Ids.Join(leftLabel, "-", rightLabel));
             var row = _page.BeginRow(string.Empty);
             float half = row.Width * 0.5f;
             DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
@@ -1168,7 +1169,7 @@ public static partial class Crystarium
                     continue;
                 perCellHelp = true;
                 RegisterHelp(
-                    $"{id}-{item.Label}",
+                    Ids.Join(id, "-", item.Label),
                     new Vector2(x, row.Origin.Y),
                     new Vector2(x + track, row.Origin.Y + bandHeight),
                     item.Help);
@@ -1255,7 +1256,7 @@ public static partial class Crystarium
                     originX + i * (width + gap),
                     controlY));
                 Crystarium.AxisWell(
-                    $"{id}-{axes[i]}",
+                    Ids.Join(id, "-", axes[i]),
                     axes[i],
                     axis == 0 ? value.X : axis == 1 ? value.Y : value.Z,
                     next =>
@@ -1398,7 +1399,7 @@ public static partial class Crystarium
                         + (ActiveTheme.Controls.FormRowHeight - side)
                         * 0.5f * _row.Scale));
                 Crystarium.ColorWell(
-                    $"{_id}-{item.Label}",
+                    Ids.Join(_id, "-", item.Label),
                     item.Value ?? Vector4.Zero,
                     item.OnChange,
                     controlStyle,
@@ -1516,7 +1517,7 @@ public static partial class Crystarium
                     bandOrigin.X,
                     Center(ActiveTheme.Controls.WorkspaceHeight).Y));
                 Crystarium.AxisWell(
-                    $"{id}-value",
+                    Ids.Join(id, "-value"),
                     "",
                     displayed,
                     next =>
@@ -1557,7 +1558,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
             Crystarium.AxisWell(
-                $"{id}-value",
+                Ids.Join(id, "-value"),
                 "",
                 value,
                 onChange,
@@ -1778,7 +1779,7 @@ public static partial class Crystarium
                     style with { Height = UiHeight.Fixed(height) },
                     action.Disabled,
                     action.Help,
-                    id: $"{id}-{action.Label}");
+                    id: Ids.Join(id, "-", action.Label));
                 x += height * scale + gap;
                 continue;
             }
@@ -1798,7 +1799,7 @@ public static partial class Crystarium
                 width / scale,
                 action.Disabled,
                 action.Help,
-                $"{id}-{action.Label}",
+                Ids.Join(id, "-", action.Label),
                 action.Variant);
             x += width + gap;
         }

@@ -120,6 +120,18 @@ public static partial class Crystarium
         private readonly bool _isSaveMode;
         private readonly string _id;
 
+        /// <summary>The dialog's fixed identities, minted ONCE with the
+        /// instance id they hang off — a surface that re-interpolates its ids
+        /// allocates for every frame it stays open.</summary>
+        private readonly string _surfaceId;
+        private readonly string _navId;
+        private readonly string _pathId;
+        private readonly string _quickId;
+        private readonly string _quickRowPrefix;
+        private readonly string _entriesId;
+        private readonly string _entryRowPrefix;
+        private readonly string _nameId;
+
         private readonly List<FileQuickEntry> _quick = new();
         private readonly List<FileListingEntry> _entries = new();
         private readonly List<FileListingEntry> _scratch = new();
@@ -160,6 +172,14 @@ public static partial class Crystarium
             _extensions = extensions;
             _isSaveMode = isSaveMode;
             _id = $"##file-dialog-{Guid.NewGuid():N}";
+            _surfaceId = $"{_title}{_id}";
+            _navId = $"{_id}-nav";
+            _pathId = $"{_id}-path";
+            _quickId = $"{_id}-quick";
+            _quickRowPrefix = $"{_id}-quick-";
+            _entriesId = $"{_id}-entries";
+            _entryRowPrefix = $"{_id}-entry-";
+            _nameId = $"{_id}-name";
         }
 
         /// <summary>
@@ -238,7 +258,7 @@ public static partial class Crystarium
         private float BottomExtra() =>
             BottomPanel is { } panel ? panel.Width + 1f : 0f;
 
-        private string SurfaceId => $"{_title}{_id}";
+        private string SurfaceId => _surfaceId;
 
         public void Open(string initialPath, Action<string> onSelect)
         {
@@ -372,7 +392,7 @@ public static partial class Crystarium
             var square = ControlStyle.Square(NavActionSize);
 
             ActionBar(
-                $"{_id}-nav",
+                _navId,
                 new Vector2(band.Min.X + inset, band.Min.Y),
                 new Vector2(band.Size.X - inset * 2f, band.Size.Y),
                 left =>
@@ -401,7 +421,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(new Vector2(
                 pathX, band.Min.Y + (band.Size.Y - control) * 0.5f));
             TextInput(
-                $"{_id}-path",
+                _pathId,
                 _pathEdit,
                 next => _pathEdit = next,
                 new ControlStyle
@@ -431,7 +451,7 @@ public static partial class Crystarium
             // second right margin (the library rail's contract).
             ImGui.SetCursorScreenPos(list.Min + new Vector2(inset * scale));
             ScrollRegion(
-                $"{_id}-quick",
+                _quickId,
                 list.Size.X / scale - inset,
                 list.Size.Y / scale - inset * 2f,
                 region =>
@@ -442,7 +462,7 @@ public static partial class Crystarium
                     {
                         FileQuickEntry entry = _quick[i];
                         var hit = Row(
-                            $"{_id}-quick-{entry.Path}",
+                            Ids.Join(_quickRowPrefix, entry.Path),
                             width,
                             gutter,
                             string.Equals(
@@ -585,7 +605,7 @@ public static partial class Crystarium
             bool second = false;
             ImGui.SetCursorScreenPos(body.Min + new Vector2(inset * scale));
             ScrollRegion(
-                $"{_id}-entries",
+                _entriesId,
                 body.Size.X / scale - inset,
                 body.Size.Y / scale - inset * 2f,
                 region =>
@@ -610,7 +630,7 @@ public static partial class Crystarium
                     {
                         FileListingEntry entry = _entries[i];
                         var hit = Row(
-                            $"{_id}-entry-{entry.FullPath}",
+                            Ids.Join(_entryRowPrefix, entry.FullPath),
                             width,
                             gutter,
                             string.Equals(
@@ -740,7 +760,7 @@ public static partial class Crystarium
                 ImGui.SetCursorScreenPos(new Vector2(
                     x, footer.Min.Y + (footer.Size.Y - control) * 0.5f));
                 TextInput(
-                    $"{_id}-name",
+                    _nameId,
                     _fileName,
                     next => _fileName = next,
                     new ControlStyle

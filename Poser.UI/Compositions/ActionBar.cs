@@ -41,7 +41,7 @@ public static partial class Crystarium
         scope.Draw(origin, size, scale, alignRight: false);
         if (right != null)
         {
-            var rightScope = new ActionBarScope($"{id}-right");
+            var rightScope = new ActionBarScope(Ids.Join(id, "-right"));
             right(rightScope);
             rightScope.Draw(origin, size, scale, alignRight: true);
         }
@@ -235,7 +235,7 @@ public static partial class Crystarium
                             x,
                             centerY - side * 0.5f));
                         Crystarium.Checkbox(
-                            $"{_id}-check-{i}",
+                            Ids.Join(_id, "-check-", i),
                             item.Value,
                             item.OnToggle!,
                             item.Style,
@@ -272,7 +272,7 @@ public static partial class Crystarium
                             max.X - switchWidth,
                             centerY - logicalHeight * scale * 0.5f));
                         Crystarium.Switch(
-                            $"{_id}-switch-{i}",
+                            Ids.Join(_id, "-switch-", i),
                             item.Value,
                             item.OnToggle!,
                             item.Style,
@@ -297,7 +297,7 @@ public static partial class Crystarium
                             style,
                             item.Disabled,
                             item.Help,
-                            $"{_id}-icon-{i}");
+                            Ids.Join(_id, "-icon-", i));
                         break;
                     }
                     default:
@@ -319,13 +319,13 @@ public static partial class Crystarium
                             width / scale,
                             item.Disabled,
                             item.Help,
-                            $"{_id}-button-{i}",
+                            Ids.Join(_id, "-button-", i),
                             item.Variant);
                         break;
                     }
                 }
                 RegisterHelp(
-                    $"{_id}-item-{i}",
+                    Ids.Join(_id, "-item-", i),
                     min,
                     max,
                     item.Help);
