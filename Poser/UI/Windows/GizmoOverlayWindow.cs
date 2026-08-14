@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -1379,7 +1379,10 @@ public class GizmoOverlayWindow : Window
                     SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
                     _ => null,
                 }
-                : null);
+                : null,
+            relativeSecondaryBones: isBone &&
+                Config.ConfigurationService.Instance.Config
+                    .RelativeSecondaryBones);
         if (!begin.Success || begin.GestureId is not { } gestureId)
         {
             _log.Verbose(

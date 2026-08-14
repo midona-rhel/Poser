@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -94,6 +94,7 @@ public class SettingsWindow : Window
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
             PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
+            RelativeSecondaryBones = c.RelativeSecondaryBones,
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
             UndoDepth = c.UndoDepth,
@@ -292,6 +293,7 @@ public class SettingsWindow : Window
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
         c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
+        c.RelativeSecondaryBones = _vm.RelativeSecondaryBones;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
         // Clamped, not trusted: the slider is bounded but the stored value is

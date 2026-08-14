@@ -227,6 +227,35 @@ public static class TransformMath
         return delta with { Rotation = rotation };
     }
 
+    /// <summary>
+    /// Ktisis' RelativeBones (TransformTarget.cs:158-163): a secondary target
+    /// keeps the angle it held to the PRIMARY instead of receiving the
+    /// primary's raw world-frame rotation. Ktisis writes the result directly
+    /// as <c>(q_t·q_p⁻¹)·Δ·q_p</c>; Poser composes deltas, so the same result
+    /// falls out of conjugating Δ by that offset — <c>Δ' = R·Δ·R⁻¹</c> with
+    /// <c>R = q_t·q_p⁻¹</c>, which <see cref="Apply"/> then post-multiplies
+    /// onto <c>q_t = R·q_p</c> to give exactly <c>R·Δ·q_p</c>.
+    ///
+    /// <para>Translation and scale copy unchanged: the relative claim is about
+    /// ANGLE, and turning a group translate into a per-target one would
+    /// scatter the selection rather than move it.</para>
+    /// </summary>
+    public static TransformDelta RelativeToPrimary(
+        TransformDelta delta,
+        Quaternion primaryBaseline,
+        Quaternion targetBaseline)
+    {
+        delta = delta.Normalized();
+        var offset = NormalizeRotation(
+            NormalizeRotation(targetBaseline) *
+            Quaternion.Inverse(NormalizeRotation(primaryBaseline)));
+        return delta with
+        {
+            Rotation = NormalizeRotation(
+                offset * delta.Rotation * Quaternion.Inverse(offset)),
+        };
+    }
+
     private static Quaternion MirrorRotation(Quaternion value) =>
         new(value.X, -value.Y, -value.Z, value.W);
 

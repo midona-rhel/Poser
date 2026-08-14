@@ -61,6 +61,16 @@ public class PoserConfiguration : IPluginConfiguration
     public bool PreservePoseAcrossRedraws { get; set; } = true;
 
     /// <summary>
+    /// With several bones selected, rotate every bone but the FIRST about the
+    /// first one's frame, so each keeps the angle it held to it — Ktisis'
+    /// <c>GizmoConfig.RelativeBones</c> (TransformTarget.cs:158-163), which it
+    /// ships on with no way to turn off. Off is Brio's behaviour and Poser's
+    /// own to date: one delta reaches every selected bone unchanged. It
+    /// affects rotation only, and only a multi-bone selection.
+    /// </summary>
+    public bool RelativeSecondaryBones { get; set; } = false;
+
+    /// <summary>
     /// How many edits the undo history keeps, read live on every recorded edit
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -50,6 +50,7 @@ public sealed class SettingsViewModel
     public bool OpenOnGPose = true;
     public bool CloseWithGPose;
     public bool PreservePoseAcrossRedraws = true;
+    public bool RelativeSecondaryBones;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
     /// <summary>How many edits undo keeps. Zero turns undo off, which is why
@@ -506,6 +507,12 @@ public static class SettingsView
                 vm.PreservePoseAcrossRedraws,
                 next => vm.PreservePoseAcrossRedraws = next,
                 "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
+            form.Switch(
+                "Keep relative angles between bones",
+                vm.RelativeSecondaryBones,
+                next => vm.RelativeSecondaryBones = next,
+                "With several bones selected, turn the rest about the first "
+                    + "one's frame so each keeps its angle to it");
             form.Switch(
                 "Follow game target",
                 vm.FollowGameTarget,

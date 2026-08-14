@@ -18,7 +18,12 @@ public sealed record BeginTransformGesture(
     PivotMode PivotMode,
     Vector3? CustomPivot = null,
     string Description = "Transform",
-    IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>? TargetModes = null);
+    IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>? TargetModes = null,
+    /// <summary>Ktisis' RelativeBones: every SECONDARY target rotates about
+    /// the primary's frame, keeping the angle it held to the primary, instead
+    /// of receiving the primary's raw delta. Off is Brio's behaviour and
+    /// Poser's own to date.</summary>
+    bool RelativeSecondaryBones = false);
 
 public readonly record struct GestureResult(
     bool Success,
@@ -227,6 +232,22 @@ public sealed class TransformGestureService : IDisposable
                                 baseline.AnimatedBaselineRotation),
                     _ => delta,
                 };
+            }
+            // Relative-frame secondaries, applied AFTER any symmetry transform
+            // and to secondaries only — Ktisis stacks them in this order too
+            // (TransformTarget.cs:130-163, its mirror branch feeds deltaRot
+            // straight into the RelativeBones formula). A LOCAL-space delta
+            // already acts in each target's own frame, so it is relative
+            // already and rebasing it a second time would be a double turn.
+            if (active.Command.RelativeSecondaryBones &&
+                index != 0 &&
+                active.Command.Space != TransformSpace.Local &&
+                baseline.Target.Kind == TransformTargetKind.Bone)
+            {
+                targetDelta = TransformMath.RelativeToPrimary(
+                    targetDelta,
+                    active.Before[0].Transform.Rotation,
+                    baseline.Transform.Rotation);
             }
             var rotatePosition = active.Command.PivotMode switch
             {

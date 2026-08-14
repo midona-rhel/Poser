@@ -2678,7 +2678,11 @@ public class PoseInspectorPane
                         DomainDeltaMode.Mirrored,
                     _ => null,
                 }
-                : null);
+                : null,
+            relativeSecondaryBones:
+                targets[0].Kind == TransformTargetKind.Bone &&
+                Config.ConfigurationService.Instance.Config
+                    .RelativeSecondaryBones);
         if (!begin.Success || begin.GestureId is not { } gesture)
             return;
 

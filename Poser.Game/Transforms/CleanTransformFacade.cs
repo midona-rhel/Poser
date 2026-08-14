@@ -46,7 +46,8 @@ public sealed class CleanTransformFacade
         Vector3? customPivot = null,
         string description = "Transform",
         bool includeLinkedBones = false,
-        TransformDeltaMode? symmetry = null)
+        TransformDeltaMode? symmetry = null,
+        bool relativeSecondaryBones = false)
     {
         var targets = new List<TransformTargetId>(targetIds);
         if (includeLinkedBones)
@@ -61,7 +62,8 @@ public sealed class CleanTransformFacade
             pivotMode,
             customPivot,
             description,
-            targetModes));
+            targetModes,
+            relativeSecondaryBones));
     }
 
     public GestureResult Update(
