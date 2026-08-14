@@ -82,6 +82,31 @@ public class Poser : IDalamudPlugin
         // The whole-scene snapshot has framework subscriptions as its only
         // activity — the same lazy-singleton hazard: resolve it or it never
         // ticks.
+        // The scene auto-save resolution drags the whole scene runtime graph
+        // in behind it; each link is resolved by name here so a construction
+        // that blocks names its own constructor in the log.
+        log.Debug("Load link: prop spawns");
+        _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
+        log.Debug("Load link: overlay nodes");
+        _ = _serviceProvider.GetRequiredService<Game.Overlays.OverlayNodeService>();
+        log.Debug("Load link: lighting");
+        _ = _serviceProvider.GetRequiredService<ILightingService>();
+        log.Debug("Load link: cameras");
+        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
+        log.Debug("Load link: environment");
+        _ = _serviceProvider.GetRequiredService<IEnvironmentService>();
+        log.Debug("Load link: bindings");
+        _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
+        log.Debug("Load link: animation");
+        _ = _serviceProvider.GetRequiredService<Application.Animation.AnimationSession>();
+        log.Debug("Load link: gaze");
+        _ = _serviceProvider.GetRequiredService<IGazeService>();
+        log.Debug("Load link: integration");
+        _ = _serviceProvider.GetRequiredService<Application.Integration.ActorIntegrationSession>();
+        log.Debug("Load link: world rendering");
+        _ = _serviceProvider.GetRequiredService<IWorldRenderingService>();
+        log.Debug("Load link: scene workflow");
+        _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
         log.Debug("Load stage: scene auto-save");
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
 
