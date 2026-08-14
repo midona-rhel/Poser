@@ -251,6 +251,22 @@ public static partial class Crystarium
             return visible;
         }
 
+        /// <summary>
+        /// The list a cluster of overlapping things offers, at the pointer.
+        ///
+        /// <para>ITS METRICS ARE BRIO'S, its looks are Poser's (user
+        /// 2026-08-14). Brio's own hover list and pick popup push no style at
+        /// all — grep <c>Brio/UI/Windows/Specialized/PosingOverlayWindow.cs</c>
+        /// for <c>PushStyleVar</c> and there is nothing — so its metrics ARE
+        /// ImGui's defaults: an 8px window padding, a plain full-width
+        /// <c>Selectable</c> per row carrying the name at the ambient text
+        /// size, and a window that fits itself to its longest entry
+        /// (<c>AlwaysAutoResize</c>, :364). Those three are what is copied:
+        /// the 8px pad, no per-row ornament, and a measured width instead of
+        /// the fixed menu width this used to wear. Everything else stays the
+        /// design system's — the glass chrome, the surface radius, and the
+        /// standard list row's own hover and selected treatment.</para>
+        /// </summary>
         public static int HoverList(
             string id,
             Vector2 anchor,
@@ -261,8 +277,28 @@ public static partial class Crystarium
             if (items.Count == 0)
                 return -1;
             float scale = ImGuiHelpers.GlobalScale;
-            float padding = ActiveTheme.Floating.PopupPadding * scale;
-            float width = ActiveTheme.Floating.MenuWidth * scale;
+            float padding = ActiveTheme.Spacing.Four * scale;
+            // Brio's auto-fit, bounded by the menu's own two widths so a long
+            // bone name cannot run off and a short one cannot read as a sliver.
+            // The row's label sits a fixed slot in from its left edge and is
+            // given the same slot back as trailing breath; the scroll region
+            // reserves its gutter unconditionally, so that comes out of the
+            // width too or the labels would truncate as soon as the list
+            // scrolls.
+            var labelStyle = new TextStyle
+            {
+                Size = ActiveTheme.Typography.BodySize,
+            };
+            float widest = 0f;
+            for (int i = 0; i < items.Count; i++)
+                widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
+            float width = Math.Clamp(
+                widest
+                    + (ActiveTheme.Spacing.Eight * 2f
+                        + ActiveTheme.Scrollbar.GutterWidth) * scale
+                    + padding * 2f,
+                ActiveTheme.Floating.MenuMinWidth * scale,
+                ActiveTheme.Floating.MenuWidth * scale);
             int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
             float height = rows * ActiveTheme.Controls.ListRowHeight * scale
                 + padding * 2f;
@@ -309,10 +345,15 @@ public static partial class Crystarium
                     region =>
                     {
                         for (int i = 0; i < items.Count; i++)
+                            // No mark: Brio's rows are the name and nothing
+                            // else, and a bullet per row in a list of five
+                            // near-identical names is ornament, not
+                            // information.
                             if (region.ListRow(
                                     $"{id}-row-{i}",
                                     items[i],
-                                    selected: i == selected))
+                                    selected: i == selected,
+                                    iconVisible: false))
                                 clicked = i;
                     });
                 Interactive.EndOwner(owner);

@@ -664,18 +664,37 @@ public class SkeletonOverlayWindow : Window
         bool hasWorldBone = !listTravel
             ? AnyHovered(bones)
             : onFrozenCluster;
-        // Ktisis' hover-list wheel (SelectableGui.DrawSelectList): a notch
-        // steps the highlighted candidate and wraps at both ends. It runs
-        // while the cluster is alive — over the dots OR travelling into the
-        // list — and BEFORE the target is read below, so the entry a release
-        // commits is the one the wheel just put under the highlight. The wheel
-        // is claimed only when it actually moved the highlight, so a single
-        // candidate leaves scrolling to whatever is underneath.
+        // The hover-list wheel. A notch steps the highlighted candidate and
+        // wraps at both ends (CycleHoverIndex — Ktisis' step, single test per
+        // side). It runs while the cluster is alive — over the dots OR
+        // travelling into the list — and BEFORE the target is read below, so
+        // the entry a release commits is the one the wheel just put under the
+        // highlight. The wheel is claimed only when it actually moved the
+        // highlight, so a single candidate leaves scrolling to whatever is
+        // underneath.
+        //
+        // WHAT THE NOTCH COSTS is the one thing the references disagree on,
+        // and it is the user's to choose (BonePickBehavior). Under Ktisis the
+        // notch moves the highlight and nothing else. Under Brio the notch
+        // SELECTS what it lands on (PosingOverlayWindow.DrawPopup:444-448
+        // invokes the entry's OnClick on every wheel event), so the scene
+        // selection walks the stack as the wheel turns. It is armed as a
+        // pending selection rather than applied here so it goes through the
+        // one commit path — same presence and occlusion tests as a click.
         if (_hoveredBones.Count > 1 && (hasWorldBone || listTravel)
             && io.MouseWheel != 0f)
         {
             _hoverIndex = CycleHoverIndex(
                 _hoverIndex, _hoveredBones.Count, io.MouseWheel);
+            if (Config.BonePickBehavior == BonePickBehavior.Brio)
+                _pendingSelection = new PendingSelection(
+                    _hoveredBones[_hoverIndex].Id,
+                    ImGui.GetMousePos(),
+                    io.KeyCtrl,
+                    new InteractionOwner(
+                        HoverListOwnerId,
+                        InteractionLayer.OverlaySurface,
+                        int.MaxValue));
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
         }
@@ -998,6 +1017,12 @@ public class SkeletonOverlayWindow : Window
     /// modulo the count. That is reproduced, not corrected: the list is a
     /// handful of dots and "wheel hard, land at the end" is the behaviour a
     /// Ktisis user's hand already has.</para>
+    ///
+    /// <para>BOTH pick behaviours share this step, because the references
+    /// agree on it: Brio's popup walks the same direction and wraps by the
+    /// same single test per side
+    /// (<c>PosingOverlayWindow.DrawPopup:428-442</c>). What they disagree
+    /// about is what a notch COSTS, which is decided at the call site.</para>
     /// </summary>
     internal static int CycleHoverIndex(int index, int count, float wheel)
     {

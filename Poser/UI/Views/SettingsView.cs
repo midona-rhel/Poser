@@ -84,6 +84,10 @@ public sealed class SettingsViewModel
 
     public bool SelectedBonesOnly;
 
+    /// <summary>Index into <c>BonePickBehaviorLabels</c>, matching
+    /// <c>BonePickBehavior</c>'s declaration order.</summary>
+    public int BonePickBehavior;
+
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
@@ -766,6 +770,14 @@ public static class SettingsView
                 vm.SelectedBonesOnly,
                 next => vm.SelectedBonesOnly = next,
                 "Draw the bones that are selected and nothing else");
+            form.Dropdown(
+                "Bone pick behavior",
+                BonePickBehaviorLabels,
+                vm.BonePickBehavior,
+                next => vm.BonePickBehavior = next,
+                "What the wheel does over a stack of overlapping bones: "
+                    + "Ktisis moves the highlight and the click picks it, "
+                    + "Brio selects each bone as the wheel reaches it");
         }, divider: false);
         page.Section("SKELETON LINES", form =>
         {
@@ -856,6 +868,11 @@ public static class SettingsView
     /// order.</summary>
     private static readonly string[] SkeletonShapeLabels =
         ["Dots", "Octahedra", "Joints"];
+
+    /// <summary>Labels for <c>BonePickBehavior</c>, in its declaration
+    /// order.</summary>
+    private static readonly string[] BonePickBehaviorLabels =
+        ["Ktisis", "Brio"];
 
     /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
     /// order.</summary>

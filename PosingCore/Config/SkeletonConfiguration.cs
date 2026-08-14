@@ -92,6 +92,12 @@ public class SkeletonConfiguration
     public ActiveActorSource ActiveActorSource { get; set; } =
         ActiveActorSource.Target;
 
+    /// <summary>Which reference the overlapping-bone pick list behaves like.
+    /// The default is what Poser already did, so the option changes nothing
+    /// until it is asked to.</summary>
+    public BonePickBehavior BonePickBehavior { get; set; } =
+        BonePickBehavior.Ktisis;
+
     /// <summary>Ktisis' <c>ShowFriendlyBoneNames</c>. Off shows the raw
     /// skeleton name (<c>j_f_ago</c>) wherever a bone names itself.</summary>
     public bool ShowFriendlyBoneNames { get; set; } = true;
@@ -103,6 +109,27 @@ public class SkeletonConfiguration
     /// character wears — so it ships on and the switch is the escape.
     /// </summary>
     public bool ShowAllVieraEars { get; set; } = false;
+}
+
+/// <summary>
+/// How the pick list behaves when several bone dots overlap under the cursor.
+/// The two references disagree about ONE thing — whether the wheel moves a
+/// highlight or moves the selection itself — and both hands are in the user
+/// base, so the surface is shared and only that rule differs.
+/// </summary>
+public enum BonePickBehavior
+{
+    /// <summary>Ktisis (<c>Ktisis/Interface/Overlay/SelectableGui.cs:125-158</c>):
+    /// the wheel moves the HIGHLIGHT and nothing else; the click commits it.
+    /// What Poser has always done, and therefore the default.</summary>
+    Ktisis,
+
+    /// <summary>Brio
+    /// (<c>Brio/UI/Windows/Specialized/PosingOverlayWindow.cs:428-448</c>):
+    /// every wheel notch SELECTS the bone it lands on, so the scene selection
+    /// walks the stack as the wheel turns and a click merely stops on the one
+    /// already selected.</summary>
+    Brio,
 }
 
 /// <summary>Which actor the overlay treats as "the active one" when

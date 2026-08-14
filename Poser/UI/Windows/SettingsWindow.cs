@@ -117,6 +117,7 @@ public class SettingsWindow : Window
             OverlayMirrored = ImGui.ColorConvertU32ToFloat4(c.Skeleton.MirroredBoneColor),
             SkeletonShape = (int)c.Skeleton.SkeletonViewMode,
             SelectedBonesOnly = c.Skeleton.ShowSelectedBonesOnly,
+            BonePickBehavior = (int)c.Skeleton.BonePickBehavior,
             ShowSkeletonLines = c.Skeleton.ShowSkeletonLines,
             BoneLineThickness = c.Skeleton.BoneLineThickness,
             BoneLineOpacity = c.Skeleton.BoneLineOpacity,
@@ -342,6 +343,8 @@ public class SettingsWindow : Window
         c.Skeleton.SkeletonViewMode =
             (SkeletonViewMode)Math.Clamp(_vm.SkeletonShape, 0, 2);
         c.Skeleton.ShowSelectedBonesOnly = _vm.SelectedBonesOnly;
+        c.Skeleton.BonePickBehavior =
+            (BonePickBehavior)Math.Clamp(_vm.BonePickBehavior, 0, 1);
         c.Skeleton.ShowSkeletonLines = _vm.ShowSkeletonLines;
         c.Skeleton.BoneLineThickness = _vm.BoneLineThickness;
         c.Skeleton.BoneLineOpacity = _vm.BoneLineOpacity;
