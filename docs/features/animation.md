@@ -10,6 +10,12 @@
   onto its slot. Combining animations is per-slot layering; holding one body
   part is that slot's speed pinned at 0. An expression holds by play + facial
   pin; release is unpin → 604 → unpin → 3 and keeps ownership on failure.
+  Picking in the Expression row's picker IS the apply (Brio's flow): one click
+  plays + pins, no separate apply step; the feed is Expressions only (the
+  facial entry of EmoteCategory-3 emotes, Brio's ExpressionsOnly set). A pick
+  while a hold is active switches the expression over the pinned slot and
+  never re-captures — the pre-hold facial timeline stays the one restore
+  point. The bake into the pose ("Apply to face") is a separate action.
 - Looping is Poser-orchestrated: an armed slot whose timeline ends is played
   again on the framework tick. The game's forced-timeline field is unproven
   for this client and is never touched (`SupportsForceLoop` false). Loop
