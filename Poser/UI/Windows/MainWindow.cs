@@ -627,6 +627,19 @@ public class MainWindow : Window
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
+        // The overlay's two display modes were implemented end to end and
+        // never written; these are their writers. Both are editor state, not
+        // config — they are how the armature is being LOOKED at right now, and
+        // the keybind registry already binds the same two commands.
+        _vm.OnSkeletonViewMode = index => _editorState.SkeletonViewMode =
+            index switch
+            {
+                1 => SkeletonViewMode.Octahedra,
+                2 => SkeletonViewMode.Joints,
+                _ => SkeletonViewMode.Default,
+            };
+        _vm.OnSelectedBonesOnly =
+            on => _editorState.ShowSelectedBonesOnly = on;
         _vm.OnSettings = () => OnSettingsRequested?.Invoke();
         _vm.OnBurger = anchor =>
         {
@@ -1272,6 +1285,13 @@ public class MainWindow : Window
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
+        _vm.SkeletonViewMode = _editorState.SkeletonViewMode switch
+        {
+            SkeletonViewMode.Octahedra => 1,
+            SkeletonViewMode.Joints => 2,
+            _ => 0,
+        };
+        _vm.SelectedBonesOnly = _editorState.ShowSelectedBonesOnly;
         _vm.CanUndo = _cleanTransforms.CanUndo;
         _vm.CanRedo = _cleanTransforms.CanRedo;
         // Pop-out follows the toolbar actor: any selection that resolves to
