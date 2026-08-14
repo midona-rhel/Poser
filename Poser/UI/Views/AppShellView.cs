@@ -274,10 +274,18 @@ public sealed class AppShellViewModel
 /// cref="ShellSidebar"/> owns them behind its own cache. The shell seats it and
 /// keeps everything around it: chassis, rules, status bar, resize strip.</para>
 ///
-/// <para>Chrome: one shell-level blur, then the Settings glass treatment with the
-/// elevation shadow suppressed (a shadow under a chassis that IS the window
-/// reads as a halo). Panel fills land on top of it, so the asymmetric glass edge
-/// is repainted last.</para>
+/// <para>Chrome, and the ONE normative statement of it: <b>one shell-level
+/// blur, one ground coat per pixel, one edge.</b> The chrome pass prepends the
+/// blur and the elevation shadows and nothing else; each COLUMN then lays a
+/// single translucent ground over it — the panels' (sidebar, rail) and the
+/// workspace's, which is the same glass over the darker app ground — and the
+/// asymmetric glass edge is drawn last, once, so no column fill can hide
+/// it.</para>
+///
+/// <para>Nothing may repaint a ground and nothing may repaint the edge.
+/// Translucency laid on itself stops being glass — it goes flat, it brightens
+/// the white edge tokens and darkens the black one, and it is the single defect
+/// behind every "the glass looks wrong" report this chassis has had.</para>
 /// </summary>
 public static class AppShellView
 {
@@ -335,8 +343,20 @@ public static class AppShellView
     private static readonly Action SpawnPressed =
         static () => _spawnPressed = true;
 
+    /// <summary>The PANELS' ground — the sidebar's and the rail's. One coat of
+    /// it per pixel: nothing may repaint it, because a translucent fill laid on
+    /// itself stops being glass.</summary>
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
+
+    /// <summary>The WORKSPACE's ground. The same glass — same alpha, same blur
+    /// behind it — mixed over the app ground instead of over the panels' raised
+    /// surface, because the content sits BELOW the panels in the ladder.
+    /// <see cref="Theme.Surface"/> is picto --color-bg-app, the rung under
+    /// SurfaceRaised. Deliberately NOT SurfaceSunken: picto's surface-2 is
+    /// BRIGHTER than surface-1 — an input well, not a ground.</summary>
+    private static Vector4 WellGlass =>
+        Crystarium.ActiveTheme.Surface with { W = Glass.W };
     private static Vector4 BorderPrimary =>
         Crystarium.ActiveTheme.Chrome.ControlBorder;
     private static Vector4 BorderSecondary =>
@@ -422,34 +442,63 @@ public static class AppShellView
         {
             float radius = Crystarium.ActiveTheme.Radii.Window;
 
-            // THE one window chrome — the same DrawChrome defaults every
-            // floating surface calls (user 2026-08-11: one chrome everywhere).
-            Crystarium.FloatingSurface.DrawChrome(dl, min, max, radius);
+            // ONE BLUR, then ONE ground coat per pixel, then ONE edge.
+            //
+            // The chrome keeps its blur and its elevation pass and gives up
+            // the other two: the WINDOW-WIDE glass fill, because every column
+            // below lays its own ground and a fill underneath them is a second
+            // coat; and the glass EDGE, because this method draws the edge
+            // itself at the end, after the columns, so their fills cannot hide
+            // it. Both used to be drawn here as well, and both were therefore
+            // painted twice — the sidebar wore two coats of glass, and the
+            // asymmetric edge wore two of itself: white 0.25 composites to
+            // 0.4375 along the TOP and 0.12 to 0.2256 down the SIDES, while
+            // the bottom's BLACK 0.2 only goes darker. That is exactly the
+            // shape reported against the MERGED window — uncollapsed "the
+            // top", collapsed "the top AND the sides", never the bottom (user
+            // 2026-08-14: "the merged window glass effect is still wrong, it
+            // has the same bug the separated window had").
+            Crystarium.FloatingSurface.DrawChrome(
+                dl, min, max, radius, fill: false, border: false);
 
-            // Attached, the workspace is a WELL: the one column the window's
-            // glass shows through, framed by a panel on either side — the
-            // sidebar's chassis and the rail's. Detached, the sidebar is a
-            // window of its own, so the workspace becomes the window's own
-            // left column and the frame is gone: the glass' backdrop bleed
-            // stood against the rail's flat panel instead of between two of
-            // them, and the left half of the window read brighter than its
-            // right (user 2026-08-14: "you should be using the same colour
-            // that the inspector has on the RIGHT side, on the left side").
-            // It therefore takes the RAIL'S OWN token, in one pass from the
-            // titlebar to the window's bottom, so the column is one material
-            // top to bottom exactly as the sidebar's and the rail's are.
-            if (vm.Detached && !vm.Collapsed)
+            // THE WELL — the one ground that is NOT the panels'. The workspace
+            // is the app's ground and the ground is DARKER than the panels
+            // standing on it (user 2026-08-14: "the main content window — i.e.
+            // NOT sidebar or inspector — is supposed to have a DARKER color").
+            // It keeps the glass: same coat, same alpha, same blur behind it —
+            // only the colour under it changes ("the BG COLOR, not the glass
+            // effect"), so the merged and separated content columns are the
+            // same translucent surface as each other and as the panels.
+            //
+            // Collapsed, the bar IS the workspace band — the sidebar and rail
+            // cells only exist while the window is open — so the coat takes
+            // the whole strip and the "one continuous titlebar" of collapse
+            // stays one continuous thing.
+            if (vm.Collapsed)
             {
-                float panelRail = vm.DrawRail != null ? RailWidth * s : 0f;
+                dl.AddRectFilled(min, max, U32(WellGlass), radius * s);
+            }
+            else
+            {
+                float wellLeft = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+                float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
+                // Only the window's OWN corners round; an edge that meets a
+                // panel is square. The radius is dropped along with them, so
+                // the flags cannot fall through to ImGui's round-everything
+                // default.
+                ImDrawFlags corners = 0;
+                if (wellLeft <= 0f)
+                    corners |= ImDrawFlags.RoundCornersTopLeft
+                        | ImDrawFlags.RoundCornersBottomLeft;
+                if (wellRight <= 0f)
+                    corners |= ImDrawFlags.RoundCornersTopRight
+                        | ImDrawFlags.RoundCornersBottomRight;
                 dl.AddRectFilled(
-                    min,
-                    new Vector2(max.X - panelRail, max.Y),
-                    U32(Crystarium.ActiveTheme.SurfaceRaised),
-                    radius * s,
-                    panelRail > 0f
-                        ? ImDrawFlags.RoundCornersTopLeft
-                            | ImDrawFlags.RoundCornersBottomLeft
-                        : ImDrawFlags.RoundCornersAll);
+                    new Vector2(min.X + wellLeft, min.Y),
+                    new Vector2(max.X - wellRight, max.Y),
+                    U32(WellGlass),
+                    corners == 0 ? 0f : radius * s,
+                    corners);
             }
 
             SyncKeybindHelp();
@@ -507,23 +556,17 @@ public static class AppShellView
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        // The window's glass is painted ONCE, by the chrome in Draw. A band
-        // repaints it only where a COLUMN has to read apart from the rest, and
-        // the sidebar's is the only such column: its cell here and its chassis
-        // below wear the same second coat, and the bar over the workspace
-        // wears the window's own single coat. Collapsed and detached have no
-        // sidebar cell, so the bar is the workspace's the whole way across and
-        // paints nothing HERE — detached, the workspace column already laid
-        // its own tone through this band in Draw, which is what keeps a column
-        // one material from the bar to the window's bottom edge. The strip
-        // those two states used to lay edge to edge instead
-        // stacked the same translucent fill on itself, which reads flat
-        // instead of glass and, over a dark backdrop, brighter than the window
-        // it sits on; its rounded BOTTOM corners also scalloped that band away
-        // at the window's left edge, where detached mode has no sidebar to
-        // continue it (user 2026-08-14: the detached inspector's chrome is
-        // "too bright", and the detached library "didn't have correct glass
-        // chrome on left").
+        // A COLUMN'S CELL, not a band across the bar. Each of these lays the
+        // panel ground over the blur exactly once, and stops at its own
+        // column's edge — the band between them is the workspace's, and Draw
+        // has already coated it with the well's ground. That is what makes a
+        // column one material from this bar down to the window's bottom, and
+        // what keeps any pixel from wearing two coats: the bar used to lay a
+        // full-width fill over the window-wide one whenever the sidebar cell
+        // was absent, which read flat instead of glass and scalloped its own
+        // rounded BOTTOM corners out of the window's left edge (user
+        // 2026-08-14: the detached chrome "too bright", the detached library
+        // "didn't have correct glass chrome on left").
         if (!vm.Collapsed && !vm.Detached)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
@@ -534,13 +577,15 @@ public static class AppShellView
         }
         if (!vm.Collapsed && railWidth > 0f)
         {
-            // With the rail present the right cluster stands on a surface-1
-            // cell continuous with the rail below it (shell rule).
+            // With the rail present the right cluster stands on a cell
+            // continuous with the rail below it (shell rule) — the same panel
+            // ground the sidebar's cell wears, so the two columns framing the
+            // well are one material and one glass.
             var railMin = new Vector2(max.X - railWidth, min.Y);
             dl.AddRectFilled(
                 railMin,
                 new Vector2(max.X, min.Y + height),
-                U32(theme.SurfaceRaised),
+                U32(Glass),
                 radius,
                 ImDrawFlags.RoundCornersTopRight);
             dl.AddRectFilled(
@@ -1102,8 +1147,11 @@ public static class AppShellView
         ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
+        // The panel ground, once — the same coat the sidebar's chassis wears
+        // and the same one this rail's titlebar cell wears, so the column is
+        // one glass from the bar to the window's bottom.
         dl.AddRectFilled(
-            railMin, max, U32(theme.SurfaceRaised), theme.Radii.Window * s,
+            railMin, max, U32(Glass), theme.Radii.Window * s,
             ImDrawFlags.RoundCornersBottomRight);
         dl.AddRectFilled(
             railMin, new Vector2(railMin.X + 1f * s, max.Y), U32(BorderPrimary));

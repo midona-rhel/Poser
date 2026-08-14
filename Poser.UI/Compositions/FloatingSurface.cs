@@ -365,13 +365,24 @@ public static partial class Crystarium
         /// <param name="blur">The backdrop blur. A surface that already
         /// prepended its own one shell-level blur states false; prepending a
         /// second would blur the same backdrop twice.</param>
+        /// <param name="fill">The window-wide glass fill. A surface that
+        /// grounds its own REGIONS states false: it lays one coat per pixel
+        /// itself, and a fill underneath them would be a second coat — which
+        /// stops being glass. The shell is the one such surface.</param>
+        /// <param name="border">The asymmetric glass edge. False for a surface
+        /// that draws the edge itself, LAST, so its region fills cannot hide
+        /// it; drawing it here as well would lay each edge token on itself,
+        /// brightening the white top and sides while only darkening the black
+        /// bottom.</param>
         public static void DrawChrome(
             ImDrawListPtr drawList,
             Vector2 min,
             Vector2 max,
             float radius,
             bool shadow = true,
-            bool blur = true)
+            bool blur = true,
+            bool fill = true,
+            bool border = true)
         {
             float scale = ImGuiHelpers.GlobalScale;
             if (blur)
@@ -386,13 +397,23 @@ public static partial class Crystarium
                 max,
                 new BoxStyle
                 {
-                    BackgroundColor = GlassChrome.BackgroundColor,
-                    BorderWidth = 1f,
+                    BackgroundColor = fill
+                        ? GlassChrome.BackgroundColor
+                        : (Vector4?)null,
+                    BorderWidth = border ? 1f : 0f,
                     BorderRadius = radius,
-                    BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
-                    BorderLeftColor = Crystarium.ActiveTheme.Glass.BorderSide,
-                    BorderRightColor = Crystarium.ActiveTheme.Glass.BorderSide,
-                    BorderBottomColor = Crystarium.ActiveTheme.Glass.BorderBottom,
+                    BorderTopColor = border
+                        ? Crystarium.ActiveTheme.Glass.BorderTop
+                        : (Vector4?)null,
+                    BorderLeftColor = border
+                        ? Crystarium.ActiveTheme.Glass.BorderSide
+                        : (Vector4?)null,
+                    BorderRightColor = border
+                        ? Crystarium.ActiveTheme.Glass.BorderSide
+                        : (Vector4?)null,
+                    BorderBottomColor = border
+                        ? Crystarium.ActiveTheme.Glass.BorderBottom
+                        : (Vector4?)null,
                     BoxShadows = shadow
                         ?
                         [
