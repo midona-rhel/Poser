@@ -43,6 +43,22 @@
   Open-in-Glamourer remains outbound-only navigation.
 - Presentation state is session-only: not pose data, a pose-file field, a
   named layer, a transform gesture, history, or a second undo journal.
+- MODEL ID: `ActorModelIdSession` (exact-generation `ActorId` keys) owns
+  Poser's ModelChara changes with the same vendor-baseline idiom — the
+  INCOMING id is captured once before the first successful apply (Brio
+  `_originalAppearance ??=`, ActorAppearanceCapability.cs:326), Reset
+  writes exactly that back, a failed restore stays owned and retries, and
+  a vanished or replaced exact generation is dropped without writes.
+  Reset All, GPose exit, disposal, and reconciliation run the same path.
+  The write is Brio's mechanism whole (id write + full redraw, owned by
+  `ActorSpawnService.SetModelCharaId`), verified by readback. The MODEL
+  section pairs the numeric field with a name search over every model the
+  game can name natively (event NPCs, minions, mounts, ornaments; battle
+  NPCs await the LuminaSupplemental name-link dependency); picking a row
+  applies ONLY its ModelChara id — an NPC's customize/equipment stay
+  Glamourer's. Exports write the id as the pose file's Brio Smart Import
+  hint (`ModelId`, Brio Files/PoseFile.cs:143-145); `RaceSexId`/`FaceID`
+  are declared for round-trip only.
 - UI: the Appearance tab (no pose rail; content takes the released
   width) is one actor-scoped form on the shared inspector geometry —
   header actions, Presentation (opacity + three color wells; absent

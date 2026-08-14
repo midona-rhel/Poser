@@ -1,9 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Plugin.Services;
+using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Presentation;
 using Poser.Application.Scene;
+using Poser.Domain.Appearance;
 using Poser.Domain.Identity;
 using Poser.Domain.Integration;
 using Poser.Domain.Presentation;
@@ -26,10 +31,14 @@ namespace Poser.UI;
 public sealed class AppearancePane
 {
     private readonly ActorPresentationSession _presentation;
+    private readonly ActorModelIdSession _model;
+    private readonly ModelCatalog _modelCatalog;
+    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
     private readonly ActorIntegrationSession _integration;
     private readonly SceneSession _scene;
     private readonly IActorSpawnService _spawn;
     private readonly StableBindingRegistry _bindings;
+    private readonly ITextureProvider _textures;
 
     private string _status = string.Empty;
     private bool _openModel = true;
@@ -52,6 +61,41 @@ public sealed class AppearancePane
     /// change while the popover is open never retargets the pending pick.</summary>
     private ActorId? _pickerActor;
 
+    // ── model search picker (its own surface: the rows are catalog rows
+    // with kind strip, icons and a model-id badge, not ExternalItems) ────
+    private readonly Crystarium.SearchPicker<ModelCatalogEntry> _modelPicker =
+        new("appearance-model");
+    private ActorId? _modelPickerActor;
+    private int _modelKindIndex;
+    private readonly Func<string, IReadOnlyList<ModelCatalogEntry>> _modelQuery;
+    private readonly Func<ModelCatalogEntry, string> _modelEntryKey;
+    private readonly Func<ModelCatalogEntry, nint> _modelEntryTexture;
+    private readonly Func<ModelCatalogEntry, string?> _modelEntryBadge;
+    private readonly Action<int> _setModelKind;
+    private static readonly Func<ModelCatalogEntry, string> ModelEntryName =
+        static entry => entry.Name;
+    private static readonly string[] ModelKindLabels =
+        ["All", "NPCs", "Minions", "Mounts", "Ornaments"];
+    private static readonly ModelCatalogKind?[] ModelKindValues =
+    [
+        null, ModelCatalogKind.EventNpc, ModelCatalogKind.Minion,
+        ModelCatalogKind.Mount, ModelCatalogKind.Ornament,
+    ];
+
+    // Per-frame row callbacks may allocate nothing: memoized query answer,
+    // cached key/badge strings, remembered missing icons (a game icon
+    // lookup THROWS for absent ids — an exception per row per frame is a
+    // frame-rate cliff).
+    private string? _modelMemoQuery;
+    private int _modelMemoKind = -1;
+    private bool _modelMemoLoaded;
+    private IReadOnlyList<ModelCatalogEntry> _modelMemo =
+        Array.Empty<ModelCatalogEntry>();
+    private readonly Dictionary<(ModelCatalogKind Kind, uint RowId), string>
+        _modelRowKeys = new();
+    private readonly Dictionary<int, string> _modelIdText = new();
+    private readonly HashSet<uint> _missingIcons = new();
+
     private static readonly TimeSpan ReadoutInterval = TimeSpan.FromSeconds(2);
     private ActorId? _readoutActor;
     private DateTime _readoutAt = DateTime.MinValue;
@@ -73,16 +117,29 @@ public sealed class AppearancePane
 
     public AppearancePane(
         ActorPresentationSession presentation,
+        ActorModelIdSession model,
+        ModelCatalog modelCatalog,
+        Game.Appearance.ModelCatalogLoader modelLoader,
         ActorIntegrationSession integration,
         SceneSession scene,
         IActorSpawnService spawn,
-        StableBindingRegistry bindings)
+        StableBindingRegistry bindings,
+        ITextureProvider textures)
     {
         _presentation = presentation;
+        _model = model;
+        _modelCatalog = modelCatalog;
+        _modelLoader = modelLoader;
         _integration = integration;
         _scene = scene;
         _spawn = spawn;
         _bindings = bindings;
+        _textures = textures;
+        _modelQuery = ComputeModelSearch;
+        _modelEntryKey = ModelRowKey;
+        _modelEntryTexture = entry => ResolveIcon(entry.Icon);
+        _modelEntryBadge = entry => ModelIdText(entry.ModelCharaId);
+        _setModelKind = chosen => _modelKindIndex = chosen;
     }
 
     /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
@@ -95,6 +152,7 @@ public sealed class AppearancePane
     public void Draw(Vector2 origin, Vector2 size)
     {
         DrainPicker();
+        DrainModelPicker();
 
         Crystarium.Page("appearance", origin, size, page =>
         {
@@ -152,24 +210,35 @@ public sealed class AppearancePane
         });
     }
 
-    /// <summary>The model-id editor: an edit buffer applied on click, never
-    /// per keystroke — every apply is a full actor redraw.</summary>
+    /// <summary>The model-id editor: a search selector over every named
+    /// model (Brio's NpcSelector data, model id only — customize and
+    /// equipment stay Glamourer's) beside the numeric field, all applied
+    /// through the ownership session so the incoming id is captured once
+    /// and Reset restores it exactly. Every apply is a full actor redraw;
+    /// the numeric buffer applies on click, never per keystroke.</summary>
     private void ModelRows(Crystarium.FormScope form, ActorId id)
     {
-        var resolved = _bindings.Resolve(id);
-        if (!resolved.Success || resolved.Value is not { } live)
+        if (_model.Read(id) is not { } current)
         {
             form.Status("This actor is no longer available.");
             return;
         }
-
-        int current = _spawn.GetModelCharaId(live);
         if (_modelActor != id)
         {
             _modelActor = id;
-            _modelText = current.ToString(
-                System.Globalization.CultureInfo.InvariantCulture);
+            _modelText = ModelIdText(current);
         }
+
+        form.Selector(
+            "Model",
+            ModelDisplayName(current),
+            () => OpenModelPicker(id),
+            () => ReportModel(_model.Reset(id), "Reset model"),
+            available: true,
+            owned: _model.IsOwned(id),
+            help: "What this actor draws as. Search NPCs, minions, mounts "
+                + "and ornaments by name or model id; Reset restores the "
+                + "model it came in with.");
 
         form.TextInput(
             "Model id",
@@ -178,7 +247,7 @@ public sealed class AppearancePane
             help: "The ModelChara row this actor draws as. 0 is the human base; applying redraws the actor.");
         form.ReadOnlyWithActions(
             "Current",
-            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ModelIdText(current),
             actions => actions.Button(
                 "Apply",
                 () =>
@@ -190,8 +259,7 @@ public sealed class AppearancePane
                             out var next)
                         && next >= 0)
                     {
-                        _spawn.SetModelCharaId(live, next);
-                        _status = string.Empty;
+                        ReportModel(_model.Apply(id, next), "Model id");
                     }
                     else
                     {
@@ -199,6 +267,142 @@ public sealed class AppearancePane
                     }
                 },
                 help: "Write the model id and redraw the actor"));
+    }
+
+    /// <summary>Applies a model outcome and re-seeds the numeric buffer
+    /// from the actor's new current id.</summary>
+    private void ReportModel(PresentationResult result, string what)
+    {
+        Report(result, what);
+        _modelActor = null;
+    }
+
+    /// <summary>The search trigger's readout: the catalog's name for the
+    /// id when one exists — the picker shows visuals, the trigger names
+    /// the current one — otherwise the bare fact.</summary>
+    private string ModelDisplayName(int current)
+    {
+        if (current == 0)
+            return "Human";
+        return _modelCatalog.FindByModelCharaId(current) is { } known
+            ? known.Name
+            : $"Model {ModelIdText(current)}";
+    }
+
+    // ── model search picker ──────────────────────────────────────────────
+
+    /// <summary>Opens the model search against the actor frozen here,
+    /// seeded to the row drawing as the current id when one exists.</summary>
+    private void OpenModelPicker(ActorId actor)
+    {
+        _modelLoader.EnsureLoaded();
+        _modelPickerActor = actor;
+        int current = _model.Read(actor) ?? 0;
+        string? selectedKey =
+            current != 0 && _modelCatalog.FindByModelCharaId(current) is { } known
+                ? ModelRowKey(known)
+                : null;
+        _modelPicker.Open(
+            "model",
+            Array.Empty<ModelCatalogEntry>(),
+            ModelEntryName,
+            _modelEntryKey,
+            selectedKey,
+            _modelCatalog.IsLoaded ? null : "Building model catalog…",
+            ModelPickerOptions());
+    }
+
+    /// <summary>The kind strip is CONTROLLED — its selection lives here —
+    /// so the open surface is re-told its options each frame before it
+    /// draws. A pick applies through the ownership session against the
+    /// actor frozen at open.</summary>
+    private void DrainModelPicker()
+    {
+        _modelPicker.Update(ModelPickerOptions());
+        if (_modelPicker.Draw() is not { } pick
+            || _modelPickerActor is not { } target)
+            return;
+        ReportModel(
+            _model.Apply(target, pick.Item.ModelCharaId), pick.Item.Name);
+    }
+
+    private PickerOptions<ModelCatalogEntry> ModelPickerOptions() => new()
+    {
+        Query = _modelQuery,
+        Texture = _modelEntryTexture,
+        Glyph = static entry => entry.Kind == ModelCatalogKind.EventNpc
+            ? TablerIcon.User
+            : TablerIcon.Paw,
+        Badge = _modelEntryBadge,
+        Strip = new PickerStrip(ModelKindLabels, _modelKindIndex, _setModelKind),
+        // A row carries an icon, a name and a badge, and the narrow picker
+        // cuts all three.
+        Width = Crystarium.ActiveTheme.Picker.WideWidth,
+    };
+
+    private IReadOnlyList<ModelCatalogEntry> ComputeModelSearch(string search)
+    {
+        bool loaded = _modelCatalog.IsLoaded;
+        if (_modelMemoQuery == search && _modelMemoKind == _modelKindIndex
+            && _modelMemoLoaded == loaded)
+            return _modelMemo;
+        _modelMemoQuery = search;
+        _modelMemoKind = _modelKindIndex;
+        _modelMemoLoaded = loaded;
+        _modelMemo = _modelCatalog.Search(
+            search,
+            ModelKindValues[Math.Clamp(
+                _modelKindIndex, 0, ModelKindValues.Length - 1)],
+            limit: 400);
+        return _modelMemo;
+    }
+
+    /// <summary>Row ids are only unique WITHIN a sheet, so a row's picker
+    /// identity is the kind and the id.</summary>
+    private string ModelRowKey(ModelCatalogEntry entry)
+    {
+        var identity = (entry.Kind, entry.RowId);
+        if (_modelRowKeys.TryGetValue(identity, out var text))
+            return text;
+        text = $"{(int)entry.Kind}-{entry.RowId}";
+        _modelRowKeys[identity] = text;
+        return text;
+    }
+
+    private string ModelIdText(int id)
+    {
+        if (_modelIdText.TryGetValue(id, out var text))
+            return text;
+        text = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        _modelIdText[id] = text;
+        return text;
+    }
+
+    /// <summary>
+    /// Resolves a row's game icon to an ImGui handle, or 0 when there is
+    /// none. Sheet icon ids are not guaranteed to exist and GetFromGameIcon
+    /// THROWS for those, so this uses the try-variant, catches anyway, and
+    /// remembers the failures. The WRAP is never cached: shared textures
+    /// must be re-resolved each frame.
+    /// </summary>
+    private nint ResolveIcon(uint iconId)
+    {
+        if (iconId == 0 || _missingIcons.Contains(iconId))
+            return 0;
+        IDalamudTextureWrap? wrap = null;
+        try
+        {
+            if (_textures.TryGetFromGameIcon(
+                    new GameIconLookup(iconId), out var shared))
+                wrap = shared.GetWrapOrDefault();
+            else
+                _missingIcons.Add(iconId);
+        }
+        catch (Exception)
+        {
+            _missingIcons.Add(iconId);
+        }
+        return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 
     /// <summary>A creature is a native attached companion, a catalog spawn, or

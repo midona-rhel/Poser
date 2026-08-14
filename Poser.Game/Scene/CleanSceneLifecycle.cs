@@ -28,6 +28,7 @@ public sealed class CleanSceneLifecycle : IDisposable
     private readonly TransformHistory _history;
     private readonly Poser.Application.Animation.AnimationSession _animation;
     private readonly Poser.Application.Presentation.ActorPresentationSession _presentation;
+    private readonly Poser.Application.Appearance.ActorModelIdSession _modelId;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly Poser.Game.Animation.AnimationRuntimePort _animationPort;
     private readonly Poser.Game.Animation.FacialPoseCapture _facialCapture;
@@ -53,6 +54,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         TransformHistory history,
         Poser.Application.Animation.AnimationSession animation,
         Poser.Application.Presentation.ActorPresentationSession presentation,
+        Poser.Application.Appearance.ActorModelIdSession modelId,
         Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
@@ -65,6 +67,7 @@ public sealed class CleanSceneLifecycle : IDisposable
         _history = history;
         _animation = animation;
         _presentation = presentation;
+        _modelId = modelId;
         _integration = integration;
         _animationPort = animationPort;
         _facialCapture = facialCapture;
@@ -221,6 +224,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             // never inherit the previous body's speed enforcement.
             _animation.Reconcile(_scene.Snapshot);
             _presentation.Reconcile(_scene.Snapshot);
+            _modelId.Reconcile(_scene.Snapshot);
             _integration.Reconcile(_scene.Snapshot);
             _animationPort.SyncEnforcementIndex();
         }
@@ -327,6 +331,7 @@ public sealed class CleanSceneLifecycle : IDisposable
             detail => { _facialCapture.CancelPending(detail); },
             () => { _animation.ResetAll(); },
             () => { _presentation.ResetAll(); },
+            () => { _modelId.ResetAll(); },
             () => { _integration.ResetAll(); });
 
     /// <summary>One teardown order for GPose exit and plugin disposal.</summary>
@@ -335,11 +340,13 @@ public sealed class CleanSceneLifecycle : IDisposable
         Action<string> cancelFacialCapture,
         Action resetAnimation,
         Action resetPresentation,
+        Action resetModelId,
         Action resetIntegration)
     {
         cancelFacialCapture(reason);
         resetAnimation();
         resetPresentation();
+        resetModelId();
         resetIntegration();
     }
 }

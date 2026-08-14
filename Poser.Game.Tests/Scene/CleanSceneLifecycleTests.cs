@@ -21,10 +21,11 @@ public sealed class CleanSceneLifecycleTests
             },
             () => calls.Add("animation"),
             () => calls.Add("presentation"),
+            () => calls.Add("modelId"),
             () => calls.Add("integration"));
 
         Assert.Equal(
-            new[] { "face", "animation", "presentation", "integration" },
+            new[] { "face", "animation", "presentation", "modelId", "integration" },
             calls);
     }
 }

@@ -207,6 +207,10 @@ internal static class ServiceRegistration
         services.AddSingleton<
             Application.Presentation.ICustomizeReadRuntimePort,
             Game.Presentation.CustomizeReadRuntimePort>();
+        services.AddSingleton<
+            Application.Appearance.IModelIdRuntimePort,
+            Game.Appearance.ModelIdRuntimePort>();
+        services.AddSingleton<Application.Appearance.ActorModelIdSession>();
         return services;
     }
 
@@ -247,6 +251,8 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationCatalogLoader>();
         services.AddSingleton<CompanionCatalog>();
         services.AddSingleton<Game.Companions.CompanionCatalogLoader>();
+        services.AddSingleton<Application.Appearance.ModelCatalog>();
+        services.AddSingleton<Game.Appearance.ModelCatalogLoader>();
         return services;
     }
 
