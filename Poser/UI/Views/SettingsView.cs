@@ -19,6 +19,11 @@ public sealed class LibrarySourceVm
     public bool Enabled = true;
 }
 
+/// <summary>One third-party plugin Poser talks to, as of the last probe:
+/// whether it answered, and what it said if it did not.</summary>
+public sealed record IntegrationStatusVm(
+    string Name, bool Available, string Detail);
+
 public sealed class SettingsViewModel
 {
     public int Category = 1;
@@ -183,6 +188,12 @@ public sealed class SettingsViewModel
 
     public string Version = "dev";
 
+    /// <summary>What Poser found when it last asked each integration whether
+    /// it was there. Snapshotted at open and on Refresh rather than read per
+    /// frame: each answer is an IPC call, and a settings page has no business
+    /// making three of them every draw.</summary>
+    public List<IntegrationStatusVm> Integrations = [];
+
     /// <summary>Non-empty when the stored config could not be read on load —
     /// the sentence <c>ConfigurationService</c> minted, naming the backup.
     /// Shown as a warning wherever the reset rows are, because that is the
@@ -213,6 +224,10 @@ public sealed class SettingsViewModel
     /// immediately — it is a discard, so there is nothing for Cancel to keep.
     /// </summary>
     public Action<ConfigResetScope>? OnResetConfig;
+
+    /// <summary>Re-probes every integration and rewrites
+    /// <see cref="Integrations"/>.</summary>
+    public Action? OnRefreshIntegrations;
 }
 
 /// <summary>Which slice of the config a reset row throws away. One per
@@ -254,11 +269,8 @@ public static class SettingsView
         (TablerIcon.Sliders, "General"),
         (TablerIcon.Monitor, "Display"),
         (TablerIcon.Bone, "Skeleton"),
-<<<<<<< HEAD
         (TablerIcon.ArrowsMove, "Gizmo"),
-=======
         (TablerIcon.Video, "Camera"),
->>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
         (TablerIcon.LayoutPanel, "UI"),
         (TablerIcon.Keyboard, "Keybinds"),
         (TablerIcon.Folder, "Library"),
@@ -452,19 +464,18 @@ public static class SettingsView
                 DrawSkeleton(vm, page);
                 break;
             case 3:
-<<<<<<< HEAD
                 DrawGizmo(vm, page);
-=======
-                DrawCamera(vm, page);
->>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
                 break;
             case 4:
-                DrawUi(vm, page);
+                DrawCamera(vm, page);
                 break;
             case 5:
-                DrawKeybinds(vm, page);
+                DrawUi(vm, page);
                 break;
             case 6:
+                DrawKeybinds(vm, page);
+                break;
+            case 7:
                 DrawLibrary(vm, page);
                 break;
             default:
@@ -800,7 +811,6 @@ public static class SettingsView
             "Put the bone dot, line and color settings back to their defaults"));
     }
 
-<<<<<<< HEAD
     /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
     /// order.</summary>
     private static readonly string[] ActiveActorLabels =
@@ -875,7 +885,8 @@ public static class SettingsView
                 vm.KeepGizmoWhenBonesHidden,
                 next => vm.KeepGizmoWhenBonesHidden = next,
                 "Off means hiding a bone from the overlay takes its gizmo with it"));
-=======
+    }
+
     /// <summary>
     /// The camera decisions that belong to the user rather than to one
     /// camera: what a new free camera starts out flying like, what the speed
@@ -943,7 +954,6 @@ public static class SettingsView
                 next => vm.CameraFlipPastNinety = next,
                 "Once the camera is rolled past a quarter turn, invert the sideways and vertical fly keys so they still move you the way the screen shows");
         });
->>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
     }
 
     private static void DrawUi(
@@ -1371,6 +1381,7 @@ public static class SettingsView
             form.Status(
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);
+<<<<<<< HEAD
 
         // The same attribution the first-run notice carries, from the same
         // list — Settings is where a user goes looking for it afterwards.
@@ -1388,6 +1399,29 @@ public static class SettingsView
                 form.ReadOnly(project.Name, project.Credit);
             form.Status(
                 "Poser is derivative of and heavily inspired by these projects.");
+        });
+
+        // Brio's per-integration status line and refresh button. Poser calls
+        // Penumbra, Glamourer and Customize+ throughout, and when one of them
+        // is missing the features that ride on it degrade quietly — this is
+        // the row that says which.
+        page.Section("INTEGRATIONS", form =>
+        {
+            foreach (var integration in vm.Integrations)
+                form.ReadOnly(
+                    integration.Name,
+                    integration.Available ? "Available" : integration.Detail,
+                    unavailable: !integration.Available,
+                    help: integration.Available
+                        ? $"Poser can talk to {integration.Name}"
+                        : $"Poser cannot talk to {integration.Name}; the "
+                            + "features that need it are unavailable");
+            if (vm.Integrations.Count == 0)
+                form.Status("No integrations have been probed yet.");
+            form.Actions(string.Empty, actions => actions.Button(
+                "Refresh",
+                () => vm.OnRefreshIntegrations?.Invoke(),
+                help: "Ask each plugin again whether it is there"));
         });
     }
 

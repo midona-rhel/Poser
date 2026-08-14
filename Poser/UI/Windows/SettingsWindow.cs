@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
+using Poser.Application.Integration;
 using Poser.Config;
 using Poser.Entities;
 using Poser.Library;
@@ -24,14 +25,18 @@ public class SettingsWindow : Window
     private SettingsViewModel _vm = new();
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
+    private readonly IIntegrationRuntimePort _integrations;
 
-    public SettingsWindow(IAutoSaveService autoSave)
+    public SettingsWindow(
+        IAutoSaveService autoSave,
+        IIntegrationRuntimePort integrations)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoResize)
     {
         _autoSave = autoSave;
+        _integrations = integrations;
         // Settings closes through Cancel or the chrome's own X, both of which
         // discard deliberately. Escape belongs to the deselect chord, and an
         // Escape that silently threw away a page of edits read as a crash.
@@ -167,6 +172,7 @@ public class SettingsWindow : Window
             Version = typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3) ?? "dev",
             OnSave = SaveToConfig,
             OnResetConfig = ResetConfig,
+            OnRefreshIntegrations = () => ReadIntegrations(_vm),
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
@@ -211,11 +217,34 @@ public class SettingsWindow : Window
             });
         }
 
+        ReadIntegrations(_vm);
+
         // Keybinds: the stored slots filled out to the whole registry and
         // COPIED, so Cancel leaves the live bindings untouched exactly as it
         // does the library roots.
         _vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
         _vm.BindingRevision++;
+    }
+
+    /// <summary>Probes each integration once and writes the answers into the
+    /// view model. Each property is a version call over IPC behind its own
+    /// ten-second cache, so this is deliberately a snapshot rather than
+    /// something the rows read while drawing.</summary>
+    private void ReadIntegrations(SettingsViewModel vm)
+    {
+        vm.Integrations.Clear();
+        vm.Integrations.Add(new IntegrationStatusVm(
+            "Penumbra",
+            _integrations.Penumbra.Available,
+            _integrations.Penumbra.Detail));
+        vm.Integrations.Add(new IntegrationStatusVm(
+            "Glamourer",
+            _integrations.Glamourer.Available,
+            _integrations.Glamourer.Detail));
+        vm.Integrations.Add(new IntegrationStatusVm(
+            "Customize+",
+            _integrations.CustomizePlus.Available,
+            _integrations.CustomizePlus.Detail));
     }
 
     /// <summary>
