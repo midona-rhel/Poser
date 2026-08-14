@@ -726,8 +726,9 @@ public sealed class SpawnBrowserWindow : Window
                     _overlayPane.SelectWhenBound(staged);
                     return;
                 }
-                _note = "The overlay could not be staged — the game's "
-                    + "interface would not take it.";
+                _notices.Failed(
+                    "The overlay could not be staged — the game's "
+                    + "interface would not take it.");
                 return;
             }
             case RowLightSpot:
