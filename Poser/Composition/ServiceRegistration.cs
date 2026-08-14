@@ -322,7 +322,16 @@ internal static class ServiceRegistration
     private static IServiceCollection AddPoseLibraryFeature(
         this IServiceCollection services)
     {
-        services.AddSingleton<Library.IPoseLibraryService, Library.PoseLibraryService>();
+        services.AddSingleton<Library.IPoseLibraryService>(sp =>
+        {
+            var config = sp.GetRequiredService<ConfigurationService>();
+            // The shipped scenes root is a CONFIGURED root, and a root the
+            // scan cannot observe aborts the whole pass — so it has to exist
+            // before the library can be asked anything, not after the first
+            // scene is saved into it.
+            config.Config.Library.EnsureSceneRootExists();
+            return new Library.PoseLibraryService(config);
+        });
         return services;
     }
 

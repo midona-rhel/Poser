@@ -17,6 +17,55 @@ namespace Poser.Tests.Library;
 
 public sealed class PoseLibraryServiceTests
 {
+    /// <summary>
+    /// The scenes root is seeded on its OWN flag. Every configuration that
+    /// predates it already has <c>DefaultsSeeded</c> set, so a scenes root
+    /// gated on that flag would never reach an existing install — and a scene
+    /// saved outside every scanned root is a scene the Scenes tab cannot see.
+    /// </summary>
+    [Fact]
+    public void The_scenes_root_seeds_into_a_configuration_that_already_has_defaults()
+    {
+        var config = new LibraryConfiguration { DefaultsSeeded = true };
+
+        config.EnsureDefaults();
+
+        var source = Assert.Single(config.Sources);
+        Assert.Equal(LibraryConfiguration.SceneSourceName, source.Name);
+        Assert.Equal(LibraryConfiguration.DefaultSceneRoot, source.Path);
+        Assert.Equal(LibraryConfiguration.DefaultSceneRoot, config.ResolveSceneRoot());
+        // Seeded once: a second pass must not append it again.
+        config.EnsureDefaults();
+        Assert.Single(config.Sources);
+    }
+
+    /// <summary>A user who repointed the scenes source keeps their choice —
+    /// saves follow the source, not the shipped path.</summary>
+    [Fact]
+    public void A_repointed_scenes_source_is_where_a_scene_save_lands()
+    {
+        var config = new LibraryConfiguration();
+        config.EnsureDefaults();
+        config.Sources
+            .Single(source => source.Name == LibraryConfiguration.SceneSourceName)
+            .Path = @"D:\Shots";
+
+        Assert.Equal(@"D:\Shots", config.ResolveSceneRoot());
+    }
+
+    /// <summary>A deleted or disabled scenes source falls back to the shipped
+    /// path rather than to a folder nothing scans.</summary>
+    [Fact]
+    public void A_removed_scenes_source_falls_back_to_the_shipped_root()
+    {
+        var config = new LibraryConfiguration();
+        config.EnsureDefaults();
+        config.Sources.RemoveAll(
+            source => source.Name == LibraryConfiguration.SceneSourceName);
+
+        Assert.Equal(LibraryConfiguration.DefaultSceneRoot, config.ResolveSceneRoot());
+    }
+
     [Fact]
     public void Metadata_statuses_distinguish_valid_corrupt_future_oversized_and_semantic_invalid()
     {

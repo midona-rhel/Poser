@@ -6,6 +6,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Poser.Application.Operations;
+using Poser.Config;
 using Poser.Files;
 using Poser.Game.Scene;
 using Poser.Library;
@@ -45,8 +46,14 @@ public sealed class ScenePane
     private readonly Crystarium.FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
 
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    /// <summary>
+    /// Where the browsers open. It starts at the library's SCENES root — the
+    /// one folder the Scenes tab is guaranteed to be scanning — so a saved
+    /// scene appears in the tab the user went looking for it in without them
+    /// having to navigate anywhere. Choosing another folder is still allowed
+    /// and sticks for the rest of the session.
+    /// </summary>
+    private string _lastPath;
 
     private string _description = string.Empty;
     private string _note = string.Empty;
@@ -91,11 +98,13 @@ public sealed class ScenePane
     public ScenePane(
         SceneWorkflow workflow,
         SceneAutoSaveService snapshots,
-        IPoseLibraryService library)
+        IPoseLibraryService library,
+        ConfigurationService config)
     {
         _workflow = workflow;
         _snapshots = snapshots;
         _library = library;
+        _lastPath = config.Config.Library.EnsureSceneRootExists();
 
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
