@@ -1034,7 +1034,7 @@ public unsafe class BonePosingService : IBonePosingService
         // of the link set. Re-entrancy guard stops link chains from ping-ponging.
         if (LinkedBonesEnabled && !_propagatingLinks)
         {
-            var links = LinkedBones.GetLinks(bone.BoneName);
+            var links = Poser.Domain.Posing.BoneLinkCatalog.GetLinked(bone.BoneName);
             if (links.Count > 0)
             {
                 var delta = BonePoseInfo.Diff(newTransform, originalTransform);

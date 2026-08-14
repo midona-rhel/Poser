@@ -2205,7 +2205,7 @@ public class PoseInspectorPane
                 // Linked partners resolve within the primary bone's OWN slot.
                 var siblings = SlotBonesOf(bone);
                 int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
-                    ? 1 + Core.LinkedBones.GetLinks(bone.CanonicalName).Count(linkName =>
+                    ? 1 + Domain.Posing.BoneLinkCatalog.GetLinked(bone.CanonicalName).Count(linkName =>
                         siblings.Any(candidate =>
                             candidate.Id.CanonicalName == linkName &&
                             candidate.Id.PartialId == bone.PartialId))

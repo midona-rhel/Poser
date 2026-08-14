@@ -1,6 +1,13 @@
 namespace Poser.Domain.Posing;
 
-/// <summary>Canonical same-delta bone groups.</summary>
+/// <summary>
+/// Canonical same-delta bone groups — ported from Anamnesis' Core/LinkedBones.cs
+/// (MIT, © Anamnesis contributors). Posing one bone in a set applies the same
+/// delta to the others: both eyes stay in sync, and Viera ear-variant chains
+/// (zera/zerb/zerc/zerd share suffixes; only the active variant's bones exist
+/// on a skeleton) pose together. Unlike Anamnesis we skip the tribe/gender
+/// gating — absent bones simply don't resolve, which is equivalent.
+/// </summary>
 public static class BoneLinkCatalog
 {
     private static readonly string[][] Sets =
