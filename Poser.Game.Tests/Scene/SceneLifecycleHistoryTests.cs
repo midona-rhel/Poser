@@ -714,8 +714,11 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Empty(world.Actors.Live);
     }
 
+    /// <summary>The group op inherits the single-actor rule: an actor this
+    /// seam spawned despawns as a journaled step, exactly as if its own
+    /// context menu had been used.</summary>
     [Fact]
-    public void A_selection_of_actors_alone_leaves_no_entry_at_all()
+    public void A_selection_of_actors_despawns_through_the_journal()
     {
         var world = new World();
         var actor = world.Lifecycle.SpawnActor(
@@ -725,8 +728,9 @@ public sealed class SceneLifecycleHistoryTests
 
         Assert.Equal(1, removed);
         Assert.Empty(world.Actors.Live);
-        // Only the ADD is left to undo: the removal recorded nothing.
-        Assert.Equal("Add actor", world.History.UndoDescription);
+        Assert.Equal("Despawn actor 'A'", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Single(world.Actors.Live);
     }
 
     /// <summary>A borrowed light is released, not destroyed, and a release has
