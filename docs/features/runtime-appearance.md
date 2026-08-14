@@ -63,6 +63,18 @@
   never displaced. While an MCDF owns the actor the selectors disable
   until Reset MCDF ([files-and-transfer.md](files-and-transfer.md)).
   Open-in-Glamourer remains outbound-only navigation.
+- A character file is never PREVIEWED on a body. Applying an MCDF is the
+  transaction above — temporary collection, locked Glamourer state,
+  temporary profile, redraw — taken through the ONE operation slot, and
+  the CharaView preview body can carry none of it: the redraw would tear
+  the draw object out from under the CharaView that owns that body's
+  lifecycle, the by-name teardown addresses the SOURCE character's
+  Glamourer identity rather than the preview's, and the slot belongs to
+  the import the user actually asked for. The library inspector shows the
+  package's own header inventory instead — description, what it carries,
+  payload count and DECLARED size — read without extraction, without an
+  actor and without claiming the slot, and it says plainly that there is
+  no render.
 - Presentation state is session-only: not pose data, a pose-file field, a
   named layer, a transform gesture, history, or a second undo journal.
 - MODEL ID: `ActorModelIdSession` (exact-generation `ActorId` keys) owns

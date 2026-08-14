@@ -25,6 +25,15 @@ public interface IMcdfFileBoundary
         CancellationToken cancellation);
 
     /// <summary>
+    /// Reads the package HEADER only — magic, version, and the declaration
+    /// JSON — and stops before the first payload byte. No operation
+    /// directory, nothing written, nothing owned: this is the read a surface
+    /// may make about a file the user merely highlighted, which
+    /// <see cref="ReadPackage"/> can never be.
+    /// </summary>
+    IntegrationValue<McdfSummary> ReadSummary(string path);
+
+    /// <summary>
     /// Reads, validates, and extracts a complete package into the
     /// CALLER-OWNED operation directory. The boundary never deletes it —
     /// the caller registered the directory before this call, so a failed

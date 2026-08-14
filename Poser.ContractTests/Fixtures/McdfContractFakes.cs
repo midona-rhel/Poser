@@ -310,6 +310,22 @@ internal sealed class FakeMcdfFileBoundary : IMcdfFileBoundary
 
     public string GetFileName(string path) => Path.GetFileName(path);
 
+    /// <summary>The header read owns nothing — no directory is created, no
+    /// read gate is waited on, and the single operation slot is untouched.
+    /// That is exactly the contract a library highlight depends on.</summary>
+    public IntegrationValue<McdfSummary> ReadSummary(string path) =>
+        ReadFailure is { } failure
+            ? IntegrationValue<McdfSummary>.Fail(failure)
+            : IntegrationValue<McdfSummary>.Ok(new McdfSummary(
+                Path.GetFileName(path),
+                "Fake package",
+                PackageHasResources ? 1 : 0,
+                PackageHasResources ? 128 : 0,
+                0,
+                PackageHasGlamourer,
+                PackageHasBody,
+                PackageHasResources));
+
     public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory()
     {
         string path;

@@ -66,6 +66,63 @@ public sealed class McdfFileBoundaryTests
     }
 
     [Fact]
+    public async Task Summary_reads_the_header_alone_and_owns_nothing()
+    {
+        using var files = new TempFiles();
+        string mod = Path.Combine(files.Root, "mod");
+        string local = Path.Combine(mod, "body.mdl");
+        Directory.CreateDirectory(mod);
+        File.WriteAllText(local, "payload");
+        var inspection = files.Boundary.InspectExportCandidates(
+            mod,
+            new Dictionary<string, IReadOnlyList<string>> { [local] = ["a/body.mdl"] },
+            CancellationToken.None);
+        var candidate = Assert.Single(inspection.Value!.Candidates);
+
+        string destination = Path.Combine(files.Root, "character.mcdf");
+        var written = await files.Boundary.WritePackage(
+            destination,
+            new McdfExportContent(
+                "A description", "glamourer", "customize", "meta",
+                [new McdfExportFile(candidate.GamePaths, candidate.LocalPath!, candidate.Source)],
+                new Dictionary<string, string> { ["a/swap.mdl"] = "b/swap.mdl" }),
+            _ => { },
+            CancellationToken.None);
+        Assert.True(written.Success);
+
+        var summary = files.Boundary.ReadSummary(destination);
+
+        Assert.True(summary.Success);
+        Assert.Equal("character.mcdf", summary.Value!.FileName);
+        Assert.Equal("A description", summary.Value.Description);
+        Assert.Equal(1, summary.Value.FileCount);
+        Assert.Equal(new FileInfo(local).Length, summary.Value.DeclaredBytes);
+        Assert.Equal(1, summary.Value.SwapCount);
+        Assert.True(summary.Value.HasAppearance);
+        Assert.True(summary.Value.HasBodyProfile);
+        Assert.True(summary.Value.HasManipulations);
+        // Nothing was extracted and no operation directory was claimed: the
+        // read a highlight makes may not own anything.
+        Assert.Equal(
+            [Path.GetFileName(local)],
+            Directory.GetFiles(mod).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public void Summary_refuses_a_file_that_is_not_a_package()
+    {
+        using var files = new TempFiles();
+        string destination = Path.Combine(files.Root, "not-a-package.mcdf");
+        Directory.CreateDirectory(files.Root);
+        File.WriteAllText(destination, "this is not an MCDF");
+
+        var summary = files.Boundary.ReadSummary(destination);
+
+        Assert.False(summary.Success);
+        Assert.NotNull(summary.Detail);
+    }
+
+    [Fact]
     public void Missing_candidate_is_skipped_without_throwing()
     {
         using var files = new TempFiles();
@@ -897,6 +954,8 @@ public sealed class McdfFileBoundaryTests
         public CancellationToken InspectionCancellation { get; private set; }
 
         public string GetFileName(string path) => Path.GetFileName(path);
+        public IntegrationValue<McdfSummary> ReadSummary(string path) =>
+            throw new NotSupportedException();
         public IntegrationValue<McdfOperationDirectory> CreateOperationDirectory() =>
             throw new NotSupportedException();
         public IntegrationValue<McdfExportInspection> InspectExportCandidates(

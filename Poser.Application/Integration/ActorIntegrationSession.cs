@@ -30,6 +30,7 @@ namespace Poser.Application.Integration;
 public sealed class ActorIntegrationSession : IDisposable
 {
     private readonly IIntegrationRuntimePort _port;
+    private readonly IMcdfFileBoundary _files;
     private readonly McdfTransaction _mcdf;
     private readonly Dictionary<ActorId, IntegrationOverrides> _overrides = new();
 
@@ -39,6 +40,7 @@ public sealed class ActorIntegrationSession : IDisposable
         ISessionGenerationSource sessions)
     {
         _port = port;
+        _files = files;
         _mcdf = new McdfTransaction(port, files, sessions, this);
     }
 
@@ -469,6 +471,15 @@ public sealed class ActorIntegrationSession : IDisposable
 
     /// <summary>Only one MCDF import/export runs at a time.</summary>
     public bool McdfBusy => _mcdf.Busy;
+
+    /// <summary>
+    /// What a package says about itself, header only. Deliberately NOT routed
+    /// through the transaction: it takes no actor, claims none of the single
+    /// operation slot, and writes nothing — a highlight must never occupy the
+    /// machinery an import needs. Blocking file work; call it off the frame.
+    /// </summary>
+    public IntegrationValue<McdfSummary> ReadMcdfSummary(string path) =>
+        _files.ReadSummary(path);
 
     /// <summary>Cooperative cancellation of the running operation.</summary>
     public void CancelMcdf() => _mcdf.Cancel();

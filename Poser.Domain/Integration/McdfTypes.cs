@@ -113,6 +113,30 @@ public sealed record McdfPackage(
 }
 
 /// <summary>
+/// Everything an MCDF states about ITSELF, read from the header alone — no
+/// extraction, no operation directory, no actor, no ownership. The format
+/// carries no character name and no thumbnail, so
+/// <see cref="Description"/> is the only free text in it and the rest is an
+/// inventory of what the package would apply.
+///
+/// <para>This is what the library inspector shows beside a character file.
+/// It shows an inventory rather than a rendered body because applying an
+/// MCDF is a scene-ownership transaction — a Penumbra collection, a locked
+/// Glamourer state and a redraw, all in the ONE slot
+/// <see cref="McdfProgress"/> describes — and none of that may be spent on a
+/// highlight.</para>
+/// </summary>
+public sealed record McdfSummary(
+    string FileName,
+    string Description,
+    int FileCount,
+    long DeclaredBytes,
+    int SwapCount,
+    bool HasAppearance,
+    bool HasBodyProfile,
+    bool HasManipulations);
+
+/// <summary>
 /// Immutable source observation captured by the file boundary. The
 /// application carries this through unchanged; it never reopens or validates
 /// the source path itself.

@@ -582,35 +582,10 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
             using var lz4 = LZ4Legacy.Decode(file, leaveOpen: true);
             using var reader = new BinaryReader(lz4, Encoding.UTF8, leaveOpen: true);
 
-            var magic = reader.ReadBytes(4);
-            if (magic.Length != 4 || magic[0] != (byte)'M' || magic[1] != (byte)'C'
-                || magic[2] != (byte)'D' || magic[3] != (byte)'F')
-                return IntegrationValue<McdfPackage>.Fail(
-                    "This is not an MCDF character file.");
-            byte version = reader.ReadByte();
-            if (version != McdfFormat.Version)
-                return IntegrationValue<McdfPackage>.Fail(
-                    $"MCDF version {version} is not supported (expected {McdfFormat.Version}).");
-
-            int jsonLength = reader.ReadInt32();
-            if (jsonLength <= 0 || jsonLength > MaxJsonBytes)
-                return IntegrationValue<McdfPackage>.Fail(
-                    $"The package declares an invalid header length ({jsonLength}).");
-            var jsonBytes = new byte[jsonLength];
-            ReadExact(lz4, jsonBytes, "package header");
-
-            WireData? data;
-            try
-            {
-                data = JsonSerializer.Deserialize<WireData>(jsonBytes, JsonOptions);
-            }
-            catch (JsonException ex)
-            {
-                return IntegrationValue<McdfPackage>.Fail(
-                    $"The package header is not valid JSON: {ex.Message}");
-            }
-            if (data == null)
-                return IntegrationValue<McdfPackage>.Fail("The package header is empty.");
+            var header = ReadHeader(lz4, reader, out string? headerFailure);
+            if (header == null)
+                return IntegrationValue<McdfPackage>.Fail(headerFailure!);
+            WireData data = header;
 
             progress(new McdfProgressStep(McdfPhase.Validating, 0, data.Files.Count, 0, 0));
             var validation = Validate(data, limits, out long totalBytes);
@@ -702,6 +677,97 @@ public sealed class McdfFileBoundary : IMcdfFileBoundary
         {
             return IntegrationValue<McdfPackage>.Fail(
                 $"Reading the package failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The package's opening: magic, version, and the declaration JSON. Shared
+    /// by the extracting read and the header-only summary so there is ONE
+    /// account of what a valid MCDF opens with — and so a file the summary
+    /// accepted can never be refused for its header by the import that
+    /// follows. Leaves the stream positioned on the first payload byte.
+    /// </summary>
+    private static WireData? ReadHeader(
+        Stream lz4, BinaryReader reader, out string? failure)
+    {
+        failure = null;
+        var magic = reader.ReadBytes(4);
+        if (magic.Length != 4 || magic[0] != (byte)'M' || magic[1] != (byte)'C'
+            || magic[2] != (byte)'D' || magic[3] != (byte)'F')
+        {
+            failure = "This is not an MCDF character file.";
+            return null;
+        }
+        byte version = reader.ReadByte();
+        if (version != McdfFormat.Version)
+        {
+            failure =
+                $"MCDF version {version} is not supported (expected {McdfFormat.Version}).";
+            return null;
+        }
+
+        int jsonLength = reader.ReadInt32();
+        if (jsonLength <= 0 || jsonLength > MaxJsonBytes)
+        {
+            failure = $"The package declares an invalid header length ({jsonLength}).";
+            return null;
+        }
+        var jsonBytes = new byte[jsonLength];
+        ReadExact(lz4, jsonBytes, "package header");
+
+        WireData? data;
+        try
+        {
+            data = JsonSerializer.Deserialize<WireData>(jsonBytes, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            failure = $"The package header is not valid JSON: {ex.Message}";
+            return null;
+        }
+        if (data != null)
+            return data;
+        failure = "The package header is empty.";
+        return null;
+    }
+
+    public IntegrationValue<McdfSummary> ReadSummary(string path)
+    {
+        try
+        {
+            using var file = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var lz4 = LZ4Legacy.Decode(file, leaveOpen: true);
+            using var reader = new BinaryReader(lz4, Encoding.UTF8, leaveOpen: true);
+            var data = ReadHeader(lz4, reader, out string? failure);
+            if (data == null)
+                return IntegrationValue<McdfSummary>.Fail(failure!);
+
+            // DECLARED bytes, and named so: nothing past the header is read,
+            // so this is what the package says its payloads weigh and not
+            // what they weigh. The import's own Validate is what holds the
+            // declaration to the limits.
+            long declared = 0;
+            foreach (var entry in data.Files)
+                declared += Math.Max(0, entry.Length);
+            return IntegrationValue<McdfSummary>.Ok(new McdfSummary(
+                Path.GetFileName(path),
+                data.Description,
+                data.Files.Count,
+                declared,
+                data.FileSwaps.Count,
+                data.GlamourerData.Length > 0,
+                data.CustomizePlusData.Length > 0,
+                data.ManipulationData.Length > 0));
+        }
+        catch (EndOfStreamException)
+        {
+            return IntegrationValue<McdfSummary>.Fail("The package is truncated.");
+        }
+        catch (Exception ex)
+        {
+            return IntegrationValue<McdfSummary>.Fail(
+                $"Reading the package header failed: {ex.Message}");
         }
     }
 

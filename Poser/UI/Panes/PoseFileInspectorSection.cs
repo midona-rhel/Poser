@@ -11,6 +11,7 @@ using Poser.Files;
 using Poser.Application.Operations;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Integration;
 using Poser.Library;
 using Poser.Game.Posing;
 using Poser.Services;
@@ -850,6 +851,90 @@ public sealed class PoseFileInspectorSection
     private string? _previewIdleText;
 
     /// <summary>
+    /// The library pane's push for a CHARACTER file highlight: what the
+    /// package says about itself, or the reason nothing is stated yet. It
+    /// stands in the preview's seat, and it is an inventory rather than a
+    /// render on purpose.
+    ///
+    /// <para>An MCDF cannot be previewed on the preview body. Applying one is
+    /// a scene transaction — a Penumbra temporary collection, a Glamourer
+    /// state locked with Poser's key, a Customize+ profile and a REDRAW, all
+    /// taken through the one operation slot the library's own progress bar
+    /// watches — and every part of that is wrong for a highlight: the redraw
+    /// would tear the draw object out from under the CharaView that owns the
+    /// preview body's lifecycle, the teardown addresses Glamourer by the
+    /// character's NAME when the object stops resolving (which is the source
+    /// actor's identity, not the preview's), and the slot itself belongs to
+    /// the import the user actually asked for. So the panel states what the
+    /// file carries and says plainly that there is no render, rather than
+    /// showing a body that is not the file's.</para>
+    /// </summary>
+    public void SetCharacterFile(McdfSummary? summary, string? status)
+    {
+        _characterFile = summary;
+        _characterFileStatus = status;
+        _characterFileStated = summary != null || status != null;
+    }
+
+    private McdfSummary? _characterFile;
+    private string? _characterFileStatus;
+    private bool _characterFileStated;
+
+    /// <summary>The character file's inventory: what it would apply, how much
+    /// of it there is, and the one line that says why no body is rendered.
+    /// </summary>
+    private void DrawCharacterFileBody(Crystarium.FormScope form)
+    {
+        if (_characterFile is not { } file)
+        {
+            form.Status(_characterFileStatus ?? "Select a character file.");
+            return;
+        }
+
+        form.ReadOnly("File", file.FileName);
+        var carries = new List<string>(3);
+        if (file.HasAppearance)
+            carries.Add("Appearance");
+        if (file.HasBodyProfile)
+            carries.Add("Body profile");
+        if (file.HasManipulations)
+            carries.Add("Meta");
+        form.ReadOnly(
+            "Carries",
+            carries.Count > 0 ? string.Join(" · ", carries) : "Nothing",
+            help: "Appearance is the packaged Glamourer state, Body profile "
+                + "the Customize+ one, Meta the Penumbra manipulations");
+        form.ReadOnly(
+            "Mod files",
+            file.FileCount == 0
+                ? "None"
+                : $"{file.FileCount} ({FormatBytes(file.DeclaredBytes)})",
+            help: "The size the package DECLARES for its payloads — the "
+                + "header is all that was read");
+        if (file.SwapCount > 0)
+            form.ReadOnly("File swaps", file.SwapCount.ToString());
+        if (file.Description.Length > 0)
+            form.Status(file.Description);
+        form.Status(
+            "No render: applying a character file is a scene import, not a "
+            + "preview.");
+    }
+
+    /// <summary>Binary-prefix file size, one decimal past KiB.</summary>
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} B";
+        double value = bytes / 1024d;
+        if (value < 1024d)
+            return $"{value:0.#} KiB";
+        value /= 1024d;
+        return value < 1024d
+            ? $"{value:0.#} MiB"
+            : $"{value / 1024d:0.##} GiB";
+    }
+
+    /// <summary>
     /// The library pane's other push: whether it WOULD be driving the shared
     /// preview if the import dialog were not. Stated every frame the pane
     /// draws, with the same frame-count slack as the host target — the pane and
@@ -1011,6 +1096,12 @@ public sealed class PoseFileInspectorSection
                 "##pose-preview", "Preview",
                 new Vector2(origin.X, y), width,
                 form => DrawPreviewBody(form, width, previewCap),
+                divider: false);
+        else if (previewCap > 0f && _characterFileStated)
+            y += MenuSection(
+                "##character-file", "Character file",
+                new Vector2(origin.X, y), width,
+                DrawCharacterFileBody,
                 divider: false);
 
         // The rule is a divider BETWEEN sections: the first one leads the

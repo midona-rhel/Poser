@@ -2332,6 +2332,7 @@ public sealed class PoseLibraryPane
         // import pipeline, and a scene is not a pose file at all: it has no
         // single skeleton to stand on a preview body.
         _vm.PreviewAvailable = _type is LibraryType.Poses or LibraryType.AutoSaves;
+        SyncCharacterFile();
         // No eye anymore (user 2026-08-11): the preview is always live on a
         // tab that can preview, so availability alone gates it.
         bool wanted = _vm.PreviewAvailable
@@ -2399,6 +2400,62 @@ public sealed class PoseLibraryPane
         // The seat is the inspector rail's, so the section is told to show it;
         // the render and its status are read there, straight off the service.
         _files.SetPreviewVisible(true);
+    }
+
+    /// <summary>One highlighted character file's own account of itself, and
+    /// the path it belongs to. Replaced WHOLE from the reading task, never
+    /// field by field, so the draw thread either sees the previous highlight's
+    /// finished state or this one's — the path is what it matches on.</summary>
+    private sealed record CharacterFileState(
+        string Path, McdfSummary? Summary, string? Status);
+
+    private volatile CharacterFileState? _characterFile;
+
+    /// <summary>
+    /// The character-file tab's stand-in for the pose preview: an MCDF cannot
+    /// be rendered on the preview body (see
+    /// <see cref="PoseFileInspectorSection.SetCharacterFile"/>), so the
+    /// inspector shows what the package says about ITSELF instead.
+    ///
+    /// <para>The read is header-only and takes no actor, no operation
+    /// directory and none of the single MCDF operation slot — a highlight may
+    /// never spend the machinery an import needs. It still touches the disk,
+    /// so it runs off the frame and the panel says it is reading until it
+    /// lands; a highlight that moves on first is simply not adopted.</para>
+    /// </summary>
+    private void SyncCharacterFile()
+    {
+        string? path = _type == LibraryType.Mcdf
+            && _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
+            ? _vm.Tiles[_vm.Selected].ThumbKey
+            : null;
+        if (path == null)
+        {
+            _characterFile = null;
+            _files.SetCharacterFile(null, null);
+            return;
+        }
+
+        var state = _characterFile;
+        if (state == null || !string.Equals(state.Path, path, StringComparison.Ordinal))
+        {
+            state = new CharacterFileState(path, null, "Reading the character file…");
+            _characterFile = state;
+            string reading = path;
+            Task.Run(() =>
+            {
+                var read = _integration.ReadMcdfSummary(reading);
+                var landed = new CharacterFileState(
+                    reading,
+                    read.Success ? read.Value : null,
+                    read.Success ? null : read.Detail);
+                // Only the highlight that asked for this read may adopt it.
+                if (_characterFile is { } current
+                    && string.Equals(current.Path, reading, StringComparison.Ordinal))
+                    _characterFile = landed;
+            });
+        }
+        _files.SetCharacterFile(state.Summary, state.Status);
     }
 
     /// <summary>The actor the preview borrows an appearance from: the
