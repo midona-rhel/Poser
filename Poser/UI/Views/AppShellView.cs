@@ -480,15 +480,21 @@ public static class AppShellView
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        if (vm.Collapsed || vm.Detached)
-        {
-            // Collapsed — and detached, whose sidebar cell is a window of its
-            // own — means ONE continuous titlebar: one glass strip, no
-            // divider.
-            dl.AddRectFilled(
-                min, new Vector2(max.X, min.Y + height), U32(Glass), radius);
-        }
-        else
+        // The window's glass is painted ONCE, by the chrome in Draw. A band
+        // repaints it only where a COLUMN has to read apart from the rest, and
+        // the sidebar's is the only such column: its cell here and its chassis
+        // below wear the same second coat, and the bar over the workspace
+        // wears the window's own single coat. Collapsed and detached have no
+        // sidebar cell, so the bar is the workspace's the whole way across and
+        // paints nothing — the strip those two states used to lay edge to edge
+        // stacked the same translucent fill on itself, which reads flat
+        // instead of glass and, over a dark backdrop, brighter than the window
+        // it sits on; its rounded BOTTOM corners also scalloped that band away
+        // at the window's left edge, where detached mode has no sidebar to
+        // continue it (user 2026-08-14: the detached inspector's chrome is
+        // "too bright", and the detached library "didn't have correct glass
+        // chrome on left").
+        if (!vm.Collapsed && !vm.Detached)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
             dl.AddRectFilled(
