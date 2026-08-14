@@ -15,7 +15,14 @@
   facial entry of EmoteCategory-3 emotes, Brio's ExpressionsOnly set). A pick
   while a hold is active switches the expression over the pinned slot and
   never re-captures — the pre-hold facial timeline stays the one restore
-  point. The bake into the pose ("Apply to face") is a separate action.
+  point. Baking that face into the pose ("Bake expression") is a separate
+  action, and the two are named apart because they differ in kind: a preview
+  is a look the ANIMATION holds, a bake is an edit the POSE holds. The
+  user-facing release (the Release button, and Reset) is Brio's whole-actor
+  reset and ends on idle; the BAKE's teardown is
+  `AnimationSession.RestoreFacialLayer` — unpin, replay the captured pre-hold
+  facial timeline, nothing on the base slot — because a face bake owns the
+  face and must not put the body back to idle.
 - Looping is Poser-orchestrated: an armed slot whose timeline ends is played
   again on the framework tick. The game's forced-timeline field is unproven
   for this client and is never touched (`SupportsForceLoop` false). Loop
@@ -41,14 +48,22 @@
   reports the RAW family (Battle/Umbrella/Accessory included), and is gated
   by `SupportsStance`. Scrubbing is a gesture: freeze at Begin, clamp to the
   captured duration, skeleton-token mismatch cancels instead of writing.
-- The facial bake is two-phase (capture during preview → release only the
-  face → two framework ticks → one raw-baseline patch) through the atomic
-  `SetAbsoluteMany`. A pending bake or transform recovery is a mutation
+- The facial bake writes `Diff(previewed face, face once the facial layer is
+  back)` as one raw-baseline `SetAbsoluteMany` patch, which is the only way to
+  say "the pose owns this face" in a delta-over-animation pose model (Ktisis
+  says it by syncing into a frozen absolute pose). That difference must be
+  MEASURABLE, which fixes the rest of the flow: the bake never writes playback
+  speed (a Poser pause zeroes every Havok control, so pausing would freeze the
+  state being measured and resuming would drop the face); it reads the face
+  from the apply pass's caches and therefore asks
+  `RequestRawTransformRefresh` on every tick it waits, because nothing else
+  refreshes `LastRawTransform` and a skeleton with no stacks is not in the
+  pass at all; and it settles by waiting for the face to STOP MOVING (capped),
+  not by counting frames. A pending bake or transform recovery is a mutation
   barrier: cancel first, preview again, then retry. GPose exit and disposal
-  cancel facial ownership before the full animation reset, and speed cleanup
-  follows exact `ActorId` identity independently of skeleton write validity.
-  Off-thread disposal is deferred to the framework thread; disposal reentered
-  during apply rolls back and stops before any later face write or history.
+  cancel facial ownership before the full animation reset. Off-thread disposal
+  is deferred to the framework thread; disposal reentered during apply rolls
+  back and stops before any later face write or history.
 - UI: one shared picker (caller supplies the destination); catalog admits
   only named, non-zero, known-slot timelines so nothing fails after
   selection; controls display only state the session actually owns.

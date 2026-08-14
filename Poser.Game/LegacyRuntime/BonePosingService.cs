@@ -84,6 +84,11 @@ public unsafe class BonePosingService : IBonePosingService
     // Track which slot skeletons need cache updates (visible overlays, active gizmo, etc.)
     private readonly HashSet<SkeletonKey> _skeletonsToUpdateCache = new();
 
+    /// <summary>One-frame apply-pass leases taken by
+    /// <see cref="RequestRawTransformRefresh"/>; cleared by every rebuild, so
+    /// a caller that still needs live raw asks again next tick.</summary>
+    private readonly HashSet<SkeletonKey> _rawRefreshRequests = new();
+
     /// <summary>
     /// Actions registered from OUTSIDE the apply pass to run INSIDE it, once,
     /// per bone — Brio's <c>SkeletonPosingCapability._transitiveActions</c>
@@ -254,7 +259,8 @@ public unsafe class BonePosingService : IBonePosingService
             // opt-in per stack/chain, and a bake registers its actions exactly
             // when it has just cleared both.
             if (poseInfo.IsOverridden || HasEnabledChains(slotKey) ||
-                _transitiveActions.ContainsKey(slotKey))
+                _transitiveActions.ContainsKey(slotKey) ||
+                _rawRefreshRequests.Contains(slotKey))
             {
                 _skeletonsToUpdate.Add(slotKey);
                 continue;
@@ -264,6 +270,9 @@ public unsafe class BonePosingService : IBonePosingService
         }
 
         _skeletonsToUpdateCache.Clear();
+        // The lease is one rebuild long. A settling bake re-requests on every
+        // tick it waits; when it stops, the skeleton leaves the pass again.
+        _rawRefreshRequests.Clear();
     }
 
     /// <summary>
@@ -343,6 +352,19 @@ public unsafe class BonePosingService : IBonePosingService
         _skeletonsToUpdateCache.Add(SkeletonKey.Of(skeleton));
     }
 
+    /// <summary>
+    /// One frame's membership in the apply pass, for a caller that needs
+    /// <see cref="IBone.LastRawTransform"/> refreshed on a skeleton that
+    /// carries nothing the pass would otherwise select it for. The pose store
+    /// is materialized because the rebuild in <see cref="OnFrameworkUpdate"/>
+    /// only walks skeletons it already knows.
+    /// </summary>
+    public void RequestRawTransformRefresh(ISkeleton skeleton)
+    {
+        GetPoseInfo(skeleton);
+        _rawRefreshRequests.Add(SkeletonKey.Of(skeleton));
+    }
+
     /// <summary>The frozen animated/reference baseline beneath the authored
     /// layers; a bone without applied layers has no observation, and its
     /// current transform IS its baseline.</summary>
@@ -385,6 +407,7 @@ public unsafe class BonePosingService : IBonePosingService
         _poseInfos.Remove(key);
         _skeletonsToUpdate.Remove(key);
         _skeletonsToUpdateCache.Remove(key);
+        _rawRefreshRequests.Remove(key);
         // A batch registered against a skeleton that is going away can never
         // execute; report it so its owner can roll back instead of waiting.
         if (_transitiveActions.Remove(key, out var orphaned))

@@ -17,17 +17,43 @@ using LegacyTransform = Poser.Transform;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Two-phase capture of a previewed facial animation into one transform patch.
-/// The pending token is owner-local and session-bound: framework callbacks must
-/// prove the exact session, actor, skeleton, and bindings before any write or
-/// restoration can happen.
+/// Bakes the previewed expression into the pose as one transform patch — the
+/// end state Ktisis reaches with <c>DoPoseExpression</c>, expressed in Poser's
+/// mechanism. The pending token is owner-local and session-bound: framework
+/// callbacks must prove the exact session, actor, skeleton, and bindings
+/// before any write or restoration can happen.
 ///
-/// The two framework ticks are intentional. Poser applies facial layers as
-/// deltas, so reading and writing on the same tick observes an identity delta;
-/// after ReleaseExpression the face must settle before LastRawTransform is
-/// used as the raw-baseline application basis. This keeps the proven
-/// Brio/Ktisis interaction contract: release only the facial preview, preserve
-/// expression/gaze semantics, and let one linked-aware command own the patch.
+/// THE MECHANISM, and why each step exists.
+///
+/// Ktisis' pose store is absolute model space and its model-space sync is
+/// hooked to do nothing, so syncing the played face into the frozen pose makes
+/// the pose OWN the face outright (PosingManager.SyncFaceModelSpace,
+/// PosingManager.cs:131-152; PosingModule.cs:86-91). Poser's pose is a per-bone
+/// DELTA applied over whatever the animation gives that frame, so the same
+/// end state is only expressible as
+/// <c>stack = Diff(face-with-expression, face-after-the-facial-layer-returns)</c>.
+/// That makes the released facial layer's own output a REQUIRED measurement,
+/// which dictates everything below:
+///
+///   * The bake NEVER changes playback speed. Poser's pause writes
+///     <c>PlaybackSpeed = 0</c> to every Havok control
+///     (AnimationRuntimePort.ApplySpeedNow), so pausing before the release
+///     freezes the very state the delta is measured against — the delta comes
+///     out identity, the pose owns nothing, and the face collapses the moment
+///     speed is handed back. An actor the USER paused is equally untouched:
+///     nothing evaluates, the raw face stays on the expression, and an
+///     identity delta is then the truthful answer.
+///   * The teardown is <see cref="AnimationSession.RestoreFacialLayer"/>, not
+///     ReleaseExpression: Brio's release ends with idle (3) on the BASE slot
+///     and would reset the actor's body animation on every bake.
+///   * The face is read from the apply pass's caches, so the pass is asked to
+///     visit this skeleton on every tick the bake waits
+///     (<see cref="IBonePosingService.RequestRawTransformRefresh"/>). Nothing
+///     else refreshes <c>LastRawTransform</c>, and a skeleton nobody has posed
+///     yet is not in the pass at all.
+///   * The settle waits for the face to STOP MOVING rather than counting a
+///     fixed number of frames: a blend takes as long as it takes, and a frozen
+///     actor is stable immediately.
 /// </summary>
 public sealed class FacialPoseCapture : IDisposable
 {
@@ -37,10 +63,39 @@ public sealed class FacialPoseCapture : IDisposable
     private readonly AnimationSession _animation;
     private readonly TransformCommandService _transforms;
     private readonly TransformGestureService _gestures;
+    private readonly IBonePosingService _posing;
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly IPluginLog _log;
 
-    private const int SettleTicks = 2;
+    /// <summary>Ticks between arming and reading the face. The refresh lease
+    /// asked for during the button press is consumed by the NEXT tick's
+    /// rebuild, and the pass that acts on it runs after that tick's framework
+    /// update — so the second tick is the first one whose caches were written
+    /// by a pass that knew about this skeleton.</summary>
+    private const int CaptureDelayTicks = 2;
+
+    /// <summary>Consecutive equal readings that prove the facial layer has
+    /// finished moving. Two, as Ktisis awaits two syncs.</summary>
+    private const int StableTicks = 2;
+
+    /// <summary>Upper bound on the settle. A face that never stops moving (a
+    /// running idle animation blinks) is baked against the frame it is on
+    /// rather than pending forever.</summary>
+    private const int SettleTimeoutTicks = 20;
+
+    /// <summary>Model-space epsilon for "this bone did not move". Below the
+    /// scale of any facial blend and above float noise.</summary>
+    private const float StableEpsilon = 1e-5f;
+
+    private enum BakePhase
+    {
+        /// <summary>Waiting for a pass to refresh the raw caches.</summary>
+        Capturing,
+
+        /// <summary>Face captured, facial layer restored, waiting for the
+        /// layer's own output to settle.</summary>
+        Settling,
+    }
 
     private sealed class PendingBake
     {
@@ -49,9 +104,13 @@ public sealed class FacialPoseCapture : IDisposable
         public required SessionGeneration SessionGeneration;
         public required ActorId Actor;
         public required SkeletonId Skeleton;
-        public required float? PriorSpeed;
-        public required List<(BoneId Bone, LegacyTransform Captured)> Captures;
-        public int TicksRemaining = SettleTicks;
+        public required List<BoneId> Bones;
+        public BakePhase Phase = BakePhase.Capturing;
+        public int CaptureDelay = CaptureDelayTicks;
+        public List<(BoneId Bone, LegacyTransform Captured)> Captures = new();
+        public List<LegacyTransform> LastReading = new();
+        public int StableRuns;
+        public int SettleTicks;
         public bool Completing;
     }
 
@@ -72,6 +131,7 @@ public sealed class FacialPoseCapture : IDisposable
         AnimationSession animation,
         TransformCommandService transforms,
         TransformGestureService gestures,
+        IBonePosingService posing,
         ISessionGenerationSource sessionGeneration,
         IPluginLog log)
     {
@@ -81,6 +141,7 @@ public sealed class FacialPoseCapture : IDisposable
         _animation = animation;
         _transforms = transforms;
         _gestures = gestures;
+        _posing = posing;
         _sessionGeneration = sessionGeneration;
         _log = log;
         _framework.Update += OnFrameworkUpdate;
@@ -121,52 +182,15 @@ public sealed class FacialPoseCapture : IDisposable
                 "A face capture is already pending; cancel it and preview " +
                 "the expression again before retrying.");
 
-        if (!TryPrepare(actor, descriptor, out var session, out var captures,
+        if (!TryPrepare(actor, descriptor, out var session, out var bones,
                 out var detail))
             return GestureResult.Fail(detail!);
 
-        float? priorSpeed = _animation.OverridesFor(actor).OverallSpeed;
         if (!IsCurrentSession(session))
             return GestureResult.Fail(
                 "The application session changed while arming capture.");
-        bool setupTouchedSpeed = false;
         try
         {
-            if (priorSpeed is not 0f)
-            {
-                setupTouchedSpeed = true;
-                var paused = _animation.Pause(actor);
-                if (!paused.Success)
-                    return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
-                        paused.Detail ?? "Could not pause the actor.");
-            }
-
-            if (!IsCurrentSession(session))
-                return SetupFailure(
-                    actor,
-                    session,
-                    priorSpeed,
-                    setupTouchedSpeed,
-                    "The application session changed while pausing capture.");
-
-            var stopped = _animation.ReleaseExpression(actor);
-            if (!stopped.Success)
-                return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
-                    stopped.Detail ?? "Could not stop the facial preview.");
-
-            if (!IsCurrentSession(session))
-                return SetupFailure(
-                    actor,
-                    session,
-                    priorSpeed,
-                    setupTouchedSpeed,
-                    "The application session changed while stopping the preview.");
-
-            _animation.SuspendCommands();
-            if (!IsCurrentSession(session))
-                return SetupFailure(actor, session, priorSpeed, setupTouchedSpeed,
-                    "The application session changed while arming capture.");
-
             var epoch = NextEpoch();
             var operationId = Guid.NewGuid();
             var pending = new PendingBake
@@ -176,16 +200,19 @@ public sealed class FacialPoseCapture : IDisposable
                 SessionGeneration = session,
                 Actor = actor,
                 Skeleton = descriptor.CharacterSkeleton!.Id,
-                PriorSpeed = priorSpeed,
-                Captures = captures,
+                Bones = bones,
             };
             _pending = pending;
+            // The first lease: the pass this asks for is what makes the
+            // reading two ticks from now describe the live face rather than
+            // the value the skeleton was built with.
+            RequestRawRefresh(pending);
             Publish(OperationReceipt.Pending(
                 operationId,
                 epoch,
                 session,
                 actor,
-                "Facial capture is settling."));
+                "Reading the face."));
             return GestureResult.Ok();
         }
         catch (Exception exception)
@@ -193,8 +220,6 @@ public sealed class FacialPoseCapture : IDisposable
             return SetupFailure(
                 actor,
                 session,
-                priorSpeed,
-                setupTouchedSpeed,
                 $"Could not arm facial capture: {exception.Message}");
         }
     }
@@ -223,18 +248,10 @@ public sealed class FacialPoseCapture : IDisposable
     private GestureResult SetupFailure(
         ActorId actor,
         SessionGeneration session,
-        float? priorSpeed,
-        bool setupTouchedSpeed,
         string detail)
     {
         if (_animation.CommandsSuspended)
             _animation.ResumeCommands();
-        var restored = (setupTouchedSpeed || priorSpeed is not null) &&
-                CanRestoreSetupIdentity(actor, session)
-            ? RestoreSpeed(actor, priorSpeed)
-            : AnimationResult.Ok();
-        if (!restored.Success)
-            detail = $"{detail} Speed restore failed: {restored.Detail}";
         return GestureResult.Fail(detail);
     }
 
@@ -251,8 +268,8 @@ public sealed class FacialPoseCapture : IDisposable
         if (pending.Completing)
             return;
 
-        // This check precedes the tick decrement and every possible write,
-        // restore, or terminal publication from this callback.
+        // This check precedes every possible read, write, restore, or
+        // terminal publication from this callback.
         if (!IsCurrentToken(pending))
         {
             InvalidatePending(
@@ -261,10 +278,131 @@ public sealed class FacialPoseCapture : IDisposable
             return;
         }
 
-        if (--pending.TicksRemaining > 0)
-            return;
+        // Renewed every tick the bake waits: the lease is one rebuild long,
+        // and both the capture and the settle read what the pass wrote.
+        RequestRawRefresh(pending);
 
-        Complete(pending);
+        if (pending.Phase == BakePhase.Capturing)
+        {
+            if (--pending.CaptureDelay > 0)
+                return;
+            CaptureAndRestore(pending);
+            return;
+        }
+
+        if (!TryReadFace(pending.Bones, out var reading, out var problem))
+        {
+            InvalidatePending(pending, $"Facial capture cancelled: {problem}");
+            return;
+        }
+
+        pending.StableRuns = Settled(reading, pending.LastReading)
+            ? pending.StableRuns + 1
+            : 0;
+        pending.LastReading = reading;
+        if (pending.StableRuns >= StableTicks ||
+            ++pending.SettleTicks >= SettleTimeoutTicks)
+            Complete(pending);
+    }
+
+    /// <summary>
+    /// The one tick that owns the whole measurement: read the face the user is
+    /// looking at, put the facial layer back, and close the actor to further
+    /// commands — in that order, because the restore is itself a command and
+    /// the reading must precede it.
+    /// </summary>
+    private void CaptureAndRestore(PendingBake pending)
+    {
+        if (!TryReadFace(pending.Bones, out var reading, out var problem))
+        {
+            InvalidatePending(pending, $"Facial capture cancelled: {problem}");
+            return;
+        }
+
+        var captures =
+            new List<(BoneId Bone, LegacyTransform Captured)>(pending.Bones.Count);
+        for (var i = 0; i < pending.Bones.Count; i++)
+            captures.Add((pending.Bones[i], reading[i]));
+
+        var restored = _animation.RestoreFacialLayer(pending.Actor);
+        if (!restored.Success)
+        {
+            InvalidatePending(
+                pending,
+                "Facial capture cancelled: " +
+                (restored.Detail ?? "the facial layer could not be restored."));
+            return;
+        }
+
+        _animation.SuspendCommands();
+        pending.Captures = captures;
+        pending.LastReading = reading;
+        pending.Phase = BakePhase.Settling;
+        Publish(OperationReceipt.Pending(
+            pending.OperationId,
+            pending.OperationEpoch,
+            pending.SessionGeneration,
+            pending.Actor,
+            "Facial capture is settling."));
+    }
+
+    /// <summary>Every bone's current raw model-space transform, as the apply
+    /// pass last wrote it. A bone that no longer resolves ends the bake: the
+    /// captured absolutes describe a skeleton that is gone.</summary>
+    private bool TryReadFace(
+        IReadOnlyList<BoneId> bones,
+        out List<LegacyTransform> reading,
+        out string? problem)
+    {
+        reading = new List<LegacyTransform>(bones.Count);
+        problem = null;
+        foreach (var bone in bones)
+        {
+            if (_bindings.Resolve(bone) is not { Success: true, Value: { } live })
+            {
+                problem = $"bone {bone.CanonicalName} is no longer bound";
+                return false;
+            }
+            reading.Add(live.LastRawTransform);
+        }
+        return true;
+    }
+
+    /// <summary>Whether the face is holding still between two readings.</summary>
+    private static bool Settled(
+        IReadOnlyList<LegacyTransform> current,
+        IReadOnlyList<LegacyTransform> previous)
+    {
+        if (previous.Count != current.Count)
+            return false;
+        for (var i = 0; i < current.Count; i++)
+        {
+            var a = current[i];
+            var b = previous[i];
+            if (Math.Abs(a.Position.X - b.Position.X) > StableEpsilon ||
+                Math.Abs(a.Position.Y - b.Position.Y) > StableEpsilon ||
+                Math.Abs(a.Position.Z - b.Position.Z) > StableEpsilon ||
+                Math.Abs(a.Rotation.X - b.Rotation.X) > StableEpsilon ||
+                Math.Abs(a.Rotation.Y - b.Rotation.Y) > StableEpsilon ||
+                Math.Abs(a.Rotation.Z - b.Rotation.Z) > StableEpsilon ||
+                Math.Abs(a.Rotation.W - b.Rotation.W) > StableEpsilon ||
+                Math.Abs(a.Scale.X - b.Scale.X) > StableEpsilon ||
+                Math.Abs(a.Scale.Y - b.Scale.Y) > StableEpsilon ||
+                Math.Abs(a.Scale.Z - b.Scale.Z) > StableEpsilon)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>Keeps this bake's skeleton in the apply pass for one frame, so
+    /// that the raw caches it reads are the ones that pass just wrote.</summary>
+    private void RequestRawRefresh(PendingBake pending)
+    {
+        if (pending.Bones.Count == 0)
+            return;
+        if (_bindings.Resolve(pending.Bones[0]) is
+            { Success: true, Value: { Skeleton: { } skeleton } })
+            _posing.RequestRawTransformRefresh(skeleton);
     }
 
     private void Complete(PendingBake pending)
@@ -313,7 +451,7 @@ public sealed class FacialPoseCapture : IDisposable
         {
             applied = _transforms.SetAbsoluteMany(
                 writes,
-                "Apply facial animation to pose",
+                "Bake expression into the pose",
                 rawBaseline: true,
                 cancellationRequested: () =>
                     DisposeRequested ||
@@ -417,23 +555,18 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
+    /// <summary>
+    /// Releases what the bake owns: the command barrier, and nothing else.
+    /// The bake never took playback speed, so it has none to hand back — the
+    /// actor plays exactly as fast after the bake as it did before it.
+    /// </summary>
     private (bool Success, string? Detail) FinishOwnedState(PendingBake pending)
     {
         try
         {
             if (_animation.CommandsSuspended)
                 _animation.ResumeCommands();
-            // Speed ownership is actor-local. A session or skeleton change
-            // invalidates bone writes, but the same exact ActorId is still the
-            // only safe and required target for restoring the pre-capture speed.
-            if (!CanRestoreSpeedIdentity(pending.Actor))
-                return (
-                    false,
-                    "The exact actor is no longer available for playback speed restore.");
-            var restored = RestoreSpeed(pending.Actor, pending.PriorSpeed);
-            return restored.Success
-                ? (true, null)
-                : (false, restored.Detail ?? "Could not restore playback speed.");
+            return (true, null);
         }
         catch (Exception exception)
         {
@@ -441,21 +574,11 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
-    private AnimationResult RestoreSpeed(ActorId actor, float? priorSpeed)
-    {
-        var restored = priorSpeed is { } speed
-            ? _animation.SetSpeed(actor, speed)
-            : _animation.ClearSpeed(actor);
-        if (!restored.Success)
-            _log.Warning($"Face capture could not restore playback speed: {restored.Detail}");
-        return restored;
-    }
-
     private bool TryPrepare(
         ActorId actor,
         ActorDescriptor descriptor,
         out SessionGeneration session,
-        out List<(BoneId Bone, LegacyTransform Captured)> captures,
+        out List<BoneId> captures,
         out string? detail)
     {
         captures = new();
@@ -507,12 +630,12 @@ public sealed class FacialPoseCapture : IDisposable
         {
             if (!IsFaceBone(bone.Id.CanonicalName))
                 continue;
-            if (_bindings.Resolve(bone.Id) is not { Success: true, Value: { } live })
+            if (_bindings.Resolve(bone.Id) is not { Success: true })
             {
                 detail = $"Face bone {bone.Id.CanonicalName} is not currently bound.";
                 return false;
             }
-            captures.Add((bone.Id, live.LastRawTransform));
+            captures.Add(bone.Id);
         }
 
         if (captures.Count == 0)
@@ -543,22 +666,11 @@ public sealed class FacialPoseCapture : IDisposable
             return "the character skeleton was replaced";
         if (_bindings.Resolve(pending.Actor) is not { Success: true })
             return "the actor binding is stale";
-        foreach (var (boneId, _) in pending.Captures)
+        foreach (var boneId in pending.Bones)
             if (_bindings.Resolve(boneId) is not { Success: true })
                 return $"bone {boneId.CanonicalName} was rebound";
         return null;
     }
-
-    private bool CanRestoreSpeedIdentity(ActorId actor) =>
-        FindActor(actor) is not null &&
-        _bindings.Resolve(actor) is { Success: true };
-
-    private bool CanRestoreSetupIdentity(
-        ActorId actor,
-        SessionGeneration session) =>
-        IsCurrentSession(session) &&
-        FindActor(actor) is not null &&
-        _bindings.Resolve(actor) is { Success: true };
 
     private bool IsCurrentToken(PendingBake pending) =>
         !_disposed &&

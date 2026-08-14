@@ -107,6 +107,21 @@ public interface IBonePosingService : IDisposable
     void RegisterSkeletonForCacheUpdate(ISkeleton skeleton);
 
     /// <summary>
+    /// Keeps a skeleton in the APPLY pass for one frame so that
+    /// <see cref="IBone.LastRawTransform"/> is refreshed for every one of its
+    /// bones. Only the apply pass writes that cache, and the pass only visits
+    /// skeletons that already carry a stack, an armed chain, or a registered
+    /// batch — so a skeleton nobody has posed yet reports the value it was
+    /// built with, forever. An operation that reads a raw basis across several
+    /// frames (a bake settling) re-requests every tick it waits.
+    ///
+    /// The lease is one frame, and holds nothing: no stack is created, no
+    /// action is queued, and the skeleton drops straight back out when the
+    /// requests stop.
+    /// </summary>
+    void RequestRawTransformRefresh(ISkeleton skeleton);
+
+    /// <summary>
     /// Registers an action to run INSIDE the next apply pass, once per bone of
     /// this slot skeleton, at the point where that bone's existing stacks have
     /// been applied and its transform caches refreshed — Brio's

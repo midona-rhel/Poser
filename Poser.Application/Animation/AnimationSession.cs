@@ -673,6 +673,50 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
+    /// <summary>
+    /// Returns the FACIAL LAYER ALONE to what Poser found there: unpin the
+    /// layer, then replay the incoming facial timeline captured before the
+    /// first hold. Deliberately NOT <see cref="ReleaseExpression"/>: Brio's
+    /// release is the user's whole-actor reset button and ends with idle (3)
+    /// on the BASE slot, which puts the body back to idle. A bake owns the
+    /// face and nothing else, so it tears down the face and nothing else.
+    ///
+    /// The capture is consumed here — it has just been replayed, and a later
+    /// Reset must not replay a stale timeline over the layer.
+    /// </summary>
+    public AnimationResult RestoreFacialLayer(ActorId actor)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        var captured = OverridesFor(actor)
+            .SlotCaptures.TryGetValue(AnimationSlot.Facial, out var incoming)
+                ? incoming
+                : (ushort)0;
+
+        var unpin = ClearSlotSpeed(actor, AnimationSlot.Facial);
+        if (!unpin.Success)
+            return unpin;
+        // A zero capture means the layer held nothing before Poser played
+        // there; there is no timeline to put back, and playing 0 is not a
+        // way to say "nothing".
+        if (captured != 0)
+        {
+            var replayed = Blend(actor, captured);
+            if (!replayed.Success)
+                // The layer is unpinned but still on Poser's timeline; the
+                // hold stays owned so Reset or a retry runs the restore
+                // again rather than stranding it.
+                return replayed;
+        }
+
+        Mutate(actor, o =>
+        {
+            var slots = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
+            slots.Remove(AnimationSlot.Facial);
+            return o with { HeldExpression = null, SlotCaptures = slots };
+        });
+        return AnimationResult.Ok();
+    }
+
     /// <summary>The expression currently held on the face, if any.</summary>
     public ushort? HeldExpressionFor(ActorId actor) =>
         OverridesFor(actor).HeldExpression;

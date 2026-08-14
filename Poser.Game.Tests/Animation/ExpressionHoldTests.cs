@@ -208,6 +208,114 @@ public sealed class ExpressionHoldTests
         Assert.Empty(session.OverridesFor(Actor).SlotSpeeds);
     }
 
+    // ── the bake's teardown ──────────────────────────────────────────────
+
+    [Fact]
+    public void Bake_teardown_puts_the_facial_layer_back_and_leaves_the_body_alone()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        port.LiveFacialTimeline = Smile;
+        port.Calls.Clear();
+
+        var result = session.RestoreFacialLayer(Actor);
+
+        Assert.True(result.Success);
+        // Unpin, then the PRE-hold facial timeline — and nothing else. Brio's
+        // release ends with idle (3) on the BASE slot, which is its whole-actor
+        // reset button; a bake that ran it would put the body back to idle
+        // every time the user baked a face.
+        Assert.Equal(
+            new[] { "ClearSlotSpeed:Facial", $"Blend:{Incoming}" },
+            port.Calls);
+        Assert.DoesNotContain(
+            $"Blend:{AnimationTimelines.StraightFace}", port.Calls);
+        Assert.DoesNotContain($"Blend:{AnimationTimelines.Idle}", port.Calls);
+        // Nothing of the hold is left owned: the layer is back where it was.
+        Assert.Null(session.HeldExpressionFor(Actor));
+        Assert.False(session.OverridesFor(Actor).HasAny);
+    }
+
+    [Fact]
+    public void Bake_teardown_of_an_empty_facial_layer_only_unpins()
+    {
+        var port = FakePort.Create();
+        // The actor arrived with no facial timeline at all; 0 is not a
+        // timeline to play back, it is the record that there was none.
+        port.LiveFacialTimeline = 0;
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        port.Calls.Clear();
+
+        Assert.True(session.RestoreFacialLayer(Actor).Success);
+
+        Assert.Equal(new[] { "ClearSlotSpeed:Facial" }, port.Calls);
+        Assert.False(session.OverridesFor(Actor).HasAny);
+    }
+
+    [Fact]
+    public void Bake_teardown_that_cannot_unpin_keeps_the_hold_for_the_retry()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        port.FailClearSlotSpeed = true;
+
+        var failed = session.RestoreFacialLayer(Actor);
+
+        Assert.False(failed.Success);
+        Assert.Equal(Smile, session.HeldExpressionFor(Actor));
+        Assert.Equal(
+            Incoming, session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
+
+        port.FailClearSlotSpeed = false;
+        Assert.True(session.RestoreFacialLayer(Actor).Success);
+        Assert.Null(session.HeldExpressionFor(Actor));
+    }
+
+    [Fact]
+    public void A_second_bake_teardown_lands_because_the_first_left_nothing_behind()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        Assert.True(session.RestoreFacialLayer(Actor).Success);
+        port.Calls.Clear();
+
+        // Pressing bake again with nothing held must not replay a stale
+        // timeline over the layer, and must not refuse.
+        var again = session.RestoreFacialLayer(Actor);
+
+        Assert.True(again.Success);
+        Assert.Equal(new[] { "ClearSlotSpeed:Facial" }, port.Calls);
+        Assert.False(session.OverridesFor(Actor).HasAny);
+
+        // And the actor is immediately pickable again.
+        port.Calls.Clear();
+        Assert.True(session.HoldExpression(Actor, Frown).Success);
+        Assert.Equal(Frown, session.HeldExpressionFor(Actor));
+    }
+
+    [Fact]
+    public void Bake_teardown_never_touches_playback_speed()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.Pause(Actor).Success);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        port.Calls.Clear();
+
+        Assert.True(session.RestoreFacialLayer(Actor).Success);
+
+        // A Poser pause writes PlaybackSpeed 0 to every Havok control, so a
+        // bake that paused or resumed would either freeze the state it has to
+        // measure or resume an actor the user froze on purpose.
+        Assert.DoesNotContain("SetOverallSpeed", port.Calls);
+        Assert.DoesNotContain("ClearOverallSpeed", port.Calls);
+        Assert.True(session.IsPaused(Actor));
+    }
+
     /// <summary>Recording fake at the port boundary: the facial slot shows
     /// a configurable live timeline, expression timelines route to Facial
     /// (idle to Base) as the sheet would, and each expression-flow write

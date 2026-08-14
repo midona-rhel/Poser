@@ -85,6 +85,7 @@ public sealed class FacialPoseCaptureTests
             new AnimationSession(NewProxy<IAnimationRuntimePort>()),
             transforms,
             gestures,
+            NewProxy<Poser.Services.IBonePosingService>(),
             source,
             NewProxy<IPluginLog>());
         var callbacks = 0;
@@ -125,14 +126,17 @@ public sealed class FacialPoseCaptureTests
         Assert.Same(pending, app.Capture.LastReceipt);
         Assert.True(app.Capture.IsPending);
         Assert.Single(receipts);
-        Assert.Equal(1, app.AnimationPort.PauseCount);
+        // A bake never pauses: freezing the actor would freeze the very
+        // facial-layer output the delta is measured against.
+        Assert.Equal(0, app.AnimationPort.PauseCount);
 
         var cancelled = app.Capture.CancelPending();
         Assert.Equal(OperationReceiptState.Cancelled, cancelled!.State);
         app.SetPreview(12);
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
-        app.Framework.FireUpdate();
+        for (var i = 0; i < CaptureHarness.TicksToApply - 1; i++)
+            app.Framework.FireUpdate();
         Assert.False(app.History.CanUndo);
         app.Framework.FireUpdate();
 
@@ -172,24 +176,25 @@ public sealed class FacialPoseCaptureTests
     }
 
     [Fact]
-    public void Skeleton_replacement_cancels_but_restores_exact_actor_speed()
+    public void Skeleton_replacement_cancels_without_touching_playback_speed()
     {
         using var app = new CaptureHarness();
         Assert.True(app.Animation.SetSpeed(app.Actor, 0.35f).Success);
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
         app.ReplaceSkeleton();
 
-        app.Framework.FireUpdate();
-        app.Framework.FireUpdate();
+        app.RunToApply();
 
         Assert.Equal(OperationReceiptState.Cancelled, app.Capture.LastReceipt!.State);
         Assert.False(app.Capture.IsPending);
-        Assert.Equal(0.35f, app.AnimationPort.OverallSpeedWrites[^1]);
+        // The user's own speed is the ONLY write on the actor: the bake owns
+        // no speed to restore, so a cancellation has none to get wrong.
+        Assert.Equal(new float?[] { 0.35f }, app.AnimationPort.OverallSpeedWrites);
         Assert.False(app.History.CanUndo);
     }
 
     [Fact]
-    public void Session_replacement_cancels_but_restores_exact_actor_speed()
+    public void Session_replacement_cancels_without_touching_playback_speed()
     {
         using var app = new CaptureHarness();
         Assert.True(app.Animation.SetSpeed(app.Actor, 0.45f).Success);
@@ -199,7 +204,7 @@ public sealed class FacialPoseCaptureTests
         app.Framework.FireUpdate();
 
         Assert.Equal(OperationReceiptState.Cancelled, app.Capture.LastReceipt!.State);
-        Assert.Equal(0.45f, app.AnimationPort.OverallSpeedWrites[^1]);
+        Assert.Equal(new float?[] { 0.45f }, app.AnimationPort.OverallSpeedWrites);
         Assert.False(app.History.CanUndo);
     }
 
@@ -231,8 +236,7 @@ public sealed class FacialPoseCaptureTests
         app.History.PatchAppended += () => app.Capture.CancelPending();
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
-        app.Framework.FireUpdate();
-        app.Framework.FireUpdate();
+        app.RunToApply();
 
         Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
         Assert.Single(
@@ -280,8 +284,7 @@ public sealed class FacialPoseCaptureTests
         app.History.PatchAppended += app.Capture.Dispose;
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
-        app.Framework.FireUpdate();
-        app.Framework.FireUpdate();
+        app.RunToApply();
 
         Assert.Single(
             receipts,
@@ -304,7 +307,7 @@ public sealed class FacialPoseCaptureTests
 
         Assert.Same(pending, app.Capture.LastReceipt);
         Assert.True(app.Capture.IsPending);
-        Assert.Equal(0f, app.AnimationPort.OverallSpeedWrites[^1]);
+        Assert.Equal(new float?[] { 0.65f }, app.AnimationPort.OverallSpeedWrites);
         Assert.False(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
         app.Framework.IsFrameworkThread = true;
@@ -312,7 +315,7 @@ public sealed class FacialPoseCaptureTests
 
         Assert.False(app.Capture.IsPending);
         Assert.Equal(OperationReceiptState.Cancelled, app.Capture.LastReceipt!.State);
-        Assert.Equal(0.65f, app.AnimationPort.OverallSpeedWrites[^1]);
+        Assert.Equal(new float?[] { 0.65f }, app.AnimationPort.OverallSpeedWrites);
         app.Gestures.Dispose();
     }
 
@@ -335,8 +338,7 @@ public sealed class FacialPoseCaptureTests
         Assert.True(app.Animation.SetSpeed(app.Actor, 0.75f).Success);
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
-        app.Framework.FireUpdate();
-        app.Framework.FireUpdate();
+        app.RunToApply();
 
         Assert.Equal(0, terminalCountDuringApply);
         Assert.True(suspendedDuringApply);
@@ -360,8 +362,7 @@ public sealed class FacialPoseCaptureTests
         app.TransformRuntime.DuringApply = app.Capture.Dispose;
         Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
 
-        app.Framework.FireUpdate();
-        app.Framework.FireUpdate();
+        app.RunToApply();
 
         var receipt = Assert.IsType<OperationReceipt>(app.Capture.LastReceipt);
         Assert.Equal(OperationReceiptState.RecoveryRequired, receipt.State);
@@ -370,6 +371,121 @@ public sealed class FacialPoseCaptureTests
         Assert.Single(app.TransformRuntime.RawBaselineWrites);
         Assert.False(app.History.CanUndo);
         app.Gestures.Dispose();
+    }
+
+    // ── the bake the user presses ────────────────────────────────────────
+
+    [Fact]
+    public void Bake_under_pause_leaves_the_actor_paused_and_still_applies()
+    {
+        using var app = new CaptureHarness();
+        // The user froze the actor first — the whole point of posing.
+        Assert.True(app.Animation.Pause(app.Actor).Success);
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        app.RunToApply();
+
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        Assert.True(app.History.CanUndo);
+        // The user's pause is the only speed write there has ever been: the
+        // bake neither froze the actor nor handed it back at speed 1, which is
+        // what used to make the face fall to the straight face the release
+        // had queued.
+        Assert.Equal(new float?[] { 0f }, app.AnimationPort.OverallSpeedWrites);
+        Assert.True(app.Animation.IsPaused(app.Actor));
+        Assert.False(app.Animation.CommandsSuspended);
+    }
+
+    [Fact]
+    public void Bake_reads_the_face_from_a_refreshed_pass_not_from_the_button_press()
+    {
+        using var app = new CaptureHarness();
+        // What the face showed when the button was pressed.
+        app.SetPreview(3);
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        // Only the apply pass writes the raw cache, and it has not run for a
+        // skeleton nobody has posed. The value that arrives once the bake's
+        // lease puts the skeleton back in the pass is the one that must be
+        // baked.
+        Assert.True(app.Posing.RawRefreshRequests > 0);
+        app.SetPreview(21);
+        app.RunToApply();
+
+        var patch = Assert.IsType<TransformPatch>(app.History.PeekUndo());
+        Assert.Equal(21, patch.After[0].Transform.Position.X);
+        Assert.True(app.Posing.RawRefreshRequests >= CaptureHarness.TicksToApply);
+    }
+
+    [Fact]
+    public void Settle_waits_for_the_face_to_stop_moving()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        // Two ticks to reach a refreshed cache, then the capture tick.
+        app.Framework.FireUpdate();
+        app.Framework.FireUpdate();
+
+        // The facial layer is still blending back; every tick reads something
+        // different, and a bake that wrote now would diff against a
+        // half-finished face.
+        for (var i = 0; i < 6; i++)
+        {
+            app.SetPreview(30 + i);
+            app.Framework.FireUpdate();
+            Assert.False(app.History.CanUndo);
+            Assert.True(app.Capture.IsPending);
+        }
+
+        // Held still for two readings: the layer has arrived.
+        app.Framework.FireUpdate();
+        app.Framework.FireUpdate();
+
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        Assert.True(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Settle_gives_up_waiting_on_a_face_that_never_stops_moving()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+
+        // A running idle animation blinks forever; the bake takes the frame it
+        // is on rather than staying pending.
+        for (var i = 0; i < 40 && app.Capture.IsPending; i++)
+        {
+            app.SetPreview(100 + i);
+            app.Framework.FireUpdate();
+        }
+
+        Assert.False(app.Capture.IsPending);
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        Assert.True(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Bake_then_immediate_rebake_both_land_as_their_own_patches()
+    {
+        using var app = new CaptureHarness();
+        app.SetPreview(4);
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        app.RunToApply();
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+
+        // Re-pick, press bake again straight away: no refusal, no leftover
+        // suspension, no leftover pin.
+        app.SetPreview(17);
+        var second = app.Capture.Begin(app.Actor, app.Descriptor);
+
+        Assert.True(second.Success);
+        app.RunToApply();
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        var patch = Assert.IsType<TransformPatch>(app.History.PeekUndo());
+        Assert.Equal(17, patch.After[0].Transform.Position.X);
+        Assert.Equal(2, app.TransformRuntime.RawBaselineWrites.Count);
+        Assert.False(app.Animation.CommandsSuspended);
+        Assert.Empty(app.AnimationPort.OverallSpeedWrites);
     }
 
     private static T NewProxy<T>() where T : class =>
@@ -417,6 +533,10 @@ public sealed class FacialPoseCaptureTests
             var boneProxy = DispatchProxy.Create<IBone, PropertyProxy>();
             _boneProxy = (PropertyProxy)(object)boneProxy;
             _boneProxy.Values["LastRawTransform"] = Raw(5);
+            // The bake asks the apply pass to keep this skeleton live; it
+            // reaches the skeleton through the bone it is about to read.
+            _boneProxy.Values["Skeleton"] =
+                DispatchProxy.Create<ISkeleton, PropertyProxy>();
             Bindings = (StableBindingRegistry)RuntimeHelpers.GetUninitializedObject(
                 typeof(StableBindingRegistry));
             SetField(Bindings, "_actorBindings", new Dictionary<ActorId, IActor>
@@ -443,6 +563,7 @@ public sealed class FacialPoseCaptureTests
                 Active = SessionGeneration.Create(
                     Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
             };
+            Posing = PosingProxy.Create();
             Capture = new FacialPoseCapture(
                 Framework.Framework,
                 Bindings,
@@ -450,8 +571,20 @@ public sealed class FacialPoseCaptureTests
                 Animation,
                 Transforms,
                 Gestures,
+                Posing.Service,
                 SessionSource,
                 NewProxy<IPluginLog>());
+        }
+
+        /// <summary>Ticks a bake needs on a face that is holding still: two to
+        /// reach caches a pass has refreshed for this skeleton, one to seed the
+        /// settle, and one more to prove the second stable reading.</summary>
+        public const int TicksToApply = 4;
+
+        public void RunToApply()
+        {
+            for (var i = 0; i < TicksToApply; i++)
+                Framework.FireUpdate();
         }
 
         public ActorId Actor { get; }
@@ -468,6 +601,7 @@ public sealed class FacialPoseCaptureTests
         public TransformGestureService Gestures { get; }
         public TransformCommandService Transforms { get; }
         public MutableSessionSource SessionSource { get; }
+        public PosingProxy Posing { get; }
         public FacialPoseCapture Capture { get; }
 
         public void SetPreview(float x) =>
@@ -629,6 +763,30 @@ public sealed class FacialPoseCaptureTests
                         return AnimationPortResult.Ok();
                     return Default(method?.ReturnType);
             }
+        }
+    }
+
+    /// <summary>Counts the apply-pass leases the bake takes: nothing else
+    /// refreshes the raw caches it reads.</summary>
+    private class PosingProxy : DispatchProxy
+    {
+        public Poser.Services.IBonePosingService Service { get; set; } = null!;
+        public int RawRefreshRequests { get; private set; }
+
+        public static PosingProxy Create()
+        {
+            var service = DispatchProxy
+                .Create<Poser.Services.IBonePosingService, PosingProxy>();
+            var proxy = (PosingProxy)(object)service;
+            proxy.Service = service;
+            return proxy;
+        }
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            if (method?.Name == "RequestRawTransformRefresh")
+                RawRefreshRequests++;
+            return Default(method?.ReturnType);
         }
     }
 

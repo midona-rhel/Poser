@@ -662,7 +662,7 @@ public sealed class AnimationPane
         ActorAnimationReading reading)
     {
         if (_facialCapture.ReceiptFor(actor) is { } receipt)
-            form.Label($"Face capture: {FacialReceiptText(receipt)}");
+            form.Label($"Bake: {FacialReceiptText(receipt)}");
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort facial = held != 0
             ? held
@@ -681,29 +681,30 @@ public sealed class AnimationPane
                             : _animation.Blend(actor, facial),
                         "Expression"),
                     disabled: facial == 0,
-                    help: "Play the chosen expression again from the start");
+                    help: "Play this expression on the face again — a look "
+                        + "held by the animation, which Release takes back");
                 actions.Button(
                     "Release",
                     () => Report(
                         _animation.ReleaseExpression(actor), "Expression"),
                     disabled: held == 0,
-                    help: "Release the held expression so the face follows "
+                    help: "Drop the previewed expression so the face follows "
                         + "the animation again");
                 actions.Button(
-                    "Apply to face",
+                    "Bake expression",
                     () =>
                     {
                         var descriptor = Describe(actor);
                         _status = descriptor == null
-                            ? "Apply to face: actor is no longer in the scene."
+                            ? "Bake expression: actor is no longer in the scene."
                             : _facialCapture.Begin(actor, descriptor)
                                 is { Success: false } failed
-                                ? $"Apply to face: {failed.Detail}"
+                                ? $"Bake expression: {failed.Detail}"
                                 : string.Empty;
                     },
                     disabled: _facialCapture.IsPending,
-                    help: "Bake the face you see now into the pose as one "
-                        + "undoable edit");
+                    help: "Write the previewed face into the POSE as one "
+                        + "undoable edit — it stays after the preview ends");
             },
             help: "Choose an expression to hold on this actor's face");
 
