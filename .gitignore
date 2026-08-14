@@ -64,3 +64,9 @@ CLAUDE.md
 /tools/uiverify/
 /docs/validation/**/*.png
 /PosingCore/Data/GameData/
+
+# The build-output rule `[Rr]elease/` above matches a directory of that name at
+# ANY depth, so it swallows the release documentation as well. Re-include the
+# directory itself; git will not descend into an excluded directory, so the
+# negation has to name the directory, not the files under it.
+!/docs/release/
