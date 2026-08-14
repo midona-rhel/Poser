@@ -131,6 +131,10 @@ public sealed class PoseLibraryPane
     private readonly CleanPoseFacade _poseFacade;
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
+
+    /// <summary>The standing load options, so a scene started from a TILE is
+    /// the same load the scene workspace's dialog would have run.</summary>
+    private readonly SceneLoadPreferences _sceneOptions;
     private readonly SelectionSession _selection;
     private readonly StableBindingRegistry _bindings;
     private readonly ActorIntegrationSession _integration;
@@ -371,6 +375,7 @@ public sealed class PoseLibraryPane
         IActorManager actors,
         PosePreviewService preview,
         SceneWorkflow scenes,
+        SceneLoadPreferences sceneOptions,
         UserNotices notices)
     {
         _config = config;
@@ -379,6 +384,7 @@ public sealed class PoseLibraryPane
         _poseFacade = poseFacade;
         _spawnService = spawnService;
         _scenes = scenes;
+        _sceneOptions = sceneOptions;
         _selection = selection;
         _bindings = bindings;
         _integration = integration;
@@ -726,7 +732,8 @@ public sealed class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
-        var started = _scenes.BeginLoad(_vm.Tiles[index].ThumbKey);
+        var started = _scenes.BeginLoad(
+            _vm.Tiles[index].ThumbKey, _sceneOptions.Options);
         if (!started.Success)
             _notices.Failed(
                 started.Detail ?? "The scene could not be loaded.");

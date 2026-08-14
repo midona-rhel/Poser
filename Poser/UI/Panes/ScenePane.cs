@@ -106,13 +106,16 @@ public sealed class ScenePane
     /// at all.</summary>
     private readonly IPlaceService _place;
 
-    /// <summary>
-    /// What the NEXT load is asked to do. Held on the pane rather than on the
-    /// workflow because they are the user's standing preference for this
-    /// session, not state of any operation; every default is the load as it
-    /// behaved before options existed.
-    /// </summary>
-    private SceneLoadOptions _options = SceneLoadOptions.Default;
+    /// <summary>What the NEXT load is asked to do. Held in the one shared
+    /// place rather than on this pane, because the library's scene tiles start
+    /// the very same load and must honour the very same answer.</summary>
+    private readonly SceneLoadPreferences _preferences;
+
+    private SceneLoadOptions Options
+    {
+        get => _preferences.Options;
+        set => _preferences.Options = value;
+    }
 
     /// <summary>The options band's logical height, corrected by its first
     /// draw — the self-measure idiom the import dialog's band uses, so every
@@ -125,8 +128,10 @@ public sealed class ScenePane
         IPoseLibraryService library,
         ConfigurationService config,
         IPlaceService place,
+        SceneLoadPreferences preferences,
         UserNotices notices)
     {
+        _preferences = preferences;
         _workflow = workflow;
         _snapshots = snapshots;
         _library = library;
@@ -521,16 +526,16 @@ public sealed class ScenePane
                 fullWidth: false,
                 new Crystarium.CheckItem(
                     "Clear the session first",
-                    _options.ClearExistingScene,
-                    next => _options = _options with { ClearExistingScene = next },
+                    Options.ClearExistingScene,
+                    next => Options = Options with { ClearExistingScene = next },
                     "Destroy every actor, prop, light, camera and overlay node "
                         + "this session holds before restoring the file. "
                         + "Undoing the load does not bring them back."),
                 new Crystarium.CheckItem(
                     "Place relative to me",
-                    _options.PlaceRelativeToCurrentOrigin,
-                    next => _options =
-                        _options with { PlaceRelativeToCurrentOrigin = next },
+                    Options.PlaceRelativeToCurrentOrigin,
+                    next => Options =
+                        Options with { PlaceRelativeToCurrentOrigin = next },
                     "Put the scene down where you are standing instead of where "
                         + "it was captured. Needs a file that recorded where it "
                         + "was taken.")));
@@ -543,26 +548,26 @@ public sealed class ScenePane
                 disabled: false,
                 fullWidth: false,
                 new Crystarium.CheckItem(
-                    "Actors", _options.IncludeActors,
-                    next => _options = _options with { IncludeActors = next },
+                    "Actors", Options.IncludeActors,
+                    next => Options = Options with { IncludeActors = next },
                     "Actors, their poses, animation, companions and gaze"),
                 new Crystarium.CheckItem(
-                    "Props", _options.IncludeProps,
-                    next => _options = _options with { IncludeProps = next }),
+                    "Props", Options.IncludeProps,
+                    next => Options = Options with { IncludeProps = next }),
                 new Crystarium.CheckItem(
-                    "Lights", _options.IncludeLights,
-                    next => _options = _options with { IncludeLights = next }),
+                    "Lights", Options.IncludeLights,
+                    next => Options = Options with { IncludeLights = next }),
                 new Crystarium.CheckItem(
-                    "Cameras", _options.IncludeCameras,
-                    next => _options = _options with { IncludeCameras = next }),
+                    "Cameras", Options.IncludeCameras,
+                    next => Options = Options with { IncludeCameras = next }),
                 new Crystarium.CheckItem(
-                    "Environment", _options.IncludeEnvironment,
-                    next => _options = _options with { IncludeEnvironment = next },
+                    "Environment", Options.IncludeEnvironment,
+                    next => Options = Options with { IncludeEnvironment = next },
                     "Time, weather, the held sky sections and the frozen "
                         + "water and physics toggles"),
                 new Crystarium.CheckItem(
-                    "Overlays", _options.IncludeOverlays,
-                    next => _options = _options with { IncludeOverlays = next },
+                    "Overlays", Options.IncludeOverlays,
+                    next => Options = Options with { IncludeOverlays = next },
                     "Dialogue, balloon and status nodes")));
 
     /// <summary>One headerless dense option section, the band's only shape.
@@ -796,7 +801,7 @@ public sealed class ScenePane
 
     private void BeginLoad(string path)
     {
-        var started = _workflow.BeginLoad(path, _options);
+        var started = _workflow.BeginLoad(path, Options);
         if (!started.Success)
             _notices.Failed(started.Detail ?? "The scene could not be loaded.");
     }

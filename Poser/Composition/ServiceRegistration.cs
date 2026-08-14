@@ -437,6 +437,7 @@ internal static class ServiceRegistration
         services.AddSingleton<LightPane>();
         services.AddSingleton<CameraPane>();
         services.AddSingleton<EnvironmentPane>();
+        services.AddSingleton<SceneLoadPreferences>();
         services.AddSingleton<PoseLibraryPane>();
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
