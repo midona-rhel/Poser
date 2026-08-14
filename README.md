@@ -4,13 +4,13 @@ A posing and scene tool for FINAL FANTASY XIV's group pose, written as a
 [Dalamud](https://github.com/goatcorp/Dalamud) plugin.
 
 Poser is a **beta — a first release candidate**. It is not stable and it is not
-finished. The projects credited below are the mature alternatives.
+finished.
 
 ## Attribution
 
 Poser is derivative of, and heavily inspired by, **Anamnesis**, **Ktisis** and
-**Brio**. Those three did all of this first, and Poser stands on the shoulders
-of the giants that coded them. Go use them — they are excellent.
+**Brio**. Those three are the real, mature projects if you are looking to pose;
+this one is only here because of the work their contributors put in.
 
 | Project | Repository | Maintainers and contributors |
 |---|---|---|
@@ -26,10 +26,8 @@ deliberate, and where it diverges the reason is written down in `docs/`.
 ## Coded with AI
 
 Poser was coded with the use of artificial intelligence. That is stated up front
-so you can decide for yourself; if it — or a beta — is not to your taste,
-Anamnesis, Ktisis and Brio are the mature alternatives. The plugin says the same
-thing on first launch and asks you to confirm you have read it before the
-workspace opens.
+so you can decide for yourself. The plugin says the same thing on first launch
+and asks you to confirm you have read it before the workspace opens.
 
 ## License
 

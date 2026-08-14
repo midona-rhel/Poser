@@ -71,8 +71,9 @@ public sealed class FirstRunNoticeView
 
         Paragraph(
             "It is derivative of, and heavily inspired by, Anamnesis, Ktisis "
-                + "and Brio. Those three did all of this first; Poser stands on "
-                + "the shoulders of the giants who coded them.",
+                + "and Brio. Those three are the real, mature projects if you "
+                + "are looking to pose; this one is only here because of the "
+                + "work their contributors put in.",
             width,
             default);
 
@@ -104,10 +105,11 @@ public sealed class FirstRunNoticeView
         ImGui.Dummy(new Vector2(0f, (ParagraphGap - 2f) * scale));
 
         Paragraph(
+            // The paragraph above already names those three as the mature
+            // ones, so this states the beta and stops.
             "This is a beta — a first release candidate. It is not stable and "
-                + "it is not finished. If that, or AI-generated code, is not to "
-                + "your taste, the three projects above are the mature "
-                + "alternatives.",
+                + "it is not finished. That, and AI-generated code, may not be "
+                + "to your taste.",
             width,
             default);
 
