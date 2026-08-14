@@ -224,6 +224,15 @@ public sealed class PopOutWindow : Window
         {
             Interactive.EndOwner(owner);
         }
+
+        // The shell's rule, for the shell's reason (MainWindow.Draw): the
+        // Appearance dialogs are pumped at WINDOW level, unconditionally,
+        // outside the owner scope — so a dialog opened from the Appearance
+        // tab survives collapsing the window or switching tabs under it.
+        // This window mints its own AppearancePane, so nothing else pumps
+        // it: without this line the pop-out's MCDF Import/Export are dead
+        // buttons, because those dialogs draw from DrawBrowsers alone.
+        _appearancePane.DrawBrowsers();
     }
 
     public override void OnClose()
