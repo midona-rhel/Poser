@@ -337,6 +337,161 @@ public sealed class WorldObjectRestoreTests
         Assert.True(world.Port.VisibleOf(address));
     }
 
+    /// <summary>A saved scene names an object by the pair the MAP owns — the
+    /// model path and the point the map stands it at — and never by the address
+    /// it was claimed at, which belonged to the run that saved it.</summary>
+    [Fact]
+    public void A_saved_entry_finds_its_object_by_path_and_map_point()
+    {
+        var world = new World();
+        world.Port.Add("bg/rock.mdl", Placed);
+        var wanted = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21);
+
+        var adopted = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Moved, visible: true, out var detail);
+
+        Assert.NotNull(adopted);
+        Assert.Null(detail);
+        Assert.Equal(wanted, adopted!.Address);
+        Assert.Equal(Moved, world.Port.PlacementOf(wanted));
+        // The claim still captured what the MAP had, so the release is the
+        // map's placement and not the file's.
+        Assert.Equal(Placed, adopted.InitialPlacement);
+        world.Service.Release(adopted);
+        Assert.Equal(Placed, world.Port.PlacementOf(wanted));
+    }
+
+    /// <summary>The codec turns a float into a decimal string and back, so the
+    /// point that comes out is near the point that went in, not equal to it.
+    /// </summary>
+    [Fact]
+    public void A_map_point_within_tolerance_is_the_same_object()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed);
+        var nudged = Placed.Position + new Vector3(0.001f, -0.001f, 0.001f);
+
+        var adopted = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", nudged, Moved, visible: true, out _);
+
+        Assert.NotNull(adopted);
+        Assert.Equal(address, adopted!.Address);
+    }
+
+    /// <summary>THE refusal that keeps this safe: an object of the right model
+    /// standing somewhere else is a DIFFERENT object, and writing the file's
+    /// placement onto it would displace a fixture nobody asked about.</summary>
+    [Fact]
+    public void The_same_model_standing_elsewhere_is_refused_by_name()
+    {
+        var world = new World();
+        var elsewhere = world.Port.Add(
+            "bg/tree.mdl",
+            Placed with { Position = Placed.Position + new Vector3(30f, 0f, 0f) });
+
+        var adopted = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Moved, visible: true, out var detail);
+
+        Assert.Null(adopted);
+        Assert.Contains("tree", detail);
+        Assert.Equal(0, world.Port.Writes);
+        Assert.Equal(
+            Placed.Position + new Vector3(30f, 0f, 0f),
+            world.Port.PlacementOf(elsewhere).Position);
+    }
+
+    [Fact]
+    public void An_entry_whose_model_is_not_in_this_zone_is_refused_by_name()
+    {
+        var world = new World();
+        world.Port.Add("bg/rock.mdl", Placed);
+
+        var adopted = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Moved, visible: true, out var detail);
+
+        Assert.Null(adopted);
+        Assert.Contains("tree", detail);
+        Assert.Equal(0, world.Port.Writes);
+    }
+
+    /// <summary>Two of a model within tolerance of one recorded point is a
+    /// degenerate map, but the nearest one is still the answer — never both,
+    /// and never an arbitrary one.</summary>
+    [Fact]
+    public void The_nearest_candidate_within_tolerance_wins()
+    {
+        var world = new World();
+        var far = world.Port.Add(
+            "bg/tree.mdl",
+            Placed with { Position = Placed.Position + new Vector3(0.04f, 0f, 0f) });
+        var near = world.Port.Add(
+            "bg/tree.mdl",
+            Placed with { Position = Placed.Position + new Vector3(0.005f, 0f, 0f) });
+
+        var adopted = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Moved, visible: true, out _);
+
+        Assert.Equal(near, adopted!.Address);
+        Assert.NotEqual(far, adopted.Address);
+    }
+
+    /// <summary>An object this session already borrowed is standing where the
+    /// USER left it, so re-adopting it would capture that as the map's own
+    /// placement and lose what the release owes the map.</summary>
+    [Fact]
+    public void An_object_already_borrowed_is_refused_rather_than_reclaimed()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21);
+        var first = world.Service.Adopt(address)!;
+        first.Transform = Moved;
+
+        var again = world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Placed, visible: true, out var detail);
+
+        Assert.Null(again);
+        Assert.Contains("already borrowed", detail);
+        Assert.Equal(1, world.Service.Count);
+
+        // The one claim still owes the map its original placement.
+        world.Service.Release(first);
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
+    }
+
+    [Fact]
+    public void An_entry_naming_no_model_is_refused()
+    {
+        var world = new World();
+        world.Port.Add("bg/tree.mdl", Placed);
+
+        var adopted = world.Service.AdoptByIdentity(
+            string.Empty, Placed.Position, Moved, visible: true, out var detail);
+
+        Assert.Null(adopted);
+        Assert.NotNull(detail);
+        Assert.Equal(0, world.Port.Writes);
+    }
+
+    /// <summary>Every exit from the contract still applies to a claim a scene
+    /// load made: it is the same claim, whichever surface took it.</summary>
+    [Fact]
+    public void Gpose_exit_restores_an_object_a_scene_load_borrowed()
+    {
+        var world = new World();
+        var address = world.Port.Add("bg/tree.mdl", Placed, flags: 0x21, visible: true);
+        world.Service.AdoptByIdentity(
+            "bg/tree.mdl", Placed.Position, Moved, visible: false, out _);
+        Assert.Equal(Moved, world.Port.PlacementOf(address));
+
+        world.Events.Publish(new GPoseStateChangedEvent(false));
+
+        Assert.Equal(Placed, world.Port.PlacementOf(address));
+        Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
+        Assert.True(world.Port.VisibleOf(address));
+        Assert.Equal(0, world.Service.Count);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────
 
     private sealed class World

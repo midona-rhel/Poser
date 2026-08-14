@@ -338,30 +338,40 @@ public sealed class WorldObjectService : IDisposable
             return null;
         }
 
+        // The live listing is checked SECOND, because a claim this session
+        // already holds has been moved by the user: the object no longer stands
+        // at the point that names it, and only the claim still remembers that
+        // point. Re-adopting it would capture the user's own placement as the
+        // map's, and the release would then owe the map the wrong value.
+        foreach (var claim in _adopted)
+        {
+            if (!string.Equals(claim.Path, path, StringComparison.Ordinal))
+                continue;
+            if (Vector3.Distance(claim.InitialPlacement.Position, mapPosition)
+                > IdentityToleranceYalms)
+                continue;
+            detail = $"'{DisplayName(path)}' is already borrowed by this scene.";
+            return null;
+        }
+
         nint best = nint.Zero;
         float bestDistance = float.PositiveInfinity;
         foreach (var row in _port.Enumerate())
         {
             if (!string.Equals(row.Path, path, StringComparison.Ordinal))
                 continue;
+            if (IsAdopted(row.Address))
+                continue;
             float distance = Vector3.Distance(row.Placement.Position, mapPosition);
             if (distance > IdentityToleranceYalms || distance >= bestDistance)
                 continue;
-            // An object this session already borrowed is not a second claim: it
-            // is already standing where the user last put it, and re-adopting
-            // it would capture THAT as the map's own placement.
-            if (IsAdopted(row.Address))
-            {
-                detail = $"'{DisplayName(path)}' is already borrowed by this scene.";
-                continue;
-            }
             best = row.Address;
             bestDistance = distance;
         }
 
         if (best == nint.Zero)
         {
-            detail ??= $"'{DisplayName(path)}' is not standing where this scene " +
+            detail = $"'{DisplayName(path)}' is not standing where this scene " +
                 "recorded it, so it was not borrowed.";
             return null;
         }
