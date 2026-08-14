@@ -368,7 +368,10 @@ public sealed class PoseLibraryPane
         // lives on the FILES section so both surfaces read one filter. The
         // library mount opens the import menu WITHOUT presets — rest poses
         // belong to the actor part (user rule).
-        _vm.OnImportMenu = () => _files.RequestImportMenu(withPresets: false);
+        // The rail's "Options" is a BUTTON, so the menu hangs off it — the
+        // same seat rule the Apply menu below already follows.
+        _vm.OnImportMenu = () => _files.RequestImportMenu(
+            withPresets: false, anchor: Crystarium.ButtonSeat);
         _vm.OnBoneFilterMenu = () => _files.RequestBoneFilterMenu();
         _vm.OnApplyMenu = () =>
         {

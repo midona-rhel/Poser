@@ -214,10 +214,13 @@ public sealed class PoseFileInspectorSection
     /// <summary>Opens the import-options menu on the next pump. Presets show
     /// only for the actor-side mount (the user's rule: rest poses belong to
     /// the actor part, never the library).</summary>
-    public void RequestImportMenu(bool withPresets)
+    /// <param name="anchor">The seat of the BUTTON that asked, when a button
+    /// asked. A button-borne surface hangs off its button; only a caller with
+    /// no seat — a menu row, a key — falls back to the pointer.</param>
+    public void RequestImportMenu(bool withPresets, Vector2? anchor = null)
     {
         _importMenuWithPresets = withPresets;
-        _menuAnchor = ImGui.GetMousePos();
+        _menuAnchor = anchor ?? ImGui.GetMousePos();
         _importMenuRequested = true;
     }
 
