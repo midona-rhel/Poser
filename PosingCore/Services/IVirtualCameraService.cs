@@ -24,6 +24,12 @@ public interface IVirtualCameraService : IDisposable
     /// <summary>The camera driving the game's view; null outside GPose.</summary>
     IVirtualCamera? LiveCamera { get; }
 
+    /// <summary>The fly speed the wheel last set on the live free camera, and
+    /// when. Null whenever no free camera is live — the overlay's readout
+    /// answers to this and to nothing else, so a free camera that is not
+    /// flying puts nothing on screen.</summary>
+    FreeCameraSpeedNotice? SpeedNotice { get; }
+
     /// <summary>Creates a camera seeded from the current view and makes it
     /// live. Framework thread only. Returns null on failure.</summary>
     IVirtualCamera? CreateCamera(CameraKind kind);

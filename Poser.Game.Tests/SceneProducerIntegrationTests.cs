@@ -265,6 +265,8 @@ public sealed class SceneProducerIntegrationTests
         public bool IsAvailable => false;
         public IReadOnlyList<IVirtualCamera> Cameras => Array.Empty<IVirtualCamera>();
         public IVirtualCamera? LiveCamera => null;
+
+        public FreeCameraSpeedNotice? SpeedNotice => null;
         public void Dispose() { }
         public IVirtualCamera? CreateCamera(CameraKind kind) => null;
         public IVirtualCamera? CloneCamera(IVirtualCamera source) => null;

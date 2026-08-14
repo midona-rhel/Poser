@@ -31,7 +31,9 @@ namespace Poser.Game.Cameras;
 /// </summary>
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
-    internal const float DefaultMovementSpeed = 0.03f;
+    // One home for the fly speed's numbers: the wheel's curve owns them and
+    // the camera's default is that curve's unit.
+    internal const float DefaultMovementSpeed = FreeCameraSpeed.Default;
     internal const float DefaultMouseSensitivity = 0.1f;
 
     // Brio signatures, verbatim from main (2026-08).
@@ -85,6 +87,15 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private Vector3 _freeForward;
     private Vector2 _freeMouseDelta;
     private float _freeMoveSpeed = DefaultMovementSpeed;
+
+    // The last fly-speed change the wheel made, for the overlay's readout.
+    // Two scalar fields rather than one notice struct because the writer is
+    // the game's input handler and the reader is the draw pass: each field is
+    // atomically read on its own, so the worst a reader can see is a speed one
+    // notch behind its timestamp. A struct pair could tear. A zero stamp is
+    // 'no notch yet'.
+    private float _speedNoticeValue = DefaultMovementSpeed;
+    private long _speedNoticeAtMs;
 
     // Tracking: the averaged bone world position is derived once per tick on
     // the framework thread (skeleton caches are refreshed there, exactly like
@@ -198,6 +209,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     public IReadOnlyList<IVirtualCamera> Cameras => _cameras;
 
     public IVirtualCamera? LiveCamera => _live;
+
+    public FreeCameraSpeedNotice? SpeedNotice =>
+        _live is { Kind: CameraKind.Free } && _speedNoticeAtMs != 0L
+            ? new FreeCameraSpeedNotice(_speedNoticeValue, _speedNoticeAtMs)
+            : null;
 
     /// <summary>The native orbit camera; null when the manager is not up.</summary>
     internal NativeCamera* Native
@@ -335,6 +351,10 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         _live = target;
         target.IsLive = true;
         target.LoadState();
+        // The readout belongs to the camera whose wheel made it; a switch
+        // retires it rather than letting the incoming camera inherit a speed
+        // it was never set to.
+        _speedNoticeAtMs = 0L;
         Publish();
     }
 
@@ -625,6 +645,31 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             mouse->HandleDelta();
         }
 
+        // The wheel is the fly speed, and the game never gets to see it. A
+        // free camera replaces the view matrix and leaves the game orbiting
+        // its own camera underneath, so an unconsumed scroll zooms a camera
+        // nobody is looking through and desyncs the orbit state every reader
+        // of the native camera still trusts. Consumed for a live free camera
+        // whatever the wheel then does — locked, or movement switched off, it
+        // is eaten and dropped.
+        if (mouse != null)
+        {
+            if (!live.IsLocked && live.MovementEnabled)
+            {
+                int notches = FreeCameraSpeed.Notches(mouse->ScrollValue);
+                if (notches != 0)
+                {
+                    live.MovementSpeed =
+                        FreeCameraSpeed.Step(live.MovementSpeed, notches);
+                    _speedNoticeValue = live.MovementSpeed;
+                    // Fully qualified: Poser.Game.Environment is a namespace
+                    // of this assembly and wins the plain name.
+                    _speedNoticeAtMs = System.Environment.TickCount64;
+                }
+            }
+            mouse->ScrollValue = 0;
+        }
+
         if (keyboard == null || !live.MovementEnabled)
             return;
 
@@ -636,6 +681,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
         if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
 
+        // Brio's vertical map, both pairs (InputManagerConfiguration): Q or
+        // Space rises, E or Shift falls. The axis travels with the input
+        // vector below, so it is the camera's up rather than the world's —
+        // pitched down, rising also carries you forward, exactly as Brio
+        // flies. Move2D is the switch that pins it to world vertical.
         int upDown = 0;
         if (keyboard->KeyDown(VirtualKey.Q) ||
             keyboard->KeyDown(VirtualKey.SPACE))
@@ -657,6 +707,14 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         keyboard->HandleKey(VirtualKey.Q);
         keyboard->HandleKey(VirtualKey.E);
         keyboard->HandleKey(VirtualKey.SPACE);
+        // The modifiers this path reads are consumed with the letters
+        // (Brio's EnableKeyHandlingOnKeyMod block, on by default): Shift is
+        // the second descend key and Ctrl/Alt are the speed modifiers, so
+        // leaving them in the frame hands the game a held modifier for every
+        // second the camera is descending.
+        keyboard->HandleKey(VirtualKey.SHIFT);
+        keyboard->HandleKey(VirtualKey.CONTROL);
+        keyboard->HandleKey(VirtualKey.MENU);
 
         if (live.IsLocked)
         {

@@ -571,6 +571,8 @@ public sealed class SceneLifecycleHistoryTests
         public bool IsAvailable => true;
         public IReadOnlyList<IVirtualCamera> Cameras => _cameras;
         public IVirtualCamera? LiveCamera => null;
+
+        public FreeCameraSpeedNotice? SpeedNotice => null;
         public void Dispose() { }
 
         public IVirtualCamera? CreateCamera(CameraKind kind)
