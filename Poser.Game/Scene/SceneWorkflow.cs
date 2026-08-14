@@ -54,6 +54,11 @@ public sealed class SceneWorkflow : IDisposable
     /// draws.</summary>
     private static readonly TimeSpan CompanionReadyTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>Bound for one saved character file to import. Generous because
+    /// the transaction behind it extracts a whole package and waits out its
+    /// own redraw barrier; cancelling the load cuts it short.</summary>
+    private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromSeconds(60);
+
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
@@ -88,10 +93,12 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.IEnvironmentService environment,
         Bindings.StableBindingRegistry bindings,
         Poser.Application.Animation.AnimationSession animation,
-        Poser.Services.IGazeService gaze)
+        Poser.Services.IGazeService gaze,
+        Poser.Application.Integration.ActorIntegrationSession integration)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
-            props, lighting, cameras, environment, bindings, animation, gaze))
+            props, lighting, cameras, environment, bindings, animation, gaze,
+            integration))
     {
     }
 
@@ -361,13 +368,21 @@ public sealed class SceneWorkflow : IDisposable
                 SceneOperationKind.Save, operation.FileName,
                 ScenePhase.Writing, 0, 0, false, null));
 
+            // Character-file references are hashed HERE, off the framework
+            // thread, between the capture that produced them and the write:
+            // hashing a package is file work the frame the capture ran on may
+            // not spend.
+            var notes = captured.Notes;
+            if (_runtime.StampMcdfHashes(scene) is { Count: > 0 } stamped)
+                notes = captured.Notes.Concat(stamped).ToList();
+
             var written = _runtime.WriteScene(scene, path);
             if (!written.Succeeded)
             {
                 Finish(
                     false,
                     $"The scene could not be written: {written.Failure!.Detail}",
-                    captured.Notes,
+                    notes,
                     written.RecoveryEvidencePaths);
                 return;
             }
@@ -376,9 +391,9 @@ public sealed class SceneWorkflow : IDisposable
                 $"Saved {scene.Actors.Count} actors, {scene.Props.Count} props, " +
                 $"{scene.Lights.Count} lights and {scene.Cameras.Count} cameras to " +
                 $"{operation.FileName}.";
-            if (captured.Notes.Count > 0)
-                summary += $" {captured.Notes.Count} entities carried notes.";
-            Finish(true, summary, captured.Notes);
+            if (notes.Count > 0)
+                summary += $" {notes.Count} entities carried notes.";
+            Finish(true, summary, notes);
         }
         catch (Exception ex)
         {
@@ -515,6 +530,48 @@ public sealed class SceneWorkflow : IDisposable
             {
                 await Abort(ready);
                 return;
+            }
+
+            // Phase 3b — character files, BEFORE anything that hangs off a
+            // body. An MCDF import redraws the actor, which destroys its draw
+            // object and every skeleton with it: a pose applied first would be
+            // thrown away, and a companion attached first would go with the old
+            // body. Each import runs through the ORDINARY MCDF transaction, so
+            // the ownership it registers — and the by-name unlock-and-restore
+            // teardown that ownership buys — is the same one a hand-driven
+            // import leaves behind.
+            if (scene.Actors.Any(entry => entry.Mcdf is not null))
+            {
+                Step(ScenePhase.ApplyingAppearance);
+                foreach (var actor in scene.Actors)
+                {
+                    if (actor.Mcdf is null)
+                        continue;
+                    if (Guard(operation, cancellation) is { } stop)
+                    {
+                        await Abort(stop);
+                        return;
+                    }
+                    var appearance = await _runtime.ImportMcdf(
+                        actorTokens[actor.Key], actor, McdfImportTimeout,
+                        cancellation);
+                    // A missing package is a refusal by name; a package whose
+                    // bytes moved on is restored WITH the divergence named.
+                    // Neither is ever a silent skip.
+                    if (appearance.Detail is { } detail)
+                        entities.Add(new SceneEntityOutcome(
+                            "Character file", actor.Name,
+                            appearance.Restored, detail));
+                }
+
+                // The redraws rebuilt the skeletons every later phase reads.
+                Step(ScenePhase.AwaitingActors);
+                var rebuilt = await WaitForActors(operation, cancellation);
+                if (rebuilt != null)
+                {
+                    await Abort(rebuilt);
+                    return;
+                }
             }
 
             // Phase 4 — explicit relationships.

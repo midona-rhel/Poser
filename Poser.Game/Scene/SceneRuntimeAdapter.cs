@@ -40,6 +40,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly StableBindingRegistry _bindings;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
+    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
     public SceneRuntimeAdapter(
         IFramework framework,
@@ -55,8 +56,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IEnvironmentService environment,
         StableBindingRegistry bindings,
         AnimationSession animation,
-        IGazeService gaze)
+        IGazeService gaze,
+        Poser.Application.Integration.ActorIntegrationSession integration)
     {
+        _integration = integration;
         _bindings = bindings;
         _animation = animation;
         _gaze = gaze;
@@ -84,6 +87,43 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public SceneWriteOutcome WriteScene(SceneFile scene, string path) =>
         _store.Write(scene, path);
 
+    public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
+    {
+        var notes = new List<string>();
+        foreach (var actor in scene.Actors)
+        {
+            if (actor.Mcdf is not { } mcdf)
+                continue;
+            var hashed = HashFile(mcdf.Path);
+            if (hashed is null)
+            {
+                // The reference is still worth saving: the load can follow the
+                // path, it just cannot vouch that the bytes are the same.
+                notes.Add(
+                    $"Actor '{actor.Name}''s character file '{mcdf.FileName}' " +
+                    "could not be read while saving; the scene records where it " +
+                    "was but cannot check it has not changed.");
+                continue;
+            }
+            mcdf.ContentHash = hashed;
+        }
+        return notes;
+    }
+
+    private static string? HashFile(string path)
+    {
+        try
+        {
+            using var stream = System.IO.File.OpenRead(path);
+            return Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(stream));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public string? ArmSceneCapture(
         Guid sceneId,
         string? description,
@@ -108,6 +148,92 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     public bool ActorReady(object actor) =>
         _skeletons.GetSkeletons((IActor)actor).Count > 0;
+
+    /// <summary>
+    /// Re-imports the saved character file through <c>McdfTransaction</c> —
+    /// the ONE import path. Nothing here reimplements a phase: the file is
+    /// checked, the existing transaction is started, and this waits for the
+    /// receipt that transaction publishes. That is what keeps the ownership it
+    /// registers, and therefore the by-name unlock-and-restore teardown, the
+    /// same for a scene-restored actor as for a hand-imported one.
+    /// </summary>
+    public async Task<SceneMcdfOutcome> ImportMcdf(
+        object actor,
+        SceneActor data,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        if (data.Mcdf is not { } saved)
+            return SceneMcdfOutcome.Silent;
+
+        // File work first, off the framework thread: a missing package is a
+        // refusal that never touches the actor, and a changed one is named
+        // before anything is applied.
+        string? changed = null;
+        if (!System.IO.File.Exists(saved.Path))
+            return SceneMcdfOutcome.Refused(
+                $"The character file '{saved.FileName}' is no longer at " +
+                $"{saved.Path}; the actor was restored without it.");
+        if (saved.ContentHash.Length > 0)
+        {
+            var hash = HashFile(saved.Path);
+            if (hash is null)
+                changed = $"The character file '{saved.FileName}' could not be " +
+                    "read to check it against the scene.";
+            else if (!string.Equals(
+                hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
+                changed = $"The character file '{saved.FileName}' has changed " +
+                    "since this scene was saved; the actor is wearing the file " +
+                    "as it is now.";
+        }
+
+        var target = (IActor)actor;
+        Guid? operationId = null;
+        var refusal = await _framework.RunOnFrameworkThread(() =>
+        {
+            if (_bindings.GetActorId(target) is not { } id)
+                return "The actor has no stable identity to import a character file onto.";
+            if (_integration.McdfBusy)
+                return "Another character-file operation is running.";
+            var started = _integration.BeginImport(id, saved.Path);
+            if (!started.Success)
+                return started.Detail ?? "The character file import was refused.";
+            // The transaction publishes a Pending receipt inside admission, so
+            // the id of THIS operation is readable the moment it is admitted.
+            operationId = _integration.McdfReceipt?.OperationId;
+            return null;
+        });
+        if (refusal != null)
+            return SceneMcdfOutcome.Refused(refusal);
+
+        var deadline = DateTime.UtcNow + bound;
+        while (true)
+        {
+            var receipt = _integration.McdfReceipt;
+            if (receipt is { } terminal &&
+                terminal.OperationId == operationId &&
+                terminal.State != OperationReceiptState.Pending)
+            {
+                return terminal.State == OperationReceiptState.Applied
+                    ? SceneMcdfOutcome.Ok(changed)
+                    : SceneMcdfOutcome.Refused(
+                        terminal.Detail
+                        ?? $"The character file import ended {terminal.State}.");
+            }
+            if (DateTime.UtcNow >= deadline)
+                return SceneMcdfOutcome.Refused(
+                    $"The character file '{saved.FileName}' did not finish " +
+                    "importing within its bound.");
+            try
+            {
+                await Task.Delay(50, cancellation);
+            }
+            catch (OperationCanceledException)
+            {
+                return SceneMcdfOutcome.Refused("The load was cancelled.");
+            }
+        }
+    }
 
     // Only called for an actor whose attachment is present: the workflow skips
     // an absent kind rather than asking the runtime to detach.

@@ -369,6 +369,7 @@ public sealed class SceneFileStoreTests
         Assert.DoesNotContain("\"Animation\"", json);
         Assert.DoesNotContain("\"Gaze\"", json);
         Assert.DoesNotContain("CompanionPose", json);
+        Assert.DoesNotContain("\"Mcdf\"", json);
 
         var read = Store().Parse(json);
         Assert.True(read.Succeeded, read.Failure?.Detail);
@@ -377,6 +378,73 @@ public sealed class SceneFileStoreTests
         Assert.Null(loaded.Animation);
         Assert.Null(loaded.Gaze);
         Assert.Null(loaded.CompanionPose);
+        Assert.Null(loaded.Mcdf);
+    }
+
+    [Fact]
+    public void A_character_file_reference_round_trips_as_a_path_and_a_hash()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\Users\Someone\Documents\Mare\friend.mcdf",
+            FileName = "friend.mcdf",
+            ContentHash = new string('A', 64),
+        };
+
+        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var mcdf = Assert.Single(read.Scene!.Actors).Mcdf!;
+        Assert.Equal(@"C:\Users\Someone\Documents\Mare\friend.mcdf", mcdf.Path);
+        Assert.Equal("friend.mcdf", mcdf.FileName);
+        Assert.Equal(new string('A', 64), mcdf.ContentHash);
+    }
+
+    /// <summary>An unhashable package at save time is still a followable
+    /// reference; the empty hash is what says the load cannot vouch for
+    /// it.</summary>
+    [Fact]
+    public void A_character_file_reference_with_no_hash_is_valid()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\files\friend.mcdf",
+            FileName = "friend.mcdf",
+        };
+
+        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(
+            string.Empty, Assert.Single(read.Scene!.Actors).Mcdf!.ContentHash);
+    }
+
+    [Fact]
+    public void A_character_file_reference_with_no_path_is_refused()
+    {
+        var scene = ValidScene();
+        scene.Actors[0].Mcdf = new SceneActorMcdf { FileName = "friend.mcdf" };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
+    }
+
+    [Fact]
+    public void A_character_file_hash_that_is_not_a_digest_is_refused()
+    {
+        // A half-written hash could only mislead the staleness check.
+        var scene = ValidScene();
+        scene.Actors[0].Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\files\friend.mcdf",
+            FileName = "friend.mcdf",
+            ContentHash = "ABCDEF",
+        };
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
     }
 
     [Fact]

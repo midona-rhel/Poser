@@ -79,6 +79,7 @@ public sealed class SceneCaptureService
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
     private readonly PoseExportCapture _exports;
+    private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
 
     public SceneCaptureService(
         IFramework framework,
@@ -96,8 +97,10 @@ public sealed class SceneCaptureService
         IPosingService posing,
         AnimationSession animation,
         IGazeService gaze,
-        PoseExportCapture exports)
+        PoseExportCapture exports,
+        Poser.Application.Integration.ActorIntegrationSession integration)
     {
+        _integration = integration;
         _exports = exports;
         _place = place;
         _posing = posing;
@@ -292,6 +295,7 @@ public sealed class SceneCaptureService
                     _posing.GetEffectiveTransform(actor),
                     $"Actor '{actor.Name}' placement", notes),
                 Animation = id is { } actorId ? CaptureAnimation(actorId) : null,
+                Mcdf = id is { } mcdfActorId ? CaptureMcdf(mcdfActorId, notes) : null,
             };
             captured.Add((actor, entry));
             scene.Actors.Add(entry);
@@ -299,6 +303,36 @@ public sealed class SceneCaptureService
 
         CaptureGaze(captured, keys, notes);
         return keys;
+    }
+
+    /// <summary>
+    /// WHICH character file the actor is wearing, as a reference — the path
+    /// and a name, never the package. Appearance itself stays with its owners
+    /// (Glamourer/Penumbra/Customize+); this is the ONE appearance fact a
+    /// scene records, because it is the one Poser itself put on the actor and
+    /// therefore the one it can put back.
+    ///
+    /// <para>An MCDF that Poser owns but whose source path was never recorded —
+    /// ownership committed by a build before this — records nothing, with a
+    /// note. Guessing at a path would be worse than saying so.</para>
+    /// </summary>
+    private SceneActorMcdf? CaptureMcdf(
+        Poser.Domain.Identity.ActorId id, List<string> notes)
+    {
+        if (_integration.OverridesFor(id).Mcdf is not { } mcdf)
+            return null;
+        if (string.IsNullOrWhiteSpace(mcdf.SourcePath))
+        {
+            notes.Add(
+                $"The character file '{mcdf.FileName}' was imported without a " +
+                "recorded path and could not be saved into the scene.");
+            return null;
+        }
+        return new SceneActorMcdf
+        {
+            Path = mcdf.SourcePath,
+            FileName = Bounded(mcdf.FileName, "Character file"),
+        };
     }
 
     /// <summary>

@@ -116,6 +116,29 @@ public sealed class SceneWorkflowTests
             callback(outcome);
         }
 
+        /// <summary>Notes the hash pass hands back, and the record of whether
+        /// it ran before the write at all.</summary>
+        public List<string> McdfStampNotes = new();
+
+        public IReadOnlyList<string> StampMcdfHashes(SceneFile scene)
+        {
+            Record("StampMcdfHashes");
+            return McdfStampNotes;
+        }
+
+        public Func<SceneActor, SceneMcdfOutcome>? McdfImport;
+
+        public Task<SceneMcdfOutcome> ImportMcdf(
+            object actor,
+            SceneActor data,
+            TimeSpan bound,
+            CancellationToken cancellation)
+        {
+            Record($"ImportMcdf:{data.Name}");
+            return Task.FromResult(
+                McdfImport?.Invoke(data) ?? SceneMcdfOutcome.Ok());
+        }
+
         public object? SpawnActor(SceneActor data, out string? detail)
         {
             Record($"SpawnActor:{data.Name}");
@@ -319,7 +342,11 @@ public sealed class SceneWorkflowTests
         await workflow.Drain;
 
         Assert.Equal(
-            new[] { "ArmSceneCapture", "CaptureScene", "WriteScene" }, runtime.Calls);
+            new[]
+            {
+                "ArmSceneCapture", "CaptureScene", "StampMcdfHashes", "WriteScene",
+            },
+            runtime.Calls);
         Assert.Equal("A shot", runtime.Captured!.Description);
         Assert.Equal(
             OperationReceiptState.Applied, workflow.Receipt!.State);
@@ -410,7 +437,11 @@ public sealed class SceneWorkflowTests
         await workflow.Drain;
 
         Assert.Equal(
-            new[] { "ArmSceneCapture", "CaptureScene", "WriteScene" }, runtime.Calls);
+            new[]
+            {
+                "ArmSceneCapture", "CaptureScene", "StampMcdfHashes", "WriteScene",
+            },
+            runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
     }
 
@@ -548,6 +579,152 @@ public sealed class SceneWorkflowTests
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    // ── character files ──────────────────────────────────────────────────
+
+    /// <summary>A character file is re-imported BEFORE anything that hangs off
+    /// the actor's body, because the import redraws it and takes every
+    /// skeleton with it.</summary>
+    [Fact]
+    public async Task A_saved_character_file_is_imported_before_the_body_is_used()
+    {
+        var lead = Actor("Lead", out _);
+        lead.HasCompanionSlot = true;
+        lead.CompanionKind = CompanionKind.Companion;
+        lead.CompanionId = 4;
+        lead.Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\files\friend.mcdf",
+            FileName = "friend.mcdf",
+        };
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(lead),
+            McdfImport = _ => SceneMcdfOutcome.Ok(),
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        var calls = runtime.Calls;
+        int import = calls.IndexOf("ImportMcdf:Lead");
+        Assert.True(import > calls.IndexOf("SpawnActor:Lead"));
+        Assert.True(import < calls.IndexOf("AttachCompanion:Lead"));
+        Assert.True(import < calls.IndexOf("ApplyActorAnimation:Lead"));
+        Assert.True(import < calls.IndexOf("ArmPoseImport:Lead"));
+        // The redraw rebuilt the skeletons, so readiness is re-established.
+        Assert.True(
+            calls.LastIndexOf("ActorReady") > import,
+            "The load must wait for the redrawn skeletons before posing.");
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        Assert.DoesNotContain(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity.Kind == "Character file");
+    }
+
+    [Fact]
+    public async Task A_missing_character_file_is_a_named_refusal_not_a_silent_skip()
+    {
+        var lead = Actor("Lead", out _);
+        lead.Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\files\gone.mcdf",
+            FileName = "gone.mcdf",
+        };
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(lead),
+            McdfImport = _ => SceneMcdfOutcome.Refused(
+                "The character file 'gone.mcdf' is no longer at C:\\files\\gone.mcdf."),
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        // The actor itself still restores; the missing file is one named
+        // refusal, and nothing rolls back.
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var entities = workflow.Progress!.Outcome!.Entities;
+        Assert.Contains(entities, entity =>
+            entity is { Kind: "Actor", Name: "Lead", Restored: true });
+        var refusal = Assert.Single(
+            entities, entity => entity.Kind == "Character file");
+        Assert.False(refusal.Restored);
+        Assert.Contains("no longer at", refusal.Detail);
+    }
+
+    [Fact]
+    public async Task A_changed_character_file_is_restored_with_the_divergence_named()
+    {
+        var lead = Actor("Lead", out _);
+        lead.Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\files\friend.mcdf",
+            FileName = "friend.mcdf",
+            ContentHash = new string('A', 64),
+        };
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(lead),
+            McdfImport = _ => SceneMcdfOutcome.Ok(
+                "The character file 'friend.mcdf' has changed since this scene was saved."),
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        // Restored WITH a detail: the whole load still reads as applied.
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        var note = Assert.Single(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity.Kind == "Character file");
+        Assert.True(note.Restored);
+        Assert.Contains("has changed", note.Detail);
+    }
+
+    [Fact]
+    public async Task An_actor_with_no_saved_character_file_never_touches_the_importer()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+            McdfImport = _ => SceneMcdfOutcome.Silent,
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("ImportMcdf:Lead", runtime.Calls);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+    }
+
+    [Fact]
+    public async Task An_unhashable_character_file_carries_its_note_into_the_save_outcome()
+    {
+        var runtime = new FakeRuntime
+        {
+            McdfStampNotes =
+            {
+                "Actor 'Lead''s character file 'friend.mcdf' could not be read while saving.",
+            },
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+        var note = Assert.Single(workflow.Progress!.Outcome!.Notes);
+        Assert.Contains("could not be read while saving", note);
     }
 
     /// <summary>A companion is a posable body, not just an attachment: its own

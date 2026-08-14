@@ -114,6 +114,11 @@ public sealed class McdfTransaction
         public required OperationEpoch Epoch { get; init; }
         public required SessionGeneration Session { get; init; }
         public required McdfOperationKind Kind { get; init; }
+
+        /// <summary>The package this import READ. Carried into ownership so a
+        /// scene can state which character file an actor is wearing; no phase
+        /// here consults it.</summary>
+        public string? SourcePath;
         public bool Invalidated;
         public bool TerminalPublished;
         /// <summary>Read while the target still resolved. The only handle a
@@ -221,6 +226,7 @@ public sealed class McdfTransaction
             return IntegrationResult.Fail(
                 "No GPose session is active; an MCDF import needs the exact session identity.");
         var operation = Admit(actor, _files.GetFileName(path), McdfOperationKind.Import, session);
+        operation.SourcePath = path;
         var cancellation = _cancellation!.Token;
         _inFlight = operation;
         _progress = new McdfProgress(
@@ -596,7 +602,8 @@ public sealed class McdfTransaction
                         fileName, operation.TemporaryCollection,
                         operation.OperationDirectory?.Path, operation.GlamourerLocked,
                         operation.TemporaryProfile, operation.BodyJson,
-                        ActorName: operation.ActorName),
+                        ActorName: operation.ActorName,
+                        SourcePath: operation.SourcePath),
                     DesignOwned = !replacedGlamourer && current.DesignOwned,
                     DesignName = replacedGlamourer ? null : current.DesignName,
                     TemporaryBodyProfile = replacedBody ? null : current.TemporaryBodyProfile,
@@ -957,7 +964,8 @@ public sealed class McdfTransaction
                 operation.RedrawPending,
                 operation.PendingGlamourerRecovery,
                 operation.PendingBodyRecoveryJson,
-                operation.ActorName),
+                operation.ActorName,
+                operation.SourcePath),
         });
         return failures.Count == 0 ? null : string.Join("; ", failures);
     }

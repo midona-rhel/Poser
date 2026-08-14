@@ -27,6 +27,11 @@ public enum ScenePhase
     Reading,
     SpawningEntities,
     AwaitingActors,
+    /// <summary>Re-importing saved character files. It runs BEFORE everything
+    /// that hangs off an actor's body, because an MCDF import redraws the
+    /// actor and takes its draw object — and every skeleton — with it.
+    /// </summary>
+    ApplyingAppearance,
     ApplyingRelationships,
     ApplyingAnimation,
     ApplyingPose,
@@ -86,6 +91,24 @@ public sealed record SceneProgress(
     bool Cancellable,
     SceneOutcome? Outcome);
 
+/// <summary>
+/// How one actor's saved character-file restore ended. Restored WITH a detail
+/// is the deliberate middle state: the package still exists but its bytes
+/// changed since the save, so the actor gets the appearance and the load says
+/// the file is not the one it was saved against. Nothing here is ever silent —
+/// a missing package is a refusal by name, never a skipped actor.
+/// </summary>
+public readonly record struct SceneMcdfOutcome(bool Restored, string? Detail)
+{
+    /// <summary>The actor states no character file; nothing happened and
+    /// there is nothing to report.</summary>
+    public static SceneMcdfOutcome Silent => new(true, null);
+
+    public static SceneMcdfOutcome Ok(string? detail = null) => new(true, detail);
+
+    public static SceneMcdfOutcome Refused(string detail) => new(false, detail);
+}
+
 /// <summary>Typed admission result for starting a scene operation.</summary>
 public readonly record struct SceneActionResult(bool Success, string? Detail = null)
 {
@@ -114,6 +137,15 @@ internal interface ISceneRuntime
     SceneReadOutcome ReadScene(string path);
     SceneWriteOutcome WriteScene(SceneFile scene, string path);
 
+    /// <summary>
+    /// Stamps every stated character-file reference with its package's content
+    /// hash, in place, and answers the notes for the ones it could not read.
+    /// Off the framework thread deliberately: hashing tens of megabytes is
+    /// file work, and the capture that produced the references may not spend
+    /// a frame on it.
+    /// </summary>
+    IReadOnlyList<string> StampMcdfHashes(SceneFile scene);
+
     // ── capture (framework thread) ───────────────────────────────────────
 
     /// <summary>
@@ -136,6 +168,25 @@ internal interface ISceneRuntime
 
     /// <summary>Whether the spawned actor's slot skeletons exist yet.</summary>
     bool ActorReady(object actor);
+
+    /// <summary>
+    /// Re-imports the actor's saved character file through the EXISTING MCDF
+    /// transaction — the same admission, phases, redraw barrier, rollback and
+    /// ownership registration a hand-driven import runs, so its by-name
+    /// unlock-and-restore teardown holds for a scene-restored actor exactly as
+    /// it does for one the user imported. Returns null when the actor states
+    /// no character file or the import succeeded, else the refusal detail.
+    /// A file that has changed since the save is RESTORED with a detail.
+    ///
+    /// <para>Runs from the workflow task, not a framework action: it marshals
+    /// its own framework work and waits on the transaction's own progress.
+    /// </para>
+    /// </summary>
+    Task<SceneMcdfOutcome> ImportMcdf(
+        object actor,
+        SceneActor data,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation);
 
     /// <summary>Attaches the saved companion; null on success.</summary>
     string? AttachCompanion(object actor, SceneActor data);

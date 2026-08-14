@@ -91,7 +91,12 @@ public sealed record IntegrationBaseline
 /// generation still resolved. Every other owned piece releases by its own
 /// id after the actor is gone, but a LOCKED Glamourer state has no id — it
 /// belongs to the character's identity — so the name is the only handle a
-/// teardown that runs after the GPose clone is destroyed can use.</summary>
+/// teardown that runs after the GPose clone is destroyed can use.
+///
+/// <see cref="SourcePath"/> is the package the import READ, kept beside the
+/// display name because a name alone cannot be re-imported. It is what lets a
+/// saved scene state which character file an actor is wearing; nothing in the
+/// import, rollback or teardown consults it.</summary>
 public sealed record McdfOwnership(
     string FileName,
     Guid? TemporaryCollection,
@@ -102,7 +107,8 @@ public sealed record McdfOwnership(
     bool RedrawPending = false,
     string? PendingGlamourerRecovery = null,
     string? PendingBodyRecoveryJson = null,
-    string? ActorName = null);
+    string? ActorName = null,
+    string? SourcePath = null);
 
 /// <summary>
 /// Poser-owned external state for one exact actor generation. Ownership is

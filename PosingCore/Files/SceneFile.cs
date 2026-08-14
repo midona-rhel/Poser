@@ -102,6 +102,13 @@ public static class SceneFileLimits
     public const int MaxLights = 50;
     public const int MaxCameras = 50;
     public const int MaxNameCharacters = 256;
+
+    /// <summary>Bound for stated filesystem paths, which are legitimately
+    /// longer than a name — a long-path prefix plus a deep library.</summary>
+    public const int MaxPathCharacters = 1024;
+
+    /// <summary>Hex characters of a SHA-256 digest.</summary>
+    public const int ContentHashCharacters = 64;
     public const float MinQuaternionLengthSquared =
         PoseFileLimits.MinQuaternionLengthSquared;
 }
@@ -191,6 +198,44 @@ public class SceneActor
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public SceneActorGaze? Gaze { get; set; }
+
+    /// <summary>The character file the actor is WEARING. Absent when the
+    /// actor's appearance is not an imported MCDF, which is the ordinary
+    /// case.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public SceneActorMcdf? Mcdf { get; set; }
+}
+
+/// <summary>
+/// A REFERENCE to the character file an actor is wearing — never the payload.
+/// An MCDF is tens of megabytes of another player's mods; a scene states where
+/// it was and lets the existing import machinery read it again.
+///
+/// <para>Divergence from both references, deliberately: Brio records only a
+/// <c>WasMCDF</c> boolean and then explicitly REFUSES to restore the appearance
+/// ("was locked at the time of saving. Appearance will not be imported",
+/// SceneService.cs:516-519). Ktisis records the path
+/// (<c>SceneFile.ActorInfo.MCDF</c>) and re-imports it, warning by name when
+/// the file has moved (SceneDataService.cs:429-437) — this follows Ktisis, and
+/// adds the content hash Ktisis has no equivalent of.</para>
+/// </summary>
+[Serializable]
+public class SceneActorMcdf
+{
+    /// <summary>The package's full path AT SAVE. Required.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>The display name, kept beside the path so a load can name the
+    /// file in a refusal without parsing a path that may no longer exist.
+    /// </summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>SHA-256 of the package's bytes at save, uppercase hex. EMPTY
+    /// when the file could not be read while saving — an unverifiable
+    /// reference, which a load still follows but cannot vouch for. A hash that
+    /// no longer matches is a named warning on load, never a silent import of
+    /// different content.</summary>
+    public string ContentHash { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -238,6 +238,32 @@ public static class SceneFileValidation
                 is { } animationFailure)
             return animationFailure;
 
+        if (actor.Mcdf is { } mcdf &&
+            ValidateMcdf(mcdf, $"Actor '{actor.Name}' character file")
+                is { } mcdfFailure)
+            return mcdfFailure;
+
+        return null;
+    }
+
+    /// <summary>A stated character file must be followable: a reference with no
+    /// path names nothing, and a hash that is neither absent nor a SHA-256
+    /// digest could only mislead a staleness check.</summary>
+    private static SceneFileValidationOutcome? ValidateMcdf(
+        SceneActorMcdf mcdf, string label)
+    {
+        if (string.IsNullOrWhiteSpace(mcdf.Path))
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"{label} states no path.");
+        if (mcdf.Path.Length > SceneFileLimits.MaxPathCharacters)
+            return Fail(SceneFileValidationFailureKind.Name,
+                $"{label} path exceeds {SceneFileLimits.MaxPathCharacters} characters.");
+        if (!ValidateText(mcdf.FileName, $"{label} name", out var nameFailure))
+            return nameFailure;
+        if (mcdf.ContentHash.Length != 0 &&
+            mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
+            return Fail(SceneFileValidationFailureKind.Document,
+                $"{label} content hash is not a SHA-256 digest.");
         return null;
     }
 
