@@ -127,9 +127,7 @@ internal sealed class PosePreviewBinder
             return false;
         }
 
-        if (!string.Equals(path, _path, StringComparison.Ordinal)
-            || _candidate is null
-            || !SameOptions(candidate, _candidate))
+        if (NeedsRebuild(_path, _candidate, path, candidate))
         {
             _path = path;
             _candidate = candidate;
@@ -143,6 +141,26 @@ internal sealed class PosePreviewBinder
             _preview.ShowSequence(cached.First, cached.Second);
         return false;
     }
+
+    /// <summary>
+    /// Whether the pose standing on the body is still the pose the frame is
+    /// asking for — <see cref="Begin"/>'s whole verdict, stated without the
+    /// service so it can be exercised on its own. A rebuild is owed when the
+    /// FILE moved, when nothing has been shown yet, or when the options under
+    /// an unmoved file moved.
+    /// </summary>
+    /// <param name="shownPath">The path last stated, or null when none has
+    /// been.</param>
+    /// <param name="shownCandidate">The UI-derived build the last statement was
+    /// made from, or null when none has been.</param>
+    public static bool NeedsRebuild(
+        string? shownPath,
+        PoseImportOptions? shownCandidate,
+        string path,
+        PoseImportOptions candidate) =>
+        !string.Equals(path, shownPath, StringComparison.Ordinal)
+        || shownCandidate is null
+        || !SameOptions(candidate, shownCandidate);
 
     /// <summary>The real build, after <see cref="Begin"/> asked for one: the
     /// target's own stance, then this file on top of it.</summary>

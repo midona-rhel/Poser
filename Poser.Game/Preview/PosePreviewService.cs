@@ -83,11 +83,14 @@ public sealed unsafe class PosePreviewService : IDisposable
     private readonly object _gate = new();
     private nint _requestedSource;
 
-    /// <summary>The object-table index the requested source occupied when the
-    /// request was made. An address alone is a claim; the copy re-proves it by
-    /// checking this slot still holds that exact address (WorldActorDiscovery's
-    /// standard), because ticks pass between Open and the copy.</summary>
-    private ushort _requestedSourceIndex = ushort.MaxValue;
+    /// <summary>Why the standing request could not be shown, or null. The
+    /// preview's own refusals are the only signal a rejected pose ever
+    /// produced — a refused import leaves the body exactly where the last
+    /// successful stage left it, so the surface showed a render and said
+    /// nothing (user 2026-08-14: "I keep selecting new poses and nothing just
+    /// loads", browsing a folder of creature poses that share no bone name
+    /// with a human preview body). Superseded by the next statement.</summary>
+    private volatile string? _refusalText;
 
     /// <summary>The standing request, in the order it must land: the first
     /// stage alone for a plain <see cref="ShowPose(string, PoseImportOptions)"/>,
@@ -106,6 +109,10 @@ public sealed unsafe class PosePreviewService : IDisposable
     // Framework thread only.
     private bool _initialized;
     private nint _copiedSource;
+
+    /// <summary>The last source the copy refused, so a source that stays
+    /// unresolvable is logged once rather than once per tick.</summary>
+    private nint _refusedSource;
     private uint _counter = 1;
 
     /// <summary>The serial the body currently stands for, and how many of its
@@ -143,6 +150,15 @@ public sealed unsafe class PosePreviewService : IDisposable
     /// <summary>Null while the preview renders; otherwise a short reason to
     /// show in place of the image.</summary>
     public string? StatusText => _statusText;
+
+    /// <summary>
+    /// Null while the standing request is showing; otherwise the typed reason
+    /// the pose was refused, to state OVER the render. Distinct from
+    /// <see cref="StatusText"/> because a refusal happens with the body
+    /// standing and the texture live: there is no empty well to put it in, and
+    /// without it the refusal is invisible.
+    /// </summary>
+    public string? RefusalText => _refusalText;
 
     /// <summary>
     /// The shader resource view of <c>CharaViewTextures[1]</c>, or 0 when the
@@ -197,17 +213,17 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         }
 
-        var sourceReference = _objectTable.CreateObjectReference(appearanceSource.Address);
-        if (sourceReference is null)
-        {
-            _statusText = "Select an actor to preview.";
-            return;
-        }
-
+        // The address is RECORDED here and PROVEN in CopyAppearance. This runs
+        // on the draw thread, every frame, and the object table is only
+        // coherent on the framework tick: a resolve here would be reading the
+        // table off its own phase, and a null from that unsynchronised read
+        // would veto the whole lifecycle below — no _open, no auxiliary
+        // registration, no framework subscription — for a preview that is
+        // perfectly alive. Naming a source is a draw-thread statement;
+        // dereferencing one is not.
         lock (_gate)
         {
             _requestedSource = appearanceSource.Address;
-            _requestedSourceIndex = sourceReference.ObjectIndex;
         }
 
         if (_open)
@@ -270,6 +286,10 @@ public sealed unsafe class PosePreviewService : IDisposable
             _requestedSecond = second;
             _requestSerial++;
         }
+
+        // A new statement supersedes the old one's verdict with it: the reason
+        // named a pose that is no longer the one being shown.
+        _refusalText = null;
     }
 
     /// <summary>
@@ -357,10 +377,10 @@ public sealed unsafe class PosePreviewService : IDisposable
         _open = false;
         _rendering = false;
         _statusText = null;
+        _refusalText = null;
         lock (_gate)
         {
             _requestedSource = nint.Zero;
-            _requestedSourceIndex = ushort.MaxValue;
             _requestedFirst = null;
             _requestedSecond = null;
             _requestSerial++;
@@ -392,6 +412,7 @@ public sealed unsafe class PosePreviewService : IDisposable
         _initialized = true;
         _counter = 1;
         _copiedSource = nint.Zero;
+        _refusedSource = nint.Zero;
         ForgetAppliedPose();
         ClearPanBase();
         CopyAppearance(agent);
@@ -404,6 +425,7 @@ public sealed unsafe class PosePreviewService : IDisposable
             return;
         _initialized = false;
         _copiedSource = nint.Zero;
+        _refusedSource = nint.Zero;
         ForgetAppliedPose();
         _counter = 1;
         // The body goes back where the game put it, and the next preview opens
@@ -419,34 +441,43 @@ public sealed unsafe class PosePreviewService : IDisposable
     private void CopyAppearance(AgentInspect* agent)
     {
         nint source;
-        ushort sourceIndex;
         lock (_gate)
         {
             source = _requestedSource;
-            sourceIndex = _requestedSourceIndex;
         }
         if (source == nint.Zero || source == _copiedSource)
             return;
 
-        // Deref-time revalidation: the request was made ticks ago, and a source
-        // that despawned since would leave this address pointing at freed or
-        // recycled memory. The slot must still hold the exact address.
-        if (sourceIndex == ushort.MaxValue
-            || _objectTable[sourceIndex] is not { } occupant
+        // Deref-time revalidation, on the phase that owns the deref. The
+        // request only NAMES an address and was stated ticks ago; a source that
+        // despawned since would leave it pointing at freed or recycled memory,
+        // so the exact-identity rule still holds — the address must resolve AND
+        // still occupy its own object-table slot (WorldActorDiscovery's
+        // standard). Both halves run HERE, where the table is coherent, rather
+        // than one of them on the draw thread.
+        //
+        // Refusal is for THIS TICK ONLY, and never touches the request. The
+        // standing request belongs to the draw thread, which restates it every
+        // frame from Open(): clearing it here would start a refuse/re-arm loop
+        // that cannot terminate and logs once per tick, and a refusal landing
+        // before the first successful copy would leave the CharaView with empty
+        // ModelData — no body ever spawns at slot 441, TryApplyPendingPose is
+        // never reached, and every stated pose is dropped in silence.
+        if (_objectTable.CreateObjectReference(source) is not { } resolved
+            || _objectTable[resolved.ObjectIndex] is not { } occupant
             || occupant.Address != source)
         {
-            lock (_gate)
+            if (_refusedSource != source)
             {
-                if (_requestedSource == source)
-                {
-                    _requestedSource = nint.Zero;
-                    _requestedSourceIndex = ushort.MaxValue;
-                }
+                _refusedSource = source;
+                _log.Debug(
+                    "PosePreviewService: appearance source does not occupy its "
+                    + "slot; copy refused until it does");
             }
-            _log.Debug("PosePreviewService: appearance source no longer occupies its slot; copy refused");
             return;
         }
 
+        _refusedSource = nint.Zero;
         agent->CharaView.ModelData.CopyFromCharacter((Character*)source);
         _copiedSource = source;
         // A new body carries none of the previous pose, and stands wherever the
@@ -578,6 +609,15 @@ public sealed unsafe class PosePreviewService : IDisposable
         if (!result.Success)
             _log.Debug(
                 $"Pose preview could not show '{request.Key}': {result.Detail}");
+        // Only a FILE stage's verdict is the user's to read. The rebase
+        // baseline is this service's own machinery — the doc above already
+        // says a baseline that cannot be stood in still lets the file show —
+        // so its refusal stays a log line and never dresses the render in a
+        // reason about a pose the user never picked.
+        if (request.Path is not null)
+            _refusalText = result.Success
+                ? null
+                : result.Detail ?? "This pose could not be shown.";
         _appliedStage++;
     }
 

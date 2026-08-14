@@ -1466,7 +1466,55 @@ public sealed class PoseFileInspectorSection
                 },
                 TextAlign.Center);
         }
+
+        // A REFUSED pose is otherwise invisible. The import leaves the body
+        // exactly where the last successful stage left it, so the render keeps
+        // showing a perfectly good pose and nothing anywhere says the picked
+        // one was rejected (user 2026-08-14: "I keep selecting new poses and
+        // nothing just loads" — a folder of creature poses, every one of them
+        // refused for sharing no bone name with a human preview body). The
+        // verdict rides a scrim along the bottom of the render rather than
+        // replacing it: the standing pose is still the truthful thing to show,
+        // and the empty well already carries its own reason, so this only
+        // dresses a LIVE render.
+        if (showRender && handle != 0
+            && _preview.RefusalText is { Length: > 0 } refusal)
+            DrawPreviewRefusal(boxMin, boxSize, radius, scale, theme, refusal);
+
         Crystarium.FloatingSurface.DrawBorder(boxMin, boxMax, radius);
+    }
+
+    /// <summary>One truncated line seated in a scrimmed band along the bottom
+    /// of the render, inside the box's own rounding so it reads as part of the
+    /// image rather than a row under it — the box does not reflow and no
+    /// mount has to make room.</summary>
+    private static void DrawPreviewRefusal(
+        Vector2 boxMin, Vector2 boxSize, float radius, float scale,
+        Theme theme, string refusal)
+    {
+        var style = new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.Warning,
+        };
+        float inset = theme.Page.Inset * scale;
+        float band = Crystarium.MeasureText(refusal, style).Y + inset;
+        float width = MathF.Max(1f, boxSize.X - inset * 2f);
+        var bandMin = new Vector2(boxMin.X, boxMin.Y + boxSize.Y - band);
+        ImGui.GetWindowDrawList().AddRectFilled(
+            bandMin,
+            boxMin + boxSize,
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(new Vector4(0f, 0f, 0f, 0.62f))),
+            radius,
+            ImDrawFlags.RoundCornersBottom);
+        Crystarium.TextInBand(
+            new Vector2(bandMin.X + inset, bandMin.Y),
+            new Vector2(width, band),
+            refusal,
+            style,
+            TextConstraint.Truncate(width, TextAlign.Center),
+            TextAlign.Center);
     }
 
     /// <summary>
