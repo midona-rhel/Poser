@@ -53,14 +53,24 @@
   say "the pose owns this face" in a delta-over-animation pose model (Ktisis
   says it by syncing into a frozen absolute pose). That difference must be
   MEASURABLE, which fixes the rest of the flow: the bake never writes playback
-  speed (a Poser pause zeroes every Havok control, so pausing would freeze the
-  state being measured and resuming would drop the face); it reads the face
-  from the apply pass's caches and therefore asks
+  OVERALL speed (a Poser pause zeroes every Havok control, so pausing would
+  freeze the state being measured and resuming would drop the face); it reads
+  the face from the apply pass's caches and therefore asks
   `RequestRawTransformRefresh` on every tick it waits, because nothing else
   refreshes `LastRawTransform` and a skeleton with no stacks is not in the
-  pass at all; and it settles by waiting for the face to STOP MOVING (capped),
-  not by counting frames. A pending bake or transform recovery is a mutation
-  barrier: cancel first, preview again, then retry. GPose exit and disposal
+  pass at all; it DRIVES the facial slot at speed 1 across the settle and
+  hands it back before the patch, because an enforced overall speed is
+  re-applied down into every Havok control by the game (the overall-speed
+  detour returns true, the game's "re-apply" signal) and the per-slot override
+  is the one lever that replaces that value — Brio's expression pin is the
+  same lever pointed the other way; and it settles by waiting for the face to
+  STOP MOVING (capped), not by counting frames. The stored delta is exact
+  while the facial layer stays on the frame the settle ended on: precisely
+  true for the paused actor the bake leaves frozen, an approximation that
+  drifts for a running one, which is inherent to a delta pose over a live
+  animation. A pending bake or transform recovery is a mutation barrier, and
+  it closes with the button press rather than with the reading two ticks
+  later: cancel first, preview again, then retry. GPose exit and disposal
   cancel facial ownership before the full animation reset. Off-thread disposal
   is deferred to the framework thread; disposal reentered during apply rolls
   back and stops before any later face write or history.

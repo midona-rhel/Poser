@@ -56,6 +56,10 @@ public sealed class AnimationPane
     /// pane's surface, which has no line of this pane's to report into.</summary>
     private string _expressionStatus = string.Empty;
     private int _pickerFrame = -1;
+    private int _expressionReadingFrame = -1;
+    private ActorId? _expressionReadingActor;
+    private ActorAnimationReading _expressionReading =
+        ActorAnimationReading.Empty;
     private bool _sceneMenuRequested;
 
     /// <summary>The exact actor and feed captured when the picker opened. A
@@ -690,10 +694,27 @@ public sealed class AnimationPane
         // The row can be the first thing the user touches in a session, on a
         // surface that never loads the catalog for itself.
         _catalogLoader.EnsureLoaded();
-        var reading = _animation.Read(actor) ?? ActorAnimationReading.Empty;
         if (_expressionStatus.Length > 0)
             form.Status(_expressionStatus);
-        DrawExpression(form, actor, reading);
+        DrawExpression(form, actor, ExpressionReading(actor));
+    }
+
+    /// <summary>
+    /// The row's animation reading, once per frame per actor. The row is drawn
+    /// on the pose rail — present on EVERY tab, and twice in a frame when the
+    /// wide Expression surface is up as well — so an unmemoized read would put
+    /// two native reads of the whole timeline state on every frame of the
+    /// application, for one label.
+    /// </summary>
+    private ActorAnimationReading ExpressionReading(ActorId actor)
+    {
+        int frame = ImGui.GetFrameCount();
+        if (_expressionReadingFrame == frame && _expressionReadingActor == actor)
+            return _expressionReading;
+        _expressionReadingFrame = frame;
+        _expressionReadingActor = actor;
+        return _expressionReading =
+            _animation.Read(actor) ?? ActorAnimationReading.Empty;
     }
 
     /// <summary>The shared picker surface, for the pane that hosts the

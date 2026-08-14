@@ -397,6 +397,117 @@ public sealed class FacialPoseCaptureTests
     }
 
     [Fact]
+    public void Bake_on_a_paused_actor_drives_the_facial_layer_and_stores_a_real_delta()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Animation.Pause(app.Actor).Success);
+        // The previewed expression, frozen on the face because everything is.
+        app.SetPreview(50);
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        // The released facial timeline can only reach the face on the frames
+        // the bake is driving the layer; a paused actor's own speed is 0.
+        app.RunToApplyFrozen(releasedFace: 70);
+
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        // The written absolute is the EXPRESSION, and the basis the real port
+        // would diff it against is the RELEASED face. A non-identity delta is
+        // exactly what survives the actor being resumed later: the layer goes
+        // on giving the released face, and the pose puts the expression back.
+        var write = Assert.Single(app.TransformRuntime.Writes);
+        Assert.Equal(50, write.Desired);
+        Assert.Equal(70, write.Basis);
+
+        // The drive is handed back, and it was the only speed the bake owned:
+        // the user's pause is untouched.
+        Assert.Null(app.AnimationPort.FacialSlotSpeed);
+        Assert.Empty(app.Animation.OverridesFor(app.Actor).SlotSpeeds);
+        Assert.Equal(new float?[] { 0f }, app.AnimationPort.OverallSpeedWrites);
+        Assert.True(app.Animation.IsPaused(app.Actor));
+        Assert.False(app.Animation.CommandsSuspended);
+    }
+
+    [Fact]
+    public void Facial_drive_is_released_before_the_patch_is_written()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Animation.Pause(app.Actor).Success);
+        float? drivenAtWrite = 1f;
+        app.TransformRuntime.DuringApply = () =>
+            drivenAtWrite = app.AnimationPort.FacialSlotSpeed;
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        app.RunToApply();
+
+        // The frame the bake diffs against has to be the frame the actor
+        // keeps, so the layer is frozen again BEFORE the write, not after it.
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        Assert.Null(drivenAtWrite);
+    }
+
+    [Fact]
+    public void A_cancelled_bake_hands_the_facial_drive_back()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Animation.Pause(app.Actor).Success);
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        // Far enough to be driving the layer, not far enough to have finished.
+        app.Framework.FireUpdate();
+        app.Framework.FireUpdate();
+        Assert.Equal(1f, app.AnimationPort.FacialSlotSpeed);
+
+        app.SessionSource.Active = SessionGeneration.New();
+        app.Framework.FireUpdate();
+
+        Assert.Equal(OperationReceiptState.Cancelled, app.Capture.LastReceipt!.State);
+        Assert.Null(app.AnimationPort.FacialSlotSpeed);
+        Assert.Empty(app.Animation.OverridesFor(app.Actor).SlotSpeeds);
+        Assert.False(app.Animation.CommandsSuspended);
+    }
+
+    [Fact]
+    public void A_refused_drive_still_bakes_and_says_so_by_storing_what_it_saw()
+    {
+        using var app = new CaptureHarness();
+        Assert.True(app.Animation.Pause(app.Actor).Success);
+        app.SetPreview(50);
+        // The game's slot-speed hook is not active: the layer cannot be
+        // driven, so on a paused actor it cannot move at all.
+        app.AnimationPort.FailSetSlotSpeed = true;
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+        app.RunToApplyFrozen(releasedFace: 70);
+
+        // Still a completed bake rather than a stuck one — but the basis IS
+        // the captured face, so the delta is identity. That is the honest
+        // outcome for a layer nothing could move, and it is exactly the state
+        // the drive exists to avoid.
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        var write = Assert.Single(app.TransformRuntime.Writes);
+        Assert.Equal(write.Desired, write.Basis);
+        Assert.False(app.Animation.CommandsSuspended);
+    }
+
+    [Fact]
+    public void The_command_barrier_closes_with_the_press_not_with_the_reading()
+    {
+        using var app = new CaptureHarness();
+
+        Assert.True(app.Capture.Begin(app.Actor, app.Descriptor).Success);
+
+        // Everything that could change the face is refused from the press
+        // onward — the two ticks before the reading are inside the bake, not
+        // a window the rest of the application can write through.
+        Assert.True(app.Animation.CommandsSuspended);
+        Assert.False(app.Animation.HoldExpression(app.Actor, 9001).Success);
+        Assert.False(app.Animation.Blend(app.Actor, 9002).Success);
+
+        app.RunToApply();
+        Assert.Equal(OperationReceiptState.Applied, app.Capture.LastReceipt!.State);
+        Assert.False(app.Animation.CommandsSuspended);
+    }
+
+    [Fact]
     public void Bake_reads_the_face_from_a_refreshed_pass_not_from_the_button_press()
     {
         using var app = new CaptureHarness();
@@ -437,7 +548,12 @@ public sealed class FacialPoseCaptureTests
             Assert.True(app.Capture.IsPending);
         }
 
-        // Held still for two readings: the layer has arrived.
+        // Two readings hold still: the layer has arrived, and the drive is
+        // handed back. Two more prove it is still holding still on the frame
+        // the actor will keep — and only then is the patch written.
+        app.Framework.FireUpdate();
+        app.Framework.FireUpdate();
+        Assert.False(app.History.CanUndo);
         app.Framework.FireUpdate();
         app.Framework.FireUpdate();
 
@@ -554,6 +670,9 @@ public sealed class FacialPoseCaptureTests
             Animation = new AnimationSession(AnimationPort.Port);
             TransformRuntime = new TestTransformRuntime();
             TransformRuntime.Seed(Bone, 0);
+            TransformRuntime.LiveRaw = () =>
+                ((Poser.Transform)_boneProxy.Values["LastRawTransform"]!)
+                    .Position.X;
             History = new TransformHistory();
             Gestures = new TransformGestureService(Scene, TransformRuntime, History);
             Transforms = new TransformCommandService(
@@ -577,14 +696,31 @@ public sealed class FacialPoseCaptureTests
         }
 
         /// <summary>Ticks a bake needs on a face that is holding still: two to
-        /// reach caches a pass has refreshed for this skeleton, one to seed the
-        /// settle, and one more to prove the second stable reading.</summary>
-        public const int TicksToApply = 4;
+        /// reach caches a pass has refreshed for this skeleton, two stable
+        /// readings to hand the facial drive back, and two more to prove the
+        /// face is still holding still on the frame it will keep.</summary>
+        public const int TicksToApply = 6;
 
         public void RunToApply()
         {
             for (var i = 0; i < TicksToApply; i++)
                 Framework.FireUpdate();
+        }
+
+        /// <summary>
+        /// The game, as far as a PAUSED actor's face is concerned: the facial
+        /// layer only moves toward the restored timeline on the frames
+        /// something is driving it. Everything else about the actor stays
+        /// exactly where the user froze it.
+        /// </summary>
+        public void RunToApplyFrozen(float releasedFace)
+        {
+            for (var i = 0; i < TicksToApply + 2; i++)
+            {
+                if (AnimationPort.FacialSlotSpeed is > 0f)
+                    SetPreview(releasedFace);
+                Framework.FireUpdate();
+            }
         }
 
         public ActorId Actor { get; }
@@ -725,6 +861,15 @@ public sealed class FacialPoseCaptureTests
         public int PauseCount => OverallSpeedWrites.Count(value => value == 0f);
         public int ReleaseExpressionCallCount { get; private set; }
 
+        /// <summary>The facial layer's owned speed, or null when Poser owns
+        /// none — the game's own value (0 on a paused actor) then applies.
+        /// </summary>
+        public float? FacialSlotSpeed { get; private set; }
+
+        /// <summary>Refuses the slot-speed write, as the port does when the
+        /// game's slot-speed hook is not active.</summary>
+        public bool FailSetSlotSpeed { get; set; }
+
         public static AnimationPortProxy Create()
         {
             var port = DispatchProxy.Create<IAnimationRuntimePort, AnimationPortProxy>();
@@ -746,9 +891,18 @@ public sealed class FacialPoseCaptureTests
                 case "ClearOverallSpeed":
                     OverallSpeedWrites.Add(null);
                     return AnimationPortResult.Ok();
+                case "SetSlotSpeed":
+                    if (FailSetSlotSpeed)
+                        return AnimationPortResult.Fail("slot speed unavailable");
+                    if ((AnimationSlot)args![1]! == AnimationSlot.Facial)
+                        FacialSlotSpeed = (float)args[2]!;
+                    return AnimationPortResult.Ok();
                 case "ClearSlotSpeed":
                     if ((AnimationSlot)args![1]! == AnimationSlot.Facial)
+                    {
                         ReleaseExpressionCallCount++;
+                        FacialSlotSpeed = null;
+                    }
                     return AnimationPortResult.Ok();
                 case "Blend":
                     args![3] = null;
@@ -799,6 +953,14 @@ public sealed class FacialPoseCaptureTests
         public Action? DuringApply { get; set; }
         public List<bool> RawBaselineWrites { get; } = new();
 
+        /// <summary>The live raw the REAL port diffs a rawBaseline write
+        /// against (TransformRuntimePort.ApplyAbsolute reads
+        /// bone.LastRawTransform at apply time). Recorded beside the desired
+        /// value so a test can see whether the stored delta is identity.
+        /// </summary>
+        public Func<float>? LiveRaw { get; set; }
+        public List<(float Desired, float Basis)> Writes { get; } = new();
+
         public void Seed(BoneId bone, float x)
         {
             var target = TransformTargetId.ForBone(bone);
@@ -823,6 +985,8 @@ public sealed class FacialPoseCaptureTests
             bool rawBaseline = false)
         {
             RawBaselineWrites.Add(rawBaseline);
+            if (LiveRaw is { } live)
+                Writes.Add((desired.Position.X, live()));
             DuringApply?.Invoke();
             if (FailApply)
                 return TransformPortResult.Fail(
