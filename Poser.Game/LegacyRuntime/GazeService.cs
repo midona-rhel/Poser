@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Game;
@@ -306,25 +307,29 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// overworld original, so an object outside 201..439 named by an id is the
     /// wrong body and writing to it lands on the real actor.
     /// </summary>
-    private static bool CanWriteCharacter(IGameObject? character) =>
+    private static bool CanWriteCharacter([NotNullWhen(true)] IGameObject? character) =>
         character is { Address: not 0 }
         && character.IsValid()
         && character.ObjectIndex is >= 201 and <= 439;
 
     /// <summary>
-    /// The GPose clone carrying <paramref name="gameObjectId"/>, searched over
-    /// the GPose range ONLY. <c>IObjectTable.SearchById</c> scans from index 0
-    /// and therefore answers with the overworld original for any actor that
-    /// exists in both places — correct for an existence probe, wrong for a
-    /// write address.
+    /// The GPose clones carrying <paramref name="wanted"/>, found in ONE walk
+    /// of the GPose range rather than a walk per id.
+    /// <c>IObjectTable.SearchById</c> scans from index 0 and therefore answers
+    /// with the overworld original for any actor that exists in both places —
+    /// correct for an existence probe, wrong for a write address, so this walk
+    /// is the only sound way to resolve a writable body by id.
     /// </summary>
-    private IGameObject? ResolveGPoseClone(ulong gameObjectId)
+    private Dictionary<ulong, (IGameObject Clone, bool Writable)> ResolveGPoseClones(
+        HashSet<ulong> wanted)
     {
-        for (int index = 201; index <= 439; index++)
+        var found = new Dictionary<ulong, (IGameObject, bool)>(wanted.Count);
+        for (int index = 201; index <= 439 && found.Count < wanted.Count; index++)
             if (_objectTable[index] is { } candidate
-                && candidate.GameObjectId == gameObjectId)
-                return candidate;
-        return null;
+                && wanted.Contains(candidate.GameObjectId)
+                && !found.ContainsKey(candidate.GameObjectId))
+                found[candidate.GameObjectId] = (candidate, CanWriteCharacter(candidate));
+        return found;
     }
 
     /// <summary>
@@ -361,7 +366,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     {
         if (pending is not { } targetId || !CanWriteCharacter(character))
             return;
-        _nativeFactory.SetCharacterTargetId(character!.Address, targetId);
+        _nativeFactory.SetCharacterTargetId(character.Address, targetId);
     }
 
     private nint ActorLookAtDetour(ContainerInterface* args)
@@ -379,12 +384,10 @@ public unsafe class GazeService : IGazeService, IDisposable
             if (any)
             {
                 var targetActor = _objectTable.CreateObjectReference((nint)args->OwnerObject);
-                // The GPose index gate is load-bearing (Brio ActorTableHelpers
-                // 201..439): a GPose clone SHARES its GameObjectId with the
-                // overworld original, and without the gate every write lands
-                // on both bodies.
-                if (targetActor is not null && targetActor.IsValid()
-                    && targetActor.ObjectIndex is >= 201 and <= 439)
+                // Same predicate as every other native gaze write, so the gate
+                // is spelled exactly once in this file (Brio ActorTableHelpers
+                // 201..439).
+                if (CanWriteCharacter(targetActor))
                 {
                     GazeTargetMode mode = GazeTargetMode.None;
                     GazeTargetType parts = GazeTargetType.None;
@@ -941,21 +944,23 @@ public unsafe class GazeService : IGazeService, IDisposable
         // Every object-table read happens OUTSIDE _sync: the clone scan walks
         // the GPose range, and the detour contends on _sync from the native
         // thread on every frame.
-        var clones = new Dictionary<ulong, (IGameObject Clone, bool Writable)>();
+
+        // The SOURCES must resolve to their own GPose clones — a clone is the
+        // only body Poser may write, and SearchById would answer with the
+        // overworld original that shares the id. One walk serves the whole
+        // snapshot.
+        var wanted = new HashSet<ulong>();
+        foreach (var (id, _) in snapshot)
+            wanted.Add(id);
+        var clones = ResolveGPoseClones(wanted);
+
+        // The TARGET question is existence, not an address: the game resolves
+        // an imposed id against the whole table, so SearchById is the right
+        // probe here and its answer is never written to.
         var liveTargets = new HashSet<ulong>();
-        foreach (var (id, targetId) in snapshot)
-        {
-            // The SOURCE must resolve to its own GPose clone — that clone is
-            // the only body Poser may write, and SearchById would answer with
-            // the overworld original that shares the id.
-            if (ResolveGPoseClone(id) is { } clone)
-                clones[id] = (clone, CanWriteCharacter(clone));
-            // The TARGET question is existence, not an address: the game
-            // resolves the imposed id against the whole table, so SearchById is
-            // the right probe here and its answer is never written to.
+        foreach (var (_, targetId) in snapshot)
             if (targetId != 0 && _objectTable.SearchById(targetId) != null)
                 liveTargets.Add(targetId);
-        }
 
         bool modeChanged = false;
         List<(IGameObject Character, ulong TargetId)>? targetWrites = null;

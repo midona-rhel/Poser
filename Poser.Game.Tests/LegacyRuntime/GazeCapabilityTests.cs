@@ -398,6 +398,44 @@ public sealed class GazeCapabilityTests
     }
 
     [Fact]
+    public void An_entry_retargeted_between_the_snapshot_and_the_apply_is_not_marked_stale()
+    {
+        using var scene = GazeScene.Create();
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+
+        // The reconciliation pass reads the object table OUTSIDE _sync, so a
+        // framework-thread caller can retarget the entry between its snapshot
+        // and its apply. The liveness answer coming back describes the OLD
+        // target and must not be spent judging the new one. Latched before the
+        // re-entrant call, because SetGazeTarget probes the table itself.
+        bool retargeted = false;
+        scene.OnSearchById = id =>
+        {
+            if (retargeted || id != GazeScene.TargetId)
+                return;
+            retargeted = true;
+            scene.Service.SetGazeTarget(scene.Actor, scene.Second);
+        };
+
+        scene.DespawnTarget();
+
+        // Anti-vacuity: the interleave really happened, and the snapshotted
+        // target really is dead — so the pass's one liveness answer said
+        // "gone", and the guard is the only thing standing between that answer
+        // and the live target the entry now holds.
+        Assert.True(retargeted);
+        Assert.Null(scene.ObjectTable.SearchById(GazeScene.TargetId));
+        Assert.NotNull(scene.ObjectTable.SearchById(GazeScene.SecondId));
+
+        var state = scene.Service.GetGazeState(scene.Actor);
+        Assert.Equal(GazeScene.SecondId, state.TargetId);
+        // The live second target is what the entry holds; marking it stale on
+        // the despawned first target's answer would strand a working gaze.
+        Assert.False(state.TargetStale);
+        Assert.Equal(GazeTargetType.All, scene.Written());
+    }
+
+    [Fact]
     public void A_stale_pass_leaves_the_locks_of_a_point_mode_entry_alone()
     {
         using var scene = GazeScene.Create();
@@ -472,6 +510,17 @@ public sealed class GazeCapabilityTests
         /// live rather than asserting against a harness that never had one.</summary>
         public required IObjectTable ObjectTable { get; init; }
 
+        internal required SearchProbe Probe { get; init; }
+
+        /// <summary>Runs on every <c>SearchById</c>, which is the one table read
+        /// the reconciliation pass performs between its snapshot and its apply.
+        /// Installing a handler here is how a test interleaves a caller with
+        /// that pass on a harness that has no second thread.</summary>
+        public Action<ulong>? OnSearchById
+        {
+            set => Probe.OnProbe = value;
+        }
+
         public nint CloneAddress => _slots[CloneIndex].Address;
         public nint OriginalAddress => _slots[OriginalIndex].Address;
 
@@ -488,7 +537,8 @@ public sealed class GazeCapabilityTests
             IActor second,
             IActor ungated,
             nint targetBlock,
-            IObjectTable objectTable)
+            IObjectTable objectTable,
+            SearchProbe probe)
         {
             var scene = new GazeScene
             {
@@ -500,6 +550,7 @@ public sealed class GazeCapabilityTests
                 Ungated = ungated,
                 TargetBlock = targetBlock,
                 ObjectTable = objectTable,
+                Probe = probe,
             };
             scene._blocks.AddRange(blocks);
             scene._slots = slots;
@@ -552,6 +603,7 @@ public sealed class GazeCapabilityTests
             var blocks = new List<nint>();
             var slots = new Dictionary<int, FakeGameObject>();
             var byAddress = new Dictionary<nint, FakeGameObject>();
+            var probe = new SearchProbe();
 
             FakeGameObject Add(ulong id, int index)
             {
@@ -597,6 +649,7 @@ public sealed class GazeCapabilityTests
             {
                 if (args?[0] is not ulong id)
                     return null;
+                probe.OnProbe?.Invoke(id);
                 var indices = new List<int>(slots.Keys);
                 indices.Sort();
                 foreach (var index in indices)
@@ -623,8 +676,16 @@ public sealed class GazeCapabilityTests
             return GazeScene.From(
                 service, factory, blocks, slots,
                 ActorAt(clone), ActorAt(target), ActorAt(second), ActorAt(ungated),
-                target.Address, objectTable);
+                target.Address, objectTable, probe);
         }
+    }
+
+    /// <summary>A settable hook on the fake table's <c>SearchById</c>. Held in
+    /// its own object because the object-table proxy captures it during
+    /// construction, long before the scene a test can reach exists.</summary>
+    internal sealed class SearchProbe
+    {
+        public Action<ulong>? OnProbe { get; set; }
     }
 
     /// <summary>One object-table row: a stable id, an object index and the
