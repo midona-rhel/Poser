@@ -935,14 +935,25 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
         float toolbarBottom = min.Y + ToolbarHeight * s;
+        // The viewport is an ImGui CHILD, and a child renders after the window
+        // that hosts it: whatever the child fills, it fills OVER the outer
+        // glass edge the shell repaints last. The child therefore stops a
+        // border pixel short of every side that IS the window's own edge.
+        // Attached, the sidebar owns the left side and only the right and the
+        // bottom are shell edges; DETACHED the sidebar is a window of its own
+        // and the workspace's left edge is the window's, so the left border
+        // needs the same pixel — without it a full-bleed pane (the library
+        // paints its own bands wall to wall) erases the left glass chrome
+        // (user 2026-08-14, screenshot).
+        float leftEdge = vm.Detached ? 1f * s : 0f;
         // Toolbar and content share one 12px horizontal inset. The viewport
         // still reaches the outer-right glass edge, and content width always
         // excludes the 12px scrollbar gutter so overflow cannot cause reflow.
         // ONE content origin for every tab: panes own their breathing room,
         // the shell owns the origin.
-        var childOrigin = new Vector2(min.X, toolbarBottom);
+        var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
         var childSize = new Vector2(
-            max.X - min.X - 1f * s,
+            max.X - min.X - 1f * s - leftEdge,
             max.Y - toolbarBottom - 1f * s);
         // The inset is measured from the CHILD, not the panel: the child is 1px
         // narrower than the panel (the glass border pixel), and the scrollbar
