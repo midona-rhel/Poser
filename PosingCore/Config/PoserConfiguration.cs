@@ -27,6 +27,11 @@ public class PoserConfiguration : IPluginConfiguration
     public LibraryConfiguration Library { get; set; } = new();
     public AutoSaveConfiguration AutoSave { get; set; } = new();
 
+    /// <summary>The pinned reference pictures and where they sit. Additive —
+    /// a config written before this existed deserialises to an empty roster,
+    /// which is what it had — so it needs no migration step.</summary>
+    public ReferenceImageConfiguration ReferenceImages { get; set; } = new();
+
     // Behavior (Settings -> General)
     public bool OpenOnGPoseEnter { get; set; } = true;
     public bool CloseWithGPose { get; set; } = false;
