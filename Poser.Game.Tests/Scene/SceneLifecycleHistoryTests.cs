@@ -728,6 +728,8 @@ public sealed class SceneLifecycleHistoryTests
         public bool SetCompanion(IActor owner, CompanionAttachment? container) => false;
         public void DestroyCompanion(IActor owner) { }
         public CompanionAttachment? GetCompanionInfo(IActor owner) => null;
+
+        public IActor? GetCompanionActor(IActor owner) => null;
         public bool HasCompanionSlot(IActor actor) => false;
     }
 }

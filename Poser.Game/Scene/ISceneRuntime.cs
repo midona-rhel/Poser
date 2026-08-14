@@ -140,6 +140,20 @@ internal interface ISceneRuntime
     /// <summary>Attaches the saved companion; null on success.</summary>
     string? AttachCompanion(object actor, SceneActor data);
 
+    /// <summary>Whether the attached companion's own skeleton exists yet — a
+    /// companion body builds several frames after the attachment lands, and a
+    /// companion pose cannot be imported before it does.</summary>
+    bool CompanionReady(object actor);
+
+    /// <summary>Arms the pose import for the actor's attached COMPANION,
+    /// through the same single-flight engine an actor pose uses. Returns the
+    /// refusal detail, or null when armed.</summary>
+    string? ArmCompanionPoseImport(
+        object actor,
+        SceneActor data,
+        string description,
+        Action<OperationReceipt> onReceipt);
+
     /// <summary>Arms the ONE atomic pose import for this actor. Returns the
     /// refusal detail, or null when armed — the terminal
     /// <see cref="OperationReceipt"/> arrives through the callback.</summary>

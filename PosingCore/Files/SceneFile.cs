@@ -141,6 +141,22 @@ public class SceneActor
     /// is absent.</summary>
     public ushort CompanionId { get; set; }
 
+    /// <summary>
+    /// The attached companion's OWN pose document, as a complete pose in its
+    /// own right — a minion, mount or ornament has a skeleton and can be posed
+    /// like any other body, and restoring only the ATTACHMENT brings it back
+    /// idling in whatever the game hands it. Brio saves the same thing
+    /// (<c>ChildActor.PoseFile</c>, ActorDTO.cs:137); Ktisis has no companion
+    /// concept in its scene at all.
+    ///
+    /// <para>Absent when the slot is empty, when the companion had no skeleton
+    /// to read, or when the companion was never posed away from its idle — so a
+    /// scene written before companion poses existed reads back byte-identical.
+    /// </para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public PoseFile? CompanionPose { get; set; }
+
     /// <summary>The complete Brio-format pose document, validated by the
     /// ordinary pose codec rules. Required — a scene actor without a pose is
     /// not a saved scene.</summary>

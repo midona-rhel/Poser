@@ -1795,6 +1795,12 @@ public sealed class ActorSpawnServiceOwnershipTests
         public bool IsCompanionReady(SpawnNativeDescriptor descriptor, CompanionAttachment want) =>
             Gate(descriptor) && Companion == want && CompanionReady;
 
+        /// <summary>The companion's own body address. The fake has no object
+        /// table behind it, so a filled slot answers with a fixed non-zero
+        /// handle and an empty one with zero.</summary>
+        public nint ReadCompanionAddress(SpawnNativeDescriptor descriptor) =>
+            Gate(descriptor) && Companion is not null ? 0x5000 : nint.Zero;
+
         public bool EnableCompanionDraw(SpawnNativeDescriptor descriptor)
         {
             if (!Gate(descriptor))

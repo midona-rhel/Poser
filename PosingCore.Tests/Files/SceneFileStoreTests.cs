@@ -368,6 +368,7 @@ public sealed class SceneFileStoreTests
         Assert.DoesNotContain("ModelTransform", json);
         Assert.DoesNotContain("\"Animation\"", json);
         Assert.DoesNotContain("\"Gaze\"", json);
+        Assert.DoesNotContain("CompanionPose", json);
 
         var read = Store().Parse(json);
         Assert.True(read.Succeeded, read.Failure?.Detail);
@@ -375,6 +376,61 @@ public sealed class SceneFileStoreTests
         Assert.Null(loaded.ModelTransform);
         Assert.Null(loaded.Animation);
         Assert.Null(loaded.Gaze);
+        Assert.Null(loaded.CompanionPose);
+    }
+
+    [Fact]
+    public void A_companion_pose_round_trips_as_its_own_document()
+    {
+        var scene = ValidScene();
+        var companionPose = new PoseFile();
+        companionPose.Bones["n_hara"] = new PoseFile.BoneData
+        {
+            Position = new Vector3(1.5f, 2.5f, 3.5f),
+            Rotation = Quaternion.Identity,
+            Scale = new Vector3(2f, 2f, 2f),
+        };
+        scene.Actors[0].CompanionPose = companionPose;
+
+        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var loaded = Assert.Single(read.Scene!.Actors);
+        var bone = Assert.Contains("n_hara", loaded.CompanionPose!.Bones);
+        Assert.Equal(new Vector3(1.5f, 2.5f, 3.5f), bone.Position);
+        Assert.Equal(new Vector3(2f, 2f, 2f), bone.Scale);
+        // The owner's own pose stays its own document.
+        Assert.Contains("j_kao", loaded.Pose!.Bones);
+        Assert.DoesNotContain("n_hara", loaded.Pose.Bones);
+    }
+
+    [Fact]
+    public void A_companion_pose_without_an_attachment_is_refused()
+    {
+        // Nothing would come back for the pose to land on.
+        var scene = ValidScene();
+        scene.Actors[0].CompanionKind = null;
+        scene.Actors[0].CompanionId = 0;
+        scene.Actors[0].CompanionPose = new PoseFile();
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
+    }
+
+    [Fact]
+    public void An_unreadable_companion_pose_is_refused_as_an_embedded_pose()
+    {
+        var scene = ValidScene();
+        var broken = new PoseFile();
+        broken.Bones["j_kao"] = new PoseFile.BoneData
+        {
+            Position = new Vector3(float.NaN, 0f, 0f),
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One,
+        };
+        scene.Actors[0].CompanionPose = broken;
+
+        AssertValidationFailure(scene, SceneFileValidationFailureKind.EmbeddedPose);
     }
 
     [Fact]

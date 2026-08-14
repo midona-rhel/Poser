@@ -84,6 +84,17 @@ public interface IActorSpawnService : IDisposable
     CompanionAttachment? GetCompanionInfo(IActor owner);
 
     /// <summary>
+    /// The attached companion AS AN ACTOR — the body itself, which owns a
+    /// skeleton and can be posed like any other. The attachment
+    /// (<see cref="GetCompanionInfo"/>) says WHICH minion, mount or ornament
+    /// sits in the slot; this says which actor it is, and an actor is the only
+    /// handle a pose read or write has. Null when the slot is empty or
+    /// unreadable, and when the child object has no entry in the actor table
+    /// yet — a companion's body builds a few frames after it attaches.
+    /// </summary>
+    IActor? GetCompanionActor(IActor owner);
+
+    /// <summary>
     /// Whether the actor reserved a companion slot when it spawned. Without
     /// one <see cref="SetCompanion"/> can only fail, so a surface asks before
     /// it offers the choice.

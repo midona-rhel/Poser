@@ -48,6 +48,12 @@ public sealed class SceneWorkflow : IDisposable
     /// catches a framework thread that stopped ticking entirely.</summary>
     private static readonly TimeSpan SceneCaptureTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>Bound for every attached companion's own body to build. It is
+    /// short because it is best-effort: the pose phase reports what did not
+    /// make it, rather than the scene waiting on a companion that never
+    /// draws.</summary>
+    private static readonly TimeSpan CompanionReadyTimeout = TimeSpan.FromSeconds(5);
+
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
@@ -535,6 +541,18 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
+            // Phase 4a — a companion's own BODY builds several frames after
+            // its attachment lands, and a companion pose has nothing to land
+            // on until its skeleton exists. Bounded, and deliberately NOT
+            // structural: a companion that never draws costs one named refusal
+            // in the pose phase, never the whole scene.
+            if (scene.Actors.Any(entry => entry.CompanionPose is not null))
+            {
+                Step(ScenePhase.AwaitingActors);
+                await WaitForCompanions(
+                    operation, scene, actorTokens, cancellation);
+            }
+
             // Phase 4b — animation, BEFORE the pose. The saved state is what
             // the actor was playing when the pose was authored on top of it,
             // so the pose must land last or the replayed timeline animates
@@ -576,16 +594,37 @@ public sealed class SceneWorkflow : IDisposable
                     return;
                 }
 
+                var token = actorTokens[actor.Key];
                 var poseResult = await ImportPose(
-                    operation, actorTokens[actor.Key], actor, cancellation);
+                    operation,
+                    receipt => _runtime.ArmPoseImport(
+                        token, actor, $"Scene pose: {actor.Name}", receipt),
+                    cancellation);
                 var placement = poseResult == null
                     ? await _runtime.OnFramework(() =>
                         Guard(operation, cancellation)
-                            ?? _runtime.PlaceActor(actorTokens[actor.Key], actor))
+                            ?? _runtime.PlaceActor(token, actor))
                     : poseResult;
                 entities.Add(placement == null
                     ? new SceneEntityOutcome("Actor", actor.Name, true)
                     : new SceneEntityOutcome("Actor", actor.Name, false, placement));
+
+                // The companion's OWN pose, after its owner's: the same
+                // single-flight engine takes one import at a time, and a
+                // companion that could not be posed is a named refusal beside
+                // a restored actor, never a failed scene.
+                if (actor.CompanionPose is not null)
+                {
+                    var companion = await ImportPose(
+                        operation,
+                        receipt => _runtime.ArmCompanionPoseImport(
+                            token, actor, $"Scene companion pose: {actor.Name}",
+                            receipt),
+                        cancellation);
+                    if (companion != null)
+                        entities.Add(new SceneEntityOutcome(
+                            "Companion", actor.Name, false, companion));
+                }
                 done++;
                 Step(ScenePhase.ApplyingPose);
             }
@@ -810,12 +849,12 @@ public sealed class SceneWorkflow : IDisposable
         }
     }
 
-    /// <summary>Arms one actor's atomic pose import and awaits its terminal
-    /// receipt within a bound. Returns null on Applied, else the detail.</summary>
+    /// <summary>Arms ONE atomic pose import — an actor's or its companion's,
+    /// through <paramref name="arm"/> — and awaits its terminal receipt within
+    /// a bound. Returns null on Applied, else the detail.</summary>
     private async Task<string?> ImportPose(
         Operation operation,
-        object actor,
-        SceneActor data,
+        Func<Action<OperationReceipt>, string?> arm,
         CancellationToken cancellation)
     {
         var completion = new TaskCompletionSource<OperationReceipt>(
@@ -824,13 +863,8 @@ public sealed class SceneWorkflow : IDisposable
         try
         {
             refusal = await _runtime.OnFramework(() =>
-            {
-                if (Guard(operation, cancellation) is { } stop)
-                    return stop;
-                return _runtime.ArmPoseImport(
-                    actor, data, $"Scene pose: {data.Name}",
-                    receipt => completion.TrySetResult(receipt));
-            });
+                Guard(operation, cancellation)
+                    ?? arm(receipt => completion.TrySetResult(receipt)));
         }
         catch (Exception ex)
         {
@@ -890,6 +924,60 @@ public sealed class SceneWorkflow : IDisposable
             catch (OperationCanceledException)
             {
                 return "Poser is shutting down.";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Best-effort barrier over every attached companion whose pose the scene
+    /// carries. It answers when they have all built, when the operation is
+    /// invalidated, or when the bound expires — never as a failure, because a
+    /// companion that never draws is the pose phase's named refusal to report,
+    /// not a reason to tear down a restored scene.
+    /// </summary>
+    private async Task WaitForCompanions(
+        Operation operation,
+        SceneFile scene,
+        Dictionary<Guid, object> actorTokens,
+        CancellationToken cancellation)
+    {
+        var deadline = DateTime.UtcNow + CompanionReadyTimeout;
+        while (true)
+        {
+            bool ready;
+            try
+            {
+                ready = await _runtime.OnFramework(() =>
+                {
+                    if (operation.Invalidated)
+                        return true;
+                    foreach (var entry in scene.Actors)
+                    {
+                        if (entry.CompanionPose is null)
+                            continue;
+                        if (!_runtime.CompanionReady(actorTokens[entry.Key]))
+                            return false;
+                    }
+                    return true;
+                });
+            }
+            catch (Exception)
+            {
+                // The framework thread is gone; the pose phase reports it.
+                return;
+            }
+
+            if (ready || operation.Invalidated ||
+                cancellation.IsCancellationRequested ||
+                DateTime.UtcNow >= deadline)
+                return;
+            try
+            {
+                await Task.Delay(50, _disposal.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
         }
     }

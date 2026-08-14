@@ -148,13 +148,12 @@ public sealed class SceneCaptureService
         if (sceneId == Guid.Empty)
             return "A scene capture needs a scene identity.";
 
+        // Companions included: a companion is not a scene entry of its own,
+        // but its pose IS captured through its owner, off the very same
+        // caches.
         var slots = new List<ISkeleton>();
         foreach (var actor in _actors.Actors)
-        {
-            if (actor.IsCompanion)
-                continue;
             slots.AddRange(_skeletons.GetSkeletons(actor));
-        }
 
         if (slots.Count == 0)
         {
@@ -285,6 +284,9 @@ public sealed class SceneCaptureService
                     companion is not null,
                 CompanionKind = companion?.Kind,
                 CompanionId = companion?.Id ?? 0,
+                CompanionPose = companion is null
+                    ? null
+                    : CaptureCompanionPose(actor, notes),
                 Pose = pose,
                 ModelTransform = NormalizedTransform(
                     _posing.GetEffectiveTransform(actor),
@@ -297,6 +299,43 @@ public sealed class SceneCaptureService
 
         CaptureGaze(captured, keys, notes);
         return keys;
+    }
+
+    /// <summary>
+    /// The attached companion's own pose, read off the companion's own
+    /// skeletons. A minion, mount or ornament is a posable body: restoring the
+    /// attachment alone brings it back idling, which is what a scene saved
+    /// before this did. Brio captures the same document
+    /// (ActorDTO.cs:130-138).
+    ///
+    /// <para>An attachment whose body has not drawn yet, or has no skeleton,
+    /// records NO pose with a note — an empty pose document would restore as a
+    /// pose import that resets the companion to nothing.</para>
+    /// </summary>
+    private PoseFile? CaptureCompanionPose(IActor owner, List<string> notes)
+    {
+        if (_spawns.GetCompanionActor(owner) is not { } companion)
+        {
+            notes.Add(
+                $"Actor '{owner.Name}' has a companion whose body could not be " +
+                "resolved; its pose was not captured.");
+            return null;
+        }
+
+        var slots = _skeletons.GetSkeletons(companion);
+        if (slots.Count == 0)
+        {
+            notes.Add(
+                $"Actor '{owner.Name}''s companion has no skeleton; its pose " +
+                "was not captured.");
+            return null;
+        }
+
+        var pose = _poseFiles.CreatePoseFile(slots);
+        if (pose is null)
+            notes.Add(
+                $"Actor '{owner.Name}''s companion pose could not be captured.");
+        return pose;
     }
 
     /// <summary>

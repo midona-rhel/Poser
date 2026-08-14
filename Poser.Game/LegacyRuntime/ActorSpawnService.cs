@@ -477,6 +477,12 @@ internal interface IActorSpawnNativeAdapter
         SpawnNativeDescriptor descriptor,
         out CompanionAttachment? attachment);
 
+    /// <summary>The attached child object's address; zero when the slot is
+    /// empty or the descriptor no longer revalidates. It is the companion's
+    /// own BODY — the attachment ids alone name a sheet row, not a posable
+    /// object.</summary>
+    nint ReadCompanionAddress(SpawnNativeDescriptor descriptor);
+
     bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id);
     bool IsCompanionReady(SpawnNativeDescriptor descriptor, CompanionAttachment want);
     bool EnableCompanionDraw(SpawnNativeDescriptor descriptor);
@@ -648,6 +654,16 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
             return false;
         attachment = ReadCompanionInfo(character);
         return true;
+    }
+
+    public nint ReadCompanionAddress(SpawnNativeDescriptor descriptor)
+    {
+        var character = (Character*)Revalidate(descriptor);
+        if (character == null || character->ChildObject == null)
+            return nint.Zero;
+        // The child's GameObject is what the object table lists it by, which
+        // is what an IActor's Address is.
+        return (nint)(&character->ChildObject->GameObject);
     }
 
     public bool WriteCompanion(SpawnNativeDescriptor descriptor, CompanionKind kind, short id)
@@ -1655,6 +1671,25 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (!TryResolveActorForOperation(owner, out var descriptor, out _))
             return null;
         return _native.TryReadCompanion(descriptor, out var info) ? info : null;
+    }
+
+    public IActor? GetCompanionActor(IActor owner)
+    {
+        if (!OnOwnerThread)
+            return null;
+        if (!TryResolveActorForOperation(owner, out var descriptor, out _))
+            return null;
+        var address = _native.ReadCompanionAddress(descriptor);
+        if (address == nint.Zero)
+            return null;
+        foreach (var actor in _actorManager.Actors)
+        {
+            if (actor.Address == address)
+                return actor;
+        }
+        // The child object exists natively but has no wrapper yet; a caller
+        // that needs the body waits rather than being handed the owner.
+        return null;
     }
 
     public bool HasCompanionSlot(IActor actor)

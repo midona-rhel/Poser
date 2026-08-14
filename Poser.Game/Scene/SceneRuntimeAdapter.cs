@@ -118,26 +118,48 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             ? null
             : "The companion could not be attached.";
 
+    /// <summary>Every component and every slot: an embedded scene pose is a
+    /// complete captured state, not an interactive rotation-only import.
+    /// Placement is absolute and separate (<see cref="PlaceActor"/>), so the
+    /// difference-based model transform stays off.</summary>
+    private static readonly PoseImportOptions SceneImportOptions = new()
+    {
+        ApplyRotation = true,
+        ApplyPosition = true,
+        ApplyScale = true,
+        ApplyModelTransform = false,
+    };
+
     public string? ArmPoseImport(
         object actor,
         SceneActor data,
         string description,
         Action<OperationReceipt> onReceipt)
     {
-        // Every component and every slot: the embedded pose is the actor's
-        // complete captured state, not an interactive rotation-only import.
-        // Placement is absolute and separate (PlaceActor), so the
-        // difference-based model transform stays off.
-        var options = new PoseImportOptions
-        {
-            ApplyRotation = true,
-            ApplyPosition = true,
-            ApplyScale = true,
-            ApplyModelTransform = false,
-        };
         var result = _poses.ImportPose(
-            (IActor)actor, data.Pose!, options, description, onReceipt);
+            (IActor)actor, data.Pose!, SceneImportOptions, description, onReceipt);
         return result.Success ? null : result.Detail ?? "The pose import refused.";
+    }
+
+    public bool CompanionReady(object actor) =>
+        _spawns.GetCompanionActor((IActor)actor) is { } companion &&
+        _skeletons.GetSkeletons(companion).Count > 0;
+
+    public string? ArmCompanionPoseImport(
+        object actor,
+        SceneActor data,
+        string description,
+        Action<OperationReceipt> onReceipt)
+    {
+        if (_spawns.GetCompanionActor((IActor)actor) is not { } companion)
+            return "The companion's body could not be resolved, so its pose was not restored.";
+        if (_skeletons.GetSkeletons(companion).Count == 0)
+            return "The companion's skeleton had not built, so its pose was not restored.";
+        var result = _poses.ImportPose(
+            companion, data.CompanionPose!, SceneImportOptions, description, onReceipt);
+        return result.Success
+            ? null
+            : result.Detail ?? "The companion pose import refused.";
     }
 
     public string? PlaceActor(object actor, SceneActor data)

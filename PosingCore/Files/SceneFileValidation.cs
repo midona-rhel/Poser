@@ -206,6 +206,11 @@ public static class SceneFileValidation
         if (actor.CompanionKind is not null && !actor.HasCompanionSlot)
             return Fail(SceneFileValidationFailureKind.Relationship,
                 $"Actor '{actor.Name}' has a companion attachment but no companion slot.");
+        // A companion pose has nothing to land on without the attachment that
+        // brings the body back.
+        if (actor.CompanionPose is not null && actor.CompanionKind is null)
+            return Fail(SceneFileValidationFailureKind.Relationship,
+                $"Actor '{actor.Name}' carries a companion pose without a companion attachment.");
 
         if (actor.Pose is null)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
@@ -214,6 +219,14 @@ public static class SceneFileValidation
         if (!pose.Succeeded)
             return Fail(SceneFileValidationFailureKind.EmbeddedPose,
                 $"Actor '{actor.Name}' pose: {pose.Failure!.Detail}");
+
+        if (actor.CompanionPose is { } companionPose)
+        {
+            var companion = PoseFileValidation.Validate(companionPose);
+            if (!companion.Succeeded)
+                return Fail(SceneFileValidationFailureKind.EmbeddedPose,
+                    $"Actor '{actor.Name}' companion pose: {companion.Failure!.Detail}");
+        }
 
         if (actor.ModelTransform is { } placement &&
             ValidateTransform(placement, $"Actor '{actor.Name}' placement")

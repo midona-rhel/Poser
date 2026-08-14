@@ -150,6 +150,36 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
+        /// <summary>Ticks a companion body needs before it reads ready, so a
+        /// test can assert the load WAITS rather than posing a body that has
+        /// not built.</summary>
+        public int CompanionReadyAfterPolls;
+
+        public int CompanionReadyPolls;
+
+        public Func<SceneActor, string?>? CompanionPoseFailure;
+
+        public bool CompanionReady(object actor)
+        {
+            Record("CompanionReady");
+            return ++CompanionReadyPolls > CompanionReadyAfterPolls;
+        }
+
+        public string? ArmCompanionPoseImport(
+            object actor,
+            SceneActor data,
+            string description,
+            Action<OperationReceipt> onReceipt)
+        {
+            Record($"ArmCompanionPoseImport:{data.Name}");
+            if (CompanionPoseFailure?.Invoke(data) is { } refusal)
+                return refusal;
+            onReceipt(OperationReceipt.Applied(
+                Guid.NewGuid(), OperationEpoch.First, Session!.Value,
+                new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1)));
+            return null;
+        }
+
         public string? PlaceActor(object actor, SceneActor data)
         {
             Record($"PlaceActor:{data.Name}");
@@ -518,6 +548,93 @@ public sealed class SceneWorkflowTests
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    /// <summary>A companion is a posable body, not just an attachment: its own
+    /// pose lands after its owner's, and only once its body has built.</summary>
+    [Fact]
+    public async Task A_companion_pose_waits_for_the_body_and_lands_after_its_owner()
+    {
+        var lead = Actor("Lead", out _);
+        lead.HasCompanionSlot = true;
+        lead.CompanionKind = CompanionKind.Companion;
+        lead.CompanionId = 4;
+        lead.CompanionPose = new PoseFile();
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(lead),
+            // The body is not ready on the first two polls; the barrier waits.
+            CompanionReadyAfterPolls = 2,
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        var calls = runtime.Calls;
+        Assert.Equal(
+            calls.IndexOf("AttachCompanion:Lead") + 1,
+            calls.IndexOf("CompanionReady"));
+        Assert.True(
+            calls.IndexOf("ArmCompanionPoseImport:Lead") >
+            calls.IndexOf("PlaceActor:Lead"),
+            "The companion pose must land after its owner's pose and placement.");
+        // The barrier polled until the body answered, plus the arm's own check.
+        Assert.True(runtime.CompanionReadyPolls >= 3);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+    }
+
+    [Fact]
+    public async Task A_companion_pose_refusal_is_named_beside_a_restored_actor()
+    {
+        var lead = Actor("Lead", out _);
+        lead.HasCompanionSlot = true;
+        lead.CompanionKind = CompanionKind.Companion;
+        lead.CompanionId = 4;
+        lead.CompanionPose = new PoseFile();
+
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(lead),
+            CompanionPoseFailure = _ =>
+                "The companion's skeleton had not built, so its pose was not restored.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        // Typed partial recovery: the actor itself stays restored and nothing
+        // rolls back.
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Empty(runtime.Destroyed);
+        var entities = workflow.Progress!.Outcome!.Entities;
+        Assert.Contains(entities, entity =>
+            entity is { Kind: "Actor", Name: "Lead", Restored: true });
+        var refusal = Assert.Single(
+            entities, entity => entity.Kind == "Companion");
+        Assert.False(refusal.Restored);
+        Assert.Contains("skeleton had not built", refusal.Detail);
+    }
+
+    [Fact]
+    public async Task An_actor_with_no_saved_companion_pose_never_waits_on_a_body()
+    {
+        var lead = Actor("Lead", out _);
+        lead.HasCompanionSlot = true;
+        lead.CompanionKind = CompanionKind.Companion;
+        lead.CompanionId = 4;
+
+        var runtime = new FakeRuntime { ReadResult = SceneWith(lead) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("CompanionReady", runtime.Calls);
+        Assert.DoesNotContain("ArmCompanionPoseImport:Lead", runtime.Calls);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
     }
 
     /// <summary>A saved Entity gaze names another actor by in-document key;
