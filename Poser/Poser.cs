@@ -67,6 +67,7 @@ public class Poser : IDalamudPlugin
             notificationManager);
 
         // Initialize configuration service (sets static Instance, must be before UI)
+        log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
         ThemeSelection.Apply(
@@ -75,20 +76,24 @@ public class Poser : IDalamudPlugin
 
         // Activate periodic auto-save. Final GPose capture is requested by the
         // lifecycle coordinator before the legacy exit event is published.
+        log.Debug("Load stage: auto-save");
         _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
 
         // The whole-scene snapshot has framework subscriptions as its only
         // activity — the same lazy-singleton hazard: resolve it or it never
         // ticks.
+        log.Debug("Load stage: scene auto-save");
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
 
         // Activate the clean scene owner before constructing presentation.
         // Singleton registration is lazy: without resolving this service its
         // actor/skeleton subscriptions never run and SceneSession stays empty.
+        log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
 
         // Target sync is another lazy singleton with framework subscriptions
         // as its only activity; resolve it or it never ticks.
+        log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
 
         // Create the active theme's complete typography matrix before any
@@ -110,6 +115,7 @@ public class Poser : IDalamudPlugin
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
 
         // Initialize UI Manager (triggers subscription to draw events)
+        log.Debug("Load stage: UI manager");
         _ = _serviceProvider.GetRequiredService<IUIManager>();
 
         // Register the /poser command
