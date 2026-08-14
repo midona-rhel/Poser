@@ -5,6 +5,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Poser.Config;
+using Poser.Entities;
 using Poser.Library;
 
 namespace Poser.UI.Views;
@@ -96,6 +97,16 @@ public sealed class SettingsViewModel
     /// <see cref="OverlayHoldModifier"/>'s declaration order.</summary>
     public int DisableDotsModifier;
     public int DisableGizmoModifier;
+
+    /// <summary>Mirrors <c>CameraConfiguration</c>'s defaults, which are what
+    /// the camera already did before any of it was configurable.</summary>
+    public float CameraDefaultSpeed = FreeCameraSpeed.Default;
+    public float CameraDefaultSensitivity = 0.1f;
+    public float CameraFastMultiplier = 3f;
+    public float CameraSlowMultiplier = 0.3f;
+    public bool CameraConsumeModifiers = true;
+    public bool CameraConsumeAllInput;
+    public bool CameraFlipPastNinety;
 
     public bool DetachedShell;
     public bool TreeGuides = true;
@@ -238,7 +249,11 @@ public static class SettingsView
         (TablerIcon.Sliders, "General"),
         (TablerIcon.Monitor, "Display"),
         (TablerIcon.Bone, "Skeleton"),
+<<<<<<< HEAD
         (TablerIcon.ArrowsMove, "Gizmo"),
+=======
+        (TablerIcon.Video, "Camera"),
+>>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
         (TablerIcon.LayoutPanel, "UI"),
         (TablerIcon.Keyboard, "Keybinds"),
         (TablerIcon.Folder, "Library"),
@@ -432,7 +447,11 @@ public static class SettingsView
                 DrawSkeleton(vm, page);
                 break;
             case 3:
+<<<<<<< HEAD
                 DrawGizmo(vm, page);
+=======
+                DrawCamera(vm, page);
+>>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
                 break;
             case 4:
                 DrawUi(vm, page);
@@ -755,6 +774,7 @@ public static class SettingsView
             "Put the bone dot, line and color settings back to their defaults"));
     }
 
+<<<<<<< HEAD
     /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
     /// order.</summary>
     private static readonly string[] ActiveActorLabels =
@@ -829,6 +849,75 @@ public static class SettingsView
                 vm.KeepGizmoWhenBonesHidden,
                 next => vm.KeepGizmoWhenBonesHidden = next,
                 "Off means hiding a bone from the overlay takes its gizmo with it"));
+=======
+    /// <summary>
+    /// The camera decisions that belong to the user rather than to one
+    /// camera: what a new free camera starts out flying like, what the speed
+    /// modifiers are worth, and how much of the game's own input a live
+    /// camera takes. Per-camera Speed and Sensitivity rows still override the
+    /// defaults — this page seeds them, it does not replace them.
+    /// </summary>
+    private static void DrawCamera(
+        SettingsViewModel vm,
+        Crystarium.PageScope page)
+    {
+        page.Section("NEW FREE CAMERAS", form =>
+        {
+            form.Slider(
+                "Movement speed",
+                vm.CameraDefaultSpeed,
+                FreeCameraSpeed.Minimum,
+                FreeCameraSpeed.Maximum,
+                next => vm.CameraDefaultSpeed = next,
+                format: "0.000",
+                help: "The fly speed a newly created free camera starts with");
+            form.Slider(
+                "Mouse sensitivity",
+                vm.CameraDefaultSensitivity,
+                0.001f,
+                0.2f,
+                next => vm.CameraDefaultSensitivity = next,
+                format: "0.000",
+                help: "How far a right-drag turns a newly created free camera");
+        }, divider: false);
+        page.Section("SPEED MODIFIERS", form =>
+        {
+            form.Slider(
+                "Hold Ctrl",
+                vm.CameraFastMultiplier,
+                1f,
+                10f,
+                next => vm.CameraFastMultiplier = next,
+                format: "0.0×",
+                help: "What holding Ctrl multiplies the fly speed by");
+            form.Slider(
+                "Hold Alt",
+                vm.CameraSlowMultiplier,
+                0.05f,
+                1f,
+                next => vm.CameraSlowMultiplier = next,
+                format: "0.00×",
+                help: "What holding Alt multiplies the fly speed by");
+        });
+        page.Section("GAME INPUT", form =>
+        {
+            form.Switch(
+                "Consume modifiers while flying",
+                vm.CameraConsumeModifiers,
+                next => vm.CameraConsumeModifiers = next,
+                "Take Space, Shift, Ctrl and Alt off the game while a free camera flies; off lets your character still jump and sprint");
+            form.Switch(
+                "Consume all game input in GPose",
+                vm.CameraConsumeAllInput,
+                next => vm.CameraConsumeAllInput = next,
+                "Take every key off the game while in GPose, except Escape and Enter");
+            form.Switch(
+                "Flip fly keys past 90°",
+                vm.CameraFlipPastNinety,
+                next => vm.CameraFlipPastNinety = next,
+                "Once the camera is rolled past a quarter turn, invert the sideways and vertical fly keys so they still move you the way the screen shows");
+        });
+>>>>>>> 74d4f49 (Settings gains a camera page: new free cameras take their speed and sensitivity from it, the two speed modifiers stop being constants, and the game's input is Poser's to take only as far as the user says)
     }
 
     private static void DrawUi(

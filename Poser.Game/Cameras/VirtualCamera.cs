@@ -208,11 +208,24 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public bool Move2D { get; set; }
 
-    public float MovementSpeed { get; set; } =
-        VirtualCameraService.DefaultMovementSpeed;
+    public float MovementSpeed { get; set; } = DefaultSpeed;
 
-    public float MouseSensitivity { get; set; } =
-        VirtualCameraService.DefaultMouseSensitivity;
+    public float MouseSensitivity { get; set; } = DefaultSensitivity;
+
+    /// <summary>The configured starting fly speed, clamped to the range the
+    /// Speed row can show back — a hand-edited config must not create a
+    /// camera whose speed its own slider cannot reach.</summary>
+    private static float DefaultSpeed => Math.Clamp(
+        VirtualCameraService.CameraSettings.DefaultMovementSpeed,
+        FreeCameraSpeed.Minimum,
+        FreeCameraSpeed.Maximum);
+
+    /// <summary>The configured starting look sensitivity, clamped to the
+    /// Sensitivity row's range for the same reason.</summary>
+    private static float DefaultSensitivity => Math.Clamp(
+        VirtualCameraService.CameraSettings.DefaultMouseSensitivity,
+        0.001f,
+        0.2f);
 
     public bool DelimitAngle { get; set; }
 
@@ -313,7 +326,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         Pan = Vector2.Zero;
         Orthographic = false;
         OrthographicZoom = 10f;
-        MovementSpeed = VirtualCameraService.DefaultMovementSpeed;
-        MouseSensitivity = VirtualCameraService.DefaultMouseSensitivity;
+        MovementSpeed = DefaultSpeed;
+        MouseSensitivity = DefaultSensitivity;
     }
 }

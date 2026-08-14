@@ -32,9 +32,27 @@ namespace Poser.Game.Cameras;
 public sealed unsafe class VirtualCameraService : IVirtualCameraService
 {
     // One home for the fly speed's numbers: the wheel's curve owns them and
-    // the camera's default is that curve's unit.
+    // the camera's default is that curve's unit. These are the FLOOR the
+    // configured defaults fall back to, not the defaults themselves — see
+    // CameraSettings.
     internal const float DefaultMovementSpeed = FreeCameraSpeed.Default;
     internal const float DefaultMouseSensitivity = 0.1f;
+
+    /// <summary>
+    /// The user's camera settings, or shipped defaults when no configuration
+    /// service exists yet — the test constructor stands this service up
+    /// without one, and the input detour is a game callback that must not
+    /// depend on plugin start order. Read per use rather than cached: a
+    /// settings save takes effect on the next frame, not the next GPose
+    /// session.
+    /// </summary>
+    internal static Config.CameraConfiguration CameraSettings =>
+        Config.ConfigurationService.Instance is { } service
+            ? service.Config.Camera
+            : FallbackCameraSettings;
+
+    private static readonly Config.CameraConfiguration
+        FallbackCameraSettings = new();
 
     // Brio signatures, verbatim from main (2026-08).
     private const string CameraUpdateSignature =
@@ -602,6 +620,19 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             if (atk == null || atk->AtkModule.IsTextInputActive())
                 return;
 
+            // Brio's EnableConsumeAllInput, opt-in: the whole frame of keys
+            // goes, except Escape and Return. Those two are how a user leaves
+            // a game dialog, and a plugin that swallows them strands them.
+            if (keyboard != null && CameraSettings.ConsumeAllGameInput)
+            {
+                for (int i = 0; i < KeyboardFrame.KeyStateLength; i++)
+                {
+                    if (i == (int)VirtualKey.ESCAPE || i == (int)VirtualKey.RETURN)
+                        continue;
+                    keyboard->KeyState[i] = 0;
+                }
+            }
+
             if (live.Kind == CameraKind.Free)
                 HandleFreeCameraInput(live, mouse, keyboard);
 
@@ -694,11 +725,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             keyboard->KeyDown(VirtualKey.SHIFT))
             upDown -= 1;
 
+        var settings = CameraSettings;
         _freeMoveSpeed = live.MovementSpeed;
         if (keyboard->KeyDown(VirtualKey.CONTROL))
-            _freeMoveSpeed = live.MovementSpeed * 3f;
+            _freeMoveSpeed = live.MovementSpeed * settings.FastMultiplier;
         else if (keyboard->KeyDown(VirtualKey.MENU))
-            _freeMoveSpeed = live.MovementSpeed * 0.3f;
+            _freeMoveSpeed = live.MovementSpeed * settings.SlowMultiplier;
 
         keyboard->HandleKey(VirtualKey.W);
         keyboard->HandleKey(VirtualKey.A);
@@ -706,20 +738,35 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         keyboard->HandleKey(VirtualKey.D);
         keyboard->HandleKey(VirtualKey.Q);
         keyboard->HandleKey(VirtualKey.E);
-        keyboard->HandleKey(VirtualKey.SPACE);
         // The modifiers this path reads are consumed with the letters
         // (Brio's EnableKeyHandlingOnKeyMod block, on by default): Shift is
         // the second descend key and Ctrl/Alt are the speed modifiers, so
         // leaving them in the frame hands the game a held modifier for every
-        // second the camera is descending.
-        keyboard->HandleKey(VirtualKey.SHIFT);
-        keyboard->HandleKey(VirtualKey.CONTROL);
-        keyboard->HandleKey(VirtualKey.MENU);
+        // second the camera is descending. Turning the setting off gives the
+        // game those four back — Space included, since Space is the other
+        // half of the same rise/fall pair.
+        if (settings.ConsumeModifiersWhileFlying)
+        {
+            keyboard->HandleKey(VirtualKey.SPACE);
+            keyboard->HandleKey(VirtualKey.SHIFT);
+            keyboard->HandleKey(VirtualKey.CONTROL);
+            keyboard->HandleKey(VirtualKey.MENU);
+        }
 
         if (live.IsLocked)
         {
             _freeForward = Vector3.Zero;
             return;
+        }
+
+        // Brio's FlipKeyBindsPastNinety, applied to the same two axes it
+        // does: rolled past a quarter turn the screen's left is the world's
+        // right, so the key that moved you screen-left keeps doing so.
+        if (settings.FlipBindsPastNinety &&
+            MathF.Abs(live.Roll) > MathF.PI / 2f)
+        {
+            leftRight = -leftRight;
+            upDown = -upDown;
         }
 
         var input = new Vector3(leftRight, upDown, forwardBack);

@@ -6,6 +6,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
 using Poser.Config;
+using Poser.Entities;
 using Poser.Library;
 using Poser.Services;
 using Poser.UI.Views;
@@ -132,6 +133,14 @@ public class SettingsWindow : Window
             AnonymousMode = c.Display.AnonymousMode,
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
+
+            CameraDefaultSpeed = c.Camera.DefaultMovementSpeed,
+            CameraDefaultSensitivity = c.Camera.DefaultMouseSensitivity,
+            CameraFastMultiplier = c.Camera.FastMultiplier,
+            CameraSlowMultiplier = c.Camera.SlowMultiplier,
+            CameraConsumeModifiers = c.Camera.ConsumeModifiersWhileFlying,
+            CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
+            CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -326,6 +335,21 @@ public class SettingsWindow : Window
         c.Display.AnonymousMode = _vm.AnonymousMode;
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
+
+        // Clamped like the undo depth, and for the same reason: the sliders
+        // are bounded but a hand-edited file is not, and these seed every
+        // camera created from now on.
+        c.Camera.DefaultMovementSpeed = Math.Clamp(
+            _vm.CameraDefaultSpeed,
+            FreeCameraSpeed.Minimum,
+            FreeCameraSpeed.Maximum);
+        c.Camera.DefaultMouseSensitivity =
+            Math.Clamp(_vm.CameraDefaultSensitivity, 0.001f, 0.2f);
+        c.Camera.FastMultiplier = Math.Clamp(_vm.CameraFastMultiplier, 1f, 10f);
+        c.Camera.SlowMultiplier = Math.Clamp(_vm.CameraSlowMultiplier, 0.05f, 1f);
+        c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
+        c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
+        c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
