@@ -751,9 +751,24 @@ public sealed class CleanPoseFacade
     }
 
     /// <summary>Animation-safe "Mirror edits": mirrors only Poser-authored
-    /// layers, across every present slot; pairing stays within each slot.</summary>
+    /// layers, across every present slot. Pairing stays within each slot
+    /// except the two weapon hands, which exchange with each other, and the
+    /// ACTOR rides along so its authored facing mirrors with its body — one
+    /// history entry still covers the whole thing.</summary>
     public PoseEditResult Mirror(IActor actor) =>
-        Report("Mirror edits", _edits.Mirror(Targets(actor), "Mirror edits"));
+        Report("Mirror edits", _edits.Mirror(MirrorTargets(actor), "Mirror edits"));
+
+    /// <summary>Every bone target plus the actor itself. The actor is appended
+    /// rather than folded into <see cref="Targets"/> because copy, paste and
+    /// stash are bone-only operations and must not gain a model transform.
+    /// </summary>
+    private IReadOnlyList<TransformTargetId> MirrorTargets(IActor actor)
+    {
+        var targets = new List<TransformTargetId>(Targets(actor));
+        if (GetActorId(actor) is { } actorId)
+            targets.Add(TransformTargetId.ForActor(actorId));
+        return targets;
+    }
 
     /// <summary>Whether any bone of any present slot carries a
     /// Poser-authored (unnamed) layer — the "Mirror edits" predicate.</summary>

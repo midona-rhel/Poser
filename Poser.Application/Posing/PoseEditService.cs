@@ -170,6 +170,21 @@ public sealed class PoseEditService
     /// bones without authored adjustments stay driven by their animation.
     /// The current evaluated animation is never captured or baked; one
     /// atomic history entry covers the whole actor.
+    ///
+    /// <para>Weapons exchange HANDS. A main-hand bone's counterpart is the
+    /// same bone in the off hand rather than a <c>_l</c>/<c>_r</c> sibling
+    /// inside its own skeleton, because a weapon skeleton has no lateral
+    /// pairs — Brio moves the two dictionaries across wholesale for the same
+    /// reason (PosingCapability.cs:538-547). Prop and ornament keep pairing
+    /// within themselves; Brio leaves both as an explicit TODO and there is
+    /// no second slot to exchange them with.</para>
+    ///
+    /// <para>An ACTOR target mirrors its authored model ROTATION in place.
+    /// Brio also reflects the model POSITION's X (MirrorModelTransform), which
+    /// reflects the actor across the world origin — a meaningless point on any
+    /// real map, and the one part of its mirror Brio annotates as not working
+    /// right. Mirroring which way the actor faces is the half that pairs with
+    /// mirroring its body; where it stands is not a left/right fact.</para>
     /// </summary>
     public PoseEditResult Mirror(
         IReadOnlyList<TransformTargetId> targets,
@@ -183,7 +198,18 @@ public sealed class PoseEditService
         if (_gestures.ActiveGesture != null)
             return PoseEditResult.Fail(
                 "A transform gesture is active.");
-        var prepared = CaptureBones(targets);
+
+        var boneTargets = targets
+            .Where(target => target.Kind == TransformTargetKind.Bone)
+            .ToArray();
+        var actorTargets = targets
+            .Where(target => target.Kind == TransformTargetKind.Actor)
+            .Distinct()
+            .ToArray();
+        if (targets.Count != boneTargets.Length + actorTargets.Length)
+            return PoseEditResult.Fail(
+                "Mirror accepts bone and actor targets only.");
+        var prepared = CaptureBones(boneTargets);
         if (!prepared.Success)
             return PoseEditResult.Fail(prepared.Detail!);
 
@@ -203,10 +229,21 @@ public sealed class PoseEditService
                 continue;
 
             TransformTargetState? partner = null;
-            if (MirrorName(bone.CanonicalName) is { } partnerName &&
-                byKey.TryGetValue(
-                    (bone.Slot, bone.PartialId, partnerName),
-                    out var candidate))
+            if (MirrorSlot(bone.Slot) is { } partnerSlot)
+            {
+                // A hand's counterpart is the SAME bone in the other hand. A
+                // main-hand bone with no off hand present falls through to the
+                // in-place branch below rather than vanishing, which is where
+                // Brio's wholesale dictionary move loses it.
+                if (byKey.TryGetValue(
+                        (partnerSlot, bone.PartialId, bone.CanonicalName),
+                        out var handed))
+                    partner = handed;
+            }
+            else if (MirrorName(bone.CanonicalName) is { } partnerName &&
+                     byKey.TryGetValue(
+                         (bone.Slot, bone.PartialId, partnerName),
+                         out var candidate))
                 partner = candidate;
 
             if (partner is { } counterpart)
@@ -252,9 +289,49 @@ public sealed class PoseEditService
             .ToHashSet();
         var changedBefore = before
             .Where(state => changedTargets.Contains(state.Target))
-            .ToArray();
+            .ToList();
+
+        var lineage = boneTargets[0].ActorLineage;
+        foreach (var target in actorTargets)
+        {
+            if (target.ActorLineage != lineage)
+                return PoseEditResult.Fail(
+                    "A pose edit cannot span actor lineages.");
+            if (!_scene.Contains(target))
+                return PoseEditResult.Fail("A pose target is stale.");
+            var captured = _runtime.Capture(target);
+            if (!captured.Success || captured.State == null)
+                return PoseEditResult.Fail(
+                    captured.Detail ?? $"Could not capture {target}.");
+            var state = captured.State;
+            // Authored edits only, the same contract the bones keep: an actor
+            // the user has never moved keeps whatever the game placed it at.
+            if (!state.HasOverride)
+                continue;
+            changedBefore.Add(state);
+            desired.Add(state with
+            {
+                Transform = state.Transform with
+                {
+                    Rotation = Domain.Transforms.TransformMath
+                        .NormalizeRotation(
+                            PoseOperations.MirrorRotation(
+                                state.Transform.Rotation)),
+                },
+            });
+        }
+
         return Apply(description, changedBefore, desired);
     }
+
+    /// <summary>The slot a bone's mirror counterpart lives in when it is not
+    /// this bone's own — the two weapon hands, and nothing else.</summary>
+    private static PoseSlot? MirrorSlot(PoseSlot slot) => slot switch
+    {
+        PoseSlot.MainHand => PoseSlot.OffHand,
+        PoseSlot.OffHand => PoseSlot.MainHand,
+        _ => null,
+    };
 
     private static string? MirrorName(string canonicalName)
     {
