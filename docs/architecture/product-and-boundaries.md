@@ -22,7 +22,7 @@ listed as retained is not part of the active product surface.
   The environment is a selectable scene entity: time, weather, the eight
   holdable environment sections, water rendering, and festival slots.
   Whole-scene save and restore ships as its own workspace, reached from the
-  sidebar''s SCENE section and the library''s Scenes tab
+  sidebar's SCENE section and the library's Scenes tab
   ([../features/scenes.md](../features/scenes.md)).
 - Deferred or parked (no dormant UI or registrations): animation authoring,
   reference images, arbitrary

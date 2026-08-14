@@ -57,15 +57,24 @@ public sealed class ScenePane
     /// it ever previewed.</summary>
     private const int VerdictCacheLimit = 64;
 
+    /// <summary>What a cached verdict was read FROM. A path is not an identity
+    /// — a re-save, or the snapshot writer landing on a path the dialog has
+    /// already probed, leaves the path saying something it no longer says — so
+    /// an answer is kept against the file's write time and size and is
+    /// re-probed the moment either moves. A file that cannot be stat'd stamps
+    /// as default, which simply never matches a real one.</summary>
+    private readonly record struct FileStamp(long WriteTicks, long Length);
+
     /// <summary>
     /// The load dialog's verdict per probed path. A probe reads, parses and
     /// VALIDATES a whole bounded document — up to the codec's file limit — so it
     /// never runs on the render thread: the panel states a pending line while a
-    /// background read resolves, and the answer is kept against its path.
-    /// A cached null is a probe that could not produce an outcome at all.
+    /// background read resolves, and the answer is kept against its path AND
+    /// the stamp it was read from. A cached null is a probe that could not
+    /// produce an outcome at all.
     /// </summary>
-    private readonly Dictionary<string, SceneMetadataReadOutcome?> _verdicts =
-        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (FileStamp Stamp, SceneMetadataReadOutcome? Outcome)>
+        _verdicts = new(StringComparer.Ordinal);
 
     /// <summary>Probe insertion order, for evicting the oldest past the cap.</summary>
     private readonly Queue<string> _verdictOrder = new();
@@ -76,7 +85,7 @@ public sealed class ScenePane
 
     /// <summary>Finished probes, handed back from the worker and drained into
     /// the cache by the drawing thread that owns it.</summary>
-    private readonly ConcurrentQueue<(string Path, SceneMetadataReadOutcome? Outcome)>
+    private readonly ConcurrentQueue<(string Path, FileStamp Stamp, SceneMetadataReadOutcome? Outcome)>
         _verdictInbox = new();
 
     public ScenePane(
@@ -490,18 +499,30 @@ public sealed class ScenePane
         while (_verdictInbox.TryDequeue(out var done))
         {
             _verdictsInFlight.Remove(done.Path);
-            if (_verdicts.TryAdd(done.Path, done.Outcome))
+            // A re-probe REPLACES its stale answer; the order queue holds one
+            // entry per path, so only a first insert enqueues.
+            if (!_verdicts.ContainsKey(done.Path))
                 _verdictOrder.Enqueue(done.Path);
+            _verdicts[done.Path] = (done.Stamp, done.Outcome);
             while (_verdictOrder.Count > VerdictCacheLimit)
                 _verdicts.Remove(_verdictOrder.Dequeue());
         }
 
-        if (_verdicts.TryGetValue(path, out verdict))
+        // One stat per frame for ONE highlighted row: the read this replaced
+        // was a whole validated document, which is the cost that had to leave
+        // the render thread.
+        var stamp = StampOf(path);
+        if (_verdicts.TryGetValue(path, out var held) && held.Stamp == stamp)
+        {
+            verdict = held.Outcome;
             return true;
+        }
+        verdict = null;
 
         if (_verdictsInFlight.Add(path))
         {
             string requested = path;
+            var requestedStamp = stamp;
             _ = Task.Run(() =>
             {
                 SceneMetadataReadOutcome? outcome = null;
@@ -516,10 +537,33 @@ public sealed class ScenePane
                     // retire the in-flight path, or the column would state
                     // "Reading…" for the rest of the session.
                 }
-                _verdictInbox.Enqueue((requested, outcome));
+                // The stamp the RENDER thread saw. A file rewritten between
+                // the stat and the read stores an answer against a stamp the
+                // next frame's stat no longer matches, so it re-probes rather
+                // than serving a document it did not read.
+                _verdictInbox.Enqueue((requested, requestedStamp, outcome));
             });
         }
         return false;
+    }
+
+    /// <summary>The file's identity for cache purposes. A path that cannot be
+    /// stat'd stamps as default, which never equals a real file's stamp, so a
+    /// disappearing file re-probes rather than serving its last answer.
+    /// </summary>
+    private static FileStamp StampOf(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists
+                ? new FileStamp(info.LastWriteTimeUtc.Ticks, info.Length)
+                : default;
+        }
+        catch (Exception)
+        {
+            return default;
+        }
     }
 
     private static string StatusWordFor(SceneEntryStatus status) => status switch
