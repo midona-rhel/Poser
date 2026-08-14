@@ -16,6 +16,10 @@
   <ItemGroup>
     <!-- The one allowed package for the MCDF legacy LZ4 stream (PBI-009). -->
     <PackageReference Include="K4os.Compression.LZ4.Legacy" Version="1.3.8" />
+    <!-- The game-UI node library behind the overlay nodes (Poser.Game/Overlays).
+         Pinned to the version Ktisis ships, which is the implementation those
+         nodes are transcribed from. -->
+    <PackageReference Include="KamiToolKit" Version="1.1.17" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />

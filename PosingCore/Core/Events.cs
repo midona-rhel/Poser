@@ -41,6 +41,14 @@ public record LightListChangedEvent(IReadOnlyList<ILight> Lights) : IEvent;
 public record PropListChangedEvent : IEvent;
 
 /// <summary>
+/// Published when the overlay-node list changes (a game-UI overlay node
+/// created or destroyed). Payload-free for the same reason the prop event is:
+/// the handle type lives above this assembly and every subscriber re-reads the
+/// live list.
+/// </summary>
+public record OverlayNodeListChangedEvent : IEvent;
+
+/// <summary>
 /// Published when the virtual-camera list changes (camera created, destroyed,
 /// or the live camera switched).
 /// </summary>
