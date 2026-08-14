@@ -44,9 +44,11 @@ public static partial class Crystarium
     ///
     /// <para>The catalog is PROBED rather than known: the game exposes no list
     /// of sky or cloud textures, so the ids are walked and the ones the game
-    /// has no file for are dropped. The walk is chunked over frames because a
-    /// texture wrap blocks while it resolves — a thousand of them on one frame
-    /// is a visible hitch (Ktisis staggers the same walk off-thread).</para>
+    /// has no file for are dropped — every id but zero, which is the
+    /// no-texture choice and is always offered. The walk is chunked over
+    /// frames because a texture wrap blocks while it resolves — a thousand of
+    /// them on one frame is a visible hitch (Ktisis staggers the same walk
+    /// off-thread).</para>
     /// </summary>
     public sealed class TexturePicker
     {
@@ -80,6 +82,16 @@ public static partial class Crystarium
         /// second at this rate and no frame carries more than a handful of
         /// blocking wrap resolutions.</summary>
         private const int TextureProbesPerFrame = 16;
+
+        /// <summary>
+        /// Zero is NO TEXTURE and is admitted whatever the game answers for
+        /// it — the one id the walk may not drop. Every other id earns its
+        /// tile by having a file; zero earns its tile by being the value that
+        /// means "none", which the grid must be able to reach (user
+        /// 2026-08-14) rather than leaving to the steppers beside it. Ktisis
+        /// keeps the same id for the same reason.
+        /// </summary>
+        private const uint NoTextureId = 0;
 
         private readonly string _popupId;
         private readonly string _gridId;
@@ -274,7 +286,7 @@ public static partial class Crystarium
                 if (answer == TextureProbe.Pending)
                     continue;
                 _loading.RemoveAt(i);
-                if (answer == TextureProbe.Ready)
+                if (answer == TextureProbe.Ready || id == NoTextureId)
                     Admit(id);
             }
             while (budget > 0 && _probeNext < _count)
@@ -284,7 +296,7 @@ public static partial class Crystarium
                 var answer = _preview(id, out _);
                 if (answer == TextureProbe.Pending)
                     _loading.Add(id);
-                else if (answer == TextureProbe.Ready)
+                else if (answer == TextureProbe.Ready || id == NoTextureId)
                     Admit(id);
             }
         }
@@ -461,10 +473,14 @@ public static partial class Crystarium
                 // walked one prints the id. A name wider than the tile is
                 // cut to it with the shared ellipsis shaping, never drawn
                 // past the cell.
+                // Zero with no art behind it IS the no-texture choice, and it
+                // says so in words: an id printed under an empty square is
+                // indistinguishable from a texture the client is missing.
+                bool none = value == NoTextureId && !drawn;
                 var captionStyle = new TextStyle
                 {
                     Size = theme.Typography.CaptionSize,
-                    Family = _caption is null
+                    Family = _caption is null && !none
                         ? FontFamily.Mono
                         : FontFamily.Default,
                     Color = theme.TextDim,
@@ -473,9 +489,11 @@ public static partial class Crystarium
                     new Vector2(artMin.X, artOuterMax.Y),
                     new Vector2(artMax.X - artMin.X, captionBand),
                     TruncateText(
-                        _caption?.Invoke(value)
-                            ?? value.ToString(
-                                "D3", CultureInfo.InvariantCulture),
+                        none
+                            ? "None"
+                            : _caption?.Invoke(value)
+                                ?? value.ToString(
+                                    "D3", CultureInfo.InvariantCulture),
                         captionStyle,
                         artMax.X - artMin.X),
                     captionStyle,

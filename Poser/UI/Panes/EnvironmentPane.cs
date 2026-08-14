@@ -104,6 +104,10 @@ public sealed class EnvironmentPane
     private readonly Crystarium.TexturePicker _cloudTexture;
     private readonly Crystarium.TexturePicker _cloudSideTexture;
 
+    /// <summary>The particle catalog, which is TWO game families behind one
+    /// id: see <see cref="ParticleTexturePath"/>.</summary>
+    private readonly Crystarium.TexturePicker _particleTexture;
+
     /// <summary>The clock's own quarters, so the track reads as a day rather
     /// than as a number between 0 and 1439.</summary>
     private static readonly float[] DayQuarters = [360f, 720f, 1080f];
@@ -187,7 +191,22 @@ public sealed class EnvironmentPane
             (uint id, out nint handle) => Preview(
                 $"bgcommon/nature/cloud/texture/cloudside_{id:D3}.tex",
                 out handle));
+        _particleTexture = new Crystarium.TexturePicker(
+            "environment-particle-texture",
+            (uint id, out nint handle) =>
+                Preview(ParticleTexturePath(id), out handle));
     }
+
+    /// <summary>
+    /// The particle id's game path. This one catalog spans TWO families:
+    /// id 1 is the snow sheet, every other id is a dust sheet offset by two
+    /// (Ktisis ParticlesEditor.ResolvePath, verified against the same client
+    /// paths). Ids 0 and 2 therefore both resolve to dust_000 — the game's
+    /// own mapping, not a bug in the walk.
+    /// </summary>
+    private static string ParticleTexturePath(uint id) => id == 1
+        ? "bgcommon/nature/snow/texture/snow.tex"
+        : $"bgcommon/nature/dust/texture/dust_{(id < 2 ? 0 : id - 2):D3}.tex";
 
     /// <summary>Draws the one page the shell's active tab names. The page id is
     /// the tab's own, so the row ids on two tabs are distinct even where the row
@@ -310,6 +329,9 @@ public sealed class EnvironmentPane
         if (_cloudSideTexture.Draw() is { } cloudSideId)
             _environment.Clouds =
                 _environment.Clouds with { CloudSideTexture = cloudSideId };
+        if (_particleTexture.Draw() is { } particleId)
+            _environment.Particles =
+                _environment.Particles with { TextureId = particleId };
     }
 
     /// <summary>
@@ -828,12 +850,23 @@ public sealed class EnvironmentPane
             value => _environment.Particles =
                 _environment.Particles with { Spin = value },
             help: "How fast the particles turn as they travel");
-        form.NumericSlider("Texture", particles.TextureId, 0f, 20f,
-            value => _environment.Particles =
-                _environment.Particles with { TextureId = ToId(value) },
-            perPixel: 0.25f,
-            format: "0",
-            help: "The particle texture: 1 is snow, the rest are dust");
+        // A texture id is a CHOICE, not a magnitude — the same rule the sky
+        // and cloud rows already follow. The slider this replaces had an
+        // invented ceiling of 20 and showed nothing of what was being chosen;
+        // the walk finds whatever the client actually ships.
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Texture",
+                cell => _particleTexture.Field(
+                    cell,
+                    particles.TextureId,
+                    id => _environment.Particles =
+                        _environment.Particles with { TextureId = id }),
+                help: "The particle sheet the air carries — 1 is snow, the "
+                    + "rest are dust. Step the id, or open the tile for the "
+                    + "whole catalog.");
+        });
     }
 
     // ── stars ────────────────────────────────────────────────────────────
@@ -1145,9 +1178,6 @@ public sealed class EnvironmentPane
 
     private static Vector4 Rgb(Vector4 color, float alpha) =>
         new(color.X, color.Y, color.Z, alpha);
-
-    private static uint ToId(float value) =>
-        (uint)Math.Max(0, (int)MathF.Round(value));
 
     /// <summary>An id as text, minted once and kept: it is a picker row's badge
     /// on every frame the surface draws it, and a row's identity.</summary>
