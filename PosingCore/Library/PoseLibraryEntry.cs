@@ -93,6 +93,12 @@ public sealed class PoseLibraryEntry
     /// every other kind.</summary>
     public string SceneContents { get; init; } = string.Empty;
 
+    /// <summary>Where a <see cref="PoseLibraryEntryKind.Scene"/> entry was
+    /// captured, as its own document recorded it. Empty for every other kind,
+    /// and for a scene written before scenes recorded a place — a listing
+    /// groups those by their day alone rather than inventing a place.</summary>
+    public string ScenePlace { get; init; } = string.Empty;
+
     /// <summary>A <c>.pose</c> file with a non-empty embedded preview image.</summary>
     public bool HasThumbnail { get; init; }
 

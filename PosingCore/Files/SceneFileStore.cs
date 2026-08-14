@@ -99,6 +99,13 @@ public sealed class SceneMetadataReadOutcome
 
     public string? Description { get; }
     public DateTimeOffset? SavedAt { get; }
+
+    /// <summary>Where the scene was captured, as the document recorded it.
+    /// Absent on a file written before scenes recorded it — a listing groups
+    /// those by their day alone rather than inventing a place for them.
+    /// </summary>
+    public string? PlaceName { get; }
+    public uint TerritoryId { get; }
     public int ActorCount { get; }
     public int PropCount { get; }
     public int LightCount { get; }
@@ -116,6 +123,8 @@ public sealed class SceneMetadataReadOutcome
         Author = scene.Author;
         Description = scene.Description;
         SavedAt = scene.SavedAt;
+        PlaceName = scene.PlaceName;
+        TerritoryId = scene.TerritoryId;
         ActorCount = scene.Actors.Count;
         PropCount = scene.Props.Count;
         LightCount = scene.Lights.Count;

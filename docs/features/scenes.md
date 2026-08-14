@@ -19,6 +19,13 @@ states only what is durable about the WHOLE-SCENE layer.
   relationship is an ABSENT field, never a sentinel member: an empty companion
   slot writes no companion kind at all, matching the Domain rule that nothing
   attached is the absence of a `CompanionAttachment` rather than a fourth kind.
+- The document records WHERE it was captured — the territory id and the place
+  name resolved at capture time. The NAME is persisted beside the id, not
+  derived from it, because the codec and the library scan have no game data to
+  resolve an id with; a listing must be able to say where a scene was taken
+  with the game shut. Both are OPTIONAL: a file written before scenes recorded
+  a place carries neither member, loads unchanged, and groups in the library
+  under its day alone. No place is ever inferred for such a file.
 - `SceneId` is the document's stable identity across re-saves and is the exact
   identity a scene operation's `OperationReceipt` targets: a whole-scene
   operation has no single target actor. Receipts, epochs and session

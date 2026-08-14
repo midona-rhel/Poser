@@ -21,8 +21,11 @@ listed as retained is not part of the active product surface.
   transaction — [posing-runtime.md](posing-runtime.md)).
   The environment is a selectable scene entity: time, weather, the eight
   holdable environment sections, water rendering, and festival slots.
+  Whole-scene save and restore ships as its own workspace, reached from the
+  sidebar''s SCENE section and the library''s Scenes tab
+  ([../features/scenes.md](../features/scenes.md)).
 - Deferred or parked (no dormant UI or registrations): animation authoring,
-  whole-scene project save and restore, reference images, arbitrary
+  reference images, arbitrary
   actor-to-bone attachment, and VFX authoring. Character
   Select+ actor application remains deferred until its public IPC has
   arbitrary-actor targeting and a restore call. General IPC/web APIs beyond

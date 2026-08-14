@@ -107,7 +107,8 @@ public static class SceneFileValidation
                 $"The scene contains {scene.Cameras.Count} cameras (limit {SceneFileLimits.MaxCameras}).");
 
         if (!ValidateText(scene.Author, "Author", out var textFailure) ||
-            !ValidateText(scene.Description, "Description", out textFailure))
+            !ValidateText(scene.Description, "Description", out textFailure) ||
+            !ValidateText(scene.PlaceName, "PlaceName", out textFailure))
             return textFailure!;
 
         var actorKeys = new HashSet<Guid>();

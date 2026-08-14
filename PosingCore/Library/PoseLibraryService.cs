@@ -460,6 +460,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var status = PoseLibraryMetadataStatus.Valid;
         var detail = string.Empty;
         var sceneContents = string.Empty;
+        var scenePlace = string.Empty;
 
         // A scene is probed through its OWN codec, which validates the whole
         // bounded document — so an entry the browser offers is an entry the
@@ -477,6 +478,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 // words from its description.
                 author = metadata.Author;
                 sceneContents = DescribeScene(metadata);
+                scenePlace = metadata.PlaceName ?? string.Empty;
             }
             // The ONE mapping — shared with the retry probe, exactly as the
             // pose branch shares its own.
@@ -516,7 +518,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             MetadataDetail = detail,
             IsLegacy = isLegacy,
             HasThumbnail = hasThumbnail,
-            SceneContents = sceneContents
+            SceneContents = sceneContents,
+            ScenePlace = scenePlace
         };
     }
 

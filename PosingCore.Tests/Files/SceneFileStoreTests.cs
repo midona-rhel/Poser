@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
@@ -29,7 +30,7 @@ public sealed class SceneFileStoreTests
         return new SceneFile
         {
             SceneId = Guid.NewGuid(),
-            Description = "Test shot",
+            Description = "Test scene",
             SavedAt = DateTimeOffset.UtcNow,
             Actors =
             {
@@ -171,6 +172,75 @@ public sealed class SceneFileStoreTests
         Assert.Equal(EnvSection.Fog, Assert.Single(loaded.Environment.HeldSections));
         Assert.Equal(100f, loaded.Environment.Fog!.Value.Distance);
         Assert.Null(loaded.Environment.Sky);
+    }
+
+    [Fact]
+    public void Where_a_scene_was_captured_round_trips()
+    {
+        using var file = new TempSceneFile();
+        var scene = ValidScene();
+        scene.TerritoryId = 132;
+        scene.PlaceName = "New Gridania";
+
+        Assert.True(Store().Write(scene, file.Path).Succeeded);
+
+        var read = Store().Read(file.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(132u, read.Scene!.TerritoryId);
+        Assert.Equal("New Gridania", read.Scene.PlaceName);
+
+        // The listing reads the place off the metadata probe, not the whole
+        // document, so the probe has to carry it too.
+        var metadata = Store().ReadMetadata(file.Path);
+        Assert.Equal("New Gridania", metadata.PlaceName);
+        Assert.Equal(132u, metadata.TerritoryId);
+    }
+
+    /// <summary>
+    /// The preservation guarantee: a scene written BEFORE scenes recorded
+    /// where they were taken carries neither member, and must load exactly as
+    /// it always did — absent is a valid document, not a corrupt one, and the
+    /// place reads back as nothing rather than as a guess.
+    /// </summary>
+    [Fact]
+    public void A_scene_written_without_a_place_loads_unchanged()
+    {
+        var scene = ValidScene();
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
+
+        // Strip the two members outright: an old file does not carry them as
+        // nulls, it does not carry them at all.
+        var lines = json.Split('\n')
+            .Where(line =>
+                !line.Contains("\"TerritoryId\"")
+                && !line.Contains("\"PlaceName\""));
+        json = string.Join("\n", lines);
+        Assert.DoesNotContain("PlaceName", json);
+        Assert.DoesNotContain("TerritoryId", json);
+
+        var read = Store().Parse(json);
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Null(read.Scene!.PlaceName);
+        Assert.Equal(0u, read.Scene.TerritoryId);
+        // Everything the file DID carry is untouched.
+        Assert.Equal(scene.SceneId, read.Scene.SceneId);
+        Assert.Equal("Lead", Assert.Single(read.Scene.Actors).Name);
+        Assert.Equal(720, read.Scene.Environment!.MinuteOfDay);
+    }
+
+    [Fact]
+    public void An_over_long_place_name_is_a_typed_validation_refusal()
+    {
+        var scene = ValidScene();
+        scene.PlaceName = new string('z', 257);
+
+        using var file = new TempSceneFile();
+        var write = Store().Write(scene, file.Path);
+
+        Assert.False(write.Succeeded);
+        Assert.False(File.Exists(file.Path));
     }
 
     [Fact]
@@ -476,7 +546,7 @@ public sealed class SceneFileStoreTests
         Assert.Equal(1, metadata.PropCount);
         Assert.Equal(1, metadata.LightCount);
         Assert.Equal(1, metadata.CameraCount);
-        Assert.Equal("Test shot", metadata.Description);
+        Assert.Equal("Test scene", metadata.Description);
     }
 
     private static void AssertValidationFailure(

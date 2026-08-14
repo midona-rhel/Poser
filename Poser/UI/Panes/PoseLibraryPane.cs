@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1370,11 +1371,8 @@ public sealed class PoseLibraryPane
         // Labels are minted with or without the extension HERE; the search
         // keeps matching the bare name either way.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
-        for (int i = 0; i < entries.Count; i++)
+        foreach (var entry in Ordered(entries, kind))
         {
-            var entry = entries[i];
-            if (entry.Kind != kind)
-                continue;
             _tileTags.Add(entry.TagsLower);
             _tileAuthors.Add(entry.AuthorLower);
             _tileStatus.Add(entry.MetadataStatus);
@@ -1406,6 +1404,12 @@ public sealed class PoseLibraryPane
                 Author = entry.Author,
                 Tags = entry.Tags,
                 Folder = _folderRows[entry.Folder],
+                SectionKey = kind == PoseLibraryEntryKind.Scene
+                    ? SceneSectionLabel(entry)
+                    : string.Empty,
+                SectionLabel = kind == PoseLibraryEntryKind.Scene
+                    ? SceneSectionLabel(entry)
+                    : string.Empty,
                 Flagged = flagged,
                 StatusText = flagged
                     ? StatusText(entry.MetadataStatus, entry.MetadataDetail)
@@ -1782,6 +1786,38 @@ public sealed class PoseLibraryPane
     private static string Count(int value) =>
         value.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// The tab's entries in the order the grid must receive them: scan order
+    /// for every kind whose sections ARE its folders, and SECTION order for
+    /// scenes, whose sections are place-and-day pairs no directory records.
+    /// Newest day leads, places sort inside a day, and the newest file leads
+    /// inside a place. Ordering here rather than in the grid is what keeps the
+    /// section break a single key comparison.
+    /// </summary>
+    private static IEnumerable<PoseLibraryEntry> Ordered(
+        IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
+    {
+        var matching = entries.Where(entry => entry.Kind == kind);
+        return kind == PoseLibraryEntryKind.Scene
+            ? matching
+                .OrderByDescending(entry => entry.Modified.Date)
+                .ThenBy(entry => entry.ScenePlace, StringComparer.OrdinalIgnoreCase)
+                .ThenByDescending(entry => entry.Modified)
+            : matching;
+    }
+
+    /// <summary>One scene section's heading: where it was captured and on
+    /// which day. A scene written before scenes recorded a place falls back to
+    /// the DAY ALONE — the place is not guessed, and such files gather under a
+    /// heading that claims nothing about where they were taken.</summary>
+    private static string SceneSectionLabel(PoseLibraryEntry entry)
+    {
+        string day = entry.Modified.ToString(DayFormat, CultureInfo.InvariantCulture);
+        return entry.ScenePlace.Length > 0
+            ? entry.ScenePlace + " – " + day
+            : day;
+    }
+
     private void SyncQuery()
     {
         if (string.Equals(_query, _vm.Query, StringComparison.Ordinal))
@@ -1844,7 +1880,12 @@ public sealed class PoseLibraryPane
         bool kept = false;
         int groupCount = 0;
         int openFolder = -1;
+        string openSection = string.Empty;
         PoseLibraryGroupRow? open = null;
+        // Scenes section by where and when they were captured, not by the
+        // directory they happen to sit in; the rail still filters by folder,
+        // so the two structures coexist rather than replace each other.
+        bool sectioned = _type == LibraryType.Scenes;
 
         for (int i = 0; i < tiles.Count; i++)
         {
@@ -1871,7 +1912,23 @@ public sealed class PoseLibraryPane
                 && !HasTag(_tileTags[i], tag))
                 continue;
 
-            if (open is null || tile.Folder != openFolder)
+            if (sectioned)
+            {
+                if (open is null || !string.Equals(
+                        tile.SectionKey, openSection, StringComparison.Ordinal))
+                {
+                    openSection = tile.SectionKey;
+                    open = GroupSlot(groups, groupCount++);
+                    open.Key = tile.SectionKey;
+                    open.Label = tile.SectionLabel;
+                    open.Collapsed =
+                        _collapsed.TryGetValue(tile.SectionKey, out var held)
+                        && held;
+                    open.Start = visible.Count;
+                    open.Count = 0;
+                }
+            }
+            else if (open is null || tile.Folder != openFolder)
             {
                 openFolder = tile.Folder;
                 var source = _vm.Folders[openFolder];
@@ -1895,9 +1952,11 @@ public sealed class PoseLibraryPane
         for (int g = 0; g < groupCount; g++)
             groups[g].CountText = Count(groups[g].Count);
 
-        // One group states nothing the rail has not already said — except on
-        // the auto-save tab, where the header IS the only structure.
-        _vm.Grouped = groupCount > 1 || _type == LibraryType.AutoSaves;
+        // One group states nothing the rail has not already said — except
+        // where the header IS the structure: the auto-save tab's day, and a
+        // scene's place and day, neither of which any rail states.
+        _vm.Grouped =
+            groupCount > 1 || _type == LibraryType.AutoSaves || sectioned;
         _vm.LayoutRevision++;
 
         // A selection the filter dropped is no longer on screen, so it stops

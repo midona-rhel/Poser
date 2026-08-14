@@ -102,6 +102,16 @@ public sealed class PoseLibraryTileRow
     /// </summary>
     public int Folder;
 
+    /// <summary>The grid section this row belongs to, for a tab that groups by
+    /// something other than the folder it sits in — scenes group by WHERE and
+    /// WHEN they were captured, which no directory records. Empty means the
+    /// folder is the section, which is every other tab. Rows carrying a key
+    /// must be emitted already ordered by it: the grid breaks a section when
+    /// the key changes, so an unordered list would fragment into repeats.
+    /// </summary>
+    public string SectionKey = string.Empty;
+    public string SectionLabel = string.Empty;
+
     /// <summary>Whether the entry's metadata probe refused it — corrupt,
     /// future-versioned, or oversized. The tile carries a warning badge and
     /// the info strip states <see cref="StatusText"/> instead of author and

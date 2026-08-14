@@ -49,6 +49,19 @@ public class SceneFile
     public string? Description { get; set; }
     public DateTimeOffset? SavedAt { get; set; }
 
+    /// <summary>The territory the capture ran in; 0 means unknown, which is
+    /// every file written before scenes recorded where they were taken.
+    /// </summary>
+    public uint TerritoryId { get; set; }
+
+    /// <summary>The territory's place name, resolved AT CAPTURE. The name is
+    /// persisted BESIDE the id, not derived from it, because neither the codec
+    /// nor the library scan has game data to resolve an id with — a listing
+    /// must be able to say where a scene was taken with the game shut. Absent
+    /// on files written before scenes recorded it, and on a capture whose
+    /// territory had no name.</summary>
+    public string? PlaceName { get; set; }
+
     public List<SceneActor> Actors { get; set; } = new();
     public List<SceneProp> Props { get; set; } = new();
     public List<SceneLight> Lights { get; set; } = new();
