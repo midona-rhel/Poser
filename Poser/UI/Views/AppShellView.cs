@@ -95,10 +95,16 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
+    /// <summary>Animation is a PER-ACTOR override, so its switch is present
+    /// exactly when the selection can carry one — hidden, never greyed, on an
+    /// entity that has no animation to pause (user 2026-08-14).</summary>
     public bool AnimationOn;
     public bool AnimationAvailable;
+
+    /// <summary>Physics has no availability twin: the freeze is one
+    /// process-global patch, so its switch is live under every selection and
+    /// under none.</summary>
     public bool PhysicsOn;
-    public bool PhysicsAvailable;
     public bool SkeletonOverlayOn;
     public bool CanUndo = true;
     public bool CanRedo;
@@ -356,26 +362,26 @@ public static class AppShellView
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
-            right.Switch(
-                "Animation",
-                vm.AnimationOn,
-                vm.AnimationToggled!,
-                !vm.AnimationAvailable
-                    ? "Select an actor to pause its animation"
-                    : vm.AnimationOn
+            // ABSENT, not greyed, on an entity with no animation: a switch
+            // that can never be thrown is chrome pretending to be a control.
+            // Physics has no such gate — one global patch, always live — so
+            // it holds the bar's trailing slot alone whenever animation
+            // cannot be shown.
+            if (vm.AnimationAvailable)
+                right.Switch(
+                    "Animation",
+                    vm.AnimationOn,
+                    vm.AnimationToggled!,
+                    vm.AnimationOn
                         ? "Switch off to pause this actor's animation"
-                        : "Switch on to resume this actor's animation",
-                disabled: !vm.AnimationAvailable);
+                        : "Switch on to resume this actor's animation");
             right.Switch(
                 "Physics",
                 vm.PhysicsOn,
                 vm.PhysicsToggled!,
-                !vm.PhysicsAvailable
-                    ? "Select an actor or bone to freeze physics for the whole scene"
-                    : vm.PhysicsOn
-                        ? "Switch off to freeze physics for the whole scene"
-                        : "Switch on to resume physics for the whole scene",
-                disabled: !vm.PhysicsAvailable);
+                vm.PhysicsOn
+                    ? "Switch off to freeze physics for the whole scene"
+                    : "Switch on to resume physics for the whole scene");
         };
     }
 

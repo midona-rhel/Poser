@@ -107,6 +107,54 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
+    public void The_scene_holds_physics_with_no_actor_and_outlives_every_actor()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        // No actor is involved at all: the shell's switch stands over every
+        // selection and over none.
+        Assert.True(session.SetScenePhysicsFrozen(true).Success);
+        Assert.True(session.SceneOwnsPhysics);
+        Assert.True(port.Frozen);
+
+        // An actor joining and departing cannot lift the scene's own hold.
+        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
+        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:True"));
+        session.Reconcile(EmptyScene(1));
+        Assert.False(session.OwnsPhysics(ActorA));
+        Assert.True(port.Frozen);
+        Assert.DoesNotContain("SetPhysicsFrozen:False", port.Calls);
+
+        // Releasing the scene's hold with no other owner unpatches once.
+        Assert.True(session.SetScenePhysicsFrozen(false).Success);
+        Assert.False(session.SceneOwnsPhysics);
+        Assert.False(port.Frozen);
+        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:False"));
+    }
+
+    [Fact]
+    public void An_actor_release_leaves_the_scenes_hold_patched()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetScenePhysicsFrozen(true).Success);
+        Assert.True(session.SetPhysicsFrozen(ActorA, true).Success);
+
+        Assert.True(session.ResetActor(ActorA).Success);
+
+        Assert.False(session.OwnsPhysics(ActorA));
+        Assert.True(session.SceneOwnsPhysics);
+        Assert.True(port.Frozen);
+
+        // Only ResetAll retires the scene: it is the one owner no reconcile
+        // can ever see depart.
+        Assert.True(session.ResetAll().Success);
+        Assert.False(session.SceneOwnsPhysics);
+        Assert.False(port.Frozen);
+    }
+
+    [Fact]
     public void Reconcile_retains_a_departed_owner_when_the_unpatch_fails()
     {
         var port = FakePort.Create();

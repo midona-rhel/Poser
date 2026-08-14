@@ -484,12 +484,12 @@ public class MainWindow : Window
             }
         };
         // The switch's polarity is "physics simulating"; the service's is
-        // "freeze requested".
-        _vm.OnPhysics = on =>
-        {
-            if (SelectedActorId() is { } actor)
-                _animation.SetPhysicsFrozen(actor, !on);
-        };
+        // "freeze requested". The request is booked against the SCENE, not
+        // against whatever happens to be selected: the freeze is one
+        // process-global patch, and a shell switch that only worked while an
+        // animating actor was selected made a scene-wide control hostage to
+        // the selection (user 2026-08-14).
+        _vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
         _vm.OnUndo = Undo;
         _vm.OnRedo = Redo;
         _vm.OnSkeletonOverlay = on => OnSkeletonOverlayToggled?.Invoke(on);
@@ -1096,14 +1096,12 @@ public class MainWindow : Window
         // a zero speed override on the selected actor.
         _vm.AnimationOn = toolbarActor is not { } animActor
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
-        _vm.PhysicsAvailable = toolbarActor is { } actorId
-            && _animation.IsSupported(actorId);
         // The freeze is one PROCESS-GLOBAL code patch, so the switch shows
         // the global state: a scene frozen by any actor's request reads
         // frozen from every selection, never "simulating" merely because
-        // the selected actor wasn't the one who asked. The action still
-        // attributes the request to the selected actor, whose hold is
-        // released with the rest of that actor's overrides.
+        // the selected actor wasn't the one who asked. It is live under
+        // EVERY selection and under none, because nothing about the patch is
+        // per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
         _vm.SkeletonOverlayOn = GetSkeletonOverlayOn?.Invoke() ?? false;
         _vm.CanUndo = _cleanTransforms.CanUndo;

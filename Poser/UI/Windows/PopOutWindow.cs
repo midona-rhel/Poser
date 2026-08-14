@@ -354,8 +354,11 @@ public sealed class PopOutWindow : Window
         bool animationOn =
             _animation.OverridesFor(frozen).OverallSpeed is not 0f;
         // Physics is one PROCESS-GLOBAL patch: the switch shows the global
-        // state (the tooltip already says "whole scene"), while the toggle
-        // still books the request against this window's actor.
+        // state (the tooltip already says "whole scene") and books its
+        // request against the SCENE, not this window's actor — a window
+        // frozen onto a non-animating actor must still be able to stop the
+        // scene's cloth, and a scene-wide hold must not evaporate with one
+        // actor's overrides (user 2026-08-14).
         bool physicsOn = !_animation.IsPhysicsFrozen;
         Crystarium.ActionBar(
             $"popout-actions-{_identity}",
@@ -364,26 +367,27 @@ public sealed class PopOutWindow : Window
             static _ => { },
             right =>
             {
-                right.Switch(
-                    "Animation",
-                    animationOn,
-                    next =>
-                    {
-                        if (next) _animation.ClearSpeed(frozen);
-                        else _animation.SetSpeed(frozen, 0f);
-                    },
-                    animationOn
-                        ? "Switch off to pause this actor's animation"
-                        : "Switch on to resume this actor's animation",
-                    disabled: !animationAvailable);
+                // Absent, not greyed, on an actor with no animation — the
+                // shell bar's rule, and one control either way.
+                if (animationAvailable)
+                    right.Switch(
+                        "Animation",
+                        animationOn,
+                        next =>
+                        {
+                            if (next) _animation.ClearSpeed(frozen);
+                            else _animation.SetSpeed(frozen, 0f);
+                        },
+                        animationOn
+                            ? "Switch off to pause this actor's animation"
+                            : "Switch on to resume this actor's animation");
                 right.Switch(
                     "Physics",
                     physicsOn,
-                    next => _animation.SetPhysicsFrozen(frozen, !next),
+                    next => _animation.SetScenePhysicsFrozen(!next),
                     physicsOn
                         ? "Switch off to freeze physics for the whole scene"
-                        : "Switch on to resume physics for the whole scene",
-                    disabled: !animationAvailable);
+                        : "Switch on to resume physics for the whole scene");
             },
             ActionBarSeparator.None);
 

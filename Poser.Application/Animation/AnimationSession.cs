@@ -55,6 +55,18 @@ public sealed class AnimationSession
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
     private readonly HashSet<ActorId> _physicsOwners = new();
 
+    /// <summary>
+    /// The SCENE's own hold on the global physics patch. The freeze is one
+    /// process-global code patch and nothing about it is per-actor, so it has
+    /// to be requestable when no actor is selected at all — a light, a camera
+    /// or the environment is a perfectly ordinary thing to be looking at
+    /// while wanting the scene's cloth to stop (user 2026-08-14). The scene
+    /// is an owner exactly like an actor is; it simply has no
+    /// <see cref="ActorId"/> to be keyed by, and unlike an actor it never
+    /// departs, so only <see cref="ResetAll"/> releases it.
+    /// </summary>
+    private bool _sceneOwnsPhysics;
+
     public AnimationSession(IAnimationRuntimePort port)
     {
         _port = port;
@@ -473,7 +485,12 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    // ── Physics (global patch, reference-counted by actor) ────────────
+    // ── Physics (global patch, reference-counted by owner) ────────────
+
+    /// <summary>Every hold on the patch: each actor that asked, plus the
+    /// scene itself.</summary>
+    private int PhysicsOwnerCount =>
+        _physicsOwners.Count + (_sceneOwnsPhysics ? 1 : 0);
 
     /// <summary>
     /// Physics is one global code patch shared by every actor, so the
@@ -489,7 +506,7 @@ public sealed class AnimationSession
         if (frozen == alreadyOwned)
             return AnimationResult.Ok();
 
-        int othersOwning = _physicsOwners.Count - (alreadyOwned ? 1 : 0);
+        int othersOwning = PhysicsOwnerCount - (alreadyOwned ? 1 : 0);
         bool shouldFreeze = frozen || othersOwning > 0;
 
         if (shouldFreeze != _port.IsPhysicsFrozen)
@@ -506,7 +523,37 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
+    /// <summary>
+    /// The SCENE's request, booked against no actor at all — the shell's
+    /// physics switch, which stands over every selection and over none. Same
+    /// discipline as the actor overload: the hold is recorded only after the
+    /// patch it implies has actually landed, and the unpatch happens only
+    /// when this is the last hold standing.
+    /// </summary>
+    public AnimationResult SetScenePhysicsFrozen(bool frozen)
+    {
+        if (frozen == _sceneOwnsPhysics)
+            return AnimationResult.Ok();
+
+        bool shouldFreeze = frozen || _physicsOwners.Count > 0;
+        if (shouldFreeze != _port.IsPhysicsFrozen)
+        {
+            var result = _port.SetPhysicsFrozen(shouldFreeze);
+            if (!result.Success)
+                return AnimationResult.Fail(
+                    result.Detail ?? "Physics freeze failed.");
+        }
+
+        _sceneOwnsPhysics = frozen;
+        return AnimationResult.Ok();
+    }
+
     public bool OwnsPhysics(ActorId actor) => _physicsOwners.Contains(actor);
+
+    /// <summary>Whether the SCENE holds the patch — distinct from
+    /// <see cref="IsPhysicsFrozen"/>, which is the global state whoever asked
+    /// for it.</summary>
+    public bool SceneOwnsPhysics => _sceneOwnsPhysics;
 
     /// <summary>
     /// Releases one actor's share of the global physics patch. The owner
@@ -522,7 +569,7 @@ public sealed class AnimationSession
     {
         if (!_physicsOwners.Contains(actor))
             return AnimationResult.Ok();
-        if (_physicsOwners.Count == 1 && _port.IsPhysicsFrozen)
+        if (PhysicsOwnerCount == 1 && _port.IsPhysicsFrozen)
         {
             var result = _port.SetPhysicsFrozen(false);
             if (!result.Success)
@@ -920,6 +967,12 @@ public sealed class AnimationSession
             if (!result.Success && result.Detail is { } detail)
                 failures.Add($"{actor}: {detail}");
         }
+        // The scene's hold last, so the actor releases above see it standing
+        // and leave the patch alone: it is the one owner that is not an
+        // actor and that no reconcile will ever retire.
+        var scene = SetScenePhysicsFrozen(false);
+        if (!scene.Success && scene.Detail is { } sceneDetail)
+            failures.Add($"scene: {sceneDetail}");
         return failures.Count == 0
             ? AnimationResult.Ok()
             : AnimationResult.Fail(string.Join("; ", failures));
