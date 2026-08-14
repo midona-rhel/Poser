@@ -5,4 +5,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
+
+  <!-- Release identity; rationale and dependency verdicts live in
+       THIRD-PARTY-LICENSES.md. -->
+  <PropertyGroup>
+    <Authors>Midona</Authors>
+    <Copyright>Copyright (C) 2026 Midona</Copyright>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+
 </Project>

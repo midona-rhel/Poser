@@ -10,6 +10,15 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <Use_DalamudPackager>false</Use_DalamudPackager>
   </PropertyGroup>
+
+  <!-- Release identity; rationale and dependency verdicts live in
+       THIRD-PARTY-LICENSES.md. -->
+  <PropertyGroup>
+    <Authors>Midona</Authors>
+    <Copyright>Copyright (C) 2026 Midona</Copyright>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Poser.Game.Tests" />
   </ItemGroup>
