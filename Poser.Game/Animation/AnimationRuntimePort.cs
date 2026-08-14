@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Dalamud.Game;
 using Dalamud.Hooking;
-using Dalamud.Memory;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -35,8 +34,6 @@ namespace Poser.Game.Animation;
 /// </summary>
 public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
-    private const int PhysicsFreezePatchOffset = 0x9;
-
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
@@ -94,10 +91,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
 
-    private readonly nint _physicsAddress;
-    private byte[] _physicsOriginal1 = [];
-    private byte[] _physicsOriginal2 = [];
-    private bool _physicsFrozen;
+    // The physics freeze is a process-global code patch, not a per-actor
+    // enforcement; the patcher owns its site, capability state and restore.
+    private readonly PhysicsFreezePatcher _physics;
 
     public AnimationRuntimePort(
         IFramework framework,
@@ -154,19 +150,10 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _log.Error($"Slot-speed hook unavailable; layer speed overrides will fail explicitly: {ex.Message}");
         }
 
-        try
-        {
-            if (sigScanner.TryScanText(
-                "0F 11 48 10 41 0F 10 44 24 ?? 0F 11 40 20 48 8B 46 28", out _physicsAddress))
-            {
-                _physicsOriginal1 = MemoryHelper.ReadRaw(_physicsAddress, 4);
-                _physicsOriginal2 = MemoryHelper.ReadRaw(_physicsAddress - PhysicsFreezePatchOffset, 3);
-            }
-        }
-        catch (Exception ex)
-        {
-            _log.Warning($"Physics freeze address unavailable: {ex.Message}");
-        }
+        // Scan, byte validation, capability state and restore all live in
+        // the patcher; an unavailable site degrades SetPhysicsFrozen to an
+        // explicit failure with the patcher's own detail.
+        _physics = new PhysicsFreezePatcher(sigScanner, log);
     }
 
     private T? ScanDelegate<T>(ISigScanner scanner, string signature, string name)
@@ -1086,79 +1073,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     // ── Physics ───────────────────────────────────────────────────────
 
-    public bool IsPhysicsFrozen => _physicsFrozen;
+    public bool IsPhysicsFrozen => _physics.IsFrozen;
 
-    public AnimationPortResult SetPhysicsFrozen(bool frozen)
-    {
-        if (_physicsAddress == 0)
-            return AnimationPortResult.Fail("Physics freeze is unavailable on this game version.");
-        if (frozen == _physicsFrozen)
-            return AnimationPortResult.Ok();
-
-        try
-        {
-            if (frozen)
-            {
-                // Both regions or neither: a fault after the first write
-                // rolls it back, so a half-frozen simulation can never
-                // survive behind _physicsFrozen == false.
-                var original1 = ReplaceRaw(_physicsAddress, [0x90, 0x90, 0x90, 0x90]);
-                byte[] original2;
-                try
-                {
-                    original2 = ReplaceRaw(
-                        _physicsAddress - PhysicsFreezePatchOffset, [0x90, 0x90, 0x90]);
-                }
-                catch
-                {
-                    ReplaceRaw(_physicsAddress, original1);
-                    throw;
-                }
-                _physicsOriginal1 = original1;
-                _physicsOriginal2 = original2;
-            }
-            else
-            {
-                // A failed unfreeze returns to the FULLY frozen state, so
-                // _physicsFrozen == true stays truthful: if the second
-                // restore faults after the first landed, the first region
-                // is re-patched before the failure propagates.
-                ReplaceRaw(_physicsAddress, _physicsOriginal1);
-                try
-                {
-                    ReplaceRaw(_physicsAddress - PhysicsFreezePatchOffset, _physicsOriginal2);
-                }
-                catch
-                {
-                    ReplaceRaw(_physicsAddress, [0x90, 0x90, 0x90, 0x90]);
-                    throw;
-                }
-            }
-            _physicsFrozen = frozen;
-            return AnimationPortResult.Ok();
-        }
-        catch (Exception ex)
-        {
-            return AnimationPortResult.Fail($"Physics freeze failed: {ex.Message}");
-        }
-    }
-
-    private static byte[] ReplaceRaw(nint address, byte[] data)
-    {
-        var original = MemoryHelper.ReadRaw(address, data.Length);
-        var protection = MemoryHelper.ChangePermission(
-            address, data.Length, MemoryProtection.ExecuteReadWrite);
-        try
-        {
-            MemoryHelper.WriteRaw(address, data);
-        }
-        finally
-        {
-            // Page protection goes back even when the write faults.
-            MemoryHelper.ChangePermission(address, data.Length, protection);
-        }
-        return original;
-    }
+    public AnimationPortResult SetPhysicsFrozen(bool frozen) => _physics.SetFrozen(frozen);
 
     public void Dispose()
     {
@@ -1169,9 +1086,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _enforcement.Clear();
         _byAddress.Clear();
         // The session restores per-actor overrides before disposal; the
-        // global code patch is this class's own and must come back here.
-        if (_physicsFrozen)
-            SetPhysicsFrozen(false);
+        // global code patch is the patcher's own, and its dispose restores
+        // it (or reports the failure explicitly).
+        _physics.Dispose();
         GC.SuppressFinalize(this);
     }
 }
