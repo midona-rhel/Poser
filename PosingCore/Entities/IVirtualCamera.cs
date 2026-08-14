@@ -73,6 +73,18 @@ public interface IVirtualCamera
     /// position while live, the retained free-cam position otherwise.</summary>
     Vector3 WorldPosition { get; }
 
+    /// <summary>
+    /// Ktisis's <c>FixedPosition</c>: pin an orbit camera to a world point so
+    /// the shot does not drift when the subject moves. Null is unpinned — the
+    /// camera goes wherever the game's own update puts it.
+    /// <see cref="PositionOffset"/> still applies on top, so the pin is the
+    /// BASE the offset is measured from rather than the final answer.
+    ///
+    /// <para>Meaningless on a free camera, which owns its
+    /// <see cref="Position"/> outright.</para>
+    /// </summary>
+    Vector3? FixedPosition { get; set; }
+
     bool DisableCollision { get; set; }
 
     /// <summary>Lifts the native zoom and vertical-angle clamps (Brio's

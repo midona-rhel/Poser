@@ -532,6 +532,10 @@ public static class SceneFileValidation
                 document.MovementSpeed, document.MouseSensitivity,
                 document.OrthographicZoom) ||
             !IsFinite(document.PositionOffset) ||
+            // Absent is legal — an unpinned camera has no fixed position at
+            // all — but a present one is held to the same finiteness as every
+            // other coordinate in the document.
+            (document.FixedPosition is { } pinned && !IsFinite(pinned)) ||
             !IsFinite(document.Position) ||
             !IsFinite(document.Rotation))
             return Fail(SceneFileValidationFailureKind.NonFiniteNumeric,

@@ -532,14 +532,23 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             if (live.Kind != CameraKind.Free)
             {
                 var offset = live.PositionOffset + live.TargetOffset;
-                if (offset != Vector3.Zero)
+                // Ktisis's WritePosition: a pinned camera measures its offset
+                // from the PIN instead of from wherever the game's update
+                // left it, which is what stops the shot drifting when the
+                // subject walks. Unpinned, this is the offset-only path it
+                // has always been — and offset-free AND unpinned still costs
+                // nothing.
+                if (offset != Vector3.Zero || live.FixedPosition != null)
                 {
                     var scene = &camera->Camera.CameraBase.SceneCamera;
                     Vector3 current = scene->Position;
-                    var moved = current + offset;
-                    Vector3 lookAt = scene->LookAtVector;
-                    scene->Position = moved;
-                    scene->LookAtVector = lookAt + (moved - current);
+                    var moved = (live.FixedPosition ?? current) + offset;
+                    if (moved != current)
+                    {
+                        Vector3 lookAt = scene->LookAtVector;
+                        scene->Position = moved;
+                        scene->LookAtVector = lookAt + (moved - current);
+                    }
                 }
             }
 

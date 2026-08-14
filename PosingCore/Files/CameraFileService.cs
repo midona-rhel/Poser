@@ -82,6 +82,7 @@ public class CameraFileService : ICameraFileService
         Zoom = camera.Zoom,
         FoV = camera.FoV,
         PositionOffset = camera.PositionOffset,
+        FixedPosition = camera.FixedPosition,
         DisableCollision = camera.DisableCollision,
         DelimitCamera = camera.DelimitCamera,
         Position = camera.Position,
@@ -106,6 +107,7 @@ public class CameraFileService : ICameraFileService
         camera.Zoom = file.Zoom;
         camera.FoV = file.FoV;
         camera.PositionOffset = file.PositionOffset;
+        camera.FixedPosition = file.FixedPosition;
         camera.DisableCollision = file.DisableCollision;
         camera.DelimitCamera = file.DelimitCamera;
         // A free camera keeps the position it spawned at unless the file

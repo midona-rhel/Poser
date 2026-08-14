@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Config;
@@ -248,6 +249,59 @@ public sealed class CameraPane
                     help: "Clear the offset",
                     id: "##camera-offset-reset");
             });
+        WorldPositionRow(form, camera, locked, perPixel);
+    }
+
+    /// <summary>
+    /// Where the orbit camera actually is, and Ktisis's pin over the same
+    /// number. Unpinned it is a readout (Brio shows the same value disabled);
+    /// pinned it becomes the editable world point the camera holds, so one
+    /// row answers "where am I" and "stay there" instead of two rows
+    /// disagreeing about which is the truth.
+    /// </summary>
+    private static void WorldPositionRow(
+        Crystarium.FormScope form,
+        IVirtualCamera camera,
+        bool locked,
+        float perPixel)
+    {
+        if (camera.FixedPosition is { } pinned)
+        {
+            form.AxisVector("World position", pinned,
+                value => camera.FixedPosition = value,
+                onCommit: null,
+                perPixel: perPixel,
+                format: "0.00",
+                help: "The world point this camera is pinned to; it stays "
+                    + "here however the subject moves",
+                disabled: locked,
+                actions: actions =>
+                {
+                    actions.IconButton(TablerIcon.LockOpen,
+                        () => camera.FixedPosition = null,
+                        disabled: locked,
+                        help: "Unpin — let the camera follow the game again",
+                        id: "##camera-fixed-unpin");
+                });
+            return;
+        }
+
+        var world = camera.WorldPosition;
+        form.ReadOnlyWithActions(
+            "World position",
+            world.X.ToString("0.00", CultureInfo.InvariantCulture) + ", "
+                + world.Y.ToString("0.00", CultureInfo.InvariantCulture) + ", "
+                + world.Z.ToString("0.00", CultureInfo.InvariantCulture),
+            actions =>
+            {
+                actions.IconButton(TablerIcon.Lock,
+                    () => camera.FixedPosition = world,
+                    disabled: locked,
+                    help: "Pin the camera here so it stops drifting with the "
+                        + "subject",
+                    id: "##camera-fixed-pin");
+            },
+            help: "Where this camera is in the world right now");
     }
 
     /// <summary>The rail's TRACKING section, whole: Ktisis's bone tracking —

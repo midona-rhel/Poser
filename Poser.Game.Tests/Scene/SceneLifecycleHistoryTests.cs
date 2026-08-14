@@ -905,6 +905,7 @@ public sealed class SceneLifecycleHistoryTests
         public Vector2 ZoomLimits => Vector2.Zero;
         public float FoV { get; set; }
         public Vector3 PositionOffset { get; set; }
+        public Vector3? FixedPosition { get; set; }
         public Vector3 TargetOffset { get; set; }
         public string TargetActorName { get; set; } = string.Empty;
         public Vector3 WorldPosition => Vector3.Zero;

@@ -169,9 +169,16 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
             var native = Live;
             if (native != null)
                 return native->GetPosition();
+            // Parked and pinned: the pin is where this camera WILL be, which
+            // is the only honest answer while the native camera is somebody
+            // else's. The offset rides on top exactly as the detour applies it.
+            if (FixedPosition is { } pinned)
+                return pinned + PositionOffset + TargetOffset;
             return _lastWorldPosition;
         }
     }
+
+    public Vector3? FixedPosition { get; set; }
 
     public bool DisableCollision { get; set; }
 
@@ -314,6 +321,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     public void ResetProperties()
     {
         PositionOffset = Vector3.Zero;
+        FixedPosition = null;
         TargetOffset = Vector3.Zero;
         TargetActorName = string.Empty;
         DisableCollision = false;

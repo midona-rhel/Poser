@@ -32,6 +32,13 @@ public class CameraFile
     public float Zoom { get; set; } = 2.5f;
     public float FoV { get; set; }
     public Vector3 PositionOffset { get; set; }
+
+    /// <summary>The world point the camera is pinned to, or null when it is
+    /// free to follow the game's update (Ktisis carries the same field in its
+    /// scene file). Null and "0, 0, 0" are different answers here, which is
+    /// why it is nullable rather than a sentinel.</summary>
+    public Vector3? FixedPosition { get; set; }
+
     public bool DisableCollision { get; set; }
     public bool DelimitCamera { get; set; }
 
