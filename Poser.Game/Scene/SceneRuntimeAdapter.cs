@@ -84,8 +84,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public SceneWriteOutcome WriteScene(SceneFile scene, string path) =>
         _store.Write(scene, path);
 
-    public SceneCaptureOutcome CaptureScene(Guid sceneId, string? description) =>
-        _capture.Capture(sceneId, description);
+    public string? ArmSceneCapture(
+        Guid sceneId,
+        string? description,
+        Action<SceneCaptureOutcome> onCaptured) =>
+        _capture.BeginCapture(sceneId, description, onCaptured);
 
     // ── actors ───────────────────────────────────────────────────────────
 

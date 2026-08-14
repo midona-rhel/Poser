@@ -80,7 +80,12 @@ public sealed class SceneAutoSaveService : IDisposable
     private readonly IFramework? _framework;
     private readonly IGPoseService _gpose;
     private readonly ConfigurationService _configuration;
-    private readonly Func<Guid, string?, SceneCaptureOutcome> _capture;
+    /// <summary>ARMS a capture: the bone-transform caches a scene serializes
+    /// are refreshed first and the outcome arrives through the callback a few
+    /// ticks later, so a snapshot never files a never-posed actor's
+    /// skeleton-build-time bones. Returns the refusal detail, or null when
+    /// armed.</summary>
+    private readonly Func<Guid, string?, Action<SceneCaptureOutcome>, string?> _capture;
     private readonly SceneFileStore _store;
     private readonly Func<bool> _sceneOperationRunning;
     private readonly Func<DateTime> _clock;
@@ -116,7 +121,7 @@ public sealed class SceneAutoSaveService : IDisposable
             framework,
             gpose,
             configuration,
-            capture.Capture,
+            capture.BeginCapture,
             () => workflow.Busy,
             System.IO.Path.Combine(
                 pluginInterface.GetPluginConfigDirectory(), FolderName))
@@ -131,7 +136,7 @@ public sealed class SceneAutoSaveService : IDisposable
         IFramework? framework,
         IGPoseService gpose,
         ConfigurationService configuration,
-        Func<Guid, string?, SceneCaptureOutcome> capture,
+        Func<Guid, string?, Action<SceneCaptureOutcome>, string?> capture,
         Func<bool> sceneOperationRunning,
         string rootDirectory,
         Func<DateTime>? utcClock = null,
@@ -213,10 +218,15 @@ public sealed class SceneAutoSaveService : IDisposable
     }
 
     /// <summary>
-    /// Captures the scene inline (this runs on the framework thread) and hands
-    /// the immutable document to the writer. Only one write is in flight: a
-    /// tick arriving over a running write is skipped by name rather than
-    /// queued, so a slow disk can never grow an unbounded backlog.
+    /// ARMS the capture (this runs on the framework thread) and hands the
+    /// immutable document to the writer once it lands. Only one write is in
+    /// flight: a tick arriving over a running write is skipped by name rather
+    /// than queued, so a slow disk can never grow an unbounded backlog.
+    ///
+    /// <para>The arm shares the ONE refresh slot with user-driven pose exports
+    /// and scene saves, so a tick landing on top of one is REFUSED and skipped
+    /// by name. A snapshot deferring to the user's own export is the right
+    /// trade: the alternative is filing bone values the game never showed.</para>
     /// </summary>
     internal void SnapshotNow()
     {
@@ -239,7 +249,19 @@ public sealed class SceneAutoSaveService : IDisposable
             return;
         }
 
-        var captured = _capture(_sceneId, "Automatic whole-scene snapshot");
+        if (_capture(_sceneId, "Automatic whole-scene snapshot", OnCaptured)
+            is { } refusal)
+        {
+            Publish(new SceneAutoSaveResult(SceneAutoSaveStatus.Skipped, refusal));
+        }
+    }
+
+    /// <summary>The armed capture landed: from here on this is exactly the
+    /// path a synchronous capture took.</summary>
+    private void OnCaptured(SceneCaptureOutcome captured)
+    {
+        if (_disposed)
+            return;
         if (!captured.Success || captured.Scene is not { } scene)
         {
             Publish(new SceneAutoSaveResult(

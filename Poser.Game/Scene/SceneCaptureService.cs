@@ -52,6 +52,14 @@ public sealed class SceneCaptureOutcome
 /// <see cref="CleanPoseFacade"/>'s copy capture does: the apply window pauses
 /// and rewinds the animation, and a snapshot landing inside it would persist
 /// a half-transitioned pose.
+///
+/// <para>The capture is ARMED, not called — see <see cref="BeginCapture"/>.
+/// The bone values a scene serializes come out of the same raw transform
+/// caches an ordinary pose export reads, and those caches are only refreshed
+/// for skeletons the per-frame rebuild qualified, so a never-posed actor's
+/// cache still holds its skeleton-build-time snapshot. Reading them
+/// synchronously is exactly the bug <see cref="PoseExportCapture"/> exists
+/// for.</para>
 /// </summary>
 public sealed class SceneCaptureService
 {
@@ -70,6 +78,7 @@ public sealed class SceneCaptureService
     private readonly IPosingService _posing;
     private readonly AnimationSession _animation;
     private readonly IGazeService _gaze;
+    private readonly PoseExportCapture _exports;
 
     public SceneCaptureService(
         IFramework framework,
@@ -86,8 +95,10 @@ public sealed class SceneCaptureService
         IPlaceService place,
         IPosingService posing,
         AnimationSession animation,
-        IGazeService gaze)
+        IGazeService gaze,
+        PoseExportCapture exports)
     {
+        _exports = exports;
         _place = place;
         _posing = posing;
         _animation = animation;
@@ -105,10 +116,75 @@ public sealed class SceneCaptureService
         _poses = poses;
     }
 
-    /// <summary>Captures the current scene. Framework thread only; the
-    /// workflow owns the marshal. <paramref name="sceneId"/> keeps a
-    /// re-saved scene's identity stable across saves.</summary>
-    public SceneCaptureOutcome Capture(Guid sceneId, string? description)
+    /// <summary>
+    /// Arms one whole-scene capture and answers through
+    /// <paramref name="onCaptured"/> once the refresh has landed. Returns the
+    /// refusal detail, or null when armed. Framework thread only; the workflow
+    /// owns the marshal.
+    ///
+    /// <para>The arming registers the SAME no-op transitive batch a pose export
+    /// registers, on every posable slot skeleton in the scene at once, so ONE
+    /// update pass makes every actor's raw transform cache current before a
+    /// single bone is read. Without it a never-posed actor serializes the
+    /// values written when its skeleton was built — an actor standing in its
+    /// idle would come back in whatever it held at spawn, and nothing about the
+    /// saved file would say so. Brio needs no such arming because it refreshes
+    /// every capability-bearing skeleton's caches every frame
+    /// (Brio SkeletonService.cs:205-249, unconditional over
+    /// <c>_skeletonToPosingCapability</c>); Poser refreshes only the skeletons
+    /// the per-frame rebuild qualified, so the parity is restored per save.</para>
+    ///
+    /// <para>A scene with no posable skeleton at all has nothing to refresh and
+    /// captures inline — the answer still arrives through the callback, so the
+    /// caller has one path.</para>
+    /// </summary>
+    public string? BeginCapture(
+        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return "Scene capture must run on the framework thread.";
+        if (_poses.IsImportBusy)
+            return "A pose import is applying; capturing now would snapshot a half-transitioned pose.";
+        if (sceneId == Guid.Empty)
+            return "A scene capture needs a scene identity.";
+
+        var slots = new List<ISkeleton>();
+        foreach (var actor in _actors.Actors)
+        {
+            if (actor.IsCompanion)
+                continue;
+            slots.AddRange(_skeletons.GetSkeletons(actor));
+        }
+
+        if (slots.Count == 0)
+        {
+            onCaptured(Capture(sceneId, description));
+            return null;
+        }
+
+        // The outcome is built inside the refresh's own write step, which runs
+        // on the framework thread once the pass has ended (or once the export
+        // capture's tick bound gives up, in which case the caches are exactly
+        // as fresh as a synchronous capture would have found them).
+        SceneCaptureOutcome? outcome = null;
+        var begun = _exports.Begin(
+            slots,
+            _ =>
+            {
+                outcome = Capture(sceneId, description);
+                return outcome.Success;
+            },
+            _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
+                "The scene capture produced no result.")));
+        return begun.Success
+            ? null
+            : begun.Detail ?? "The scene capture could not be armed.";
+    }
+
+    /// <summary>The capture itself, run only from inside the armed refresh
+    /// above so the caches it reads are current. <paramref name="sceneId"/>
+    /// keeps a re-saved scene's identity stable across saves.</summary>
+    private SceneCaptureOutcome Capture(Guid sceneId, string? description)
     {
         if (!_framework.IsInFrameworkUpdateThread)
             return SceneCaptureOutcome.Fail(

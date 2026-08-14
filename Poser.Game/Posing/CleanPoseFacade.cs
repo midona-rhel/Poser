@@ -154,7 +154,7 @@ public sealed class CleanPoseFacade
         const string description = "Copy pose";
         // The export capture insists on the framework thread; the callers
         // (preview baseline, stash, clipboard copy) arm from the draw
-        // thread. Self-marshal like CaptureScene: Ok means armed, and a
+        // thread. Self-marshal like the scene capture: Ok means armed, and a
         // failure on the far side still answers through the callback.
         if (!_framework.IsInFrameworkUpdateThread)
         {

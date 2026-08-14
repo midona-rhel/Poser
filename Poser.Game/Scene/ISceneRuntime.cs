@@ -16,6 +16,12 @@ public enum SceneOperationKind
 /// <summary>Phases of the single scene transaction, in execution order.</summary>
 public enum ScenePhase
 {
+    /// <summary>The save's FIRST phase: the raw bone-transform caches every
+    /// actor's pose is read out of are re-armed and given the update pass they
+    /// need. It exists because the caches are only current for skeletons the
+    /// per-frame rebuild qualified — see
+    /// <see cref="Posing.PoseExportCapture"/>.</summary>
+    RefreshingPoses,
     Capturing,
     Writing,
     Reading,
@@ -110,7 +116,17 @@ internal interface ISceneRuntime
 
     // ── capture (framework thread) ───────────────────────────────────────
 
-    SceneCaptureOutcome CaptureScene(Guid sceneId, string? description);
+    /// <summary>
+    /// ARMS the whole-scene capture: the bone-transform caches are re-armed
+    /// now, and the capture itself runs — and answers through
+    /// <paramref name="onCaptured"/> — once the update pass that refreshes
+    /// them has run, several ticks later. Returns the refusal detail, or null
+    /// when armed. A capture that read the caches synchronously would write a
+    /// never-posed actor's SKELETON-BUILD-TIME bones rather than the pose on
+    /// screen, which is why this is armed rather than called.
+    /// </summary>
+    string? ArmSceneCapture(
+        Guid sceneId, string? description, Action<SceneCaptureOutcome> onCaptured);
 
     // ── load-side materialization (framework thread) ─────────────────────
 

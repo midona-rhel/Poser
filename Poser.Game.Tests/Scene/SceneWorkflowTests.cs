@@ -71,12 +71,49 @@ public sealed class SceneWorkflowTests
             return WriteResult;
         }
 
-        public SceneCaptureOutcome CaptureScene(Guid sceneId, string? description)
+        /// <summary>Refuses the ARM — the save never reaches a capture.</summary>
+        public string? CaptureArmRefusal;
+
+        /// <summary>Holds the armed capture open, the way a real refresh does
+        /// while it waits for the update pass. <see cref="ReleaseCapture"/>
+        /// lands it.</summary>
+        public bool DeferCapture;
+
+        private Action<SceneCaptureOutcome>? _pendingCapture;
+        private SceneCaptureOutcome? _pendingOutcome;
+
+        public string? ArmSceneCapture(
+            Guid sceneId,
+            string? description,
+            Action<SceneCaptureOutcome> onCaptured)
         {
-            Record("CaptureScene");
-            return SceneCaptureOutcome.Ok(
+            Record("ArmSceneCapture");
+            if (CaptureArmRefusal is { } refusal)
+                return refusal;
+            var outcome = SceneCaptureOutcome.Ok(
                 new SceneFile { SceneId = sceneId, Description = description },
                 new List<string>());
+            if (DeferCapture)
+            {
+                _pendingCapture = onCaptured;
+                _pendingOutcome = outcome;
+                return null;
+            }
+            Record("CaptureScene");
+            onCaptured(outcome);
+            return null;
+        }
+
+        public void ReleaseCapture()
+        {
+            var callback = _pendingCapture;
+            var outcome = _pendingOutcome;
+            _pendingCapture = null;
+            _pendingOutcome = null;
+            if (callback is null || outcome is null)
+                return;
+            Record("CaptureScene");
+            callback(outcome);
         }
 
         public object? SpawnActor(SceneActor data, out string? detail)
@@ -251,7 +288,8 @@ public sealed class SceneWorkflowTests
         Assert.True(workflow.BeginSave("shot.poserscene", "A shot").Success);
         await workflow.Drain;
 
-        Assert.Equal(new[] { "CaptureScene", "WriteScene" }, runtime.Calls);
+        Assert.Equal(
+            new[] { "ArmSceneCapture", "CaptureScene", "WriteScene" }, runtime.Calls);
         Assert.Equal("A shot", runtime.Captured!.Description);
         Assert.Equal(
             OperationReceiptState.Applied, workflow.Receipt!.State);
@@ -318,6 +356,80 @@ public sealed class SceneWorkflowTests
         Assert.False(second.Success);
         Assert.Contains("already running", second.Detail);
         Assert.DoesNotContain("ReadScene", runtime.Calls);
+    }
+
+    [Fact]
+    public async Task A_save_waits_for_the_bone_refresh_before_it_writes()
+    {
+        // The whole point of the armed capture: a save that wrote while the
+        // refresh was still outstanding would serialize a never-posed actor's
+        // skeleton-build-time bones instead of the pose on screen.
+        var runtime = new FakeRuntime { DeferCapture = true };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await WaitFor(
+            () => workflow.Progress!.Phase == ScenePhase.Capturing,
+            "the save to reach its capture phase");
+
+        Assert.DoesNotContain("CaptureScene", runtime.Calls);
+        Assert.DoesNotContain("WriteScene", runtime.Calls);
+        Assert.True(workflow.Busy);
+
+        runtime.ReleaseCapture();
+        await workflow.Drain;
+
+        Assert.Equal(
+            new[] { "ArmSceneCapture", "CaptureScene", "WriteScene" }, runtime.Calls);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+    }
+
+    [Fact]
+    public async Task A_refusal_to_arm_the_refresh_fails_the_save_without_writing()
+    {
+        var runtime = new FakeRuntime
+        {
+            CaptureArmRefusal = "A pose import is applying.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(new[] { "ArmSceneCapture" }, runtime.Calls);
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Contains("A pose import is applying.", workflow.Receipt.Detail);
+    }
+
+    [Fact]
+    public async Task A_refresh_that_never_lands_fails_the_save_within_its_bound()
+    {
+        // A framework thread that stopped ticking must not leave the save
+        // parked forever — and must not fall back to writing stale bones.
+        var runtime = new FakeRuntime { DeferCapture = true };
+        using var workflow = new SceneWorkflow(runtime)
+        {
+            CaptureBound = TimeSpan.FromMilliseconds(100),
+        };
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(new[] { "ArmSceneCapture" }, runtime.Calls);
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Contains("within its bound", workflow.Receipt.Detail);
+    }
+
+    private static async Task WaitFor(Func<bool> condition, string what)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return;
+            await Task.Delay(5);
+        }
+        Assert.Fail($"Timed out waiting for {what}.");
     }
 
     // ── load: whole-document validation first ────────────────────────────

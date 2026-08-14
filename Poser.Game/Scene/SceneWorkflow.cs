@@ -43,6 +43,11 @@ public sealed class SceneWorkflow : IDisposable
     /// receipt.</summary>
     private static readonly TimeSpan PoseImportTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>Bound for the armed whole-scene capture to answer. The refresh
+    /// it waits on has its own tick bound and answers either way, so this only
+    /// catches a framework thread that stopped ticking entirely.</summary>
+    private static readonly TimeSpan SceneCaptureTimeout = TimeSpan.FromSeconds(15);
+
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
@@ -88,6 +93,11 @@ public sealed class SceneWorkflow : IDisposable
     {
         _runtime = runtime;
     }
+
+    /// <summary>The armed capture's bound. Only the contract tests set it —
+    /// waiting the real bound out would make asserting the timeout a
+    /// fifteen-second test.</summary>
+    internal TimeSpan CaptureBound { get; init; } = SceneCaptureTimeout;
 
     /// <summary>Raised after any progress/receipt publication; UI reads the
     /// immutable snapshots, never workflow internals.</summary>
@@ -210,8 +220,9 @@ public sealed class SceneWorkflow : IDisposable
         return operation;
     }
 
-    /// <summary>Starts the whole-scene save: framework-thread pointer-free
-    /// capture first, then off-thread validation and the atomic write.</summary>
+    /// <summary>Starts the whole-scene save: the bone-cache refresh is armed
+    /// first, the framework-thread pointer-free capture runs once it lands,
+    /// then off-thread validation and the atomic write.</summary>
     public SceneActionResult BeginSave(string path, string? description = null)
     {
         if (AdmissionGate() is { } refused)
@@ -226,7 +237,7 @@ public sealed class SceneWorkflow : IDisposable
         var cancellation = _cancellation!.Token;
         _progress = new SceneProgress(
             SceneOperationKind.Save, operation.FileName,
-            ScenePhase.Capturing, 0, 0, true, null);
+            ScenePhase.RefreshingPoses, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
             () => RunSave(operation, path, description, cancellation),
@@ -286,21 +297,47 @@ public sealed class SceneWorkflow : IDisposable
 
         try
         {
-            SceneCaptureOutcome captured;
+            // The capture is ARMED, not called: the bone caches it reads are
+            // only current for skeletons the per-frame rebuild qualified, so a
+            // never-posed actor would serialize its skeleton-build-time values.
+            // The arm re-qualifies every actor's skeletons and the capture runs
+            // in the update pass that follows — which is why a save that used
+            // to be one framework hop is now a bounded await.
+            var completion = new TaskCompletionSource<SceneCaptureOutcome>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            string? armRefusal;
             try
             {
-                captured = await _runtime.OnFramework(() =>
-                {
-                    if (Guard(operation, cancellation) is { } stop)
-                        return SceneCaptureOutcome.Fail(stop);
-                    return _runtime.CaptureScene(operation.SceneScopeId, description);
-                });
+                armRefusal = await _runtime.OnFramework(() =>
+                    Guard(operation, cancellation)
+                        ?? _runtime.ArmSceneCapture(
+                            operation.SceneScopeId, description,
+                            outcome => completion.TrySetResult(outcome)));
             }
             catch (Exception ex)
             {
                 Finish(false, $"The capture dispatch failed: {ex.Message}");
                 return;
             }
+            if (armRefusal != null)
+            {
+                Finish(false, armRefusal);
+                return;
+            }
+
+            PublishStep(operation, new SceneProgress(
+                SceneOperationKind.Save, operation.FileName,
+                ScenePhase.Capturing, 0, 0, true, null));
+
+            var settled = await Task.WhenAny(
+                completion.Task,
+                Task.Delay(CaptureBound, CancellationToken.None));
+            if (settled != completion.Task)
+            {
+                Finish(false, "The scene capture did not finish within its bound.");
+                return;
+            }
+            var captured = completion.Task.Result;
 
             if (!captured.Success || captured.Scene is not { } scene)
             {

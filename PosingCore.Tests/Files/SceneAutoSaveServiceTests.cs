@@ -28,6 +28,7 @@ public sealed class SceneAutoSaveServiceTests : IDisposable
         new(Substitute.For<IDalamudPluginInterface>());
 
     private bool _operationRunning;
+    private string? _armRefusal;
     private SceneCaptureOutcome? _captureResult;
     private int _captures;
     private Guid _lastCapturedSceneId;
@@ -83,11 +84,16 @@ public sealed class SceneAutoSaveServiceTests : IDisposable
             framework: null,
             _gpose,
             _configuration,
-            (sceneId, _) =>
+            // The capture is ARMED: this fake lands it inline, which is what
+            // the real refresh does once its update pass has run.
+            (sceneId, _, onCaptured) =>
             {
+                if (_armRefusal is { } refusal)
+                    return refusal;
                 _captures++;
                 _lastCapturedSceneId = sceneId;
-                return _captureResult ?? SceneCaptureOutcome.Ok(Shot(), new());
+                onCaptured(_captureResult ?? SceneCaptureOutcome.Ok(Shot(), new()));
+                return null;
             },
             () => _operationRunning,
             _root,
@@ -261,6 +267,23 @@ public sealed class SceneAutoSaveServiceTests : IDisposable
         Assert.Empty(Snapshots());
         Assert.Equal(SceneAutoSaveStatus.Failed, service.LastResult.Status);
         Assert.Contains("pose import", service.LastResult.Detail);
+    }
+
+    [Fact]
+    public void A_refused_bone_refresh_skips_the_snapshot_rather_than_filing_stale_bones()
+    {
+        // The refresh slot is shared with user-driven pose exports. A tick
+        // that cannot have it defers by name; it never falls back to reading
+        // caches nothing has refreshed.
+        using var service = Create();
+        _armRefusal = "A pose export is already writing.";
+
+        service.SnapshotNow();
+
+        Assert.Empty(Snapshots());
+        Assert.Equal(0, _captures);
+        Assert.Equal(SceneAutoSaveStatus.Skipped, service.LastResult.Status);
+        Assert.Contains("pose export", service.LastResult.Detail);
     }
 
     // ── retention ────────────────────────────────────────────────────────
