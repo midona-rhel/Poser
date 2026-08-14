@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Poser.Application.Transforms;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Game.Overlays;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Services;
@@ -80,6 +82,55 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
 }
 
 /// <summary>
+/// The overlay-node half of <see cref="SceneLifecycleHistory"/>, the prop
+/// port's twin. A node's whole identity IS its document, so — like a prop and
+/// unlike an actor — both directions of a removal are exact, and the port
+/// exists for the reason the prop port does: an entry's two directions must be
+/// provable without the game's UI.
+/// </summary>
+internal interface IOverlayLifecycle
+{
+    IReadOnlyList<object> Overlays { get; }
+
+    object? Create(OverlayNodeState state);
+
+    bool IsLive(object overlay);
+
+    void Destroy(object overlay);
+
+    OverlayNodeState Read(object overlay);
+}
+
+internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
+{
+    private readonly OverlayNodeService _overlays;
+
+    public OverlayServiceLifecycle(OverlayNodeService overlays) =>
+        _overlays = overlays;
+
+    public IReadOnlyList<object> Overlays
+    {
+        get
+        {
+            var live = new List<object>(_overlays.Nodes.Count);
+            foreach (var overlay in _overlays.Nodes)
+                live.Add(overlay);
+            return live;
+        }
+    }
+
+    public object? Create(OverlayNodeState state) => _overlays.Create(state);
+
+    public bool IsLive(object overlay) => ((OverlayNodeHandle)overlay).IsValid;
+
+    public void Destroy(object overlay) =>
+        _overlays.Destroy((OverlayNodeHandle)overlay);
+
+    public OverlayNodeState Read(object overlay) =>
+        ((OverlayNodeHandle)overlay).State;
+}
+
+/// <summary>
 /// The ONE seam through which an entity enters or leaves the scene by a user's
 /// act, so that act lands in the SAME history the transforms do.
 ///
@@ -134,6 +185,7 @@ public sealed class SceneLifecycleHistory
     private readonly IVirtualCameraService _cameras;
     private readonly IActorSpawnService _actors;
     private readonly IPropLifecycle _props;
+    private readonly IOverlayLifecycle _overlayNodes;
 
     /// <summary>Live instance → slot, by reference: the re-binding that makes
     /// every entry about one entity share one slot. Keys are dropped as the
@@ -151,30 +203,43 @@ public sealed class SceneLifecycleHistory
     private readonly Dictionary<object, PropSlot> _propSlots =
         new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<object, OverlaySlot> _overlaySlots =
+        new(ReferenceEqualityComparer.Instance);
+
     public SceneLifecycleHistory(
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IActorSpawnService actors,
-        PropSpawnService props)
-        : this(history, lighting, cameras, actors, new PropServiceLifecycle(props))
+        PropSpawnService props,
+        OverlayNodeService overlays)
+        : this(
+            history,
+            lighting,
+            cameras,
+            actors,
+            new PropServiceLifecycle(props),
+            new OverlayServiceLifecycle(overlays))
     {
     }
 
-    /// <summary>Test seam: the prop half as a port, so the entry's two
-    /// directions can be exercised without a native scene object.</summary>
+    /// <summary>Test seam: the prop and overlay halves as ports, so an entry's
+    /// two directions can be exercised without a native scene object and
+    /// without a native UI node.</summary>
     internal SceneLifecycleHistory(
         TransformHistory history,
         ILightingService lighting,
         IVirtualCameraService cameras,
         IActorSpawnService actors,
-        IPropLifecycle props)
+        IPropLifecycle props,
+        IOverlayLifecycle overlays)
     {
         _history = history;
         _lighting = lighting;
         _cameras = cameras;
         _actors = actors;
         _props = props;
+        _overlayNodes = overlays;
         // A slot exists only to serve entries, and is only ever minted by
         // this seam recording one. When the history drops every entry —
         // leaving GPose is the clear that matters — the slots are holding
@@ -188,6 +253,7 @@ public sealed class SceneLifecycleHistory
         _cameraSlots.Clear();
         _actorSlots.Clear();
         _propSlots.Clear();
+        _overlaySlots.Clear();
     }
 
     // ── lights ───────────────────────────────────────────────────────────
@@ -613,4 +679,133 @@ public sealed class SceneLifecycleHistory
             landed &= RestoreProp(slot);
         return landed;
     }
+
+    // ── overlay nodes ──────────────────────────────────────
+
+    /// <summary>The live node token, plus the document that rebuilds it once
+    /// the live one is gone. An overlay node's whole identity IS that document
+    /// — there is no second, native half of it — so a removal inverts as
+    /// cleanly as an addition and takes an entry.</summary>
+    private sealed class OverlaySlot
+    {
+        public object? Live;
+        public OverlayNodeState Document = new();
+        public bool HasDocument;
+    }
+
+    public object? SpawnOverlay(OverlayNodeKind kind) =>
+        SpawnOverlay(OverlayNodeService.DefaultState(kind));
+
+    /// <summary>Records one overlay node the user added, from a complete
+    /// document: a fresh create, a duplicate of the selected node, or a
+    /// restored one.</summary>
+    public object? SpawnOverlay(OverlayNodeState state)
+    {
+        var overlay = _overlayNodes.Create(state);
+        if (overlay == null)
+            return null;
+        var slot = OverlaySlotFor(overlay);
+        _history.Append(new SceneLifecyclePatch(
+            $"Add {KindName(state.Kind)} '{_overlayNodes.Read(overlay).Name}'",
+            () => RemoveOverlay(slot),
+            () => RestoreOverlay(slot)));
+        return overlay;
+    }
+
+    public void DestroyOverlay(object overlay)
+    {
+        var document = _overlayNodes.Read(overlay);
+        string description =
+            $"Remove {KindName(document.Kind)} '{document.Name}'";
+        var slot = OverlaySlotFor(overlay);
+        if (!RemoveOverlay(slot))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            description,
+            () => RestoreOverlay(slot),
+            () => RemoveOverlay(slot)));
+    }
+
+    /// <summary>Clearing the overlay list is ONE act of the user's, so it is
+    /// ONE entry over every slot it took — the prop list's own rule.</summary>
+    public void DestroyAllOverlays()
+    {
+        var overlays = _overlayNodes.Overlays;
+        if (overlays.Count == 0)
+            return;
+        var slots = new List<OverlaySlot>(overlays.Count);
+        foreach (var overlay in overlays)
+            slots.Add(OverlaySlotFor(overlay));
+        if (!RemoveOverlays(slots))
+            return;
+        _history.Append(new SceneLifecyclePatch(
+            overlays.Count == 1
+                ? "Remove overlay"
+                : $"Remove {overlays.Count} overlays",
+            () => RestoreOverlays(slots),
+            () => RemoveOverlays(slots)));
+    }
+
+    private OverlaySlot OverlaySlotFor(object overlay)
+    {
+        if (_overlaySlots.TryGetValue(overlay, out var existing))
+            return existing;
+        var slot = new OverlaySlot { Live = overlay };
+        _overlaySlots[overlay] = slot;
+        return slot;
+    }
+
+    private bool RemoveOverlay(OverlaySlot slot)
+    {
+        if (slot.Live is not { } overlay)
+            return false;
+        if (_overlayNodes.IsLive(overlay))
+        {
+            // Captured HERE, not at creation: a node the user rewrote comes
+            // back saying what they last made it say.
+            slot.Document = _overlayNodes.Read(overlay);
+            slot.HasDocument = true;
+            _overlayNodes.Destroy(overlay);
+        }
+        _overlaySlots.Remove(overlay);
+        slot.Live = null;
+        return true;
+    }
+
+    private bool RestoreOverlay(OverlaySlot slot)
+    {
+        if (slot.Live != null)
+            return true;
+        if (!slot.HasDocument)
+            return false;
+        var overlay = _overlayNodes.Create(slot.Document);
+        if (overlay == null)
+            return false;
+        slot.Live = overlay;
+        _overlaySlots[overlay] = slot;
+        return true;
+    }
+
+    private bool RemoveOverlays(IReadOnlyList<OverlaySlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RemoveOverlay(slot);
+        return landed;
+    }
+
+    private bool RestoreOverlays(IReadOnlyList<OverlaySlot> slots)
+    {
+        bool landed = true;
+        foreach (var slot in slots)
+            landed &= RestoreOverlay(slot);
+        return landed;
+    }
+
+    private static string KindName(OverlayNodeKind kind) => kind switch
+    {
+        OverlayNodeKind.Balloon => "balloon",
+        OverlayNodeKind.Status => "status",
+        _ => "dialog",
+    };
 }

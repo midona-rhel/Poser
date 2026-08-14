@@ -84,7 +84,8 @@ public sealed class CustomizeReadRuntimePortTests
             new TestActorSpawnService(),
             new TestLightingService(),
             new TestCameraService(),
-            EmptyProps());
+            EmptyProps(),
+            EmptyOverlays());
 
     private static PropSpawnService EmptyProps()
     {
@@ -96,6 +97,21 @@ public sealed class CustomizeReadRuntimePortTests
                 props,
                 new List<PropHandle>());
         return props;
+    }
+
+    /// <summary>An overlay service with no nodes and no live port: the
+    /// registry only ever reads its list.</summary>
+    private static Poser.Game.Overlays.OverlayNodeService EmptyOverlays()
+    {
+        var overlays = (Poser.Game.Overlays.OverlayNodeService)
+            RuntimeHelpers.GetUninitializedObject(
+                typeof(Poser.Game.Overlays.OverlayNodeService));
+        typeof(Poser.Game.Overlays.OverlayNodeService).GetField(
+            "_nodes",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(
+                overlays,
+                new List<Poser.Game.Overlays.OverlayNodeHandle>());
+        return overlays;
     }
 
     private sealed class TestActorManager : IActorManager

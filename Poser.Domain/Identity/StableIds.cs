@@ -72,6 +72,15 @@ public readonly record struct PropId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
+/// <summary>One staged overlay node — a game-UI dialogue box, chat bubble or
+/// status line — at one exact native binding generation.</summary>
+public readonly record struct OverlayId(Guid LogicalId, uint Generation)
+{
+    public static OverlayId New() => new(Guid.NewGuid(), 0);
+    public OverlayId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override string ToString() => $"{LogicalId:N}@{Generation}";
+}
+
 /// <summary>One virtual camera at one exact native binding generation.</summary>
 public readonly record struct CameraId(Guid LogicalId, uint Generation)
 {
@@ -89,6 +98,11 @@ public enum SceneEntityKind
     Environment,
     GazeTarget,
     Prop,
+
+    /// <summary>A staged game-UI overlay node. It is a scene entity like a
+    /// prop, but a FLAT one: it lives in screen space, so it never enters the
+    /// world gizmo or the transform history.</summary>
+    Overlay,
 }
 
 /// <summary>Which gaze point a gaze-target selection addresses. Anchor is the
@@ -108,7 +122,8 @@ public readonly record struct SelectionId
         LightId? light = null,
         GazePart? gaze = null,
         CameraId? camera = null,
-        PropId? prop = null)
+        PropId? prop = null,
+        OverlayId? overlay = null)
     {
         Kind = kind;
         Actor = actor;
@@ -119,6 +134,7 @@ public readonly record struct SelectionId
         Gaze = gaze;
         Camera = camera;
         Prop = prop;
+        Overlay = overlay;
     }
 
     public SceneEntityKind Kind { get; }
@@ -130,6 +146,7 @@ public readonly record struct SelectionId
     public GazePart? Gaze { get; }
     public CameraId? Camera { get; }
     public PropId? Prop { get; }
+    public OverlayId? Overlay { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -150,6 +167,9 @@ public readonly record struct SelectionId
 
     public static SelectionId ForProp(PropId prop) =>
         new(SceneEntityKind.Prop, null, null, null, prop: prop);
+
+    public static SelectionId ForOverlay(OverlayId overlay) =>
+        new(SceneEntityKind.Overlay, null, null, null, overlay: overlay);
 
     public static SelectionId ForBoneGroup(ActorId actor, string id)
     {
@@ -180,6 +200,7 @@ public readonly record struct SelectionId
         SceneEntityKind.Light => $"light:{Light}",
         SceneEntityKind.Camera => $"camera:{Camera}",
         SceneEntityKind.Prop => $"prop:{Prop}",
+        SceneEntityKind.Overlay => $"overlay:{Overlay}",
         SceneEntityKind.Environment => "environment",
         SceneEntityKind.GazeTarget => $"gaze:{Actor}:{Gaze}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),

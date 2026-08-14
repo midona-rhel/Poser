@@ -2,6 +2,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Game.Overlays;
 using Poser.Services;
 
 namespace Poser.Game.Bindings;
@@ -69,6 +70,11 @@ public sealed class StableBindingRegistry
     private Dictionary<PropHandle, PropId> _propIds =
         new(ReferenceComparer<PropHandle>.Instance);
     private Dictionary<PropId, PropHandle> _propBindings = new();
+    // Overlay nodes follow the light rule exactly: plugin-owned handles, ids by
+    // reference identity, the handle dies with the node.
+    private Dictionary<OverlayNodeHandle, OverlayId> _overlayIds =
+        new(ReferenceComparer<OverlayNodeHandle>.Instance);
+    private Dictionary<OverlayId, OverlayNodeHandle> _overlayBindings = new();
     // The auxiliary half of the PUBLISHED maps. Empty until a commit publishes
     // one, which is exactly what makes the first preview body a change.
     private IReadOnlyList<AuxiliaryBindingKey> _auxiliaryBindings =
@@ -80,7 +86,8 @@ public sealed class StableBindingRegistry
         IActorSpawnService spawn,
         ILightingService lighting,
         IVirtualCameraService cameras,
-        PropSpawnService props)
+        PropSpawnService props,
+        OverlayNodeService overlays)
     {
         _actors = actors;
         _skeletons = skeletons;
@@ -88,9 +95,11 @@ public sealed class StableBindingRegistry
         _lighting = lighting;
         _cameras = cameras;
         _props = props;
+        _overlays = overlays;
     }
 
     private readonly PropSpawnService _props;
+    private readonly OverlayNodeService _overlays;
 
     /// <summary>
     /// A framework-thread-only discovery result. Native maps and lineage state
@@ -111,6 +120,8 @@ public sealed class StableBindingRegistry
             Dictionary<CameraId, IVirtualCamera> cameraBindings,
             Dictionary<PropHandle, PropId> propIds,
             Dictionary<PropId, PropHandle> propBindings,
+            Dictionary<OverlayNodeHandle, OverlayId> overlayIds,
+            Dictionary<OverlayId, OverlayNodeHandle> overlayBindings,
             IReadOnlyList<AuxiliaryBindingKey> auxiliaryBindings)
         {
             AuxiliaryBindings = auxiliaryBindings;
@@ -126,6 +137,8 @@ public sealed class StableBindingRegistry
             CameraBindings = cameraBindings;
             PropIds = propIds;
             PropBindings = propBindings;
+            OverlayIds = overlayIds;
+            OverlayBindings = overlayBindings;
         }
 
         public SceneSnapshot Snapshot { get; }
@@ -145,6 +158,8 @@ public sealed class StableBindingRegistry
         internal Dictionary<CameraId, IVirtualCamera> CameraBindings { get; }
         internal Dictionary<PropHandle, PropId> PropIds { get; }
         internal Dictionary<PropId, PropHandle> PropBindings { get; }
+        internal Dictionary<OverlayNodeHandle, OverlayId> OverlayIds { get; }
+        internal Dictionary<OverlayId, OverlayNodeHandle> OverlayBindings { get; }
     }
 
     public BindingCandidate RefreshCandidate()
@@ -386,6 +401,28 @@ public sealed class StableBindingRegistry
                 prop.Visible));
         }
 
+        // Overlay nodes keep their id while present and valid, exactly as
+        // props do. They are the one entity whose row state is a kind rather
+        // than a native fact, because a node's kind cannot change.
+        var overlayIds = new Dictionary<OverlayNodeHandle, OverlayId>(
+            ReferenceComparer<OverlayNodeHandle>.Instance);
+        var overlayBindings = new Dictionary<OverlayId, OverlayNodeHandle>();
+        var overlayDescriptors = new List<OverlayDescriptor>();
+        foreach (var overlay in _overlays.Nodes)
+        {
+            if (!overlay.IsValid)
+                continue;
+            if (!_overlayIds.TryGetValue(overlay, out var overlayId))
+                overlayId = OverlayId.New();
+            overlayIds[overlay] = overlayId;
+            overlayBindings[overlayId] = overlay;
+            overlayDescriptors.Add(new OverlayDescriptor(
+                overlayId,
+                overlay.Name,
+                overlay.Kind,
+                overlay.Visible));
+        }
+
         // This registry can justify native identity/topology plus the current
         // actor, light, camera, and prop row fields above. The registry cannot
         // truthfully reduce a camera's display-name target and
@@ -400,7 +437,8 @@ public sealed class StableBindingRegistry
             actorDescriptors,
             lightDescriptors,
             cameraDescriptors,
-            propDescriptors),
+            propDescriptors,
+            Overlays: overlayDescriptors),
             lineages,
             actorBindings,
             boneBindings,
@@ -412,6 +450,8 @@ public sealed class StableBindingRegistry
             cameraBindings,
             propIds,
             propBindings,
+            overlayIds,
+            overlayBindings,
             auxiliaryBindings);
         _stagedCandidate = candidate;
         return candidate;
@@ -441,6 +481,8 @@ public sealed class StableBindingRegistry
         _cameraBindings = candidate.CameraBindings;
         _propIds = candidate.PropIds;
         _propBindings = candidate.PropBindings;
+        _overlayIds = candidate.OverlayIds;
+        _overlayBindings = candidate.OverlayBindings;
         _auxiliaryBindings = candidate.AuxiliaryBindings;
         _stagedCandidate = null;
     }
@@ -641,6 +683,25 @@ public sealed class StableBindingRegistry
         return new BindingResult<PropHandle>(
             BindingStatus.Missing,
             Detail: $"Prop {id.LogicalId:N} is not present.");
+    }
+
+    public OverlayId? GetOverlayId(OverlayNodeHandle overlay) =>
+        _overlayIds.TryGetValue(overlay, out var id) &&
+        _overlayBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, overlay)
+            ? id
+            : null;
+
+    public BindingResult<OverlayNodeHandle> Resolve(OverlayId id)
+    {
+        if (_overlayBindings.TryGetValue(id, out var overlay) && overlay.IsValid)
+            return new BindingResult<OverlayNodeHandle>(
+                BindingStatus.Success,
+                overlay);
+
+        return new BindingResult<OverlayNodeHandle>(
+            BindingStatus.Missing,
+            Detail: $"Overlay {id.LogicalId:N} is not present.");
     }
 
     public BindingResult<ILight> Resolve(LightId id)

@@ -4,7 +4,9 @@ using System.Reflection;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
+using Poser.Game.Overlays;
 using Poser.Entities;
 using Poser.Game.Scene;
 using Poser.Services;
@@ -362,6 +364,155 @@ public sealed class SceneLifecycleHistoryTests
         Assert.False(world.History.CanUndo);
     }
 
+    // ── overlay nodes ────────────────────────────────────────────────────
+
+    [Fact]
+    public void Adding_an_overlay_leaves_one_undoable_entry_that_removes_it()
+    {
+        var world = new World();
+
+        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk);
+
+        Assert.NotNull(overlay);
+        Assert.Equal("Add dialog 'Dialog'", world.History.UndoDescription);
+        Assert.Single(world.Overlays.Live);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Overlays.Live);
+        Assert.True(world.History.CanRedo);
+    }
+
+    [Fact]
+    public void An_overlay_entry_names_the_kind_it_added()
+    {
+        var world = new World();
+
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Balloon);
+        Assert.Equal("Add balloon 'Balloon'", world.History.UndoDescription);
+
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Status);
+        Assert.Equal("Add status 'Status'", world.History.UndoDescription);
+    }
+
+    /// <summary>The whole point of capturing at the moment of REMOVAL: a node
+    /// the user rewrote comes back saying what they last made it say, not what
+    /// it was born saying.</summary>
+    [Fact]
+    public void Redoing_an_add_restores_the_overlay_as_the_user_last_had_it()
+    {
+        var world = new World();
+        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
+        world.Overlays.Write(overlay, state => state with
+        {
+            Speaker = "Y'shtola",
+            Text = "The aether stirs.",
+            TalkBackground = TalkBackground.Linkpearl,
+        });
+
+        Assert.True(world.Undo());
+        Assert.True(world.Redo());
+
+        var restored = Assert.Single(world.Overlays.Live);
+        Assert.NotSame(overlay, restored);
+        var document = world.Overlays.Read(restored);
+        Assert.Equal("Y'shtola", document.Speaker);
+        Assert.Equal("The aether stirs.", document.Text);
+        Assert.Equal(TalkBackground.Linkpearl, document.TalkBackground);
+    }
+
+    [Fact]
+    public void Removing_an_overlay_is_undone_by_bringing_the_same_one_back()
+    {
+        var world = new World();
+        var overlay = world.Overlays.Create(
+            OverlayNodeService.DefaultState(OverlayNodeKind.Status) with
+            {
+                Name = "Astral Fire",
+            })!;
+
+        world.Lifecycle.DestroyOverlay(overlay);
+
+        Assert.Empty(world.Overlays.Live);
+        Assert.Equal(
+            "Remove status 'Astral Fire'", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal(
+            "Astral Fire",
+            world.Overlays.Read(Assert.Single(world.Overlays.Live)).Name);
+    }
+
+    /// <summary>The slot-registry regression, for overlays: undoing past a
+    /// removal must destroy the node the removal's own undo re-created, not
+    /// the corpse the add was born holding.</summary>
+    [Fact]
+    public void Undo_past_a_removal_destroys_the_overlay_the_removal_restored()
+    {
+        var world = new World();
+        var original = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
+        world.Lifecycle.DestroyOverlay(original);
+
+        Assert.True(world.Undo());
+        Assert.NotSame(original, Assert.Single(world.Overlays.Live));
+        Assert.True(world.Undo());
+        Assert.Empty(world.Overlays.Live);
+    }
+
+    [Fact]
+    public void An_overlay_the_game_refuses_to_recreate_keeps_its_entry()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk);
+        Assert.True(world.Undo());
+
+        world.Overlays.RefuseCreate = true;
+        Assert.False(world.Redo());
+
+        Assert.True(world.History.CanRedo);
+        Assert.Empty(world.Overlays.Live);
+        world.Overlays.RefuseCreate = false;
+        Assert.True(world.Redo());
+        Assert.Single(world.Overlays.Live);
+    }
+
+    [Fact]
+    public void An_overlay_that_left_by_another_path_undoes_without_a_dead_write()
+    {
+        var world = new World();
+        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
+
+        world.Overlays.VanishWithoutNotice(overlay);
+
+        Assert.True(world.Undo());
+        Assert.Empty(world.Overlays.Live);
+        Assert.False(world.Redo());
+    }
+
+    [Fact]
+    public void Removing_every_overlay_is_one_entry_that_brings_them_all_back()
+    {
+        var world = new World();
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk);
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Balloon);
+
+        world.Lifecycle.DestroyAllOverlays();
+
+        Assert.Empty(world.Overlays.Live);
+        Assert.Equal("Remove 2 overlays", world.History.UndoDescription);
+        Assert.True(world.Undo());
+        Assert.Equal(2, world.Overlays.Live.Count);
+        Assert.Equal("Add balloon 'Balloon'", world.History.UndoDescription);
+    }
+
+    [Fact]
+    public void A_create_the_game_refuses_records_no_overlay_entry()
+    {
+        var world = new World { Overlays = { RefuseCreate = true } };
+
+        Assert.Null(world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk));
+
+        Assert.False(world.History.CanUndo);
+    }
+
     // ── the shared stack ─────────────────────────────────────────────────
 
     [Fact]
@@ -391,6 +542,7 @@ public sealed class SceneLifecycleHistoryTests
         world.Lifecycle.CreateCamera(CameraKind.Free);
         world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("A"));
         world.Lifecycle.SpawnProp(Apple);
+        world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk);
         Assert.Single(Slots(world.Lifecycle, "_lightSlots"));
 
         world.History.Clear();
@@ -399,6 +551,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Empty(Slots(world.Lifecycle, "_cameraSlots"));
         Assert.Empty(Slots(world.Lifecycle, "_actorSlots"));
         Assert.Empty(Slots(world.Lifecycle, "_propSlots"));
+        Assert.Empty(Slots(world.Lifecycle, "_overlaySlots"));
     }
 
     /// <summary>
@@ -452,6 +605,7 @@ public sealed class SceneLifecycleHistoryTests
         public FakeCameras Cameras { get; } = new();
         public FakeActors Actors { get; } = new();
         public FakeProps Props { get; } = new();
+        public FakeOverlays Overlays { get; } = new();
         public SceneLifecycleHistory Lifecycle { get; }
 
         /// <param name="capacity">Undo depth; below 1 is undo switched off.
@@ -460,7 +614,7 @@ public sealed class SceneLifecycleHistoryTests
         {
             History = new TransformHistory(() => capacity);
             Lifecycle = new SceneLifecycleHistory(
-                History, Lighting, Cameras, Actors, Props);
+                History, Lighting, Cameras, Actors, Props, Overlays);
         }
 
         public bool Undo()
@@ -691,6 +845,65 @@ public sealed class SceneLifecycleHistoryTests
     {
         public bool IsValid { get; set; } = true;
         public PropState State { get; set; }
+    }
+
+    /// <summary>The overlay half at its port: a token per staged node holding
+    /// the one document that IS its identity.</summary>
+    private sealed class FakeOverlays : IOverlayLifecycle
+    {
+        private readonly List<object> _overlays = new();
+
+        public bool RefuseCreate { get; set; }
+        public IReadOnlyList<object> Live => _overlays;
+        public IReadOnlyList<object> Overlays => _overlays.ToList();
+
+        public object? Create(OverlayNodeState state)
+        {
+            if (RefuseCreate)
+                return null;
+            var overlay = new FakeOverlay
+            {
+                // The service names an unnamed document; the port fake says so
+                // too, because the history's entry descriptions read the name
+                // back out of the created node.
+                State = state.Name.Length == 0
+                    ? state with { Name = KindName(state.Kind) }
+                    : state,
+            };
+            _overlays.Add(overlay);
+            return overlay;
+        }
+
+        public bool IsLive(object overlay) => ((FakeOverlay)overlay).IsValid;
+
+        public void Destroy(object overlay)
+        {
+            _overlays.Remove(overlay);
+            ((FakeOverlay)overlay).IsValid = false;
+        }
+
+        /// <summary>The node leaves without this seam's knowledge — a scene
+        /// import, or the game taking its UI down.</summary>
+        public void VanishWithoutNotice(object overlay) => Destroy(overlay);
+
+        public OverlayNodeState Read(object overlay) =>
+            ((FakeOverlay)overlay).State;
+
+        public void Write(object overlay, Func<OverlayNodeState, OverlayNodeState> edit) =>
+            ((FakeOverlay)overlay).State = edit(((FakeOverlay)overlay).State);
+
+        private static string KindName(OverlayNodeKind kind) => kind switch
+        {
+            OverlayNodeKind.Balloon => "Balloon",
+            OverlayNodeKind.Status => "Status",
+            _ => "Dialog",
+        };
+    }
+
+    private sealed class FakeOverlay
+    {
+        public bool IsValid { get; set; } = true;
+        public OverlayNodeState State { get; set; } = new();
     }
 
     private sealed class FakeActors : IActorSpawnService

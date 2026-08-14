@@ -343,6 +343,13 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Game.PropSpawnService>();
+        // The overlay nodes' native seam and the service that owns their
+        // lives. Registered as singletons so the container's own dispose is
+        // the plugin-unload teardown edge.
+        services.AddSingleton<
+            Game.Overlays.IOverlayNodePort,
+            Game.Overlays.KamiToolKitOverlayPort>();
+        services.AddSingleton<Game.Overlays.OverlayNodeService>();
         return services;
     }
 

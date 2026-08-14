@@ -1,5 +1,6 @@
 using System.Numerics;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 
 namespace Poser.Domain.Scene;
 
@@ -110,6 +111,19 @@ public sealed record PropDescriptor(
     string Name,
     bool Visible = true);
 
+/// <summary>
+/// Owns the pointer-free overlay-node row state. It does not own the live
+/// node or its native UI subtree. The KIND rides along because it decides the
+/// row's mark and the editor it opens, and nothing else about a node is a row
+/// fact — its text, its colours and its screen placement all live in the
+/// editor.
+/// </summary>
+public sealed record OverlayDescriptor(
+    OverlayId Id,
+    string Name,
+    OverlayNodeKind Kind,
+    bool Visible = true);
+
 [Flags]
 public enum EnvironmentSection
 {
@@ -195,7 +209,8 @@ public sealed record SceneSnapshot
         IReadOnlyList<CameraDescriptor> Cameras,
         IReadOnlyList<PropDescriptor> Props,
         EnvironmentDescriptor? Environment = null,
-        IReadOnlyList<GazeDescriptor>? GazeStates = null)
+        IReadOnlyList<GazeDescriptor>? GazeStates = null,
+        IReadOnlyList<OverlayDescriptor>? Overlays = null)
     {
         ArgumentNullException.ThrowIfNull(Actors);
         ArgumentNullException.ThrowIfNull(Lights);
@@ -209,6 +224,7 @@ public sealed record SceneSnapshot
         this.Props = Props;
         this.Environment = Environment;
         this.GazeStates = GazeStates ?? Array.Empty<GazeDescriptor>();
+        this.Overlays = Overlays ?? Array.Empty<OverlayDescriptor>();
     }
 
     public ulong Revision { get; init; }
@@ -235,6 +251,20 @@ public sealed record SceneSnapshot
     {
         get;
         init => field = Freeze(value);
+    }
+
+    /// <summary>The staged game-UI overlay nodes. Last of the entity lists and
+    /// defaulted empty, so a producer that knows nothing of them — every one
+    /// written before they existed — states an empty scene rather than a null
+    /// one.</summary>
+    public IReadOnlyList<OverlayDescriptor> Overlays
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = Freeze(value);
+        }
     }
 
     public EnvironmentDescriptor? Environment { get; init; }
@@ -265,6 +295,7 @@ public sealed record SceneSnapshot
                LightsEqual(Lights, other.Lights) &&
                CamerasEqual(Cameras, other.Cameras) &&
                PropsEqual(Props, other.Props) &&
+               OverlaysEqual(Overlays, other.Overlays) &&
                EnvironmentEqual(Environment, other.Environment) &&
                GazeEqual(GazeStates, other.GazeStates);
     }
@@ -449,6 +480,27 @@ public sealed record SceneSnapshot
             var second = right[index];
             if (first.Id != second.Id ||
                 !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Visible != second.Visible)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool OverlaysEqual(
+        IReadOnlyList<OverlayDescriptor> left,
+        IReadOnlyList<OverlayDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Kind != second.Kind ||
                 first.Visible != second.Visible)
                 return false;
         }

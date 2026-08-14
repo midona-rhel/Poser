@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Threading;
 using Poser.Application.Selection;
 using Poser.Domain.Identity;
+using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 
 namespace Poser.Application.Scene;
@@ -93,6 +94,7 @@ public sealed class SceneSession
     private Dictionary<LightId, LightDescriptor> _lights = new();
     private Dictionary<CameraId, CameraDescriptor> _cameras = new();
     private Dictionary<PropId, PropDescriptor> _props = new();
+    private Dictionary<OverlayId, OverlayDescriptor> _overlays = new();
 
     // These floors live for this SceneSession, including through removals and
     // reappearances. A new logical scene session gets a new owner instance;
@@ -103,6 +105,7 @@ public sealed class SceneSession
     private readonly Dictionary<Guid, uint> _lightGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _cameraGenerationFloors = new();
     private readonly Dictionary<Guid, uint> _propGenerationFloors = new();
+    private readonly Dictionary<Guid, uint> _overlayGenerationFloors = new();
     private int _refreshGate;
 
     public SceneSession(SelectionSession selection)
@@ -154,6 +157,7 @@ public sealed class SceneSession
                     out var lights,
                     out var cameras,
                     out var props,
+                    out var overlays,
                     out var validationError))
                 return Invalid(validationError!);
 
@@ -170,6 +174,7 @@ public sealed class SceneSession
             _lights = lights;
             _cameras = cameras;
             _props = props;
+            _overlays = overlays;
             _snapshot = snapshot;
             RecordGenerationFloors(snapshot);
 
@@ -261,6 +266,11 @@ public sealed class SceneSession
                 ? SelectionId.ForProp(currentProp.Id)
                 : null;
 
+        if (id.Kind == SceneEntityKind.Overlay && id.Overlay is { } overlay)
+            return TryFindOverlay(overlay.LogicalId, out var currentOverlay)
+                ? SelectionId.ForOverlay(currentOverlay.Id)
+                : null;
+
         // Environment is the scene singleton and carries no generation. Its
         // descriptor is read state, not a second selectable entity.
         if (id.Kind == SceneEntityKind.Environment)
@@ -294,6 +304,7 @@ public sealed class SceneSession
         out Dictionary<LightId, LightDescriptor> lights,
         out Dictionary<CameraId, CameraDescriptor> cameras,
         out Dictionary<PropId, PropDescriptor> props,
+        out Dictionary<OverlayId, OverlayDescriptor> overlays,
         out string? validationError)
     {
         actors = new();
@@ -301,6 +312,7 @@ public sealed class SceneSession
         lights = new();
         cameras = new();
         props = new();
+        overlays = new();
         validationError = null;
 
         var actorLineages = new HashSet<Guid>();
@@ -433,6 +445,8 @@ public sealed class SceneSession
                 out validationError))
             return false;
         if (!TryBuildPropIndexes(snapshot, props, out validationError))
+            return false;
+        if (!TryBuildOverlayIndexes(snapshot, overlays, out validationError))
             return false;
 
         var gazeActors = new HashSet<Guid>();
@@ -667,6 +681,36 @@ public sealed class SceneSession
         return true;
     }
 
+    private static bool TryBuildOverlayIndexes(
+        SceneSnapshot snapshot,
+        Dictionary<OverlayId, OverlayDescriptor> overlays,
+        out string? validationError)
+    {
+        var lineages = new HashSet<Guid>();
+        foreach (var overlay in snapshot.Overlays)
+        {
+            if (overlay is null)
+                return Fail(
+                    "Scene contains a null overlay descriptor.",
+                    out validationError);
+            if (!IsValidOverlayId(overlay.Id))
+                return Fail(
+                    $"Overlay id {overlay.Id} is invalid.", out validationError);
+            if (!lineages.Add(overlay.Id.LogicalId) ||
+                !overlays.TryAdd(overlay.Id, overlay))
+                return Fail(
+                    $"Scene contains duplicate overlay {overlay.Id.LogicalId:N}.",
+                    out validationError);
+            if (!Enum.IsDefined(typeof(OverlayNodeKind), overlay.Kind))
+                return Fail(
+                    $"Overlay {overlay.Id} has an unknown kind.",
+                    out validationError);
+        }
+
+        validationError = null;
+        return true;
+    }
+
     private static bool TryValidateBoneGraph(
         Dictionary<BoneId, BoneDescriptor> bones,
         out string? validationError)
@@ -763,6 +807,13 @@ public sealed class SceneSession
                 "prop",
                 out validationError))
             return false;
+        if (!TryValidateObjectGenerationFloors(
+                snapshot.Overlays,
+                _overlayGenerationFloors,
+                static overlay => (overlay.Id.LogicalId, overlay.Id.Generation),
+                "overlay",
+                out validationError))
+            return false;
 
         validationError = null;
         return true;
@@ -813,6 +864,11 @@ public sealed class SceneSession
             RaiseFloor(_cameraGenerationFloors, camera.Id.LogicalId, camera.Id.Generation);
         foreach (var prop in snapshot.Props)
             RaiseFloor(_propGenerationFloors, prop.Id.LogicalId, prop.Id.Generation);
+        foreach (var overlay in snapshot.Overlays)
+            RaiseFloor(
+                _overlayGenerationFloors,
+                overlay.Id.LogicalId,
+                overlay.Id.Generation);
     }
 
     private static void RaiseFloor(
@@ -870,6 +926,9 @@ public sealed class SceneSession
     private static bool IsValidCameraId(CameraId id) => id.LogicalId != Guid.Empty;
 
     private static bool IsValidPropId(PropId id) => id.LogicalId != Guid.Empty;
+
+    private static bool IsValidOverlayId(OverlayId id) =>
+        id.LogicalId != Guid.Empty;
 
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) &&
@@ -933,6 +992,21 @@ public sealed class SceneSession
         }
 
         prop = null!;
+        return false;
+    }
+
+    private bool TryFindOverlay(Guid logicalId, out OverlayDescriptor overlay)
+    {
+        foreach (var candidate in _overlays.Values)
+        {
+            if (candidate.Id.LogicalId == logicalId)
+            {
+                overlay = candidate;
+                return true;
+            }
+        }
+
+        overlay = null!;
         return false;
     }
 
