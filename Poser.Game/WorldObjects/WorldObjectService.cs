@@ -297,6 +297,82 @@ public sealed class WorldObjectService : IDisposable
         return handle;
     }
 
+    /// <summary>How far a saved map position may sit from a live one and still
+    /// be the same object. It absorbs the codec — a float that has been through
+    /// a decimal string is not the float that went in — and nothing more: two
+    /// BG objects of one model standing five centimetres apart is not a map
+    /// anyone builds, while a rounding error of that size is every one of
+    /// them.</summary>
+    public const float IdentityToleranceYalms = 0.05f;
+
+    /// <summary>
+    /// Finds the object a saved scene entry names and adopts it at the
+    /// placement that entry recorded.
+    ///
+    /// <para>Identity is the pair the MAP owns: the model path, and the point
+    /// the map stands the object at. The address is deliberately not part of it
+    /// — a saved address belongs to the run that saved it. The nearest live
+    /// candidate within <see cref="IdentityToleranceYalms"/> of the saved point
+    /// wins, and an entry that matches nothing here is refused BY NAME rather
+    /// than applied to whatever else shares its path.</para>
+    ///
+    /// <para>Null with a stated <paramref name="detail"/> on every refusal.
+    /// </para>
+    /// </summary>
+    public AdoptedWorldObject? AdoptByIdentity(
+        string path,
+        Vector3 mapPosition,
+        Transform placement,
+        bool visible,
+        out string? detail)
+    {
+        detail = null;
+        if (_disposed)
+        {
+            detail = "The world-object service is not running.";
+            return null;
+        }
+        if (string.IsNullOrEmpty(path))
+        {
+            detail = "The entry names no model, so nothing could be matched.";
+            return null;
+        }
+
+        nint best = nint.Zero;
+        float bestDistance = float.PositiveInfinity;
+        foreach (var row in _port.Enumerate())
+        {
+            if (!string.Equals(row.Path, path, StringComparison.Ordinal))
+                continue;
+            float distance = Vector3.Distance(row.Placement.Position, mapPosition);
+            if (distance > IdentityToleranceYalms || distance >= bestDistance)
+                continue;
+            // An object this session already borrowed is not a second claim: it
+            // is already standing where the user last put it, and re-adopting
+            // it would capture THAT as the map's own placement.
+            if (IsAdopted(row.Address))
+            {
+                detail = $"'{DisplayName(path)}' is already borrowed by this scene.";
+                continue;
+            }
+            best = row.Address;
+            bestDistance = distance;
+        }
+
+        if (best == nint.Zero)
+        {
+            detail ??= $"'{DisplayName(path)}' is not standing where this scene " +
+                "recorded it, so it was not borrowed.";
+            return null;
+        }
+
+        detail = null;
+        var handle = AdoptAt(best, placement, visible);
+        if (handle == null)
+            detail = $"'{DisplayName(path)}' could not be borrowed.";
+        return handle;
+    }
+
     /// <summary>
     /// Gives one object back to the map: its captured placement and flags are
     /// written back and the claim is forgotten. Returns false only when there

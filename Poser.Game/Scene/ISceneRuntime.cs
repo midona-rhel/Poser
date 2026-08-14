@@ -122,12 +122,19 @@ public readonly record struct SceneActionResult(bool Success, string? Detail = n
 /// rolled back, so the outcome has to be able to say exactly what it cost.
 /// </summary>
 public readonly record struct SceneClearOutcome(
-    int Actors, int Props, int Overlays, int Lights, int Cameras)
+    int Actors, int Props, int Overlays, int Lights, int Cameras,
+    int WorldObjects = 0)
 {
-    public int Total => Actors + Props + Overlays + Lights + Cameras;
+    public int Total =>
+        Actors + Props + Overlays + Lights + Cameras + WorldObjects;
 
     /// <summary>The clear in the user's words, or null when it removed
     /// nothing — an empty session needs no sentence about being emptied.
+    ///
+    /// <para>Borrowed map objects are counted but spoken of SEPARATELY, and
+    /// never as destroyed: a clear gives them back to the map exactly where it
+    /// had them, which is the one part of a clear that costs the user
+    /// nothing.</para>
     /// </summary>
     public string? Summary()
     {
@@ -144,8 +151,15 @@ public readonly record struct SceneClearOutcome(
         Part(Overlays, "overlay", "overlays");
         Part(Lights, "light", "lights");
         Part(Cameras, "camera", "cameras");
+
+        string borrowed = WorldObjects == 0
+            ? string.Empty
+            : $" {WorldObjects} borrowed map " +
+                $"{(WorldObjects == 1 ? "object was" : "objects were")} put back.";
+        if (parts.Count == 0)
+            return $"Cleared the session first:{borrowed}".TrimEnd();
         return $"Cleared the session first: {string.Join(", ", parts)} were " +
-            "destroyed. Undoing the load does not bring them back.";
+            $"destroyed. Undoing the load does not bring them back.{borrowed}";
     }
 }
 
@@ -205,11 +219,25 @@ internal interface ISceneRuntime
     System.Numerics.Vector3? CurrentOrigin();
 
     /// <summary>
+    /// Which zone the session is in NOW. A borrowed map object means something
+    /// only where it was taken, so this is what a load compares
+    /// <see cref="SceneFile.TerritoryId"/> against before it tries to take one
+    /// again. Zero when there is no territory to read, which refuses every
+    /// borrowed entry rather than guessing. Framework thread.
+    /// </summary>
+    uint CurrentTerritoryId();
+
+    /// <summary>
     /// Destroys everything the session is holding — spawned actors, props,
     /// overlay nodes, spawned lights and additional cameras — before a
     /// destroy-first load restores anything. Borrowed entities (a captured
     /// world light, the session's own default camera) are left alone: they were
     /// never this session's to destroy. Framework thread.
+    ///
+    /// <para>A borrowed MAP object is neither destroyed nor left alone: it is
+    /// RELEASED, which writes back the placement and flags it was claimed with.
+    /// Clearing a scene is one of the four ways a claim ends, and the count
+    /// comes back so the outcome can say so in its own words.</para>
     /// </summary>
     SceneClearOutcome ClearScene();
 
@@ -290,6 +318,23 @@ internal interface ISceneRuntime
 
     /// <summary>Stages one overlay node from its saved document.</summary>
     object? SpawnOverlay(SceneOverlay data, out string? detail);
+
+    /// <summary>
+    /// Takes back one of the map's own objects that the scene had borrowed,
+    /// matching it by the identity the file states (model path plus the point
+    /// the map stands it at) and applying the placement the file recorded.
+    ///
+    /// <para>Nothing is created: the object was already there. Null with a
+    /// stated detail when this map has no such object standing where the file
+    /// says — a borrowed entry is refused BY NAME rather than applied to
+    /// whatever else happens to share its path.</para>
+    /// </summary>
+    object? AdoptWorldObject(SceneWorldObject data, out string? detail);
+
+    /// <summary>Gives one borrowed map object back — the rollback verb, and the
+    /// exact inverse of <see cref="AdoptWorldObject"/>. It RESTORES rather than
+    /// destroys, which is why it is not named with the others.</summary>
+    void ReleaseWorldObject(object token);
 
     /// <summary>Spawns one light with its complete document, gobo, and — when
     /// an attachment is stated — the exact resolved bone on the restored

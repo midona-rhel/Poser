@@ -83,6 +83,7 @@ public sealed class SceneCaptureService
     private readonly PoseExportCapture _exports;
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingService _rendering;
+    private readonly WorldObjects.WorldObjectService _worldObjects;
 
     public SceneCaptureService(
         IFramework framework,
@@ -104,8 +105,10 @@ public sealed class SceneCaptureService
         IGazeService gaze,
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        IWorldRenderingService rendering)
+        IWorldRenderingService rendering,
+        WorldObjects.WorldObjectService worldObjects)
     {
+        _worldObjects = worldObjects;
         _rendering = rendering;
         _integration = integration;
         _exports = exports;
@@ -220,6 +223,7 @@ public sealed class SceneCaptureService
             var actorKeys = CaptureActors(scene, notes);
             CaptureProps(scene, notes);
             CaptureOverlays(scene);
+            CaptureWorldObjects(scene, notes);
             CaptureLights(scene, actorKeys, notes);
             CaptureCameras(scene, actorKeys, notes);
             scene.Environment = CaptureEnvironment();
@@ -592,6 +596,45 @@ public sealed class SceneCaptureService
                 {
                     Name = Bounded(overlay.State.Name, "Overlay"),
                 },
+            });
+        }
+    }
+
+    /// <summary>
+    /// The map's own objects the scene has BORROWED. Each is written by the
+    /// identity that outlives the session — the model path, plus the point the
+    /// MAP stands it at, which is the claim's captured placement and therefore
+    /// does not move when the user drags the object — and beside that, the
+    /// placement the user actually gave it.
+    ///
+    /// <para>The list is left ABSENT when nothing was borrowed, so a scene that
+    /// borrowed nothing writes exactly the file it wrote before this existed.
+    /// </para>
+    /// </summary>
+    private void CaptureWorldObjects(SceneFile scene, List<string> notes)
+    {
+        foreach (var worldObject in _worldObjects.Adopted)
+        {
+            if (!worldObject.IsValid)
+            {
+                notes.Add(
+                    $"World object '{worldObject.Name}' is no longer there and " +
+                    "was not captured.");
+                continue;
+            }
+
+            scene.WorldObjects ??= new List<SceneWorldObject>();
+            scene.WorldObjects.Add(new SceneWorldObject
+            {
+                Key = _bindings.GetWorldObjectId(worldObject)?.LogicalId
+                    ?? Guid.NewGuid(),
+                Path = Bounded(worldObject.Path, "World object"),
+                MapPosition = Finite(worldObject.InitialPlacement.Position),
+                Visible = worldObject.Visible,
+                Transform = NormalizedTransform(
+                    worldObject.Transform,
+                    $"World object '{worldObject.Name}'",
+                    notes),
             });
         }
     }

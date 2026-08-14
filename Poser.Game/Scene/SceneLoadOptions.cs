@@ -85,6 +85,13 @@ public sealed record SceneLoadOptions
 /// move is anything already expressed relative to something that moved with
 /// the scene — a bone-attached light (its position is the bone's), an orbit
 /// camera (it orbits its target), and a camera's target offset.</para>
+///
+/// <para>A BORROWED MAP OBJECT also does not move, and for a different reason
+/// than either: it is not Poser's to place. Its identity IS the point the map
+/// stands it at, so rebasing it would match the fixture at its real spot and
+/// then shove it by an arbitrary offset — a pillar hanging over a field. A
+/// relative load therefore leaves borrowed objects where the map has them and
+/// says so, rather than dragging the zone's own furniture along.</para>
 /// </summary>
 public static class SceneRelativePlacement
 {

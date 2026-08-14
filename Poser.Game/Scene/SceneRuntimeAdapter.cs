@@ -45,6 +45,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly IWorldRenderingService _rendering;
     private readonly IActorManager _actors;
     private readonly IObjectTable _objects;
+    private readonly WorldObjects.WorldObjectService _worldObjects;
+    private readonly Poser.Services.IPlaceService _place;
 
     public SceneRuntimeAdapter(
         IFramework framework,
@@ -65,10 +67,14 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingService rendering,
         IActorManager actors,
-        IObjectTable objects)
+        IObjectTable objects,
+        WorldObjects.WorldObjectService worldObjects,
+        Poser.Services.IPlaceService place)
     {
         _actors = actors;
         _objects = objects;
+        _worldObjects = worldObjects;
+        _place = place;
         _rendering = rendering;
         _integration = integration;
         _bindings = bindings;
@@ -147,6 +153,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public System.Numerics.Vector3? CurrentOrigin() =>
         _objects.LocalPlayer?.Position;
 
+    // The SAME place source the capture stamped the document from
+    // (SceneCaptureService.CaptureTerritory), so "the same territory" means one
+    // thing on both sides of the file.
+    public uint CurrentTerritoryId() => _place.Current.TerritoryId;
+
     /// <summary>
     /// The destroy-first clear. Actors go through the spawn service one at a
     /// time because only the spawned ones are this session's to destroy — the
@@ -178,7 +189,14 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         int cameras = _cameras.Cameras.Count(camera => !camera.IsDefault);
         _cameras.DestroyAllCameras();
 
-        return new SceneClearOutcome(actors, props, overlays, lights, cameras);
+        // Not a destruction: releasing writes each borrowed object's captured
+        // placement and flags back to the map. Clearing the scene is one of the
+        // four exits the restore contract names, and this is where it runs.
+        int worldObjects = _worldObjects.Count;
+        _worldObjects.ReleaseAll();
+
+        return new SceneClearOutcome(
+            actors, props, overlays, lights, cameras, worldObjects);
     }
 
     // ── actors ───────────────────────────────────────────────────────────
@@ -546,6 +564,23 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         detail = null;
         return handle;
     }
+
+    /// <summary>
+    /// Re-borrows one of the map's own objects. Nothing is created — the object
+    /// belongs to the map and was already standing there — so this MATCHES
+    /// rather than spawns, and a match that does not come off is a refusal
+    /// naming the model rather than a claim on something else.
+    /// </summary>
+    public object? AdoptWorldObject(SceneWorldObject data, out string? detail) =>
+        _worldObjects.AdoptByIdentity(
+            data.Path,
+            data.MapPosition,
+            data.Transform,
+            data.Visible,
+            out detail);
+
+    public void ReleaseWorldObject(object token) =>
+        _worldObjects.Release((WorldObjects.AdoptedWorldObject)token);
 
     public object? SpawnProp(SceneProp data, out string? detail)
     {

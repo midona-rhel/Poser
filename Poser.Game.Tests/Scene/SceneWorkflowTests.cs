@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Numerics;
 using Poser.Application.Operations;
 using Poser.Domain.Companions;
 using Poser.Files;
@@ -35,6 +36,7 @@ public sealed class SceneWorkflowTests
         public Func<SceneActor, string?>? ActorSpawnFailure;
         public Func<SceneProp, string?>? PropSpawnFailure;
         public Func<SceneOverlay, string?>? OverlayStageFailure;
+        public Func<SceneWorldObject, string?>? WorldObjectAdoptFailure;
         public Func<SceneLight, string?>? LightSpawnFailure;
         public Func<SceneActor, string?>? PoseFailure;
         public Func<SceneActor, string?>? CompanionFailure;
@@ -249,6 +251,37 @@ public sealed class SceneWorkflowTests
             return detail is null ? new Token($"overlay:{name}") : null;
         }
 
+        /// <summary>Which zone the fake session is standing in. It matches the
+        /// territory <see cref="SceneWith"/> stamps, so a document's borrowed
+        /// entries are attempted unless a test moves one of the two apart.
+        /// </summary>
+        public uint Territory = HomeTerritory;
+
+        public uint CurrentTerritoryId()
+        {
+            Record("CurrentTerritoryId");
+            return Territory;
+        }
+
+        public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
+        {
+            Record($"AdoptWorldObject:{data.Path}");
+            detail = WorldObjectAdoptFailure?.Invoke(data);
+            return detail is null ? new Token($"world:{data.Path}") : null;
+        }
+
+        /// <summary>Recorded as a RELEASE and queued apart from
+        /// <see cref="Destroyed"/>: the fake keeps the same distinction the
+        /// restore contract makes, so a test cannot pass by destroying
+        /// something the map owns.</summary>
+        public void ReleaseWorldObject(object token)
+        {
+            Record($"ReleaseWorldObject:{((Token)token).Name}");
+            Released.Enqueue(((Token)token).Name);
+        }
+
+        public readonly ConcurrentQueue<string> Released = new();
+
         public object? SpawnLight(
             SceneLight data, object? attachmentOwner, out string? detail)
         {
@@ -362,13 +395,33 @@ public sealed class SceneWorkflowTests
         return new SceneActor { Key = key, Name = name, Pose = new PoseFile() };
     }
 
+    /// <summary>The zone every built document says it was captured in, and the
+    /// one the fake session stands in by default. A borrowed map object is the
+    /// only entity whose restore depends on the two agreeing, so both sides
+    /// name this constant rather than a literal.</summary>
+    private const uint HomeTerritory = 132u;
+
     private static SceneFile SceneWith(
         params SceneActor[] actors)
     {
-        var scene = new SceneFile { SceneId = Guid.NewGuid() };
+        var scene = new SceneFile
+        {
+            SceneId = Guid.NewGuid(),
+            TerritoryId = HomeTerritory,
+            PlaceName = "Old Gridania",
+        };
         scene.Actors.AddRange(actors);
         return scene;
     }
+
+    private static SceneWorldObject WorldObject(
+        string path, Vector3 mapPosition = default) =>
+        new()
+        {
+            Key = Guid.NewGuid(),
+            Path = path,
+            MapPosition = mapPosition,
+        };
 
     private static SceneStoreFailure Corrupt(string detail) =>
         SceneStoreFailure.Create(SceneStoreFailureKind.Json, detail);
@@ -1344,6 +1397,137 @@ public sealed class SceneWorkflowTests
         Assert.Equal(
             new[] { "overlay:Opening line", "actor:Lead" },
             runtime.Destroyed.ToArray());
+    }
+
+    // -- borrowed map objects ---------------------------------------------
+
+    /// <summary>Loading in the SAME zone takes the map's objects back and puts
+    /// them where the file left them.</summary>
+    [Fact]
+    public async Task Borrowed_map_objects_are_taken_back_in_the_same_territory()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.WorldObjects = [WorldObject("bg/a.mdl", new Vector3(1f, 2f, 3f))];
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Contains("AdoptWorldObject:bg/a.mdl", runtime.Calls);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is { Kind: "World object", Restored: true });
+    }
+
+    /// <summary>THE zone rule. A borrowed object's identity is only meaningful
+    /// where it was taken, so a load anywhere else refuses every entry BY NAME
+    /// and never reaches for whatever shares its path in this zone.</summary>
+    [Fact]
+    public async Task Borrowed_map_objects_are_refused_by_name_in_another_territory()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.WorldObjects = [WorldObject("bg/a.mdl", new Vector3(1f, 2f, 3f))];
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            Territory = HomeTerritory + 1,
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain(
+            runtime.Calls, call => call.StartsWith("AdoptWorldObject"));
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Notes,
+            note => note.Contains("Old Gridania") && note.Contains("left alone"));
+        // The rest of the scene still lands: a borrowed entry is never
+        // structural.
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+    }
+
+    /// <summary>No territory to read is not "close enough": it refuses for the
+    /// same reason a mismatch does.</summary>
+    [Fact]
+    public async Task Borrowed_map_objects_are_refused_when_there_is_no_territory()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.WorldObjects = [WorldObject("bg/a.mdl")];
+        var runtime = new FakeRuntime { ReadResult = scene, Territory = 0u };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain(
+            runtime.Calls, call => call.StartsWith("AdoptWorldObject"));
+    }
+
+    /// <summary>A scene written before map objects could be borrowed carries no
+    /// list, and the load must not even ask where it is.</summary>
+    [Fact]
+    public async Task A_scene_with_no_borrowed_list_never_reads_the_territory()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("CurrentTerritoryId", runtime.Calls);
+        Assert.DoesNotContain(
+            runtime.Calls, call => call.StartsWith("AdoptWorldObject"));
+    }
+
+    [Fact]
+    public async Task An_object_that_is_no_longer_there_leaves_the_rest_standing()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.WorldObjects = [WorldObject("bg/a.mdl")];
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            WorldObjectAdoptFailure = _ => "It is not standing there any more.",
+        };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Empty(runtime.Destroyed);
+        Assert.Empty(runtime.Released);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Contains(
+            workflow.Progress!.Outcome!.Entities,
+            entity => entity is { Kind: "World object", Restored: false });
+    }
+
+    /// <summary>THE ROLLBACK EDGE, and the one that matters most: a load that
+    /// is undone must give the map its objects back — RELEASED, never
+    /// destroyed — and it must do so before it tears anything else down.
+    /// </summary>
+    [Fact]
+    public async Task A_rolled_back_load_gives_the_map_its_objects_back()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        scene.WorldObjects = [WorldObject("bg/a.mdl")];
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+        runtime.AfterCall = call =>
+        {
+            if (call == "AdoptWorldObject:bg/a.mdl")
+                workflow.Cancel();
+        };
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(OperationReceiptState.Cancelled, workflow.Receipt!.State);
+        Assert.Equal(new[] { "world:bg/a.mdl" }, runtime.Released.ToArray());
+        // Never destroyed: the map owns it.
+        Assert.DoesNotContain("world:bg/a.mdl", runtime.Destroyed);
     }
 
     // -- load options: the import matrix --------------------------------

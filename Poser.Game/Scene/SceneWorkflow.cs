@@ -101,11 +101,14 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Application.Integration.ActorIntegrationSession integration,
         Poser.Services.IWorldRenderingService rendering,
         Poser.Services.IActorManager actors,
-        Dalamud.Plugin.Services.IObjectTable objects)
+        Dalamud.Plugin.Services.IObjectTable objects,
+        WorldObjects.WorldObjectService worldObjects,
+        Poser.Services.IPlaceService place)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
-            animation, gaze, integration, rendering, actors, objects))
+            animation, gaze, integration, rendering, actors, objects,
+            worldObjects, place))
     {
     }
 
@@ -158,6 +161,10 @@ public sealed class SceneWorkflow : IDisposable
         public readonly List<object> StagedOverlays = new();
         public readonly List<object> SpawnedLights = new();
         public readonly List<object> CreatedCameras = new();
+
+        // Borrowed, not created — but rollback still has to undo the claim, and
+        // releasing one is the exact inverse of taking it.
+        public readonly List<object> BorrowedWorldObjects = new();
         public CameraFile? DefaultCameraBaseline;
         public SceneEnvironment? EnvironmentBaseline;
         public SceneWorld? WorldBaseline;
@@ -508,6 +515,31 @@ public sealed class SceneWorkflow : IDisposable
             var overlays = options.IncludeOverlays
                 ? (IReadOnlyList<SceneOverlay>)(scene.Overlays ?? [])
                 : Array.Empty<SceneOverlay>();
+            // A borrowed map object is the one entity whose view is decided by
+            // WHERE THE SESSION IS rather than by an option. It is not a thing
+            // the load can create: it can only take back an object this map is
+            // already standing. The gate runs here, before any native work, so
+            // a scene loaded in the wrong zone refuses its borrowed entries by
+            // name and lands everything else.
+            var worldObjects = (IReadOnlyList<SceneWorldObject>)(
+                scene.WorldObjects ?? []);
+            uint currentTerritory = worldObjects.Count == 0
+                ? 0u
+                : await _runtime.OnFramework(_runtime.CurrentTerritoryId);
+            if (worldObjects.Count > 0 &&
+                (currentTerritory == 0 || currentTerritory != scene.TerritoryId))
+            {
+                string where = string.IsNullOrWhiteSpace(scene.PlaceName)
+                    ? $"territory {scene.TerritoryId}"
+                    : scene.PlaceName;
+                notes.Add(
+                    $"This scene borrowed {worldObjects.Count} map " +
+                    $"{(worldObjects.Count == 1 ? "object" : "objects")} in " +
+                    $"{where}, which is not where you are. " +
+                    $"{(worldObjects.Count == 1 ? "It was" : "They were")} " +
+                    "left alone.");
+                worldObjects = Array.Empty<SceneWorldObject>();
+            }
             var lights = options.IncludeLights
                 ? (IReadOnlyList<SceneLight>)scene.Lights
                 : Array.Empty<SceneLight>();
@@ -552,11 +584,19 @@ public sealed class SceneWorkflow : IDisposable
                     return;
                 }
                 notes.Add("Placed relative to where you are standing.");
+                // The rebase moved everything Poser places. It did NOT move the
+                // map's own objects, because it cannot: they are matched by the
+                // point the map stands them at.
+                if (worldObjects.Count > 0)
+                    notes.Add(
+                        $"The {worldObjects.Count} borrowed map " +
+                        $"{(worldObjects.Count == 1 ? "object stays" : "objects stay")} " +
+                        "where the map has them; only what Poser placed moved.");
             }
 
             total = actors.Count + props.Count +
                 lights.Count + cameras.Count +
-                overlays.Count +
+                overlays.Count + worldObjects.Count +
                 (environment is null ? 0 : 1);
 
             // Phase 2 — baselines, then spawn/admit every entity that other
@@ -632,6 +672,29 @@ public sealed class SceneWorkflow : IDisposable
                     }
                     operation.StagedOverlays.Add(token);
                     entities.Add(new SceneEntityOutcome("Overlay", name, true));
+                }
+
+                // Borrowing back the map's own objects. A refusal here is
+                // NAMED and never structural: the map may have been rebuilt,
+                // the object may already be borrowed, or it may simply not be
+                // standing where this scene recorded it — and a scene is still
+                // a scene without it.
+                foreach (var worldObject in worldObjects)
+                {
+                    string name = WorldObjects.WorldObjectService.DisplayName(
+                        worldObject.Path);
+                    var token = _runtime.AdoptWorldObject(
+                        worldObject, out var detail);
+                    if (token is null)
+                    {
+                        entities.Add(new SceneEntityOutcome(
+                            "World object", name, false,
+                            detail ?? "The map object could not be borrowed."));
+                        continue;
+                    }
+                    operation.BorrowedWorldObjects.Add(token);
+                    entities.Add(
+                        new SceneEntityOutcome("World object", name, true));
                 }
                 return null;
             });
@@ -1288,6 +1351,11 @@ public sealed class SceneWorkflow : IDisposable
             }
         }
 
+        // First out, because it is the one rollback step that GIVES SOMETHING
+        // BACK rather than destroying it: whatever else fails below, the map
+        // must not be left holding this load's displacements.
+        RollbackList(operation.BorrowedWorldObjects, _runtime.ReleaseWorldObject,
+            "world object release", failures);
         RollbackList(operation.CreatedCameras, _runtime.DestroyCamera,
             "camera", failures);
         RollbackList(operation.SpawnedLights, _runtime.DestroyLight,
