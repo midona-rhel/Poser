@@ -41,6 +41,7 @@ public sealed class PopOutWindow : Window
     private readonly SelectionSession _selection;
     private readonly IGPoseService _gPose;
     private readonly PoseInspectorPane _inspector;
+    private readonly GraphicalBonePane _graphical;
     private readonly AnimationPane _animationPane;
     private readonly AppearancePane _appearancePane;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
@@ -50,6 +51,7 @@ public sealed class PopOutWindow : Window
     private readonly string _ownerId;
     private readonly int _identity;
     private int _tab;
+    private bool _disposed;
     private bool _collapsed;
     private float _savedHeight = 620f;
     private float _lastWidth = 760f;
@@ -94,6 +96,7 @@ public sealed class PopOutWindow : Window
         // an alternating subject would cancel a drag on every frame.
         var graphical = ActivatorUtilities
             .CreateInstance<GraphicalBonePane>(services);
+        _graphical = graphical;
         _inspector = ActivatorUtilities
             .CreateInstance<PoseInspectorPane>(services);
         _inspector.DrawMapInline = graphical.DrawInline;
@@ -227,6 +230,15 @@ public sealed class PopOutWindow : Window
     {
         base.OnClose();
         _selection.ForgetScope(_scope);
+        // This window privately minted its map pane (ActivatorUtilities, not
+        // DI), so this window must dispose it — its decoded bone-map
+        // textures leaked once per open/close cycle otherwise. Exactly once:
+        // close is the window's end of life, it never reopens.
+        if (!_disposed)
+        {
+            _disposed = true;
+            _graphical.Dispose();
+        }
         OnDismissed?.Invoke(this);
     }
 
