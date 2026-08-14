@@ -526,11 +526,41 @@ public class PoseFileService : IPoseFileService
     /// POSITIONS — descendants included, GetSelectedBones(false,
     /// includeDescendants) — inside the same MultipleMemento. Poser plans the
     /// equivalent by withholding the position component from every filtered
-    /// bone's write: same net pose, same single history patch, no transient
-    /// motion. Gated exactly like Ktisis (selective active AND a position
-    /// component applying); a write masked to nothing is dropped, so an
-    /// anchor that empties the whole plan surfaces as the existing typed
+    /// bone's write. Gated exactly like Ktisis (selective active AND a
+    /// position component applying); a write masked to nothing is dropped, so
+    /// an anchor that empties the whole plan surfaces as the existing typed
     /// "nothing applies" refusal instead of a silent no-op arm.
+    ///
+    /// <para>Anchoring by never-writing lands the SAME net pose as Ktisis'
+    /// do-then-undo on the body partial, and in one history patch instead of
+    /// two mementos. Ktisis' restore is relative (PoseContainer.cs:200-207):
+    /// the bone's pre-import offset from its parent, carried by that parent's
+    /// rigid motion. A masked bone reaches the identical place from the other
+    /// side — ApplyBoneTransform reads model space with propagation already
+    /// applied (BonePosingService.AccessBoneModelSpace(..., Propagate)), so
+    /// the bone sits exactly where its ancestors' motion put it. Neither has
+    /// an observable transient: Ktisis' two passes share one
+    /// RunOnFrameworkThread tick, so the mask's advantage is the single patch,
+    /// not the absence of a flicker.</para>
+    ///
+    /// <para>Two characterized divergences, neither an equivalence claim.
+    /// FACE AND HAIR PARTIALS — Ktisis' TryGetRelativeParent
+    /// (PoseContainer.cs:236-238) forces parentIndex 0 for partialIndex 1 or
+    /// 2, so it anchors every face/hair bone to the PARTIAL ROOT (j_kao)
+    /// rather than to the bone's own parent: a deep face bone does not swing
+    /// with a rotating intermediate parent there. The mask leaves the bone
+    /// riding its true parent (ClassifyBoneFilter walks bone.ParentBone), so
+    /// the net poses genuinely differ — INTENTIONALLY. "Anchor" means a bone
+    /// follows its own parent; Ktisis' behaviour is a by-product of the
+    /// partial-root shortcut its selective rotation math uses, and this is the
+    /// coherent reading, not a port gap. SCALE — Poser propagates with
+    /// TransformComponents.All (PoseImportCapture, exact Brio parity,
+    /// PoseImporter.cs:35) while Ktisis' Propagate carries pos/rot only
+    /// (HavokPosing.cs:175-178), so a propagated scale can displace an
+    /// anchored descendant where Ktisis would have restored it. Inherited from
+    /// the Brio-vs-Ktisis propagation difference, not introduced here, and it
+    /// is the one place the anchor's promise leaks — only while Scale is also
+    /// importing.</para>
     /// </summary>
     private static TransformComponents AnchorMask(
         BoneFilterMatch match,

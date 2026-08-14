@@ -396,6 +396,49 @@ public sealed class SelectiveImportContractTests
         Assert.True(emptied.IsEmpty);
     }
 
+    [Fact]
+    public void The_default_smart_import_selective_flow_applies_position_so_the_anchor_is_live()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var service = RealFileService();
+
+        // The dialog's DEFAULT state, derived exactly as the descendant-less
+        // selective confirm derives it (RouteAsType → ForImportType with the
+        // plain Body pair, presetComponents from Smart Import which is on by
+        // default): the raw Position checkbox is FALSE and disabled, and the
+        // preset still imports positions. The anchor row gates on THIS value
+        // (PoseFileInspectorSection.SelectiveImportAppliesPosition), never on
+        // the checkbox — Ktisis reads the transform its apply consumes
+        // (PoseImportDialog.cs:151-153 → :199).
+        var options = PoseImportOptions.ForImportType(
+            body: true, expression: false,
+            rotation: true, position: false, scale: false,
+            presetComponents: true);
+        Assert.True(options.ApplyPosition);
+
+        options.BoneFilter =
+            new HashSet<(PoseSlot, string)> { (PoseSlot.Character, "j_kao") };
+        options.AnchorSelectedPositions = true;
+
+        var plan = service.BuildImportPlan(
+            new[] { app.Skeleton }, FileWith("j_kao"), options);
+
+        // ... and the anchor those defaults reach actually anchors.
+        var write = Assert.Single(plan.Writes);
+        Assert.Equal("j_kao", write.Bone.BoneName);
+        Assert.True(write.Components.HasFlag(TransformComponents.Rotation));
+        Assert.False(write.Components.HasFlag(TransformComponents.Position));
+
+        // The gate still closes where position genuinely will not apply: with
+        // descendants on, the built pair stands, and Smart Import's
+        // neither-type preset is rotation-only — the row disables and the
+        // anchor would have nothing to withhold.
+        Assert.False(PoseImportOptions.ForImportType(
+            body: false, expression: false,
+            rotation: true, position: false, scale: false,
+            presetComponents: true).ApplyPosition);
+    }
+
     // ── Reference pose ───────────────────────────────────────────────────
 
     [Fact]

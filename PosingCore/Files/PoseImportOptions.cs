@@ -97,12 +97,16 @@ public class PoseImportOptions
     /// withheld from every filtered bone (descendants included) while
     /// rotation and scale still apply — Ktisis' "Anchor group positions"
     /// (PosingManager.ApplyPoseFile:254-265 restores the selection's
-    /// pre-import positions after the selective apply; planning the mask is
-    /// the same net effect with no transient motion and the same single
-    /// history entry). Effective only with a live <see cref="BoneFilter"/>
-    /// and an applying position component, mirroring Ktisis'
-    /// <c>selectedBones &amp;&amp; anchorGroups &amp;&amp;
-    /// transforms.HasFlag(Position)</c> gate.
+    /// pre-import positions after the selective apply; planning the mask
+    /// lands the same net pose on the body partial in one history entry
+    /// instead of two mementos). Effective only with a live
+    /// <see cref="BoneFilter"/> and an applying position component, mirroring
+    /// Ktisis' <c>selectedBones &amp;&amp; anchorGroups &amp;&amp;
+    /// transforms.HasFlag(Position)</c> gate. The equivalence is not total:
+    /// the mask anchors face and hair bones to their own parent where Ktisis
+    /// anchors them to the partial root — deliberate — and a propagated scale
+    /// can still displace an anchored descendant. Both are read out at
+    /// <c>PoseFileService.AnchorMask</c>, the mechanism's normative home.
     /// </summary>
     public bool AnchorSelectedPositions { get; set; }
 

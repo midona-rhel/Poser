@@ -65,8 +65,9 @@ public sealed class PoseFileInspectorSection
     private bool _selectiveImport;
     private bool _selectiveDescendants;
     // Ktisis' "Anchor group positions" (PoseImportDialog.cs:151-155, gated
-    // on the Position transform): the selective set keeps its positions,
-    // the file contributes rotation/scale.
+    // on the EFFECTIVE position component — see
+    // SelectiveImportAppliesPosition): the selective set keeps its
+    // positions, the file contributes rotation/scale.
     private bool _selectiveAnchor;
     // Two-step reference-pose confirm: the first press arms and shows the
     // visible warning, the second applies. Any other preset disarms.
@@ -1246,18 +1247,26 @@ public sealed class PoseFileInspectorSection
                             + "descendant of the selected bones");
                     // Ktisis' "Anchor group positions"
                     // (PoseImportDialog.cs:151-155): live only while a
-                    // position component is importing, exactly Ktisis'
-                    // ImRaii.Disabled(!hasPosition) gate.
+                    // position component is importing — Ktisis'
+                    // ImRaii.Disabled(!hasPosition) reads the value its
+                    // apply consumes (:199), so this reads the EFFECTIVE
+                    // component, not the Position widget.
+                    bool anchorable = SelectiveImportAppliesPosition();
                     form.Checkbox(
                         "Anchor positions", _selectiveAnchor,
                         next => _selectiveAnchor = next,
-                        disabled: !_selectiveImport || !_position,
-                        help: _position || !_selectiveImport
+                        disabled: !_selectiveImport || !anchorable,
+                        help: anchorable || !_selectiveImport
                             ? "Keep the selected bones (and descendants) "
                                 + "where they stand — the file's rotations "
                                 + "and scales apply, its positions do not"
-                            : "Turn on the Position component first — "
-                                + "without it there is nothing to anchor");
+                            : _smartImport
+                                ? "This import applies no position — Smart "
+                                    + "Import's preset decides the "
+                                    + "components, and there is nothing to "
+                                    + "anchor"
+                                : "Turn on the Position component first — "
+                                    + "without it there is nothing to anchor");
                 }
                 form.Checkbox(
                     "Reset first", _reset, next => _reset = next,
@@ -2432,6 +2441,38 @@ public sealed class PoseFileInspectorSection
             built.ApplyModelTransform && !routed.AsExpression;
         return routed;
     }
+
+    /// <summary>
+    /// Whether a selective confirm would actually import POSITIONS — the
+    /// anchor row's gate. Ktisis gates its anchor checkbox on
+    /// <c>ImportPoseTransforms.HasFlag(Position)</c>
+    /// (PoseImportDialog.cs:151-153), the exact value its apply consumes
+    /// (:199); the Poser equivalent is NOT the Position checkbox, because
+    /// Smart Import overrides the whole trio with the type preset's own
+    /// components (<see cref="PoseImportOptions.ForImportType"/>'s
+    /// presetComponents branch). Under the default state — Smart Import on,
+    /// so the trio draws disabled with Position false — the confirm's Body
+    /// route imports positions, and a gate on the widget disabled the anchor
+    /// in precisely the state that anchors.
+    ///
+    /// <para>Derived through the same <c>ForImportType</c> the confirm
+    /// reaches: without descendants <see cref="ImportFromPath"/> re-derives
+    /// the plain Body pair through <see cref="RouteAsType"/>, with them the
+    /// built pair stands (<see cref="BuildOptions"/>). Only the type pair and
+    /// the trio decide a component — the category filter
+    /// <see cref="BuildOptions"/> folds in moves slots and prefixes, never
+    /// Apply*, so reading the components off the bare build is exact. A typed
+    /// .cmp substitutes its own preset at confirm and is not knowable while
+    /// the row draws; that path can only over-enable the row, and the service
+    /// gates the mask on the effective component anyway, so the anchor is
+    /// inert there rather than wrong.</para>
+    /// </summary>
+    private bool SelectiveImportAppliesPosition() =>
+        PoseImportOptions.ForImportType(
+            body: !_selectiveDescendants || _typeBody,
+            expression: _selectiveDescendants && _typeExpression,
+            _rotation, _position, _scale,
+            presetComponents: _smartImport).ApplyPosition;
 
     /// <summary>
     /// Brio's ResolveSmartImport (FileUIHelpers.cs:332-438) on a loaded file.

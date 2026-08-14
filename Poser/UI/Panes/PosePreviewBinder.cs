@@ -284,6 +284,7 @@ internal sealed class PosePreviewBinder
         && a.ResetBeforeImport == b.ResetBeforeImport
         && a.AsExpression == b.AsExpression
         && a.FilterIncludesDescendants == b.FilterIncludesDescendants
+        && a.AnchorSelectedPositions == b.AnchorSelectedPositions
         && a.ExcludeUncategorizedBones == b.ExcludeUncategorizedBones
         && a.FreezeOnImport == b.FreezeOnImport
         && SameSet(a.ExcludedBonePrefixes, b.ExcludedBonePrefixes)
