@@ -805,6 +805,81 @@ public sealed class TransactionContractTests
         Assert.Equal(secondInitial, app.Runtime.State(second));
     }
 
+    [Fact]
+    public void Gesture_begin_thrown_capture_recovers_prior_captures_and_never_arms()
+    {
+        var first = TestIds.BoneTarget(name: "j_arm_l", boneIndex: 1);
+        var second = TestIds.BoneTarget(name: "j_arm_r", boneIndex: 2);
+        using var app = BoneHarness(first, second);
+        app.Runtime.ThrowCaptureCall = 2;
+
+        var result = app.Gestures.Begin(Gesture(first, second));
+
+        Assert.False(result.Success);
+        Assert.Contains("capture threw", result.Detail!);
+        Assert.Null(app.Gestures.ActiveGesture);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.True(recovery.Complete);
+        Assert.Equal(
+            new[] { first },
+            recovery.Attempts.Select(a => a.RequestedState.Target));
+        Assert.Equal(new[] { first }, app.Runtime.RestoreCalls);
+        Assert.Null(app.Gestures.PendingRecovery);
+        Assert.False(app.History.CanUndo);
+    }
+
+    [Fact]
+    public void Gesture_update_thrown_apply_disarms_and_incomplete_recovery_arms_barrier()
+    {
+        var first = TestIds.BoneTarget(name: "j_arm_l", boneIndex: 1);
+        var second = TestIds.BoneTarget(name: "j_arm_r", boneIndex: 2);
+        using var app = BoneHarness(first, second);
+        var begun = app.Gestures.Begin(Gesture(first, second));
+        Assert.True(begun.Success);
+        app.Runtime.ThrowApplyCall = 2;
+        app.Runtime.ThrowRestoreCalls.Add(1);
+
+        var result = app.Gestures.Update(begun.GestureId!.Value, Move(3));
+
+        Assert.False(result.Success);
+        Assert.Contains("apply threw", result.Detail!);
+        Assert.Contains("restore threw", result.Detail!);
+        Assert.Null(app.Gestures.ActiveGesture);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.False(recovery.Complete);
+        Assert.Equal(
+            new[] { first, second },
+            recovery.Attempts.Select(a => a.RequestedState.Target));
+        Assert.Equal(new[] { first, second }, app.Runtime.RestoreCalls);
+        Assert.Same(recovery, app.Gestures.PendingRecovery);
+        Assert.False(app.History.CanUndo);
+        AssertBarrier(app.Gestures.Begin(Gesture(first)), recovery);
+    }
+
+    [Fact]
+    public void Gesture_commit_thrown_capture_recovers_without_history_and_arms_barrier()
+    {
+        var target = TestIds.BoneTarget();
+        using var app = BoneHarness(target);
+        var begun = app.Gestures.Begin(Gesture(target));
+        Assert.True(begun.Success);
+        Assert.True(app.Gestures.Update(begun.GestureId!.Value, Move(2)).Success);
+        app.Runtime.ThrowCaptureCall = 2;
+        app.Runtime.ThrowRestoreCalls.Add(1);
+
+        var result = app.Gestures.Commit(begun.GestureId.Value);
+
+        Assert.False(result.Success);
+        Assert.Contains("capture threw", result.Detail!);
+        Assert.Contains("restore threw", result.Detail!);
+        Assert.Null(app.Gestures.ActiveGesture);
+        var recovery = Assert.IsType<TransformRecoveryReceipt>(result.Recovery);
+        Assert.False(recovery.Complete);
+        Assert.Equal(new[] { target }, app.Runtime.RestoreCalls);
+        Assert.Same(recovery, app.Gestures.PendingRecovery);
+        Assert.False(app.History.CanUndo);
+    }
+
     private static TransformApplicationHarness ActorHarness(
         TransformTargetId target,
         TransformTargetState initial)

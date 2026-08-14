@@ -109,7 +109,16 @@ public sealed class TransformGestureService : IDisposable
         {
             if (!_scene.Contains(target))
                 return GestureResult.Fail($"Target {target} is stale.");
-            var result = _runtime.Capture(target);
+            TransformPortResult result;
+            try
+            {
+                result = _runtime.Capture(target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture {target}", exception, captured);
+            }
             if (!result.Success || result.State == null)
                 return GestureResult.Fail(
                     result.Detail ?? $"Could not capture {target}.");
@@ -213,9 +222,20 @@ public sealed class TransformGestureService : IDisposable
 
         for (var index = 0; index < active.Before.Count; index++)
         {
-            var result = _runtime.ApplyAbsolute(
-                active.Before[index],
-                desired[index]);
+            TransformPortResult result;
+            try
+            {
+                result = _runtime.ApplyAbsolute(
+                    active.Before[index],
+                    desired[index]);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not transform {active.Before[index].Target}",
+                    exception,
+                    active.Before);
+            }
             if (result.Success)
                 continue;
 
@@ -253,7 +273,18 @@ public sealed class TransformGestureService : IDisposable
         var after = new List<TransformTargetState>(active.Before.Count);
         foreach (var before in active.Before)
         {
-            var result = _runtime.Capture(before.Target);
+            TransformPortResult result;
+            try
+            {
+                result = _runtime.Capture(before.Target);
+            }
+            catch (Exception exception)
+            {
+                return ThrownFailureAfterRecovery(
+                    $"Could not capture final state for {before.Target}",
+                    exception,
+                    active.Before);
+            }
             if (!result.Success || result.State == null)
             {
                 var rollback = AttemptRecovery(active.Before);
@@ -456,6 +487,24 @@ public sealed class TransformGestureService : IDisposable
         var recovery = AttemptRecovery(active.Before);
         _active = null;
         return RecoveryResult(recovery);
+    }
+
+    /// <summary>
+    /// A thrown port call is mutation-unknown, exactly like an explicit
+    /// failure: every supplied frozen baseline is attempted in order, the
+    /// gesture disarms so stale baselines never feed a later tick, and
+    /// incomplete recovery arms the <see cref="PendingRecovery"/> barrier.
+    /// </summary>
+    private GestureResult ThrownFailureAfterRecovery(
+        string operation,
+        Exception exception,
+        IReadOnlyList<TransformTargetState> baselines)
+    {
+        var recovery = AttemptRecovery(baselines);
+        _active = null;
+        return FailureAfterRecovery(
+            $"{operation}: {exception.Message}",
+            recovery);
     }
 
     private static GestureResult FailureAfterRecovery(
