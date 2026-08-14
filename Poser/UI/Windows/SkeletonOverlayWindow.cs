@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Windowing;
@@ -64,46 +64,70 @@ public class SkeletonOverlayWindow : Window
     private static bool ShowNsfwBones =>
         ConfigurationService.Instance.Config.Display.ShowNsfwBones;
 
-    // Bone display data
-    private class BoneDisplayData
+    // ── the per-frame display model ──────────────────────────────────────
+    // One VALUE per drawn handle, held in buffers this window owns and
+    // clears at the top of each frame. The rebuild itself is the design
+    // (Ktisis draws from a fresh projection every frame); what the overlay
+    // must not do is allocate the model, because posing is the tool's
+    // hottest interactive state and a heap object per visible bone per
+    // frame is hundreds of allocations a frame. Mutating passes therefore
+    // reach the elements through CollectionsMarshal.AsSpan — a foreach over
+    // a List of values hands out copies, and a hover written to a copy is a
+    // hover lost.
+
+    private struct BoneDisplayData
     {
-        public string Name { get; init; } = "";
-        public SelectionId Id { get; init; }
-        public Vector2 ScreenPos { get; init; }
-        public Vector2? ParentScreenPos { get; init; }
-        public float CameraDistance { get; init; }
-        public bool IsHovered { get; set; }
-        public bool IsSelected { get; set; }
-        public bool IsIkChain { get; init; }
-        public bool IsMirrorPartner { get; set; }
+        public string Name;
+        public SelectionId Id;
+        public Vector2 ScreenPos;
+        public Vector2? ParentScreenPos;
+        public float CameraDistance;
+        public bool IsHovered;
+        public bool IsSelected;
+        public bool IsIkChain;
+        public bool IsMirrorPartner;
     }
 
-    private sealed class ActorDisplayData
+    private struct ActorDisplayData
     {
-        public string Name { get; init; } = "";
-        public SelectionId Id { get; init; }
-        public Vector2 ScreenPos { get; init; }
-        public float CameraDistance { get; init; }
-        public bool IsHovered { get; set; }
+        public string Name;
+        public SelectionId Id;
+        public Vector2 ScreenPos;
+        public float CameraDistance;
+        public bool IsHovered;
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
     /// no hierarchy, so a light is exactly one dot plus a small mark saying
     /// which way it faces.</summary>
-    private sealed class LightDisplayData
+    private struct LightDisplayData
     {
-        public string Name { get; init; } = "";
-        public SelectionId Id { get; init; }
-        public PoseTransform Transform { get; init; }
-        public Vector2 ScreenPos { get; init; }
-        public float CameraDistance { get; init; }
-        public bool IsSelected { get; init; }
-        public ILight? Live { get; init; }
-        public bool IsHovered { get; set; }
+        public string Name;
+        public SelectionId Id;
+        public PoseTransform Transform;
+        public Vector2 ScreenPos;
+        public float CameraDistance;
+        public bool IsSelected;
+        public ILight? Live;
+        public bool IsHovered;
     }
 
-    // Hover list state (Ktisis-style)
-    private List<BoneDisplayData>? _hoveredBones;
+    private readonly HashSet<SelectionId> _selectedIds = new();
+    private readonly List<BoneDisplayData> _bones = new();
+    private readonly List<ActorDisplayData> _actors = new();
+    private readonly List<LightDisplayData> _lights = new();
+    private readonly Dictionary<BoneId, Vector2> _boneScreenPositions = new();
+    private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
+    private readonly List<BoneDisplayData> _hoverCandidates = new();
+
+    // Hover list state (Ktisis-style). The frozen candidates outlive the
+    // frame that found them, so this list is NOT one of the per-frame
+    // buffers: it is rewritten only when the candidate set changes, and an
+    // EMPTY list is what 'no cluster' means. Its labels are cached with it,
+    // because the popup wants them as a list and rebuilding one per frame
+    // would put back the allocation the buffers just removed.
+    private readonly List<BoneDisplayData> _hoveredBones = new();
+    private readonly List<string> _hoverLabels = new();
     private int _hoverIndex;
     private Vector2 _hoverAnchor;
     private SelectionId? _pressedWorldTarget;
@@ -230,11 +254,16 @@ public class SkeletonOverlayWindow : Window
         // light handles unconditionally. Alt still hides everything.
         bool drawArmature = _presentation.AnyVisible || AnySelectionAnchor();
 
-        var selectedIds = _selection.Selected.ToHashSet();
-        var shownActors = new HashSet<SelectionId>();
-        var bones = new List<BoneDisplayData>();
-        var actors = new List<ActorDisplayData>();
-        var lights = new List<LightDisplayData>();
+        var selectedIds = _selectedIds;
+        selectedIds.Clear();
+        foreach (var id in _selection.Selected)
+            selectedIds.Add(id);
+        var bones = _bones;
+        var actors = _actors;
+        var lights = _lights;
+        bones.Clear();
+        actors.Clear();
+        lights.Clear();
         var cameraPosition = _cameraService.GetCameraPosition();
 
         // Lights are otherwise invisible in the world: without a handle there
@@ -334,8 +363,10 @@ public class SkeletonOverlayWindow : Window
             var armedIkBones = CollectArmedIkBones(descriptors);
             bool showNsfw = ShowNsfwBones;
 
-            var boneScreenPositions = new Dictionary<BoneId, Vector2>();
-            var boneWorldPositions = new Dictionary<BoneId, Vector3>();
+            var boneScreenPositions = _boneScreenPositions;
+            var boneWorldPositions = _boneWorldPositions;
+            boneScreenPositions.Clear();
+            boneWorldPositions.Clear();
             foreach (var bone in descriptors)
             {
                 // Opted-in bones draw; a SELECTED bone draws regardless —
@@ -347,8 +378,6 @@ public class SkeletonOverlayWindow : Window
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
-                if (shown)
-                    shownActors.Add(actorSelectionId);
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;
                 var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
@@ -393,11 +422,11 @@ public class SkeletonOverlayWindow : Window
         // handle was never collected — so nothing hidden is interactive.
 
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
-        foreach (var actor in actors)
+        foreach (ref var actor in CollectionsMarshal.AsSpan(actors))
             actor.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(actor.ScreenPos, actorRadius);
-        foreach (var light in lights)
+        foreach (ref var light in CollectionsMarshal.AsSpan(lights))
             light.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(light.ScreenPos, actorRadius);
@@ -405,7 +434,7 @@ public class SkeletonOverlayWindow : Window
         // Update hover state
         if (pointerBlocked)
         {
-            foreach (var bone in bones)
+            foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
                 bone.IsHovered = false;
             _pressedWorldTarget = null;
         }
@@ -418,9 +447,7 @@ public class SkeletonOverlayWindow : Window
 
         // Filter bones if ShowSelectedBonesOnly is enabled
         if (_editorState.ShowSelectedBonesOnly)
-        {
-            bones = bones.Where(b => b.IsSelected || b.IsHovered).ToList();
-        }
+            bones.RemoveAll(NotSelectedOrHovered);
 
         // Draw skeleton
         // The custom gizmo holds shared pointer ownership on hover AND
@@ -460,23 +487,20 @@ public class SkeletonOverlayWindow : Window
 
         DrawLights(drawList, viewportPos, lights, actorRadius);
 
-        var hoveredActor = actors
-            .Where(actor => actor.IsHovered)
-            .OrderBy(actor => actor.CameraDistance)
-            .FirstOrDefault();
-        var hoveredLight = lights
-            .Where(light => light.IsHovered)
-            .OrderBy(light => light.CameraDistance)
-            .FirstOrDefault();
-        if (hoveredLight != null && !pointerBlocked)
+        int hoveredActorIndex = NearestHovered(actors);
+        int hoveredLightIndex = NearestHovered(lights);
+        bool hasHoveredActor = hoveredActorIndex >= 0;
+        bool hasHoveredLight = hoveredLightIndex >= 0;
+        if (hasHoveredLight && !pointerBlocked)
         {
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-light",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
-                $"{hoveredLight.Name} — light", animated: false);
+                $"{lights[hoveredLightIndex].Name} — light", animated: false);
         }
-        else if (hoveredActor != null && !pointerBlocked)
+        else if (hasHoveredActor && !pointerBlocked)
         {
+            var hoveredActor = actors[hoveredActorIndex];
             var overlayMouse = ImGui.GetMousePos();
             Crystarium.HoverHelp.Preview("sow-actor",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
@@ -488,22 +512,21 @@ public class SkeletonOverlayWindow : Window
 
         // Freeze the overlapping candidates and their anchor while the
         // pointer crosses into the explicit list.
-        bool onFrozenCluster = listTravel
-            && _hoveredBones is { } frozen
-            && bones.Any(bone => bone.IsHovered
-                && frozen.Any(candidate => candidate.Id.Equals(bone.Id)));
+        bool onFrozenCluster = listTravel && AnyHoveredIsFrozen(bones);
         UpdateHoveredBones(bones, mousePos, listTravel);
         bool hasWorldBone = !listTravel
-            ? bones.Any(bone => bone.IsHovered)
+            ? AnyHovered(bones)
             : onFrozenCluster;
         // A light handle sits in front of everything else it overlaps: it is
         // the only route to a light from the viewport, and a bone dot behind it
         // is still reachable from the sidebar.
-        var worldTarget = hoveredLight?.Id
-            ?? hoveredActor?.Id
-            ?? (hasWorldBone && _hoveredBones is { Count: > 0 }
-                ? _hoveredBones[_hoverIndex].Id
-                : (SelectionId?)null);
+        var worldTarget = hasHoveredLight
+            ? lights[hoveredLightIndex].Id
+            : hasHoveredActor
+                ? actors[hoveredActorIndex].Id
+                : hasWorldBone && _hoveredBones.Count > 0
+                    ? _hoveredBones[_hoverIndex].Id
+                    : (SelectionId?)null;
         // Dalamud routes every click ImGui has not claimed BEFORE the press
         // to the game — an unclaimed pointer means the press never reaches
         // ImGui at all (no IsMouseClicked, ever). Claiming on hover is what
@@ -524,22 +547,92 @@ public class SkeletonOverlayWindow : Window
                 + $"blocked={pointerBlocked} listTravel={listTravel} "
                 + $"hasWorldBone={hasWorldBone} "
                 + $"gizmo={Controls.GizmoPointerOwnership.Owned} "
-                + $"hoverL={hoveredLight != null} hoverA={hoveredActor != null}");
+                + $"hoverL={hasHoveredLight} hoverA={hasHoveredActor}");
         UpdateWorldPress(
             worldTarget,
             pointerBlocked || (listTravel && !hasWorldBone));
-        if (_hoveredBones is { Count: > 0 })
+        if (_hoveredBones.Count > 0)
             DrawHoverList();
     }
 
     private const int HoverPadding = 6;
+
+    /// <summary>The ShowSelectedBonesOnly filter as a cached predicate: a
+    /// lambda written inline allocates a delegate every frame the mode is
+    /// on.</summary>
+    private static readonly Predicate<BoneDisplayData> NotSelectedOrHovered =
+        bone => !(bone.IsSelected || bone.IsHovered);
+
+    /// <summary>Index of the hovered handle NEAREST the camera, or -1.
+    /// Ties keep the earlier entry, as the ordered query this replaces
+    /// did.</summary>
+    private static int NearestHovered(List<ActorDisplayData> actors)
+    {
+        int best = -1;
+        float bestDistance = 0f;
+        for (int i = 0; i < actors.Count; i++)
+        {
+            var actor = actors[i];
+            if (!actor.IsHovered)
+                continue;
+            if (best < 0 || actor.CameraDistance < bestDistance)
+            {
+                best = i;
+                bestDistance = actor.CameraDistance;
+            }
+        }
+        return best;
+    }
+
+    private static int NearestHovered(List<LightDisplayData> lights)
+    {
+        int best = -1;
+        float bestDistance = 0f;
+        for (int i = 0; i < lights.Count; i++)
+        {
+            var light = lights[i];
+            if (!light.IsHovered)
+                continue;
+            if (best < 0 || light.CameraDistance < bestDistance)
+            {
+                best = i;
+                bestDistance = light.CameraDistance;
+            }
+        }
+        return best;
+    }
+
+    private static bool AnyHovered(List<BoneDisplayData> bones)
+    {
+        for (int i = 0; i < bones.Count; i++)
+            if (bones[i].IsHovered)
+                return true;
+        return false;
+    }
+
+    /// <summary>Whether any bone hovered THIS frame is one of the frozen
+    /// candidates — the test that keeps a cluster alive while the pointer
+    /// crosses into its list.</summary>
+    private bool AnyHoveredIsFrozen(List<BoneDisplayData> bones)
+    {
+        for (int i = 0; i < bones.Count; i++)
+        {
+            var bone = bones[i];
+            if (!bone.IsHovered)
+                continue;
+            for (int j = 0; j < _hoveredBones.Count; j++)
+                if (_hoveredBones[j].Id.Equals(bone.Id))
+                    return true;
+        }
+        return false;
+    }
 
     private void UpdateHoverState(List<BoneDisplayData> bones, Vector2 mousePos)
     {
         var radius = DotRadius * ImGuiHelpers.GlobalScale;
         var isOctahedraMode = _editorState.SkeletonViewMode == SkeletonViewMode.Octahedra;
 
-        foreach (var bone in bones)
+        foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
         {
             // Ktisis uses IsMouseHoveringRect with padding
             var hoveredByDot = IsHoveringDot(bone.ScreenPos, radius);
@@ -606,29 +699,48 @@ public class SkeletonOverlayWindow : Window
         Vector2 mousePos,
         bool keepFrozen)
     {
-        if (keepFrozen && _hoveredBones is { Count: > 0 })
+        if (keepFrozen && _hoveredBones.Count > 0)
             return;
-        var hovered = bones
-            .Where(bone => bone.IsHovered)
-            .OrderBy(bone => bone.CameraDistance)
-            .ToList();
+
+        // Nearest first, by insertion: a candidate cluster is a handful of
+        // overlapping dots, and inserting AFTER every equal distance keeps
+        // the stable order the ordered query gave.
+        var hovered = _hoverCandidates;
+        hovered.Clear();
+        for (int i = 0; i < bones.Count; i++)
+        {
+            var bone = bones[i];
+            if (!bone.IsHovered)
+                continue;
+            int at = hovered.Count;
+            while (at > 0
+                && hovered[at - 1].CameraDistance > bone.CameraDistance)
+                at--;
+            hovered.Insert(at, bone);
+        }
 
         if (hovered.Count == 0)
         {
             if (keepFrozen)
                 return;
-            _hoveredBones = null;
+            _hoveredBones.Clear();
+            _hoverLabels.Clear();
             _hoverIndex = 0;
             return;
         }
 
-        bool sameCandidates = _hoveredBones != null
-            && _hoveredBones.Count == hovered.Count
-            && !_hoveredBones.Where(
-                (bone, index) => !bone.Id.Equals(hovered[index].Id)).Any();
+        bool sameCandidates = _hoveredBones.Count == hovered.Count;
+        for (int i = 0; sameCandidates && i < hovered.Count; i++)
+            sameCandidates = _hoveredBones[i].Id.Equals(hovered[i].Id);
         if (!sameCandidates)
         {
-            _hoveredBones = hovered;
+            _hoveredBones.Clear();
+            _hoverLabels.Clear();
+            for (int i = 0; i < hovered.Count; i++)
+            {
+                _hoveredBones.Add(hovered[i]);
+                _hoverLabels.Add(hovered[i].Name);
+            }
             _hoverIndex = 0;
             _hoverAnchor = mousePos;
         }
@@ -638,7 +750,7 @@ public class SkeletonOverlayWindow : Window
         Vector2 point,
         InteractionOwner owner)
     {
-        if (_hoveredBones is not { Count: > 0 }
+        if (_hoveredBones.Count == 0
             || !Interactive.TryGetOwnerBounds(
                 HoverListOwnerId,
                 out var listMin,
@@ -684,15 +796,14 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawHoverList()
     {
-        if (_hoveredBones == null || _hoveredBones.Count == 0
+        if (_hoveredBones.Count == 0
             || Controls.GizmoPointerOwnership.Owned)
             return;
 
-        var labels = _hoveredBones.Select(bone => bone.Name).ToArray();
         int clicked = Crystarium.FloatingSurface.HoverList(
             HoverListOwnerId,
             _hoverAnchor,
-            labels,
+            _hoverLabels,
             _hoverIndex,
             InteractionLayer.OverlaySurface);
         if (clicked < 0 || clicked >= _hoveredBones.Count)
@@ -716,9 +827,13 @@ public class SkeletonOverlayWindow : Window
         if (_pendingSelection is not { } pending)
             return;
         _pendingSelection = null;
-        bool stillPresent = bones.Any(bone => bone.Id.Equals(pending.Id))
-            || actors.Any(actor => actor.Id.Equals(pending.Id))
-            || lights.Any(light => light.Id.Equals(pending.Id));
+        bool stillPresent = false;
+        for (int i = 0; !stillPresent && i < bones.Count; i++)
+            stillPresent = bones[i].Id.Equals(pending.Id);
+        for (int i = 0; !stillPresent && i < actors.Count; i++)
+            stillPresent = actors[i].Id.Equals(pending.Id);
+        for (int i = 0; !stillPresent && i < lights.Count; i++)
+            stillPresent = lights[i].Id.Equals(pending.Id);
         bool releaseOccluded = Interactive.PointerOccluded(
             pending.Owner,
             pending.ReleasePoint);
@@ -786,7 +901,7 @@ public class SkeletonOverlayWindow : Window
         if (partners == null)
             return;
 
-        foreach (var bone in bones)
+        foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
         {
             if (bone.IsSelected || bone.Id.Bone is not { } boneId)
                 continue;
