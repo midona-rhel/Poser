@@ -277,7 +277,17 @@ public static partial class Crystarium
             if (items.Count == 0)
                 return -1;
             float scale = ImGuiHelpers.GlobalScale;
-            float padding = ActiveTheme.Spacing.Four * scale;
+            // Brio's metrics were taken as ImGui's DEFAULTS, and at Poser's
+            // type scale that reads oversized: the 8px pad, the body size and
+            // the 26px tree row are the SIDEBAR's proportions, and this is a
+            // transient list at the pointer, not a pane (user 2026-08-15:
+            // "okay but too much padding and too large of a font"). It reads
+            // at the caption size in a row box sized for it — a context
+            // menu's density, about a third off the tree row's — while the
+            // glass chrome, the surface radius and the row's own hover and
+            // selected treatment stay exactly the design system's.
+            float padding = ActiveTheme.Spacing.Three * scale;
+            float labelSize = ActiveTheme.Typography.CaptionSize;
             // Brio's auto-fit, bounded by the menu's own two widths so a long
             // bone name cannot run off and a short one cannot read as a sliver.
             // The row's label sits a fixed slot in from its left edge and is
@@ -287,20 +297,23 @@ public static partial class Crystarium
             // scrolls.
             var labelStyle = new TextStyle
             {
-                Size = ActiveTheme.Typography.BodySize,
+                Size = labelSize,
             };
             float widest = 0f;
             for (int i = 0; i < items.Count; i++)
                 widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
             float width = Math.Clamp(
                 widest
-                    + (ActiveTheme.Spacing.Eight * 2f
+                    + (ActiveTheme.Spacing.Six * 2f
                         + ActiveTheme.Scrollbar.GutterWidth) * scale
                     + padding * 2f,
                 ActiveTheme.Floating.MenuMinWidth * scale,
                 ActiveTheme.Floating.MenuWidth * scale);
+            // The row box is the label plus a few px of breath each side —
+            // the whole difference between a menu row and a tree row.
+            float rowHeight = labelSize + ActiveTheme.Spacing.Three * 2f;
             int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
-            float height = rows * ActiveTheme.Controls.ListRowHeight * scale
+            float height = rows * rowHeight * scale
                 + padding * 2f;
             var requested = anchor + new Vector2(
                 ActiveTheme.Floating.AnchorGap * scale,
@@ -353,7 +366,12 @@ public static partial class Crystarium
                                     $"{id}-row-{i}",
                                     items[i],
                                     selected: i == selected,
-                                    iconVisible: false))
+                                    iconVisible: false,
+                                    style: new ControlStyle
+                                    {
+                                        Height = UiHeight.Fixed(rowHeight),
+                                    },
+                                    labelSize: labelSize))
                                 clicked = i;
                     });
                 Interactive.EndOwner(owner);

@@ -40,6 +40,13 @@ public record struct TreeRowProps
     /// and its guide column already spans the same distance.</summary>
     public bool HideIcon;
 
+    /// <summary>The label's type size, or null for the standing body size the
+    /// scene tree reads at. Stated only by rows that are NOT the tree — a
+    /// dense transient list at the pointer wants the caption size and a row
+    /// box to match, and shrinking the shared token would take the whole
+    /// sidebar with it.</summary>
+    public float? LabelSize;
+
     /// <summary>Right-aligned mono readout (counts, "you", "spawned").</summary>
     public string? Badge;
 
@@ -401,7 +408,7 @@ public static partial class Crystarium
         {
             var labelStyle = new TextStyle
             {
-                Size = theme.Typography.BodySize,
+                Size = props.LabelSize ?? theme.Typography.BodySize,
                 Color = theme.Text,
             };
             float span = labelRight - x;
