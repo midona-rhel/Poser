@@ -443,9 +443,11 @@ public sealed class LightPane
     /// wrap with no error is merely "still loading". The WRAP is never
     /// cached: shared textures must be re-resolved each frame.
     /// </summary>
-    private TextureProbe GoboPreview(uint index, out nint handle)
+    private TextureProbe GoboPreview(
+        uint index, out nint handle, out Vector2 pixels)
     {
         handle = 0;
+        pixels = Vector2.Zero;
         var gobos = _lighting.Gobos;
         if (index >= gobos.Count)
             return TextureProbe.Missing;
@@ -470,6 +472,8 @@ public sealed class LightPane
             return TextureProbe.Missing;
         }
         handle = wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        if (wrap is not null)
+            pixels = new Vector2(wrap.Width, wrap.Height);
         return handle == 0
             ? TextureProbe.Pending
             : TextureProbe.Ready;

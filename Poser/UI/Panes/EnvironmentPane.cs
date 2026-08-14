@@ -179,22 +179,26 @@ public sealed class EnvironmentPane
         // exist or do not.
         _skyTexture = new Crystarium.TexturePicker(
             "environment-sky-texture",
-            (uint id, out nint handle) => Preview(
-                $"bgcommon/nature/sky/texture/sky_{id:D3}.tex", out handle));
+            (uint id, out nint handle, out Vector2 pixels) => Preview(
+                $"bgcommon/nature/sky/texture/sky_{id:D3}.tex",
+                out handle,
+                out pixels));
         _cloudTexture = new Crystarium.TexturePicker(
             "environment-cloud-texture",
-            (uint id, out nint handle) => Preview(
+            (uint id, out nint handle, out Vector2 pixels) => Preview(
                 $"bgcommon/nature/cloud/texture/cloud_{id:D3}.tex",
-                out handle));
+                out handle,
+                out pixels));
         _cloudSideTexture = new Crystarium.TexturePicker(
             "environment-cloud-side-texture",
-            (uint id, out nint handle) => Preview(
+            (uint id, out nint handle, out Vector2 pixels) => Preview(
                 $"bgcommon/nature/cloud/texture/cloudside_{id:D3}.tex",
-                out handle));
+                out handle,
+                out pixels));
         _particleTexture = new Crystarium.TexturePicker(
             "environment-particle-texture",
-            (uint id, out nint handle) =>
-                Preview(ParticleTexturePath(id), out handle));
+            (uint id, out nint handle, out Vector2 pixels) =>
+                Preview(ParticleTexturePath(id), out handle, out pixels));
     }
 
     /// <summary>
@@ -349,10 +353,16 @@ public sealed class EnvironmentPane
     /// the wrap is null with no exception while it is still loading and null
     /// WITH one when the path is not in the game's files. Nothing is cached —
     /// a shared texture's handle belongs to the frame that asked for it.
+    ///
+    /// <para>The wrap's pixel size rides along because the tile crops with it:
+    /// several of these catalogs are animation sheets rather than pictures.
+    /// </para>
     /// </summary>
-    private TextureProbe Preview(string path, out nint handle)
+    private TextureProbe Preview(
+        string path, out nint handle, out Vector2 pixels)
     {
         handle = 0;
+        pixels = Vector2.Zero;
         // An id with no path behind it — the particle catalog's zero — is
         // answered here rather than by making the texture provider throw on
         // it once per frame for as long as the tile is on screen.
@@ -370,6 +380,8 @@ public sealed class EnvironmentPane
         if (!shared.TryGetWrap(out var wrap, out var error))
             return error is null ? TextureProbe.Pending : TextureProbe.Missing;
         handle = wrap is null ? 0 : (nint)wrap.Handle.Handle;
+        if (wrap is not null)
+            pixels = new Vector2(wrap.Width, wrap.Height);
         return handle == 0 ? TextureProbe.Pending : TextureProbe.Ready;
     }
 

@@ -25,10 +25,16 @@ public enum TextureProbe
     Ready,
 }
 
-/// <summary>Resolves one candidate texture id to a frame-local ImGui handle.
-/// Stated by the caller, exactly as <see cref="PickerOptions{T}.Texture"/> is —
-/// game paths and the texture service stay outside Crystarium.</summary>
-public delegate TextureProbe TexturePreview(uint id, out nint handle);
+/// <summary>Resolves one candidate texture id to a frame-local ImGui handle
+/// and the PIXEL SIZE of the image behind it. Stated by the caller, exactly as
+/// <see cref="PickerOptions{T}.Texture"/> is — game paths and the texture
+/// service stay outside Crystarium.
+///
+/// <para>The size is what tells a picture from an ANIMATION ATLAS, which the
+/// tile must sample differently; an unresolved probe answers
+/// <see cref="Vector2.Zero"/> and is drawn whole.</para></summary>
+public delegate TextureProbe TexturePreview(
+    uint id, out nint handle, out Vector2 pixels);
 
 public static partial class Crystarium
 {
@@ -282,7 +288,7 @@ public static partial class Crystarium
             {
                 budget--;
                 uint id = _loading[i];
-                var answer = _preview(id, out _);
+                var answer = _preview(id, out _, out _);
                 if (answer == TextureProbe.Pending)
                     continue;
                 _loading.RemoveAt(i);
@@ -293,7 +299,7 @@ public static partial class Crystarium
             {
                 budget--;
                 uint id = _probeNext++;
-                var answer = _preview(id, out _);
+                var answer = _preview(id, out _, out _);
                 if (answer == TextureProbe.Pending)
                     _loading.Add(id);
                 else if (answer == TextureProbe.Ready || id == NoTextureId)
@@ -395,6 +401,30 @@ public static partial class Crystarium
         }
 
         /// <summary>
+        /// The corners of the image a tile actually samples. Some of the
+        /// game's textures in these catalogs are ANIMATION ATLASES — a wide
+        /// sheet of square frames laid side by side — and squashing a whole
+        /// sheet into a square tile shows every frame at once instead of the
+        /// picture. Anything that is not 1:1 is therefore sampled at its
+        /// TOP-LEFT SQUARE, which is the atlas's first frame; a square texture
+        /// keeps the whole image.
+        ///
+        /// <para>DISPLAY ONLY, and free: the id the scene is given never sees
+        /// this, and the crop is two UV corners handed to ImGui — no pixels
+        /// are decoded, resized, or cached. A probe that could not state a
+        /// size answers zero and is drawn whole.</para>
+        /// </summary>
+        private static (Vector2 Min, Vector2 Max) FirstFrameUv(Vector2 pixels)
+        {
+            if (pixels.X <= 0f || pixels.Y <= 0f || pixels.X == pixels.Y)
+                return (Vector2.Zero, Vector2.One);
+            float side = MathF.Min(pixels.X, pixels.Y);
+            return (
+                Vector2.Zero,
+                new Vector2(side / pixels.X, side / pixels.Y));
+        }
+
+        /// <summary>
         /// One preview square, hit-tested. The FIELD's tile opens the surface;
         /// a GRID tile picks. The wrap is re-resolved every frame — a shared
         /// texture's handle is the frame's and nothing else.
@@ -441,21 +471,24 @@ public static partial class Crystarium
             float inset = TextureTileInset * scale;
             var artMin = min + new Vector2(inset);
             var artMax = artOuterMax - new Vector2(inset);
-            bool drawn = _preview(value, out nint handle)
+            bool drawn = _preview(value, out nint handle, out var pixels)
                 == TextureProbe.Ready && handle != 0;
             if (drawn)
+            {
+                var (uvMin, uvMax) = FirstFrameUv(pixels);
                 draw.AddImage(
                     new ImTextureID(handle),
                     artMin,
                     artMax,
-                    Vector2.Zero,
-                    Vector2.One,
+                    uvMin,
+                    uvMax,
                     ImGui.ColorConvertFloat4ToU32(
                         ColorEx.ApplyAlpha(
                             disabled
                                 ? Vector4.One.Fade(
                                     theme.Chrome.DisabledOpacity)
                                 : Vector4.One)));
+            }
             else
                 IconIn(
                     (min + artOuterMax) * 0.5f - new Vector2(
