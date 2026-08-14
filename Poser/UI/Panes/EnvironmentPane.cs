@@ -199,14 +199,23 @@ public sealed class EnvironmentPane
 
     /// <summary>
     /// The particle id's game path. This one catalog spans TWO families:
-    /// id 1 is the snow sheet, every other id is a dust sheet offset by two
-    /// (Ktisis ParticlesEditor.ResolvePath, verified against the same client
-    /// paths). Ids 0 and 2 therefore both resolve to dust_000 — the game's
-    /// own mapping, not a bug in the walk.
+    /// id 1 is the snow sheet, and every id from 2 up is a dust sheet offset
+    /// by two (Ktisis ParticlesEditor.ResolvePath).
+    ///
+    /// <para>ZERO has no sheet: it is the no-texture value, and the picker's
+    /// own zero rule captions the empty tile "None". Ktisis lands in the same
+    /// place by accident — its <c>id - 2</c> underflows the unsigned id into
+    /// a path no client ships — so stating the absence is that behaviour
+    /// without the accident. It is also what keeps 0 distinct from 2: a
+    /// resolver that clamped both onto dust_000 would put one sheet in the
+    /// grid twice and leave the no-texture choice unreachable.</para>
     /// </summary>
-    private static string ParticleTexturePath(uint id) => id == 1
-        ? "bgcommon/nature/snow/texture/snow.tex"
-        : $"bgcommon/nature/dust/texture/dust_{(id < 2 ? 0 : id - 2):D3}.tex";
+    private static string ParticleTexturePath(uint id) => id switch
+    {
+        0 => string.Empty,
+        1 => "bgcommon/nature/snow/texture/snow.tex",
+        _ => $"bgcommon/nature/dust/texture/dust_{id - 2:D3}.tex",
+    };
 
     /// <summary>Draws the one page the shell's active tab names. The page id is
     /// the tab's own, so the row ids on two tabs are distinct even where the row
@@ -344,6 +353,11 @@ public sealed class EnvironmentPane
     private TextureProbe Preview(string path, out nint handle)
     {
         handle = 0;
+        // An id with no path behind it — the particle catalog's zero — is
+        // answered here rather than by making the texture provider throw on
+        // it once per frame for as long as the tile is on screen.
+        if (string.IsNullOrEmpty(path))
+            return TextureProbe.Missing;
         ISharedImmediateTexture shared;
         try
         {
