@@ -657,6 +657,14 @@ public sealed class WorldObjectRestoreTests
             return rows;
         }
 
+        /// <summary>The graph's light-typed nodes. A light is never a BG
+        /// object, so this listing and <see cref="Enumerate"/>'s never
+        /// overlap — the same partition the real walk makes by ObjectType.
+        /// </summary>
+        public List<nint> Lights { get; } = new();
+
+        public IReadOnlyList<nint> EnumerateLights() => Lights.ToArray();
+
         public bool IsAlive(nint address) => _nodes.ContainsKey(address);
 
         public bool TryRead(nint address, out Transform placement)

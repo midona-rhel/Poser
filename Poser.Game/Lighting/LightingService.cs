@@ -10,6 +10,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Poser.Core;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Game.WorldObjects;
 using Poser.Services;
 using PoserTransform = Poser.Transform;
 
@@ -62,6 +63,7 @@ public sealed unsafe class LightingService : ILightingService
     private readonly IEventBus _events;
     private readonly IObjectTable _objects;
     private readonly IGameInteropProvider _hooks;
+    private readonly IWorldObjectPort _worldGraph;
 
     /// <summary>Light.Create — the game allocates and returns the object;
     /// the plugin never allocates one itself.</summary>
@@ -92,6 +94,15 @@ public sealed unsafe class LightingService : ILightingService
     private readonly HashSet<nint> _worldLights = new();
     private readonly object _worldGate = new();
 
+    /// <summary>Whether the world's existing lights have been walked for this
+    /// GPose session. The ctor hook only ever sees lights constructed AFTER it
+    /// was installed, so a zone that was already loaded — every dev hot-reload,
+    /// and every session entered without a territory change — contributes
+    /// nothing through it. The seed is what makes those lights exist to the
+    /// listing; this flag is what stops an empty listing re-walking the graph
+    /// on every frame.</summary>
+    private bool _worldLightsSeeded;
+
     private readonly HashSet<Skeleton> _attachRefreshed = new();
 
     private static readonly TimeSpan GPosePollInterval = TimeSpan.FromSeconds(1);
@@ -107,7 +118,8 @@ public sealed unsafe class LightingService : ILightingService
         ICameraService camera,
         IEventBus events,
         IObjectTable objects,
-        IGameInteropProvider hooks)
+        IGameInteropProvider hooks,
+        IWorldObjectPort worldGraph)
     {
         _framework = framework;
         _log = log;
@@ -116,6 +128,7 @@ public sealed unsafe class LightingService : ILightingService
         _events = events;
         _objects = objects;
         _hooks = hooks;
+        _worldGraph = worldGraph;
 
         _gobos = GoboLibrary.Load();
 
@@ -878,12 +891,78 @@ public sealed unsafe class LightingService : ILightingService
             _events.Publish(new LightListChangedEvent(Lights));
     }
 
+    /// <summary>
+    /// Walks the world's scene graph for the lights that already exist and adds
+    /// them to the tracked set.
+    ///
+    /// <para>WHY THIS EXISTS: <see cref="LightCtorDetour"/> is the only other
+    /// writer, and a hook sees nothing that was constructed before it was
+    /// installed. A light belonging to an already-loaded zone therefore never
+    /// entered the set, which made the world-light listing permanently empty
+    /// for exactly the case it is tested in. The hook is the LIVENESS half and
+    /// stays; this is the SEED half.</para>
+    ///
+    /// <para>Ktisis reaches the same lights the same way and no other way:
+    /// one recursion of <c>World.Instance()</c>'s object graph, partitioned by
+    /// <c>ObjectType.Light</c> (<c>Ktisis/Services/Game/WorldService.cs:39-42</c>),
+    /// rebuilt on its own GPose-enter event (<c>:27-30</c>), with the node's
+    /// address used as the light pointer directly
+    /// (<c>Scene/Entities/World/LightEntity.cs:114</c>). Overlap with the hook's
+    /// additions costs nothing — the set is a hash set.</para>
+    /// </summary>
+    private void SeedWorldLights()
+    {
+        if (_disposed || !_framework.IsInFrameworkUpdateThread)
+            return;
+        if (!_worldGraph.IsAvailable)
+            return;
+
+        _worldLightsSeeded = true;
+
+        IReadOnlyList<nint> found;
+        try
+        {
+            found = _worldGraph.EnumerateLights();
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"LightingService: seeding the world lights failed: {ex}");
+            return;
+        }
+
+        var added = 0;
+        lock (_worldGate)
+        {
+            foreach (var handle in found)
+            {
+                if (handle != nint.Zero && _worldLights.Add(handle))
+                    added++;
+            }
+        }
+
+        if (added > 0)
+            _log.Debug(
+                $"LightingService: seeded {added} pre-existing world light(s) from the scene graph.");
+    }
+
     public IReadOnlyList<WorldLightCandidate> GetWorldLightCandidates()
     {
         if (!IsAvailable || _lightCtorHook == null || !_gPose.IsGPosing)
             return Array.Empty<WorldLightCandidate>();
         if (!_framework.IsInFrameworkUpdateThread)
             return Array.Empty<WorldLightCandidate>();
+
+        // The lazy half of the seed, for the session this service was
+        // constructed INSIDE of — a hot reload raises no GPose-enter event, so
+        // the first listing is the only place left to notice the set is empty.
+        if (!_worldLightsSeeded)
+        {
+            var empty = false;
+            lock (_worldGate)
+                empty = _worldLights.Count == 0;
+            if (empty)
+                SeedWorldLights();
+        }
 
         nint[] handles;
         lock (_worldGate)
@@ -1137,9 +1216,19 @@ public sealed unsafe class LightingService : ILightingService
     {
         _nextGPosePollUtc = DateTime.MinValue;
         if (evt.IsGPosing)
+        {
+            // Ktisis rebuilds its world listing on this same edge
+            // (WorldService.cs:27-30). The seed runs first so the camera
+            // lights the refresh finds are already deduped against it.
+            _worldLightsSeeded = false;
+            SeedWorldLights();
             RefreshGPoseLights();
+        }
         else
+        {
+            _worldLightsSeeded = false;
             DestroyAllLightsCore();
+        }
     }
 
     public void Dispose()

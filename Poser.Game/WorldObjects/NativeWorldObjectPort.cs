@@ -30,6 +30,11 @@ namespace Poser.Game.WorldObjects;
 /// guaranteed acyclic, so this walk carries an explicit visited set and a hard
 /// node cap instead of Ktisis' pairwise address comparisons — the same
 /// traversal, terminating by construction.</para>
+///
+/// <para>The same walk answers the light service's seed. Ktisis partitions its
+/// one recursion into BG objects and lights by <c>ObjectType</c>
+/// (<c>WorldService.cs:39-42</c>), and this port does the same rather than
+/// standing a second graph walk up beside it.</para>
 /// </summary>
 public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 {
@@ -41,6 +46,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 
     private readonly IPluginLog _log;
     private readonly List<WorldObjectRow> _rows = new();
+    private readonly List<nint> _lights = new();
     private readonly HashSet<nint> _visited = new();
     private readonly Stack<nint> _pending = new();
 
@@ -50,14 +56,38 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 
     public IReadOnlyList<WorldObjectRow> Enumerate()
     {
+        Walk(wantLights: false);
+        return _rows.Count == 0
+            ? Array.Empty<WorldObjectRow>()
+            : _rows.ToArray();
+    }
+
+    public IReadOnlyList<nint> EnumerateLights()
+    {
+        Walk(wantLights: true);
+        return _lights.Count == 0
+            ? Array.Empty<nint>()
+            : _lights.ToArray();
+    }
+
+    /// <summary>The one traversal, partitioned at its end by object type —
+    /// Ktisis' <c>RecurseWorld()</c> is likewise walked once and split into BG
+    /// objects and lights by two <c>Where</c> clauses
+    /// (<c>WorldService.cs:39-42</c>). The partition is a parameter rather than
+    /// two collected lists because a listing pass wants one of them and
+    /// building the other would be a wasted read of every node's model
+    /// resource.</summary>
+    private void Walk(bool wantLights)
+    {
         _rows.Clear();
+        _lights.Clear();
         _visited.Clear();
         _pending.Clear();
         try
         {
             var world = CSWorld.Instance();
             if (world == null)
-                return Array.Empty<WorldObjectRow>();
+                return;
 
             // The root itself is not a listing row — Ktisis says the same in
             // as many words (WorldService.cs:49, "don't include World root").
@@ -73,7 +103,14 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
                 if (node == null)
                     continue;
                 PushRing(node->ChildObject);
-                if (node->GetObjectType() != ObjectType.BgObject)
+                var type = node->GetObjectType();
+                if (wantLights)
+                {
+                    if (type == ObjectType.Light)
+                        _lights.Add(address);
+                    continue;
+                }
+                if (type != ObjectType.BgObject)
                     continue;
                 _rows.Add(ReadRow(address, (BgObject*)node));
             }
@@ -89,10 +126,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             // throw into the overlay's draw.
             _log.Error($"NativeWorldObjectPort: walking the world failed: {ex.Message}");
             _rows.Clear();
+            _lights.Clear();
         }
-        return _rows.Count == 0
-            ? Array.Empty<WorldObjectRow>()
-            : _rows.ToArray();
     }
 
     public bool IsAlive(nint address) => Resolve(address) != null;

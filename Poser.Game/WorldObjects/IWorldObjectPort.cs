@@ -79,6 +79,25 @@ public interface IWorldObjectPort
     /// the service's question, not the graph's.</summary>
     IReadOnlyList<WorldObjectRow> Enumerate();
 
+    /// <summary>The same walk, filtered to the graph's LIGHT-typed nodes, as
+    /// bare addresses.
+    ///
+    /// <para>It lives on this seam rather than beside the light service because
+    /// the world's scene graph has exactly one walk, and Ktisis reaches its
+    /// lights through that same walk and no other — one recursion, partitioned
+    /// by <c>ObjectType</c> at the end of it
+    /// (<c>Ktisis/Services/Game/WorldService.cs:39-42</c>: BG objects and
+    /// lights are two <c>Where</c> clauses over one <c>RecurseWorld()</c>).
+    /// The address is the graph node's own, which is the light: Ktisis casts it
+    /// straight through (<c>Scene/Entities/World/LightEntity.cs:114</c>,
+    /// <c>Scene/Modules/Lights/LightModule.cs:74</c>).</para>
+    ///
+    /// <para>Bare addresses rather than rows because a light's interesting
+    /// state is not the BG object's — no model path, no culling volume — and
+    /// the light service already knows how to read one from its handle.</para>
+    /// </summary>
+    IReadOnlyList<nint> EnumerateLights();
+
     /// <summary>Whether this address is still a BG object this port can
     /// address. An adopted object whose address has gone is inert, never
     /// written and never restored onto.</summary>
