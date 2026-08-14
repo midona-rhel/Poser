@@ -1460,9 +1460,7 @@ public class MainWindow : Window
             _camerasSection.Rows.Add(new ShellSidebarRow
             {
                 Label = camera.Name,
-                // The badge slot marks the session's own camera: the one
-                // that cannot be destroyed and that live falls back to.
-                Count = camera.IsDefault ? "Default" : "",
+                Count = CameraBadge(camera.IsLive, camera.IsDefault),
                 Icon = camera.Kind == CameraKind.Free
                     ? TablerIcon.Video
                     : TablerIcon.Camera,
@@ -1472,6 +1470,19 @@ public class MainWindow : Window
             });
         }
     }
+
+    /// <summary>
+    /// The camera row's badge. Exactly one camera is LIVE — the one the shot
+    /// is actually framed through — and the row said so only by an undimmed
+    /// glyph in its action strip, which reads as an available verb rather than
+    /// as a state (user, in-game round 4: the scene lists cameras but not
+    /// which is active). Live takes the one badge slot when it applies: which
+    /// camera you are looking through is the more urgent fact, and the default
+    /// camera's own mark — that it cannot be destroyed — is still told by its
+    /// absent destroy affordance.
+    /// </summary>
+    private static string CameraBadge(bool live, bool isDefault) =>
+        live ? "Live" : isDefault ? "Default" : "";
 
     /// <summary>The mark for one light KIND, shared by the sidebar rows and
     /// the LIGHTS header's type chooser: a kind means the same thing wherever
@@ -1570,13 +1581,18 @@ public class MainWindow : Window
             cameraRow.Active = _selection.IsSelected(cameraSelection);
             // The live and lock marks read the LIVE camera, not the
             // descriptor: the switch moves the scene signature, and waiting
-            // for the republish would leave the glyphs behind the click.
+            // for the republish would leave the glyphs behind the click. The
+            // BADGE is the same fact, so it is restated from the same read —
+            // the mark for which camera the shot is framed through must not
+            // lag the click that moved it.
             if (cameraSelection.Camera is { } rowCameraId &&
                 _bindings.Resolve(rowCameraId) is
                     { Success: true, Value: { } liveCamera })
             {
                 cameraRow.CameraLive = liveCamera.IsLive;
                 cameraRow.CameraLocked = liveCamera.IsLocked;
+                cameraRow.Count =
+                    CameraBadge(liveCamera.IsLive, liveCamera.IsDefault);
             }
         }
 
