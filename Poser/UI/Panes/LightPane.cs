@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -48,7 +48,9 @@ public sealed class LightPane
     private readonly ICameraService _camera;
     private readonly ITextureProvider _textures;
 
-    private string _status = string.Empty;
+    /// <summary>Where this pane's verb outcomes go; the page itself states
+    /// standing facts only.</summary>
+    private readonly UserNotices _notices;
     private bool _openGeneral = true;
     private bool _openLight = true;
     private bool _openShadows = true;
@@ -113,8 +115,10 @@ public sealed class LightPane
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
         ICameraService camera,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        UserNotices notices)
     {
+        _notices = notices;
         _scene = scene;
         _bindings = bindings;
         _lighting = lighting;
@@ -168,11 +172,10 @@ public sealed class LightPane
                 _lightFiles.ImportLight(path));
             if (imported == null)
             {
-                _status = "Load: the light file could not be read.";
+                _notices.Failed("Load: the light file could not be read.");
                 return;
             }
             _pendingSelect = imported;
-            _status = string.Empty;
         });
     }
 
@@ -228,7 +231,6 @@ public sealed class LightPane
                 return;
             }
 
-            page.Status(_status);
             sections(page, lightId, light);
         });
     }
@@ -394,7 +396,6 @@ public sealed class LightPane
                     () =>
                     {
                         _lighting.ClearGobo(light);
-                        _status = string.Empty;
                     },
                     disabled: light.GoboPath is null),
                 help: "Project no mask at all");
@@ -432,9 +433,8 @@ public sealed class LightPane
         if (light == null || gobos.Count == 0)
             return;
         int clamped = (int)Math.Min(index, (uint)(gobos.Count - 1));
-        _status = _lighting.ApplyGobo(light, gobos[clamped])
-            ? string.Empty
-            : "Gobo: the texture could not be applied.";
+        if (!_lighting.ApplyGobo(light, gobos[clamped]))
+            _notices.Failed("Gobo: the texture could not be applied.");
     }
 
     /// <summary>
@@ -543,7 +543,6 @@ public sealed class LightPane
                     {
                         light.AttachedBone = null;
                         _attachLabel = null;
-                        _status = string.Empty;
                     },
                     disabled: attached is null,
                     help: "Leave the light where it is and stop following");
@@ -626,12 +625,11 @@ public sealed class LightPane
         var resolved = _bindings.Resolve(choice.Id);
         if (!resolved.Success || resolved.Value is not { } bone)
         {
-            _status = $"Attach: {resolved.Detail}";
+            _notices.Failed($"Attach: {resolved.Detail}");
             return;
         }
         light.AttachedBone = bone;
         _attachLabel = null;
-        _status = string.Empty;
     }
 
     /// <summary>Nickname / anonymous-mask aware, like every other surface.
@@ -665,13 +663,14 @@ public sealed class LightPane
             // the dialog is up; an invalid handle reads as spawn defaults.
             if (!light.IsValid)
             {
-                _status = "Export: the light no longer exists.";
+                _notices.Refused("Export: the light no longer exists.");
                 return;
             }
-            bool exported = _lightFiles.ExportLight(light, path);
-            _status = exported
-                ? string.Empty
-                : "Export: the light file could not be written.";
+            if (_lightFiles.ExportLight(light, path))
+                _notices.Done($"Light saved to {path}.");
+            else
+                _notices.Failed(
+                    "Export: the light file could not be written.");
         });
     }
 
@@ -689,10 +688,9 @@ public sealed class LightPane
             actions.Button("Clone",
                 () =>
                 {
-                    var clone = _lifecycle.CloneLight(light);
-                    _status = clone == null
-                        ? "Clone: the light could not be created."
-                        : string.Empty;
+                    if (_lifecycle.CloneLight(light) == null)
+                        _notices.Failed(
+                            "Clone: the light could not be created.");
                 },
                 help: "Create a second light with every setting of this one");
             // A borrowed native is never destructed: a captured light is given
@@ -703,7 +701,6 @@ public sealed class LightPane
                     () =>
                     {
                         _lifecycle.DestroyLight(light);
-                        _status = string.Empty;
                     },
                     help: "Remove this light from the scene",
                     variant: ButtonVariant.Danger);
@@ -712,7 +709,6 @@ public sealed class LightPane
                     () =>
                     {
                         _lighting.ReleaseLight(light);
-                        _status = string.Empty;
                     },
                     help: "Give this light back to the game and stop editing it");
         });
@@ -726,7 +722,7 @@ public sealed class LightPane
         var forward = _camera.GetLookDirection();
         if (forward == Vector3.Zero)
         {
-            _status = "Move to camera: the camera could not be read.";
+            _notices.Failed("Move to camera: the camera could not be read.");
             return;
         }
 
@@ -746,15 +742,14 @@ public sealed class LightPane
                 out var target,
                 out var invalid))
         {
-            _status = $"Move to camera: {invalid}";
+            _notices.Failed($"Move to camera: {invalid}");
             return;
         }
 
         var moved = _cleanTransforms.SetAbsolute(
             TransformTargetId.ForLight(lightId), target, "Move light to camera");
-        _status = moved.Success
-            ? string.Empty
-            : $"Move to camera: {moved.Detail}";
+        if (!moved.Success)
+            _notices.Failed($"Move to camera: {moved.Detail}");
     }
 
     // ── HDR colour mapping ───────────────────────────────────────────────

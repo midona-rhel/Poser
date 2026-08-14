@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Application.Scene;
@@ -37,7 +37,9 @@ public sealed class CameraPane
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
 
-    private string _status = string.Empty;
+    /// <summary>Where this pane's verb outcomes go; the page itself states
+    /// standing facts only.</summary>
+    private readonly UserNotices _notices;
     private bool _openGeneral = true;
     private bool _openCamera = true;
     private bool _openMovement = true;
@@ -88,13 +90,15 @@ public sealed class CameraPane
         StableBindingRegistry bindings,
         IVirtualCameraService cameras,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        ICameraFileService cameraFiles)
+        ICameraFileService cameraFiles,
+        UserNotices notices)
     {
         _scene = scene;
         _bindings = bindings;
         _cameras = cameras;
         _lifecycle = lifecycle;
         _cameraFiles = cameraFiles;
+        _notices = notices;
     }
 
     /// <summary>
@@ -130,11 +134,10 @@ public sealed class CameraPane
                 _cameraFiles.ImportCamera(path));
             if (imported == null)
             {
-                _status = "Load: the camera file could not be read.";
+                _notices.Failed("Load: the camera file could not be read.");
                 return;
             }
             _pendingSelect = imported;
-            _status = string.Empty;
         });
     }
 
@@ -265,7 +268,6 @@ public sealed class CameraPane
                 return;
             }
 
-            page.Status(_status);
             sections(page, cameraId, camera);
         });
     }
@@ -400,7 +402,6 @@ public sealed class CameraPane
                     () =>
                     {
                         _cameras.ClearTargetActor(camera);
-                        _status = string.Empty;
                     },
                     disabled: locked || !following,
                     help: "Put the pivot back on the game's own target");
@@ -560,7 +561,6 @@ public sealed class CameraPane
                 () =>
                 {
                     camera.ResetProperties();
-                    _status = string.Empty;
                 },
                 disabled: camera.IsLocked,
                 help: "Put every camera property back to its default");
@@ -573,11 +573,11 @@ public sealed class CameraPane
                     var clone = _lifecycle.CloneCamera(camera);
                     if (clone == null)
                     {
-                        _status = "Clone: the camera could not be created.";
+                        _notices.Failed(
+                            "Clone: the camera could not be created.");
                         return;
                     }
                     _pendingSelect = clone;
-                    _status = string.Empty;
                 },
                 help: "Create a second camera with every setting of this one");
             if (!camera.IsDefault)
@@ -585,7 +585,6 @@ public sealed class CameraPane
                     () =>
                     {
                         _lifecycle.DestroyCamera(camera);
-                        _status = string.Empty;
                     },
                     help: "Remove this camera from the scene",
                     variant: ButtonVariant.Danger);
@@ -627,7 +626,6 @@ public sealed class CameraPane
                     () =>
                     {
                         tracked.Clear();
-                        _status = string.Empty;
                     },
                     disabled: locked || tracked.Count == 0,
                     help: "Stop tracking every bone");
@@ -684,12 +682,11 @@ public sealed class CameraPane
         var resolved = _bindings.Resolve(choice.Id);
         if (!resolved.Success || resolved.Value is not { } actor)
         {
-            _status = $"Follow: {resolved.Detail}";
+            _notices.Failed($"Follow: {resolved.Detail}");
             return;
         }
-        _status = _cameras.SetTargetActor(camera, actor, choice.Name)
-            ? string.Empty
-            : "Follow: the actor is not drawn yet.";
+        if (!_cameras.SetTargetActor(camera, actor, choice.Name))
+            _notices.Failed("Follow: the actor is not drawn yet.");
     }
 
     private void OpenBonePicker(IVirtualCamera camera)
@@ -739,7 +736,7 @@ public sealed class CameraPane
             var resolved = _bindings.Resolve(choice.Id);
             if (!resolved.Success || resolved.Value is not { } bone)
             {
-                _status = $"Track: {resolved.Detail}";
+                _notices.Failed($"Track: {resolved.Detail}");
                 return;
             }
             if (!camera.TrackedBones.Contains(bone))
@@ -756,7 +753,6 @@ public sealed class CameraPane
             }
             _trackedKeys.Remove(key);
         }
-        _status = string.Empty;
     }
 
     /// <summary>Ktisis's "track selection" button: the tracked set becomes
@@ -774,13 +770,12 @@ public sealed class CameraPane
         }
         if (bones.Count == 0)
         {
-            _status = "Track: select one or more bones first.";
+            _notices.Refused("Track: select one or more bones first.");
             return;
         }
         camera.TrackedBones.Clear();
         foreach (var bone in bones)
             camera.TrackedBones.Add(bone);
-        _status = string.Empty;
     }
 
     private string BoneLabel(IBone bone)
@@ -841,13 +836,14 @@ public sealed class CameraPane
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             if (!camera.IsValid)
             {
-                _status = "Export: the camera no longer exists.";
+                _notices.Refused("Export: the camera no longer exists.");
                 return;
             }
-            bool exported = _cameraFiles.ExportCamera(camera, path);
-            _status = exported
-                ? string.Empty
-                : "Export: the camera file could not be written.";
+            if (_cameraFiles.ExportCamera(camera, path))
+                _notices.Done($"Camera saved to {path}.");
+            else
+                _notices.Failed(
+                    "Export: the camera file could not be written.");
         });
     }
 

@@ -151,6 +151,31 @@ section headers and tree drawn over a FLAT cache of visible entries.
 set; a disclosure click flows out through `AppShellViewModel.OnRowExpandToggled`
 and only marks the cache dirty, so the next frame re-splices from rebuilt rows.
 
+## Saying something to the user
+
+There are exactly TWO channels, and which one a string belongs in is decided by
+what produced it, not by how important it is.
+
+- **Standing text stays in place.** A pane renders it from its CURRENT state
+  with no user action behind it: an empty state, a scan in progress, a running
+  transaction's phase (beside its Stop), a per-file typed diagnosis, a
+  placeholder standing where a thing would be, a control's unavailability. It
+  explains an ABSENCE where the absence is, so moving it would leave a blank
+  surface that says nothing. `Crystarium.PageScope.Status` /
+  `FormScope.Status` are its only home.
+- **Transient text is a notification.** It is the outcome of a COMPLETED user
+  action — a save that landed, an import that refused, a verb whose target went
+  away. It has no standing state to explain, it would linger until the next
+  action displaced it, and the surface that started the action is frequently
+  gone by the time it answers (a menu row, a modal, the spawn browser, which
+  closes on focus loss). `UserNotices` — `Done` / `Refused` / `Failed` over
+  Dalamud's `INotificationManager` — is its only home. No pane keeps a
+  `_status` or `_note` field for this.
+
+A success the user can SEE happen says nothing at all: a moved tile leaves the
+grid, a cleared badge is the answer to a retry. `Done` is for outcomes with no
+visible trace — a file written somewhere the user is not looking.
+
 ## Text and ink centering
 
 `Crystarium.Text` / `TextAt` / `MeasureText` / `TruncateText` with a `TextStyle`

@@ -59,8 +59,10 @@ internal static class ServiceRegistration
         IKeyState keyState,
         ITextureProvider textureProvider,
         ITargetManager targetManager,
-        IChatGui chatGui)
+        IChatGui chatGui,
+        INotificationManager notificationManager)
     {
+        services.AddSingleton(notificationManager);
         services.AddSingleton(pluginInterface);
         services.AddSingleton(log);
         services.AddSingleton(clientState);
@@ -413,6 +415,9 @@ internal static class ServiceRegistration
     private static IServiceCollection AddFeaturePanes(
         this IServiceCollection services)
     {
+        // The one transient-message channel every surface below speaks
+        // through, registered ahead of them all.
+        services.AddSingleton<UserNotices>();
         services.AddSingleton<ExpressionInspectorSection>();
         services.AddSingleton<PoseFileInspectorSection>();
         services.AddSingleton<PoseInspectorPane>();

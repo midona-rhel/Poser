@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -152,12 +152,15 @@ public sealed class SpawnBrowserWindow : Window
     // The caption is a STRING PER COUNT, not per frame: it is rebuilt only when
     // the number it states or the mode it states it in changes.
     private string _caption = string.Empty;
+
+    /// <summary>Why an activation did nothing. A spawn row's refusal is a
+    /// TRANSIENT outcome and this window closes on focus loss, so it goes to
+    /// the notification channel — a caption in a surface that is already gone
+    /// says nothing to anybody.</summary>
+    private readonly UserNotices _notices;
     private int _captionCount = -1;
     private bool _captionFiltered;
 
-    /// <summary>Why the last activation did nothing, or null. Cleared by the
-    /// next activation and by any query change.</summary>
-    private string? _note;
 
     private int _lastRow = -1;
     private double _lastActivatedAt;
@@ -180,7 +183,8 @@ public sealed class SpawnBrowserWindow : Window
         AnimationSession animation,
         ConfigurationService configuration,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        UserNotices notices)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -201,6 +205,7 @@ public sealed class SpawnBrowserWindow : Window
         _animation = animation;
         _configuration = configuration;
         _lifecycle = lifecycle;
+        _notices = notices;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -212,7 +217,6 @@ public sealed class SpawnBrowserWindow : Window
             if (_vm.Tab == next)
                 return;
             _vm.Tab = next;
-            _note = null;
             // The world listing is a snapshot; entering its tab is one of
             // the two implicit refresh points (the other is window open).
             // Deferred: this fires from the tab strip mid-draw.
@@ -256,7 +260,6 @@ public sealed class SpawnBrowserWindow : Window
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
-        _note = null;
         _lastRow = -1;
         _hadFocus = false;
         // Re-read rather than trust the cached toggle: a config reset is not
@@ -356,11 +359,10 @@ public sealed class SpawnBrowserWindow : Window
         var captured = _lightingService.CaptureWorldLight(choice.Candidate);
         if (captured == null)
         {
-            _note = "The world light could not be captured.";
+            _notices.Failed("The world light could not be captured.");
             return;
         }
         _pendingSelectSpawnedLight = captured;
-        _note = null;
     }
 
     // ── the list ─────────────────────────────────────────────────────────
@@ -624,7 +626,6 @@ public sealed class SpawnBrowserWindow : Window
         // Lowercased ONCE per query change; the scan below compares ordinal
         // against names that were lowercased when the catalog was built.
         _queryLower = _query.Trim().ToLowerInvariant();
-        _note = null;
         _refilter = true;
     }
 
@@ -661,11 +662,6 @@ public sealed class SpawnBrowserWindow : Window
 
     private void SyncStatus()
     {
-        if (_note is { } note)
-        {
-            _vm.Status = note;
-            return;
-        }
         bool filtered = _queryLower.Length > 0;
         if (_captionCount != _vm.Visible.Count || _captionFiltered != filtered)
         {
@@ -686,7 +682,6 @@ public sealed class SpawnBrowserWindow : Window
             return;
         _lastRow = index;
         _lastActivatedAt = now;
-        _note = null;
 
         switch (index)
         {
@@ -710,7 +705,7 @@ public sealed class SpawnBrowserWindow : Window
                 return;
             case RowProp:
                 if (_lifecycle.SpawnProp() == null)
-                    _note = SpawnFailedNote;
+                    _notices.Failed(SpawnFailedNote);
                 return;
             case RowOverlayTalk:
             case RowOverlayBalloon:
@@ -775,8 +770,9 @@ public sealed class SpawnBrowserWindow : Window
                     index == RowCameraFree ? CameraKind.Free : CameraKind.Game);
                 if (created == null)
                 {
-                    _note = "The camera could not be created — cameras exist "
-                        + "only inside GPose.";
+                    _notices.Failed(
+                        "The camera could not be created — cameras exist "
+                        + "only inside GPose.");
                     return;
                 }
                 // The camera pane owns the pending select; it is pumped by
@@ -817,7 +813,7 @@ public sealed class SpawnBrowserWindow : Window
             int modelIndex = index - ActionRows - _actorEntryCount;
             if (modelIndex >= 0 && modelIndex < models.Count &&
                 _lifecycle.SpawnProp(models[modelIndex]) == null)
-                _note = SpawnFailedNote;
+                _notices.Failed(SpawnFailedNote);
             return;
         }
 
@@ -829,7 +825,7 @@ public sealed class SpawnBrowserWindow : Window
             $"Add {entry.Name}", () => _spawnService.SpawnCatalogActor(entry));
         if (spawned == null)
         {
-            _note = SpawnFailedNote;
+            _notices.Failed(SpawnFailedNote);
             return;
         }
         SelectSpawned(spawned);
@@ -849,15 +845,15 @@ public sealed class SpawnBrowserWindow : Window
                 return;
             case WorldActorImportStatus.StaleCandidate:
                 _refreshWorldPending = true;
-                _note = "That actor is no longer there — the list was "
-                    + "refreshed.";
+                _notices.Refused(
+                    "That actor is no longer there — the list was refreshed.");
                 return;
             case WorldActorImportStatus.SpawnFailed:
-                _note = result.Detail ?? SpawnFailedNote;
+                _notices.Failed(result.Detail ?? SpawnFailedNote);
                 return;
             default:
-                _note = result.Detail
-                    ?? "Cloning a world actor works only inside GPose.";
+                _notices.Failed(result.Detail
+                    ?? "Cloning a world actor works only inside GPose.");
                 return;
         }
     }
@@ -929,6 +925,7 @@ public sealed class SpawnBrowserWindow : Window
             return;
         var result = _animation.Pause(actor);
         if (!result.Success)
-            _note = result.Detail ?? "The new actor could not be frozen.";
+            _notices.Failed(
+                result.Detail ?? "The new actor could not be frozen.");
     }
 }

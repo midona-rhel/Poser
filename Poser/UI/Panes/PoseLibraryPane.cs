@@ -137,6 +137,11 @@ public sealed class PoseLibraryPane
     private readonly IAutoSaveService _autoSave;
     private readonly PoseFileInspectorSection _files;
     private readonly IActorManager _actors;
+
+    /// <summary>Where every verb's OUTCOME goes. A file verb, an apply and a
+    /// spawn all answer after the click that started them; they are not the
+    /// grid's standing state, so they do not take a band of it.</summary>
+    private readonly UserNotices _notices;
     private readonly PoseLibraryViewModel _vm = new();
     private bool _applyMenuRequested;
 
@@ -241,10 +246,6 @@ public sealed class PoseLibraryPane
     /// their labels; a Settings flip forces a remint.</summary>
     private bool _builtExtensions;
 
-    /// <summary>Why the last apply or spawn did nothing, or null. Cleared by
-    /// the next one and by any filter change.</summary>
-    private string? _note;
-
 
     private int _lastAppliedTile = -1;
     private double _lastAppliedAt;
@@ -255,8 +256,8 @@ public sealed class PoseLibraryPane
     // The BINDER owns the tile menu now: its rows depend on the tab, the
     // entry's typed metadata status, and which authoring/recovery verbs
     // apply — none of which the view knows. Disk actions go through the
-    // typed PoseLibraryFileActions verbs; every outcome lands in _note and a
-    // successful mutation requests a rescan, never edits the snapshot.
+    // typed PoseLibraryFileActions verbs; every outcome is a notification and
+    // a successful mutation requests a rescan, never edits the snapshot.
 
     private const string TileMenuId = "##pose-library-tile-menu";
     private const string MoveMenuId = "##pose-library-move-menu";
@@ -351,7 +352,8 @@ public sealed class PoseLibraryPane
         PoseFileInspectorSection files,
         IActorManager actors,
         PosePreviewService preview,
-        SceneWorkflow scenes)
+        SceneWorkflow scenes,
+        UserNotices notices)
     {
         _config = config;
         _library = library;
@@ -365,6 +367,7 @@ public sealed class PoseLibraryPane
         _autoSave = autoSave;
         _files = files;
         _actors = actors;
+        _notices = notices;
         _previewBinder = new PosePreviewBinder(preview, poseFacade);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -428,7 +431,8 @@ public sealed class PoseLibraryPane
                 return;
             operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
-                _note = $"Apply: {receipt.Detail ?? receipt.State.ToString()}.";
+                _notices.Failed(
+                    $"Apply: {receipt.Detail ?? receipt.State.ToString()}.");
         };
     }
 
@@ -517,7 +521,7 @@ public sealed class PoseLibraryPane
             }
             if (items.Count == 0)
             {
-                _note = "No actor to apply to.";
+                _notices.Refused("No actor to apply to.");
                 return;
             }
             if (items.Count == 1)
@@ -693,7 +697,8 @@ public sealed class PoseLibraryPane
             return;
         var started = _scenes.BeginLoad(_vm.Tiles[index].ThumbKey);
         if (!started.Success)
-            _note = started.Detail;
+            _notices.Failed(
+                started.Detail ?? "The scene could not be loaded.");
     }
 
     private void Dispatch(TileMenuAction action, int index)
@@ -743,25 +748,26 @@ public sealed class PoseLibraryPane
 
     // ── the recovery and authoring verbs ─────────────────────────────────
     // Disk work happens on the click, exactly as an apply's file load does;
-    // every outcome is TYPED and lands in the footer note, and a successful
-    // mutation asks the scan for a fresh complete pass rather than editing
-    // the published snapshot.
+    // every outcome is TYPED and is announced through the notification
+    // channel, and a successful mutation asks the scan for a fresh complete
+    // pass rather than editing the published snapshot.
 
     private void RetryProbe(string path)
     {
         var result = PoseLibraryFileActions.Default.Probe(path);
         if (!result.Succeeded)
         {
-            _note = "Retry: " + result.Detail;
+            _notices.Failed("Retry: " + result.Detail);
             return;
         }
         // A clean read says nothing: the badge that prompted the retry simply
         // goes, which IS the answer (user 2026-08-14 — the confirmations were
         // restating what the tile already showed). Only a still-bad read has
         // something the tile cannot say on its own.
-        _note = result.ProbeStatus == PoseLibraryMetadataStatus.Valid
-            ? null
-            : "Retry: " + StatusText(result.ProbeStatus!.Value, result.Detail);
+        if (result.ProbeStatus != PoseLibraryMetadataStatus.Valid)
+            _notices.Failed(
+                "Retry: "
+                + StatusText(result.ProbeStatus!.Value, result.Detail));
         // Either way the badge restates the CURRENT truth.
         _library.RequestScan();
     }
@@ -771,12 +777,12 @@ public sealed class PoseLibraryPane
         var result = PoseLibraryFileActions.Default.Quarantine(path);
         if (!result.Succeeded)
         {
-            _note = "Quarantine: " + result.Detail;
+            _notices.Failed("Quarantine: " + result.Detail);
             return;
         }
         FavoritePathChanged(path, null);
-        _note = "Moved into "
-            + PoseLibraryFileActions.QuarantineFolderName + ".";
+        _notices.Done("Moved into "
+            + PoseLibraryFileActions.QuarantineFolderName + ".");
         _library.RequestScan();
     }
 
@@ -816,7 +822,7 @@ public sealed class PoseLibraryPane
 
         if (items.Count == 0)
         {
-            _note = "No other folder to move to.";
+            _notices.Refused("No other folder to move to.");
             return;
         }
         _movePath = path;
@@ -836,11 +842,10 @@ public sealed class PoseLibraryPane
         if (result.Succeeded)
         {
             FavoritePathChanged(path, result.ResultPath);
-            _note = null;
             _library.RequestScan();
         }
         else
-            _note = "Move: " + result.Detail;
+            _notices.Failed("Move: " + result.Detail);
     }
 
     /// <summary>Opens Explorer with the file selected. A refusal is stated,
@@ -851,7 +856,7 @@ public sealed class PoseLibraryPane
         {
             if (!System.IO.File.Exists(path))
             {
-                _note = "Reveal: the file no longer exists.";
+                _notices.Refused("Reveal: the file no longer exists.");
                 return;
             }
             System.Diagnostics.Process.Start(
@@ -863,7 +868,7 @@ public sealed class PoseLibraryPane
         }
         catch (Exception ex)
         {
-            _note = "Reveal: " + ex.Message;
+            _notices.Failed("Reveal: " + ex.Message);
         }
     }
 
@@ -981,11 +986,10 @@ public sealed class PoseLibraryPane
                 if (result.Succeeded)
                 {
                     FavoritePathChanged(_renamePath, result.ResultPath);
-                    _note = null;
                     _library.RequestScan();
                 }
                 else
-                    _note = "Rename: " + result.Detail;
+                    _notices.Failed("Rename: " + result.Detail);
                 _renameOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -1055,12 +1059,9 @@ public sealed class PoseLibraryPane
                 var result = PoseLibraryFileActions.Default.EditMetadata(
                     _metaPath, _metaAuthor, _metaTags.Split(','));
                 if (result.Succeeded)
-                {
-                    _note = null;
                     _library.RequestScan();
-                }
                 else
-                    _note = "Metadata: " + result.Detail;
+                    _notices.Failed("Metadata: " + result.Detail);
                 _metaOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -1126,14 +1127,13 @@ public sealed class PoseLibraryPane
                 if (result.Succeeded)
                 {
                     FavoritePathChanged(_deletePath, null);
-                    _note = null;
                     if (_type == LibraryType.AutoSaves)
                         _autoDirty = true;
                     else
                         _library.RequestScan();
                 }
                 else
-                    _note = "Delete: " + result.Detail;
+                    _notices.Failed("Delete: " + result.Detail);
                 _deleteOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -1248,7 +1248,6 @@ public sealed class PoseLibraryPane
         _vm.SelectedFolder = 0;
         _rangeStart = -1;
         _rangeEnd = -1;
-        _note = null;
     }
 
     /// <summary>The active library type as an index (Poses/Auto-saves/MCDF).
@@ -1937,7 +1936,6 @@ public sealed class PoseLibraryPane
         // Lowercased ONCE per query change; the scan below compares ordinal
         // against names that were lowercased when the snapshot was built.
         _queryLower = _query.Trim().ToLowerInvariant();
-        _note = null;
         _refilter = true;
     }
 
@@ -2188,12 +2186,6 @@ public sealed class PoseLibraryPane
         if (importing)
         {
             _vm.Status = $"{AppearancePane.PhaseLabel(running!.Phase)} {running.FileName}";
-            return;
-        }
-
-        if (_note is { } note)
-        {
-            _vm.Status = note;
             return;
         }
 
@@ -2604,7 +2596,6 @@ public sealed class PoseLibraryPane
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
         _vm.Selected = index;
-        _note = null;
     }
 
     private void SelectFolder(int index)
@@ -2613,7 +2604,6 @@ public sealed class PoseLibraryPane
             || index == _vm.SelectedFolder)
             return;
         _vm.SelectedFolder = index;
-        _note = null;
         SyncFolderRange();
         _refilter = true;
     }
@@ -2624,7 +2614,6 @@ public sealed class PoseLibraryPane
         // Lowercased ONCE per change; the scan compares ordinal against tags
         // the snapshot already lowercased.
         _tagLower = tag?.ToLowerInvariant();
-        _note = null;
         _refilter = true;
     }
 
@@ -2689,7 +2678,7 @@ public sealed class PoseLibraryPane
 
         if (TargetActor() is not { HasSkeleton: true } actor)
         {
-            _note = "Select an actor to apply a pose to.";
+            _notices.Refused("Select an actor to apply a pose to.");
             return;
         }
         ApplyTo(index, actor);
@@ -2708,7 +2697,7 @@ public sealed class PoseLibraryPane
         }
         if (!actor.HasSkeleton)
         {
-            _note = "That actor has no skeleton to pose.";
+            _notices.Refused("That actor has no skeleton to pose.");
             return;
         }
         var path = _vm.Tiles[index].ThumbKey;
@@ -2716,7 +2705,7 @@ public sealed class PoseLibraryPane
         _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
         if (blocked)
         {
-            _note = cmpNote;
+            _notices.Refused(cmpNote!);
             return;
         }
         // The target's stance is about to change, so the preview's rebase
@@ -2725,7 +2714,7 @@ public sealed class PoseLibraryPane
         _previewBinder.InvalidateBaseline();
         if (_bindings.GetActorId(actor) is not { } expectedActor)
         {
-            _note = "Apply: the actor could not be resolved.";
+            _notices.Failed("Apply: the actor could not be resolved.");
             return;
         }
         var result = _poseFacade.ImportPose(
@@ -2733,26 +2722,30 @@ public sealed class PoseLibraryPane
             path,
             BuildImportOptions(path),
             onReceipt: TrackImport(expectedActor));
-        _note = result.Success ? cmpNote : Failure(result);
+        if (!result.Success)
+            _notices.Failed(Failure(result));
+        else if (cmpNote is { Length: > 0 })
+            _notices.Refused(cmpNote);
     }
 
     /// <summary>
     /// The MCDF apply: the SAME call the appearance pane's Import… dialog
     /// makes (<c>AppearancePane.OpenMcdfImport</c>), so a character file picked
     /// here travels the identical mods/appearance/body-scale pipeline. The
-    /// session reports progress and every failure on its own surface; the note
-    /// only carries a refusal to start.
+    /// session reports progress and every failure on its own surface; the
+    /// notification only carries a refusal to start.
     /// </summary>
     private void ApplyCharacterFile(int index)
     {
         if (TargetActor() is not { } actor
             || _bindings.GetActorId(actor) is not { } id)
         {
-            _note = "Select an actor to apply a character file to.";
+            _notices.Refused("Select an actor to apply a character file to.");
             return;
         }
         var begun = _integration.BeginImport(id, _vm.Tiles[index].ThumbKey);
-        _note = begun.Success ? null : "Import: " + begun.Detail;
+        if (!begun.Success)
+            _notices.Failed("Import: " + begun.Detail);
     }
 
     private void Spawn(int index)
@@ -2766,14 +2759,14 @@ public sealed class PoseLibraryPane
         _files.CmpImportOverride(path, out bool blocked, out var cmpNote);
         if (blocked)
         {
-            _note = cmpNote;
+            _notices.Refused(cmpNote!);
             return;
         }
 
         var spawned = _spawnService.SpawnNewActor(reserveCompanionSlot: false);
         if (spawned is null)
         {
-            _note = "The actor could not be spawned.";
+            _notices.Failed("The actor could not be spawned.");
             return;
         }
 
@@ -2784,7 +2777,8 @@ public sealed class PoseLibraryPane
         _pendingPath = path;
         _pendingOptions = BuildImportOptions(path);
         _pendingFrames = 0;
-        _note = cmpNote;
+        if (cmpNote is { Length: > 0 })
+            _notices.Refused(cmpNote);
     }
 
     /// <summary>Second half of <see cref="Spawn"/>: the scene has not rescanned
@@ -2800,7 +2794,7 @@ public sealed class PoseLibraryPane
             if (++_pendingFrames < PendingSpawnFrames)
                 return;
             ClearPendingSpawn();
-            _note = "Spawned actor never became ready.";
+            _notices.Failed("Spawned actor never became ready.");
             return;
         }
 
@@ -2814,7 +2808,8 @@ public sealed class PoseLibraryPane
             path,
             options,
             onReceipt: TrackImport(id));
-        _note = result.Success ? null : Failure(result);
+        if (!result.Success)
+            _notices.Failed(Failure(result));
     }
 
     private void ClearPendingSpawn()

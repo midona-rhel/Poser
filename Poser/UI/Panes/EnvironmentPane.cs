@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -71,7 +71,14 @@ public sealed class EnvironmentPane
     private const string FestivalsUnavailable =
         "Festivals can only be changed in GPose";
 
-    private string _status = string.Empty;
+    /// <summary>Where this pane's verb outcomes go; the five pages state
+    /// standing facts only.</summary>
+    private readonly UserNotices _notices;
+
+    /// <summary>The one wording for a festival verb the zone refuses. It was
+    /// written out three times with three different leading words.</summary>
+    private const string FestivalPlaceRefusal =
+        "This festival cannot be changed where you are standing.";
 
     // Every section opens EXPANDED. A page carries at most four of them and a
     // collapsed header hides the only thing the page is for; the disclosure is
@@ -162,8 +169,10 @@ public sealed class EnvironmentPane
         IEnvironmentService environment,
         IWorldRenderingService rendering,
         IFestivalService festivals,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        UserNotices notices)
     {
+        _notices = notices;
         _environment = environment;
         _rendering = rendering;
         _festivals = festivals;
@@ -255,12 +264,9 @@ public sealed class EnvironmentPane
     //
     // The rule is a divider BETWEEN sections, so EVERY page's first section
     // states divider: false and draws neither the rule nor the margin above it.
-    // The status line is the PANE's, not a section's, so all five restate it —
-    // it costs a page that has none nothing, because Status returns on empty.
 
     private void WeatherPage(Crystarium.PageScope page)
     {
-        page.Status(_status);
         page.Section("TIME", _openTime, next => _openTime = next,
             TimeRows, divider: false);
         page.Section("WEATHER", _openWeather, next => _openWeather = next,
@@ -269,7 +275,6 @@ public sealed class EnvironmentPane
 
     private void SkyPage(Crystarium.PageScope page)
     {
-        page.Status(_status);
         page.Section("SKY", _openSky, next => _openSky = next, SkyRows,
             divider: false);
         page.Section("STARS", _openStars, next => _openStars = next, StarRows);
@@ -277,14 +282,12 @@ public sealed class EnvironmentPane
 
     private void LightPage(Crystarium.PageScope page)
     {
-        page.Status(_status);
         page.Section("LIGHTING", _openLighting,
             next => _openLighting = next, LightingRows, divider: false);
     }
 
     private void AtmospherePage(Crystarium.PageScope page)
     {
-        page.Status(_status);
         page.Section("FOG", _openFog, next => _openFog = next, FogRows,
             divider: false);
         page.Section("RAIN", _openRain, next => _openRain = next, RainRows);
@@ -295,7 +298,6 @@ public sealed class EnvironmentPane
 
     private void WorldPage(Crystarium.PageScope page)
     {
-        page.Status(_status);
         page.Section("RENDERING", _openRendering,
             next => _openRendering = next, RenderingRows, divider: false);
         page.Section("FESTIVALS", _openFestivals,
@@ -322,14 +324,14 @@ public sealed class EnvironmentPane
             // it the game reverts the pick on its next weather update.
             _environment.SetWeather(
                 weather.Item.Id, _environment.TransitionTime);
-            _status = string.Empty;
         }
 
         if (_festivalPicker.Draw() is { } festival)
         {
-            _status = _festivals.Add(festival.Item.Id)
-                ? string.Empty
-                : $"{festival.Item.Name}: this festival cannot be set where you are standing.";
+            if (!_festivals.Add(festival.Item.Id))
+                _notices.Refused(
+                    $"{festival.Item.Name}: this festival cannot be set "
+                    + "where you are standing.");
         }
 
         // Same rule as above, and for the same reason: the three texture grids
@@ -1061,9 +1063,11 @@ public sealed class EnvironmentPane
                 actions =>
                 {
                     actions.Button("Remove",
-                        () => _status = _festivals.Remove(id)
-                            ? string.Empty
-                            : "Remove: this festival cannot be changed where you are standing.",
+                        () =>
+                        {
+                            if (!_festivals.Remove(id))
+                                _notices.Refused(FestivalPlaceRefusal);
+                        },
                         disabled: !canModify,
                         help: canModify
                             ? "Clear this festival slot"
@@ -1087,20 +1091,26 @@ public sealed class EnvironmentPane
                         selected = p;
                 }
                 form.Dropdown($"{label} phase", names, selected,
-                    chosen => _status = _festivals.ChangePhase(
-                        id, (ushort)phases[chosen].Id)
-                        ? string.Empty
-                        : "Phase: this festival cannot be changed where you are standing.",
+                    chosen =>
+                    {
+                        if (!_festivals.ChangePhase(
+                                id, (ushort)phases[chosen].Id))
+                            _notices.Refused(FestivalPlaceRefusal);
+                    },
                     help: "Which stage of the festival the zone shows",
                     disabled: !canModify);
             }
             else
             {
                 form.NumericSlider($"{label} phase", slot.Phase, 0f, 255f,
-                    value => _status = _festivals.ChangePhase(
-                        id, (ushort)Math.Clamp((int)MathF.Round(value), 0, 255))
-                        ? string.Empty
-                        : "Phase: this festival cannot be changed where you are standing.",
+                    value =>
+                    {
+                        if (!_festivals.ChangePhase(
+                                id,
+                                (ushort)Math.Clamp(
+                                    (int)MathF.Round(value), 0, 255)))
+                            _notices.Refused(FestivalPlaceRefusal);
+                    },
                     perPixel: 0.25f,
                     format: "0",
                     help: "Which stage of the festival the zone shows — this "
@@ -1125,7 +1135,6 @@ public sealed class EnvironmentPane
                 () =>
                 {
                     _festivals.Reset();
-                    _status = string.Empty;
                 },
                 disabled: !_festivals.HasOverride,
                 help: _festivals.HasOverride

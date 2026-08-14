@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -56,7 +56,6 @@ public sealed class ScenePane
     private string _lastPath;
 
     private string _description = string.Empty;
-    private string _note = string.Empty;
 
     /// <summary>How many probed paths the verdict column remembers. Highlighting
     /// walks a folder one row at a time, so the answers must survive a walk back
@@ -95,15 +94,19 @@ public sealed class ScenePane
     private readonly ConcurrentQueue<(string Path, FileStamp Stamp, SceneMetadataReadOutcome? Outcome)>
         _verdictInbox = new();
 
+    private readonly UserNotices _notices;
+
     public ScenePane(
         SceneWorkflow workflow,
         SceneAutoSaveService snapshots,
         IPoseLibraryService library,
-        ConfigurationService config)
+        ConfigurationService config,
+        UserNotices notices)
     {
         _workflow = workflow;
         _snapshots = snapshots;
         _library = library;
+        _notices = notices;
         _lastPath = config.Config.Library.EnsureSceneRootExists();
 
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
@@ -179,7 +182,6 @@ public sealed class ScenePane
                                 : "Validate a whole scene file, then restore it into this session.");
                     },
                     fullWidth: true);
-                form.Status(_note);
             },
             divider: false);
 
@@ -594,9 +596,10 @@ public sealed class ScenePane
         var started = _workflow.BeginSave(
             path,
             string.IsNullOrWhiteSpace(_description) ? null : _description);
-        _note = started.Success ? string.Empty : started.Detail ?? string.Empty;
         if (started.Success)
             _library.RequestScan();
+        else
+            _notices.Failed(started.Detail ?? "The scene could not be saved.");
     });
 
     private void OpenLoad() => _loadBrowser.Open(_lastPath, path =>
@@ -611,7 +614,8 @@ public sealed class ScenePane
     private void BeginLoad(string path)
     {
         var started = _workflow.BeginLoad(path);
-        _note = started.Success ? string.Empty : started.Detail ?? string.Empty;
+        if (!started.Success)
+            _notices.Failed(started.Detail ?? "The scene could not be loaded.");
     }
 
     private void OpenFolder(string? folder)
@@ -628,7 +632,7 @@ public sealed class ScenePane
         }
         catch (Exception ex)
         {
-            _note = $"The folder could not be opened: {ex.Message}";
+            _notices.Failed($"The folder could not be opened: {ex.Message}");
         }
     }
 }

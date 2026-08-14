@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -50,11 +50,11 @@ public sealed class AnimationPane
     private IReadOnlyList<ScrubControlReading>? _scrubFrozenControls;
     private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks =
         new();
-    private string _status = string.Empty;
-
-    /// <summary>The expression row's own status: the row is drawn on another
-    /// pane's surface, which has no line of this pane's to report into.</summary>
-    private string _expressionStatus = string.Empty;
+    /// <summary>Where this pane's verb outcomes go. It also removes the
+    /// reason the expression row needed a SECOND status line of its own: that
+    /// row is drawn on another pane's surface, and a notification is not on
+    /// any surface.</summary>
+    private readonly UserNotices _notices;
     private int _pickerFrame = -1;
     private int _expressionReadingFrame = -1;
     private ActorId? _expressionReadingActor;
@@ -172,8 +172,10 @@ public sealed class AnimationPane
         AnimationSceneActions sceneActions,
         Game.Animation.FacialPoseCapture facialCapture,
         ITextureProvider textures,
-        SceneSession scene)
+        SceneSession scene,
+        UserNotices notices)
     {
+        _notices = notices;
         _animation = animation;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
@@ -218,8 +220,6 @@ public sealed class AnimationPane
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
-            page.Status(_status);
-
             // The page's FIRST section draws no divider: the rule is a
             // separator BETWEEN sections.
             page.Section(
@@ -318,7 +318,7 @@ public sealed class AnimationPane
                             actor, current, out bool resumed);
                         Report(result, "Replay");
                         if (result.Success && resumed)
-                            _status = "Replay resumed paused playback.";
+                            _notices.Done("Replay resumed paused playback.");
                     },
                     disabled: current == 0,
                     help: "Play this actor's animation again from the "
@@ -702,8 +702,6 @@ public sealed class AnimationPane
         // The row can be the first thing the user touches in a session, on a
         // surface that never loads the catalog for itself.
         _catalogLoader.EnsureLoaded();
-        if (_expressionStatus.Length > 0)
-            form.Status(_expressionStatus);
         DrawExpression(form, actor, ExpressionReading(actor));
     }
 
@@ -785,12 +783,14 @@ public sealed class AnimationPane
                     () =>
                     {
                         var descriptor = Describe(actor);
-                        _expressionStatus = descriptor == null
-                            ? "Bake expression: actor is no longer in the scene."
-                            : _facialCapture.Begin(actor, descriptor)
-                                is { Success: false } failed
-                                ? $"Bake expression: {failed.Detail}"
-                                : string.Empty;
+                        if (descriptor == null)
+                            _notices.Refused(
+                                "Bake expression: actor is no longer in "
+                                + "the scene.");
+                        else if (_facialCapture.Begin(actor, descriptor)
+                            is { Success: false } failed)
+                            _notices.Failed(
+                                $"Bake expression: {failed.Detail}");
                     },
                     disabled: _facialCapture.IsPending,
                     help: "Write the previewed face into the POSE as one "
@@ -1149,9 +1149,9 @@ public sealed class AnimationPane
                 // Replay-all resumes paused actors by design; the status
                 // line says which semantic actually ran.
                 if (replay.Success && resumed > 0)
-                    _status = string.IsNullOrEmpty(_status)
-                        ? $"Replay resumed {resumed} paused actor{(resumed == 1 ? "" : "s")}."
-                        : $"Replay resumed {resumed} paused actor{(resumed == 1 ? "" : "s")}. {_status}";
+                    _notices.Done(
+                        $"Replay resumed {resumed} paused "
+                        + $"actor{(resumed == 1 ? "" : "s")}.");
                 break;
             }
             case 3:
@@ -1301,24 +1301,25 @@ public sealed class AnimationPane
         _scrubFrozenControls = null;
     }
 
-    /// <summary>The expression row reports into its own line: the row is
-    /// drawn on the face surface, which never shows this pane's status.</summary>
+    /// <summary>Kept as its own name because the expression row is drawn on
+    /// the face surface, not this pane — the CALL SITES still read better for
+    /// saying which of the two they are. Both channels are now one.</summary>
     private void ReportExpression(AnimationResult result, string what) =>
-        _expressionStatus = result.Success
-            ? string.Empty
-            : $"{what}: {result.Detail}";
+        Report(result, what);
 
-    private void Report(AnimationResult result, string what) =>
-        _status = result.Success
-            ? string.Empty
-            : $"{what}: {result.Detail}";
+    private void Report(AnimationResult result, string what)
+    {
+        if (!result.Success)
+            _notices.Failed($"{what}: {result.Detail}");
+    }
 
     private void Report(
         AnimationSceneActions.SceneActionReport report,
-        string verb) =>
-        _status = report.Success && report.Skipped.Count == 0
-            ? string.Empty
-            : report.Summary(verb);
+        string verb)
+    {
+        if (!report.Success || report.Skipped.Count > 0)
+            _notices.Failed(report.Summary(verb));
+    }
 
     private static string FacialReceiptText(
         global::Poser.Application.Operations.OperationReceipt receipt) =>

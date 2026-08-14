@@ -39,7 +39,8 @@ public class Poser : IDalamudPlugin
         IKeyState keyState,
         ITextureProvider textureProvider,
         ITargetManager targetManager,
-        IChatGui chatGui)
+        IChatGui chatGui,
+        INotificationManager notificationManager)
     {
         log.Info($"Starting {PluginConstants.PluginName}...");
 
@@ -62,7 +63,8 @@ public class Poser : IDalamudPlugin
             keyState,
             textureProvider,
             targetManager,
-            chatGui);
+            chatGui,
+            notificationManager);
 
         // Initialize configuration service (sets static Instance, must be before UI)
         var configuration =
@@ -137,7 +139,8 @@ public class Poser : IDalamudPlugin
         IKeyState keyState,
         ITextureProvider textureProvider,
         ITargetManager targetManager,
-        IChatGui chatGui)
+        IChatGui chatGui,
+        INotificationManager notificationManager)
     {
         return new ServiceCollection()
             .AddDalamudDependencies(
@@ -153,7 +156,8 @@ public class Poser : IDalamudPlugin
                 keyState,
                 textureProvider,
                 targetManager,
-                chatGui)
+                chatGui,
+                notificationManager)
             .AddPoserCore()
             .AddPoserFeatures()
             .AddPoserPresentation()

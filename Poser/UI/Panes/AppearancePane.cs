@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Interface.Textures;
@@ -41,7 +41,11 @@ public sealed class AppearancePane
     private readonly StableBindingRegistry _bindings;
     private readonly ITextureProvider _textures;
 
-    private string _status = string.Empty;
+    /// <summary>Every outcome this pane produces is the answer to a button
+    /// the user pressed, so it goes to the notification channel rather than a
+    /// row of the page. The page states standing facts only.</summary>
+    private readonly UserNotices _notices;
+
     private bool _openModel = true;
     private bool _openGeneral = true;
     private ActorId? _modelActor;
@@ -131,8 +135,10 @@ public sealed class AppearancePane
         IActorSpawnService spawn,
         StableBindingRegistry bindings,
         ITextureProvider textures,
-        Config.ConfigurationService config)
+        Config.ConfigurationService config,
+        UserNotices notices)
     {
+        _notices = notices;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
         _presentation = presentation;
         _model = model;
@@ -169,8 +175,6 @@ public sealed class AppearancePane
                 page.EmptyState();
                 return;
             }
-            page.Status(_status);
-
             // Sections that cannot serve the actor are ABSENT, not disabled
             // with an excuse: wet/tint rows need presentation support, and the
             // human-appearance surfaces (external plugins, MCDF) mean nothing
@@ -271,7 +275,7 @@ public sealed class AppearancePane
                     }
                     else
                     {
-                        _status = "Model id must be a whole number.";
+                        _notices.Refused("Model id must be a whole number.");
                     }
                 },
                 help: "Write the model id and redraw the actor"));
@@ -445,9 +449,8 @@ public sealed class AppearancePane
                 target, pick.Item.Id, pick.Item.Name),
             _ => IntegrationResult.Ok(),
         };
-        _status = picked.Success
-            ? string.Empty
-            : $"{pick.Item.Name}: {picked.Detail}";
+        if (!picked.Success)
+            _notices.Failed($"{pick.Item.Name}: {picked.Detail}");
         _readoutAt = DateTime.MinValue;
     }
 
@@ -464,9 +467,9 @@ public sealed class AppearancePane
                 () =>
                 {
                     var opened = _integration.OpenGlamourer(actor);
-                    _status = opened.Success
-                        ? string.Empty
-                        : $"Open in Glamourer: {opened.Detail}";
+                    if (!opened.Success)
+                        _notices.Failed(
+                            $"Open in Glamourer: {opened.Detail}");
                 },
                 disabled: !glamourer.Available,
                 help: glamourer.Available
@@ -734,7 +737,8 @@ public sealed class AppearancePane
             if (_mcdfActor is not { } frozen)
                 return;
             var begun = _integration.BeginImport(frozen, chosen);
-            _status = begun.Success ? string.Empty : $"Import: {begun.Detail}";
+            if (!begun.Success)
+                _notices.Failed($"Import: {begun.Detail}");
             _readoutAt = DateTime.MinValue;
         });
     }
@@ -752,7 +756,8 @@ public sealed class AppearancePane
                 return;
             var begun = _integration.BeginExport(
                 frozen, chosen, $"{_mcdfDescription} — exported by Poser");
-            _status = begun.Success ? string.Empty : $"Export: {begun.Detail}";
+            if (!begun.Success)
+                _notices.Failed($"Export: {begun.Detail}");
         });
     }
 
@@ -764,14 +769,18 @@ public sealed class AppearancePane
         PresentationModel model) =>
         owned.Tints.TryGetValue(model, out var tint) ? tint : reading.TintFor(model);
 
-    private void Report(PresentationResult result, string what) =>
-        _status = result.Success ? string.Empty : $"{what}: {result.Detail}";
+    private void Report(PresentationResult result, string what)
+    {
+        if (!result.Success)
+            _notices.Failed($"{what}: {result.Detail}");
+    }
 
     /// <summary>Reports an external-integration outcome and invalidates the
     /// readout cache, which is what every reset callback needs.</summary>
     private void ReportExternal(IntegrationResult result, string what)
     {
-        _status = result.Success ? string.Empty : $"{what}: {result.Detail}";
+        if (!result.Success)
+            _notices.Failed($"{what}: {result.Detail}");
         _readoutAt = DateTime.MinValue;
     }
 

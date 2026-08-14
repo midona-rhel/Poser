@@ -26,6 +26,10 @@ namespace Poser.UI;
 /// </summary>
 public sealed class PoseFileInspectorSection
 {
+    /// <summary>The one wording for "nothing is selected to do this to". It
+    /// was written out at nine call sites and had begun to drift.</summary>
+    private const string NoActorText = "Select an actor first.";
+
     // The import menu's type pair, Brio's exact popup state: both OFF is
     // the DEFAULT path (rotation-only toggles over everything, weapons and
     // ex excluded, the custom bone filter live); Body-only excludes the
@@ -46,7 +50,13 @@ public sealed class PoseFileInspectorSection
     /// the import dialog is open — the same binder the library rail runs, so
     /// the highlight/option compare has one implementation.</summary>
     private readonly PosePreviewBinder _importPreview;
-    private string _status = string.Empty;
+
+    /// <summary>Where every verb's OUTCOME goes. Import, export, stash,
+    /// clipboard and the presets all answer AFTER the click that started
+    /// them, often from a menu that has already closed — so they announce
+    /// themselves rather than writing into a row of a surface the user may no
+    /// longer be looking at.</summary>
+    private readonly UserNotices _notices;
     private readonly Crystarium.FileDialog _importBrowser =
         new("Import Pose", new[] { ".pose", ".cmp" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _exportBrowser =
@@ -129,8 +139,10 @@ public sealed class PoseFileInspectorSection
         IAutoSaveService autoSave,
         Game.Preview.PosePreviewService preview,
         ITextureProvider textures,
-        IPoseLibraryService library)
+        IPoseLibraryService library,
+        UserNotices notices)
     {
+        _notices = notices;
         _poseFacade = poseFacade;
         _selection = selection;
         _config = config;
@@ -170,7 +182,8 @@ public sealed class PoseFileInspectorSection
                 return;
             operation = null;
             if (receipt.State is not OperationReceiptState.Applied)
-                _status = $"Import: {receipt.Detail ?? receipt.State.ToString()}.";
+                _notices.Failed(
+                    $"Import: {receipt.Detail ?? receipt.State.ToString()}.");
         };
     }
 
@@ -485,7 +498,7 @@ public sealed class PoseFileInspectorSection
                 if (SelectedSkeleton() is { } exportSkeleton)
                     OpenExport(exportSkeleton);
                 else
-                    _status = "Select an actor first.";
+                    _notices.Refused(NoActorText);
                 break;
             case 1:
                 OpenExportToLibrary();
@@ -1139,7 +1152,7 @@ public sealed class PoseFileInspectorSection
                         if (SelectedSkeleton() is { } skeleton)
                             OpenImport(skeleton);
                         else
-                            _status = "Select an actor first.";
+                            _notices.Refused(NoActorText);
                     });
                     // Disabled rather than hidden in library mode: the row
                     // geometry stays put and the reason is readable.
@@ -1188,11 +1201,6 @@ public sealed class PoseFileInspectorSection
                                 + "pose — replaces the current pose of every "
                                 + "bone; undo restores it");
                     });
-                // The popup is where a clipboard paste fails, so it is where
-                // the reason has to appear — the FILES area's own status row
-                // is behind it, and the library rail has none at all.
-                if (_status.Length > 0)
-                    form.Status(_status);
             });
 
         return y;
@@ -1803,23 +1811,23 @@ public sealed class PoseFileInspectorSection
         if (!_referenceArmed)
         {
             _referenceArmed = true;
-            _status = "Reference pose replaces the current pose of every "
-                + "bone (undo restores it). Press Confirm reference to apply.";
+            _notices.Refused(
+                "Reference pose replaces the current pose of every bone "
+                + "(undo restores it). Press Confirm reference to apply.");
             return;
         }
         _referenceArmed = false;
         if (SelectedSkeleton() is not { } skeleton
             || _poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         NotePoseApplied();
-        _status = _poseFacade.ApplyReferencePose(
-            skeleton.Actor, TrackImport(expectedActor)) is
-            { Success: false } failed
-            ? $"Reference: {failed.Detail}"
-            : string.Empty;
+        if (_poseFacade.ApplyReferencePose(
+                skeleton.Actor, TrackImport(expectedActor)) is
+            { Success: false } failed)
+            _notices.Failed($"Reference: {failed.Detail}");
     }
 
     private void ApplyRestPreset(RestPose pose)
@@ -1829,20 +1837,19 @@ public sealed class PoseFileInspectorSection
         {
             if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
             {
-                _status = "Select an actor first.";
+                _notices.Refused(NoActorText);
                 return;
             }
             NotePoseApplied();
-            _status = _poseFacade.ApplyRestPose(
-                skeleton.Actor,
-                pose,
-                TrackImport(expectedActor)) is
-                { Success: false } failed
-                ? $"Preset: {failed.Detail}"
-                : string.Empty;
+            if (_poseFacade.ApplyRestPose(
+                    skeleton.Actor,
+                    pose,
+                    TrackImport(expectedActor)) is
+                { Success: false } failed)
+                _notices.Failed($"Preset: {failed.Detail}");
         }
         else
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
     }
 
     /// <summary>
@@ -1984,9 +1991,6 @@ public sealed class PoseFileInspectorSection
             actions.Button("Export", () => RequestExportMenu());
             actions.Button("Library", () => OnLibraryRequested?.Invoke());
         });
-
-        if (_status.Length > 0)
-            form.Status(_status);
     }
 
     public void OpenImport(ISkeleton skeleton)
@@ -2065,14 +2069,14 @@ public sealed class PoseFileInspectorSection
             notice = cmpNotice;
         if (blocked)
         {
-            _status = notice;
+            _notices.Refused(notice);
             return;
         }
 
         NotePoseApplied();
         if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
-            _status = "Import: the actor could not be resolved.";
+            _notices.Failed("Import: the actor could not be resolved.");
             return;
         }
         // Selected-bones scope applies only to DIALOG confirms — the one
@@ -2105,7 +2109,10 @@ public sealed class PoseFileInspectorSection
             options,
             frozenSelection,
             TrackImport(expectedActor));
-        _status = imported.Success ? notice : $"Import: {imported.Detail}";
+        if (!imported.Success)
+            _notices.Failed($"Import: {imported.Detail}");
+        else if (notice.Length > 0)
+            _notices.Refused(notice);
     }
 
     /// <summary>Whether the import dialog's frozen target actor has at
@@ -2192,7 +2199,7 @@ public sealed class PoseFileInspectorSection
         NotePoseApplied();
         if (_poseFacade.GetActorId(skeleton.Actor) is not { } expectedActor)
         {
-            _status = $"{statusPrefix}: the actor could not be resolved.";
+            _notices.Failed($"{statusPrefix}: the actor could not be resolved.");
             return;
         }
         var imported = _poseFacade.ImportPose(
@@ -2201,7 +2208,10 @@ public sealed class PoseFileInspectorSection
             BuildOptions(),
             description,
             TrackImport(expectedActor));
-        _status = imported.Success ? notice : $"{statusPrefix}: {imported.Detail}";
+        if (!imported.Success)
+            _notices.Failed($"{statusPrefix}: {imported.Detail}");
+        else if (notice.Length > 0)
+            _notices.Refused(notice);
     }
 
     /// <summary>The file Smart Import classifies. A .cmp is upgraded first,
@@ -2253,7 +2263,7 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton() is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         if (_lastImportPath is { } path)
@@ -2261,7 +2271,7 @@ public sealed class PoseFileInspectorSection
         else if (_lastImportPose is { } pose)
             ImportLoadedPose(skeleton, pose, "Reapply last pose", "Reapply");
         else
-            _status = "Nothing has been imported yet.";
+            _notices.Refused("Nothing has been imported yet.");
     }
 
     /// <summary>Brio's "Load From Stash" (FileUIHelpers.cs:603-607): the
@@ -2270,12 +2280,12 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton() is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         if (_poseStash is not { } pose)
         {
-            _status = "Nothing is stashed.";
+            _notices.Refused("Nothing is stashed.");
             return;
         }
         ImportLoadedPose(skeleton, pose, "Import stashed pose", "Stash");
@@ -2289,22 +2299,22 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton() is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
         {
             if (pose == null)
             {
-                _status = "Stash: the pose could not be captured.";
+                _notices.Failed("Stash: the pose could not be captured.");
                 return;
             }
             _poseStash = pose;
             _poseStashedAt = DateTimeOffset.UtcNow;
-            _status = string.Empty;
+            _notices.Done("Pose stashed.");
         });
         if (!armed.Success)
-            _status = $"Stash: {armed.Detail}";
+            _notices.Failed($"Stash: {armed.Detail}");
     }
 
     public void OpenExport(ISkeleton skeleton)
@@ -2315,15 +2325,20 @@ public sealed class PoseFileInspectorSection
             // Armed, not written: the file lands once the update-phase pass
             // has refreshed the raw transform caches it snapshots, so a
             // never-posed actor exports its current pose instead of the
-            // build-time one. The status comes from the callback.
+            // build-time one. The outcome comes from the callback.
             var armed = _poseFacade.ExportPose(
                 skeleton.Actor,
                 path,
-                exported => _status = exported
-                    ? string.Empty
-                    : "Export: the pose file could not be written.");
+                exported =>
+                {
+                    if (exported)
+                        _notices.Done($"Pose saved to {path}.");
+                    else
+                        _notices.Failed(
+                            "Export: the pose file could not be written.");
+                });
             if (!armed.Success)
-                _status = $"Export: {armed.Detail}";
+                _notices.Failed($"Export: {armed.Detail}");
         }));
     }
 
@@ -2371,7 +2386,7 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton(out var actorId) is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         var sources = ExportableSources();
@@ -2541,8 +2556,8 @@ public sealed class PoseFileInspectorSection
     /// file row runs (<see cref="CleanPoseFacade.ExportPose"/> self-marshals
     /// and waits for the cache-refresh pass), and on the write landing, kick
     /// a library rescan so the tile appears without a manual refresh. The
-    /// modal is already closed; the result lands in <see cref="_status"/> —
-    /// success clears, failure explains.</summary>
+    /// modal is already closed, so the result is announced rather than
+    /// written into a surface that is gone.</summary>
     private void ConfirmExportToLibrary(
         ISkeleton skeleton,
         LibrarySourceConfig source,
@@ -2556,14 +2571,15 @@ public sealed class PoseFileInspectorSection
         {
             if (exported)
             {
-                _status = string.Empty;
+                _notices.Done($"{name} saved to {source.Name}.");
                 _library.RequestScan();
             }
             else
-                _status = "Library: the pose file could not be written.";
+                _notices.Failed(
+                    "Library: the pose file could not be written.");
         });
         if (!armed.Success)
-            _status = $"Library: {armed.Detail}";
+            _notices.Failed($"Library: {armed.Detail}");
     }
 
     /// <summary>The section's current import options, for surfaces that import
@@ -2706,7 +2722,7 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton() is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         string text;
@@ -2716,12 +2732,12 @@ public sealed class PoseFileInspectorSection
         }
         catch (Exception ex)
         {
-            _status = $"Clipboard: {ex.Message}";
+            _notices.Failed($"Clipboard: {ex.Message}");
             return;
         }
         if (PoseClipboard.Decode(text, out var reason) is not { } pose)
         {
-            _status = $"Clipboard: {reason}";
+            _notices.Failed($"Clipboard: {reason}");
             return;
         }
         // Smart Import's file classifier, same as the browse path — the
@@ -2737,27 +2753,27 @@ public sealed class PoseFileInspectorSection
     {
         if (SelectedSkeleton() is not { } skeleton)
         {
-            _status = "Select an actor first.";
+            _notices.Refused(NoActorText);
             return;
         }
         var armed = _poseFacade.CapturePoseFile(skeleton.Actor, pose =>
         {
             if (pose == null || PoseClipboard.Encode(pose) is not { } payload)
             {
-                _status = "Clipboard: the pose could not be copied.";
+                _notices.Failed("Clipboard: the pose could not be copied.");
                 return;
             }
             try
             {
                 ImGui.SetClipboardText(payload);
-                _status = string.Empty;
+                _notices.Done("Pose copied to the clipboard.");
             }
             catch (Exception ex)
             {
-                _status = $"Clipboard: {ex.Message}";
+                _notices.Failed($"Clipboard: {ex.Message}");
             }
         });
         if (!armed.Success)
-            _status = $"Clipboard: {armed.Detail}";
+            _notices.Failed($"Clipboard: {armed.Detail}");
     }
 }
