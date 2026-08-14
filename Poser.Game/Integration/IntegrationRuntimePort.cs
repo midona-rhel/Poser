@@ -86,11 +86,14 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
     private readonly ICallGateSubscriber<object, int, uint, ulong, int> _applyState;
     private readonly ICallGateSubscriber<int, uint, int> _unlockState;
     // By NAME, for the exit edge: the GPose clone is destroyed there, but
-    // Glamourer's locked state belongs to the character's identity and
-    // outlives the object index. Brio releases the same way
-    // (Brio/IPC/GlamourerService.cs UnlockAndRevertCharacterByName).
+    // Glamourer's locked state belongs to the character's IDENTITY and
+    // outlives the object index. The pair mirrors the by-index unlock and
+    // restore exactly — and is deliberately NOT Glamourer's RevertState*,
+    // which reverts to GAME state: the clone and the player share one
+    // identity, so a revert would throw away the design the user actually
+    // had on every post-import exit.
     private readonly ICallGateSubscriber<string, uint, int> _unlockStateName;
-    private readonly ICallGateSubscriber<string, uint, ulong, int> _revertStateName;
+    private readonly ICallGateSubscriber<object, string, uint, ulong, int> _applyStateName;
     private readonly ICallGateSubscriber<int, object?> _openActorIndex;
 
     // Customize+
@@ -141,7 +144,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
         _applyState = pluginInterface.GetIpcSubscriber<object, int, uint, ulong, int>("Glamourer.ApplyState");
         _unlockState = pluginInterface.GetIpcSubscriber<int, uint, int>("Glamourer.UnlockState");
         _unlockStateName = pluginInterface.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
-        _revertStateName = pluginInterface.GetIpcSubscriber<string, uint, ulong, int>("Glamourer.RevertStateName");
+        _applyStateName = pluginInterface.GetIpcSubscriber<object, string, uint, ulong, int>("Glamourer.ApplyStateName");
         _openActorIndex = pluginInterface.GetIpcSubscriber<int, object?>("Glamourer.OpenActorIndex");
 
         _customizeVersion = pluginInterface.GetIpcSubscriber<(int, int)>("CustomizePlus.General.GetApiVersion");
@@ -561,32 +564,53 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort
                 : GlamourerResult(ec, "releasing Poser's lock");
         });
 
-    public IntegrationPortResult ReleaseGlamourerStateByName(string name) =>
-        Guarded(Glamourer, "Release state by name", () =>
+    public IntegrationPortResult UnlockGlamourerStateByName(string name) =>
+        GuardedByName(name, "Unlock by name", () =>
+        {
+            // Poser's key is the only thing that may release this state; a
+            // foreign lock refuses with InvalidKey rather than being stolen.
+            // An absent character has no state to unlock, which is a
+            // completed release rather than a retryable failure — but it is
+            // NOT an early exit from the caller's restore step, which owns
+            // its own absent-character answer.
+            int ec = _unlockStateName.InvokeFunc(name, LockKey);
+            return ec is GlamourerEcSuccess or GlamourerEcNothingDone
+                or GlamourerEcActorNotFound
+                ? IntegrationPortResult.Ok()
+                : GlamourerResult(ec, "releasing Poser's lock by name");
+        });
+
+    public IntegrationPortResult RestoreGlamourerStateByName(string name, string state) =>
+        GuardedByName(name, "Restore state by name", () =>
+        {
+            // The by-index restore's exact flags: Once maps to IpcManual, no
+            // Lock flag, so nothing of Poser's survives. This writes the
+            // CAPTURED pre-import state back — never a revert to game state,
+            // which on a shared clone/player identity would discard the
+            // design the user actually had.
+            int ec = _applyStateName.InvokeFunc(
+                state, name, LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return ec is GlamourerEcSuccess or GlamourerEcNothingDone
+                or GlamourerEcActorNotFound
+                ? IntegrationPortResult.Ok()
+                : GlamourerResult(ec, "restoring the captured state by name");
+        });
+
+    /// <summary>The shared preconditions of the two by-name calls: the
+    /// availability gate, a real name, and the framework thread — the
+    /// by-index guard normally supplies the last one through actor
+    /// resolution, which by definition cannot run here.</summary>
+    private IntegrationPortResult GuardedByName(
+        string name, string what, Func<IntegrationPortResult> call) =>
+        Guarded(Glamourer, what, () =>
         {
             if (!_framework.IsInFrameworkUpdateThread)
                 return IntegrationPortResult.Fail(
                     "External integration calls must run on the framework thread.");
-            if (string.IsNullOrEmpty(name))
-                return IntegrationPortResult.Fail(
-                    "No character name was captured for this import, so its locked Glamourer state cannot be released by name.");
-            // Unlock FIRST — Poser's key is the only thing that may release
-            // this state, and a foreign lock refuses with InvalidKey rather
-            // than being stolen. Then revert what the import applied. An
-            // absent character has nothing left to release, which is a
-            // completed release, not a retryable failure.
-            int unlocked = _unlockStateName.InvokeFunc(name, LockKey);
-            if (unlocked is not (GlamourerEcSuccess or GlamourerEcNothingDone
-                or GlamourerEcActorNotFound))
-                return GlamourerResult(unlocked, "releasing Poser's lock by name");
-            if (unlocked == GlamourerEcActorNotFound)
-                return IntegrationPortResult.Ok();
-            int reverted = _revertStateName.InvokeFunc(
-                name, LockKey, ApplyEquipment | ApplyCustomization);
-            return reverted is GlamourerEcSuccess or GlamourerEcNothingDone
-                or GlamourerEcActorNotFound
-                ? IntegrationPortResult.Ok()
-                : GlamourerResult(reverted, "reverting the imported state by name");
+            return string.IsNullOrEmpty(name)
+                ? IntegrationPortResult.Fail(
+                    "No character name was captured for this import, so its Glamourer state cannot be addressed by name.")
+                : call();
         });
 
     public IntegrationPortResult OpenGlamourer(ActorId actor)

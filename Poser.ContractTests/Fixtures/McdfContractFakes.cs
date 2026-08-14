@@ -29,7 +29,8 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     public List<Guid> AppliedProfiles { get; } = new();
     public List<Guid> DeletedProfiles { get; } = new();
     public List<string> RestoredGlamourerStates { get; } = new();
-    public List<string> ReleasedGlamourerNames { get; } = new();
+    public List<string> UnlockedGlamourerNames { get; } = new();
+    public List<(string Name, string State)> RestoredGlamourerStatesByName { get; } = new();
     public List<ActorId> RedrawWaitActors { get; } = new();
 
     /// <summary>What <see cref="GetActorName"/> answers for a resolvable
@@ -45,7 +46,8 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
     public string? FailAddTemporaryMods { get; set; }
     public string? FailDeleteTemporaryCollection { get; set; }
     public string? FailUnlockGlamourer { get; set; }
-    public string? FailReleaseGlamourerByName { get; set; }
+    public string? FailUnlockGlamourerByName { get; set; }
+    public string? FailRestoreGlamourerByName { get; set; }
 
     public IntegrationAvailability Penumbra { get; set; } = new(true, "Penumbra is available.");
     public IntegrationAvailability Glamourer { get; set; } = new(true, "Glamourer is available.");
@@ -230,12 +232,22 @@ internal sealed class FakeIntegrationRuntimePort : IIntegrationRuntimePort
             : IntegrationPortResult.Ok();
     }
 
-    public IntegrationPortResult ReleaseGlamourerStateByName(string name)
+    public IntegrationPortResult UnlockGlamourerStateByName(string name)
     {
         lock (_gate)
-            ReleasedGlamourerNames.Add(name);
-        Log("ReleaseGlamourerStateByName");
-        return FailReleaseGlamourerByName is { } failure
+            UnlockedGlamourerNames.Add(name);
+        Log("UnlockGlamourerStateByName");
+        return FailUnlockGlamourerByName is { } failure
+            ? IntegrationPortResult.Fail(failure)
+            : IntegrationPortResult.Ok();
+    }
+
+    public IntegrationPortResult RestoreGlamourerStateByName(string name, string state)
+    {
+        lock (_gate)
+            RestoredGlamourerStatesByName.Add((name, state));
+        Log("RestoreGlamourerStateByName");
+        return FailRestoreGlamourerByName is { } failure
             ? IntegrationPortResult.Fail(failure)
             : IntegrationPortResult.Ok();
     }

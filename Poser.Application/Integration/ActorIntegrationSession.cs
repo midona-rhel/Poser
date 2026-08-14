@@ -507,6 +507,13 @@ public sealed class ActorIntegrationSession : IDisposable
     /// BOUNDED framework hop that a dead pump can abandon. Registered after
     /// the integration port in composition, so container disposal runs this
     /// BEFORE the port and provider tear down.
+    ///
+    /// Disposal off the framework thread writes NOTHING rather than writing
+    /// unsafely, and says so: <see cref="IIntegrationRuntimePort.IsResolvable"/>
+    /// answers false off that thread, and the by-name fallbacks refuse on the
+    /// same check, so the teardown degrades to bookkeeping and its failures
+    /// stay owned as evidence. Dalamud disposes plugins ON the framework
+    /// thread, which is why the real path still releases.
     /// </summary>
     public void Dispose()
     {

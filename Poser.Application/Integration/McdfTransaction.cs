@@ -731,6 +731,10 @@ public sealed class McdfTransaction
     {
         var actor = operation.Target;
         bool resolvable = _port.IsResolvable(actor);
+        // The captured character name, and only while the object itself is
+        // unreachable: Glamourer's state is keyed to the identity, so it is
+        // still addressable when the exact generation is not.
+        string? byName = resolvable ? null : NonEmpty(operation.ActorName);
         // A Penumbra redraw belongs to Penumbra changes only: Glamourer
         // and Customize+ apply their own updates, and Penumbra is
         // legitimately optional for packages without resources — tying a
@@ -810,31 +814,33 @@ public sealed class McdfTransaction
         }
         else if (operation.GlamourerLocked)
         {
-            // The state to restore INTO died with the actor, but the lock
-            // did not: Glamourer holds it against the character's identity,
-            // so forgetting it here would weld the imported look on. Release
-            // it by name instead — the same post-mortem revert Brio runs
-            // when the GPose character has left the object table. A failure
-            // keeps the lock owned so a later Reset MCDF retries.
-            var released = _port.ReleaseGlamourerStateByName(
-                operation.ActorName ?? string.Empty);
-            if (released.Success)
+            // The OBJECT died with the actor, but the lock did not:
+            // Glamourer holds it against the character's identity. Forgetting
+            // it here would weld the imported look on, so unlock by name and
+            // let the recovery below put the working recipe back the same
+            // way. The obligation is registered exactly as on the resolvable
+            // branch; a failure keeps the lock owned and retryable.
+            var unlocked = ByNameUnlock(byName);
+            if (unlocked.Success)
             {
                 operation.GlamourerLocked = false;
-                operation.PendingGlamourerRecovery = null;
+                operation.PendingGlamourerRecovery = operation.WorkingGlamourerState;
             }
             else
             {
-                failures.Add(released.Detail!);
+                failures.Add(unlocked.Detail!);
             }
         }
 
         if (!operation.GlamourerLocked
             && operation.PendingGlamourerRecovery is { } recovery)
         {
-            if (resolvable)
+            // Between the unlock above and this write, Glamourer's own
+            // automation may briefly reassert itself on the character — a
+            // frame-scale flicker on a torn-down clone, and the price of
+            // never stealing another plugin's lock by writing first.
+            if (RestoreEither(actor, resolvable, byName, recovery) is { } restored)
             {
-                var restored = _port.RestoreGlamourerState(actor, recovery);
                 if (restored.Success)
                     operation.PendingGlamourerRecovery = null;
                 else
@@ -842,6 +848,7 @@ public sealed class McdfTransaction
             }
             else
             {
+                // Neither the object nor a name is addressable.
                 operation.PendingGlamourerRecovery = null;
             }
         }
@@ -955,6 +962,35 @@ public sealed class McdfTransaction
         return failures.Count == 0 ? null : string.Join("; ", failures);
     }
 
+    // ── Addressing Glamourer after the object is gone ────────────────────
+
+    private static string? NonEmpty(string? value) =>
+        string.IsNullOrEmpty(value) ? null : value;
+
+    /// <summary>Unlocks by the captured name, or refuses truthfully when no
+    /// name was ever captured — a lock Poser cannot address is evidence to
+    /// keep, never a flag to quietly drop.</summary>
+    private IntegrationPortResult ByNameUnlock(string? name) =>
+        name is { } addressable
+            ? _port.UnlockGlamourerStateByName(addressable)
+            : IntegrationPortResult.Fail(
+                "The actor is gone and no character name was captured for this "
+                + "import, so its locked Glamourer state cannot be released.");
+
+    /// <summary>
+    /// Writes a captured Glamourer state back through whichever handle
+    /// still exists — the exact object, else the character name — and
+    /// answers null when NEITHER does, which is the one case where the
+    /// capture has nowhere to go and is dropped with the ownership.
+    /// </summary>
+    private IntegrationPortResult? RestoreEither(
+        ActorId actor, bool resolvable, string? byName, string state) =>
+        resolvable
+            ? _port.RestoreGlamourerState(actor, state)
+            : byName is { } name
+                ? _port.RestoreGlamourerStateByName(name, state)
+                : null;
+
     // ── Teardown of committed ownership ──────────────────────────────────
 
     /// <summary>
@@ -978,6 +1014,10 @@ public sealed class McdfTransaction
         // A redraw is owed whenever temporary Penumbra ownership was
         // removed — now or, still pending, by an earlier partial teardown.
         bool removedPenumbra = mcdf.RedrawPending;
+        // The captured character name, and only while the object itself is
+        // unreachable: Glamourer's state is keyed to the identity, so it is
+        // still addressable when the exact generation is not.
+        string? byName = resolvable ? null : NonEmpty(mcdf.ActorName);
 
         bool locked = mcdf.GlamourerLocked;
         if (locked && resolvable)
@@ -998,17 +1038,18 @@ public sealed class McdfTransaction
             // Glamourer's locked state is scoped to the character's
             // IDENTITY, not to the object, and outlives it. Dropping the
             // flag here is what left an imported character file welded onto
-            // the actor after leaving Poser. Release by name instead
-            // (Brio/Game/Actor/CharacterHandlerService.cs RevertMCDF does
-            // the same once the GPose character has left the object table);
-            // a failure keeps the MCDF owned as retryable evidence.
-            var released = _port.ReleaseGlamourerStateByName(
-                mcdf.ActorName ?? string.Empty);
-            if (released.Success)
+            // the actor after leaving Poser. Unlock by name instead, and let
+            // the restore below put the CAPTURED state back the same way: a
+            // revert to game state would be wrong here, because the clone
+            // and the player share that identity and the user's own design
+            // is what would be thrown away. A failure keeps the MCDF owned
+            // as retryable evidence.
+            var unlocked = ByNameUnlock(byName);
+            if (unlocked.Success)
                 locked = false;
             else
             {
-                failures.Add(released.Detail!);
+                failures.Add(unlocked.Detail!);
                 complete = false;
             }
         }
@@ -1019,12 +1060,15 @@ public sealed class McdfTransaction
         // the durable baseline stays captured for the selector resets.
         // Without one, tearing down a committed MCDF reapplies the
         // ORIGINAL captured state as before.
+        // Between the unlock above and either write below, Glamourer's own
+        // automation may briefly reassert itself on the character. That
+        // flicker is the price of never writing before the lock is released,
+        // which is what keeps Poser off another plugin's locked state.
         string? pendingGlamourer = mcdf.PendingGlamourerRecovery;
         if (!locked && pendingGlamourer is { } recovery)
         {
-            if (resolvable)
+            if (RestoreEither(actor, resolvable, byName, recovery) is { } recovered)
             {
-                var recovered = _port.RestoreGlamourerState(actor, recovery);
                 if (recovered.Success)
                     pendingGlamourer = null;
                 else
@@ -1035,13 +1079,14 @@ public sealed class McdfTransaction
             }
             else
             {
+                // Neither the object nor a name is addressable.
                 pendingGlamourer = null;
             }
         }
-        else if (!locked && resolvable && !current.DesignOwned
-            && current.Baseline.GlamourerState is { } state)
+        else if (!locked && !current.DesignOwned
+            && current.Baseline.GlamourerState is { } state
+            && RestoreEither(actor, resolvable, byName, state) is { } restored)
         {
-            var restored = _port.RestoreGlamourerState(actor, state);
             if (restored.Success)
                 current = current with
                 {

@@ -406,7 +406,7 @@ public sealed class McdfTransactionContractTests
     }
 
     [Fact]
-    public async Task Exit_teardown_releases_the_locked_state_by_name_when_the_actor_is_gone()
+    public async Task Exit_teardown_restores_the_captured_state_by_name_when_the_actor_is_gone()
     {
         using var app = new Harness();
         app.Port.ActorName = "Aymeric Borel";
@@ -423,22 +423,30 @@ public sealed class McdfTransactionContractTests
 
         Assert.True(reset.Success, reset.Detail);
         // The lock is not forgotten: it is released against the character's
-        // identity, which is all that survives the object.
-        Assert.Equal(new[] { "Aymeric Borel" }, app.Port.ReleasedGlamourerNames);
-        // The by-index unlock is unusable here and is not attempted.
+        // identity, which is all that survives the object...
+        Assert.Equal(new[] { "Aymeric Borel" }, app.Port.UnlockedGlamourerNames);
+        // ...and the state the user ACTUALLY had is written back. The clone
+        // and the player share this identity, so anything less than the
+        // captured state — a revert to game state above all — would throw
+        // the user's own design away.
+        Assert.Equal(
+            new[] { ("Aymeric Borel", "incoming-state") },
+            app.Port.RestoredGlamourerStatesByName);
+        // The by-index calls are unusable here and are not attempted.
         Assert.Equal(unlocksBefore, app.Port.CallCount("UnlockGlamourerState"));
+        Assert.Empty(app.Port.RestoredGlamourerStates);
         Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
     }
 
     [Fact]
-    public async Task A_failed_by_name_release_keeps_the_mcdf_owned_for_retry()
+    public async Task A_failed_by_name_unlock_keeps_the_mcdf_owned_for_retry()
     {
         using var app = new Harness();
         Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
         await app.Idle();
 
         app.Port.Resolvable.Remove(app.Actor);
-        app.Port.FailReleaseGlamourerByName = "Glamourer is not responding.";
+        app.Port.FailUnlockGlamourerByName = "Glamourer is not responding.";
 
         var reset = app.Session.ResetAll();
 
@@ -448,12 +456,60 @@ public sealed class McdfTransactionContractTests
         Assert.NotNull(owned);
         Assert.True(owned!.GlamourerLocked);
         Assert.Equal("Imported Character", owned.ActorName);
+        // Nothing is written on top of a lock that would not release.
+        Assert.Empty(app.Port.RestoredGlamourerStatesByName);
 
-        // The retry succeeds and clears the ownership.
-        app.Port.FailReleaseGlamourerByName = null;
+        // The retry succeeds, restores, and clears the ownership.
+        app.Port.FailUnlockGlamourerByName = null;
         var retried = app.Session.ResetMcdf(app.Actor);
         Assert.True(retried.Success, retried.Detail);
+        Assert.Equal(
+            new[] { ("Imported Character", "incoming-state") },
+            app.Port.RestoredGlamourerStatesByName);
         Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
+    }
+
+    [Fact]
+    public async Task A_failed_by_name_restore_keeps_the_captured_state_owned_for_retry()
+    {
+        using var app = new Harness();
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+
+        app.Port.Resolvable.Remove(app.Actor);
+        app.Port.FailRestoreGlamourerByName = "Glamourer refused the state.";
+
+        var reset = app.Session.ResetAll();
+
+        Assert.False(reset.Success);
+        Assert.Contains("Glamourer refused the state.", reset.Detail);
+        var owned = app.Session.OverridesFor(app.Actor).Mcdf;
+        Assert.NotNull(owned);
+        // The lock DID release; only the restore is outstanding, and the
+        // capture stays owned so Reset MCDF can write it again.
+        Assert.False(owned!.GlamourerLocked);
+        Assert.NotNull(app.Session.OverridesFor(app.Actor).Baseline.GlamourerState);
+    }
+
+    [Fact]
+    public async Task An_unnamed_actor_that_is_gone_keeps_the_lock_owned_rather_than_dropping_it()
+    {
+        using var app = new Harness();
+        // No name could be read at import time, so the post-mortem release
+        // has no handle at all. That is evidence to keep, never a flag to
+        // quietly clear — the state really is still on the character.
+        app.Port.ActorName = string.Empty;
+        Assert.True(app.Session.BeginImport(app.Actor, @"X:\in\a.mcdf").Success);
+        await app.Idle();
+        Assert.Null(app.Session.OverridesFor(app.Actor).Mcdf!.ActorName);
+
+        app.Port.Resolvable.Remove(app.Actor);
+        var reset = app.Session.ResetAll();
+
+        Assert.False(reset.Success);
+        Assert.True(app.Session.OverridesFor(app.Actor).Mcdf!.GlamourerLocked);
+        Assert.Empty(app.Port.UnlockedGlamourerNames);
+        Assert.Empty(app.Port.RestoredGlamourerStatesByName);
     }
 
     [Fact]
@@ -567,7 +623,10 @@ public sealed class McdfTransactionContractTests
         Assert.Equal(IntegrationOverrides.None, app.Session.OverridesFor(app.Actor));
         Assert.Equal(app.Port.CreatedCollections, app.Port.DeletedCollections);
         Assert.Equal(app.Port.AppliedProfiles, app.Port.DeletedProfiles);
-        Assert.Equal(new[] { "Imported Character" }, app.Port.ReleasedGlamourerNames);
+        Assert.Equal(new[] { "Imported Character" }, app.Port.UnlockedGlamourerNames);
+        Assert.Equal(
+            new[] { ("Imported Character", "incoming-state") },
+            app.Port.RestoredGlamourerStatesByName);
         Assert.Equal(app.Files.CreatedDirectories, app.Files.DeletedDirectories);
     }
 }

@@ -121,16 +121,23 @@ public interface IIntegrationRuntimePort
     IntegrationPortResult UnlockGlamourerState(ActorId actor);
 
     /// <summary>
-    /// Releases a locked MCDF state from a character that no longer
-    /// resolves — the GPose clone is destroyed on the exit edge, but
-    /// Glamourer's state belongs to the character's identity and outlives
-    /// it. Addresses Glamourer BY NAME with Poser's own key: releases the
-    /// lock and reverts the imported equipment/customization, so nothing
-    /// Poser applied survives the exit. Never touches another plugin's
-    /// lock — a foreign key refuses. A character that is not present at
-    /// all is a success: there is no longer anything to release.
+    /// <see cref="UnlockGlamourerState"/> for a character whose exact
+    /// generation no longer resolves — the GPose clone is destroyed on the
+    /// exit edge, but Glamourer's state belongs to the character's IDENTITY
+    /// and outlives it. Never touches another plugin's lock: a foreign key
+    /// refuses. An absent character is a success, and never an excuse to
+    /// skip the restore that follows.
     /// </summary>
-    IntegrationPortResult ReleaseGlamourerStateByName(string name);
+    IntegrationPortResult UnlockGlamourerStateByName(string name);
+
+    /// <summary>
+    /// <see cref="RestoreGlamourerState"/> for that same character: writes
+    /// the CAPTURED pre-import state back by name, one-shot and unlocked.
+    /// Deliberately NOT a revert to game state — the clone and the player
+    /// share one Glamourer identity, so a revert would discard the design
+    /// the user actually had.
+    /// </summary>
+    IntegrationPortResult RestoreGlamourerStateByName(string name, string state);
 
     /// <summary>Outbound navigation: opens Glamourer's window on the actor.</summary>
     IntegrationPortResult OpenGlamourer(ActorId actor);

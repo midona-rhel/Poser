@@ -317,9 +317,15 @@ public sealed class CleanSceneLifecycle : IDisposable
             if (_gestures.ActiveGesture is { } gesture)
                 _gestures.Cancel(gesture);
             _history.Clear();
-            // Leaving GPose is the last moment the actors Poser overrode
-            // are still resolvable, so every animation override is put
-            // back here rather than dropped when they disappear.
+            // Leaving GPose is the last chance to write into the actors
+            // Poser overrode, so everything owned is put back here rather
+            // than dropped when they disappear. "Last chance" is not
+            // "guaranteed": the edge is observed after IsGPosing has
+            // already flipped, so the clone may ALREADY be destroyed and
+            // the exact generation unresolvable by the time this runs.
+            // Owners that hold state the object does not own must carry
+            // their own fallback — see the MCDF teardown's by-name
+            // Glamourer release in runtime-appearance.md.
             ResetOwnedState("GPose exited.");
         }
         Refresh();

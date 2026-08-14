@@ -40,13 +40,24 @@
   scopes it to the character's IDENTITY, so it outlives the GPose clone
   the exit edge destroys. The import therefore captures the character
   NAME while the actor still resolves, and a teardown on an unresolvable
-  actor releases the lock and reverts the imported
-  equipment/customization BY NAME with Poser's key (Brio
-  `CharacterHandlerService.RevertMCDF`); a failed release keeps the MCDF
-  owned and retryable, and an absent character is a completed release.
-  Nothing else uses the name. Plugin disposal drains the active
-  transaction and THEN runs this same teardown, so unload cannot leave
-  committed ownership behind either. A Glamourer state locked by another
+  actor runs the SAME unlock-then-restore pair by name that the
+  resolvable path runs by object index: Poser's key releases the lock,
+  then the CAPTURED pre-import state is written back. Never a revert to
+  game state — the clone and the player share that identity, so a revert
+  would discard the design the user actually had. (Brio's MCDF path
+  unlocks by name only, `GlamourerService.UnlockAndRevertCharacterByName`;
+  restoring the capture is Poser's addition, and the by-name restore uses
+  Glamourer's `ApplyStateName` with the by-index restore's exact flags.)
+  Between the unlock and the write, Glamourer automation may briefly
+  reassert itself; writing first would mean stealing a lock, so the
+  order stands. Either half failing keeps the MCDF owned and retryable,
+  an absent character is a completed release, and an import for which no
+  name could be read keeps its lock owned as evidence rather than
+  dropping it. Nothing else uses the name. Plugin disposal drains the
+  active transaction and THEN runs this same teardown, so unload cannot
+  leave committed ownership behind either; off the framework thread it
+  writes nothing and keeps its evidence, because both the resolution and
+  the by-name calls refuse there. A Glamourer state locked by another
   plugin and an unreadable
   foreign temporary Customize+ profile refuse BEFORE mutation and are
   never displaced. While an MCDF owns the actor the selectors disable
