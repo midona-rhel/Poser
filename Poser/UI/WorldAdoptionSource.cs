@@ -22,7 +22,16 @@ public enum WorldAdoptionKind
     /// <summary>A BG/layout object the map placed — the class Ktisis is alone
     /// in offering, and the only one that is ADOPTED BY REFERENCE: the actor
     /// class clones and the light class copies, while this one takes the map's
-    /// own object and gives it back on release.</summary>
+    /// own object and gives it back on release.
+    ///
+    /// <para>INTEGRATOR NOTE: this branch predates the commit that moved the
+    /// class toggles to the sidebar footer, so it has no
+    /// <c>WorldAdoptionClasses</c> to join. Once the two meet, this member
+    /// belongs in <c>WorldAdoptionClasses.All</c> beside Actor and Light —
+    /// that array is what decides which classes get a footer glyph, and the
+    /// discovery, the filter and the counter this lane needs are all already
+    /// here. It is one line and nothing else.</para>
+    /// </summary>
     WorldObject,
 }
 
