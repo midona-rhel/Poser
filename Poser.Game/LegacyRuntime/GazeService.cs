@@ -32,10 +32,20 @@ internal interface IGazeNativeFactory
         IGameInteropProvider hooks,
         nint address,
         GazeLoopDelegate detour);
+
+    /// <summary>
+    /// Writes the CHARACTER's own game target id (Brio ActorLookAtService
+    /// SetActorTarget, `actor.Native()-&gt;SetTargetId(targetActorID)`). Behind
+    /// the factory because it is a native member call on a live character.
+    /// </summary>
+    void SetCharacterTargetId(nint characterAddress, ulong targetId);
 }
 
 internal sealed class GazeNativeFactory : IGazeNativeFactory
 {
+    public unsafe void SetCharacterTargetId(nint characterAddress, ulong targetId) =>
+        ((Character*)characterAddress)->SetTargetId(targetId);
+
     public nint ScanUpdateLookAt(ISigScanner scanner) => scanner.ScanText(
         "E8 ?? ?? ?? ?? 8B D7 48 8B CB E8 ?? ?? ?? ?? 41 ?? ?? 8B D7 48 ?? ?? 48 ?? ?? ?? ?? 48 83 ?? ?? 5F");
 
@@ -80,6 +90,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
     private readonly IFramework? _framework;
+    private readonly IGazeNativeFactory _nativeFactory;
 
     /// <summary>Spawn/discovery-standard thread refusal (ActorSpawnService
     /// shape) for the members that write natively outside the hooked loop.</summary>
@@ -101,9 +112,26 @@ public unsafe class GazeService : IGazeService, IDisposable
     /// </summary>
     private sealed class GazeEntry
     {
+        /// <summary>The CONFIGURED mode. Remembered across a full untoggle:
+        /// Brio's SetTargetType only rewrites the participation mask and never
+        /// touches TargetMode, so re-adding a part resumes the same mode.</summary>
         public GazeTargetMode Mode;
         public GazeTargetType Parts = GazeTargetType.All;
-        public ulong TargetId;              // Entity-mode target GameObjectId; 0 = unset
+
+        /// <summary>The remembered Entity target GameObjectId; 0 = never
+        /// chosen. Surviving a full untoggle is the point — it is cleared only
+        /// by <see cref="ResetGaze"/>, which is Brio's RemoveObjectFromLook.</summary>
+        public ulong TargetId;
+
+        /// <summary>The remembered target is no longer in the object table.
+        /// Exact identity, never an address: the id stays so the refusal can
+        /// name it, and reapplying it is refused rather than followed.</summary>
+        public bool TargetStale;
+
+        /// <summary>The character target id Poser last wrote natively; 0 when
+        /// Poser has written none. Poser only ever clears what it set.</summary>
+        public ulong AppliedTargetId;
+
         public Vector3 Position;            // Position-mode shared world anchor
         public LookAtSource Target;         // per-part native write source
         public bool EyesLocked;
@@ -158,6 +186,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         _eventBus = eventBus;
         _log = log;
         _framework = framework;
+        _nativeFactory = nativeFactory;
 
         nint updateLookAtAddress;
         try
@@ -230,11 +259,78 @@ public unsafe class GazeService : IGazeService, IDisposable
             _log.Warning($"GazeService: {detail} {error.Message}");
     }
 
-    /// <summary>Entity mode without a chosen target performs no override.</summary>
-    private static GazeTargetMode EffectiveMode(GazeEntry entry) =>
-        entry.Mode == GazeTargetMode.Entity && entry.TargetId == 0
+    /// <summary>
+    /// The mode the entry's stored per-part sources are SEEDED from. Entity
+    /// without a usable target seeds nothing; the participation mask is
+    /// deliberately not consulted, so untoggling every part leaves the stored
+    /// positions and target id exactly as they were (Brio's SetTargetType
+    /// rewrites the mask and nothing else).
+    /// </summary>
+    private static GazeTargetMode SeedMode(GazeEntry entry) =>
+        entry.Mode == GazeTargetMode.Entity && (entry.TargetId == 0 || entry.TargetStale)
             ? GazeTargetMode.None
             : entry.Mode;
+
+    /// <summary>
+    /// What the detour actually enforces. No participating part means Poser
+    /// writes nothing at all and the game's own look-at loop owns every
+    /// channel — release is cessation, exactly as in Brio, where a channel
+    /// outside the mask gets no _updateLookAt call and the original loop runs
+    /// unconditionally afterwards.
+    /// </summary>
+    private static GazeTargetMode EffectiveMode(GazeEntry entry) =>
+        entry.Parts == GazeTargetType.None
+            ? GazeTargetMode.None
+            : SeedMode(entry);
+
+    /// <summary>
+    /// The channels the detour will enforce for this actor on its next pass.
+    /// Everything absent is handed back to the game. This is the observable
+    /// form of the release contract, so it is what the tests assert.
+    /// </summary>
+    internal GazeTargetType WrittenParts(ulong gameObjectId)
+    {
+        lock (_sync)
+        {
+            if (!_entries.TryGetValue(gameObjectId, out var entry))
+                return GazeTargetType.None;
+            return EffectiveMode(entry) == GazeTargetMode.None
+                ? GazeTargetType.None
+                : entry.Parts;
+        }
+    }
+
+    /// <summary>
+    /// Computes the character-target-id write this transition owes, and books
+    /// it as applied. Null when the native id already matches. Callers hold
+    /// <see cref="_sync"/>; the write itself happens outside it.
+    /// </summary>
+    private ulong? PendingTargetWrite(GazeEntry entry)
+    {
+        // Off-thread transitions book nothing, so the next on-thread transition
+        // still sees desired != applied and performs the write.
+        if (!OnOwnerThread)
+            return null;
+        var desired = EffectiveMode(entry) == GazeTargetMode.Entity ? entry.TargetId : 0ul;
+        if (desired == entry.AppliedTargetId)
+            return null;
+        entry.AppliedTargetId = desired;
+        return desired;
+    }
+
+    /// <summary>
+    /// Keeps the character's own game target id in step with the effective
+    /// Entity target. Brio drives this BOTH ways — set when an actor is picked,
+    /// and written back to 0 by its "Reset Selected Actor" path — and the clear
+    /// is what actually hands the channel back: an imposed target left behind
+    /// keeps the game's own look-at pointing at it.
+    /// </summary>
+    private void WriteCharacterTarget(nint characterAddress, ulong? pending)
+    {
+        if (pending is not { } targetId || characterAddress == nint.Zero)
+            return;
+        _nativeFactory.SetCharacterTargetId(characterAddress, targetId);
+    }
 
     private nint ActorLookAtDetour(ContainerInterface* args)
     {
@@ -332,6 +428,14 @@ public unsafe class GazeService : IGazeService, IDisposable
         return _actorLookAtLoop!.Original(args);
     }
 
+    private GazeResult Unavailable() =>
+        GazeResult.Refused(UnavailableDetail ?? "Gaze capability unavailable.");
+
+    /// <summary>The remembered target is gone, so reapplying it is refused by
+    /// name instead of quietly following nothing or a reused address.</summary>
+    private static GazeResult StaleRefusal(GazeEntry entry) => GazeResult.Refused(
+        $"The remembered gaze target ({entry.TargetId:X}) has left the scene. Choose another actor.");
+
     private IGameObject? Resolve(IActor actor) =>
         actor.Address != nint.Zero ? _objectTable.CreateObjectReference(actor.Address) : null;
 
@@ -347,6 +451,8 @@ public unsafe class GazeService : IGazeService, IDisposable
                 ? new GazeState
                 {
                     Mode = entry.Mode,
+                    Active = EffectiveMode(entry) != GazeTargetMode.None,
+                    TargetStale = entry.TargetStale,
                     TargetType = entry.Parts,
                     TargetId = entry.TargetId,
                     Position = entry.Position,
@@ -358,23 +464,30 @@ public unsafe class GazeService : IGazeService, IDisposable
         }
     }
 
-    public void SetGazeMode(IActor actor, GazeTargetMode mode)
+    public GazeResult SetGazeMode(IActor actor, GazeTargetMode mode)
     {
         if (!IsAvailable)
-            return;
+            return Unavailable();
         if (Resolve(actor) is not { } gameObject)
-            return;
+            return GazeResult.Refused("This actor is no longer resolvable.");
         bool modeChanged;
+        ulong? pendingTarget;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            // Re-selecting Actor mode is a reapply of the remembered target, so
+            // a stale one is refused here rather than silently doing nothing.
+            if (mode == GazeTargetMode.Entity && entry.TargetId != 0 && entry.TargetStale)
+                return StaleRefusal(entry);
             var beforeMode = EffectiveMode(entry);
             var previousMode = entry.Mode;
             entry.Mode = mode;
             if (mode == GazeTargetMode.None)
             {
                 // Off stops every write and clears locks; the game's own
-                // update re-takes the released slots.
+                // update re-takes the released slots. The remembered target and
+                // the stored per-part points deliberately survive — this is the
+                // toggle the user expects to be able to undo.
                 ClearPartLock(entry, GazeTargetType.All);
             }
             else if (entry.Parts == GazeTargetType.None)
@@ -388,78 +501,104 @@ public unsafe class GazeService : IGazeService, IDisposable
                 entry.Position = CameraLerpPoint(actor);
             ReseedUnlockedParts(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
+            pendingTarget = PendingTargetWrite(entry);
         }
+        // Leaving Entity clears the character's imposed target id, so the
+        // game's own look-at stops pointing at the actor Poser chose.
+        WriteCharacterTarget(gameObject.Address, pendingTarget);
         // Published outside the lock — the detour contends on _sync from the
         // native thread, so the bus is never invoked while holding it.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
+        return GazeResult.Ok();
     }
 
-    public void SetGazeParts(IActor actor, GazeTargetType parts)
+    public GazeResult SetGazeParts(IActor actor, GazeTargetType parts)
     {
         if (!IsAvailable)
-            return;
+            return Unavailable();
         if (Resolve(actor) is not { } gameObject)
-            return;
+            return GazeResult.Refused("This actor is no longer resolvable.");
         bool modeChanged;
+        ulong? pendingTarget;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
+            // Adding a part back is a reapply of the remembered configuration.
+            // Relinquishing one never is, so only additions can be refused.
+            if ((parts & ~entry.Parts) != GazeTargetType.None
+                && entry.Mode == GazeTargetMode.Entity
+                && entry.TargetId != 0
+                && entry.TargetStale)
+                return StaleRefusal(entry);
             var beforeMode = EffectiveMode(entry);
             // Removing a part relinquishes it immediately — the detour just
             // stops writing it — and a locked part being disabled unlocks.
             ClearPartLock(entry, entry.Parts & ~parts);
             entry.Parts = parts;
-            // Turning off the final active part returns the mode to Off in the
-            // same transition; the handle is kept so re-enabling is symmetric.
-            if (parts == GazeTargetType.None)
-                entry.Mode = GazeTargetMode.None;
+            // The mode is NOT cleared when the last part goes off. Brio's
+            // SetTargetType rewrites the participation mask and nothing else,
+            // so the mode and the chosen target are still there to resume from
+            // the moment a part comes back.
             ReseedUnlockedParts(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
+            pendingTarget = PendingTargetWrite(entry);
         }
-        // Only the last-part-off auto-Off is a mode transition; part edits that
-        // leave the mode alone stay silent. Published outside the lock.
+        // All-off drops the character's imposed target id; the first part back
+        // reapplies it, which is what makes retoggling resume tracking.
+        WriteCharacterTarget(gameObject.Address, pendingTarget);
+        // Crossing between "some part enforced" and "none" is the transition;
+        // part edits that leave that alone stay silent. Published outside lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
+        return GazeResult.Ok();
     }
 
-    public void SetGazeTarget(IActor actor, IActor target)
+    public GazeResult SetGazeTarget(IActor actor, IActor target)
     {
-        if (!IsAvailable || !OnOwnerThread)
-            return;
+        if (!IsAvailable)
+            return Unavailable();
+        if (!OnOwnerThread)
+            return GazeResult.Refused("Gaze targets can only be set on the game thread.");
         if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
-            return;
+            return GazeResult.Refused("This actor is no longer resolvable.");
         // The GPose index gate is load-bearing here exactly as in the detour
         // (Brio ActorTableHelpers 201..439): a GPose clone SHARES its
         // GameObjectId with the overworld original, so a stale wrapper naming
         // an overworld body would write the target id onto the real actor.
         if (!gameObject.IsValid() || gameObject.ObjectIndex is not (>= 201 and <= 439))
-            return;
+            return GazeResult.Refused("Only a GPose actor can be given a gaze target.");
         if (gameObject.GameObjectId == targetObject.GameObjectId)
         {
             _log.Warning("GazeService: an actor cannot gaze at itself.");
-            return;
+            return GazeResult.Refused("An actor cannot gaze at itself.");
         }
         bool modeChanged;
+        ulong? pendingTarget;
         lock (_sync)
         {
             var entry = GetOrCreateEntry(gameObject.GameObjectId);
             var beforeMode = EffectiveMode(entry);
             entry.TargetId = targetObject.GameObjectId;
+            // A freshly chosen target is live by construction, so this is the
+            // one place the stale mark is lifted.
+            entry.TargetStale = false;
             entry.Mode = GazeTargetMode.Entity;
             if (entry.Parts == GazeTargetType.None)
                 entry.Parts = GazeTargetType.All;
             ReseedUnlockedParts(entry);
             modeChanged = EffectiveMode(entry) != beforeMode;
+            pendingTarget = PendingTargetWrite(entry);
         }
         // Brio parity (SetActorTarget): the character's own target id backs
         // the game's id-based look tracking. Written through the RESOLVED
         // wrapper's address — the raw IActor address is only a claim.
-        ((Character*)gameObject.Address)->SetTargetId(targetObject.GameObjectId);
+        WriteCharacterTarget(gameObject.Address, pendingTarget);
         // Retargeting within Entity mode is not a mode transition; only the
         // move INTO Entity publishes. Published outside the lock.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());
+        return GazeResult.Ok();
     }
 
     public nint GetGazeTargetAddress(IActor actor)
@@ -487,7 +626,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
-                EffectiveMode(entry) != GazeTargetMode.Position)
+                SeedMode(entry) != GazeTargetMode.Position)
                 return; // the anchor exists only in Position mode
             entry.Position = position;
             // Locked parts keep their frozen positions — existing guarantee.
@@ -504,7 +643,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
-                EffectiveMode(entry) != GazeTargetMode.Position)
+                SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // An explicit user edit outranks a lock, so locked parts move too;
             // the lock flag and the shared anchor are both left alone.
@@ -521,7 +660,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         lock (_sync)
         {
             if (!_entries.TryGetValue(gameObject.GameObjectId, out var entry) ||
-                EffectiveMode(entry) != GazeTargetMode.Position)
+                SeedMode(entry) != GazeTargetMode.Position)
                 return;
             // Brio's "set to camera value": a one-shot capture, not a follow.
             var target = new LookAtTarget
@@ -607,14 +746,20 @@ public unsafe class GazeService : IGazeService, IDisposable
         if (Resolve(actor) is not { } gameObject)
             return;
         bool modeChanged;
+        ulong? pendingTarget = null;
         lock (_sync)
         {
             // Release is cessation: dropping the entry stops every write in
-            // the same transition.
-            modeChanged = _entries.TryGetValue(gameObject.GameObjectId, out var entry) &&
-                EffectiveMode(entry) != GazeTargetMode.None;
+            // the same transition. This is Brio's RemoveObjectFromLook — the
+            // ONE path that forgets the remembered target, as opposed to the
+            // toggles, which keep it.
+            bool known = _entries.TryGetValue(gameObject.GameObjectId, out var entry);
+            modeChanged = known && EffectiveMode(entry!) != GazeTargetMode.None;
+            if (known && entry!.AppliedTargetId != 0 && OnOwnerThread)
+                pendingTarget = 0;
             _entries.Remove(gameObject.GameObjectId);
         }
+        WriteCharacterTarget(gameObject.Address, pendingTarget);
         // A dropped entry that was already effectively Off changed nothing.
         // Published outside the lock.
         if (modeChanged)
@@ -645,7 +790,9 @@ public unsafe class GazeService : IGazeService, IDisposable
     private void ReseedPart(GazeEntry entry, GazeTargetType part)
     {
         var target = new LookAtTarget();
-        switch (EffectiveMode(entry))
+        // Seeded from the CONFIGURED mode, so untoggling every part leaves the
+        // stored per-part sources intact for the retoggle to resume from.
+        switch (SeedMode(entry))
         {
             case GazeTargetMode.Camera:
             case GazeTargetMode.Forward:
@@ -745,6 +892,7 @@ public unsafe class GazeService : IGazeService, IDisposable
     private void OnActorListChanged(ActorListChangedEvent _)
     {
         bool modeChanged = false;
+        List<(nint Address, ulong TargetId)>? targetWrites = null;
         lock (_sync)
         {
             if (_entries.Count > 0)
@@ -752,28 +900,43 @@ public unsafe class GazeService : IGazeService, IDisposable
                 List<ulong>? removed = null;
                 foreach (var (id, entry) in _entries)
                 {
-                    if (_objectTable.SearchById(id) == null)
+                    var source = _objectTable.SearchById(id);
+                    if (source == null)
                     {
                         (removed ??= new List<ulong>()).Add(id);
                         continue;
                     }
-                    if (entry.Mode == GazeTargetMode.Entity && entry.TargetId != 0 &&
-                        _objectTable.SearchById(entry.TargetId) == null)
+                    bool wasStale = entry.TargetStale;
+                    // Exact identity: the remembered id is KEPT and marked
+                    // stale, never zeroed and never re-resolved by address. A
+                    // stale target enforces nothing, and reapplying it is
+                    // refused by name rather than followed.
+                    entry.TargetStale = entry.TargetId != 0 &&
+                        _objectTable.SearchById(entry.TargetId) == null;
+                    if (entry.TargetStale == wasStale)
+                        continue;
+                    if (entry.TargetStale)
                     {
-                        entry.TargetId = 0;
-                        entry.Mode = GazeTargetMode.None;
                         ClearPartLock(entry, GazeTargetType.All);
-                        // Entity with a live target was effectively Entity, so
-                        // this branch is always a transition to Off.
-                        modeChanged = true;
-                        _log.Debug($"GazeService: gaze target of {id} despawned — gaze off.");
+                        _log.Debug(
+                            $"GazeService: gaze target of {id} despawned — remembered as stale.");
                     }
+                    if (entry.Mode != GazeTargetMode.Entity)
+                        continue;
+                    modeChanged = true;
+                    if (PendingTargetWrite(entry) is { } pending)
+                        (targetWrites ??= new()).Add((source.Address, pending));
                 }
                 if (removed != null)
                     foreach (var id in removed)
                         _entries.Remove(id);
             }
         }
+        // Outside the lock: a despawned target leaves the character's imposed
+        // target id pointing at nothing, so it is cleared here too.
+        if (targetWrites != null)
+            foreach (var (address, targetId) in targetWrites)
+                WriteCharacterTarget(address, targetId);
         // Published outside the lock, once for the whole reconciliation pass.
         if (modeChanged)
             _eventBus.Publish(new GazeStateChangedEvent());

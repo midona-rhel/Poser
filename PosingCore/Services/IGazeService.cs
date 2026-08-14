@@ -34,6 +34,17 @@ public enum GazeTargetType
 }
 
 /// <summary>
+/// Outcome of a gaze transition that is allowed to be refused. A refusal is
+/// always typed and always names its reason: the UI states it instead of the
+/// click appearing to do nothing.
+/// </summary>
+public readonly record struct GazeResult(bool Success, string? Detail = null)
+{
+    public static GazeResult Ok() => new(true);
+    public static GazeResult Refused(string detail) => new(false, detail);
+}
+
+/// <summary>
 /// Read snapshot of an actor's managed gaze state. Durable identity is never
 /// an <see cref="IActor"/> reference: the service keys state by the native
 /// GameObjectId and the Entity target is a GameObjectId, both of which
@@ -41,7 +52,24 @@ public enum GazeTargetType
 /// </summary>
 public class GazeState
 {
+    /// <summary>
+    /// The CONFIGURED mode, which is remembered across a full untoggle — it is
+    /// not a claim that anything is being enforced. Ask <see cref="Active"/>
+    /// for that.
+    /// </summary>
     public GazeTargetMode Mode { get; set; } = GazeTargetMode.None;
+
+    /// <summary>
+    /// Whether Poser is enforcing any channel right now. False whenever every
+    /// part is untoggled or the remembered target is stale, even though the
+    /// mode and target are still remembered.
+    /// </summary>
+    public bool Active { get; set; }
+
+    /// <summary>The remembered Entity target has left the scene: it is kept by
+    /// id so a reapply can be refused by name rather than followed.</summary>
+    public bool TargetStale { get; set; }
+
     public GazeTargetType TargetType { get; set; } = GazeTargetType.All;
 
     /// <summary>The Entity-mode target's GameObjectId; 0 when unset.</summary>
@@ -81,21 +109,26 @@ public interface IGazeService
     /// <summary>
     /// One mode transition. Entering a non-Off mode with no participating
     /// parts enables all three. Entity mode without a chosen target performs
-    /// no native override until a target is set.
+    /// no native override until a target is set. Off keeps the remembered
+    /// target and per-part points — only <see cref="ResetGaze"/> forgets them.
+    /// Re-entering Entity on a stale remembered target is refused.
     /// </summary>
-    void SetGazeMode(IActor actor, GazeTargetMode mode);
+    GazeResult SetGazeMode(IActor actor, GazeTargetMode mode);
 
     /// <summary>
-    /// Changes part participation only. Turning off the final active part
-    /// returns the mode to Off.
+    /// Changes part participation only, exactly as Brio's SetTargetType does:
+    /// a part removed from the mask is simply no longer written, so the game's
+    /// own look-at resumes owning it. The mode and target survive an empty
+    /// mask, so re-adding a part resumes what was configured. Re-adding a part
+    /// on a stale remembered target is refused; removing one never is.
     /// </summary>
-    void SetGazeParts(IActor actor, GazeTargetType parts);
+    GazeResult SetGazeParts(IActor actor, GazeTargetType parts);
 
     /// <summary>
     /// Chooses the Entity-mode target and switches to Entity mode. The
     /// source actor itself is rejected.
     /// </summary>
-    void SetGazeTarget(IActor actor, IActor target);
+    GazeResult SetGazeTarget(IActor actor, IActor target);
 
     /// <summary>
     /// The current Entity target's live address resolved at call time

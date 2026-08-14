@@ -1447,6 +1447,11 @@ public class PoseInspectorPane
     // Quiet inline note after an Actor-mode click with no valid target actor.
     private bool _gazeActorUnavailableNote;
 
+    // The last typed gaze refusal, so a refused click states its reason
+    // instead of appearing to do nothing. Cleared by the next accepted one,
+    // and carries its own actor so a note cannot survive onto another one.
+    private (nint Actor, string Text)? _gazeRefusal;
+
     /// <param name="wide">The workspace Actor tab. The rail's control cell is
     /// ~150px, so the narrow form keeps Mode and At on rows of their own; the
     /// parts are chips on a full-width row in BOTH forms, because three text
@@ -1473,6 +1478,13 @@ public class PoseInspectorPane
             if (sourceLineage is not { } source || candidate.Id.LogicalId != source)
                 others.Add(candidate);
 
+        // Every refusable gaze call routes through here, so the note is always
+        // the outcome of the most recent one.
+        void Record(GazeResult result) =>
+            _gazeRefusal = result.Success
+                ? null
+                : (actor.Address, result.Detail ?? "Gaze change refused.");
+
         int ModeIndex() => state.Mode switch
         {
             GazeTargetMode.None => 0,
@@ -1492,14 +1504,14 @@ public class PoseInspectorPane
             else
             {
                 _gazeActorUnavailableNote = false;
-                _gazeService.SetGazeMode(actor, selected switch
+                Record(_gazeService.SetGazeMode(actor, selected switch
                 {
                     0 => GazeTargetMode.None,
                     1 => GazeTargetMode.Forward,
                     2 => GazeTargetMode.Camera,
                     3 => GazeTargetMode.Position,
                     _ => GazeTargetMode.Entity,
-                });
+                }));
             }
             state = _gazeService.GetGazeState(actor);
             // The service's OWN answer decides, not the click: a refused mode
@@ -1555,7 +1567,10 @@ public class PoseInspectorPane
                 && next < others.Count
                 && _bindings.Resolve(others[next].Id) is
                     { Success: true, Value: { } live })
-                _gazeService.SetGazeTarget(actor, live);
+            {
+                Record(_gazeService.SetGazeTarget(actor, live));
+                state = _gazeService.GetGazeState(actor);
+            }
         }
 
         const string atHelp = "Choose which actor this one looks at";
@@ -1602,7 +1617,14 @@ public class PoseInspectorPane
         else
             _gazeActorUnavailableNote = false;
 
-        DrawGazeParts(form, actor, state, wide);
+        // The remembered target outliving its actor is a standing condition,
+        // so it is stated whether or not a click has just been refused.
+        if (state.TargetStale)
+            form.Status("The remembered gaze target has left the scene. Choose another actor.");
+        else if (_gazeRefusal is { } refusal && refusal.Actor == actor.Address)
+            form.Status(refusal.Text);
+
+        DrawGazeParts(form, actor, state, wide, Record);
 
         if (!wide)
         {
@@ -1636,17 +1658,24 @@ public class PoseInspectorPane
         Crystarium.FormScope form,
         IActor actor,
         GazeState state,
-        bool wide)
+        bool wide,
+        Action<GazeResult> record)
     {
+        // The CONFIGURED mode gates the chips, not whether anything is being
+        // enforced: with every part off the mode is still remembered, and the
+        // chips are how it gets resumed.
         bool off = state.Mode == GazeTargetMode.None;
         bool point = state.Mode == GazeTargetMode.Position;
 
-        void SetPart(GazeTargetType part, bool next) =>
-            _gazeService.SetGazeParts(
+        void SetPart(GazeTargetType part, bool next)
+        {
+            record(_gazeService.SetGazeParts(
                 actor,
                 next
                     ? state.TargetType | part
-                    : state.TargetType & ~part);
+                    : state.TargetType & ~part));
+            state = _gazeService.GetGazeState(actor);
+        }
 
         void LockIcon(
             Crystarium.ActionScope actions,

@@ -21,10 +21,28 @@ grabbable by the world gizmo (mutually exclusive with the bone gizmo); gaze
 writes never enter history. Actor mode
 requires an explicit target choice: the UI picker lists candidates by stable
 `ActorId` from the scene snapshot, while `GazeService` keys its state and
-target by native `GameObjectId`. Disabling a part immediately restores its
-pre-Poser native target (captured once, never re-seeded from Poser output);
-Off writes nothing. Redraws cannot orphan the id-keyed state; a vanished
-target transitions to Off. Reset restores every part and clears gaze state.
+target by native `GameObjectId`.
+
+Release is cessation, never restoration (Brio): a part outside the
+participation mask is simply not written, and the game's own look-at loop —
+which runs unconditionally after the hook — owns it again. Nothing is
+captured, no override flag is cleared, and the two write-on-release variants
+both pinned the part to a stale target instead.
+
+The mask is the only thing a part toggle changes. The configured mode, the
+chosen Actor target and the per-part points all survive an empty mask and
+survive Off, so re-enabling a part resumes what was configured without
+re-picking it; `ResetGaze` is the one path that forgets. Alongside the
+per-part sources, Actor mode also imposes the character's own game target id,
+and that id is cleared the moment the effective mode stops being Actor —
+without the clear, the game's look-at keeps pointing at the actor Poser chose,
+which reads as the gaze refusing to let go.
+
+Redraws cannot orphan the id-keyed state. A vanished Actor target is kept by
+id and marked stale rather than zeroed: it stops being enforced, and
+reapplying it (re-enabling a part, or re-entering Actor mode) is refused with
+a typed `GazeResult` naming the reason instead of following a reused address.
+Choosing a live target is the only thing that lifts the mark.
 
 The native gaze capability is optional: missing signatures or hook setup keeps
 the plugin running, reports a stable unavailable detail through `IGazeService`,
