@@ -85,7 +85,8 @@ public sealed class CustomizeReadRuntimePortTests
             new TestLightingService(),
             new TestCameraService(),
             EmptyProps(),
-            EmptyOverlays());
+            EmptyOverlays(),
+            EmptyWorldObjects());
 
     private static PropSpawnService EmptyProps()
     {
@@ -112,6 +113,21 @@ public sealed class CustomizeReadRuntimePortTests
                 overlays,
                 new List<Poser.Game.Overlays.OverlayNodeHandle>());
         return overlays;
+    }
+
+    /// <summary>A world-object service with no claims and no live port: the
+    /// registry only ever reads its list.</summary>
+    private static Poser.Game.WorldObjects.WorldObjectService EmptyWorldObjects()
+    {
+        var worldObjects = (Poser.Game.WorldObjects.WorldObjectService)
+            RuntimeHelpers.GetUninitializedObject(
+                typeof(Poser.Game.WorldObjects.WorldObjectService));
+        typeof(Poser.Game.WorldObjects.WorldObjectService).GetField(
+            "_adopted",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(
+                worldObjects,
+                new List<Poser.Game.WorldObjects.AdoptedWorldObject>());
+        return worldObjects;
     }
 
     private sealed class TestActorManager : IActorManager

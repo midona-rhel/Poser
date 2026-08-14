@@ -360,6 +360,14 @@ internal static class ServiceRegistration
             Game.Overlays.KamiToolKitOverlayPort>();
         services.AddSingleton<Game.Overlays.OverlayNodeService>();
         services.AddSingleton<Game.Overlays.StatusIconCatalog>();
+        // The map's own objects: the native walk, and the service that owns
+        // every adoption's restore. A singleton for the same reason the
+        // overlay port is one — the container's dispose is the unload edge
+        // that gives every borrowed object back.
+        services.AddSingleton<
+            Game.WorldObjects.IWorldObjectPort,
+            Game.WorldObjects.NativeWorldObjectPort>();
+        services.AddSingleton<Game.WorldObjects.WorldObjectService>();
         return services;
     }
 

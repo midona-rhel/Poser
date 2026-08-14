@@ -89,6 +89,8 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
         log.Debug("Load link: overlay nodes");
         _ = _serviceProvider.GetRequiredService<Game.Overlays.OverlayNodeService>();
+        log.Debug("Load link: world objects");
+        _ = _serviceProvider.GetRequiredService<Game.WorldObjects.WorldObjectService>();
         log.Debug("Load link: lighting");
         _ = _serviceProvider.GetRequiredService<ILightingService>();
         log.Debug("Load link: cameras");

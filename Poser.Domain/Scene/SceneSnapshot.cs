@@ -112,6 +112,18 @@ public sealed record PropDescriptor(
     bool Visible = true);
 
 /// <summary>
+/// Owns the pointer-free ADOPTED-WORLD-OBJECT row state. It does not own the
+/// live claim or the native object under it. The PATH rides along because it
+/// is the only human-readable thing a BG object carries and the only half of
+/// its identity that survives the session the addresses belong to.
+/// </summary>
+public sealed record WorldObjectDescriptor(
+    WorldObjectId Id,
+    string Name,
+    string Path,
+    bool Visible = true);
+
+/// <summary>
 /// Owns the pointer-free overlay-node row state. It does not own the live
 /// node or its native UI subtree. The KIND rides along because it decides the
 /// row's mark and the editor it opens, and nothing else about a node is a row
@@ -210,7 +222,8 @@ public sealed record SceneSnapshot
         IReadOnlyList<PropDescriptor> Props,
         EnvironmentDescriptor? Environment = null,
         IReadOnlyList<GazeDescriptor>? GazeStates = null,
-        IReadOnlyList<OverlayDescriptor>? Overlays = null)
+        IReadOnlyList<OverlayDescriptor>? Overlays = null,
+        IReadOnlyList<WorldObjectDescriptor>? WorldObjects = null)
     {
         ArgumentNullException.ThrowIfNull(Actors);
         ArgumentNullException.ThrowIfNull(Lights);
@@ -225,6 +238,8 @@ public sealed record SceneSnapshot
         this.Environment = Environment;
         this.GazeStates = GazeStates ?? Array.Empty<GazeDescriptor>();
         this.Overlays = Overlays ?? Array.Empty<OverlayDescriptor>();
+        this.WorldObjects =
+            WorldObjects ?? Array.Empty<WorldObjectDescriptor>();
     }
 
     public ulong Revision { get; init; }
@@ -267,6 +282,19 @@ public sealed record SceneSnapshot
         }
     }
 
+    /// <summary>The adopted world objects. Last of the entity lists and
+    /// defaulted empty, exactly as the overlays are, so a producer that knows
+    /// nothing of them states an empty scene rather than a null one.</summary>
+    public IReadOnlyList<WorldObjectDescriptor> WorldObjects
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = Freeze(value);
+        }
+    }
+
     public EnvironmentDescriptor? Environment { get; init; }
 
     public IReadOnlyList<GazeDescriptor> GazeStates
@@ -296,6 +324,7 @@ public sealed record SceneSnapshot
                CamerasEqual(Cameras, other.Cameras) &&
                PropsEqual(Props, other.Props) &&
                OverlaysEqual(Overlays, other.Overlays) &&
+               WorldObjectsEqual(WorldObjects, other.WorldObjects) &&
                EnvironmentEqual(Environment, other.Environment) &&
                GazeEqual(GazeStates, other.GazeStates);
     }
@@ -480,6 +509,27 @@ public sealed record SceneSnapshot
             var second = right[index];
             if (first.Id != second.Id ||
                 !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                first.Visible != second.Visible)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool WorldObjectsEqual(
+        IReadOnlyList<WorldObjectDescriptor> left,
+        IReadOnlyList<WorldObjectDescriptor> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var first = left[index];
+            var second = right[index];
+            if (first.Id != second.Id ||
+                !StringComparer.Ordinal.Equals(first.Name, second.Name) ||
+                !StringComparer.Ordinal.Equals(first.Path, second.Path) ||
                 first.Visible != second.Visible)
                 return false;
         }

@@ -49,6 +49,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 CaptureLight(target, light),
             TransformTargetKind.Prop when target.Prop is { } prop =>
                 CaptureProp(target, prop),
+            TransformTargetKind.WorldObject when target.WorldObject is { } world =>
+                CaptureWorldObject(target, world),
             _ => TransformPortResult.Fail(
                 TransformPortStatus.IdentityMismatch,
                 $"Malformed transform target {target}."),
@@ -135,6 +137,16 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (baseline.Target.Kind == TransformTargetKind.WorldObject &&
+            baseline.Target.WorldObject is { } applyWorldId)
+        {
+            var resolved = _bindings.Resolve(applyWorldId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(desired);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {baseline.Target}.");
@@ -192,6 +204,16 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Ok();
         }
 
+        if (state.Target.Kind == TransformTargetKind.WorldObject &&
+            state.Target.WorldObject is { } restoreWorldId)
+        {
+            var resolved = _bindings.Resolve(restoreWorldId);
+            if (!resolved.Success)
+                return FromBinding(resolved.Status, resolved.Detail);
+            resolved.Value!.Transform = ToLegacy(state.Transform);
+            return TransformPortResult.Ok();
+        }
+
         return TransformPortResult.Fail(
             TransformPortStatus.IdentityMismatch,
             $"Malformed transform target {state.Target}.");
@@ -233,6 +255,31 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             return TransformPortResult.Fail(
                 TransformPortStatus.InvalidTransform,
                 $"Prop {propId} returned an invalid transform.");
+        return TransformPortResult.Ok(new TransformTargetState(
+            target,
+            converted.Value,
+            new BonePose(),
+            true));
+    }
+
+    /// <summary>
+    /// An adopted world object's transform is its whole editable state, exactly
+    /// as a prop's is. Undoing one is a WRITE BACK onto the same borrowed
+    /// object — never a release: the transform history moves things, and only
+    /// the lifecycle history gives them back.
+    /// </summary>
+    private TransformPortResult CaptureWorldObject(
+        TransformTargetId target,
+        WorldObjectId worldObjectId)
+    {
+        var resolved = _bindings.Resolve(worldObjectId);
+        if (!resolved.Success)
+            return FromBinding(resolved.Status, resolved.Detail);
+        var converted = FromLegacy(resolved.Value!.Transform);
+        if (converted == null)
+            return TransformPortResult.Fail(
+                TransformPortStatus.InvalidTransform,
+                $"World object {worldObjectId} returned an invalid transform.");
         return TransformPortResult.Ok(new TransformTargetState(
             target,
             converted.Value,

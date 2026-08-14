@@ -189,9 +189,19 @@ internal sealed class PoseImportCaptureHarness : IDisposable
             BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(
                 overlays,
                 new List<Poser.Game.Overlays.OverlayNodeHandle>());
+        // A world-object service with no claims: the registry only ever reads
+        // its list.
+        var worldObjects = (Poser.Game.WorldObjects.WorldObjectService)
+            RuntimeHelpers.GetUninitializedObject(
+                typeof(Poser.Game.WorldObjects.WorldObjectService));
+        typeof(Poser.Game.WorldObjects.WorldObjectService).GetField(
+            "_adopted",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(
+                worldObjects,
+                new List<Poser.Game.WorldObjects.AdoptedWorldObject>());
         Bindings = new StableBindingRegistry(
             _actorManager, Skeletons, spawn, lighting, cameras, props,
-            overlays);
+            overlays, worldObjects);
 
         Selection = new Poser.Application.Selection.SelectionSession();
         Scene = new SceneSession(Selection);

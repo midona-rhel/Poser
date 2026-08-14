@@ -65,6 +65,8 @@ public sealed class ViewportProjection
                 GetLightTransform(lightId),
             TransformTargetKind.Prop when target.Prop is { } propId =>
                 GetPropTransform(propId),
+            TransformTargetKind.WorldObject when target.WorldObject is { } worldId =>
+                GetWorldObjectTransform(worldId),
             _ => null,
         };
 
@@ -77,6 +79,18 @@ public sealed class ViewportProjection
         var prop = _bindings.Resolve(id);
         return prop.Success
             ? ToPoseTransform(prop.Value!.Transform)
+            : null;
+    }
+
+    /// <summary>World transform of an adopted world object. Null off the
+    /// framework thread or when the id no longer binds.</summary>
+    public PoseTransform? GetWorldObjectTransform(WorldObjectId id)
+    {
+        if (!_framework.IsInFrameworkUpdateThread)
+            return null;
+        var worldObject = _bindings.Resolve(id);
+        return worldObject.Success
+            ? ToPoseTransform(worldObject.Value!.Transform)
             : null;
     }
 

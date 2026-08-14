@@ -72,6 +72,18 @@ public readonly record struct PropId(Guid LogicalId, uint Generation)
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
+/// <summary>One ADOPTED world object — a BG/layout object the map placed and
+/// the user took into the scene — at one exact native binding generation. It is
+/// deliberately its own identity rather than a prop's: a prop is Poser's own
+/// object and is DESTROYED, while this one is borrowed and is RESTORED, and
+/// nothing that can act on both may confuse the two.</summary>
+public readonly record struct WorldObjectId(Guid LogicalId, uint Generation)
+{
+    public static WorldObjectId New() => new(Guid.NewGuid(), 0);
+    public WorldObjectId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override string ToString() => $"{LogicalId:N}@{Generation}";
+}
+
 /// <summary>One staged overlay node — a game-UI dialogue box, chat bubble or
 /// status line — at one exact native binding generation.</summary>
 public readonly record struct OverlayId(Guid LogicalId, uint Generation)
@@ -103,6 +115,11 @@ public enum SceneEntityKind
     /// prop, but a FLAT one: it lives in screen space, so it never enters the
     /// world gizmo or the transform history.</summary>
     Overlay,
+
+    /// <summary>An adopted BG/layout object: the map's own furniture, borrowed
+    /// into the scene. It transforms like a prop and is REMOVED like a borrowed
+    /// light — released back to where it stood, never destroyed.</summary>
+    WorldObject,
 }
 
 /// <summary>Which gaze point a gaze-target selection addresses. Anchor is the
@@ -123,7 +140,8 @@ public readonly record struct SelectionId
         GazePart? gaze = null,
         CameraId? camera = null,
         PropId? prop = null,
-        OverlayId? overlay = null)
+        OverlayId? overlay = null,
+        WorldObjectId? worldObject = null)
     {
         Kind = kind;
         Actor = actor;
@@ -135,6 +153,7 @@ public readonly record struct SelectionId
         Camera = camera;
         Prop = prop;
         Overlay = overlay;
+        WorldObject = worldObject;
     }
 
     public SceneEntityKind Kind { get; }
@@ -147,6 +166,7 @@ public readonly record struct SelectionId
     public CameraId? Camera { get; }
     public PropId? Prop { get; }
     public OverlayId? Overlay { get; }
+    public WorldObjectId? WorldObject { get; }
 
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
@@ -170,6 +190,11 @@ public readonly record struct SelectionId
 
     public static SelectionId ForOverlay(OverlayId overlay) =>
         new(SceneEntityKind.Overlay, null, null, null, overlay: overlay);
+
+    public static SelectionId ForWorldObject(WorldObjectId worldObject) =>
+        new(
+            SceneEntityKind.WorldObject, null, null, null,
+            worldObject: worldObject);
 
     public static SelectionId ForBoneGroup(ActorId actor, string id)
     {
@@ -201,6 +226,7 @@ public readonly record struct SelectionId
         SceneEntityKind.Camera => $"camera:{Camera}",
         SceneEntityKind.Prop => $"prop:{Prop}",
         SceneEntityKind.Overlay => $"overlay:{Overlay}",
+        SceneEntityKind.WorldObject => $"world-object:{WorldObject}",
         SceneEntityKind.Environment => "environment",
         SceneEntityKind.GazeTarget => $"gaze:{Actor}:{Gaze}",
         _ => throw new InvalidOperationException($"Unknown selection kind {Kind}."),
@@ -213,6 +239,7 @@ public enum TransformTargetKind
     Bone,
     Light,
     Prop,
+    WorldObject,
 }
 
 /// <summary>The subset of selection identities that can enter a transform gesture.</summary>
@@ -223,13 +250,15 @@ public readonly record struct TransformTargetId
         ActorId? actor,
         BoneId? bone,
         LightId? light = null,
-        PropId? prop = null)
+        PropId? prop = null,
+        WorldObjectId? worldObject = null)
     {
         Kind = kind;
         Actor = actor;
         Bone = bone;
         Light = light;
         Prop = prop;
+        WorldObject = worldObject;
     }
 
     public TransformTargetKind Kind { get; }
@@ -237,6 +266,7 @@ public readonly record struct TransformTargetId
     public BoneId? Bone { get; }
     public LightId? Light { get; }
     public PropId? Prop { get; }
+    public WorldObjectId? WorldObject { get; }
     public Guid ActorLineage =>
         Actor?.LogicalId ??
         Bone?.Skeleton.Actor.LogicalId ??
@@ -254,12 +284,19 @@ public readonly record struct TransformTargetId
     public static TransformTargetId ForProp(PropId prop) =>
         new(TransformTargetKind.Prop, null, null, null, prop);
 
+    public static TransformTargetId ForWorldObject(WorldObjectId worldObject) =>
+        new(
+            TransformTargetKind.WorldObject, null, null, null, null,
+            worldObject);
+
     public SelectionId ToSelectionId() => Kind switch
     {
         TransformTargetKind.Actor => SelectionId.ForActor(Actor!.Value),
         TransformTargetKind.Bone => SelectionId.ForBone(Bone!.Value),
         TransformTargetKind.Light => SelectionId.ForLight(Light!.Value),
         TransformTargetKind.Prop => SelectionId.ForProp(Prop!.Value),
+        TransformTargetKind.WorldObject =>
+            SelectionId.ForWorldObject(WorldObject!.Value),
         _ => throw new InvalidOperationException($"Unknown target kind {Kind}."),
     };
 

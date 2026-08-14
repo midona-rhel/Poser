@@ -3,6 +3,7 @@ using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Overlays;
+using Poser.Game.WorldObjects;
 using Poser.Services;
 
 namespace Poser.Game.Bindings;
@@ -75,6 +76,13 @@ public sealed class StableBindingRegistry
     private Dictionary<OverlayNodeHandle, OverlayId> _overlayIds =
         new(ReferenceComparer<OverlayNodeHandle>.Instance);
     private Dictionary<OverlayId, OverlayNodeHandle> _overlayBindings = new();
+
+    // Adopted world objects follow the light rule exactly: borrowed handles,
+    // ids by reference, kept while the claim is live.
+    private Dictionary<AdoptedWorldObject, WorldObjectId> _worldObjectIds =
+        new(ReferenceComparer<AdoptedWorldObject>.Instance);
+    private Dictionary<WorldObjectId, AdoptedWorldObject> _worldObjectBindings =
+        new();
     // The auxiliary half of the PUBLISHED maps. Empty until a commit publishes
     // one, which is exactly what makes the first preview body a change.
     private IReadOnlyList<AuxiliaryBindingKey> _auxiliaryBindings =
@@ -87,7 +95,8 @@ public sealed class StableBindingRegistry
         ILightingService lighting,
         IVirtualCameraService cameras,
         PropSpawnService props,
-        OverlayNodeService overlays)
+        OverlayNodeService overlays,
+        WorldObjectService worldObjects)
     {
         _actors = actors;
         _skeletons = skeletons;
@@ -96,10 +105,12 @@ public sealed class StableBindingRegistry
         _cameras = cameras;
         _props = props;
         _overlays = overlays;
+        _worldObjects = worldObjects;
     }
 
     private readonly PropSpawnService _props;
     private readonly OverlayNodeService _overlays;
+    private readonly WorldObjectService _worldObjects;
 
     /// <summary>
     /// A framework-thread-only discovery result. Native maps and lineage state
@@ -122,6 +133,8 @@ public sealed class StableBindingRegistry
             Dictionary<PropId, PropHandle> propBindings,
             Dictionary<OverlayNodeHandle, OverlayId> overlayIds,
             Dictionary<OverlayId, OverlayNodeHandle> overlayBindings,
+            Dictionary<AdoptedWorldObject, WorldObjectId> worldObjectIds,
+            Dictionary<WorldObjectId, AdoptedWorldObject> worldObjectBindings,
             IReadOnlyList<AuxiliaryBindingKey> auxiliaryBindings)
         {
             AuxiliaryBindings = auxiliaryBindings;
@@ -139,6 +152,8 @@ public sealed class StableBindingRegistry
             PropBindings = propBindings;
             OverlayIds = overlayIds;
             OverlayBindings = overlayBindings;
+            WorldObjectIds = worldObjectIds;
+            WorldObjectBindings = worldObjectBindings;
         }
 
         public SceneSnapshot Snapshot { get; }
@@ -160,6 +175,8 @@ public sealed class StableBindingRegistry
         internal Dictionary<PropId, PropHandle> PropBindings { get; }
         internal Dictionary<OverlayNodeHandle, OverlayId> OverlayIds { get; }
         internal Dictionary<OverlayId, OverlayNodeHandle> OverlayBindings { get; }
+        internal Dictionary<AdoptedWorldObject, WorldObjectId> WorldObjectIds { get; }
+        internal Dictionary<WorldObjectId, AdoptedWorldObject> WorldObjectBindings { get; }
     }
 
     public BindingCandidate RefreshCandidate()
@@ -423,6 +440,28 @@ public sealed class StableBindingRegistry
                 overlay.Visible));
         }
 
+        // Adopted world objects keep their id while the claim is live. A
+        // released claim simply stops being listed — its object went back to
+        // the map, so there is nothing left for an id to name.
+        var worldObjectIds = new Dictionary<AdoptedWorldObject, WorldObjectId>(
+            ReferenceComparer<AdoptedWorldObject>.Instance);
+        var worldObjectBindings = new Dictionary<WorldObjectId, AdoptedWorldObject>();
+        var worldObjectDescriptors = new List<WorldObjectDescriptor>();
+        foreach (var worldObject in _worldObjects.Adopted)
+        {
+            if (!worldObject.IsValid)
+                continue;
+            if (!_worldObjectIds.TryGetValue(worldObject, out var worldObjectId))
+                worldObjectId = WorldObjectId.New();
+            worldObjectIds[worldObject] = worldObjectId;
+            worldObjectBindings[worldObjectId] = worldObject;
+            worldObjectDescriptors.Add(new WorldObjectDescriptor(
+                worldObjectId,
+                worldObject.Name,
+                worldObject.Path,
+                worldObject.Visible));
+        }
+
         // This registry can justify native identity/topology plus the current
         // actor, light, camera, and prop row fields above. The registry cannot
         // truthfully reduce a camera's display-name target and
@@ -452,6 +491,8 @@ public sealed class StableBindingRegistry
             propBindings,
             overlayIds,
             overlayBindings,
+            worldObjectIds,
+            worldObjectBindings,
             auxiliaryBindings);
         _stagedCandidate = candidate;
         return candidate;
@@ -483,6 +524,8 @@ public sealed class StableBindingRegistry
         _propBindings = candidate.PropBindings;
         _overlayIds = candidate.OverlayIds;
         _overlayBindings = candidate.OverlayBindings;
+        _worldObjectIds = candidate.WorldObjectIds;
+        _worldObjectBindings = candidate.WorldObjectBindings;
         _auxiliaryBindings = candidate.AuxiliaryBindings;
         _stagedCandidate = null;
     }
@@ -683,6 +726,26 @@ public sealed class StableBindingRegistry
         return new BindingResult<PropHandle>(
             BindingStatus.Missing,
             Detail: $"Prop {id.LogicalId:N} is not present.");
+    }
+
+    public WorldObjectId? GetWorldObjectId(AdoptedWorldObject worldObject) =>
+        _worldObjectIds.TryGetValue(worldObject, out var id) &&
+        _worldObjectBindings.TryGetValue(id, out var bound) &&
+        ReferenceEquals(bound, worldObject)
+            ? id
+            : null;
+
+    public BindingResult<AdoptedWorldObject> Resolve(WorldObjectId id)
+    {
+        if (_worldObjectBindings.TryGetValue(id, out var worldObject) &&
+            worldObject.IsValid)
+            return new BindingResult<AdoptedWorldObject>(
+                BindingStatus.Success,
+                worldObject);
+
+        return new BindingResult<AdoptedWorldObject>(
+            BindingStatus.Missing,
+            Detail: $"World object {id.LogicalId:N} is not present.");
     }
 
     public OverlayId? GetOverlayId(OverlayNodeHandle overlay) =>

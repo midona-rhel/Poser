@@ -109,6 +109,33 @@ public static class TransformTargetResolver
                 : new EffectiveTransformSelection(propTargets[0], propTargets);
         }
 
+        if (selected[0].Kind == SceneEntityKind.WorldObject)
+        {
+            var worldTargets = new List<TransformTargetId>();
+            foreach (var id in selected)
+            {
+                if (id is not
+                    { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldId })
+                    continue;
+                // Same all-or-nothing rule as props: one stale claim makes the
+                // whole selection unresolvable rather than silently shrinking.
+                var exists = false;
+                foreach (var worldObject in snapshot.WorldObjects)
+                {
+                    if (!worldObject.Id.Equals(worldId))
+                        continue;
+                    exists = true;
+                    break;
+                }
+                if (!exists)
+                    return null;
+                worldTargets.Add(TransformTargetId.ForWorldObject(worldId));
+            }
+            return worldTargets.Count == 0
+                ? null
+                : new EffectiveTransformSelection(worldTargets[0], worldTargets);
+        }
+
         var bones = new List<BoneId>();
         foreach (var id in selected)
             if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
