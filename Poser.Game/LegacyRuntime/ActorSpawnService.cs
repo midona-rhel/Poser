@@ -1039,6 +1039,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 sourceAddress,
                 modelCharaId,
                 name ?? ToPoserName(descriptor.Value.Index));
+            DrawWhenReady(ownership, descriptor.Value);
 
             _log?.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
 
@@ -1275,6 +1276,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
         EnsureCurrent(ownership);
         SetName(newObject, name ?? ToPoserName(descriptor.Index));
 
+        // Brio registers the new body with GPose BEFORE the appearance copy
+        // (ActorSpawnService.cs:325-327): the second copy exists to trigger a
+        // redraw for Penumbra/Glamourer, and those tools decide what to apply
+        // from what the object IS at that moment.
+        EnsureCurrent(ownership);
+        AddCharacterToGPose(newCharacter);
+
         // Copy appearance from the source actor.
         var sourceCharacter = (Character*)sourceAddress;
         EnsureCurrent(ownership);
@@ -1301,11 +1309,37 @@ public unsafe class ActorSpawnService : IActorSpawnService
         newObject->DefaultPosition = sourceCharacter->GameObject.Position;
         newObject->DefaultRotation = sourceCharacter->GameObject.Rotation;
 
-        EnsureCurrent(ownership);
-        AddCharacterToGPose(newCharacter);
+        // The draw is NOT started here: see DrawWhenReady, which the spawn
+        // transaction runs once the mutations are done.
+    }
 
-        EnsureCurrent(ownership);
-        newObject->EnableDraw();
+    /// <summary>
+    /// Brio's <c>ActorRedrawService.DrawWhenReady</c> (ActorSpawnService.cs:156
+    /// → ActorRedrawService.cs:99-110): skip two frames, then hold the draw
+    /// until <c>IsReadyToDraw</c>, and only then enable it. Drawing in the same
+    /// tick as the appearance copy builds the draw object from whatever was
+    /// still resident and renders the BASE appearance instead of the source's —
+    /// the skipped frames are also the window Penumbra/Glamourer need to react
+    /// to the copy's redraw before the object is built. Without a framework
+    /// there is no way to defer, so the draw is started immediately.
+    /// </summary>
+    private void DrawWhenReady(
+        SpawnOwnershipRecord ownership,
+        SpawnNativeDescriptor descriptor)
+    {
+        if (_framework is null)
+        {
+            _native.SetDrawState(descriptor, true);
+            return;
+        }
+        PollUntil(
+            ownership,
+            descriptor,
+            () => _native.IsReadyToDraw(descriptor) == true,
+            () => _native.SetDrawState(descriptor, true),
+            timeoutMs: 2000,
+            what: $"clone draw at index {descriptor.Index}",
+            skipFrames: 2);
     }
 
     private void EnsureCurrent(SpawnOwnershipRecord ownership)
@@ -1568,6 +1602,11 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// lifetime hook is absent: a delayed callback cannot prove its target is
     /// still the same object across frames without the authoritative
     /// destruction transition.
+    ///
+    /// <paramref name="skipFrames"/> is Brio's <c>dontStartFor</c>: the first
+    /// frames after a native mutation can answer a readiness question with the
+    /// state that preceded it, so a condition that must not be believed too
+    /// early skips them outright rather than trusting the first answer.
     /// </summary>
     private void PollUntil(
         SpawnOwnershipRecord? ownership,
@@ -1575,7 +1614,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Func<bool> condition,
         Action onSatisfied,
         int timeoutMs,
-        string what)
+        string what,
+        int skipFrames = 0)
     {
         if (_framework is null)
             return;
@@ -1588,6 +1628,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         var token = ownership?.Token;
         var deadline = _clock() + timeoutMs;
+        var remainingSkips = skipFrames;
         void Tick(IFramework fw)
         {
             try
@@ -1595,6 +1636,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 if (!IsCallbackCurrent(token, lifetime))
                 {
                     _framework.Update -= Tick;
+                    return;
+                }
+                if (remainingSkips > 0)
+                {
+                    // Still inside the window where the condition would answer
+                    // about the pre-mutation state; the deadline keeps running.
+                    remainingSkips--;
                     return;
                 }
                 if (condition())

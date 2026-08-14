@@ -117,6 +117,106 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.True(Assert.Single(service.OwnershipSnapshot).HasCompanionSlot);
     }
 
+    // ── clone appearance: Brio ActorSpawnService.cs:156 → ActorRedrawService
+    // .cs:99-110. The appearance copy itself is byte-identical to Brio's, so
+    // what decides whether the clone renders as the source or as the BASE
+    // appearance is when the draw starts: Brio skips two frames, then holds
+    // the draw until IsReadyToDraw. Drawing in the copy's own tick builds the
+    // draw object from whatever was still resident.
+
+    [Fact]
+    public void A_clone_holds_its_draw_until_the_copied_appearance_is_ready()
+    {
+        var actor = Actor(0x881);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(881, actor.Address, 881)) { ReadyToDraw = false };
+        var framework = new FakeFramework();
+        using var service = NewService(native, manager, framework: framework);
+
+        Assert.Same(actor, service.CloneActor(actor));
+        Assert.Null(native.DrawEnabled);
+
+        // Brio's dontStartFor: 2 — the first frames after the copy would
+        // answer the readiness question about the state that preceded it, so
+        // they are skipped outright even though the fake is "ready" by then.
+        native.ReadyToDraw = true;
+        framework.RaiseUpdate();
+        Assert.Null(native.DrawEnabled);
+        framework.RaiseUpdate();
+        Assert.Null(native.DrawEnabled);
+
+        framework.RaiseUpdate();
+        Assert.True(native.DrawEnabled);
+    }
+
+    [Fact]
+    public void A_clone_that_is_never_ready_is_never_drawn()
+    {
+        var actor = Actor(0x882);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(882, actor.Address, 882)) { ReadyToDraw = false };
+        var framework = new FakeFramework();
+        var log = new RecordingLog();
+        var clock = 0L;
+        using var service = NewService(
+            native, manager, framework: framework, clock: () => clock, log: log.Proxy());
+
+        service.CloneActor(actor);
+        for (var frame = 0; frame < 4; frame++)
+            framework.RaiseUpdate();
+        Assert.Null(native.DrawEnabled);
+
+        // The poll is bounded, not a forever-loop: it gives up and says so.
+        clock = 10_000;
+        framework.RaiseUpdate();
+        Assert.Null(native.DrawEnabled);
+        Assert.Contains(log.Warnings, w => w.Contains("clone draw"));
+
+        // And it really unsubscribed — a later ready state is not picked up.
+        native.ReadyToDraw = true;
+        framework.RaiseUpdate();
+        Assert.Null(native.DrawEnabled);
+    }
+
+    [Fact]
+    public void A_clone_spawned_without_a_framework_draws_immediately()
+    {
+        var actor = Actor(0x883);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(883, actor.Address, 883));
+        // No framework means no way to defer at all; the draw must still
+        // happen rather than leaving an invisible clone behind.
+        using var service = NewService(native, manager);
+
+        service.CloneActor(actor);
+
+        Assert.True(native.DrawEnabled);
+    }
+
+    [Fact]
+    public void The_appearance_copy_runs_before_the_draw_is_ever_started()
+    {
+        var actor = Actor(0x884);
+        var manager = new FakeActorManager(actor);
+        var native = new FakeNative(new(884, actor.Address, 884));
+        var copiedFrom = new List<nint>();
+        using var service = NewService(
+            native,
+            manager,
+            mutate: (_, source, _, _) =>
+            {
+                // The mutation step owns the appearance copy; a draw already
+                // enabled here would be a draw of the pre-copy body.
+                Assert.Null(native.DrawEnabled);
+                copiedFrom.Add(source);
+            });
+
+        service.CloneActor(actor);
+
+        Assert.Equal(new[] { actor.Address }, copiedFrom.ToArray());
+        Assert.True(native.DrawEnabled);
+    }
+
     [Fact]
     public void World_source_clone_refuses_all_spawn_gates_before_any_create()
     {
