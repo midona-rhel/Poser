@@ -52,9 +52,9 @@ public sealed class PoseLibraryFileActionResult
 ///
 /// <para>Metadata editing goes through the atomic pose store's own bounded
 /// read and same-directory atomic write, so a corrupt, future, or oversized
-/// file is REFUSED with its typed read failure rather than being partially
-/// rewritten, and a successful edit leaves a file the codec fully validated.
-/// </para>
+/// file is REFUSED rather than being partially rewritten, a rewritten file
+/// keeps every root member Poser does not model, and a successful edit leaves
+/// a file the codec fully validated.</para>
 /// </summary>
 public sealed class PoseLibraryFileActions
 {
@@ -282,9 +282,18 @@ public sealed class PoseLibraryFileActions
     /// Rewrites the file's author and tags through the atomic store: bounded
     /// full read, mutate, validate, same-directory atomic replace. Tags are
     /// trimmed, blanks dropped, and duplicates folded case-insensitively; an
-    /// empty author or tag set clears the member. A file the codec refuses to
-    /// read — corrupt, future-versioned content is still readable; oversized
-    /// or malformed is not — is refused untouched with the typed failure.
+    /// empty author or tag set clears the member.
+    ///
+    /// <para>This is Poser's only read-modify-WRITE-IN-PLACE on a file it did
+    /// not author, so it is bound by two rules the other write paths never
+    /// need. Root members Poser does not model survive the rewrite verbatim
+    /// (<c>PoseFile.UnmappedMembers</c>) — a Brio document keeps everything
+    /// Brio consumes. And a document the codec cannot fully account for is
+    /// never rewritten: an oversized or malformed file is refused by the read,
+    /// and a <see cref="PoseLibraryMetadataStatus.Future"/> document — one
+    /// declaring a version Poser has already said it does not support — is
+    /// refused here even though it parses, because "parses" is not
+    /// "understood".</para>
     /// </summary>
     public PoseLibraryFileActionResult EditMetadata(
         string path, string? author, IReadOnlyList<string> tags)
@@ -299,6 +308,12 @@ public sealed class PoseLibraryFileActions
                     read.Failure?.Detail ?? "The pose file could not be read.");
 
             var pose = read.Pose!;
+            if (!string.IsNullOrWhiteSpace(pose.Version))
+                return Refused(
+                    kind,
+                    $"Pose version '{pose.Version}' is not supported, so the " +
+                    "file is not rewritten.");
+
             var trimmedAuthor = author?.Trim();
             pose.Author = string.IsNullOrEmpty(trimmedAuthor) ? null : trimmedAuthor;
 

@@ -10,8 +10,12 @@ interchange with Brio and (via name conversion) Anamnesis.
   unavailable slots are skipped and reported, never redirected by bone
   name to Character. Numerics
   serialize as comma-space strings via the custom converters (the
-  Brio/Anamnesis wire format — without them structs write as `{}`). Unknown
-  members are ignored both ways, so Brio v3 files load fine. Poser writes no
+  Brio/Anamnesis wire format — without them structs write as `{}`). Root
+  members Poser does not model are never interpreted but ARE carried
+  (`PoseFile.UnmappedMembers`), so a Brio v3 file both loads and survives a
+  rewrite with everything Brio consumes intact; nothing in Poser reads or
+  writes that carry, so it can never shadow a named member, and it is only
+  ever populated by a read the bounds below already passed. Poser writes no
   format version; adopt `FileVersion` first if diverging. Reads are bounded to
   32 MiB and JSON depth 64; each slot collection is bounded to 8,192 entries,
   all five to 32,768, and bone names/tags to 256 characters (256 tags). Used
@@ -94,9 +98,16 @@ interchange with Brio and (via name conversion) Anamnesis.
     refused), **Move** to another scanned folder (missing destination or
     taken name refused), **Edit metadata** — author and tags written back
     into the file through the atomic store's bounded read + validate +
-    same-directory atomic replace (Brio `SaveMetadata` parity); tags are
-    trimmed, deduplicated case-insensitively, and bounded by the codec's
-    256-tag limit, and a file the codec cannot read is refused untouched.
+    same-directory atomic replace; tags are trimmed, deduplicated
+    case-insensitively, and bounded by the codec's 256-tag limit. Brio's
+    `SaveMetadata` edits five members (author, version, description, tags,
+    thumbnail); Poser's edits two, and reaches Brio's FIDELITY rather than its
+    field set — Brio edits through its full document, Poser preserves the
+    unmodelled root members it carries. Because this is Poser's only rewrite
+    of a file it did not author, eligibility is `Valid` ONLY: an unreadable
+    file is refused by the read, and a `Future` one is refused explicitly,
+    since a schema Poser has already said it does not support must not be
+    rewritten. Refusals leave the file byte-identical.
 - Favourites key on the absolute path; a path-changing verb carries the
   favourite along, and delete/quarantine drop it.
 

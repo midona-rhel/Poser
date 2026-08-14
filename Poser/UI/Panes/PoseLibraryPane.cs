@@ -563,9 +563,11 @@ public sealed class PoseLibraryPane
             Separator();
             bool legacy = tile.ThumbKey.EndsWith(
                 ".cmp", StringComparison.OrdinalIgnoreCase);
-            if (poses && !legacy
-                && status is PoseLibraryMetadataStatus.Valid
-                    or PoseLibraryMetadataStatus.Future)
+            // Valid only. Editing rewrites the whole document, and a Future
+            // entry is one whose schema Poser has already said it does not
+            // support; the core refuses it as well, this keeps the menu from
+            // offering a verb that would only answer a refusal.
+            if (poses && !legacy && status is PoseLibraryMetadataStatus.Valid)
                 Row(TileMenuAction.EditMetadata, new ContextMenuItem(
                     "Edit metadata…", TablerIcon.FileText,
                     help: "Author and tags, written back into the file."));

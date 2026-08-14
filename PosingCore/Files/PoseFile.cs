@@ -24,10 +24,11 @@ public class PoseFile
     public string? Base64Image { get; set; }
 
     /// <summary>
-    /// Poser writes a plain string array; Brio's <c>TagCollection</c> writes
-    /// an array of tag OBJECTS. The converter reads both so a Brio-authored
-    /// .pose or clipboard payload that carries tags still loads — without it
-    /// the shape mismatch rejects the entire document, not just its tags
+    /// Poser writes a plain string array, which is what current Brio writes
+    /// too — its <c>TagCollection</c> serializes through the globally
+    /// registered <c>TagCollectionConverter</c>. Older documents carry an
+    /// array of tag OBJECTS; the converter reads both, because a shape
+    /// mismatch rejects the entire document, not just its tags
     /// (<see cref="Converters.TagListConverter"/>).
     /// </summary>
     [JsonConverter(typeof(Converters.TagListConverter))]
@@ -60,6 +61,28 @@ public class PoseFile
     public Vector3 Position { get; set; }
     public Quaternion Rotation { get; set; }
     public Vector3 Scale { get; set; }
+
+    /// <summary>
+    /// Every root member this model does not name, carried verbatim.
+    /// System.Text.Json SKIPS unmapped members by default, so without this any
+    /// read-modify-write of a document Poser did not author would silently
+    /// drop what Brio (or a newer Poser) writes and consumes at that root —
+    /// <c>FileVersion</c>, <c>GameVersion</c>, whatever the format gains next.
+    /// Brio's own metadata edit is careful for the same reason: it edits
+    /// through the full-fidelity document
+    /// (Brio Services/Library/Sources/FileSource.cs:341).
+    ///
+    /// <para>This is a preservation seam, not a data model: nothing in Poser
+    /// reads or writes into it, so it can never shadow a named member, and a
+    /// member that later gains a property here simply stops arriving. Carried
+    /// members are re-emitted after the named ones. It adds no unbounded
+    /// surface — only a read that already passed the codec's file-size and
+    /// JSON-depth bounds (<see cref="PoseFileLimits"/>) can populate it, and
+    /// the write path re-decodes and re-bounds the serialized bytes before
+    /// any file is replaced.</para>
+    /// </summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? UnmappedMembers { get; set; }
 
     /// <summary>
     /// Bone transform data matching Brio's format.

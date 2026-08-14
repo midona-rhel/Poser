@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using Poser.Files;
 using Poser.Library;
 using Poser.Tests.Files;
@@ -282,6 +283,75 @@ public sealed class PoseLibraryFileActionsTests
     }
 
     [Fact]
+    public void EditMetadata_preserves_every_root_member_Poser_does_not_model()
+    {
+        // The members Brio writes and consumes at the document root, plus a
+        // nested container standing in for whatever the format gains next.
+        // None of them is named by Poser.Files.PoseFile.
+        using var fixture = new ActionsFixture();
+        var path = fixture.WriteRaw("foreign", """
+        {
+          "TypeName": "Brio Pose",
+          "FileVersion": 3,
+          "Author": "Brio",
+          "GameVersion": "2026.07.15.0000.0000",
+          "FutureBrioMember": { "Nested": [1, 2, 3], "Deeper": { "Flag": true } },
+          "Tags": [{ "DisplayName": "sitting", "Name": "sitting" }],
+          "Bones": {
+            "j_kao": {
+              "Position": "1.25, 2.5, -3.75",
+              "Rotation": "0, 0.25, 0, 0.9682458",
+              "Scale": "1, 1, 1"
+            }
+          }
+        }
+        """);
+
+        var result = PoseLibraryFileActions.Default.EditMetadata(
+            path, "Midona", new[] { "standing" });
+
+        Assert.True(result.Succeeded, result.Detail);
+        using var rewritten = JsonDocument.Parse(File.ReadAllBytes(path));
+        var root = rewritten.RootElement;
+
+        // The edited members took the new values...
+        Assert.Equal("Midona", root.GetProperty("Author").GetString());
+        Assert.Equal(
+            new[] { "standing" },
+            root.GetProperty("Tags").EnumerateArray()
+                .Select(tag => tag.GetString())
+                .ToArray());
+
+        // ...and every member Poser does not model survived verbatim.
+        Assert.Equal(3, root.GetProperty("FileVersion").GetInt32());
+        Assert.Equal(
+            "2026.07.15.0000.0000", root.GetProperty("GameVersion").GetString());
+        Assert.Equal(
+            """{"Nested":[1,2,3],"Deeper":{"Flag":true}}""",
+            JsonSerializer.Serialize(root.GetProperty("FutureBrioMember")));
+
+        // The rewritten document is still one the codec fully accepts.
+        Assert.True(AtomicPoseFileStore.Default.Read(path).Succeeded);
+    }
+
+    [Fact]
+    public void EditMetadata_refuses_a_future_versioned_document_untouched()
+    {
+        using var fixture = new ActionsFixture();
+        var future = PoseFilePersistenceTests.ValidPose();
+        future.Version = "future-2";
+        var path = fixture.WritePose("future", future);
+        var before = File.ReadAllBytes(path);
+
+        var result = PoseLibraryFileActions.Default.EditMetadata(
+            path, "Midona", new[] { "standing" });
+
+        Assert.False(result.Succeeded);
+        Assert.Contains("future-2", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllBytes(path));
+    }
+
+    [Fact]
     public void EditMetadata_refuses_a_tag_set_beyond_the_codec_bound()
     {
         using var fixture = new ActionsFixture();
@@ -317,10 +387,13 @@ public sealed class PoseLibraryFileActionsTests
             return path;
         }
 
+        // Bytes, not File.WriteAllText(…, Encoding.UTF8): that helper emits a
+        // BOM, and the codec's preflight reader would reject the fixture
+        // before it ever reached what the test is about.
         public string WriteRaw(string name, string json)
         {
             var path = Path.Combine(Root, name + ".pose");
-            File.WriteAllText(path, json, Encoding.UTF8);
+            File.WriteAllBytes(path, Encoding.UTF8.GetBytes(json));
             return path;
         }
 

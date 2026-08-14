@@ -8,18 +8,19 @@ namespace Poser.Files.Converters;
 /// <summary>
 /// Reads either tag shape into Poser's plain string list.
 ///
-/// <para>Brio's <c>Tags</c> is a <c>TagCollection</c>
-/// (Services/Library/Tags/TagCollection.cs), an <c>ICollection&lt;Tag&gt;</c>
-/// with no converter of its own — so both its .pose files and its clipboard
-/// payloads write an array of tag OBJECTS
-/// (<c>[{"DisplayName":"x","Name":"x","Aliases":[],"IsToolGenerated":false}]</c>),
-/// where Poser writes an array of strings. Without this, a Brio document that
-/// carries any tag fails to deserialize as a whole and the pose is rejected
-/// outright — not just its tags.</para>
+/// <para>CURRENT Brio agrees with Poser on the wire. Its <c>Tags</c> is a
+/// <c>TagCollection</c> (Services/Library/Tags/TagCollection.cs), an
+/// <c>ICollection&lt;Tag&gt;</c>, but <c>TagCollectionConverter</c> is
+/// registered in BOTH of Brio's option sets (Core/JsonSerializer.cs:30, :44)
+/// and it reads and writes a plain string array. The object shape
+/// (<c>[{"DisplayName":"x","Name":"x","Aliases":[],"IsToolGenerated":false}]</c>)
+/// is what a <c>TagCollection</c> serializes as WITHOUT that converter, which
+/// is what older documents in the wild carry.</para>
 ///
-/// <para>Writing stays Poser's plain string array: the clipboard encoder
-/// strips tags entirely (Brio's reader would choke on the string shape the
-/// same way), and .pose files keep the format Poser has always written.</para>
+/// <para>This converter exists for those older documents: without it, one tag
+/// in the object shape fails to deserialize and the WHOLE pose is rejected,
+/// not just its tags. Writing stays the plain string array, which is the shape
+/// current Brio both writes and reads.</para>
 /// </summary>
 public sealed class TagListConverter : JsonConverter<List<string>?>
 {
