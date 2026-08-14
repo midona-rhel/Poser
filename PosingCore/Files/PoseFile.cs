@@ -33,6 +33,20 @@ public class PoseFile
     [JsonConverter(typeof(Converters.TagListConverter))]
     public List<string>? Tags { get; set; }
 
+    /// <summary>
+    /// Brio Smart Import metadata hint, Brio's wire names exactly (Brio
+    /// Files/PoseFile.cs:143-145). Brio writes them at save
+    /// (MetadataModal.cs:199-202) and Smart Import consumes ModelId
+    /// (FileUIHelpers.ResolveSmartImport:341-351): a non-zero ModelId on a
+    /// human target redraws the target as that creature before posing.
+    /// Poser populates ModelId on export from the actor's current model id;
+    /// RaceSexId/FaceID derive from customize data Poser does not own, so
+    /// they are declared only to round-trip Brio-authored files unharmed.
+    /// </summary>
+    public int ModelId { get; set; }
+    public string? RaceSexId { get; set; }
+    public int? FaceID { get; set; }
+
     public BoneData ModelDifference { get; set; } = BoneData.Identity;
     public BoneData ModelAbsoluteValues { get; set; } = BoneData.Identity;
 

@@ -20,15 +20,20 @@ public class PoseFileService : IPoseFileService
 {
     private readonly IPluginLog _log;
     private readonly IPosingService _posingService;
+    private readonly IActorSpawnService? _spawn;
 
     public PoseImportOptions DefaultImportOptions { get; } = PoseImportOptions.Default;
 
+    /// <summary>The spawn service is optional plumbing for the Smart Import
+    /// ModelId hint; without it exports simply carry 0, Brio's own default.</summary>
     public PoseFileService(
         IPluginLog log,
-        IPosingService posingService)
+        IPosingService posingService,
+        IActorSpawnService? spawn = null)
     {
         _log = log;
         _posingService = posingService;
+        _spawn = spawn;
     }
 
     private static Dictionary<string, PoseFile.BoneData>? CollectionFor(
@@ -90,6 +95,15 @@ public class PoseFileService : IPoseFileService
             poseFile.Position = effective.Position;
             poseFile.Rotation = effective.Rotation;
             poseFile.Scale = effective.Scale;
+
+            // Smart Import hint (Brio MetadataModal.cs:199-202): the actor's
+            // current model id, so a creature pose re-imported through Brio
+            // can redraw a human target first. Exports run on the framework
+            // thread (PoseExportCapture.Complete via RunOnTick), which the
+            // spawn service's read requires; off-thread callers get 0 —
+            // Brio's own "no hint" default.
+            if (_spawn != null)
+                poseFile.ModelId = _spawn.GetModelCharaId(actor);
         }
 
         return poseFile;

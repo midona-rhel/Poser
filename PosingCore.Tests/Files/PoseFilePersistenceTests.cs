@@ -53,6 +53,9 @@ public sealed class PoseFilePersistenceTests
           "Tags": [
             "sitting"
           ],
+          "ModelId": 0,
+          "RaceSexId": null,
+          "FaceID": null,
           "ModelDifference": {
             "Position": "0, 0, 0",
             "Rotation": "0, 0, 0, 1",
