@@ -43,6 +43,17 @@ public class ReferenceImageEntry
     public float Width { get; set; }
 
     public float Height { get; set; }
+
+    /// <summary>Taken off screen without being given up. This is the sidebar
+    /// eye's state, and it is STORED for the same reason the placement is: a
+    /// picture set aside stays set aside across a session, or the eye would
+    /// silently undo itself the next time the roster restored.
+    ///
+    /// <para>Hidden is not closed. Closing removes the entry; hiding keeps the
+    /// entry, its placement and its opacity, and only takes the window down —
+    /// which is what makes the eye a toggle rather than a delete.</para>
+    /// </summary>
+    public bool Hidden { get; set; }
 }
 
 /// <summary>

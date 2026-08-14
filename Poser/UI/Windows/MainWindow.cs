@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -49,6 +50,13 @@ public class MainWindow : Window
     private readonly BoneVisibilityPresetService _bonePresets;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
+
+    /// <summary>The reference-picture roster. The sidebar LISTS it and never
+    /// owns it: a picture is not a scene entity — it needs no native
+    /// signature, joins no journal, and is laid OVER the game rather than into
+    /// the scene — so its rows restate the session's state and every verb goes
+    /// back through the session.</summary>
+    private readonly ReferenceImageSession _referenceImages;
 
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
@@ -542,6 +550,7 @@ public class MainWindow : Window
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
         BoneVisibilityPresetService bonePresets,
+        ReferenceImageSession referenceImages,
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
@@ -611,6 +620,7 @@ public class MainWindow : Window
         _animation = animation;
         _overlayPresentation = overlayPresentation;
         _bonePresets = bonePresets;
+        _referenceImages = referenceImages;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _lifecycle = lifecycle;
@@ -804,6 +814,11 @@ public class MainWindow : Window
                 _ctxPropId = ctxProp;
                 _propCtxOpenRequested = true;
             }
+            else if (row.Tag is ReferenceImageInstance ctxImage)
+            {
+                _ctxReferenceImage = ctxImage;
+                _referenceCtxOpenRequested = true;
+            }
             else if (row.OverlayBones != null)
             {
                 _ctxOverlayBones = row.OverlayBones;
@@ -847,6 +862,17 @@ public class MainWindow : Window
         };
         _vm.OnLightVisibility = row =>
         {
+            // A reference picture wears the same eye seat: its toggle is
+            // whether the window stands. Hidden is not closed — the entry, its
+            // placement and its opacity all survive, which is what makes this
+            // a toggle rather than a delete.
+            if (row.Tag is ReferenceImageInstance eyeImage)
+            {
+                bool nextShown = ReferenceImageSession.IsHidden(eyeImage);
+                _referenceImages.SetHidden(eyeImage, !nextShown);
+                row.LightOn = nextShown;
+                return;
+            }
             // A prop row wears the same eye seat: its toggle is draw
             // visibility rather than a light's on-state.
             if (row.Tag is SelectionId
@@ -1200,6 +1226,7 @@ public class MainWindow : Window
         _animationPane.DrawExpressionPicker();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
+        DrawReferenceImageContextMenu();
         DrawLightContextMenu();
         DrawCameraContextMenu();
         DrawPropContextMenu();
@@ -1617,6 +1644,13 @@ public class MainWindow : Window
             });
         }
 
+        // A reference picture is an overlay by the same test the nodes are —
+        // it is laid OVER the game rather than into the scene — so it lists
+        // here beside them (user 2026-08-14). It is NOT a scene entity: it
+        // carries no SelectionId, joins no journal, and its Tag is the session
+        // instance itself, which is what every verb below dispatches on.
+        AppendReferenceImageRows(filter, filtering);
+
         // Borrowed map objects are flat like props: one row per claim, and the
         // eye seat toggles whether the object is drawn. There is no plus —
         // the only way one arrives is a click on its handle in the world.
@@ -1697,6 +1731,47 @@ public class MainWindow : Window
         _ => TablerIcon.Spotlight,
     };
 
+    /// <summary>
+    /// The reference pictures, as OVERLAYS rows. The label is the file STEM,
+    /// deduped: the roster mints identity per add precisely so the same sheet
+    /// can be placed twice, and two rows reading "sketch" would be two rows
+    /// naming nothing. The second and later occurrences carry an ordinal, so
+    /// the first one keeps the plain name a user recognises.
+    /// </summary>
+    private void AppendReferenceImageRows(string filter, bool filtering)
+    {
+        var images = _referenceImages.Instances;
+        if (images.Count == 0)
+            return;
+        _referenceStemCounts.Clear();
+        for (int i = 0; i < images.Count; i++)
+        {
+            var image = images[i];
+            string stem = image.Name;
+            _referenceStemCounts.TryGetValue(stem, out int seen);
+            _referenceStemCounts[stem] = seen + 1;
+            string label = seen == 0
+                ? stem
+                : $"{stem} ({(seen + 1).ToString(CultureInfo.InvariantCulture)})";
+            // The filter reads the LABEL, which is what the user can see.
+            if (filtering && !MatchesSidebarFilter(filter, label))
+                continue;
+            _overlaysSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = label,
+                Count = "",
+                Icon = TablerIcon.Photo,
+                Tag = image,
+                LightActions = true,
+                LightOn = !ReferenceImageSession.IsHidden(image),
+            });
+        }
+    }
+
+    /// <summary>Scratch for the stem dedupe; a sidebar rebuild must not mint a
+    /// dictionary to count names.</summary>
+    private readonly Dictionary<string, int> _referenceStemCounts = new();
+
     /// <summary>Flips one world class's handles. The glyph's own flag is
     /// restated immediately so it lights with the click rather than on the
     /// next refresh.</summary>
@@ -1770,6 +1845,15 @@ public class MainWindow : Window
         for (int i = 0; i < overlayRows.Count; i++)
         {
             var overlayRow = overlayRows[i];
+            // A reference row carries the session instance, not a selection —
+            // so it is answered BEFORE the selection guard below, which would
+            // otherwise skip it. Its eye restates the session's own answer,
+            // live, for the same reason every other action glyph does.
+            if (overlayRow.Tag is ReferenceImageInstance rowImage)
+            {
+                overlayRow.LightOn = !ReferenceImageSession.IsHidden(rowImage);
+                continue;
+            }
             if (overlayRow.Tag is not SelectionId overlaySelection)
                 continue;
             overlayRow.Active = _selection.IsSelected(overlaySelection);
@@ -2892,6 +2976,19 @@ public class MainWindow : Window
 
     private void ApplyRowClick(ShellSidebarRow row)
     {
+        // A reference picture is not in the scene, so there is nothing to
+        // select: the row's body RAISES its window instead, and shows it first
+        // if the eye had set it aside — a click that focuses something the
+        // user cannot see would read as a click that did nothing.
+        if (row.Tag is ReferenceImageInstance clickedImage)
+        {
+            _referenceImages.SetHidden(clickedImage, false);
+            row.LightOn = true;
+            ImGui.SetWindowFocus(
+                ReferenceImageWindow.WindowNameFor(clickedImage));
+            return;
+        }
+
         // Touching anything in the scene tree is leaving the library or the
         // scene workspace: they are alternatives in one workspace. A selecting
         // click leaves through the selection itself; a bare category
@@ -3641,6 +3738,68 @@ public class MainWindow : Window
                     descriptor.DisplayName);
                 break;
         }
+    }
+
+    private ReferenceImageInstance? _ctxReferenceImage;
+    private bool _referenceCtxOpenRequested;
+
+    /// <summary>
+    /// A reference picture's verbs, in the overlay-node rows' family: the eye's
+    /// own verb, the rename every named thing in the tree carries, a second
+    /// placement, and the close. No transform verbs and no journal entry — a
+    /// picture is not in the scene, so there is nothing for undo to restore it
+    /// to and nothing to isolate it from.
+    /// </summary>
+    private void DrawReferenceImageContextMenu()
+    {
+        if (_ctxReferenceImage is not { } image)
+            return;
+        // A picture closed from its own bar while the menu is up leaves the
+        // roster; the menu goes with it rather than acting on a dead entry.
+        if (!_referenceImages.Instances.Contains(image))
+        {
+            _ctxReferenceImage = null;
+            Crystarium.FloatingMenu.Dismiss("##reference-ctx");
+            return;
+        }
+        bool hidden = ReferenceImageSession.IsHidden(image);
+        var items = new[]
+        {
+            new ContextMenuItem(
+                hidden ? "Show" : "Hide",
+                hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Stack2),
+            new ContextMenuItem("Remove", TablerIcon.Trash),
+        };
+        if (_referenceCtxOpenRequested)
+        {
+            _referenceCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##reference-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##reference-ctx");
+        if (clicked < 0)
+            return;
+        switch (clicked)
+        {
+            case 0:
+                _referenceImages.SetHidden(image, !hidden);
+                break;
+            case 1:
+                OpenEntityRename(
+                    "Rename reference image",
+                    image.Name,
+                    next => image.Entry.Name = next);
+                break;
+            case 2:
+                _referenceImages.Duplicate(image);
+                break;
+            case 3:
+                _referenceImages.Close(image);
+                break;
+        }
+        _ctxReferenceImage = null;
     }
 
     private void DrawOverlayContextMenu()

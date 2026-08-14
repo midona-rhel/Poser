@@ -115,9 +115,19 @@ public sealed class ReferenceImageWindow : Window
                 : new Vector2(desired.Y * aspect, desired.Y);
     }
 
+    /// <summary>The ImGui window name for one picture. Stated here because the
+    /// window owns its own naming: the sidebar row raises a picture by asking
+    /// ImGui for this name, and a second spelling of it elsewhere would be a
+    /// raise that silently found nothing.</summary>
+    public static string WindowNameFor(ReferenceImageInstance image)
+    {
+        ArgumentNullException.ThrowIfNull(image);
+        return $"###poser_reference_image_{image.Id}";
+    }
+
     public ReferenceImageWindow(
         ReferenceImageSession session, ReferenceImageInstance image)
-        : base($"###poser_reference_image_{image.Id}",
+        : base(WindowNameFor(image),
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoSavedSettings)

@@ -168,6 +168,50 @@ public sealed class ReferenceImageSession : IDisposable
         OnRemoved?.Invoke(instance);
     }
 
+    /// <summary>
+    /// Takes a picture off screen, or puts it back. The session is the ONE
+    /// owner of this answer: the window set reads it to decide whether the
+    /// window stands, and the sidebar row's eye restates it. Nothing else
+    /// holds a second copy, so the eye and the window cannot disagree.
+    ///
+    /// <para>Saved on the spot rather than marked dirty: this is a click, not
+    /// a drag, and the end-of-gesture save exists for gestures.</para>
+    /// </summary>
+    public void SetHidden(ReferenceImageInstance instance, bool hidden)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        if (instance.Entry.Hidden == hidden)
+            return;
+        instance.Entry.Hidden = hidden;
+        _dirty = false;
+        _configuration.Save();
+    }
+
+    /// <summary>Whether the picture is currently set aside.</summary>
+    public static bool IsHidden(ReferenceImageInstance instance)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        return instance.Entry.Hidden;
+    }
+
+    /// <summary>
+    /// A second placement of the SAME picture — the roster's own reason for
+    /// minting identity instead of deriving it from the path (two crops of one
+    /// sheet, two placements of one pose sheet). The copy carries the
+    /// original's opacity and arrives visible, seating itself from the
+    /// picture's own pixels rather than landing exactly under the original
+    /// where it could not be told apart.
+    /// </summary>
+    public ReferenceImageInstance Duplicate(ReferenceImageInstance instance)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        var copy = Add(instance.Entry.FilePath);
+        copy.Entry.Opacity = instance.Entry.Opacity;
+        _dirty = false;
+        _configuration.Save();
+        return copy;
+    }
+
     /// <summary>Writes an opacity through the floor and marks the roster for
     /// the end-of-gesture save.</summary>
     public void SetOpacity(ReferenceImageInstance instance, float opacity)

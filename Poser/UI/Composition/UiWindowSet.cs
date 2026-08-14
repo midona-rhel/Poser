@@ -111,7 +111,8 @@ public sealed class UiWindowSet : IDisposable
         if (isOpen)
             _referenceImages.Restore();
         foreach (var window in _referenceWindows)
-            window.IsOpen = isOpen;
+            window.IsOpen =
+                isOpen && !ReferenceImageSession.IsHidden(window.Image);
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
         // The window itself follows the session like the gizmo overlay, and a
@@ -226,6 +227,12 @@ public sealed class UiWindowSet : IDisposable
     public void PumpReferenceImages()
     {
         FlushDismissedReference();
+        // The session owns "set aside", so the windows follow it here rather
+        // than the sidebar reaching across to a window it does not own. One
+        // read per picture per frame, against a bool the row already restates.
+        if (Main.IsOpen)
+            foreach (var window in _referenceWindows)
+                window.IsOpen = !ReferenceImageSession.IsHidden(window.Image);
         _referenceImages.Tick();
         _referenceImages.DrawDialogs();
     }
@@ -236,8 +243,9 @@ public sealed class UiWindowSet : IDisposable
         var window = new ReferenceImageWindow(_referenceImages, image)
         {
             // A picture added while the workspace is up appears at once; one
-            // restored before it opens waits for SetPrimaryOpen.
-            IsOpen = Main.IsOpen,
+            // restored before it opens waits for SetPrimaryOpen. A picture the
+            // sidebar eye had set aside stays aside through both.
+            IsOpen = Main.IsOpen && !ReferenceImageSession.IsHidden(image),
         };
         _referenceWindows.Add(window);
         System.AddWindow(window);
