@@ -126,6 +126,7 @@ public sealed class GazeCapabilityTests
             NewProxy<ISigScanner>(),
             NewProxy<IGameInteropProvider>(),
             NewProxy<IPluginLog>(),
+            framework: null, // null passes OnOwnerThread (ActorSpawnService shape)
             factory);
     }
 

@@ -79,6 +79,11 @@ public unsafe class GazeService : IGazeService, IDisposable
     private readonly IObjectTable _objectTable;
     private readonly IEventBus _eventBus;
     private readonly IPluginLog _log;
+    private readonly IFramework? _framework;
+
+    /// <summary>Spawn/discovery-standard thread refusal (ActorSpawnService
+    /// shape) for the members that write natively outside the hooked loop.</summary>
+    private bool OnOwnerThread => _framework is null || _framework.IsInFrameworkUpdateThread;
 
     private delegate* unmanaged<CharacterLookAtController*, LookAtTarget*, uint, nint, void> _updateLookAt;
     private IGazeHook? _actorLookAtLoop;
@@ -121,7 +126,8 @@ public unsafe class GazeService : IGazeService, IDisposable
         IEventBus eventBus,
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
-        IPluginLog log)
+        IPluginLog log,
+        IFramework framework)
         : this(
             gPoseService,
             cameraService,
@@ -130,6 +136,7 @@ public unsafe class GazeService : IGazeService, IDisposable
             sigScanner,
             hooks,
             log,
+            framework,
             new GazeNativeFactory())
     {
     }
@@ -142,6 +149,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         ISigScanner sigScanner,
         IGameInteropProvider hooks,
         IPluginLog log,
+        IFramework? framework,
         IGazeNativeFactory nativeFactory)
     {
         _gPoseService = gPoseService;
@@ -149,6 +157,7 @@ public unsafe class GazeService : IGazeService, IDisposable
         _objectTable = objectTable;
         _eventBus = eventBus;
         _log = log;
+        _framework = framework;
 
         nint updateLookAtAddress;
         try
@@ -416,9 +425,15 @@ public unsafe class GazeService : IGazeService, IDisposable
 
     public void SetGazeTarget(IActor actor, IActor target)
     {
-        if (!IsAvailable)
+        if (!IsAvailable || !OnOwnerThread)
             return;
         if (Resolve(actor) is not { } gameObject || Resolve(target) is not { } targetObject)
+            return;
+        // The GPose index gate is load-bearing here exactly as in the detour
+        // (Brio ActorTableHelpers 201..439): a GPose clone SHARES its
+        // GameObjectId with the overworld original, so a stale wrapper naming
+        // an overworld body would write the target id onto the real actor.
+        if (!gameObject.IsValid() || gameObject.ObjectIndex is not (>= 201 and <= 439))
             return;
         if (gameObject.GameObjectId == targetObject.GameObjectId)
         {
@@ -438,8 +453,9 @@ public unsafe class GazeService : IGazeService, IDisposable
             modeChanged = EffectiveMode(entry) != beforeMode;
         }
         // Brio parity (SetActorTarget): the character's own target id backs
-        // the game's id-based look tracking.
-        ((Character*)actor.Address)->SetTargetId(targetObject.GameObjectId);
+        // the game's id-based look tracking. Written through the RESOLVED
+        // wrapper's address — the raw IActor address is only a claim.
+        ((Character*)gameObject.Address)->SetTargetId(targetObject.GameObjectId);
         // Retargeting within Entity mode is not a mode transition; only the
         // move INTO Entity publishes. Published outside the lock.
         if (modeChanged)
