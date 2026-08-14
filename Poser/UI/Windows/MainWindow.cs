@@ -241,6 +241,18 @@ public class MainWindow : Window
     };
 
     /// <summary>
+    /// The map's own objects the scene has BORROWED. It closes the scene's
+    /// list because it is the one section whose entities the scene does not
+    /// own: every row here is a claim on something the map placed, and the
+    /// only act on it is giving it back. There is no plus — nothing here is
+    /// created; a row arrives by clicking a handle in the world.
+    /// </summary>
+    private readonly ShellSidebarSection _worldObjectsSection = new()
+    {
+        Title = "WORLD OBJECTS",
+    };
+
+    /// <summary>
     /// The world-adoption classes as the FOOTER states them: one lit-or-faded
     /// glyph each, retained with their kind because they carry no per-scene
     /// data at all — a warm frame restates the lit flag and never rebuilds
@@ -404,6 +416,14 @@ public class MainWindow : Window
         new() { Label = "Overlay" },
     ];
 
+    /// <summary>A borrowed map object's strip, the prop strip's sibling: while
+    /// one is selected the single tab IS its editor, and its transform lives on
+    /// the inspector rail exactly as a prop's does.</summary>
+    private readonly ShellTab[] _worldObjectTabs =
+    [
+        new() { Label = "Object" },
+    ];
+
     /// <summary>A camera's tab strip, the light strip's sibling: while a
     /// camera is selected the one tab IS the camera editor — the camera's
     /// offset and its bone tracking live on the inspector rail instead.
@@ -447,6 +467,11 @@ public class MainWindow : Window
     /// that lives on the SCREEN rather than in the scene, so they sit outside
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
+
+    /// <summary>The borrowed map objects close the scene's list: the one
+    /// section whose entities belong to the world rather than to the scene.
+    /// </summary>
+    private const int WorldObjectsSectionIndex = 8;
 
     // The shell has no overlay controls at all any more (user 2026-08-14):
     // the armature's shape and the selected-bones-only filter are settings
@@ -500,6 +525,7 @@ public class MainWindow : Window
         GraphicalBonePane graphicalBonePane,
         Game.PropSpawnService propService,
         PropsPane propsPane,
+        WorldObjectsPane worldObjectsPane,
         Game.Overlays.OverlayNodeService overlayService,
         OverlayPane overlayPane,
         CompanionSection companions,
@@ -543,6 +569,7 @@ public class MainWindow : Window
         _spawnService = spawnService;
         _propService = propService;
         _propsPane = propsPane;
+        _worldObjectsPane = worldObjectsPane;
         _overlayService = overlayService;
         _overlayPane = overlayPane;
         _companions = companions;
@@ -832,6 +859,21 @@ public class MainWindow : Window
                     return;
                 node.Visible = !node.Visible;
                 row.LightOn = node.Visible;
+                return;
+            }
+            // A borrowed map object wears the same eye seat as a prop's: its
+            // toggle is whether the map draws it. It is written straight
+            // through to the object, and the release puts the captured state
+            // back whatever the user left it at.
+            if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldObjectId })
+            {
+                var worldObject = _bindings.Resolve(worldObjectId);
+                if (!worldObject.Success ||
+                    worldObject.Value is not { IsValid: true } claim)
+                    return;
+                claim.Visible = !claim.Visible;
+                row.LightOn = claim.Visible;
                 return;
             }
             if (row.Tag is not SelectionId
@@ -1474,11 +1516,15 @@ public class MainWindow : Window
         // at. The world stands under everything — it is where the next of the
         // scene comes from.
         _vm.Sections.Add(_overlaysSection);
+        // The borrowed map objects close the scene's own list: everything
+        // above is the scene's, and everything here is the world's.
+        _vm.Sections.Add(_worldObjectsSection);
         _actorsSection.Rows.Clear();
         _propsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
         _camerasSection.Rows.Clear();
         _overlaysSection.Rows.Clear();
+        _worldObjectsSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
@@ -1557,6 +1603,24 @@ public class MainWindow : Window
                 Tag = SelectionId.ForOverlay(overlay.Id),
                 LightActions = true,
                 LightOn = overlay.Visible,
+            });
+        }
+
+        // Borrowed map objects are flat like props: one row per claim, and the
+        // eye seat toggles whether the object is drawn. There is no plus —
+        // the only way one arrives is a click on its handle in the world.
+        foreach (var worldObject in _scene.Snapshot.WorldObjects)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, worldObject.Name))
+                continue;
+            _worldObjectsSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = worldObject.Name,
+                Count = "",
+                Icon = TablerIcon.Home,
+                Tag = SelectionId.ForWorldObject(worldObject.Id),
+                LightActions = true,
+                LightOn = worldObject.Visible,
             });
         }
 
@@ -2556,6 +2620,8 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Camera } => (_cameraTabs, "camera"),
             { Kind: SceneEntityKind.Prop } => (_propTabs, "prop"),
             { Kind: SceneEntityKind.Overlay } => (_overlayTabs, "overlay"),
+            { Kind: SceneEntityKind.WorldObject } =>
+                (_worldObjectTabs, "world-object"),
             // Creatures share the actor strip: their skeleton poses, their
             // battle-chara body animates, and the Appearance pane hides the
             // humanoid-only sections itself.
@@ -2782,7 +2848,7 @@ public class MainWindow : Window
         // page missing from this list, so the shell was insetting it a second
         // time on top of the Page's own.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Prop" or "Light"
+            tab is "Animation" or "Appearance" or "Prop" or "Object" or "Light"
                 or "Shadows"
                 or "Camera"
                 or "Scene"
@@ -2918,6 +2984,14 @@ public class MainWindow : Window
             return;
         }
 
+        // A borrowed map object's tab, the prop tab's sibling: one unique
+        // label, one pane.
+        if (_activeTab == "Object")
+        {
+            _worldObjectsPane.Draw(origin, size);
+            return;
+        }
+
         // The environment is answered by the SELECTION, not by the label: it
         // and a light both name a "Light" tab, and only the selected entity
         // says which pane that tab belongs to. Its strip is its own five tabs,
@@ -2981,6 +3055,7 @@ public class MainWindow : Window
 
     private readonly Game.PropSpawnService _propService;
     private readonly PropsPane _propsPane;
+    private readonly WorldObjectsPane _worldObjectsPane;
     private readonly Game.Overlays.OverlayNodeService _overlayService;
     private readonly OverlayPane _overlayPane;
     private readonly CompanionSection _companions;

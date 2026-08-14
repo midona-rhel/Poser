@@ -31,7 +31,12 @@ internal enum GizmoTargetType
     Actor,
     Bone,
     Light,
-    Prop
+    Prop,
+
+    /// <summary>A borrowed map object. It manipulates exactly as a prop does —
+    /// one world transform, no pose, no override — and differs only in what
+    /// ending its claim means, which is not the gizmo's business.</summary>
+    WorldObject
 }
 
 /// <summary>
@@ -699,6 +704,7 @@ public class GizmoOverlayWindow : Window
             { Kind: SceneEntityKind.Light, Light: { } light } =>
                 IsAttached(light) ? GizmoTargetType.None : GizmoTargetType.Light,
             { Kind: SceneEntityKind.Prop } => GizmoTargetType.Prop,
+            { Kind: SceneEntityKind.WorldObject } => GizmoTargetType.WorldObject,
             _ => GizmoTargetType.None,
         };
     }
@@ -788,6 +794,7 @@ public class GizmoOverlayWindow : Window
         ActorId? primaryActor = null;
         LightId? primaryLight = null;
         PropId? primaryProp = null;
+        WorldObjectId? primaryWorldObject = null;
         var modelMatrix = Matrix4x4.Identity;
 
         if (isBone)
@@ -824,6 +831,16 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Prop, Prop: { } primaryPropId })
                 return;
             primaryProp = primaryPropId;
+        }
+        else if (targetType == GizmoTargetType.WorldObject)
+        {
+            if (selection.Primary is not
+                {
+                    Kind: TransformTargetKind.WorldObject,
+                    WorldObject: { } primaryWorldObjectId
+                })
+                return;
+            primaryWorldObject = primaryWorldObjectId;
         }
         else
         {
@@ -868,6 +885,13 @@ public class GizmoOverlayWindow : Window
                 is { } propRest)
         {
             currentTransform = ToLegacy(propRest);
+        }
+        else if (primaryWorldObject is { } worldObjectTarget &&
+            _viewport.GetModelTransform(
+                TransformTargetId.ForWorldObject(worldObjectTarget))
+                is { } worldObjectRest)
+        {
+            currentTransform = ToLegacy(worldObjectRest);
         }
         else
         {
@@ -1373,6 +1397,8 @@ public class GizmoOverlayWindow : Window
                     $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.Prop =>
                     $"Transform {targets.Count} prop{(targets.Count == 1 ? "" : "s")}",
+                GizmoTargetType.WorldObject =>
+                    $"Transform {targets.Count} world object{(targets.Count == 1 ? "" : "s")}",
                 _ =>
                     $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
             },

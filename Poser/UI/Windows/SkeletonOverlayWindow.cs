@@ -1110,9 +1110,15 @@ public class SkeletonOverlayWindow : Window
     }
 
     /// <summary>Sides of the polygon that says which class a handle stands
-    /// for: five for an actor, three for a light — Ktisis' own shapes.</summary>
-    private static int AdoptSides(WorldAdoptionKind kind) =>
-        kind == WorldAdoptionKind.Light ? 3 : 5;
+    /// for: five for an actor, three for a light, four for a map object —
+    /// Ktisis' own shapes (SceneDraw.cs:208 draws the map object as a 4-gon,
+    /// :251 the actor as a 5-gon, :296 the light as a 3-gon).</summary>
+    private static int AdoptSides(WorldAdoptionKind kind) => kind switch
+    {
+        WorldAdoptionKind.Light => 3,
+        WorldAdoptionKind.WorldObject => 4,
+        _ => 5,
+    };
 
     private static void DrawAdoptionHandles(
         ImDrawListPtr drawList, List<AdoptDisplayData> adopts)
@@ -1202,7 +1208,8 @@ public class SkeletonOverlayWindow : Window
         in WorldAdoptionCandidate left, in WorldAdoptionCandidate right) =>
         left.Kind == right.Kind
         && left.Actor.Equals(right.Actor)
-        && left.Light.Handle == right.Light.Handle;
+        && left.Light.Handle == right.Light.Handle
+        && left.WorldObject == right.WorldObject;
 
     private void DrawHoverList()
     {

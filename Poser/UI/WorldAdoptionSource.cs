@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
@@ -18,6 +18,12 @@ public enum WorldAdoptionKind
 {
     Actor,
     Light,
+
+    /// <summary>A BG/layout object the map placed — the class Ktisis is alone
+    /// in offering, and the only one that is ADOPTED BY REFERENCE: the actor
+    /// class clones and the light class copies, while this one takes the map's
+    /// own object and gives it back on release.</summary>
+    WorldObject,
 }
 
 /// <summary>The kinds this source can actually list, in the order the shell
@@ -47,7 +53,8 @@ public readonly record struct WorldAdoptionCandidate(
     Vector3 Position,
     float DistanceFromPlayer,
     WorldActorCandidateId Actor = default,
-    WorldLightCandidate Light = default);
+    WorldLightCandidate Light = default,
+    nint WorldObject = default);
 
 /// <summary>
 /// The overlay's adoption listing: everything the world holds that the scene
@@ -90,6 +97,13 @@ public sealed class WorldAdoptionSource
     // thing a pending-select needs — is not on the read port.
     private readonly Game.WorldActorDiscovery _worldActors;
     private readonly ILightingService _lighting;
+    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
+
+    // Adopting a MAP object is a scene-lifecycle act with an exact inverse
+    // (release-and-restore), so it goes through the seam that files one in the
+    // same history the transforms use — unlike the actor clone and the light
+    // capture beside it, for neither of which this seam can state an inverse.
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly StableBindingRegistry _bindings;
     private readonly SelectionSession _selection;
     private readonly AnimationSession _animation;
@@ -100,10 +114,13 @@ public sealed class WorldAdoptionSource
     private long _nextRefreshMs;
     private IActor? _pendingSelectActor;
     private ILight? _pendingSelectLight;
+    private Game.WorldObjects.AdoptedWorldObject? _pendingSelectWorldObject;
 
     public WorldAdoptionSource(
         Game.WorldActorDiscovery worldActors,
         ILightingService lighting,
+        Game.WorldObjects.WorldObjectService worldObjects,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         StableBindingRegistry bindings,
         SelectionSession selection,
         AnimationSession animation,
@@ -112,6 +129,8 @@ public sealed class WorldAdoptionSource
     {
         _worldActors = worldActors;
         _lighting = lighting;
+        _worldObjects = worldObjects;
+        _lifecycle = lifecycle;
         _bindings = bindings;
         _selection = selection;
         _animation = animation;
@@ -130,6 +149,12 @@ public sealed class WorldAdoptionSource
     /// field of actor handles is what the class filters are for.</summary>
     public bool ShowLights { get; set; }
 
+    /// <summary>Whether the map's own BG/layout OBJECTS draw handles. Its own
+    /// filter beside the other two because a zone holds an order of magnitude
+    /// more of them than of either, so hunting for a light through a field of
+    /// furniture handles is exactly what the class filters are for.</summary>
+    public bool ShowWorldObjects { get; set; }
+
     /// <summary>
     /// Whether the layer draws at all — DERIVED from the class filters rather
     /// than held beside them. A master switch over exactly two filters is a
@@ -137,21 +162,33 @@ public sealed class WorldAdoptionSource
     /// draws, or off while both classes read on, and the sidebar then has two
     /// answers to one question.
     /// </summary>
-    public bool Enabled => ShowActors || ShowLights;
+    public bool Enabled => ShowActors || ShowLights || ShowWorldObjects;
 
     /// <summary>One class's filter, as one call so no caller restates the
     /// mapping.</summary>
-    public bool IsShown(WorldAdoptionKind kind) =>
-        kind == WorldAdoptionKind.Light ? ShowLights : ShowActors;
+    public bool IsShown(WorldAdoptionKind kind) => kind switch
+    {
+        WorldAdoptionKind.Light => ShowLights,
+        WorldAdoptionKind.WorldObject => ShowWorldObjects,
+        _ => ShowActors,
+    };
 
     /// <summary>Sets one class's filter. Turning the last one off leaves the
     /// layer off, because the layer IS its classes.</summary>
     public void SetShown(WorldAdoptionKind kind, bool shown)
     {
-        if (kind == WorldAdoptionKind.Light)
-            ShowLights = shown;
-        else
-            ShowActors = shown;
+        switch (kind)
+        {
+            case WorldAdoptionKind.Light:
+                ShowLights = shown;
+                break;
+            case WorldAdoptionKind.WorldObject:
+                ShowWorldObjects = shown;
+                break;
+            default:
+                ShowActors = shown;
+                break;
+        }
         // The listing is stale the moment a filter moves: re-read on the next
         // tick rather than leaving the outgoing class's handles up for the
         // rest of the cadence.
@@ -164,6 +201,7 @@ public sealed class WorldAdoptionSource
     {
         ShowActors = false;
         ShowLights = false;
+        ShowWorldObjects = false;
         _candidates.Clear();
     }
 
@@ -201,6 +239,9 @@ public sealed class WorldAdoptionSource
             case WorldAdoptionKind.Light:
                 AdoptLight(candidate.Light);
                 break;
+            case WorldAdoptionKind.WorldObject:
+                AdoptWorldObject(candidate.WorldObject);
+                break;
         }
         // The listing the click came from now names something the scene holds:
         // re-read at once rather than leaving its handle up for half a second.
@@ -235,6 +276,26 @@ public sealed class WorldAdoptionSource
         _pendingSelectLight = captured;
     }
 
+    /// <summary>
+    /// Takes one BG object into the scene BY REFERENCE — the map's own object,
+    /// not a copy of it. Nothing is written to it here: the claim records where
+    /// it stood, and every way that claim can end writes that back (see
+    /// WorldObjectService's restore contract). The adoption is journaled, so an
+    /// undo releases it and the map has its object back.
+    /// </summary>
+    private void AdoptWorldObject(nint address)
+    {
+        if (_lifecycle.AdoptWorldObject(address)
+            is Game.WorldObjects.AdoptedWorldObject adopted)
+        {
+            _pendingSelectWorldObject = adopted;
+            return;
+        }
+        _log.Information(
+            "[Overlay] world object adoption refused: the object could not "
+            + "be taken");
+    }
+
     /// <summary>Selects what was just adopted, once the scene has bound it —
     /// the same two-step every spawn row uses, because the registry scan that
     /// mints the id runs after the call that created the entity.</summary>
@@ -245,6 +306,13 @@ public sealed class WorldAdoptionSource
         {
             _selection.Select(SelectionId.ForLight(lightId));
             _pendingSelectLight = null;
+        }
+
+        if (_pendingSelectWorldObject is { } worldObject &&
+            _bindings.GetWorldObjectId(worldObject) is { } worldObjectId)
+        {
+            _selection.Select(SelectionId.ForWorldObject(worldObjectId));
+            _pendingSelectWorldObject = null;
         }
 
         if (_pendingSelectActor is not { } actor)
@@ -291,18 +359,33 @@ public sealed class WorldAdoptionSource
             }
         }
 
-        if (!ShowLights)
-            return;
-        foreach (var light in _lighting.GetWorldLightCandidates())
+        if (ShowLights)
         {
-            if (light.DistanceFromPlayer > RangeYalms)
+            foreach (var light in _lighting.GetWorldLightCandidates())
+            {
+                if (light.DistanceFromPlayer > RangeYalms)
+                    continue;
+                _candidates.Add(new WorldAdoptionCandidate(
+                    WorldAdoptionKind.Light,
+                    "World light",
+                    light.Position,
+                    light.DistanceFromPlayer,
+                    Light: light));
+            }
+        }
+
+        if (!ShowWorldObjects)
+            return;
+        foreach (var worldObject in _worldObjects.GetCandidates())
+        {
+            if (worldObject.DistanceFromPlayer > RangeYalms)
                 continue;
             _candidates.Add(new WorldAdoptionCandidate(
-                WorldAdoptionKind.Light,
-                "World light",
-                light.Position,
-                light.DistanceFromPlayer,
-                Light: light));
+                WorldAdoptionKind.WorldObject,
+                worldObject.Name,
+                worldObject.Position,
+                worldObject.DistanceFromPlayer,
+                WorldObject: worldObject.Address));
         }
     }
 }

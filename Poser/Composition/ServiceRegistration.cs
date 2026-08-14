@@ -441,6 +441,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();
+        services.AddSingleton<WorldObjectsPane>();
         services.AddSingleton<OverlayPane>();
         services.AddSingleton<LightPane>();
         services.AddSingleton<CameraPane>();

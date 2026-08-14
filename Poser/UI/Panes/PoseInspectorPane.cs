@@ -2592,6 +2592,24 @@ public class PoseInspectorPane
             }
             return ("Prop", "prop", 0);
         }
+        // A borrowed map object names itself for the same reason a prop does,
+        // and its subtitle says WHOSE it is: the rail's rows move the map's own
+        // furniture, and the head is where that fact belongs.
+        if (_primary is
+            { Kind: SceneEntityKind.WorldObject, WorldObject: { } primaryWorld })
+        {
+            foreach (var worldObject in _scene.Snapshot.WorldObjects)
+            {
+                if (worldObject.Id.Equals(primaryWorld))
+                    return (
+                        worldObject.Name,
+                        worldObject.Visible
+                            ? "world object"
+                            : "world object · hidden",
+                        0);
+            }
+            return ("World object", "world object", 0);
+        }
         return ("", "", 0);
     }
 
@@ -2730,6 +2748,17 @@ public class PoseInspectorPane
                 return _viewport.GetPropTransform(propId) is { } propValue
                     ? (ToLegacy(propValue), true)
                     : (Transform.Identity, false);
+            case
+            {
+                Kind: TransformTargetKind.WorldObject,
+                WorldObject: { } worldObjectId
+            }:
+                // A borrowed map object's transform IS world space, exactly
+                // like a prop's.
+                return _viewport.GetWorldObjectTransform(worldObjectId)
+                    is { } worldObjectValue
+                    ? (ToLegacy(worldObjectValue), true)
+                    : (Transform.Identity, false);
             default:
                 return (Transform.Identity, false);
         }
@@ -2758,6 +2787,7 @@ public class PoseInspectorPane
             case { Kind: TransformTargetKind.Actor }:
             case { Kind: TransformTargetKind.Light }:
             case { Kind: TransformTargetKind.Prop }:
+            case { Kind: TransformTargetKind.WorldObject }:
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
@@ -2812,6 +2842,7 @@ public class PoseInspectorPane
                     TransformTargetKind.Actor => "actor",
                     TransformTargetKind.Light => "light",
                     TransformTargetKind.Prop => "prop",
+                    TransformTargetKind.WorldObject => "world object",
                     _ => "bone",
                 }}{(targets.Count == 1 ? "" : "s")}",
             includeLinkedBones:
@@ -2846,7 +2877,8 @@ public class PoseInspectorPane
         // authorization the entity check gives actors and bones.
         if (_entity is not (IActor or IBone) &&
             _primary is not { Kind: SceneEntityKind.Light } &&
-            _primary is not { Kind: SceneEntityKind.Prop })
+            _primary is not { Kind: SceneEntityKind.Prop } &&
+            _primary is not { Kind: SceneEntityKind.WorldObject })
             return;
 
         if (_cleanGesture is not { } gesture ||

@@ -103,6 +103,8 @@ public sealed class SkeletonOverlayPresentation
         { Kind: SceneEntityKind.Light, Light: { } light } => light.LogicalId,
         { Kind: SceneEntityKind.Camera, Camera: { } camera } => camera.LogicalId,
         { Kind: SceneEntityKind.Prop, Prop: { } prop } => prop.LogicalId,
+        { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldObject } =>
+            worldObject.LogicalId,
         _ => null,
     };
 }
