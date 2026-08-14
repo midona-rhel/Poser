@@ -15,7 +15,10 @@ states only what is durable about the WHOLE-SHOT layer.
 - Relationships are stated EXPLICITLY as in-document keys — companion
   attachment, a light's owner plus slot/partial/bone name, a camera's target
   actor — and the key is a stable logical identity independent of any native
-  binding generation. No native index or pointer is persisted.
+  binding generation. No native index or pointer is persisted. An absent
+  relationship is an ABSENT field, never a sentinel member: an empty companion
+  slot writes no companion kind at all, matching the Domain rule that nothing
+  attached is the absence of a `CompanionAttachment` rather than a fourth kind.
 - `SceneId` is the document's stable identity across re-saves and is the exact
   identity a scene operation's `OperationReceipt` targets: a whole-shot
   operation has no single target actor. Receipts, epochs and session

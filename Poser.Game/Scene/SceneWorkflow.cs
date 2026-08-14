@@ -479,7 +479,7 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 foreach (var actor in scene.Actors)
                 {
-                    if (actor.CompanionKind == Types.CompanionKind.None)
+                    if (actor.CompanionKind is null)
                         continue;
                     var detail = _runtime.AttachCompanion(
                         actorTokens[actor.Key], actor);

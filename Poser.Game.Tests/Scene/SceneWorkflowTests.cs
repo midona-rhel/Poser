@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using Poser.Application.Operations;
+using Poser.Domain.Companions;
 using Poser.Files;
 using Poser.Game.Scene;
-using Poser.Game.Types;
 
 namespace Poser.Game.Tests.Scene;
 

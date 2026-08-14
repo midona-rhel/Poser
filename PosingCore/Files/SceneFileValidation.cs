@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Files;
@@ -185,13 +185,13 @@ public static class SceneFileValidation
         if (actor.ModelCharaId < 0)
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Actor '{actor.Name}' has a negative model id.");
-        if (!Enum.IsDefined(actor.CompanionKind))
+        if (actor.CompanionKind is { } companionKind && !Enum.IsDefined(companionKind))
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Actor '{actor.Name}' has an unknown companion kind.");
-        if (actor.CompanionKind == CompanionKind.None && actor.CompanionId != 0)
+        if (actor.CompanionKind is null && actor.CompanionId != 0)
             return Fail(SceneFileValidationFailureKind.Relationship,
                 $"Actor '{actor.Name}' carries a companion id without a companion kind.");
-        if (actor.CompanionKind != CompanionKind.None && !actor.HasCompanionSlot)
+        if (actor.CompanionKind is not null && !actor.HasCompanionSlot)
             return Fail(SceneFileValidationFailureKind.Relationship,
                 $"Actor '{actor.Name}' has a companion attachment but no companion slot.");
 

@@ -4,10 +4,10 @@ using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Poser.Application.Lifecycle;
 using Poser.Application.Operations;
+using Poser.Domain.Companions;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Posing;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Game.Scene;
@@ -93,10 +93,12 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public bool ActorReady(object actor) =>
         _skeletons.GetSkeletons((IActor)actor).Count > 0;
 
+    // Only called for an actor whose attachment is present: the workflow skips
+    // an absent kind rather than asking the runtime to detach.
     public string? AttachCompanion(object actor, SceneActor data) =>
         _spawns.SetCompanion(
             (IActor)actor,
-            new CompanionAttachment(data.CompanionKind, data.CompanionId))
+            new CompanionAttachment(data.CompanionKind!.Value, data.CompanionId))
             ? null
             : "The companion could not be attached.";
 

@@ -174,11 +174,9 @@ public sealed class SceneCaptureService
                 // A live attachment proves the slot exists even when the
                 // actor was not spawned by Poser with an explicit reservation.
                 HasCompanionSlot = _spawns.HasCompanionSlot(actor) ||
-                    companion.Kind != Types.CompanionKind.None,
-                CompanionKind = companion.Kind,
-                CompanionId = companion.Kind == Types.CompanionKind.None
-                    ? (ushort)0
-                    : companion.Id,
+                    companion is not null,
+                CompanionKind = companion?.Kind,
+                CompanionId = companion?.Id ?? 0,
                 Pose = pose,
             });
         }

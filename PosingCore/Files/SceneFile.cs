@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Files;
@@ -117,11 +117,14 @@ public class SceneActor
     /// for a companion attachment to be restorable.</summary>
     public bool HasCompanionSlot { get; set; }
 
-    /// <summary>Attached companion/mount/ornament; None when empty.</summary>
-    public CompanionKind CompanionKind { get; set; } = CompanionKind.None;
+    /// <summary>Attached companion/mount/ornament; ABSENT when the slot is
+    /// empty. Nothing attached is the absence of an attachment, never a
+    /// kind — no sheet describes an empty slot — so an empty slot writes no
+    /// kind rather than a named one.</summary>
+    public CompanionKind? CompanionKind { get; set; }
 
     /// <summary>The attachment's row id; 0 when <see cref="CompanionKind"/>
-    /// is None.</summary>
+    /// is absent.</summary>
     public ushort CompanionId { get; set; }
 
     /// <summary>The complete Brio-format pose document, validated by the

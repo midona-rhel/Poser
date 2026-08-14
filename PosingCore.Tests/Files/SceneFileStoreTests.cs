@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Numerics;
+using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Files;
-using Poser.Game.Types;
 using Poser.Services;
 
 namespace Poser.Tests.Files;
@@ -303,7 +303,7 @@ public sealed class SceneFileStoreTests
     public void Companion_id_without_a_kind_is_refused()
     {
         var scene = ValidScene();
-        scene.Actors[0].CompanionKind = CompanionKind.None;
+        scene.Actors[0].CompanionKind = null;
 
         AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
     }
