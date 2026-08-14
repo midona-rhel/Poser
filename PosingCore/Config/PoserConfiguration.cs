@@ -70,4 +70,13 @@ public class PoserConfiguration : IPluginConfiguration
     /// is what writes this, so the persisted value IS that toggle's state.
     /// </summary>
     public bool SpawnFrozen { get; set; } = false;
+
+    /// <summary>
+    /// The revision of the first-run notice this config has accepted (see
+    /// <see cref="FirstRunNotice"/>). Zero — the value every config written
+    /// before the notice existed deserialises to — means it has never been
+    /// accepted, so the gate shows. This is deliberately NOT a migration
+    /// step: an existing user has not read the notice either.
+    /// </summary>
+    public int AcceptedNoticeVersion { get; set; }
 }
