@@ -72,6 +72,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     private readonly Dictionary<ISkeleton, Action<IBone, BonePoseInfo>> _registeredActions = new();
     private readonly IActorManager _actorManager;
     private IActor _currentActor;
+    private IActor? _previewActor;
     private ISkeleton _currentWeaponSkeleton;
     private int _poseInfoCallCount;
     private int _registerCallCount;
@@ -162,7 +163,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
 
         _actorManager = Substitute.For<IActorManager>();
         _actorManager.Actors.Returns(_ => new[] { _currentActor });
-        _actorManager.AuxiliaryActors.Returns(Array.Empty<IActor>());
+        _actorManager.AuxiliaryActors.Returns(_ => _previewActor is { } preview
+            ? new[] { preview }
+            : Array.Empty<IActor>());
         var spawn = Substitute.For<IActorSpawnService>();
         spawn.IsVisible(Actor).Returns(true);
         var lighting = Substitute.For<ILightingService>();
@@ -471,6 +474,110 @@ internal sealed class PoseImportCaptureHarness : IDisposable
                 $"Weapon replacement scene was not admitted: {admitted.Detail}");
         Bindings.CommitCandidate(candidate, Scene.Snapshot);
     }
+
+    /// <summary>
+    /// The CharaView pose preview's body, as the import pipeline sees it: an
+    /// AUXILIARY actor of <see cref="ActorKind.Preview"/> living at an object
+    /// index outside the GPose scan band, bound so imports can reach it and —
+    /// by design — carrying no scene descriptor at all.
+    /// </summary>
+    public sealed record PreviewBody(
+        IActor Actor, ISkeleton Skeleton, IBone Bone, ActorId ActorId);
+
+    /// <summary>
+    /// Stands a preview body up and publishes its bindings, exactly as a
+    /// refresh does in game: the scene snapshot is UNCHANGED by it (asserted
+    /// here, because that is the whole reason the refresh needs a second
+    /// signature) and the maps are committed against that unchanged scene.
+    /// </summary>
+    public PreviewBody AddPreviewBody()
+    {
+        var actor = Substitute.For<IActor>();
+        actor.Id.Returns(new EntityId("actor_aux_441"));
+        actor.Name.Returns("Preview body");
+        actor.Address.Returns((nint)441);
+        actor.ActorKind.Returns(ActorKind.Preview);
+
+        var skeleton = Substitute.For<ISkeleton>();
+        skeleton.Id.Returns(new EntityId("preview-skeleton"));
+        skeleton.Name.Returns("Character");
+        skeleton.Actor.Returns(actor);
+        skeleton.Slot.Returns(PoseSlot.Character);
+        skeleton.CharacterBaseAddress.Returns((nint)442);
+        skeleton.IsValid.Returns(true);
+
+        var bone = Substitute.For<IBone>();
+        bone.Id.Returns(new EntityId("preview-bone"));
+        bone.Name.Returns("j_kao");
+        bone.BoneName.Returns("j_kao");
+        bone.BoneIndex.Returns(1);
+        bone.PartialId.Returns(0);
+        bone.Skeleton.Returns(skeleton);
+        bone.ParentBone.Returns((IBone?)null);
+        bone.ChildBones.Returns(Array.Empty<IBone>());
+        bone.LastRawTransform.Returns(Transform.Identity);
+        skeleton.RootBone.Returns(bone);
+        skeleton.Bones.Returns(new[] { bone });
+        skeleton.GetBone("j_kao").Returns(bone);
+
+        Skeletons.GetSkeletons(actor).Returns(new[] { skeleton });
+        Skeletons.GetSkeleton(actor).Returns(skeleton);
+        Skeletons.GetSkeleton(actor, PoseSlot.Character).Returns(skeleton);
+        _poseInfos[skeleton] = new SkeletonPoseInfo();
+        _previewActor = actor;
+
+        var candidate = Bindings.RefreshCandidate();
+        if (!candidate.Snapshot.ContentEquals(Scene.Snapshot with { Revision = 0 }))
+            throw new InvalidOperationException(
+                "A preview body must not reach the scene snapshot.");
+        if (!Bindings.AuxiliaryBindingsChanged(candidate))
+            throw new InvalidOperationException(
+                "A preview body must change the auxiliary bindings.");
+        var admitted = Scene.TryRefresh(candidate.Snapshot with
+        {
+            Revision = Scene.Revision,
+        });
+        if (!admitted.Accepted)
+            throw new InvalidOperationException(
+                $"Preview scene was not admitted: {admitted.Outcome}: {admitted.Detail}");
+        Bindings.CommitCandidate(candidate, Scene.Snapshot);
+
+        if (Bindings.GetActorId(actor) is not { } actorId)
+            throw new InvalidOperationException(
+                "The preview body's actor binding was not published.");
+        if (Bindings.GetBoneId(bone) is not { } boneId)
+            throw new InvalidOperationException(
+                "The preview body's bone binding was not published.");
+        Runtime.Seed(TestStates.At(
+            TransformTargetId.ForBone(boneId), 0, hasOverride: false));
+        return new PreviewBody(actor, skeleton, bone, actorId);
+    }
+
+    /// <summary>One file bone landing on the preview body — the shape every
+    /// pose tile selection takes.</summary>
+    public GestureResult BeginPreviewWriteImport(
+        PreviewBody body, Action<OperationReceipt> onReceipt)
+    {
+        var desired = Transform.Identity;
+        desired.Position = new Vector3(1, 0, 0);
+        var plan = new PoseImportPlan { FileBoneCount = 1 };
+        plan.Writes.Add((body.Bone, desired, TransformComponents.All));
+        return Imports.Begin(plan, "preview pose", onReceipt: onReceipt);
+    }
+
+    public void FirePreviewNativeAction(PreviewBody body)
+    {
+        if (_registeredActions.TryGetValue(body.Skeleton, out var action))
+            action(body.Bone, _poseInfos[body.Skeleton].GetPoseInfo("j_kao", 0));
+    }
+
+    public void EndPreviewNativeBatch(PreviewBody body, bool executed = true) =>
+        Posing.TransitiveActionsEnded +=
+            Raise.Event<Action<TransitiveActionOutcome>>(
+                new TransitiveActionOutcome(body.Skeleton, executed));
+
+    public int PreviewStackCount(PreviewBody body) =>
+        _poseInfos[body.Skeleton].GetPoseInfo("j_kao", 0).Stacks.Count;
 
     public GestureResult BeginWriteImport(Action<OperationReceipt> onReceipt)
     {

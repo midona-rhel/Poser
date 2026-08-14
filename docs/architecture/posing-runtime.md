@@ -95,6 +95,14 @@ Game-owned while their transitional callers move off PosingCore.
 - Slot discovery follows the actor draw object, weapon draw data, and ornament
   object. Missing slots are normal; present slots share ordering, and slot
   replacement releases only that slot's bindings, caches, and pose state.
+- Auxiliary bodies — the CharaView pose preview at object index 441, outside
+  the 201–439 scan band — are bound so the import pipeline can reach them and
+  carry no scene descriptor at all: the snapshot is what every pane, picker,
+  and gizmo draws from. A refresh therefore coalesces on TWO signatures, the
+  scene's and the auxiliary bindings', because the scene's cannot see an
+  auxiliary body arrive and coalescing on it alone aborts the candidate that
+  binds one. Import admission asks the scene about scene targets only; a
+  preview target is admitted on its bindings.
 - Pose deltas are keyed by `(Slot, BoneName, PartialId)`. Slot-blind or
   name-only lookup is invalid. Named producer layers are replaced in place;
   normal reset/history preserves them and Reset All is explicit.

@@ -109,6 +109,64 @@ public sealed class SceneProducerIntegrationTests
         registry.AbortCandidate(retry);
     }
 
+    /// <summary>
+    /// The CharaView pose preview's body appears at object index 441 and is
+    /// bound so imports can reach it, WITHOUT a scene descriptor. The scene
+    /// signature the refresh coalesces on therefore cannot see it arrive — so
+    /// coalescing on that signature alone aborts the very candidate that
+    /// carries the preview's bindings, <c>GetActorId</c> answers null for the
+    /// preview body forever, and every pose stated against it is dropped in
+    /// silence behind a perfectly good render. The auxiliary half of the
+    /// candidate is the second signature that case needs.
+    /// </summary>
+    [Fact]
+    public void An_auxiliary_body_publishes_its_bindings_under_an_unmoved_scene()
+    {
+        var actor = new ActorBase(
+            new EntityId("scene-actor"), "Actor", (nint)1, ActorKind.Companion);
+        var actors = new TestActorManager(actor);
+        var registry = NewRegistry(actors);
+        var session = new SceneSession(new Poser.Application.Selection.SelectionSession());
+
+        var first = registry.RefreshCandidate();
+        Admit(session, first.Snapshot);
+        registry.CommitCandidate(first, session.Snapshot);
+        Assert.Single(first.Snapshot.Actors);
+
+        var preview = new ActorBase(
+            new EntityId("actor_aux_441"), "Preview", (nint)441, ActorKind.Preview);
+        actors.Auxiliary = [preview];
+
+        var staged = registry.RefreshCandidate();
+        // The scene is blind to it, by design and forever.
+        Assert.Single(staged.Snapshot.Actors);
+        Assert.True(CleanSceneLifecycle.CanonicalSignature(staged.Snapshot)
+            .ContentEquals(CleanSceneLifecycle.CanonicalSignature(first.Snapshot)));
+        // The candidate is not: this is what makes it publishable.
+        Assert.True(registry.AuxiliaryBindingsChanged(staged));
+
+        var admitted = session.TryRefresh(
+            CleanSceneLifecycle.CreateAdmissionCandidate(
+                staged.Snapshot, session.Snapshot));
+        Assert.Equal(SceneRefreshOutcome.NoChange, admitted.Outcome);
+        registry.CommitCandidate(staged, session.Snapshot);
+
+        Assert.NotNull(registry.GetActorId(preview));
+        Assert.Same(preview, registry.Resolve(registry.GetActorId(preview)!.Value).Value);
+        Assert.Single(session.Snapshot.Actors);
+
+        // An unmoved preview body coalesces exactly like an unmoved scene.
+        var replay = registry.RefreshCandidate();
+        Assert.False(registry.AuxiliaryBindingsChanged(replay));
+        registry.AbortCandidate(replay);
+
+        // …and its departure is a change again, so the stale binding goes.
+        actors.Auxiliary = [];
+        var withdrawn = registry.RefreshCandidate();
+        Assert.True(registry.AuxiliaryBindingsChanged(withdrawn));
+        registry.AbortCandidate(withdrawn);
+    }
+
     private static StableBindingRegistry NewRegistry(TestActorManager actors) =>
         new(
             actors,
@@ -144,7 +202,8 @@ public sealed class SceneProducerIntegrationTests
         public IReadOnlyList<IActor> Actors => ThrowOnRead
             ? throw new InvalidOperationException("producer failure")
             : [Current];
-        public IReadOnlyList<IActor> AuxiliaryActors => Array.Empty<IActor>();
+        public IReadOnlyList<IActor> Auxiliary { get; set; } = Array.Empty<IActor>();
+        public IReadOnlyList<IActor> AuxiliaryActors => Auxiliary;
         public void Dispose() { }
         public void RegisterAuxiliary(ushort objectIndex, ActorKind kind) { }
         public void UnregisterAuxiliary(ushort objectIndex) { }

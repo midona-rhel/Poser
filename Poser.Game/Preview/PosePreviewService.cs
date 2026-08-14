@@ -747,8 +747,21 @@ public sealed unsafe class PosePreviewService : IDisposable
                 break;
             }
         }
+        // The auxiliary actor and its STABLE BINDING, on the same bounded-
+        // silence terms as the skeleton wait below rather than a bare return:
+        // the binding is published by the scene refresh, and a refresh that
+        // cannot see the preview body arrive (it owns no scene descriptor by
+        // design) used to drop the candidate carrying it, so this gate held
+        // shut forever and every pose was dropped without a word behind a
+        // perfectly good render. The publication is fixed at its source
+        // (StableBindingRegistry.AuxiliaryBindingsChanged); this makes the WAIT
+        // audible, so the next variant of it cannot hide.
         if (actor == null || _bindings.GetActorId(actor) == null)
+        {
+            if (++_skeletonWaitTicks > SkeletonWaitTicks)
+                _statusText = "Waiting for the preview body…";
             return;
+        }
         // …and its SKELETON, on the same terms. The auxiliary actor and its
         // stable binding both exist several ticks before the CharaView body is
         // skeleton-bound, so every first statement against a fresh body races

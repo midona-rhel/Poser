@@ -181,12 +181,23 @@ public sealed class CleanSceneLifecycle : IDisposable
             // One structural signature coalesces every refresh source (events,
             // retries, session transitions): identical scenes publish nothing —
             // no snapshot churn, no revision increment, no gesture cancellation.
+            //
+            // The scene signature is not the WHOLE candidate, though: auxiliary
+            // bodies (the CharaView pose preview) are bound so the import
+            // pipeline can reach them and are deliberately absent from the
+            // snapshot, so one appearing or being replaced moves nothing this
+            // signature can see. Coalescing on it alone therefore ABORTS the
+            // candidate that carries the preview's own bindings, and every pose
+            // stated against the preview is dropped in silence — see
+            // StableBindingRegistry.AuxiliaryBindingsChanged. Both halves have
+            // to be unchanged for a refresh to publish nothing.
             var signature = CanonicalSignature(candidate);
             _retryPending = candidate.Actors.Any(
                 actor => actor.CharacterSkeleton == null);
             if (!_retryPending)
                 _retryInterval = InitialRetryInterval;
-            if (_lastSignature?.ContentEquals(signature) == true)
+            if (_lastSignature?.ContentEquals(signature) == true
+                && !_bindings.AuxiliaryBindingsChanged(staged))
                 return;
 
             var result = _scene.TryRefresh(CreateAdmissionCandidate(

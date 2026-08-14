@@ -24,6 +24,16 @@ public readonly record struct BindingResult<T>(
 }
 
 /// <summary>
+/// One auxiliary body's binding identity, as the registry staged it: the actor
+/// itself (<see cref="Skeleton"/> null) and then one entry per present slot
+/// skeleton. This is the ONLY account of an auxiliary body the refresh has —
+/// they carry no <see cref="ActorDescriptor"/> by design — so it is what
+/// <see cref="StableBindingRegistry.AuxiliaryBindingsChanged"/> compares.
+/// </summary>
+public readonly record struct AuxiliaryBindingKey(
+    ActorId Actor, SkeletonId? Skeleton, int Bones);
+
+/// <summary>
 /// Private identity map between domain ids and current legacy/native entities.
 /// Refresh and resolution must run on the framework thread.
 /// </summary>
@@ -59,6 +69,10 @@ public sealed class StableBindingRegistry
     private Dictionary<PropHandle, PropId> _propIds =
         new(ReferenceComparer<PropHandle>.Instance);
     private Dictionary<PropId, PropHandle> _propBindings = new();
+    // The auxiliary half of the PUBLISHED maps. Empty until a commit publishes
+    // one, which is exactly what makes the first preview body a change.
+    private IReadOnlyList<AuxiliaryBindingKey> _auxiliaryBindings =
+        Array.Empty<AuxiliaryBindingKey>();
 
     public StableBindingRegistry(
         IActorManager actors,
@@ -96,8 +110,10 @@ public sealed class StableBindingRegistry
             Dictionary<IVirtualCamera, CameraId> cameraIds,
             Dictionary<CameraId, IVirtualCamera> cameraBindings,
             Dictionary<PropHandle, PropId> propIds,
-            Dictionary<PropId, PropHandle> propBindings)
+            Dictionary<PropId, PropHandle> propBindings,
+            IReadOnlyList<AuxiliaryBindingKey> auxiliaryBindings)
         {
+            AuxiliaryBindings = auxiliaryBindings;
             Snapshot = snapshot;
             Lineages = lineages;
             ActorBindings = actorBindings;
@@ -113,6 +129,10 @@ public sealed class StableBindingRegistry
         }
 
         public SceneSnapshot Snapshot { get; }
+
+        /// <summary>The bodies this candidate binds that the
+        /// <see cref="Snapshot"/> deliberately does not describe.</summary>
+        public IReadOnlyList<AuxiliaryBindingKey> AuxiliaryBindings { get; }
 
         internal Dictionary<string, ActorLineage> Lineages { get; }
         internal Dictionary<ActorId, IActor> ActorBindings { get; }
@@ -149,6 +169,7 @@ public sealed class StableBindingRegistry
         var actorDescriptors = new List<ActorDescriptor>();
         var descriptorAddresses = new List<nint>();
         var companionOwners = new Dictionary<nint, ActorId>();
+        var auxiliaryBindings = new List<AuxiliaryBindingKey>();
 
         foreach (var actor in _actors.Actors)
             BindActor(actor, actorDescriptors);
@@ -248,7 +269,24 @@ public sealed class StableBindingRegistry
             }
             actorBindings[actorId] = actor;
             legacyActorIds[legacyKey] = actorId;
-            descriptors?.Add(new ActorDescriptor(
+            // A descriptor list of null IS the auxiliary case (the one call
+            // site above passes it). Nothing such a body does can move the
+            // scene snapshot, so its binding identity is recorded separately or
+            // the refresh has no way to know it changed at all.
+            if (descriptors is null)
+            {
+                auxiliaryBindings.Add(new AuxiliaryBindingKey(actorId, null, 0));
+                foreach (var skeleton in skeletonDescriptors)
+                    auxiliaryBindings.Add(new AuxiliaryBindingKey(
+                        actorId, skeleton.Id, skeleton.Bones.Count));
+                // Nothing below is an auxiliary body's business: the companion
+                // map exists to fill in OwnerActor on DESCRIPTORS, and the
+                // address list is read positionally against those descriptors,
+                // so an entry with no descriptor may not add one. A CharaView
+                // render body owns no companion, mount, or ornament either.
+                return;
+            }
+            descriptors.Add(new ActorDescriptor(
                 actorId,
                 actor.Name,
                 skeletonDescriptors,
@@ -373,7 +411,8 @@ public sealed class StableBindingRegistry
             cameraIds,
             cameraBindings,
             propIds,
-            propBindings);
+            propBindings,
+            auxiliaryBindings);
         _stagedCandidate = candidate;
         return candidate;
     }
@@ -402,7 +441,32 @@ public sealed class StableBindingRegistry
         _cameraBindings = candidate.CameraBindings;
         _propIds = candidate.PropIds;
         _propBindings = candidate.PropBindings;
+        _auxiliaryBindings = candidate.AuxiliaryBindings;
         _stagedCandidate = null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="candidate"/> binds a different set of auxiliary
+    /// bodies than the published maps do.
+    ///
+    /// <para>The scene snapshot cannot answer this and must not be made to: an
+    /// auxiliary body (the CharaView pose preview at object index 441) is bound
+    /// so the import pipeline can reach it and deliberately given NO
+    /// <see cref="ActorDescriptor"/>, because the snapshot is what every pane,
+    /// picker, and gizmo draws from. The consequence is that the preview body
+    /// appearing changes NOTHING the scene signature can see, so the refresh
+    /// that coalesces on that signature aborts the very candidate carrying the
+    /// preview's actor and bone bindings — and
+    /// <see cref="GetActorId"/> answers null for the preview body forever.
+    /// Every pose stated against it is then dropped by the one guard that asks
+    /// (<c>PosePreviewService.TryApplyPendingPose</c>) without a word: the
+    /// CharaView renders a perfectly good body standing in its idle stance.
+    /// This predicate is the second signature that case needs.</para>
+    /// </summary>
+    public bool AuxiliaryBindingsChanged(BindingCandidate candidate)
+    {
+        EnsureStaged(candidate);
+        return !candidate.AuxiliaryBindings.SequenceEqual(_auxiliaryBindings);
     }
 
     /// <summary>Discards a candidate whose scene admission did not commit.</summary>
