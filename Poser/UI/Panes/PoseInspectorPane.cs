@@ -545,6 +545,62 @@ public class PoseInspectorPane
         ClearTransformSession();
     }
 
+    /// <summary>
+    /// A column of stacked <see cref="Crystarium.Section"/>s: one flow
+    /// cursor, one id prefix, and the flow-cursor restore the hosting view
+    /// expects — the "next band" bookkeeping the rail and the Actor tab
+    /// each restated as a local closure plus repeated
+    /// <c>SetCursorScreenPos(origin.X, cursor.Y)</c> stanzas.
+    /// </summary>
+    private struct SectionStack
+    {
+        private readonly string _prefix;
+        private readonly float _originX;
+        private readonly float _width;
+        private Vector2 _cursor;
+
+        public SectionStack(string prefix, Vector2 origin, float width)
+        {
+            _prefix = prefix;
+            _originX = origin.X;
+            _width = width;
+            _cursor = origin;
+        }
+
+        /// <summary>Whether any section has been stacked yet — the
+        /// divider-after-first policy stated as <c>divider: stack.Any</c>.
+        /// </summary>
+        public bool Any { get; private set; }
+
+        public void Section(
+            string id,
+            string title,
+            bool open,
+            Action<bool> setOpen,
+            Action<Crystarium.FormScope> content,
+            bool divider = true)
+        {
+            _cursor.Y += Crystarium.Section(
+                $"{_prefix}-{id}",
+                title,
+                _cursor,
+                _width,
+                open,
+                setOpen,
+                content,
+                divider);
+            Any = true;
+        }
+
+        /// <summary>Bottom of the stack, absolute Y.</summary>
+        public readonly float Bottom => _cursor.Y;
+
+        /// <summary>Restores the window flow cursor under the stack — the
+        /// pane's contract with the hosting view.</summary>
+        public readonly void Finish() =>
+            ImGui.SetCursorScreenPos(new Vector2(_originX, _cursor.Y));
+    }
+
     /// <summary>The inspector sections, drawn inside the shell rail.</summary>
     public void DrawRailSections(Vector2 origin, float width)
     {
@@ -555,31 +611,14 @@ public class PoseInspectorPane
         // reopened.
         UpdateGestureGuards();
 
-        var cursor = origin;
-
-        void Section(
-            string id,
-            string title,
-            bool open,
-            Action<bool> setOpen,
-            Action<Crystarium.FormScope> content,
-            bool divider = true) =>
-            cursor.Y += Crystarium.Section(
-                $"pose-rail-{id}",
-                title,
-                cursor,
-                width,
-                open,
-                setOpen,
-                content,
-                divider);
+        var stack = new SectionStack("pose-rail", origin, width);
 
         // Nothing selected declares NO sections: the rail head already says
         // "Nothing selected", and a stack of headers over an empty selection
         // would claim there is something to manipulate.
         if (_primary == null)
         {
-            ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+            stack.Finish();
             return;
         }
 
@@ -589,26 +628,24 @@ public class PoseInspectorPane
         // Camera tab.
         if (_primary is { Kind: SceneEntityKind.Camera })
         {
-            if (!_cameraPane.HasRailCamera)
+            if (_cameraPane.HasRailCamera)
             {
-                ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
-                return;
+                stack.Section(
+                    "translation",
+                    "TRANSLATION",
+                    _openTranslation,
+                    next => _openTranslation = next,
+                    _cameraPane.DrawRailTranslation,
+                    divider: false);
+                if (_cameraPane.RailHasTracking)
+                    stack.Section(
+                        "camera-tracking",
+                        "TRACKING",
+                        _openCameraTracking,
+                        next => _openCameraTracking = next,
+                        _cameraPane.DrawRailTracking);
             }
-            Section(
-                "translation",
-                "TRANSLATION",
-                _openTranslation,
-                next => _openTranslation = next,
-                _cameraPane.DrawRailTranslation,
-                divider: false);
-            if (_cameraPane.RailHasTracking)
-                Section(
-                    "camera-tracking",
-                    "TRACKING",
-                    _openCameraTracking,
-                    next => _openCameraTracking = next,
-                    _cameraPane.DrawRailTracking);
-            ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+            stack.Finish();
             return;
         }
 
@@ -617,7 +654,7 @@ public class PoseInspectorPane
         // position is the world handle's alone, and xyz rows here would
         // edit the owning actor while claiming to edit the point.
         if (_primary is not { Kind: SceneEntityKind.GazeTarget })
-            Section(
+            stack.Section(
                 "translation",
                 "TRANSLATION",
                 _openTranslation,
@@ -630,7 +667,7 @@ public class PoseInspectorPane
             // A bone without an IK chain gets no section at all rather than a
             // disabled ghost — the rail states what this bone can do.
             if (_ikPort.IsSupported(TransformTargetId.ForBone(railBone)))
-                Section(
+                stack.Section(
                     "ik",
                     "IK",
                     _openIk,
@@ -647,14 +684,14 @@ public class PoseInspectorPane
             var skeleton = OwningSkeleton();
             bool humanoid = actor != null && !IsCreature(actor);
             if (actor != null && humanoid)
-                Section(
+                stack.Section(
                     "gaze",
                     "GAZE",
                     _openGaze,
                     next => _openGaze = next,
                     form => DrawGaze(form, actor, wide: false));
             if (actor != null && humanoid && _expressionSection.CanDraw)
-                Section(
+                stack.Section(
                     "expression",
                     "EXPRESSION",
                     _openExpression,
@@ -662,7 +699,7 @@ public class PoseInspectorPane
                     form => _expressionSection.Draw(
                         form, actor, paired: false));
             if (skeleton != null)
-                Section(
+                stack.Section(
                     "pose",
                     "POSE",
                     _openPose,
@@ -670,7 +707,7 @@ public class PoseInspectorPane
                     form => DrawPoseActions(form, skeleton, wide: false));
         }
 
-        ImGui.SetCursorScreenPos(new Vector2(origin.X, cursor.Y));
+        stack.Finish();
     }
 
     /// <summary>Whether any bone carries a Poser-authored layer (the
@@ -848,6 +885,63 @@ public class PoseInspectorPane
         return DrawMatrixSurface(cursor, width, viewportHeight, s);
     }
 
+    /// <summary>The bounded band a workspace surface draws in: one page
+    /// action-gap under the mode strip, one page inset above the footer.
+    /// False when the viewport leaves the band no area.</summary>
+    private static bool SurfaceBand(
+        Vector2 cursor,
+        float width,
+        float viewportHeight,
+        float s,
+        out Vector2 min,
+        out Vector2 max)
+    {
+        var theme = Crystarium.ActiveTheme;
+        min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
+        max = cursor + new Vector2(width, viewportHeight)
+            - new Vector2(0f, theme.Page.Inset * s);
+        return max.X > min.X && max.Y > min.Y;
+    }
+
+    /// <summary>
+    /// One scrolling workspace surface: the region spans min→max, the
+    /// content keeps <paramref name="insets"/> page insets clear of the
+    /// scrollbar (the Expression/Actor surfaces double it — one inset reads
+    /// as touching the bar, user 2026-08-04), and the height the body
+    /// reports is registered as the scroll extent. A body that drew only an
+    /// empty-state note reports 0 and registers nothing, exactly as the
+    /// hand-rolled stanzas did.
+    /// </summary>
+    /// <param name="body">Handed the content origin and the content width in
+    /// SCREEN px; returns the consumed height in screen px.</param>
+    private static void InsetScrollSurface(
+        string id,
+        Vector2 min,
+        Vector2 max,
+        float s,
+        int insets,
+        Func<Vector2, float, float> body)
+    {
+        var theme = Crystarium.ActiveTheme;
+        ImGui.SetCursorScreenPos(min);
+        Crystarium.ScrollRegion(
+            id,
+            (max.X - min.X) / s,
+            (max.Y - min.Y) / s,
+            region =>
+            {
+                var origin = ImGui.GetCursorScreenPos();
+                float contentWidth = MathF.Max(
+                    0f, region.ContentWidth - theme.Page.Inset * insets) * s;
+                float consumed = body(origin, contentWidth);
+                if (consumed <= 0f)
+                    return;
+                ImGui.SetCursorScreenPos(
+                    new Vector2(origin.X, origin.Y + consumed));
+                ImGui.Dummy(new Vector2(contentWidth, MathF.Max(1f, s)));
+            });
+    }
+
     /// <summary>The workspace's Expression tab: the same section the rail
     /// declares for an actor primary, given the width a face full of weight
     /// sliders needs.</summary>
@@ -857,26 +951,14 @@ public class PoseInspectorPane
         float viewportHeight,
         float s)
     {
-        var theme = Crystarium.ActiveTheme;
-        var min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
-        var max = cursor + new Vector2(width, viewportHeight)
-            - new Vector2(0f, theme.Page.Inset * s);
-        if (max.X <= min.X || max.Y <= min.Y)
+        if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
         var actor = OwningActor();
-        ImGui.SetCursorScreenPos(min);
-        Crystarium.ScrollRegion(
-            "##pose-expression-scroll",
-            (max.X - min.X) / s,
-            (max.Y - min.Y) / s,
-            region =>
+        InsetScrollSurface(
+            "##pose-expression-scroll", min, max, s, insets: 2,
+            (origin, contentWidth) =>
             {
-                var origin = ImGui.GetCursorScreenPos();
-                // A doubled inset keeps the rows clear of the scrollbar
-                // (one inset reads as touching it — user 2026-08-04).
-                float contentWidth = MathF.Max(
-                    0f, region.ContentWidth - theme.Page.Inset * 2f) * s;
                 if (actor == null || !_expressionSection.CanDraw)
                 {
                     Crystarium.TextAt(
@@ -884,12 +966,12 @@ public class PoseInspectorPane
                         "Select an actor to edit its expression.",
                         new TextStyle
                         {
-                            Size = theme.Typography.LabelSize,
-                            Color = theme.FormHint,
+                            Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                            Color = Crystarium.ActiveTheme.FormHint,
                         });
-                    return;
+                    return 0f;
                 }
-                float consumed = Crystarium.Section(
+                return Crystarium.Section(
                     "pose-surface-expression",
                     "EXPRESSION",
                     origin,
@@ -899,9 +981,6 @@ public class PoseInspectorPane
                     form => _expressionSection.Draw(
                         form, actor, paired: true),
                     divider: false);
-                ImGui.SetCursorScreenPos(
-                    new Vector2(origin.X, origin.Y + consumed));
-                ImGui.Dummy(new Vector2(contentWidth, MathF.Max(1f, s)));
             });
         return viewportHeight;
     }
@@ -915,27 +994,15 @@ public class PoseInspectorPane
         float viewportHeight,
         float s)
     {
-        var theme = Crystarium.ActiveTheme;
-        var min = cursor + new Vector2(0f, theme.Page.ActionGap * s);
-        var max = cursor + new Vector2(width, viewportHeight)
-            - new Vector2(0f, theme.Page.Inset * s);
-        if (max.X <= min.X || max.Y <= min.Y)
+        if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
         var actor = OwningActor();
         var skeleton = OwningSkeleton();
-        ImGui.SetCursorScreenPos(min);
-        Crystarium.ScrollRegion(
-            "##pose-actor-scroll",
-            (max.X - min.X) / s,
-            (max.Y - min.Y) / s,
-            region =>
+        InsetScrollSurface(
+            "##pose-actor-scroll", min, max, s, insets: 2,
+            (origin, contentWidth) =>
             {
-                var origin = ImGui.GetCursorScreenPos();
-                // Same doubled inset as the Expression surface: content
-                // must not touch the scrollbar.
-                float contentWidth = MathF.Max(
-                    0f, region.ContentWidth - theme.Page.Inset * 2f) * s;
                 if (actor == null && skeleton == null)
                 {
                     Crystarium.TextAt(
@@ -943,58 +1010,40 @@ public class PoseInspectorPane
                         "Select an actor to use these actions.",
                         new TextStyle
                         {
-                            Size = theme.Typography.LabelSize,
-                            Color = theme.FormHint,
+                            Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                            Color = Crystarium.ActiveTheme.FormHint,
                         });
-                    return;
+                    return 0f;
                 }
 
-                var stacked = origin;
-                bool first = true;
-                void Section(
-                    string id,
-                    string title,
-                    bool open,
-                    Action<bool> setOpen,
-                    Action<Crystarium.FormScope> content)
-                {
-                    stacked.Y += Crystarium.Section(
-                        $"pose-surface-{id}",
-                        title,
-                        stacked,
-                        contentWidth,
-                        open,
-                        setOpen,
-                        content,
-                        divider: !first);
-                    first = false;
-                }
-
+                var stack = new SectionStack(
+                    "pose-surface", origin, contentWidth);
                 if (actor != null && !IsCreature(actor))
-                    Section(
+                    stack.Section(
                         "gaze",
                         "GAZE",
                         _openSurfaceGaze,
                         next => _openSurfaceGaze = next,
-                        form => DrawGaze(form, actor, wide: true));
+                        form => DrawGaze(form, actor, wide: true),
+                        divider: stack.Any);
                 if (skeleton != null)
                 {
-                    Section(
+                    stack.Section(
                         "pose",
                         "POSE",
                         _openSurfacePose,
                         next => _openSurfacePose = next,
-                        form => DrawPoseActions(form, skeleton, wide: true));
-                    Section(
+                        form => DrawPoseActions(form, skeleton, wide: true),
+                        divider: stack.Any);
+                    stack.Section(
                         "files",
                         "FILES",
                         _openSurfaceFiles,
                         next => _openSurfaceFiles = next,
-                        form => _poseFileSection.Draw(form, skeleton));
+                        form => _poseFileSection.Draw(form, skeleton),
+                        divider: stack.Any);
                 }
-
-                ImGui.SetCursorScreenPos(new Vector2(origin.X, stacked.Y));
-                ImGui.Dummy(new Vector2(contentWidth, MathF.Max(1f, s)));
+                return stack.Bottom - origin.Y;
             });
         return viewportHeight;
     }
@@ -1006,14 +1055,7 @@ public class PoseInspectorPane
         float s)
     {
         var theme = Crystarium.ActiveTheme;
-        var min = cursor + new Vector2(
-            0f,
-            theme.Page.ActionGap * s);
-        var max = cursor + new Vector2(width, viewportHeight)
-            - new Vector2(
-                0f,
-                theme.Page.Inset * s);
-        if (max.X <= min.X || max.Y <= min.Y)
+        if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
 
         float toolbarHeight = theme.Controls.WorkspaceHeight * s;
@@ -1083,30 +1125,13 @@ public class PoseInspectorPane
             _matrixSkeletonId = matrixSkeleton.Id;
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
-        ImGui.SetCursorScreenPos(viewMin);
-        Crystarium.ScrollRegion(
-            "##pose-matrix-scroll",
-            (viewMax.X - viewMin.X) / s,
-            (viewMax.Y - viewMin.Y) / s,
-            region =>
-            {
-                var contentOrigin = ImGui.GetCursorScreenPos();
-                float contentWidth = MathF.Max(
-                    0f,
-                    region.ContentWidth
-                        - theme.Page.Inset);
-                float contentHeight = BoneMatrixView.Draw(
-                    _matrixVm,
-                    contentOrigin,
-                    contentWidth * s,
-                    "livemx");
-                ImGui.SetCursorScreenPos(new Vector2(
-                    contentOrigin.X,
-                    contentOrigin.Y + contentHeight));
-                ImGui.Dummy(new Vector2(
-                    contentWidth * s,
-                    MathF.Max(1f, s)));
-            });
+        InsetScrollSurface(
+            "##pose-matrix-scroll", viewMin, viewMax, s, insets: 1,
+            (contentOrigin, contentWidth) => BoneMatrixView.Draw(
+                _matrixVm,
+                contentOrigin,
+                contentWidth,
+                "livemx"));
         return viewportHeight;
     }
 
