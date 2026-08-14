@@ -11,6 +11,87 @@ using WeatherRow = Lumina.Excel.Sheets.Weather;
 
 namespace Poser.Game.Environment;
 
+internal delegate void UpdateEorzeaTimeDelegate(nint a1, nint a2);
+
+// The manager argument is untouched — the detour exists only to stop the
+// original from running — so it stays an opaque pointer.
+internal delegate void UpdateTerritoryWeatherDelegate(nint weatherManager);
+
+internal unsafe delegate nint EnvStateCopyDelegate(EnvStateNative* dest, EnvStateNative* src);
+
+/// <summary>A hold switch over one native hook; the enabled state IS the
+/// hold. The narrow surface exists so the hold/release owner is testable
+/// without the game (the Gaze capability seam, same shape).</summary>
+internal interface IEnvHook : IDisposable
+{
+    bool IsEnabled { get; }
+    void Enable();
+    void Disable();
+}
+
+internal unsafe interface IEnvStateCopyHook : IEnvHook
+{
+    nint Original(EnvStateNative* dest, EnvStateNative* src);
+}
+
+internal unsafe interface IEnvironmentNativeFactory
+{
+    IEnvHook CreateTimeHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour);
+    IEnvHook CreateWeatherHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateTerritoryWeatherDelegate detour);
+    IEnvStateCopyHook CreateEnvStateCopyHook(
+        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
+    IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
+        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour);
+}
+
+internal sealed unsafe class EnvironmentNativeFactory : IEnvironmentNativeFactory
+{
+    public IEnvHook CreateTimeHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateEorzeaTimeDelegate detour) =>
+        new DalamudEnvHook<UpdateEorzeaTimeDelegate>(hooking.HookFromAddress(
+            scanner.ScanText("48 89 5C 24 ?? 57 48 83 EC ?? 48 8B F9 48 8B DA 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C"),
+            detour));
+
+    public IEnvHook CreateWeatherHook(
+        ISigScanner scanner, IGameInteropProvider hooking, UpdateTerritoryWeatherDelegate detour) =>
+        new DalamudEnvHook<UpdateTerritoryWeatherDelegate>(hooking.HookFromAddress(
+            scanner.ScanText("48 89 5C 24 ?? 55 56 57 48 83 EC ?? 48 8B F9 48 8D 0D"),
+            detour));
+
+    // Brio scans the copy routine directly; Ktisis scans a call site to the
+    // same routine. Both are kept: a broken direct pattern still leaves the
+    // section holds working through the call site.
+    public IEnvStateCopyHook CreateEnvStateCopyHook(
+        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
+        new DalamudEnvCopyHook(hooking.HookFromAddress(
+            scanner.ScanText("0F 10 42 08 0F 11 41 08 F2 0F 10 4A 18"),
+            detour));
+
+    public IEnvStateCopyHook CreateEnvStateCopyCallSiteHook(
+        ISigScanner scanner, IGameInteropProvider hooking, EnvStateCopyDelegate detour) =>
+        new DalamudEnvCopyHook(hooking.HookFromAddress(
+            scanner.ScanText("E8 ?? ?? ?? ?? 49 3B F5 75 0D"),
+            detour));
+
+    private class DalamudEnvHook<T>(Hook<T> hook) : IEnvHook where T : Delegate
+    {
+        protected readonly Hook<T> Hook = hook;
+        public bool IsEnabled => Hook.IsEnabled;
+        public void Enable() => Hook.Enable();
+        public void Disable() => Hook.Disable();
+        public void Dispose() => Hook.Dispose();
+    }
+
+    private sealed class DalamudEnvCopyHook(Hook<EnvStateCopyDelegate> hook)
+        : DalamudEnvHook<EnvStateCopyDelegate>(hook), IEnvStateCopyHook
+    {
+        public nint Original(EnvStateNative* dest, EnvStateNative* src) =>
+            Hook.Original(dest, src);
+    }
+}
+
 /// <summary>
 /// Time, weather and per-section environment holds. Brio's TimeService and
 /// EnvironmentService merged into one native surface, with Brio's mediator
@@ -60,16 +141,9 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
     private readonly IEventBus _events;
     private readonly Action<GPoseStateChangedEvent> _onGPoseStateChanged;
 
-    private delegate void UpdateEorzeaTimeDelegate(nint a1, nint a2);
-    private readonly Hook<UpdateEorzeaTimeDelegate>? _timeHook;
-
-    // The manager argument is untouched — the detour exists only to stop the
-    // original from running — so it stays an opaque pointer.
-    private delegate void UpdateTerritoryWeatherDelegate(nint weatherManager);
-    private readonly Hook<UpdateTerritoryWeatherDelegate>? _weatherHook;
-
-    private delegate nint EnvStateCopyDelegate(EnvStateNative* dest, EnvStateNative* src);
-    private readonly Hook<EnvStateCopyDelegate>? _envStateHook;
+    private readonly IEnvHook? _timeHook;
+    private readonly IEnvHook? _weatherHook;
+    private readonly IEnvStateCopyHook? _envStateHook;
     private readonly bool _envStateHookEnabled;
 
     private readonly ExcelSheet<WeatherRow>? _weatherSheet;
@@ -95,32 +169,37 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
         IDataManager data,
         IPluginLog log,
         IEventBus events)
+        : this(clientState, sigScanner, hooking, data, log, events, new EnvironmentNativeFactory())
+    {
+    }
+
+    internal EnvironmentService(
+        IClientState clientState,
+        ISigScanner sigScanner,
+        IGameInteropProvider hooking,
+        IDataManager data,
+        IPluginLog log,
+        IEventBus events,
+        IEnvironmentNativeFactory nativeFactory)
     {
         _clientState = clientState;
         _log = log;
         _events = events;
 
-        _timeHook = CreateHook<UpdateEorzeaTimeDelegate>(
-            sigScanner, hooking,
-            "48 89 5C 24 ?? 57 48 83 EC ?? 48 8B F9 48 8B DA 48 81 C1 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C",
-            UpdateEorzeaTimeDetour, "time freeze");
+        _timeHook = TryCreate(
+            () => nativeFactory.CreateTimeHook(sigScanner, hooking, UpdateEorzeaTimeDetour),
+            "time freeze");
 
-        _weatherHook = CreateHook<UpdateTerritoryWeatherDelegate>(
-            sigScanner, hooking,
-            "48 89 5C 24 ?? 55 56 57 48 83 EC ?? 48 8B F9 48 8D 0D",
-            UpdateTerritoryWeatherDetour, "weather hold");
+        _weatherHook = TryCreate(
+            () => nativeFactory.CreateWeatherHook(sigScanner, hooking, UpdateTerritoryWeatherDetour),
+            "weather hold");
 
-        // Brio scans the copy routine directly; Ktisis scans a call site to the
-        // same routine. Both are kept: a broken direct pattern still leaves the
-        // section holds working through the call site.
-        _envStateHook = CreateHook<EnvStateCopyDelegate>(
-            sigScanner, hooking,
-            "0F 10 42 08 0F 11 41 08 F2 0F 10 4A 18",
-            EnvStateCopyDetour, "environment section hold")
-            ?? CreateHook<EnvStateCopyDelegate>(
-                sigScanner, hooking,
-                "E8 ?? ?? ?? ?? 49 3B F5 75 0D",
-                EnvStateCopyDetour, "environment section hold (call site)");
+        _envStateHook = TryCreate(
+            () => nativeFactory.CreateEnvStateCopyHook(sigScanner, hooking, EnvStateCopyDetour),
+            "environment section hold")
+            ?? TryCreate(
+                () => nativeFactory.CreateEnvStateCopyCallSiteHook(sigScanner, hooking, EnvStateCopyDetour),
+                "environment section hold (call site)");
 
         // Unlike the other two, this hook stays enabled: the detour is what
         // reads the hold flags, and it is a plain pass-through while none are
@@ -154,14 +233,12 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
         _events.Subscribe(_onGPoseStateChanged);
     }
 
-    private Hook<T>? CreateHook<T>(
-        ISigScanner sigScanner, IGameInteropProvider hooking,
-        string signature, T detour, string capability) where T : Delegate
+    private THook? TryCreate<THook>(Func<THook> create, string capability)
+        where THook : class, IEnvHook
     {
         try
         {
-            var address = sigScanner.ScanText(signature);
-            return hooking.HookFromAddress(address, detour);
+            return create();
         }
         catch (Exception ex)
         {
@@ -676,17 +753,44 @@ public sealed unsafe class EnvironmentService : IEnvironmentService, IDisposable
     private void OnTerritoryChanged(uint territory)
     {
         // The zone's weather table is gone; every hold is released so the new
-        // zone starts on its own weather and clock.
+        // zone starts on its own weather, clock and environment.
         _cachedTerritory = null;
         _territoryWeathers.Clear();
-        IsWeatherOverrideEnabled = false;
-        IsTimeFrozen = false;
+        ReleaseAllHolds("territory change");
     }
 
-    private void OnLogout(int type, int code)
+    private void OnLogout(int type, int code) => ReleaseAllHolds("logout");
+
+    /// <summary>
+    /// Territory change and logout end every hold. Brio releases weather on
+    /// territory change (EnvironmentService.OnTerritoryChanged) and time on
+    /// both transitions (TimeService.OnTerritoryChanged/OnLogout); the held
+    /// sections must join them here because the copy detour would otherwise
+    /// keep stamping the previous zone's snapshot into the new zone. Each
+    /// release is fault-visible on its own: a hook that refuses to disable
+    /// stays truthfully held and logged, and never blocks the others.
+    /// </summary>
+    private void ReleaseAllHolds(string reason)
     {
-        IsWeatherOverrideEnabled = false;
-        IsTimeFrozen = false;
+        // Sections first — a flag clear cannot throw, so a hook fault below
+        // can never leave the detour stamping stale sections.
+        ReleaseAllSections();
+        try
+        {
+            IsWeatherOverrideEnabled = false;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"Environment: weather hold release failed on {reason}: {ex.Message}");
+        }
+        try
+        {
+            IsTimeFrozen = false;
+        }
+        catch (Exception ex)
+        {
+            _log.Error($"Environment: time freeze release failed on {reason}: {ex.Message}");
+        }
     }
 
     public void Dispose()
