@@ -360,6 +360,21 @@ internal static class ServiceRegistration
             sp.GetRequiredService<IPoseFileService>,
             sp.GetRequiredService<ConfigurationService>(),
             sp.GetRequiredService<IDalamudPluginInterface>()));
+
+        // The whole-shot vertical. The workflow owns the ONE scene
+        // transaction and takes its native/persistence seam as the adapter;
+        // the snapshot service is a separate cadence over the same capture and
+        // store, so it is constructed after the workflow it defers to.
+        services.AddSingleton<SceneCaptureService>();
+        services.AddSingleton<SceneWorkflow>();
+        services.AddSingleton(sp => new SceneAutoSaveService(
+            sp.GetRequiredService<IPluginLog>(),
+            sp.GetRequiredService<IFramework>(),
+            sp.GetRequiredService<IGPoseService>(),
+            sp.GetRequiredService<ConfigurationService>(),
+            sp.GetRequiredService<SceneCaptureService>(),
+            sp.GetRequiredService<SceneWorkflow>(),
+            sp.GetRequiredService<IDalamudPluginInterface>()));
         return services;
     }
 
@@ -380,6 +395,7 @@ internal static class ServiceRegistration
         services.AddSingleton<CameraPane>();
         services.AddSingleton<EnvironmentPane>();
         services.AddSingleton<PoseLibraryPane>();
+        services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
         services.AddSingleton<PoseThumbnailCache>();

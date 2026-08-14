@@ -16,6 +16,11 @@ public enum PoseLibraryEntryKind : byte
     /// <summary>A Mare character file. Carries no pose metadata at all — no
     /// author, no tags, no preview — so the scan never opens one.</summary>
     Mcdf,
+
+    /// <summary>A <c>.poserscene</c> whole shot. Its metadata is observed
+    /// through the scene codec, so a listing can never advertise a scene the
+    /// load would reject.</summary>
+    Scene,
 }
 
 /// <summary>Why a pose metadata probe did or did not produce metadata.</summary>
@@ -83,6 +88,11 @@ public sealed class PoseLibraryEntry
     /// <summary>An Anamnesis <c>.cmp</c> file; carries no metadata.</summary>
     public bool IsLegacy { get; init; }
 
+    /// <summary>What a <see cref="PoseLibraryEntryKind.Scene"/> entry holds,
+    /// pre-formatted at scan time (e.g. "3 actors, 2 lights"). Empty for
+    /// every other kind.</summary>
+    public string SceneContents { get; init; } = string.Empty;
+
     /// <summary>A <c>.pose</c> file with a non-empty embedded preview image.</summary>
     public bool HasThumbnail { get; init; }
 
@@ -124,6 +134,10 @@ public sealed class PoseLibraryFolder
     /// lets a browser tab drop the whole subtree and keep a valid tree.
     /// </summary>
     public int McdfCount { get; init; }
+
+    /// <summary>Recursive <see cref="PoseLibraryEntryKind.Scene"/> count at
+    /// and below this folder, on the same recursive contract.</summary>
+    public int SceneCount { get; init; }
 }
 
 /// <summary>

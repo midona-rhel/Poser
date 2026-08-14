@@ -27,7 +27,6 @@ public sealed class SceneWorkflowTests
         public SceneStoreFailure? ReadFailure;
         public SceneFile? Captured;
         public SceneWriteOutcome WriteResult = SceneWriteOutcome.Success();
-        public SceneCaptureOutcome? CaptureResult;
 
         /// <summary>Runs after each named call, so a test can flip the session,
         /// cancel, or release a gate at an exact point in the phase order.</summary>
@@ -68,7 +67,7 @@ public sealed class SceneWorkflowTests
         public SceneCaptureOutcome CaptureScene(Guid sceneId, string? description)
         {
             Record("CaptureScene");
-            return CaptureResult ?? SceneCaptureOutcome.Ok(
+            return SceneCaptureOutcome.Ok(
                 new SceneFile { SceneId = sceneId, Description = description },
                 new List<string>());
         }

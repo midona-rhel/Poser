@@ -17,6 +17,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private const string PoseExtension = ".pose";
     private const string LegacyExtension = ".cmp";
     private const string McdfExtension = ".mcdf";
+    private static readonly string SceneExtension = SceneFile.Extension;
 
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
@@ -271,6 +272,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         public int Count { get; set; }
         public int PoseCount { get; set; }
         public int McdfCount { get; set; }
+        public int SceneCount { get; set; }
     }
 
     private readonly record struct SourceSpec(string Name, string Path, bool Enabled);
@@ -378,10 +380,18 @@ public sealed class PoseLibraryService : IPoseLibraryService
         node.Count = node.Files.Count;
         foreach (var file in node.Files)
         {
-            if (KindOf(file) == PoseLibraryEntryKind.Mcdf)
-                node.McdfCount++;
-            else
-                node.PoseCount++;
+            switch (KindOf(file))
+            {
+                case PoseLibraryEntryKind.Mcdf:
+                    node.McdfCount++;
+                    break;
+                case PoseLibraryEntryKind.Scene:
+                    node.SceneCount++;
+                    break;
+                default:
+                    node.PoseCount++;
+                    break;
+            }
         }
 
         foreach (var child in node.Children)
@@ -389,6 +399,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             node.Count += child.Count;
             node.PoseCount += child.PoseCount;
             node.McdfCount += child.McdfCount;
+            node.SceneCount += child.SceneCount;
         }
 
         return !isRoot && node.Count == 0 ? null : node;
@@ -410,7 +421,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Depth = node.Depth,
             Count = node.Count,
             PoseCount = node.PoseCount,
-            McdfCount = node.McdfCount
+            McdfCount = node.McdfCount,
+            SceneCount = node.SceneCount
         });
 
         foreach (var file in node.Files)
@@ -447,10 +459,35 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var hasThumbnail = false;
         var status = PoseLibraryMetadataStatus.Valid;
         var detail = string.Empty;
+        var sceneContents = string.Empty;
 
+        // A scene is probed through its OWN codec, which validates the whole
+        // bounded document — so an entry the browser offers is an entry the
+        // load will accept, and a corrupt or future file says so in the row
+        // instead of only when it is clicked.
+        if (kind == PoseLibraryEntryKind.Scene)
+        {
+            var metadata = SceneFileStore.Default.ReadMetadata(filePath);
+            status = metadata.Status switch
+            {
+                SceneEntryStatus.Valid => PoseLibraryMetadataStatus.Valid,
+                SceneEntryStatus.Future => PoseLibraryMetadataStatus.Future,
+                SceneEntryStatus.Oversized => PoseLibraryMetadataStatus.Oversized,
+                _ => PoseLibraryMetadataStatus.Corrupt,
+            };
+            if (metadata.Succeeded)
+            {
+                author = metadata.Description;
+                sceneContents = DescribeScene(metadata);
+            }
+            else
+            {
+                detail = metadata.Failure?.Detail ?? "The scene could not be read.";
+            }
+        }
         // A .cmp has no header and an .mcdf is a compressed archive: opening
         // either would cost a read that can never answer.
-        if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
+        else if (kind == PoseLibraryEntryKind.Pose && !isLegacy)
         {
             var metadata = _poseStore.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -481,8 +518,25 @@ public sealed class PoseLibraryService : IPoseLibraryService
             MetadataStatus = status,
             MetadataDetail = detail,
             IsLegacy = isLegacy,
-            HasThumbnail = hasThumbnail
+            HasThumbnail = hasThumbnail,
+            SceneContents = sceneContents
         };
+    }
+
+    /// <summary>The scene row's one-line contents, minted at scan time
+    /// because the grid reads it on every keystroke.</summary>
+    private static string DescribeScene(SceneMetadataReadOutcome metadata)
+    {
+        var parts = new List<string>(4);
+        if (metadata.ActorCount > 0)
+            parts.Add($"{metadata.ActorCount} actor{(metadata.ActorCount == 1 ? "" : "s")}");
+        if (metadata.PropCount > 0)
+            parts.Add($"{metadata.PropCount} prop{(metadata.PropCount == 1 ? "" : "s")}");
+        if (metadata.LightCount > 0)
+            parts.Add($"{metadata.LightCount} light{(metadata.LightCount == 1 ? "" : "s")}");
+        if (metadata.CameraCount > 0)
+            parts.Add($"{metadata.CameraCount} camera{(metadata.CameraCount == 1 ? "" : "s")}");
+        return parts.Count == 0 ? "Empty shot" : string.Join(", ", parts);
     }
 
     private static bool IsLibraryFile(string path)
@@ -490,13 +544,19 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var extension = Path.GetExtension(path);
         return extension.Equals(PoseExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static PoseLibraryEntryKind KindOf(string path) =>
-        Path.GetExtension(path).Equals(McdfExtension, StringComparison.OrdinalIgnoreCase)
-            ? PoseLibraryEntryKind.Mcdf
+    private static PoseLibraryEntryKind KindOf(string path)
+    {
+        var extension = Path.GetExtension(path);
+        if (extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Mcdf;
+        return extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase)
+            ? PoseLibraryEntryKind.Scene
             : PoseLibraryEntryKind.Pose;
+    }
 
     private bool ObserveDirectory(string path)
     {

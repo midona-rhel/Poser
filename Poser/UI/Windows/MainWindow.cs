@@ -87,6 +87,7 @@ public class MainWindow : Window
     private readonly IVirtualCameraService _cameraService;
     private readonly EnvironmentPane _environmentPane;
     private readonly PoseLibraryPane _libraryPane;
+    private readonly ScenePane _scenePane;
     private readonly PoseFileInspectorSection _poseFileSection;
     private readonly Game.Animation.AnimationCatalogLoader _animationCatalog;
     private readonly Game.Companions.CompanionCatalogLoader _companionCatalog;
@@ -116,6 +117,12 @@ public class MainWindow : Window
     /// selection's tabs. The SELECTION is untouched — the library applies to
     /// whatever actor was selected before the mode was entered.</summary>
     private bool _libraryMode;
+
+    /// <summary>The workspace is showing the WHOLE SHOT — save, load, progress
+    /// and recovery — instead of the selection's tabs. A mode exactly like the
+    /// library's, and its alternative: a shot is not a property of whatever
+    /// happens to be selected.</summary>
+    private bool _sceneMode;
 
     /// <summary>The library's sidebar section and its one tab, both retained:
     /// they carry no per-frame data, so a warm frame restates them rather than
@@ -226,6 +233,18 @@ public class MainWindow : Window
         new() { Label = "Auto-saves" },
         new() { Label = "MCDF" },
     ];
+
+    /// <summary>The shot workspace's one tab, retained like every other
+    /// strip. Whole-shot save/load is a MODE, not a property of a selection,
+    /// so it has its own strip rather than a tab on someone else's.</summary>
+    private readonly ShellTab[] _sceneTabs =
+    [
+        new() { Label = SceneTabLabel },
+    ];
+
+    /// <summary>The shot strip's one label, and the tab-layout identity that
+    /// goes with it.</summary>
+    private const string SceneTabLabel = "Shot";
 
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
@@ -346,6 +365,7 @@ public class MainWindow : Window
         IVirtualCameraService cameraService,
         EnvironmentPane environmentPane,
         PoseLibraryPane libraryPane,
+        ScenePane scenePane,
         PoseFileInspectorSection poseFileSection,
         Application.Animation.AnimationSession animation,
         Game.Animation.AnimationCatalogLoader animationCatalog,
@@ -392,6 +412,7 @@ public class MainWindow : Window
         _cameraService = cameraService;
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
+        _scenePane = scenePane;
         // The library's "Add source…" and its empty state both mean the same
         // thing the titlebar gear does, so they travel the one settings route.
         _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
@@ -518,6 +539,7 @@ public class MainWindow : Window
             else if (index == EnvironmentSectionIndex)
             {
                 ExitLibraryMode();
+                ExitSceneMode();
                 // There is exactly one environment, so range and toggle mean
                 // nothing here: the header is a plain Select, never a modified
                 // one.
@@ -883,6 +905,8 @@ public class MainWindow : Window
     {
         if (_libraryMode)
             return "Library";
+        if (_sceneMode)
+            return "Shot";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -944,6 +968,7 @@ public class MainWindow : Window
         _lightPane.DrawBrowsers();
         _cameraPane.DrawBrowsers();
         _poseFileSection.DrawBrowsers();
+        _scenePane.DrawBrowsers();
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
         _libraryPane.Tick();
@@ -956,6 +981,7 @@ public class MainWindow : Window
     /// releases the scene the same way.</summary>
     public void ShowLibrary()
     {
+        ExitSceneMode();
         _libraryMode = true;
         _selection.Clear();
         // Both switches can happen from a sidebar click, which occurs while
@@ -971,6 +997,26 @@ public class MainWindow : Window
             return;
         _libraryMode = false;
         _libraryPane.OnHidden();
+        ApplyTabLayout(_activeTab);
+    }
+
+    /// <summary>Puts the workspace into shot mode. Openers only, exactly like
+    /// the library's: a second request must not toggle a shot workspace the
+    /// user is already looking at. The two modes are alternatives, so entering
+    /// this one leaves the library.</summary>
+    public void ShowSceneFiles()
+    {
+        ExitLibraryMode();
+        _sceneMode = true;
+        _scenePane.OnShown();
+        ApplyTabLayout(SceneTabLabel);
+    }
+
+    private void ExitSceneMode()
+    {
+        if (!_sceneMode)
+            return;
+        _sceneMode = false;
         ApplyTabLayout(_activeTab);
     }
 
@@ -1054,7 +1100,7 @@ public class MainWindow : Window
         _vm.CanRedo = _cleanTransforms.CanRedo;
         // Pop-out follows the toolbar actor: any selection that resolves to
         // an actor can be frozen into its own content window.
-        _vm.ShowPopOut = toolbarActor != null && !_libraryMode;
+        _vm.ShowPopOut = toolbarActor != null && !_libraryMode && !_sceneMode;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and the ACTORS header. Both open the SAME surface,
         // the spawn browser (the LIGHTS and CAMERAS header pluses are the
@@ -1066,7 +1112,10 @@ public class MainWindow : Window
 
         BuildSidebar(primary);
         BuildTabs(primary);
-        ApplyTabLayout(_libraryMode ? "Library" : _activeTab);
+        ApplyTabLayout(
+            _libraryMode ? "Library"
+            : _sceneMode ? SceneTabLabel
+            : _activeTab);
         BuildStatus(primary);
     }
 
@@ -2129,6 +2178,14 @@ public class MainWindow : Window
             }
             return;
         }
+        if (_sceneMode)
+        {
+            // One tab: the shot workspace is a single page, and the strip is
+            // what states the mode the user is in.
+            _sceneTabs[0].Active = true;
+            _vm.Tabs.Add(_sceneTabs[0]);
+            return;
+        }
         // The strip is a function of the SELECTION TYPE: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -2251,6 +2308,9 @@ public class MainWindow : Window
             _libraryPane.SelectType(index);
             return;
         }
+        // The shot workspace has one tab: clicking it is already where it goes.
+        if (_sceneMode)
+            return;
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 
@@ -2305,9 +2365,10 @@ public class MainWindow : Window
 
     private void OnRowClicked(ShellSidebarRow row)
     {
-        // Selecting anything in the scene is leaving the library: the two are
-        // alternatives in one workspace.
+        // Selecting anything in the scene is leaving the library or the shot
+        // workspace: they are alternatives in one workspace.
         ExitLibraryMode();
+        ExitSceneMode();
         if (row.Tag is string catKey2)
         {
             if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
@@ -2357,6 +2418,15 @@ public class MainWindow : Window
         if (_libraryMode)
         {
             _libraryPane.Draw(origin, size);
+            return;
+        }
+
+        // The shot workspace precedes the GPose gate for the same reason the
+        // library does: recovering a shot file is browsable out of GPose, and
+        // the workflow itself refuses the operation without a live session.
+        if (_sceneMode)
+        {
+            _scenePane.Draw(origin, size);
             return;
         }
 
@@ -2595,6 +2665,7 @@ public class MainWindow : Window
     private enum ShellCommand
     {
         ShowLibrary,
+        ShowShot,
         SpawnActor,
         ImportPose,
         ExportPose,
@@ -2654,6 +2725,10 @@ public class MainWindow : Window
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Photo);
+        // The whole shot: one command, because save, load, progress and
+        // recovery all live on the one page it opens.
+        _shellMenuItems[(int)ShellCommand.ShowShot] =
+            new ContextMenuItem("Save or load a shot", TablerIcon.Movie);
         _shellMenuItems[(int)ShellCommand.SpawnActor] =
             new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
         _shellMenuItems[(int)ShellCommand.ImportPose] =
@@ -2711,6 +2786,9 @@ public class MainWindow : Window
         {
             case ShellCommand.ShowLibrary:
                 ShowLibrary();
+                break;
+            case ShellCommand.ShowShot:
+                ShowSceneFiles();
                 break;
             case ShellCommand.SpawnActor:
                 OnSpawnBrowserRequested?.Invoke(

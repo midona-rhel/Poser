@@ -57,6 +57,30 @@ public sealed class SceneWorkflow : IDisposable
     private OperationEpoch _epoch;
     private bool _disposed;
 
+    /// <summary>
+    /// Composition entry point. The native/persistence seam is an
+    /// implementation detail of this assembly, so the host wires the OWNERS
+    /// and the workflow binds them — nothing outside Poser.Game ever names
+    /// <see cref="ISceneRuntime"/>.
+    /// </summary>
+    public SceneWorkflow(
+        Dalamud.Plugin.Services.IFramework framework,
+        Poser.Application.Lifecycle.ISessionGenerationSource sessions,
+        SceneCaptureService capture,
+        Posing.CleanPoseFacade poses,
+        Poser.Services.IActorSpawnService spawns,
+        Poser.Services.ISkeletonService skeletons,
+        Poser.Services.IPosingService posing,
+        PropSpawnService props,
+        Poser.Services.ILightingService lighting,
+        Poser.Services.IVirtualCameraService cameras,
+        Poser.Services.IEnvironmentService environment)
+        : this(new SceneRuntimeAdapter(
+            framework, sessions, capture, poses, spawns, skeletons, posing,
+            props, lighting, cameras, environment))
+    {
+    }
+
     internal SceneWorkflow(ISceneRuntime runtime)
     {
         _runtime = runtime;
