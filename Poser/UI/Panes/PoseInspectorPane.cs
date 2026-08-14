@@ -1981,6 +1981,102 @@ public class PoseInspectorPane
     // survive onto another bone's IK section.
     private (TransformTargetId Target, string Text)? _ikBakeNote;
 
+    /// <summary>
+    /// Every IK chain this ACTOR has, above the selected chain's own controls,
+    /// with Ktisis' pair of bulk buttons over it (ActorPropertyList.cs:326-346
+    /// — each disabled once it would do nothing). The rail is otherwise typed
+    /// by the selection, and this row is the one place that has to escape
+    /// that: arming four limbs one selection at a time is four detours, and
+    /// there was previously no surface at all that showed which chains were
+    /// live without visiting each endpoint in turn.
+    /// </summary>
+    private void DrawIkChainList(
+        Crystarium.FormScope form,
+        BoneId selected,
+        TransformTargetId selectedTarget)
+    {
+        var chains = ActorIkChains(selected);
+        if (chains.Count <= 1)
+            return;
+
+        int armedCount = chains.Count(chain => _ikPort.Get(chain)?.Enabled == true);
+        form.Actions(
+            $"Chains ({armedCount}/{chains.Count} live)",
+            actions =>
+            {
+                actions.Button(
+                    "Enable all",
+                    () => SetEveryChain(chains, true),
+                    disabled: armedCount == chains.Count,
+                    help: "Turn Live IK on for every limb this actor has");
+                actions.Button(
+                    "Disable all",
+                    () => SetEveryChain(chains, false),
+                    disabled: armedCount == 0,
+                    help: "Turn Live IK off for every limb this actor has");
+            },
+            help: SelectedChainLabel(chains, selectedTarget));
+    }
+
+    private void SetEveryChain(
+        IReadOnlyList<TransformTargetId> chains,
+        bool enabled)
+    {
+        foreach (var chain in chains)
+        {
+            // Read each chain's own configuration rather than reusing one:
+            // an arm and a leg carry different gains and hinge limits, and a
+            // bulk toggle must not flatten them onto each other.
+            if (_ikPort.Get(chain) is { } chainConfig &&
+                chainConfig.Enabled != enabled)
+                _ikPort.Set(chain, chainConfig with { Enabled = enabled });
+        }
+    }
+
+    /// <summary>Which of the listed chains the rail is currently editing —
+    /// the row names the selection so the bulk buttons cannot be mistaken for
+    /// controls over the one chain below them.</summary>
+    private string SelectedChainLabel(
+        IReadOnlyList<TransformTargetId> chains,
+        TransformTargetId selectedTarget) =>
+        chains.Contains(selectedTarget) && selectedTarget.Bone is { } bone
+            ? "Editing " +
+              Core.BoneInfo.BoneInfoService.GetDisplayName(bone.CanonicalName) +
+              " below"
+            : "Live IK across every limb of this actor";
+
+    /// <summary>Every supported IK endpoint present on the owning actor, in
+    /// the fixed chain order, deduplicated and confirmed by the port. Weapon
+    /// and prop skeletons are included because the port resolves a chain
+    /// against the endpoint's OWN slot skeleton, not the Character one.
+    /// </summary>
+    private IReadOnlyList<TransformTargetId> ActorIkChains(BoneId owner)
+    {
+        var chains = new List<TransformTargetId>();
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            if (actor.Id.LogicalId != owner.Skeleton.Actor.LogicalId)
+                continue;
+            foreach (var endpoint in Domain.Posing.IkChains.SupportedEndpoints)
+            foreach (var skeleton in actor.Skeletons)
+            foreach (var descriptor in skeleton.Bones)
+            {
+                if (!string.Equals(
+                        descriptor.Id.CanonicalName,
+                        endpoint,
+                        StringComparison.Ordinal))
+                    continue;
+                var target = TransformTargetId.ForBone(descriptor.Id);
+                if (!chains.Contains(target) && _ikPort.IsSupported(target))
+                    chains.Add(target);
+            }
+
+            break;
+        }
+
+        return chains;
+    }
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -1997,6 +2093,9 @@ public class PoseInspectorPane
         bool eligible = config != null;
         bool armed = config?.Enabled == true;
         bool canBake = armed && _ikBake.CanBake(ikTarget);
+
+        DrawIkChainList(form, boneId, ikTarget);
+
         form.SwitchActions(
             "Live IK",
             armed,
