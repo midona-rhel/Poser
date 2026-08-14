@@ -440,6 +440,16 @@ internal static class ServiceRegistration
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
+        // The configuration INSTANCE is replaced by ConfigurationService.Reset,
+        // so the preset store is reached through the service on every call.
+        services.AddSingleton(sp =>
+        {
+            var configuration = sp.GetRequiredService<ConfigurationService>();
+            return new BoneVisibilityPresetService(
+                sp.GetRequiredService<SkeletonOverlayPresentation>(),
+                () => configuration.Config,
+                configuration.Save);
+        });
         services.AddSingleton<WorldAdoptionSource>();
         services.AddSingleton<PoseThumbnailCache>();
         // Owns every reference picture's texture, so the container's own

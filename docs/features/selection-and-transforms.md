@@ -35,5 +35,11 @@
   Anamnesis eyes/Viera-ears catalog, resolved per partial. Ctrl selection
   may span slots of one actor; symmetry, linked lookup, ancestry, and
   parent traversal never cross a slot boundary.
+- Overlay bone visibility is a session mask over bone ids that starts empty;
+  the sidebar eyes opt bones in, and a selection anchor bypasses it. Named
+  **presets** (Ktisis) sit on top: a preset is a set of canonical bone NAMES in
+  config, so any actor can wear it, and whether it reads as applied is DERIVED
+  from the mask rather than stored beside it — the check marks and the overlay
+  cannot disagree, and the mask stays the single writer.
 - Precision wells: drag with modifiers, double-click for numeric entry,
   Escape cancels, the wheel only scrolls. X/Y/Z are literal axes.

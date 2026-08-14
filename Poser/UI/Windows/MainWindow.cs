@@ -46,6 +46,7 @@ public class MainWindow : Window
     private readonly StableBindingRegistry _bindings;
     private readonly Application.Animation.AnimationSession _animation;
     private readonly SkeletonOverlayPresentation _overlayPresentation;
+    private readonly BoneVisibilityPresetService _bonePresets;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
 
@@ -79,6 +80,13 @@ public class MainWindow : Window
     private bool _renameOpen;
     private string _renameValue = "";
     private ActorId? _renameTarget;
+    // Bone-visibility presets: the menu applies them to one actor, the manager
+    // owns the shared store. Both hold an id, never a descriptor.
+    private ActorId? _presetActorId;
+    private bool _presetMenuOpenRequested;
+    private bool _presetManagerOpen;
+    private string _presetNameValue = "";
+    private string? _presetSaveNote;
     private readonly IEditorState _editorState;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
@@ -490,6 +498,7 @@ public class MainWindow : Window
         OverlayPane overlayPane,
         CompanionSection companions,
         SkeletonOverlayPresentation overlayPresentation,
+        BoneVisibilityPresetService bonePresets,
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
@@ -552,6 +561,7 @@ public class MainWindow : Window
                 : null;
         _animation = animation;
         _overlayPresentation = overlayPresentation;
+        _bonePresets = bonePresets;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _lifecycle = lifecycle;
@@ -1114,6 +1124,7 @@ public class MainWindow : Window
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
         DrawActorContextMenu();
+        DrawBonePresetMenu();
         // Window-level: the attach picker outlives the context menu that
         // opened it.
         _companions.DrawPicker();
@@ -1129,6 +1140,7 @@ public class MainWindow : Window
         DrawPropContextMenu();
         DrawRenameModal();
         DrawEntityRenameModal();
+        DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
         // tab or a context menu survives whatever the user does to that
         // surface next.
@@ -3221,6 +3233,20 @@ public class MainWindow : Window
             () => _spawnService.DestroyCompanion(actor),
         };
 
+        // Which bones the overlay shows is per actor, so the named sets hang
+        // off the actor exactly as Ktisis' presets submenu does.
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new ContextMenuItem(
+            "Bone presets", TablerIcon.Armature,
+            disabled: !actor.HasSkeleton,
+            help: "Named sets of which bones this actor shows in the overlay"));
+        actions.Add(null); // separator
+        actions.Add(() =>
+        {
+            _presetActorId = actorId;
+            _presetMenuOpenRequested = true;
+        });
+
         // Pose files belong to the actor, not to whatever is selected, so the
         // actor itself is where they are reachable.
         items.Add(ContextMenuItem.Separator);
@@ -3271,6 +3297,148 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+    }
+
+    /// <summary>
+    /// The actor's bone-visibility presets: one row per stored set, checked
+    /// when the actor already shows all of it, plus Ktisis' two bulk verbs and
+    /// the route to the store itself.
+    /// </summary>
+    private void DrawBonePresetMenu()
+    {
+        if (_presetActorId is not { } actorId)
+            return;
+        if (FindActor(actorId.LogicalId) is not { } actor)
+        {
+            _presetActorId = null;
+            Crystarium.FloatingMenu.Dismiss("##bone-presets");
+            return;
+        }
+
+        var presets = _bonePresets.Presets;
+        var items = new List<ContextMenuItem>(presets.Count + 5);
+        var actions = new List<Action?>(presets.Count + 5);
+        if (presets.Count == 0)
+        {
+            items.Add(new ContextMenuItem(
+                "No presets yet", TablerIcon.Circle, disabled: true,
+                help: "Show the bones you want, then save them as a preset"));
+            actions.Add(null);
+        }
+        foreach (var preset in presets)
+        {
+            var name = preset.Name;
+            items.Add(new ContextMenuItem(
+                name,
+                _bonePresets.IsApplied(actor, name)
+                    ? TablerIcon.Check
+                    : TablerIcon.Circle,
+                help: $"{preset.Bones.Count} bones"));
+            actions.Add(() => _bonePresets.Toggle(actor, name));
+        }
+
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem(
+            "Show bones no preset covers", TablerIcon.Crosshair,
+            disabled: presets.Count == 0,
+            help: "Hide everything the presets claim and show the rest"));
+        actions.Add(() => _bonePresets.ToggleOther(actor));
+        items.Add(new ContextMenuItem(
+            "Hide every bone", TablerIcon.EyeOff,
+            help: "Take this actor's overlay back to nothing"));
+        actions.Add(() => _bonePresets.Clear(actor));
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem(
+            "Manage presets", TablerIcon.Edit,
+            help: "Save what this actor shows as a new preset, or delete one"));
+        actions.Add(() =>
+        {
+            _presetNameValue = string.Empty;
+            _presetSaveNote = null;
+            _presetManagerOpen = true;
+        });
+
+        if (_presetMenuOpenRequested)
+        {
+            _presetMenuOpenRequested = false;
+            var rows = items.ToArray();
+            Crystarium.FloatingMenu.Open(
+                "##bone-presets",
+                ImGui.GetMousePos(),
+                rows,
+                Crystarium.FloatingMenu.MeasureWidth(rows));
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##bone-presets");
+        if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>The preset STORE, which is shared by every actor: create one
+    /// from what the menu's actor currently shows, or delete one. Kept out of
+    /// Settings because that window is a draft the user can cancel, and these
+    /// two acts land immediately.</summary>
+    private void DrawBonePresetManager()
+    {
+        if (!_presetManagerOpen)
+            return;
+        var actor = _presetActorId is { } id ? FindActor(id.LogicalId) : null;
+        float gap = 8f * ImGuiHelpers.GlobalScale;
+        Crystarium.Modal(
+            "##bone-presets-manage",
+            _presetManagerOpen,
+            next => _presetManagerOpen = next,
+            "Bone visibility presets",
+            () =>
+        {
+            Crystarium.TextInput(
+                "##bone-preset-name",
+                _presetNameValue,
+                next => _presetNameValue = next,
+                placeholder: "New preset name");
+            ImGui.Dummy(new Vector2(0f, gap));
+            if (Crystarium.Button(
+                    "Save what this actor shows",
+                    variant: ButtonVariant.Primary,
+                    id: "bone-preset-save",
+                    disabled: actor == null,
+                    help: "Store every bone currently shown in the overlay under that name"))
+            {
+                _presetSaveNote =
+                    _bonePresets.SaveCurrent(_presetNameValue, actor!);
+                if (_presetSaveNote == null)
+                    _presetNameValue = string.Empty;
+            }
+            if (_presetSaveNote is { Length: > 0 } note)
+                Crystarium.Text(note);
+
+            ImGui.Dummy(new Vector2(0f, gap));
+            var presets = _bonePresets.Presets;
+            if (presets.Count == 0)
+            {
+                Crystarium.Text("No presets stored yet.");
+                return;
+            }
+            string? doomed = null;
+            for (int i = 0; i < presets.Count; i++)
+            {
+                var preset = presets[i];
+                var name = preset.Name;
+                if (Crystarium.IconButton(
+                        TablerIcon.Trash,
+                        id: $"bone-preset-delete-{i}",
+                        help: $"Delete '{name}'"))
+                    doomed = name;
+                ImGui.SameLine(0f, gap);
+                Crystarium.Text($"{name} — {preset.Bones.Count} bones");
+            }
+            if (doomed != null)
+            {
+                _bonePresets.Delete(doomed);
+                _presetSaveNote = null;
+            }
+        });
     }
 
     /// <summary>

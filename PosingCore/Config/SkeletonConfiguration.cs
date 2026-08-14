@@ -1,4 +1,19 @@
+using System.Collections.Generic;
+
 namespace Poser.Config;
+
+/// <summary>
+/// One named overlay bone-visibility set (Ktisis <c>PresetConfig.Presets</c>).
+/// Bones are stored as CANONICAL NAMES rather than ids because a preset is
+/// applied to whichever actor the user picks, and a stored list rather than a
+/// keyed dictionary because the serializer must not have to reconstruct a
+/// comparer to keep the store's case rules.
+/// </summary>
+public class BoneVisibilityPreset
+{
+    public string Name { get; set; } = string.Empty;
+    public List<string> Bones { get; set; } = new();
+}
 
 /// <summary>
 /// Configuration for skeleton overlay display settings.
@@ -32,4 +47,8 @@ public class SkeletonConfiguration
 
     // Display options
     public bool ShowSkeletonLines { get; set; } = true;
+
+    /// <summary>Named bone-visibility sets, shared by every actor and applied
+    /// per actor. Kept sorted by name so the persisted file is stable.</summary>
+    public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();
 }
