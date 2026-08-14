@@ -28,6 +28,7 @@ public class PoserConfiguration : IPluginConfiguration
     public LibraryConfiguration Library { get; set; } = new();
     public AutoSaveConfiguration AutoSave { get; set; } = new();
     public CameraConfiguration Camera { get; set; } = new();
+    public TransformConfiguration Transform { get; set; } = new();
 
     /// <summary>The pinned reference pictures and where they sit. Additive —
     /// a config written before this existed deserialises to an empty roster,

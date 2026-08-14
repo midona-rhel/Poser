@@ -134,6 +134,9 @@ public class SettingsWindow : Window
             Theme = c.UI.Theme,
             AccentIndex = c.UI.AccentIndex,
 
+            TransformEntitySpeed = c.Transform.EntitySpeed,
+            TransformBoneSpeed = c.Transform.BoneSpeed,
+
             CameraDefaultSpeed = c.Camera.DefaultMovementSpeed,
             CameraDefaultSensitivity = c.Camera.DefaultMouseSensitivity,
             CameraFastMultiplier = c.Camera.FastMultiplier,
@@ -335,6 +338,11 @@ public class SettingsWindow : Window
         c.Display.AnonymousMode = _vm.AnonymousMode;
         c.UI.Theme = _vm.Theme;
         c.UI.AccentIndex = _vm.AccentIndex;
+
+        c.Transform.EntitySpeed =
+            Math.Clamp(_vm.TransformEntitySpeed, 0.0005f, 0.05f);
+        c.Transform.BoneSpeed =
+            Math.Clamp(_vm.TransformBoneSpeed, 0.0005f, 0.05f);
 
         // Clamped like the undo depth, and for the same reason: the sliders
         // are bounded but a hand-edited file is not, and these seed every

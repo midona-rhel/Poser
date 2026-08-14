@@ -201,12 +201,16 @@ public sealed class CameraPane
         if (camera == null)
             return;
         bool locked = camera.IsLocked;
+        // A camera is an entity, so its rows take the entity drag speed the
+        // settings page sets — the same one an actor or a light is moved at.
+        float perPixel = ConfigurationService.Instance.Config
+            .Transform.For(isBone: false);
         if (camera.Kind == CameraKind.Free)
         {
             form.AxisVector("Position", camera.Position,
                 value => camera.Position = value,
                 onCommit: null,
-                perPixel: 0.005f,
+                perPixel: perPixel,
                 format: "0.00",
                 help: "The camera's world position",
                 disabled: locked,
@@ -225,7 +229,7 @@ public sealed class CameraPane
         form.AxisVector("Offset", camera.PositionOffset,
             value => camera.PositionOffset = value,
             onCommit: null,
-            perPixel: 0.005f,
+            perPixel: perPixel,
             format: "0.00",
             help: "World-space offset added to the camera every frame",
             disabled: locked,

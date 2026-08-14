@@ -98,6 +98,11 @@ public sealed class SettingsViewModel
     public int DisableDotsModifier;
     public int DisableGizmoModifier;
 
+    /// <summary>Mirrors <c>TransformConfiguration</c>'s defaults — the
+    /// constant every numeric transform row was written with.</summary>
+    public float TransformEntitySpeed = 0.005f;
+    public float TransformBoneSpeed = 0.005f;
+
     /// <summary>Mirrors <c>CameraConfiguration</c>'s defaults, which are what
     /// the camera already did before any of it was configurable.</summary>
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
@@ -556,6 +561,27 @@ public static class SettingsView
                 "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
             // The folder row moved to POSER FOLDERS, where it is editable
             // rather than merely openable — one place per path.
+        });
+        // Brio's Transform Slider Speed group, in the same General page it
+        // sits on there.
+        page.Section("TRANSFORM SPEED", form =>
+        {
+            form.Slider(
+                "Entity drag speed",
+                vm.TransformEntitySpeed,
+                0.0005f,
+                0.05f,
+                next => vm.TransformEntitySpeed = next,
+                format: "0.0000",
+                help: "How far one pixel of drag moves an actor, prop, light or camera");
+            form.Slider(
+                "Bone drag speed",
+                vm.TransformBoneSpeed,
+                0.0005f,
+                0.05f,
+                next => vm.TransformBoneSpeed = next,
+                format: "0.0000",
+                help: "How far one pixel of drag moves a single bone");
         });
         page.Section("RESET", form =>
         {

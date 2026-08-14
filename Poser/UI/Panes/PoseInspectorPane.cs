@@ -1443,12 +1443,18 @@ public class PoseInspectorPane
             ClearTransformSession();
         }
 
+        // Brio's Transform Slider Speed pair: a bone and a whole entity are
+        // dragged at different magnitudes, so the drag speed is the user's to
+        // set per kind. Rotation keeps its own constant — degrees per pixel
+        // does not vary with the thing being turned.
+        float dragSpeed = Config.ConfigurationService.Instance.Config
+            .Transform.For(_entity is IBone);
         form.AxisVector(
             "Translation",
             pos,
             next => Apply(next, DomainOperation.Translate),
             Commit,
-            0.005f,
+            dragSpeed,
             "0.000",
             disabled: !canEdit);
         form.AxisVector(
@@ -1469,7 +1475,7 @@ public class PoseInspectorPane
             scale,
             next => Apply(next, DomainOperation.Scale),
             Commit,
-            0.005f,
+            dragSpeed,
             "0.000",
             disabled: !canEdit);
 
