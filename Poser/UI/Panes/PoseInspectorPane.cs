@@ -368,6 +368,9 @@ public class PoseInspectorPane
 
         if (!Nullable.Equals(primary, _primary) || selectionChanged)
         {
+            // The rail-head summary is a pure function of the selection plus
+            // the probed inputs at its cache; this is its selection key.
+            _railHeaderPrimed = false;
             AppShellView.CancelAxisEdit();
             bool hadGesture = _cleanGesture != null;
             // Cancel exactly once: when the service already cancelled the
@@ -2110,10 +2113,54 @@ public class PoseInspectorPane
 
     // ── rail helpers (header summary, children, flip, freeze state) ─────
 
+    // The rail-head tuple, recomputed only when its inputs move: the compute
+    // builds LINQ chains and joined strings proportional to the selection and
+    // the rail asks EVERY frame — exactly the multi-bone posing state a user
+    // holds longest. Key: selection identity (SetSelection clears the primed
+    // flag) plus allocation-free probes for the inputs that move without a
+    // selection change — scene revision (names, linked siblings, light and
+    // camera descriptors), the linked-bones toggle, and the actor
+    // transform-override flag. Nickname edits arrive through the
+    // configuration-changed hook.
+    private (string Who, string Sub, int Linked) _railHeader = ("", "", 0);
+    private bool _railHeaderPrimed;
+    private ulong _railHeaderRevision;
+    private bool _railHeaderLinked;
+    private bool _railHeaderOverride;
+    private bool _railHeaderConfigHooked;
+
     /// <summary>Selected-bones summary for the rail head (Anamnesis right
     /// column): who = display summary, sub = game bone names, linked = number
-    /// of bones an edit applies to (pill hidden below 2).</summary>
+    /// of bones an edit applies to (pill hidden below 2). Cached; see the
+    /// key fields above.</summary>
     public (string Who, string Sub, int Linked) RailHeader()
+    {
+        if (!_railHeaderConfigHooked)
+        {
+            // Actor display names come from configuration (nicknames): a
+            // rename must refresh a head whose selection did not change.
+            // Hooked on first use — draw time — so the pane never races the
+            // configuration service's own bootstrap.
+            _railHeaderConfigHooked = true;
+            Config.ConfigurationService.Instance.OnConfigurationChanged +=
+                () => _railHeaderPrimed = false;
+        }
+        bool linked = _bonePosingService.LinkedBonesEnabled;
+        bool hasOverride = HasActorTransformOverride;
+        if (_railHeaderPrimed &&
+            _railHeaderRevision == _scene.Revision &&
+            _railHeaderLinked == linked &&
+            _railHeaderOverride == hasOverride)
+            return _railHeader;
+        _railHeaderPrimed = true;
+        _railHeaderRevision = _scene.Revision;
+        _railHeaderLinked = linked;
+        _railHeaderOverride = hasOverride;
+        _railHeader = ComputeRailHeader();
+        return _railHeader;
+    }
+
+    private (string Who, string Sub, int Linked) ComputeRailHeader()
     {
         if (_primary is { Kind: SceneEntityKind.Bone })
         {

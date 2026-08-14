@@ -210,6 +210,20 @@ public sealed class AppShellViewModel
     /// <summary>A click on a <see cref="ShellSidebarSection.Selectable"/>
     /// header, told the section index.</summary>
     public Action<int>? OnSectionSelected;
+
+    // Hoisted once per model (the PoseLibraryView convention): the frame's
+    // chrome must not mint a closure, and every one of these closes over
+    // nothing but this model. AppShellView assigns them on first draw.
+    internal Action<int>? TabChosen;
+    internal Action<int>? GizmoOperationChosen;
+    internal Action<int>? GizmoSpaceChosen;
+    internal Action<int>? RotationPivotChosen;
+    internal Func<int, bool>? RotationPivotDisabled;
+    internal Action<int>? SymmetryChosen;
+    internal Action<bool>? AnimationToggled;
+    internal Action<bool>? PhysicsToggled;
+    internal Action? CollapseToggled;
+    internal Action<Crystarium.ActionBarScope>? WorkspaceRightActions;
 }
 
 /// <summary>
@@ -300,9 +314,51 @@ public static class AppShellView
     public static float MainHorizontalPadding => Crystarium.ActiveTheme.Page.Inset;
     public static float RailWidth => Crystarium.ActiveTheme.Shell.RailWidth;
 
+    /// <summary>Hoists the model-forwarding callbacks once per model, per the
+    /// codebase's own idiom (PoseLibraryView, SpawnBrowserView, ShellSidebar):
+    /// a warm chrome frame must not mint a closure. Each closes over nothing
+    /// but the model and reads its state at invoke time.</summary>
+    private static void EnsureHoisted(AppShellViewModel vm)
+    {
+        vm.TabChosen ??= chosen => vm.OnTab?.Invoke(chosen);
+        vm.GizmoOperationChosen ??= index => vm.OnGizmoOperation?.Invoke(index);
+        vm.GizmoSpaceChosen ??= index => vm.OnGizmoSpace?.Invoke(index);
+        vm.RotationPivotChosen ??= index => vm.OnRotationPivot?.Invoke(index);
+        vm.RotationPivotDisabled ??= index => !vm.RotationPivotEnabled
+            || (index == 1 && !vm.RotationPivotParentAvailable);
+        vm.SymmetryChosen ??= index => vm.OnSymmetry?.Invoke(index);
+        vm.AnimationToggled ??= next => vm.OnAnimation?.Invoke(next);
+        vm.PhysicsToggled ??= next => vm.OnPhysics?.Invoke(next);
+        vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
+        vm.WorkspaceRightActions ??= right =>
+        {
+            right.Switch(
+                "Animation",
+                vm.AnimationOn,
+                vm.AnimationToggled!,
+                !vm.AnimationAvailable
+                    ? "Select an actor to pause its animation"
+                    : vm.AnimationOn
+                        ? "Switch off to pause this actor's animation"
+                        : "Switch on to resume this actor's animation",
+                disabled: !vm.AnimationAvailable);
+            right.Switch(
+                "Physics",
+                vm.PhysicsOn,
+                vm.PhysicsToggled!,
+                !vm.PhysicsAvailable
+                    ? "Select an actor or bone to freeze physics for the whole scene"
+                    : vm.PhysicsOn
+                        ? "Switch off to freeze physics for the whole scene"
+                        : "Switch on to resume physics for the whole scene",
+                disabled: !vm.PhysicsAvailable);
+        };
+    }
+
     public static void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
         ArgumentNullException.ThrowIfNull(vm);
+        EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
         var min = origin;
         var max = origin + size;
@@ -617,7 +673,7 @@ public static class AppShellView
             "##shell-gizmo-operation",
             GizmoIcons,
             vm.GizmoOperation,
-            index => vm.OnGizmoOperation?.Invoke(index),
+            vm.GizmoOperationChosen!,
             itemHelp: static index => index switch
             {
                 0 => "Use the gizmo to move the selection",
@@ -630,7 +686,7 @@ public static class AppShellView
             "##shell-gizmo-space",
             SpaceItems,
             vm.GizmoSpace,
-            index => vm.OnGizmoSpace?.Invoke(index),
+            vm.GizmoSpaceChosen!,
             itemHelp: static index => index == 0
                 ? "Use the selection's own axes"
                 : "Use the world axes") + gap;
@@ -642,9 +698,8 @@ public static class AppShellView
             "##shell-rotation-pivot",
             PivotItems,
             vm.RotationPivot,
-            index => vm.OnRotationPivot?.Invoke(index),
-            itemDisabled: index => !vm.RotationPivotEnabled
-                || (index == 1 && !vm.RotationPivotParentAvailable),
+            vm.RotationPivotChosen!,
+            itemDisabled: vm.RotationPivotDisabled,
             itemHelp: static index => index == 0
                 ? "Rotate each selected bone in place"
                 : "Rotate the selected bone around its parent bone") + gap;
@@ -653,7 +708,7 @@ public static class AppShellView
             "##shell-symmetry",
             SymmetryItems,
             vm.SymmetryMode,
-            index => vm.OnSymmetry?.Invoke(index),
+            vm.SymmetryChosen!,
             itemHelp: static index => index switch
             {
                 0 => "Edit only the current selection",
@@ -677,7 +732,7 @@ public static class AppShellView
             new Vector2(x, y),
             vm.Collapsed ? "chevron-down" : "chevron-up",
             side,
-            () => vm.OnCollapse?.Invoke(!vm.Collapsed),
+            vm.CollapseToggled,
             "##shell-collapse",
             vm.Collapsed ? "Expand the window" : "Collapse to the title bar");
         x -= step;
@@ -817,7 +872,7 @@ public static class AppShellView
                 "##shell-tabs",
                 _tabLabels,
                 _tabActive,
-                chosen => vm.OnTab?.Invoke(chosen),
+                vm.TabChosen!,
                 alignFirstTabToCursor: true);
         }
 
@@ -829,29 +884,7 @@ public static class AppShellView
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, ToolbarHeight * s),
             static _ => { },
-            right =>
-            {
-                right.Switch(
-                    "Animation",
-                    vm.AnimationOn,
-                    next => vm.OnAnimation?.Invoke(next),
-                    !vm.AnimationAvailable
-                        ? "Select an actor to pause its animation"
-                        : vm.AnimationOn
-                            ? "Switch off to pause this actor's animation"
-                            : "Switch on to resume this actor's animation",
-                    disabled: !vm.AnimationAvailable);
-                right.Switch(
-                    "Physics",
-                    vm.PhysicsOn,
-                    next => vm.OnPhysics?.Invoke(next),
-                    !vm.PhysicsAvailable
-                        ? "Select an actor or bone to freeze physics for the whole scene"
-                        : vm.PhysicsOn
-                            ? "Switch off to freeze physics for the whole scene"
-                            : "Switch on to resume physics for the whole scene",
-                    disabled: !vm.PhysicsAvailable);
-            },
+            vm.WorkspaceRightActions,
             ActionBarSeparator.None);
 
         DrawContentViewport(vm, min, max, s);
@@ -1160,6 +1193,7 @@ public static class AppShellView
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height)
     {
+        EnsureHoisted(vm);
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
