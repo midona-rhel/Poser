@@ -19,6 +19,12 @@
     <Reference Include="Dalamud">
       <HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
     </Reference>
+    <!-- Dalamud persists IPluginConfiguration through Newtonsoft, so the
+         config round-trip characterization uses the real serializer rather
+         than a stand-in. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(DalamudLibPath)Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit.v3" Version="2.0.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
