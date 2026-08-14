@@ -51,4 +51,49 @@ public class SkeletonConfiguration
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();
+
+    /// <summary>
+    /// Brio's <c>SkeletonLineToCircle</c>: a connector stops at the two dots'
+    /// circle edges instead of running centre to centre. Brio ships it ON;
+    /// Poser ships it OFF so a config written before this option existed keeps
+    /// drawing what it drew — the same rule every option below follows.
+    /// </summary>
+    public bool SkeletonLineToCircle { get; set; } = false;
+
+    /// <summary>Brio's <c>HideSkeletonWhenGizmoActive</c>: dots and lines both
+    /// disappear for the duration of a gizmo drag rather than fading to
+    /// <see cref="BoneLineOpacityWhileUsing"/>.</summary>
+    public bool HideSkeletonWhileDragging { get; set; } = false;
+
+    // ── inactive-actor dimming (Ktisis OverlayConfig) ────────────────────
+    // Ktisis' DimOverlayForInactiveActors / InactiveOpacity / ActiveStateType,
+    // applied to an actor's dots AND its connector lines together.
+
+    public bool DimInactiveActors { get; set; } = false;
+    public float InactiveActorOpacity { get; set; } = 0.5f;
+    public ActiveActorSource ActiveActorSource { get; set; } =
+        ActiveActorSource.Target;
+
+    /// <summary>Ktisis' <c>ShowFriendlyBoneNames</c>. Off shows the raw
+    /// skeleton name (<c>j_f_ago</c>) wherever a bone names itself.</summary>
+    public bool ShowFriendlyBoneNames { get; set; } = true;
+
+    /// <summary>
+    /// Ktisis' <c>ShowAllVieraEars</c>. Unlike the options above this one keeps
+    /// the REFERENCE default: the filtered state is the whole point of the
+    /// feature — three of a Viera's four ear sets are never the ones the
+    /// character wears — so it ships on and the switch is the escape.
+    /// </summary>
+    public bool ShowAllVieraEars { get; set; } = false;
+}
+
+/// <summary>Which actor the overlay treats as "the active one" when
+/// <see cref="SkeletonConfiguration.DimInactiveActors"/> is on — Ktisis'
+/// <c>ActiveState</c>.</summary>
+public enum ActiveActorSource
+{
+    Target,
+    Selection,
+    Both,
+>>>>>>> 05feabf (Overlay and gizmo options gain a home: two config sections carry the reference switches, the settings page grows a Gizmo category, and every default is what the tool already did)
 }

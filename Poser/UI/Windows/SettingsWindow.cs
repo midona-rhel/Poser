@@ -106,6 +106,23 @@ public class SettingsWindow : Window
             ShowSkeletonLines = c.Skeleton.ShowSkeletonLines,
             BoneLineThickness = c.Skeleton.BoneLineThickness,
             BoneLineOpacity = c.Skeleton.BoneLineOpacity,
+            BoneLineOpacityWhileUsing = c.Skeleton.BoneLineOpacityWhileUsing,
+            SkeletonLineToCircle = c.Skeleton.SkeletonLineToCircle,
+            HideSkeletonWhileDragging = c.Skeleton.HideSkeletonWhileDragging,
+            DimInactiveActors = c.Skeleton.DimInactiveActors,
+            InactiveActorOpacity = c.Skeleton.InactiveActorOpacity,
+            ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
+            ShowFriendlyBoneNames = c.Skeleton.ShowFriendlyBoneNames,
+            ShowAllVieraEars = c.Skeleton.ShowAllVieraEars,
+
+            GizmoScale = c.Gizmo.GizmoScale,
+            AllowHoldSnap = c.Gizmo.AllowHoldSnap,
+            SnapRotationDegrees = c.Gizmo.SnapRotationDegrees,
+            SnapLinearStep = c.Gizmo.SnapLinearStep,
+            AllowRaySnap = c.Gizmo.AllowRaySnap,
+            KeepGizmoWhenBonesHidden = c.Gizmo.KeepGizmoWhenBonesHidden,
+            DisableDotsModifier = (int)c.Gizmo.DisableDotsModifier,
+            DisableGizmoModifier = (int)c.Gizmo.DisableGizmoModifier,
 
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
@@ -231,6 +248,31 @@ public class SettingsWindow : Window
         c.Skeleton.ShowSkeletonLines = _vm.ShowSkeletonLines;
         c.Skeleton.BoneLineThickness = _vm.BoneLineThickness;
         c.Skeleton.BoneLineOpacity = _vm.BoneLineOpacity;
+        c.Skeleton.BoneLineOpacityWhileUsing = _vm.BoneLineOpacityWhileUsing;
+        c.Skeleton.SkeletonLineToCircle = _vm.SkeletonLineToCircle;
+        c.Skeleton.HideSkeletonWhileDragging = _vm.HideSkeletonWhileDragging;
+        c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
+        c.Skeleton.InactiveActorOpacity =
+            Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);
+        c.Skeleton.ActiveActorSource =
+            (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
+        // The friendly-name switch is a DISPLAY rule the bone tables answer,
+        // and every entity that has already resolved its own name reads it
+        // live — so publishing it here is the whole of applying it.
+        c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
+        c.Skeleton.ShowAllVieraEars = _vm.ShowAllVieraEars;
+
+        c.Gizmo.GizmoScale = Math.Clamp(_vm.GizmoScale, 0.5f, 2f);
+        c.Gizmo.AllowHoldSnap = _vm.AllowHoldSnap;
+        c.Gizmo.SnapRotationDegrees =
+            Math.Clamp(_vm.SnapRotationDegrees, 0.5f, 45f);
+        c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
+        c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
+        c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
+        c.Gizmo.DisableDotsModifier =
+            (OverlayHoldModifier)Math.Clamp(_vm.DisableDotsModifier, 0, 2);
+        c.Gizmo.DisableGizmoModifier =
+            (OverlayHoldModifier)Math.Clamp(_vm.DisableGizmoModifier, 0, 2);
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;

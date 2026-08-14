@@ -21,6 +21,7 @@ public class PoserConfiguration : IPluginConfiguration
     public const int LatestVersion = 3;
 
     public SkeletonConfiguration Skeleton { get; set; } = new();
+    public GizmoConfiguration Gizmo { get; set; } = new();
     public DisplayConfiguration Display { get; set; } = new();
     public UIConfiguration UI { get; set; } = new();
     public IntegrationConfiguration Integration { get; set; } = new();

@@ -73,6 +73,29 @@ public sealed class SettingsViewModel
     public bool ShowSkeletonLines = true;
     public float BoneLineThickness = 1.0f;
     public float BoneLineOpacity = 0.23f;
+    public float BoneLineOpacityWhileUsing = 0.15f;
+    public bool SkeletonLineToCircle;
+    public bool HideSkeletonWhileDragging;
+
+    public bool DimInactiveActors;
+    public float InactiveActorOpacity = 0.5f;
+    /// <summary>Index into <see cref="ActiveActorLabels"/>, matching
+    /// <see cref="ActiveActorSource"/>'s declaration order.</summary>
+    public int ActiveActorSource;
+
+    public bool ShowFriendlyBoneNames = true;
+    public bool ShowAllVieraEars;
+
+    public float GizmoScale = 1.0f;
+    public bool AllowHoldSnap;
+    public float SnapRotationDegrees = 5.0f;
+    public float SnapLinearStep = 0.1f;
+    public bool AllowRaySnap;
+    public bool KeepGizmoWhenBonesHidden = true;
+    /// <summary>Indices into <see cref="HoldModifierLabels"/>, matching
+    /// <see cref="OverlayHoldModifier"/>'s declaration order.</summary>
+    public int DisableDotsModifier;
+    public int DisableGizmoModifier;
 
     public bool DetachedShell;
     public bool TreeGuides = true;
@@ -179,6 +202,7 @@ public static class SettingsView
         (TablerIcon.Sliders, "General"),
         (TablerIcon.Monitor, "Display"),
         (TablerIcon.Bone, "Skeleton"),
+        (TablerIcon.ArrowsMove, "Gizmo"),
         (TablerIcon.LayoutPanel, "UI"),
         (TablerIcon.Keyboard, "Keybinds"),
         (TablerIcon.Folder, "Library"),
@@ -372,12 +396,15 @@ public static class SettingsView
                 DrawSkeleton(vm, page);
                 break;
             case 3:
-                DrawUi(vm, page);
+                DrawGizmo(vm, page);
                 break;
             case 4:
-                DrawKeybinds(vm, page);
+                DrawUi(vm, page);
                 break;
             case 5:
+                DrawKeybinds(vm, page);
+                break;
+            case 6:
                 DrawLibrary(vm, page);
                 break;
             default:
@@ -576,7 +603,138 @@ public static class SettingsView
                 1f,
                 next => vm.BoneLineOpacity = next,
                 format: "0%");
+            form.Slider(
+                "Line opacity while dragging",
+                vm.BoneLineOpacityWhileUsing,
+                0f,
+                1f,
+                next => vm.BoneLineOpacityWhileUsing = next,
+                format: "0%",
+                help: "How visible the connectors stay while a gizmo handle is held",
+                disabled: vm.HideSkeletonWhileDragging);
+            form.Switch(
+                "Stop lines at the dot",
+                vm.SkeletonLineToCircle,
+                next => vm.SkeletonLineToCircle = next,
+                "Draw each connector to the edge of the bone circle instead of through its centre");
+            form.Switch(
+                "Hide the skeleton while dragging",
+                vm.HideSkeletonWhileDragging,
+                next => vm.HideSkeletonWhileDragging = next,
+                "Take the dots and lines away for the length of a gizmo drag");
         }, divider: false);
+        page.Section("INACTIVE ACTORS", form =>
+        {
+            form.Switch(
+                "Dim inactive actors",
+                vm.DimInactiveActors,
+                next => vm.DimInactiveActors = next,
+                "Fade every actor's overlay except the active one");
+            form.Slider(
+                "Inactive opacity",
+                vm.InactiveActorOpacity,
+                0f,
+                1f,
+                next => vm.InactiveActorOpacity = next,
+                format: "0%",
+                disabled: !vm.DimInactiveActors);
+            form.Dropdown(
+                "Active actor is",
+                ActiveActorLabels,
+                vm.ActiveActorSource,
+                next => vm.ActiveActorSource = next,
+                "Which actor counts as active: the game's GPose target, the current selection, or either",
+                disabled: !vm.DimInactiveActors);
+        });
+        page.Section("BONE NAMES", form =>
+        {
+            form.Switch(
+                "Friendly bone names",
+                vm.ShowFriendlyBoneNames,
+                next => vm.ShowFriendlyBoneNames = next,
+                "Name bones the way a person would (\"Jaw\") instead of the way the skeleton does (\"j_f_ago\")");
+            form.Switch(
+                "Show unused Viera ears",
+                vm.ShowAllVieraEars,
+                next => vm.ShowAllVieraEars = next,
+                "Keep all four Viera ear sets, not only the pair the character wears");
+        });
+    }
+
+    /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
+    /// order.</summary>
+    private static readonly string[] ActiveActorLabels =
+        ["GPose target", "Selection", "Either"];
+
+    /// <summary>Labels for <c>OverlayHoldModifier</c>, in its declaration
+    /// order.</summary>
+    private static readonly string[] HoldModifierLabels =
+        ["Off", "Ctrl", "Shift"];
+
+    private static void DrawGizmo(
+        SettingsViewModel vm,
+        Crystarium.PageScope page)
+    {
+        page.Section("SIZE", form =>
+            form.Slider(
+                "Gizmo size",
+                vm.GizmoScale,
+                0.5f,
+                2f,
+                next => vm.GizmoScale = next,
+                format: "0.00×",
+                help: "Scales the handles; they keep the same size on screen at any distance"),
+            divider: false);
+        page.Section("SNAPPING", form =>
+        {
+            form.Switch(
+                "Hold Ctrl to snap",
+                vm.AllowHoldSnap,
+                next => vm.AllowHoldSnap = next,
+                "Quantise a drag to fixed steps while Ctrl is held; add Shift for a tenth of the step");
+            form.Slider(
+                "Rotation step",
+                vm.SnapRotationDegrees,
+                0.5f,
+                45f,
+                next => vm.SnapRotationDegrees = next,
+                format: "0.0°",
+                disabled: !vm.AllowHoldSnap);
+            form.Slider(
+                "Move and scale step",
+                vm.SnapLinearStep,
+                0.01f,
+                1f,
+                next => vm.SnapLinearStep = next,
+                format: "0.00",
+                disabled: !vm.AllowHoldSnap);
+            form.Switch(
+                "Hold Shift to snap to the world",
+                vm.AllowRaySnap,
+                next => vm.AllowRaySnap = next,
+                "While moving, put the target wherever the pointer meets the scene");
+        });
+        page.Section("HOLD TO SUSPEND", form =>
+        {
+            form.Dropdown(
+                "Disable bone dots",
+                HoldModifierLabels,
+                vm.DisableDotsModifier,
+                next => vm.DisableDotsModifier = next,
+                "Hold this to make the dots and lines non-interactive, so a gizmo handle underneath them can be grabbed");
+            form.Dropdown(
+                "Disable the gizmo",
+                HoldModifierLabels,
+                vm.DisableGizmoModifier,
+                next => vm.DisableGizmoModifier = next,
+                "Hold this to let the pointer through the gizmo to the bone dot behind it");
+        });
+        page.Section("VISIBILITY", form =>
+            form.Switch(
+                "Keep the gizmo when bones are hidden",
+                vm.KeepGizmoWhenBonesHidden,
+                next => vm.KeepGizmoWhenBonesHidden = next,
+                "Off means hiding a bone from the overlay takes its gizmo with it"));
     }
 
     private static void DrawUi(

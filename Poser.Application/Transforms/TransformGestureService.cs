@@ -130,6 +130,7 @@ public sealed class TransformGestureService : IDisposable
             PivotMode.PerTarget => captured[0].Transform.Position,
             PivotMode.Primary => captured[0].Transform.Position,
             PivotMode.Custom => command.CustomPivot!.Value,
+            PivotMode.Centroid => Centroid(captured),
             _ => captured[0].Transform.Position,
         };
 
@@ -141,6 +142,31 @@ public sealed class TransformGestureService : IDisposable
             pivot,
             captured.ToArray());
         return GestureResult.Ok(id);
+    }
+
+    /// <summary>
+    /// The arithmetic mean of the captured positions — Brio's group pivot. The
+    /// sum is taken in double precision because a scene's coordinates run to
+    /// four figures and a float sum of a dozen of them loses the low bits the
+    /// pivot is made of; a single target still returns its own position
+    /// exactly, so <see cref="PivotMode.Centroid"/> degrades into
+    /// <see cref="PivotMode.Primary"/> rather than drifting off it.
+    /// </summary>
+    private static Vector3 Centroid(IReadOnlyList<TransformTargetState> captured)
+    {
+        if (captured.Count == 1)
+            return captured[0].Transform.Position;
+        double x = 0d, y = 0d, z = 0d;
+        foreach (var state in captured)
+        {
+            x += state.Transform.Position.X;
+            y += state.Transform.Position.Y;
+            z += state.Transform.Position.Z;
+        }
+        return new Vector3(
+            (float)(x / captured.Count),
+            (float)(y / captured.Count),
+            (float)(z / captured.Count));
     }
 
     public GestureResult Update(

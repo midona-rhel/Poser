@@ -21,6 +21,15 @@ public enum PivotMode
     PerTarget,
     Primary,
     Custom,
+
+    /// <summary>
+    /// The mean of every captured target's position — Brio's group pivot for a
+    /// multi-entity selection (<c>TransformHelper.ApplyDeltaToMultiple(...,
+    /// centroid, true)</c>). Rotating three actors about the middle of the
+    /// three is what "rotate the group" means; pivoting on whichever one
+    /// happens to be primary swings the other two around a corner.
+    /// </summary>
+    Centroid,
 }
 
 public enum TransformDeltaMode
