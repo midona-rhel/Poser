@@ -40,6 +40,12 @@ public sealed class CameraPane
     /// <summary>Where this pane's verb outcomes go; the page itself states
     /// standing facts only.</summary>
     private readonly UserNotices _notices;
+
+    /// <summary>The destroy-all's first press. Held on the pane rather than
+    /// on a camera: it is a statement about the scene, so which camera
+    /// happens to be selected does not change what it means.</summary>
+    private bool _destroyAllArmed;
+
     private bool _openGeneral = true;
     private bool _openCamera = true;
     private bool _openMovement = true;
@@ -593,6 +599,58 @@ public sealed class CameraPane
                     help: "Remove this camera from the scene",
                     variant: ButtonVariant.Danger);
         });
+
+        // Brio's "Destroy All… → Cameras → Confirm", armed rather than held:
+        // the first press states what is about to go, the second does it.
+        int spare = SpareCameraCount();
+        form.Actions("All cameras", actions =>
+        {
+            actions.Button(
+                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
+                () => DestroyAllCameras(spare),
+                disabled: spare == 0,
+                help: "Remove every camera except the main one",
+                variant: _destroyAllArmed
+                    ? ButtonVariant.Danger
+                    : ButtonVariant.Secondary);
+        });
+        if (_destroyAllArmed)
+            form.Status(
+                $"{spare} camera{(spare == 1 ? string.Empty : "s")} will be "
+                + "removed. The main camera stays.",
+                warning: true);
+    }
+
+    /// <summary>How many cameras a destroy-all would take. The default camera
+    /// is the GPose session's own and cannot be destroyed, so it is never
+    /// counted.</summary>
+    private int SpareCameraCount()
+    {
+        int spare = 0;
+        foreach (var candidate in _cameras.Cameras)
+            if (!candidate.IsDefault)
+                spare++;
+        return spare;
+    }
+
+    private void DestroyAllCameras(int spare)
+    {
+        if (!_destroyAllArmed)
+        {
+            _destroyAllArmed = spare > 0;
+            return;
+        }
+        _destroyAllArmed = false;
+        // Snapshotted first: the destroy mutates the service's own list, and
+        // each one goes through the lifecycle seam so the whole sweep is as
+        // undoable as a single Destroy is.
+        var doomed = new List<IVirtualCamera>();
+        foreach (var candidate in _cameras.Cameras)
+            if (!candidate.IsDefault)
+                doomed.Add(candidate);
+        foreach (var candidate in doomed)
+            _lifecycle.DestroyCamera(candidate);
+        _status = string.Empty;
     }
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)

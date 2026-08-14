@@ -51,6 +51,12 @@ public sealed class LightPane
     /// <summary>Where this pane's verb outcomes go; the page itself states
     /// standing facts only.</summary>
     private readonly UserNotices _notices;
+
+    /// <summary>The destroy-all's first press. Held on the pane rather than on
+    /// a light: it is a statement about the scene, so which light happens to
+    /// be selected does not change what it means.</summary>
+    private bool _destroyAllArmed;
+
     private bool _openGeneral = true;
     private bool _openLight = true;
     private bool _openShadows = true;
@@ -712,6 +718,44 @@ public sealed class LightPane
                     },
                     help: "Give this light back to the game and stop editing it");
         });
+
+        // Brio's "Destroy All… → Lights → Confirm", armed rather than held:
+        // the first press states what is about to go, the second does it.
+        int count = _lighting.Lights.Count;
+        form.Actions("All lights", actions =>
+        {
+            actions.Button(
+                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
+                () => DestroyAllLights(count),
+                disabled: count == 0,
+                help: "Remove every spawned light and hand every captured one back",
+                variant: _destroyAllArmed
+                    ? ButtonVariant.Danger
+                    : ButtonVariant.Secondary);
+        });
+        if (_destroyAllArmed)
+            form.Status(
+                $"{count} light{(count == 1 ? string.Empty : "s")} will go. "
+                + "Captured world lights are handed back, not destroyed.",
+                warning: true);
+    }
+
+    private void DestroyAllLights(int count)
+    {
+        if (!_destroyAllArmed)
+        {
+            _destroyAllArmed = count > 0;
+            return;
+        }
+        _destroyAllArmed = false;
+        // Snapshotted first — the sweep mutates the service's own list — and
+        // each one goes through the LIFECYCLE seam rather than the service's
+        // DestroyAllLights, which is a teardown path with no undo behind it.
+        // The seam is also what keeps a captured light a release.
+        var doomed = new List<ILight>(_lighting.Lights);
+        foreach (var light in doomed)
+            _lifecycle.DestroyLight(light);
+        _status = string.Empty;
     }
 
     /// <summary>Brio's "move to camera": the light takes the camera's world
