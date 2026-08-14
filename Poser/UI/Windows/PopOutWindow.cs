@@ -75,8 +75,15 @@ public sealed class PopOutWindow : Window
         _scene = services.GetRequiredService<SceneSession>();
         _selection = _scene.Selection;
         _gPose = services.GetRequiredService<Services.IGPoseService>();
-        _animationPane = services.GetRequiredService<AnimationPane>();
-        _appearancePane = services.GetRequiredService<AppearancePane>();
+        // This window's OWN animation/appearance panes, for the same reason
+        // as the inspector pair below: the DI singletons are the main
+        // window's live-selection instances, and sharing them would
+        // alternate each pane's subject (picker state, in-flight edits,
+        // readout throttles) between two windows every frame.
+        _animationPane = ActivatorUtilities
+            .CreateInstance<AnimationPane>(services);
+        _appearancePane = ActivatorUtilities
+            .CreateInstance<AppearancePane>(services);
         _animationCatalog = services
             .GetRequiredService<Game.Animation.AnimationCatalogLoader>();
         _animation = services
