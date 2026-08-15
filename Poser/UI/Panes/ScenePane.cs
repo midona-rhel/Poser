@@ -207,7 +207,7 @@ public sealed class ScenePane
                             disabled: busy,
                             help: busy
                                 ? "A scene operation is already running."
-                                : "Capture every actor, prop, light, camera and the environment into one file.",
+                                : "Capture every actor, object, light, camera and the environment into one file.",
                             variant: ButtonVariant.Primary);
                         actions.Button(
                             "Load scene…",
@@ -268,7 +268,7 @@ public sealed class ScenePane
         ScenePhase.Capturing => "Capturing the scene",
         ScenePhase.Writing => "Writing the file",
         ScenePhase.Reading => "Reading and validating the file",
-        ScenePhase.SpawningEntities => "Spawning actors and props",
+        ScenePhase.SpawningEntities => "Spawning actors and objects",
         ScenePhase.AwaitingActors => "Waiting for the actors to build",
         ScenePhase.ApplyingRelationships => "Attaching companions",
         ScenePhase.ApplyingPose => "Applying poses",
@@ -528,7 +528,7 @@ public sealed class ScenePane
                     "Clear the session first",
                     Options.ClearExistingScene,
                     next => Options = Options with { ClearExistingScene = next },
-                    "Destroy every actor, prop, light, camera and overlay node "
+                    "Destroy every actor, object, light, camera and overlay node "
                         + "this session holds before restoring the file. "
                         + "Undoing the load does not bring them back."),
                 new Crystarium.CheckItem(
@@ -552,7 +552,7 @@ public sealed class ScenePane
                     next => Options = Options with { IncludeActors = next },
                     "Actors, their poses, animation, companions and gaze"),
                 new Crystarium.CheckItem(
-                    "Props", Options.IncludeProps,
+                    "Objects", Options.IncludeProps,
                     next => Options = Options with { IncludeProps = next }),
                 new Crystarium.CheckItem(
                     "Lights", Options.IncludeLights,
@@ -674,7 +674,7 @@ public sealed class ScenePane
         }
 
         Line($"{metadata.ActorCount} actors", theme.FormHint, theme.Typography.CaptionSize);
-        Line($"{metadata.PropCount} props", theme.FormHint, theme.Typography.CaptionSize);
+        Line($"{metadata.PropCount} objects", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.LightCount} lights", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.CameraCount} cameras", theme.FormHint, theme.Typography.CaptionSize);
         if (metadata.SavedAt is { } saved)

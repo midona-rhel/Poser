@@ -732,7 +732,7 @@ public sealed class StableBindingRegistry
 
         return new BindingResult<PropHandle>(
             BindingStatus.Missing,
-            Detail: $"Prop {id.LogicalId:N} is not present.");
+            Detail: $"Object {id.LogicalId:N} is not present.");
     }
 
     public WorldObjectId? GetWorldObjectId(AdoptedWorldObject worldObject) =>

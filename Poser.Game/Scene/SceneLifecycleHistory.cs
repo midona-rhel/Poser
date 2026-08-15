@@ -771,7 +771,7 @@ public sealed class SceneLifecycleHistory
 
     /// <summary>Brio's default prop, for the row that names no model.</summary>
     public object? SpawnProp() =>
-        SpawnProp(new PropModel("Prop", 9001, 249, 1, string.Empty));
+        SpawnProp(new PropModel("Object", 9001, 249, 1, string.Empty));
 
     public object? SpawnProp(PropModel model)
     {
@@ -780,7 +780,7 @@ public sealed class SceneLifecycleHistory
             return null;
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
-            $"Add prop '{_props.Read(prop).Name}'",
+            $"Add object '{_props.Read(prop).Name}'",
             () => RemoveProp(slot),
             () => RestoreProp(slot)));
         return prop;
@@ -802,7 +802,7 @@ public sealed class SceneLifecycleHistory
         _props.Apply(prop, state with { Name = _props.Read(prop).Name });
         var slot = SlotFor(prop);
         _history.Append(new SceneLifecyclePatch(
-            $"Clone prop '{state.Name}'",
+            $"Clone object '{state.Name}'",
             () => RemoveProp(slot),
             () => RestoreProp(slot)));
         return prop;
@@ -810,7 +810,7 @@ public sealed class SceneLifecycleHistory
 
     public void DestroyProp(object prop)
     {
-        string description = $"Remove prop '{_props.Read(prop).Name}'";
+        string description = $"Remove object '{_props.Read(prop).Name}'";
         var slot = SlotFor(prop);
         if (!RemoveProp(slot))
             return;
@@ -838,7 +838,7 @@ public sealed class SceneLifecycleHistory
         if (!RemoveProps(slots))
             return;
         _history.Append(new SceneLifecyclePatch(
-            props.Count == 1 ? "Remove prop" : $"Remove {props.Count} props",
+            props.Count == 1 ? "Remove object" : $"Remove {props.Count} objects",
             () => RestoreProps(slots),
             () => RemoveProps(slots)));
     }

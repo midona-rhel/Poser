@@ -414,7 +414,7 @@ public sealed class SceneWorkflow : IDisposable
             }
 
             var summary =
-                $"Saved {scene.Actors.Count} actors, {scene.Props.Count} props, " +
+                $"Saved {scene.Actors.Count} actors, {scene.Props.Count} objects, " +
                 $"{scene.Lights.Count} lights and {scene.Cameras.Count} cameras to " +
                 $"{operation.FileName}.";
             if (notes.Count > 0)
@@ -554,7 +554,7 @@ public sealed class SceneWorkflow : IDisposable
             // once, as a note, so a scene that came back with fewer entities
             // than it was saved with says why rather than looking short.
             AppendSkipNote(notes, "actors", options.IncludeActors, scene.Actors.Count);
-            AppendSkipNote(notes, "props", options.IncludeProps, scene.Props.Count);
+            AppendSkipNote(notes, "objects", options.IncludeProps, scene.Props.Count);
             AppendSkipNote(notes, "lights", options.IncludeLights, scene.Lights.Count);
             AppendSkipNote(notes, "cameras", options.IncludeCameras, scene.Cameras.Count);
             AppendSkipNote(
@@ -648,12 +648,12 @@ public sealed class SceneWorkflow : IDisposable
                     if (token is null)
                     {
                         entities.Add(new SceneEntityOutcome(
-                            "Prop", prop.Name, false,
-                            detail ?? "The prop could not be spawned."));
+                            "Object", prop.Name, false,
+                            detail ?? "The object could not be spawned."));
                         continue;
                     }
                     operation.SpawnedProps.Add(token);
-                    entities.Add(new SceneEntityOutcome("Prop", prop.Name, true));
+                    entities.Add(new SceneEntityOutcome("Object", prop.Name, true));
                 }
 
                 // An overlay node that will not stage is a NAMED refusal, not
@@ -1099,7 +1099,7 @@ public sealed class SceneWorkflow : IDisposable
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
                     ? $"Loaded {operation.FileName}: {actors.Count} actors, " +
-                      $"{props.Count} props, {lights.Count} lights, " +
+                      $"{props.Count} objects, {lights.Count} lights, " +
                       $"{cameras.Count} cameras."
                     : $"Loaded {operation.FileName} partially: " +
                       $"{failures.Count} of {total} entities could not be restored " +
@@ -1363,7 +1363,7 @@ public sealed class SceneWorkflow : IDisposable
         RollbackList(operation.StagedOverlays, _runtime.DestroyOverlay,
             "overlay", failures);
         RollbackList(operation.SpawnedProps, _runtime.DestroyProp,
-            "prop", failures);
+            "object", failures);
         RollbackList(operation.SpawnedActors, _runtime.DestroyActor,
             "actor", failures);
 

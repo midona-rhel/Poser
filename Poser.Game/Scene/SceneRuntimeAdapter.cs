@@ -588,7 +588,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             data.Name, data.Model, data.Submodel, data.Variant, string.Empty));
         if (handle is null)
         {
-            detail = "The prop spawn failed.";
+            detail = "The object spawn failed.";
             return null;
         }
         handle.Transform = data.Transform;

@@ -804,7 +804,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
             "##shell-spawn",
-            help: "Add an actor or prop to the scene");
+            help: "Add an actor or object to the scene");
         if (_spawnPressed)
         {
             _spawnPressed = false;
@@ -1497,7 +1497,7 @@ public static class AppShellView
             IconAt(
                 new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
                 "##shell-spawn",
-                help: "Add an actor or prop to the scene");
+                help: "Add an actor or object to the scene");
             if (_spawnPressed)
             {
                 _spawnPressed = false;

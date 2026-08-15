@@ -147,7 +147,7 @@ public readonly record struct SceneClearOutcome(
                 parts.Add($"{count} {(count == 1 ? singular : plural)}");
         }
         Part(Actors, "actor", "actors");
-        Part(Props, "prop", "props");
+        Part(Props, "object", "objects");
         Part(Overlays, "overlay", "overlays");
         Part(Lights, "light", "lights");
         Part(Cameras, "camera", "cameras");

@@ -581,7 +581,7 @@ public static class SettingsView
                 "Auto-save whole scenes",
                 vm.SceneSnapshotsEnabled,
                 next => vm.SceneSnapshotsEnabled = next,
-                "Also snapshot the entire scene — actors, props, lights, cameras and the environment — on the same interval, into its own folder",
+                "Also snapshot the entire scene — actors, objects, lights, cameras and the environment — on the same interval, into its own folder",
                 disabled: !vm.AutoSaveEnabled);
             form.TextInput(
                 "Kept scene snapshots",
@@ -609,7 +609,7 @@ public static class SettingsView
                 0.05f,
                 next => vm.TransformEntitySpeed = next,
                 format: "0.0000",
-                help: "How far one pixel of drag moves an actor, prop, light or camera");
+                help: "How far one pixel of drag moves an actor, object, light or camera");
             form.Slider(
                 "Bone drag speed",
                 vm.TransformBoneSpeed,

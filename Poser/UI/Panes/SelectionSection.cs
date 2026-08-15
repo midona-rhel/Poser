@@ -207,7 +207,7 @@ public sealed class SelectionSection
 
         public string Noun =>
             Actors.Count > 0 ? "actors"
-            : Props.Count > 0 ? "props"
+            : Props.Count > 0 ? "objects"
             : Lights.Count > 0 ? "lights"
             : Cameras.Count > 0 ? "cameras"
             : Overlays.Count > 0 ? "overlay nodes"

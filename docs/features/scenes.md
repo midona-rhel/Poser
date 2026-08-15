@@ -1,8 +1,8 @@
 # Scenes
 
-`.poserscene` saves and restores an entire scene — actors, props, lights,
-cameras, overlay text nodes, the map objects the session borrowed, the
-environment, and the relationships between them. Per-entity file
+`.poserscene` saves and restores an entire scene — actors, objects (spawned
+and borrowed alike), lights, cameras, overlay text nodes, the environment, and
+the relationships between them. Per-entity file
 formats, the atomic-write discipline they share, and per-actor pose auto-save
 are defined once in [files-and-transfer.md](files-and-transfer.md); this file
 states only what is durable about the WHOLE-SCENE layer.
@@ -138,7 +138,7 @@ states only what is durable about the WHOLE-SCENE layer.
   Phases then run in this order, each re-guarded against cancellation and
   session replacement before it mutates anything:
 
-  spawn/admit actors and props → readiness barrier → character files →
+  spawn/admit actors and objects → readiness barrier → character files →
   readiness barrier again → relationships → companion-body barrier →
   animation → pose and transforms (owner, then companion) → presentation and
   gaze → cameras → lights → overlay nodes → borrowed map objects →

@@ -684,12 +684,12 @@ public sealed class SceneSession
         foreach (var prop in snapshot.Props)
         {
             if (prop is null)
-                return Fail("Scene contains a null prop descriptor.", out validationError);
+                return Fail("Scene contains a null object descriptor.", out validationError);
             if (!IsValidPropId(prop.Id))
-                return Fail($"Prop id {prop.Id} is invalid.", out validationError);
+                return Fail($"Object id {prop.Id} is invalid.", out validationError);
             if (!lineages.Add(prop.Id.LogicalId) || !props.TryAdd(prop.Id, prop))
                 return Fail(
-                    $"Scene contains duplicate prop {prop.Id.LogicalId:N}.",
+                    $"Scene contains duplicate object {prop.Id.LogicalId:N}.",
                     out validationError);
         }
 
@@ -852,7 +852,7 @@ public sealed class SceneSession
                 snapshot.Props,
                 _propGenerationFloors,
                 static prop => (prop.Id.LogicalId, prop.Id.Generation),
-                "prop",
+                "object",
                 out validationError))
             return false;
         if (!TryValidateObjectGenerationFloors(

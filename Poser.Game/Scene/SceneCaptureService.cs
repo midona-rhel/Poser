@@ -558,20 +558,20 @@ public sealed class SceneCaptureService
         {
             if (!prop.IsValid)
             {
-                notes.Add($"Prop '{prop.Name}' is no longer valid and was not captured.");
+                notes.Add($"Object '{prop.Name}' is no longer valid and was not captured.");
                 continue;
             }
 
             scene.Props.Add(new SceneProp
             {
                 Key = _bindings.GetPropId(prop)?.LogicalId ?? Guid.NewGuid(),
-                Name = Bounded(prop.Name, "Prop"),
+                Name = Bounded(prop.Name, "Object"),
                 Model = prop.Model.Model,
                 Submodel = prop.Model.Submodel,
                 Variant = prop.Model.Variant,
                 Visible = prop.Visible,
                 Transform = NormalizedTransform(
-                    prop.Transform, $"Prop '{prop.Name}'", notes),
+                    prop.Transform, $"Object '{prop.Name}'", notes),
             });
         }
     }

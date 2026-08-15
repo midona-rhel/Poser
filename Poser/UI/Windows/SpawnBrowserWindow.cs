@@ -348,7 +348,7 @@ public sealed class SpawnBrowserWindow : Window
             TablerIcon.Paw));
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Stack2));
-        rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Diamond));
+        rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -458,7 +458,7 @@ public sealed class SpawnBrowserWindow : Window
                 models[i].Name.ToLowerInvariant(),
                 TablerIcon.Diamond,
                 0u,
-                "Prop",
+                "Object",
                 false));
             _rowTabs.Add(SpawnBrowserTab.Props);
         }

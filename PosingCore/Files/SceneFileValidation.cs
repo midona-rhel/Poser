@@ -100,7 +100,7 @@ public static class SceneFileValidation
                 $"The scene contains {scene.Actors.Count} actors (limit {SceneFileLimits.MaxActors}).");
         if (scene.Props.Count > SceneFileLimits.MaxProps)
             return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene contains {scene.Props.Count} props (limit {SceneFileLimits.MaxProps}).");
+                $"The scene contains {scene.Props.Count} objects (limit {SceneFileLimits.MaxProps}).");
         if (scene.Lights.Count > SceneFileLimits.MaxLights)
             return Fail(SceneFileValidationFailureKind.CollectionSize,
                 $"The scene contains {scene.Lights.Count} lights (limit {SceneFileLimits.MaxLights}).");
@@ -440,16 +440,16 @@ public static class SceneFileValidation
     {
         if (prop is null)
             return Fail(SceneFileValidationFailureKind.Document,
-                "The scene contains a null prop entry.");
+                "The scene contains a null object entry.");
         if (prop.Key == Guid.Empty)
             return Fail(SceneFileValidationFailureKind.Identity,
-                $"Prop '{prop.Name}' has no key.");
+                $"Object '{prop.Name}' has no key.");
         if (!keys.Add(prop.Key))
             return Fail(SceneFileValidationFailureKind.Identity,
-                $"The scene contains duplicate prop key {prop.Key:N}.");
-        if (!ValidateRequiredName(prop.Name, $"Prop {prop.Key:N}", out var nameFailure))
+                $"The scene contains duplicate object key {prop.Key:N}.");
+        if (!ValidateRequiredName(prop.Name, $"Object {prop.Key:N}", out var nameFailure))
             return nameFailure;
-        if (ValidateTransform(prop.Transform, $"Prop '{prop.Name}'") is { } failure)
+        if (ValidateTransform(prop.Transform, $"Object '{prop.Name}'") is { } failure)
             return failure;
         return null;
     }

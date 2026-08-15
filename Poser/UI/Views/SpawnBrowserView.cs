@@ -166,7 +166,7 @@ public static class SpawnBrowserView
         "Actors",
         "Lights",
         "Cameras",
-        "Props",
+        "Objects",
         "Overlays",
     ];
 

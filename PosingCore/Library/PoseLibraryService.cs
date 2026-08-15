@@ -535,7 +535,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         if (metadata.ActorCount > 0)
             parts.Add($"{metadata.ActorCount} actor{(metadata.ActorCount == 1 ? "" : "s")}");
         if (metadata.PropCount > 0)
-            parts.Add($"{metadata.PropCount} prop{(metadata.PropCount == 1 ? "" : "s")}");
+            parts.Add($"{metadata.PropCount} object{(metadata.PropCount == 1 ? "" : "s")}");
         if (metadata.LightCount > 0)
             parts.Add($"{metadata.LightCount} light{(metadata.LightCount == 1 ? "" : "s")}");
         if (metadata.CameraCount > 0)

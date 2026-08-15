@@ -255,7 +255,7 @@ public sealed unsafe class PropSpawnService : IDisposable
     /// <summary>The default prop — Brio's apple — for callers with no model
     /// in hand.</summary>
     public PropHandle? SpawnProp() =>
-        SpawnProp(new PropModel("Prop", 9001, 249, 1, string.Empty));
+        SpawnProp(new PropModel("Object", 9001, 249, 1, string.Empty));
 
     public PropHandle? SpawnProp(PropModel model)
     {
@@ -311,8 +311,8 @@ public sealed unsafe class PropSpawnService : IDisposable
             var handle = new PropHandle(
                 this,
                 id,
-                model.Name == "Prop"
-                    ? "Prop " + id.ToString(CultureInfo.InvariantCulture)
+                model.Name == "Object"
+                    ? "Object " + id.ToString(CultureInfo.InvariantCulture)
                     : model.Name,
                 (nint)weapon,
                 model);

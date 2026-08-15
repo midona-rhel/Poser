@@ -51,14 +51,14 @@ public sealed class PropsPane
         {
             if (SelectedProp() is not { } prop)
             {
-                page.EmptyState("Select a prop in the sidebar.");
+                page.EmptyState("Select an object in the sidebar.");
                 return;
             }
 
             // Transform lives on the inspector rail, exactly as a light's
             // does; this pane owns only what the rail cannot say.
             page.Section(
-                "PROP",
+                "OBJECT",
                 _openProp,
                 next => _openProp = next,
                 form => PropRows(form, prop),
@@ -78,7 +78,7 @@ public sealed class PropsPane
             "Visible",
             prop.Visible,
             next => prop.Visible = next,
-            help: "Hide this prop without destroying it");
+            help: "Hide this object without destroying it");
         form.Actions("Lifetime", actions =>
         {
             actions.Button(
@@ -89,7 +89,7 @@ public sealed class PropsPane
                     _scene.Selection.Clear();
                 },
                 variant: ButtonVariant.Danger,
-                help: "Destroy this prop");
+                help: "Destroy this object");
             actions.Button(
                 "Remove all",
                 () => _pending = () =>
@@ -98,10 +98,11 @@ public sealed class PropsPane
                     _scene.Selection.Clear();
                 },
                 variant: ButtonVariant.Danger,
-                help: "Destroy every prop spawned this session");
+                help: "Destroy every object spawned this session");
         });
         form.Status(
-            "Props last for this GPose session and are destroyed when it ends.");
+            "Objects spawned here last for this GPose session and are destroyed "
+            + "when it ends.");
     }
 
     // ── state ────────────────────────────────────────────────────────────

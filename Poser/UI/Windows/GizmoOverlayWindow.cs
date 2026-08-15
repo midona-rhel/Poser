@@ -1396,7 +1396,7 @@ public class GizmoOverlayWindow : Window
                 GizmoTargetType.Light =>
                     $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.Prop =>
-                    $"Transform {targets.Count} prop{(targets.Count == 1 ? "" : "s")}",
+                    $"Transform {targets.Count} object{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.WorldObject =>
                     $"Transform {targets.Count} world object{(targets.Count == 1 ? "" : "s")}",
                 _ =>

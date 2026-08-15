@@ -2610,9 +2610,9 @@ public class PoseInspectorPane
             foreach (var prop in _scene.Snapshot.Props)
             {
                 if (prop.Id.Equals(primaryProp))
-                    return (prop.Name, prop.Visible ? "prop" : "prop · hidden", 0);
+                    return (prop.Name, prop.Visible ? "object" : "object · hidden", 0);
             }
-            return ("Prop", "prop", 0);
+            return ("Object", "object", 0);
         }
         // A borrowed map object names itself for the same reason a prop does,
         // and its subtitle says WHOSE it is: the rail's rows move the map's own
@@ -2885,7 +2885,7 @@ public class PoseInspectorPane
                 {
                     TransformTargetKind.Actor => "actor",
                     TransformTargetKind.Light => "light",
-                    TransformTargetKind.Prop => "prop",
+                    TransformTargetKind.Prop => "object",
                     TransformTargetKind.WorldObject => "world object",
                     _ => "bone",
                 }}{(targets.Count == 1 ? "" : "s")}",

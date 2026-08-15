@@ -345,7 +345,7 @@ public sealed class SceneAutoSaveService : IDisposable
             Prune(Math.Max(1, Settings.MaxSceneSnapshots));
             Publish(new SceneAutoSaveResult(
                 SceneAutoSaveStatus.Written,
-                $"Snapshotted {scene.Actors.Count} actors, {scene.Props.Count} props, " +
+                $"Snapshotted {scene.Actors.Count} actors, {scene.Props.Count} objects, " +
                 $"{scene.Lights.Count} lights and {scene.Cameras.Count} cameras.",
                 path));
         }

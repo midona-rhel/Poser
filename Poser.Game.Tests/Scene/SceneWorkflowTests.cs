@@ -1718,7 +1718,7 @@ public sealed class SceneWorkflowTests
         // What the file HAS and this load left alone is said once, per
         // category, rather than left to look like a short scene.
         var notes = workflow.Progress!.Outcome!.Notes;
-        Assert.Contains(notes, note => note.Contains("1 props were not loaded"));
+        Assert.Contains(notes, note => note.Contains("1 objects were not loaded"));
         Assert.Contains(notes, note => note.Contains("1 lights were not loaded"));
         Assert.Contains(notes, note => note.Contains("1 overlays were not loaded"));
         Assert.Contains(

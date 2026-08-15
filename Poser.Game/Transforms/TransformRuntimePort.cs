@@ -254,7 +254,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
         if (converted == null)
             return TransformPortResult.Fail(
                 TransformPortStatus.InvalidTransform,
-                $"Prop {propId} returned an invalid transform.");
+                $"Object {propId} returned an invalid transform.");
         return TransformPortResult.Ok(new TransformTargetState(
             target,
             converted.Value,

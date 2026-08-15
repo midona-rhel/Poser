@@ -356,7 +356,7 @@ public sealed class SceneLifecycleHistoryTests
         var prop = world.Lifecycle.SpawnProp(Apple);
 
         Assert.NotNull(prop);
-        Assert.Equal("Add prop 'Apple'", world.History.UndoDescription);
+        Assert.Equal("Add object 'Apple'", world.History.UndoDescription);
         Assert.Single(world.Props.Live);
 
         Assert.True(world.Undo());
@@ -394,7 +394,7 @@ public sealed class SceneLifecycleHistoryTests
         world.Lifecycle.DestroyProp(prop);
 
         Assert.Empty(world.Props.Live);
-        Assert.Equal("Remove prop 'Apple'", world.History.UndoDescription);
+        Assert.Equal("Remove object 'Apple'", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Single(world.Props.Live);
     }
@@ -454,11 +454,11 @@ public sealed class SceneLifecycleHistoryTests
         world.Lifecycle.DestroyAllProps();
 
         Assert.Empty(world.Props.Live);
-        Assert.Equal("Remove 2 props", world.History.UndoDescription);
+        Assert.Equal("Remove 2 objects", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Equal(2, world.Props.Live.Count);
         // And the two adds are still there behind it.
-        Assert.Equal("Add prop 'Lamp'", world.History.UndoDescription);
+        Assert.Equal("Add object 'Lamp'", world.History.UndoDescription);
     }
 
     [Fact]
@@ -481,7 +481,7 @@ public sealed class SceneLifecycleHistoryTests
         // A spawn names itself; only the undo of a REMOVAL puts a user's own
         // name back.
         Assert.Equal("Apple", state.Name);
-        Assert.Equal("Clone prop 'Fruit'", world.History.UndoDescription);
+        Assert.Equal("Clone object 'Fruit'", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Single(world.Props.Live);
     }
@@ -663,7 +663,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.True(world.Undo());
         Assert.Equal(2, world.Props.Live.Count);
         // And the two adds are still there behind the one group entry.
-        Assert.Equal("Add prop 'Lamp'", world.History.UndoDescription);
+        Assert.Equal("Add object 'Lamp'", world.History.UndoDescription);
     }
 
     [Fact]

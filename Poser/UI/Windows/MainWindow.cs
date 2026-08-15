@@ -209,13 +209,23 @@ public class MainWindow : Window
         ShowPlus = true,
     };
 
-    /// <summary>The props section, retained like ACTORS: flat rows, one per
-    /// spawned prop, rebuilt behind the same gate (the scene revision carries
-    /// a prop's spawn, destroy and visibility) and flag-refreshed on warm
-    /// frames.</summary>
+    /// <summary>
+    /// The objects section, retained like ACTORS: flat rows, one per object
+    /// the scene holds, rebuilt behind the same gate (the scene revision
+    /// carries an object's spawn, destroy and visibility) and flag-refreshed
+    /// on warm frames.
+    ///
+    /// <para>It holds BOTH kinds the word covers — the ones the scene spawned
+    /// and the ones it borrowed from the map. They were two sections and are
+    /// one, because "which service made it" is not a fact the user sorts by:
+    /// a table is a table whether Poser stood it there or the map did. What
+    /// separates them is stated PER ROW instead, the way a light's ownership
+    /// is — a borrowed row wears its own mark and its verb is release, not
+    /// destroy.</para>
+    /// </summary>
     private readonly ShellSidebarSection _propsSection = new()
     {
-        Title = "PROPS",
+        Title = "OBJECTS",
         ShowPlus = true,
     };
 
@@ -246,18 +256,6 @@ public class MainWindow : Window
     private readonly ShellSidebarSection _camerasSection = new()
     {
         Title = "CAMERAS",
-    };
-
-    /// <summary>
-    /// The map's own objects the scene has BORROWED. It closes the scene's
-    /// list because it is the one section whose entities the scene does not
-    /// own: every row here is a claim on something the map placed, and the
-    /// only act on it is giving it back. There is no plus — nothing here is
-    /// created; a row arrives by clicking a handle in the world.
-    /// </summary>
-    private readonly ShellSidebarSection _worldObjectsSection = new()
-    {
-        Title = "WORLD OBJECTS",
     };
 
     /// <summary>
@@ -392,11 +390,13 @@ public class MainWindow : Window
         new() { Label = "Appearance" },
     ];
 
-    /// <summary>A prop's strip, the camera strip's sibling: while a prop is
-    /// selected the one tab IS the prop editor.</summary>
+    /// <summary>A spawned object's strip, the camera strip's sibling: while
+    /// one is selected the single tab IS its editor. It shares the label with
+    /// the borrowed object's strip below — one word for one thing — and the
+    /// selection decides which pane the label opens.</summary>
     private readonly ShellTab[] _propTabs =
     [
-        new() { Label = "Prop" },
+        new() { Label = "Object" },
     ];
 
     /// <summary>The environment's own tab strip: selecting the environment
@@ -465,14 +465,14 @@ public class MainWindow : Window
     private const int EnvironmentSectionIndex = 2;
 
     /// <summary>The sections are stated in a fixed order — library, scene,
-    /// environment, actors, props, lights, cameras, world — so the actors
+    /// environment, actors, objects, lights, cameras, overlays — so the actors
     /// section is index 3. Its header and the lights header are the only two
     /// whose plus creates anything; neither the scene nor the environment is
     /// ever created or destroyed.</summary>
     private const int ActorsSectionIndex = 3;
 
-    /// <summary>Props stand between the actors and the lights: scene
-    /// furniture, owned by nobody.</summary>
+    /// <summary>Objects stand between the actors and the lights: scene
+    /// furniture, spawned or borrowed.</summary>
     private const int PropsSectionIndex = 4;
 
     /// <summary>Lights stand under the actors they light.</summary>
@@ -486,11 +486,6 @@ public class MainWindow : Window
     /// that lives on the SCREEN rather than in the scene, so they sit outside
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
-
-    /// <summary>The borrowed map objects close the scene's list: the one
-    /// section whose entities belong to the world rather than to the scene.
-    /// </summary>
-    private const int WorldObjectsSectionIndex = 8;
 
     // The shell has no overlay controls at all any more (user 2026-08-14):
     // the armature's shape and the selected-bones-only filter are settings
@@ -1551,18 +1546,13 @@ public class MainWindow : Window
         _vm.Sections.Add(_camerasSection);
         // Overlays close the scene's list: they are the one entity that lives
         // on the screen rather than in the world the cameras above them look
-        // at. The world stands under everything — it is where the next of the
-        // scene comes from.
+        // at.
         _vm.Sections.Add(_overlaysSection);
-        // The borrowed map objects close the scene's own list: everything
-        // above is the scene's, and everything here is the world's.
-        _vm.Sections.Add(_worldObjectsSection);
         _actorsSection.Rows.Clear();
         _propsSection.Rows.Clear();
         _lightsSection.Rows.Clear();
         _camerasSection.Rows.Clear();
         _overlaysSection.Rows.Clear();
-        _worldObjectsSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
@@ -1580,8 +1570,10 @@ public class MainWindow : Window
                 0, RootTreeLines, true);
         }
 
-        // Props are flat like lights: one row per spawned prop, the header's
-        // plus makes another, and the eye seat toggles draw visibility.
+        // Objects are flat like lights: one row per object, the header's plus
+        // makes another, and the eye seat toggles draw visibility. The scene's
+        // OWN objects list first — the plus above the section makes those, so
+        // what it makes is what the section opens with.
         foreach (var prop in _scene.Snapshot.Props)
         {
             if (filtering && !MatchesSidebarFilter(filter, prop.Name))
@@ -1594,6 +1586,30 @@ public class MainWindow : Window
                 Tag = SelectionId.ForProp(prop.Id),
                 LightActions = true,
                 LightOn = prop.Visible,
+            });
+        }
+
+        // The BORROWED objects follow them in the same section. They wear a
+        // different mark for the same reason a borrowed light does: the row
+        // has to say the object belongs to the map — and that its verb is
+        // release, not destroy — before it is ever selected.
+        foreach (var worldObject in _scene.Snapshot.WorldObjects)
+        {
+            if (filtering && !MatchesSidebarFilter(filter, worldObject.Name))
+                continue;
+            _propsSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = worldObject.Name,
+                Count = "",
+                // The square is the handle this row arrived through: Ktisis
+                // draws a BG object's node as a 4-gon and an actor's as a
+                // 5-gon (SceneDraw.cs:207, :251), and Poser's overlay follows.
+                // A row whose mark is the shape the user clicked is a row they
+                // can find without reading it.
+                Icon = TablerIcon.Square,
+                Tag = SelectionId.ForWorldObject(worldObject.Id),
+                LightActions = true,
+                LightOn = worldObject.Visible,
             });
         }
 
@@ -1650,29 +1666,6 @@ public class MainWindow : Window
         // carries no SelectionId, joins no journal, and its Tag is the session
         // instance itself, which is what every verb below dispatches on.
         AppendReferenceImageRows(filter, filtering);
-
-        // Borrowed map objects are flat like props: one row per claim, and the
-        // eye seat toggles whether the object is drawn. There is no plus —
-        // the only way one arrives is a click on its handle in the world.
-        foreach (var worldObject in _scene.Snapshot.WorldObjects)
-        {
-            if (filtering && !MatchesSidebarFilter(filter, worldObject.Name))
-                continue;
-            _worldObjectsSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = worldObject.Name,
-                Count = "",
-                // The square is the handle this row arrived through: Ktisis
-                // draws a BG object's node as a 4-gon and an actor's as a
-                // 5-gon (SceneDraw.cs:207, :251), and Poser's overlay follows.
-                // A row whose mark is the shape the user clicked is a row they
-                // can find without reading it.
-                Icon = TablerIcon.Square,
-                Tag = SelectionId.ForWorldObject(worldObject.Id),
-                LightActions = true,
-                LightOn = worldObject.Visible,
-            });
-        }
 
         // Cameras are flat like lights: one row per camera, the header's plus
         // makes another, and the row's one action makes it the live camera.
@@ -1875,10 +1868,16 @@ public class MainWindow : Window
             propRow.Active = _selection.IsSelected(propSelection);
             // The eye reads the LIVE handle: visibility moves the scene
             // signature, and waiting for the republish would leave the glyph
-            // behind the click that flipped it.
+            // behind the click that flipped it. The section holds both kinds
+            // of object, so both are read here — a borrowed row that was never
+            // refreshed kept whatever the last rebuild said.
             if (propSelection.Prop is { } propId &&
                 _bindings.Resolve(propId) is { Success: true, Value: { } prop })
                 propRow.LightOn = prop.Visible;
+            else if (propSelection.WorldObject is { } borrowedId &&
+                _bindings.Resolve(borrowedId) is
+                    { Success: true, Value: { } borrowed })
+                propRow.LightOn = borrowed.Visible;
         }
 
         var lightRows = _lightsSection.Rows;
@@ -2948,7 +2947,7 @@ public class MainWindow : Window
         // page missing from this list, so the shell was insetting it a second
         // time on top of the Page's own.
         _vm.ContentUsesPage =
-            tab is "Animation" or "Appearance" or "Prop" or "Object" or "Light"
+            tab is "Animation" or "Appearance" or "Object" or "Light"
                 or "Shadows"
                 or "Camera"
                 or "Scene"
@@ -3079,29 +3078,23 @@ public class MainWindow : Window
             return;
         }
 
-        // The prop tab stands only while a prop is selected — the label is
-        // unique across every strip, so it is the whole dispatch, exactly
-        // like the camera's.
-        if (_activeTab == "Prop")
-        {
-            _propsPane.Draw(origin, size);
-            return;
-        }
-
         // The overlay tab stands only while an overlay is selected — the label
-        // is unique across every strip, so it is the whole dispatch, exactly
-        // like the prop's.
+        // is unique across every strip, so it is the whole dispatch.
         if (_activeTab == "Overlay")
         {
             _overlayPane.Draw(origin, size);
             return;
         }
 
-        // A borrowed map object's tab, the prop tab's sibling: one unique
-        // label, one pane.
+        // Both kinds of object name the same tab, because the user has one
+        // word for them. WHICH pane it opens is the SELECTION's answer, never
+        // the label's — the same rule "Light" already lives under.
         if (_activeTab == "Object")
         {
-            _worldObjectsPane.Draw(origin, size);
+            if (_selection.Primary is { Kind: SceneEntityKind.WorldObject })
+                _worldObjectsPane.Draw(origin, size);
+            else
+                _propsPane.Draw(origin, size);
             return;
         }
 
@@ -3990,7 +3983,7 @@ public class MainWindow : Window
         {
             () => prop.Visible = !prop.Visible,
             () => OpenEntityRename(
-                "Rename prop", prop.Name, next => prop.Name = next),
+                "Rename object", prop.Name, next => prop.Name = next),
             () =>
             {
                 if (_lifecycle.CloneProp(prop) is Game.PropHandle clone &&
