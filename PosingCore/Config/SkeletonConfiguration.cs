@@ -112,23 +112,36 @@ public class SkeletonConfiguration
 }
 
 /// <summary>
-/// How the pick list behaves when several bone dots overlap under the cursor.
-/// The two references disagree about ONE thing — whether the wheel moves a
-/// highlight or moves the selection itself — and both hands are in the user
-/// base, so the surface is shared and only that rule differs.
+/// How picking works when several bone dots overlap under the cursor.
+///
+/// <para>The two references AGREE on the surface a cluster raises and on when
+/// it comes and goes: a list of every candidate at the cursor, up on the first
+/// hovered dot with no overlap threshold and no delay, following the pointer,
+/// taking no input of its own, and gone the frame the pointer leaves. Both
+/// hands are in the user base for what happens NEXT, which is where they
+/// part — so the surface is shared and only the picking differs.</para>
 /// </summary>
 public enum BonePickBehavior
 {
-    /// <summary>Ktisis (<c>Ktisis/Interface/Overlay/SelectableGui.cs:125-158</c>):
-    /// the wheel moves the HIGHLIGHT and nothing else; the click commits it.
-    /// What Poser has always done, and therefore the default.</summary>
+    /// <summary>
+    /// Ktisis (<c>Ktisis/Interface/Overlay/SelectableGui.cs:101-158</c>): the
+    /// list is the whole mechanism. The wheel moves a HIGHLIGHT through it and
+    /// costs nothing; a click on the dots commits whatever the highlight is
+    /// on. The highlight is carried between clusters rather than reset, and
+    /// there is no second surface. Poser's default.
+    /// </summary>
     Ktisis,
 
-    /// <summary>Brio
-    /// (<c>Brio/UI/Windows/Specialized/PosingOverlayWindow.cs:428-448</c>):
-    /// every wheel notch SELECTS the bone it lands on, so the scene selection
-    /// walks the stack as the wheel turns and a click merely stops on the one
-    /// already selected.</summary>
+    /// <summary>
+    /// Brio (<c>Brio/UI/Windows/Specialized/PosingOverlayWindow.cs:346-450</c>):
+    /// the list is a passive readout marking whatever is SELECTED, and picking
+    /// happens through a second surface. A click or a wheel notch over a
+    /// cluster selects the nearest candidate outright and opens an anchored
+    /// pick popup; inside it the wheel walks the selection one entry per notch
+    /// and a row click stops on one. The popup outlives the hover that opened
+    /// it, takes the dots out of play while it is up, and closes on Escape, a
+    /// press outside it, or a picked row.
+    /// </summary>
     Brio,
 }
 

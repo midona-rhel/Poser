@@ -775,9 +775,10 @@ public static class SettingsView
                 BonePickBehaviorLabels,
                 vm.BonePickBehavior,
                 next => vm.BonePickBehavior = next,
-                "What the wheel does over a stack of overlapping bones: "
-                    + "Ktisis moves the highlight and the click picks it, "
-                    + "Brio selects each bone as the wheel reaches it");
+                "How a stack of overlapping bones is picked apart: Ktisis "
+                    + "wheels a highlight through the list and the click takes "
+                    + "it, Brio opens a pick menu the wheel walks the "
+                    + "selection through");
         }, divider: false);
         page.Section("SKELETON LINES", form =>
         {

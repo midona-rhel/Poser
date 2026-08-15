@@ -2,6 +2,7 @@ extern alias ProductionPoser;
 
 using System.Numerics;
 using Poser.Application.Transforms;
+using Poser.Config;
 using Poser.ContractTests.Fixtures;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
@@ -105,6 +106,137 @@ public sealed class OverlayGizmoContractTests
     public void An_empty_hover_list_has_no_index_to_step()
     {
         Assert.Equal(0, SkeletonOverlayWindow.CycleHoverIndex(3, 0, 1f));
+    }
+
+    [Fact]
+    public void A_highlight_carried_into_a_smaller_cluster_is_pulled_into_range()
+    {
+        // Ktisis never resets ScrollIndex when the cluster changes; the step
+        // runs every frame, notch or not, and THAT is what corrects an index
+        // the previous cluster left behind (SelectableGui.cs:137-141). Its
+        // single test per side lands on the top, not on the last entry.
+        Assert.Equal(0, SkeletonOverlayWindow.CycleHoverIndex(5, 2, 0f));
+    }
+
+    [Fact]
+    public void An_in_range_highlight_survives_a_frame_with_no_notch()
+    {
+        Assert.Equal(2, SkeletonOverlayWindow.CycleHoverIndex(2, 4, 0f));
+    }
+
+    // ── Brio's popup wheel (PosingOverlayWindow.DrawPopup:428-449) ───────
+
+    [Fact]
+    public void Brios_notch_moves_one_entry_however_hard_the_wheel_is_turned()
+    {
+        // Brio steps by ++/-- and ignores the magnitude entirely, where Ktisis
+        // subtracts the whole notch. A burst of five is still one entry.
+        Assert.Equal(2, SkeletonOverlayWindow.BrioPickStep(1, 4, -5f));
+        Assert.Equal(0, SkeletonOverlayWindow.BrioPickStep(1, 4, 5f));
+    }
+
+    [Fact]
+    public void Brios_wheel_walks_the_same_direction_as_ktisis()
+    {
+        // Pushed away (positive) walks toward the front in both references.
+        Assert.Equal(1, SkeletonOverlayWindow.BrioPickStep(2, 4, 1f));
+        Assert.Equal(3, SkeletonOverlayWindow.BrioPickStep(2, 4, -1f));
+    }
+
+    [Fact]
+    public void Brios_wheel_wraps_at_both_ends()
+    {
+        Assert.Equal(0, SkeletonOverlayWindow.BrioPickStep(3, 4, -1f));
+        Assert.Equal(3, SkeletonOverlayWindow.BrioPickStep(0, 4, 1f));
+    }
+
+    [Fact]
+    public void With_nothing_selected_the_wheel_enters_from_whichever_end()
+    {
+        // Brio's selectedIndex stays -1 when no candidate is selected, so a
+        // notch down lands on the first entry and a notch up on the last.
+        Assert.Equal(0, SkeletonOverlayWindow.BrioPickStep(-1, 4, -1f));
+        Assert.Equal(3, SkeletonOverlayWindow.BrioPickStep(-1, 4, 1f));
+    }
+
+    [Fact]
+    public void A_frame_without_a_notch_leaves_brios_selection_alone()
+    {
+        Assert.Equal(2, SkeletonOverlayWindow.BrioPickStep(2, 4, 0f));
+        Assert.Equal(-1, SkeletonOverlayWindow.BrioPickStep(-1, 4, 0f));
+    }
+
+    [Fact]
+    public void An_empty_brio_popup_has_nothing_to_land_on()
+    {
+        Assert.Equal(-1, SkeletonOverlayWindow.BrioPickStep(0, 0, -1f));
+    }
+
+    // ── the pick surfaces' spawn and dismissal ───────────────────────────
+
+    [Fact]
+    public void One_candidate_raises_the_preview_and_none_takes_it_away()
+    {
+        // Neither reference has an overlap threshold or a hover delay: the
+        // predicate is an empty test and nothing else.
+        Assert.True(SkeletonOverlayWindow.PreviewVisible(1, false, false));
+        Assert.True(SkeletonOverlayWindow.PreviewVisible(5, false, false));
+        Assert.False(SkeletonOverlayWindow.PreviewVisible(0, false, false));
+    }
+
+    [Fact]
+    public void The_gizmo_and_brios_popup_each_take_the_preview_away()
+    {
+        // Ktisis refuses the list while ImGuizmo is used or hovered; Brio's
+        // popup turns the whole dot layer off while it is up.
+        Assert.False(SkeletonOverlayWindow.PreviewVisible(3, true, false));
+        Assert.False(SkeletonOverlayWindow.PreviewVisible(3, false, true));
+    }
+
+    [Fact]
+    public void Only_brio_opens_a_second_surface_and_only_for_a_cluster()
+    {
+        Assert.True(SkeletonOverlayWindow.PickPopupOpens(
+            BonePickBehavior.Brio, 2));
+        // A lone dot has nothing to disambiguate: Brio's single-hover wheel
+        // branch is empty and its click branch wants Count > 1.
+        Assert.False(SkeletonOverlayWindow.PickPopupOpens(
+            BonePickBehavior.Brio, 1));
+        // Ktisis has no second surface at all.
+        Assert.False(SkeletonOverlayWindow.PickPopupOpens(
+            BonePickBehavior.Ktisis, 5));
+    }
+
+    [Fact]
+    public void Escape_a_press_outside_and_a_picked_row_each_shut_the_popup()
+    {
+        Assert.False(SkeletonOverlayWindow.PickPopupStaysOpen(
+            escape: true, pressedOutside: false, rowPicked: false,
+            justOpened: false));
+        Assert.False(SkeletonOverlayWindow.PickPopupStaysOpen(
+            escape: false, pressedOutside: true, rowPicked: false,
+            justOpened: false));
+        Assert.False(SkeletonOverlayWindow.PickPopupStaysOpen(
+            escape: false, pressedOutside: false, rowPicked: true,
+            justOpened: false));
+    }
+
+    [Fact]
+    public void The_wheel_leaves_the_popup_up_so_it_can_scrub_the_stack()
+    {
+        // Brio's wheel branch has no CloseCurrentPopup: nothing in a quiet
+        // frame, wheel included, dismisses it.
+        Assert.True(SkeletonOverlayWindow.PickPopupStaysOpen(
+            escape: false, pressedOutside: false, rowPicked: false,
+            justOpened: false));
+    }
+
+    [Fact]
+    public void The_gesture_that_opened_the_popup_cannot_also_dismiss_it()
+    {
+        Assert.True(SkeletonOverlayWindow.PickPopupStaysOpen(
+            escape: true, pressedOutside: true, rowPicked: true,
+            justOpened: true));
     }
 
     // ── tri-state group visibility (Brio ImBrio.TristateCheckbox) ────────
