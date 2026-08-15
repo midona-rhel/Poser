@@ -51,6 +51,13 @@ public sealed class StableBindingRegistry
     private BindingCandidate? _stagedCandidate;
     private Dictionary<ActorId, IActor> _actorBindings = new();
     private Dictionary<BoneId, IBone> _boneBindings = new();
+    // Skeleton → live skeleton, derived from _boneBindings at commit. The
+    // registry keys on BONES, so answering "which skeleton is this" used to
+    // walk every bound bone of every actor — and the overlay asks it once per
+    // present skeleton on every frame it draws, which made a per-frame walk of
+    // the whole binding table. Derived, never a second source of truth: it is
+    // rebuilt from _boneBindings in the one place _boneBindings is published.
+    private Dictionary<SkeletonId, ISkeleton> _skeletonBindings = new();
     private Dictionary<string, ActorId> _legacyActorIds =
         new(StringComparer.Ordinal);
     private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
@@ -521,6 +528,7 @@ public sealed class StableBindingRegistry
         _lineages = candidate.Lineages;
         _actorBindings = candidate.ActorBindings;
         _boneBindings = candidate.BoneBindings;
+        _skeletonBindings = IndexSkeletons(_boneBindings);
         _legacyActorIds = candidate.LegacyActorIds;
         _legacyBoneIds = candidate.LegacyBoneIds;
         _lightIds = candidate.LightIds;
@@ -816,13 +824,22 @@ public sealed class StableBindingRegistry
 
     /// <summary>The live skeleton behind an exact skeleton generation, reached
     /// through the bones bound to it — the registry keys on bones, and a
-    /// skeleton with no bound bone is one nothing can be asked about.</summary>
-    public ISkeleton? ResolveSkeleton(SkeletonId id)
+    /// skeleton with no bound bone is one nothing can be asked about. The walk
+    /// itself happens ONCE per commit (see <see cref="IndexSkeletons"/>);
+    /// callers ask this per frame.</summary>
+    public ISkeleton? ResolveSkeleton(SkeletonId id) =>
+        _skeletonBindings.TryGetValue(id, out var skeleton) ? skeleton : null;
+
+    /// <summary>The first bound bone's skeleton wins for each id, which is the
+    /// answer the linear walk this replaces gave: bones of one skeleton
+    /// generation all carry the same live skeleton.</summary>
+    private static Dictionary<SkeletonId, ISkeleton> IndexSkeletons(
+        Dictionary<BoneId, IBone> boneBindings)
     {
-        foreach (var (boneId, live) in _boneBindings)
-            if (boneId.Skeleton == id)
-                return live.Skeleton;
-        return null;
+        var index = new Dictionary<SkeletonId, ISkeleton>();
+        foreach (var (boneId, live) in boneBindings)
+            index.TryAdd(boneId.Skeleton, live.Skeleton);
+        return index;
     }
 
     public BindingResult<IBone> Resolve(BoneId id)
