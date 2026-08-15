@@ -162,21 +162,45 @@ public class SkeletonOverlayWindow : Window
     private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
     private readonly List<BoneDisplayData> _hoverCandidates = new();
 
-    // Hover list state (Ktisis-style). The frozen candidates outlive the
-    // frame that found them, so this list is NOT one of the per-frame
-    // buffers: it is rewritten only when the candidate set changes, and an
-    // EMPTY list is what 'no cluster' means. Its labels are cached with it,
-    // because the popup wants them as a list and rebuilding one per frame
-    // would put back the allocation the buffers just removed.
+    // ── the two overlapping-bone pick surfaces ───────────────────────────
+    //
+    // BOTH references rebuild the candidate cluster from scratch every frame
+    // and keep no hover state across frames beyond a single index (Ktisis
+    // SelectableGui.cs:57-59,63; Brio PosingOverlayWindow.cs:101,313-314).
+    // These buffers are therefore per-frame like the display model above; the
+    // labels are cached alongside only because the surface wants them as a
+    // list and rebuilding one per frame would put back the allocation the
+    // display buffers just removed.
     private readonly List<BoneDisplayData> _hoveredBones = new();
     private readonly List<string> _hoverLabels = new();
+    /// <summary>Ktisis' <c>ScrollIndex</c>: the highlighted candidate. It is
+    /// stepped and range-corrected once per frame while the preview is up and
+    /// is deliberately NOT reset when the cluster changes — Ktisis has no
+    /// reset anywhere, only the wrap (SelectableGui.cs:137-141).</summary>
     private int _hoverIndex;
+    /// <summary>Where the preview is drawn. Both references put it at the
+    /// LIVE cursor every frame (Ktisis SelectableGui.cs:112, Brio
+    /// PosingOverlayWindow.cs:363 with <c>ImGuiCond.Always</c>), so this is
+    /// rewritten each frame rather than pinned at spawn.</summary>
     private Vector2 _hoverAnchor;
+
+    // Brio's SECOND surface (PosingOverlayWindow.cs:34,404-450): the frozen
+    // snapshot a click or a wheel notch over a cluster opens, anchored where
+    // it opened and alive until it is dismissed. Its content is captured once
+    // — Brio's `_selectingFrom` is never refreshed — so it survives the
+    // pointer leaving the dots entirely. Ktisis has no such surface.
+    private readonly List<BoneDisplayData> _pickBones = new();
+    private readonly List<string> _pickLabels = new();
+    private bool _pickOpen;
+    private bool _pickJustOpened;
+    private Vector2 _pickAnchor;
+
     private SelectionId? _pressedWorldTarget;
     private PendingSelection? _pendingSelection;
     private WorldAdoptionCandidate? _pressedAdoptTarget;
     private PendingAdoption? _pendingAdoption;
     private const string HoverListOwnerId = "##skeleton-overlay-bones";
+    private const string PickPopupOwnerId = "##skeleton-overlay-bone-pick";
 
     private readonly record struct PendingSelection(
         SelectionId Id,
@@ -311,12 +335,12 @@ public class SkeletonOverlayWindow : Window
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
         var mousePos = io.MousePos;
-        var hoverListOwner = new InteractionOwner(
-            HoverListOwnerId,
-            InteractionLayer.OverlaySurface,
-            int.MaxValue);
-        bool listTravel = CanContinueIntoHoverList(
-            mousePos, hoverListOwner);
+        // While Brio's pick popup is up the dots take NO input at all: its
+        // `SkeletonInputEnabled` folds `PopupOpen` into `AnythingBusy` and
+        // returns before the hit test runs (PosingOverlayWindow.cs:310-311,
+        // :1040,:1049), so nothing hovers, nothing highlights and nothing is
+        // clickable until the popup is dismissed.
+        bool pickOpen = _pickOpen;
         bool pointerBlocked = Interactive.PointerOccluded(
             InteractionOwner.World,
             mousePos);
@@ -551,15 +575,15 @@ public class SkeletonOverlayWindow : Window
         var actorRadius = 8f * ImGuiHelpers.GlobalScale;
         foreach (ref var actor in CollectionsMarshal.AsSpan(actors))
             actor.IsHovered = !pointerBlocked
-                && !listTravel
+                && !pickOpen
                 && IsHoveringDot(actor.ScreenPos, actorRadius);
         foreach (ref var light in CollectionsMarshal.AsSpan(lights))
             light.IsHovered = !pointerBlocked
-                && !listTravel
+                && !pickOpen
                 && IsHoveringDot(light.ScreenPos, actorRadius);
         foreach (ref var adopt in CollectionsMarshal.AsSpan(adopts))
             adopt.IsHovered = !pointerBlocked
-                && !listTravel
+                && !pickOpen
                 && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
 
         // Update hover state. Brio's Posing_DisableSkeleton — a held modifier
@@ -567,7 +591,7 @@ public class SkeletonOverlayWindow : Window
         // so a gizmo handle underneath one can be grabbed — reads exactly like
         // an occluded pointer here, which is what makes it a one-line gate.
         bool dotsSuppressed =
-            HoldModifierDown(GizmoConfig.DisableDotsModifier);
+            HoldModifierDown(GizmoConfig.DisableDotsModifier) || pickOpen;
         if (pointerBlocked || dotsSuppressed)
         {
             foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
@@ -689,46 +713,61 @@ public class SkeletonOverlayWindow : Window
                 animated: false);
         }
 
-        // Freeze the overlapping candidates and their anchor while the
-        // pointer crosses into the explicit list.
-        bool onFrozenCluster = listTravel && AnyHoveredIsFrozen(bones);
-        UpdateHoveredBones(bones, mousePos, listTravel);
-        bool hasWorldBone = !listTravel
-            ? AnyHovered(bones)
-            : onFrozenCluster;
-        // The hover-list wheel. A notch steps the highlighted candidate and
-        // wraps at both ends (CycleHoverIndex — Ktisis' step, single test per
-        // side). It runs while the cluster is alive — over the dots OR
-        // travelling into the list — and BEFORE the target is read below, so
-        // the entry a release commits is the one the wheel just put under the
-        // highlight. The wheel is claimed only when it actually moved the
-        // highlight, so a single candidate leaves scrolling to whatever is
-        // underneath.
+        // The cluster under the pointer, rebuilt from scratch. Nothing bridges
+        // the gap between the dots and the preview, because in NEITHER
+        // reference is the preview something the pointer can reach: Ktisis'
+        // follows the cursor (SelectableGui.cs:112) and Brio's is flagged
+        // NoInputs (PosingOverlayWindow.cs:364). Leaving the dots is the whole
+        // dismissal rule, with no grace frames and no timeout on either side.
+        UpdateHoveredBones(bones);
+        bool hasWorldBone = AnyHovered(bones);
+        bool brioPick = Config.BonePickBehavior == BonePickBehavior.Brio;
+        // The preview is drawn AT THE CURSOR, every frame.
+        _hoverAnchor = mousePos;
+
+        // THE WHEEL is the one thing the references disagree about, and it is
+        // the user's to choose (BonePickBehavior).
         //
-        // WHAT THE NOTCH COSTS is the one thing the references disagree on,
-        // and it is the user's to choose (BonePickBehavior). Under Ktisis the
-        // notch moves the highlight and nothing else. Under Brio the notch
-        // SELECTS what it lands on (PosingOverlayWindow.DrawPopup:444-448
-        // invokes the entry's OnClick on every wheel event), so the scene
-        // selection walks the stack as the wheel turns. It is armed as a
-        // pending selection rather than applied here so it goes through the
-        // one commit path — same presence and occlusion tests as a click.
-        if (_hoveredBones.Count > 1 && (hasWorldBone || listTravel)
-            && io.MouseWheel != 0f)
-        {
+        // Ktisis (SelectableGui.cs:137-144) runs its step unconditionally for
+        // as long as the list is up — wheel or no wheel, which is also what
+        // range-corrects an index carried over from a bigger cluster — and
+        // claims the pointer for the whole time rather than only on the frames
+        // a notch landed. The notch moves the highlight and costs nothing
+        // else.
+        //
+        // Brio (PosingOverlayWindow.cs:377-395) has no highlight to move: ANY
+        // notch, either direction, selects the FIRST candidate outright, and a
+        // notch over a cluster opens the pick popup as well. Selections are
+        // armed rather than applied so they go through the one commit path,
+        // with the same presence and occlusion tests a click gets.
+        //
+        // The step also runs on frames with NO notch and outside every gate,
+        // because a carried index is only pulled back inside a smaller cluster
+        // by running it — and the target below indexes with it.
+        if (brioPick)
+            _hoverIndex = 0;
+        else
             _hoverIndex = CycleHoverIndex(
-                _hoverIndex, _hoveredBones.Count, io.MouseWheel);
-            if (Config.BonePickBehavior == BonePickBehavior.Brio)
-                _pendingSelection = new PendingSelection(
-                    _hoveredBones[_hoverIndex].Id,
-                    ImGui.GetMousePos(),
-                    io.KeyCtrl,
-                    new InteractionOwner(
-                        HoverListOwnerId,
-                        InteractionLayer.OverlaySurface,
-                        int.MaxValue));
+                _hoverIndex, _hoveredBones.Count, 0f);
+        if (_hoveredBones.Count > 0 && !Controls.GizmoPointerOwnership.Owned)
+        {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
+            if (brioPick)
+            {
+                if (io.MouseWheel != 0f)
+                {
+                    ArmPick(_hoveredBones[0], HoverListOwnerId);
+                    if (PickPopupOpens(
+                            Config.BonePickBehavior, _hoveredBones.Count))
+                        OpenPickPopup(mousePos);
+                }
+            }
+            else
+            {
+                _hoverIndex = CycleHoverIndex(
+                    _hoverIndex, _hoveredBones.Count, io.MouseWheel);
+            }
         }
         // A light handle sits in front of everything else it overlaps: it is
         // the only route to a light from the viewport, and a bone dot behind it
@@ -761,17 +800,38 @@ public class SkeletonOverlayWindow : Window
         if (Breadcrumbs && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             _log.Verbose(
                 $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
-                + $"blocked={pointerBlocked} listTravel={listTravel} "
+                + $"blocked={pointerBlocked} pickOpen={pickOpen} "
                 + $"hasWorldBone={hasWorldBone} "
                 + $"gizmo={Controls.GizmoPointerOwnership.Owned} "
                 + $"hoverL={hasHoveredLight} hoverA={hasHoveredActor}");
-        UpdateWorldPress(
+        bool committedBone = UpdateWorldPress(
             worldTarget,
-            pointerBlocked || dotsSuppressed
-                || (listTravel && !hasWorldBone));
-        UpdateAdoptPress(adoptTarget, pointerBlocked || listTravel);
-        if (_hoveredBones.Count > 0)
-            DrawHoverList();
+            pointerBlocked || dotsSuppressed);
+        UpdateAdoptPress(adoptTarget, pointerBlocked || pickOpen);
+        // Brio's click over a cluster does BOTH: it commits the first
+        // candidate and opens the popup on the same gesture
+        // (PosingOverlayWindow.cs:346-359). Poser's world clicks commit on the
+        // RELEASE over the pressed target rather than on the press, so the
+        // popup opens on that same release — the observable outcome is Brio's,
+        // reached through the contract every other world handle already has.
+        // Only a BONE cluster opens it: a light or actor handle in front of the
+        // dots is what the click meant, and it is not one of the candidates.
+        bool boneCluster =
+            !hasHoveredLight && !hasHoveredActor && hasWorldBone;
+        if (committedBone && boneCluster
+            && PickPopupOpens(Config.BonePickBehavior, _hoveredBones.Count))
+            OpenPickPopup(ImGui.GetMousePos());
+
+        // The two surfaces never coexist: while Brio's popup is up its
+        // `SkeletonInputEnabled` is false, so no dot is hovered and no preview
+        // is built (PosingOverlayWindow.cs:310-311,:1040).
+        if (_pickOpen)
+            DrawPickPopup();
+        else if (PreviewVisible(
+                     _hoveredBones.Count,
+                     Controls.GizmoPointerOwnership.Owned,
+                     _pickOpen))
+            DrawHoverPreview();
     }
 
     // ── inactive-actor dimming (Ktisis SceneDraw.GetOpacityMultiplier) ────
@@ -903,23 +963,6 @@ public class SkeletonOverlayWindow : Window
         return false;
     }
 
-    /// <summary>Whether any bone hovered THIS frame is one of the frozen
-    /// candidates — the test that keeps a cluster alive while the pointer
-    /// crosses into its list.</summary>
-    private bool AnyHoveredIsFrozen(List<BoneDisplayData> bones)
-    {
-        for (int i = 0; i < bones.Count; i++)
-        {
-            var bone = bones[i];
-            if (!bone.IsHovered)
-                continue;
-            for (int j = 0; j < _hoveredBones.Count; j++)
-                if (_hoveredBones[j].Id.Equals(bone.Id))
-                    return true;
-        }
-        return false;
-    }
-
     private void UpdateHoverState(List<BoneDisplayData> bones, Vector2 mousePos)
     {
         var radius = DotRadius * ImGuiHelpers.GlobalScale;
@@ -987,14 +1030,20 @@ public class SkeletonOverlayWindow : Window
         return u >= 0 && v >= 0 && u + v <= 1;
     }
 
-    private void UpdateHoveredBones(
-        List<BoneDisplayData> bones,
-        Vector2 mousePos,
-        bool keepFrozen)
+    /// <summary>
+    /// The candidate cluster for this frame. Both references rebuild it from
+    /// nothing every frame and let it vanish the instant the hit test stops
+    /// answering (Ktisis SelectableGui.cs:75-99; Brio
+    /// PosingOverlayWindow.cs:313-314,:361) — there is no grace window, no
+    /// timeout and nothing to travel into, so there is nothing to freeze.
+    ///
+    /// <para>The HIGHLIGHT is not touched here. Ktisis carries its
+    /// <c>ScrollIndex</c> across clusters untouched and only wraps it into
+    /// range while stepping (SelectableGui.cs:137-141); resetting it to the
+    /// top on every change is a rule neither reference has.</para>
+    /// </summary>
+    private void UpdateHoveredBones(List<BoneDisplayData> bones)
     {
-        if (keepFrozen && _hoveredBones.Count > 0)
-            return;
-
         // Nearest first, by insertion: a candidate cluster is a handful of
         // overlapping dots, and inserting AFTER every equal distance keeps
         // the stable order the ordered query gave.
@@ -1014,28 +1063,25 @@ public class SkeletonOverlayWindow : Window
 
         if (hovered.Count == 0)
         {
-            if (keepFrozen)
-                return;
             _hoveredBones.Clear();
             _hoverLabels.Clear();
-            _hoverIndex = 0;
             return;
         }
 
+        // The labels are rebuilt only when the set actually changed, which is
+        // an allocation guard and nothing more — the SET itself is this
+        // frame's either way.
         bool sameCandidates = _hoveredBones.Count == hovered.Count;
         for (int i = 0; sameCandidates && i < hovered.Count; i++)
             sameCandidates = _hoveredBones[i].Id.Equals(hovered[i].Id);
-        if (!sameCandidates)
+        if (sameCandidates)
+            return;
+        _hoveredBones.Clear();
+        _hoverLabels.Clear();
+        for (int i = 0; i < hovered.Count; i++)
         {
-            _hoveredBones.Clear();
-            _hoverLabels.Clear();
-            for (int i = 0; i < hovered.Count; i++)
-            {
-                _hoveredBones.Add(hovered[i]);
-                _hoverLabels.Add(hovered[i].Name);
-            }
-            _hoverIndex = 0;
-            _hoverAnchor = mousePos;
+            _hoveredBones.Add(hovered[i]);
+            _hoverLabels.Add(hovered[i].Name);
         }
     }
 
@@ -1070,41 +1116,55 @@ public class SkeletonOverlayWindow : Window
         return next;
     }
 
-    private bool CanContinueIntoHoverList(
-        Vector2 point,
-        InteractionOwner owner)
+    /// <summary>
+    /// Brio's popup step (<c>PosingOverlayWindow.DrawPopup:428-449</c>): ONE
+    /// entry per notch whatever the notch's magnitude, wrapping at both ends,
+    /// with the wheel pushed away walking toward the front of the list — the
+    /// same direction as Ktisis' step, and the only two things it shares with
+    /// it. The step runs from whatever is CURRENTLY selected, so a list with
+    /// nothing selected answers the first entry going down and the last going
+    /// up, exactly as Brio's <c>selectedIndex = -1</c> does.
+    ///
+    /// <para>Brio re-derives that base from a snapshot it froze at open and
+    /// never refreshes, so upstream the wheel lands on the same neighbour
+    /// every time instead of walking the stack. Poser asks the LIVE selection
+    /// instead: the walk is what Brio's own code plainly means, and the popup
+    /// is worthless without it.</para>
+    /// </summary>
+    internal static int BrioPickStep(int selected, int count, float wheel)
     {
-        if (_hoveredBones.Count == 0
-            || !Interactive.TryGetOwnerBounds(
-                HoverListOwnerId,
-                out var listMin,
-                out var listMax)
-            || Interactive.PointerOccluded(owner, point))
-            return false;
-        float padding = HoverPadding * ImGuiHelpers.GlobalScale;
-        var bridgeMin = Vector2.Min(_hoverAnchor, listMin)
-            - new Vector2(padding);
-        var bridgeMax = Vector2.Max(_hoverAnchor, listMax)
-            + new Vector2(padding);
-        return point.X >= bridgeMin.X && point.X < bridgeMax.X
-            && point.Y >= bridgeMin.Y && point.Y < bridgeMax.Y;
+        if (count <= 0)
+            return -1;
+        if (wheel == 0f)
+            return selected;
+        if (wheel < 0f)
+        {
+            int forward = selected + 1;
+            return forward >= count ? 0 : forward;
+        }
+        int back = selected - 1;
+        return back < 0 ? count - 1 : back;
     }
 
-    private void UpdateWorldPress(
+    /// <summary>Runs the world press/release handshake and reports whether a
+    /// release just armed a selection — which is what tells Brio's pick popup
+    /// that a cluster was clicked.</summary>
+    private bool UpdateWorldPress(
         SelectionId? target,
         bool pointerBlocked)
     {
         if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
         {
             _pressedWorldTarget = null;
-            return;
+            return false;
         }
 
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
             _pressedWorldTarget = target;
 
         if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
-            return;
+            return false;
+        bool committed = false;
         if (_pressedWorldTarget is { } pressed
             && target is { } released
             && pressed.Equals(released))
@@ -1114,8 +1174,10 @@ public class SkeletonOverlayWindow : Window
                 ImGui.GetMousePos(),
                 ImGui.GetIO().KeyCtrl,
                 InteractionOwner.World);
+            committed = true;
         }
         _pressedWorldTarget = null;
+        return committed;
     }
 
     // ── adoption handles ─────────────────────────────────────────────────
@@ -1246,30 +1308,197 @@ public class SkeletonOverlayWindow : Window
         && left.Light.Handle == right.Light.Handle
         && left.WorldObject == right.WorldObject;
 
-    private void DrawHoverList()
+    // ── the passive preview ──────────────────────────────────────────────
+
+    /// <summary>
+    /// The readout of what the pointer is on, at the pointer, taking no input.
+    /// It appears for ONE candidate as readily as for five — neither reference
+    /// has an overlap threshold, only an empty test (Ktisis
+    /// SelectableGui.cs:107, Brio PosingOverlayWindow.cs:361) — with no delay
+    /// going up and none coming down.
+    ///
+    /// <para>WHAT IT MARKS is where the references part. Ktisis marks the
+    /// wheel highlight, because the wheel is what its click will commit
+    /// (SelectableGui.cs:151-154). Brio has no highlight to mark and marks the
+    /// bone that is actually SELECTED instead
+    /// (PosingOverlayWindow.cs:370).</para>
+    /// </summary>
+    private void DrawHoverPreview()
     {
-        if (_hoveredBones.Count == 0
-            || Controls.GizmoPointerOwnership.Owned)
+        if (_hoveredBones.Count == 0)
             return;
 
-        int clicked = Crystarium.FloatingSurface.HoverList(
+        int marked = Config.BonePickBehavior == BonePickBehavior.Brio
+            ? SelectedCandidate(_hoveredBones)
+            : _hoverIndex;
+        Crystarium.FloatingSurface.HoverList(
             HoverListOwnerId,
             _hoverAnchor,
             _hoverLabels,
-            _hoverIndex,
-            InteractionLayer.OverlaySurface);
-        if (clicked < 0 || clicked >= _hoveredBones.Count)
+            marked,
+            InteractionLayer.OverlaySurface,
+            interactive: false);
+    }
+
+    /// <summary>
+    /// The preview's SPAWN PREDICATE. Neither reference has an overlap
+    /// threshold, a hover delay or a timeout: one candidate raises it, zero
+    /// takes it away, on the frame it happens (Ktisis SelectableGui.cs:107;
+    /// Brio PosingOverlayWindow.cs:361). What suppresses it is the gizmo —
+    /// Ktisis refuses the list while ImGuizmo is used OR merely hovered
+    /// (SelectableGui.cs:107-108) — and Brio's pick popup, which turns the
+    /// whole dot layer off while it is up (PosingOverlayWindow.cs:1040,:1049).
+    /// </summary>
+    internal static bool PreviewVisible(
+        int candidateCount, bool gizmoOwned, bool pickOpen) =>
+        candidateCount > 0 && !gizmoOwned && !pickOpen;
+
+    /// <summary>
+    /// Whether a click or a wheel notch over the cluster opens Brio's second
+    /// surface. Brio needs TWO candidates for it — a lone dot has nothing to
+    /// disambiguate, so its wheel branch for a single hover is literally empty
+    /// (<c>PosingOverlayWindow.cs:382-385</c>) and its click branch is gated on
+    /// <c>_clickedIndices.Count &gt; 1</c> (<c>:352</c>). Ktisis has no second
+    /// surface at all, so its mode never opens one.
+    /// </summary>
+    internal static bool PickPopupOpens(
+        BonePickBehavior behavior, int candidateCount) =>
+        behavior == BonePickBehavior.Brio && candidateCount > 1;
+
+    /// <summary>
+    /// The popup's DISMISSAL state machine, which is ImGui's popup rule
+    /// because Brio's popup IS an ImGui popup (<c>ImRaii.Popup</c>,
+    /// <c>PosingOverlayWindow.cs:406</c>): Escape closes it, a press outside
+    /// its rectangle closes it, and picking a row closes it explicitly
+    /// (<c>:423-424</c>). The WHEEL does not — Brio's wheel branch has no
+    /// <c>CloseCurrentPopup</c>, which is what makes the popup a scrubber
+    /// through the stack rather than a one-shot menu. The frame it opened is
+    /// exempt, or the gesture that raised it would read as the press that
+    /// dismisses it.
+    /// </summary>
+    internal static bool PickPopupStaysOpen(
+        bool escape, bool pressedOutside, bool rowPicked, bool justOpened) =>
+        justOpened || !(escape || pressedOutside || rowPicked);
+
+    // ── Brio's pick popup ────────────────────────────────────────────────
+
+    /// <summary>Freezes the cluster into Brio's <c>_selectingFrom</c> and
+    /// anchors the popup where the gesture happened. The snapshot is what
+    /// makes the popup outlive the hover that opened it.</summary>
+    private void OpenPickPopup(Vector2 anchor)
+    {
+        _pickBones.Clear();
+        _pickLabels.Clear();
+        for (int i = 0; i < _hoveredBones.Count; i++)
+        {
+            _pickBones.Add(_hoveredBones[i]);
+            _pickLabels.Add(_hoveredBones[i].Name);
+        }
+        _pickAnchor = anchor;
+        _pickOpen = true;
+        // The gesture that opened it is still in this frame's input: without
+        // this the opening release would read as the dismissing click.
+        _pickJustOpened = true;
+    }
+
+    private void ClosePickPopup()
+    {
+        _pickOpen = false;
+        _pickJustOpened = false;
+        _pickBones.Clear();
+        _pickLabels.Clear();
+    }
+
+    /// <summary>
+    /// Brio's second surface: an anchored list of the frozen cluster with LIVE
+    /// rows. Picking one selects it and closes
+    /// (<c>PosingOverlayWindow.cs:420-425</c>); the wheel walks the selection
+    /// through the stack and leaves the popup up, so it doubles as a scrubber;
+    /// and dismissal is ImGui's own popup rule, which is what
+    /// <c>ImRaii.Popup</c> buys Brio for free (<c>:406</c>) — Escape, or a
+    /// press anywhere outside it.
+    /// </summary>
+    private void DrawPickPopup()
+    {
+        if (_pickBones.Count == 0)
+        {
+            ClosePickPopup();
             return;
-        _hoverIndex = clicked;
+        }
+
+        int marked = SelectedCandidate(_pickBones);
+        int clicked = Crystarium.FloatingSurface.HoverList(
+            PickPopupOwnerId,
+            _pickAnchor,
+            _pickLabels,
+            marked,
+            InteractionLayer.Popup);
+
+        var io = ImGui.GetIO();
+        io.WantCaptureMouse = true;
+        ImGui.SetNextFrameWantCaptureMouse(true);
+
+        bool rowPicked = clicked >= 0 && clicked < _pickBones.Count;
+        if (rowPicked)
+        {
+            ArmPick(_pickBones[clicked], PickPopupOwnerId);
+        }
+        else if (io.MouseWheel != 0f)
+        {
+            int next = BrioPickStep(marked, _pickBones.Count, io.MouseWheel);
+            if (next >= 0 && next < _pickBones.Count)
+                ArmPick(_pickBones[next], PickPopupOwnerId);
+        }
+
+        bool justOpened = _pickJustOpened;
+        _pickJustOpened = false;
+        if (!PickPopupStaysOpen(
+                ImGui.IsKeyPressed(ImGuiKey.Escape),
+                PressedOutsidePick(),
+                rowPicked,
+                justOpened))
+            ClosePickPopup();
+    }
+
+    /// <summary>Whether this frame carries a press the popup does not cover.
+    /// "Outside" is the popup's own rectangle and nothing else: ImGui shuts a
+    /// popup on a press anywhere it does not cover, presses on other windows
+    /// included.</summary>
+    private bool PressedOutsidePick()
+    {
+        if (!ImGui.IsMouseClicked(ImGuiMouseButton.Left)
+            && !ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+            return false;
+        var point = ImGui.GetMousePos();
+        return !Interactive.TryGetOwnerBounds(
+                   PickPopupOwnerId, out var min, out var max)
+            || point.X < min.X || point.X >= max.X
+            || point.Y < min.Y || point.Y >= max.Y;
+    }
+
+    /// <summary>Index of the candidate the scene currently has selected, or
+    /// -1. Brio's popup reads the same thing to place its mark and to start
+    /// its wheel from.</summary>
+    private int SelectedCandidate(List<BoneDisplayData> candidates)
+    {
+        for (int i = 0; i < candidates.Count; i++)
+            if (_selection.IsSelected(candidates[i].Id))
+                return i;
+        return -1;
+    }
+
+    /// <summary>Arms a candidate the way a world release does, so every pick
+    /// — dot, wheel or popup row — lands through the one commit path with the
+    /// same presence and occlusion tests.</summary>
+    private void ArmPick(in BoneDisplayData bone, string ownerId) =>
         _pendingSelection = new PendingSelection(
-            _hoveredBones[clicked].Id,
+            bone.Id,
             ImGui.GetMousePos(),
             ImGui.GetIO().KeyCtrl,
             new InteractionOwner(
-                HoverListOwnerId,
-                InteractionLayer.OverlaySurface,
+                ownerId,
+                InteractionLayer.Popup,
                 int.MaxValue));
-    }
 
     private void CommitPendingSelection(
         IReadOnlyList<BoneDisplayData> bones,
