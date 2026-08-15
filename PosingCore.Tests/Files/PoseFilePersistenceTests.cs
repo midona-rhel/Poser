@@ -888,6 +888,8 @@ internal sealed class EmulatedPoseFileSystem : IPoseFileStoreFileSystem
     public Stream CreateNew(string path) => new FileStream(
         path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.SequentialScan);
 
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+
     public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
 
     public bool Exists(string path) => File.Exists(path);
@@ -929,6 +931,7 @@ internal sealed class BoundedReadPoseFileSystem : IPoseFileStoreFileSystem
 
     public Stream OpenRead(string path) => new BoundedReadStream(_bytes, ReadSizes);
     public Stream CreateNew(string path) => throw new NotSupportedException();
+    public void CreateDirectory(string path) => throw new NotSupportedException();
     public void FlushToDisk(Stream stream) => throw new NotSupportedException();
     public bool Exists(string path) => false;
     public void Replace(string source, string destination, string backup) => throw new NotSupportedException();

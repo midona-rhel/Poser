@@ -180,6 +180,12 @@ internal interface IPoseFileStoreFileSystem
 {
     Stream OpenRead(string path);
     Stream CreateNew(string path);
+
+    /// <summary>Makes the destination folder exist before the atomic temp is
+    /// created in it. Idempotent — an existing folder is not an error — because
+    /// every writer calls it unconditionally rather than probing first.</summary>
+    void CreateDirectory(string path);
+
     void FlushToDisk(Stream stream);
     bool Exists(string path);
     void Replace(string source, string destination, string backup);
@@ -204,6 +210,8 @@ internal sealed class SystemPoseFileStoreFileSystem : IPoseFileStoreFileSystem
         FileShare.None,
         bufferSize: 4096,
         FileOptions.SequentialScan);
+
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 
     public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
     public bool Exists(string path) => File.Exists(path);

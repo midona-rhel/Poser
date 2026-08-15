@@ -336,6 +336,15 @@ public sealed class SceneFileStore
             fullDestination = Path.GetFullPath(destination);
             var directory = Path.GetDirectoryName(fullDestination)
                 ?? throw new IOException("The destination has no parent directory.");
+            // The folder is MADE, not assumed. The atomic temp is created
+            // beside the destination, so a missing folder failed the whole save
+            // at CreateNew with a bare DirectoryNotFoundException — which is
+            // every save into a library home the user moved, renamed, or let a
+            // sync client take away, and every save into a folder typed into
+            // the dialog's name field. The scene auto-save never hit it only
+            // because it makes its own day folder first
+            // (SceneAutoSaveService.WriteAndPrune).
+            _fileSystem.CreateDirectory(directory);
             var fileName = Path.GetFileName(fullDestination);
             temporary = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.tmp");
             backup = Path.Combine(directory, $".{fileName}.{Guid.NewGuid():N}.bak");
@@ -344,7 +353,7 @@ public sealed class SceneFileStore
         {
             return WriteFailure(
                 SceneStoreFailureKind.TemporaryCreate,
-                $"Preparing the atomic scene paths failed: {ex.Message}",
+                $"Preparing the scene destination failed: {ex.Message}",
                 destination);
         }
 

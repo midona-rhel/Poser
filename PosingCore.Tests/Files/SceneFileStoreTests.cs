@@ -126,6 +126,65 @@ public sealed class SceneFileStoreTests
 
     private static SceneFileStore Store() => new();
 
+    // ── destination ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The write MAKES its destination folder. The atomic temp is created
+    /// beside the destination, so a folder that is not there failed the whole
+    /// save at CreateNew — which is every save into a library home the user
+    /// moved, renamed, or let a sync client take away, and every save into a
+    /// folder named in the dialog's own name field.
+    /// </summary>
+    [Fact]
+    public void A_write_into_a_folder_that_does_not_exist_makes_it_and_lands()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(), "poser-scene-home-" + Guid.NewGuid().ToString("N"));
+        var destination = Path.Combine(root, "Shoots", "morning.poserscene");
+        try
+        {
+            Assert.False(Directory.Exists(root));
+
+            var write = Store().Write(ValidScene(), destination);
+
+            Assert.True(write.Succeeded, write.Failure?.Detail);
+            Assert.True(File.Exists(destination));
+            Assert.True(Store().Read(destination).Succeeded);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>The configured scenes home is the ONE place the save writes:
+    /// the store targets exactly the path it is handed, with no rehoming of its
+    /// own, so what the library scans and what the save writes can never
+    /// disagree.</summary>
+    [Fact]
+    public void A_write_targets_exactly_the_configured_home_it_was_handed()
+    {
+        var home = Path.Combine(
+            Path.GetTempPath(), "poser-scene-home-" + Guid.NewGuid().ToString("N"));
+        var destination = Path.Combine(home, "shot.poserscene");
+        try
+        {
+            Assert.True(Store().Write(ValidScene(), destination).Succeeded);
+
+            var landed = Assert.Single(
+                Directory.GetFiles(home, "*.poserscene", SearchOption.AllDirectories));
+            Assert.Equal(destination, landed);
+            // No temp or backup survives a clean commit.
+            Assert.Empty(Directory.GetFiles(home, ".*"));
+        }
+        finally
+        {
+            if (Directory.Exists(home))
+                Directory.Delete(home, recursive: true);
+        }
+    }
+
     // ── round trip ───────────────────────────────────────────────────────
 
     [Fact]
@@ -685,6 +744,58 @@ public sealed class SceneFileStoreTests
         var read = Store().Parse(json);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
+    }
+
+    /// <summary>
+    /// A document written before the optional members existed still reads. Such
+    /// a file names no overlays, no borrowed map objects, no environment and no
+    /// capture origin, and its actors name no animation, character file, gaze
+    /// or placement transform — every one an ABSENT member rather than a stated
+    /// empty. Absence must decode as absence, because the load's phases read it
+    /// as "nothing to do" and a codec that failed here would refuse the file
+    /// wholesale.
+    /// </summary>
+    [Fact]
+    public void A_document_written_before_the_optional_members_still_reads()
+    {
+        const string json = """
+        {
+          "TypeName": "Poser Scene",
+          "FileVersion": 1,
+          "SceneId": "3f0a6d0e-6d0a-4c53-9c0d-0f52ac6b12d1",
+          "Description": "An older shot",
+          "TerritoryId": 132,
+          "Actors": [
+            {
+              "Key": "6a2a4e2f-4c4e-4a1e-9a0a-3f5c1d2b7e40",
+              "Name": "Lead",
+              "ModelCharaId": 0,
+              "Visible": true,
+              "Pose": { "TypeName": "Poser Pose", "Bones": {} }
+            }
+          ],
+          "Props": [],
+          "Lights": [],
+          "Cameras": []
+        }
+        """;
+
+        var read = Store().Parse(json);
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        var scene = read.Scene!;
+        Assert.Null(scene.Origin);
+        Assert.Null(scene.Overlays);
+        Assert.Null(scene.WorldObjects);
+        Assert.Null(scene.Environment);
+        Assert.Null(scene.PlaceName);
+        var actor = Assert.Single(scene.Actors);
+        Assert.Null(actor.Animation);
+        Assert.Null(actor.Mcdf);
+        Assert.Null(actor.Gaze);
+        Assert.Null(actor.CompanionKind);
+        Assert.Null(actor.CompanionPose);
+        Assert.Null(actor.ModelTransform);
     }
 
     // ── typed refusals ───────────────────────────────────────────────────
