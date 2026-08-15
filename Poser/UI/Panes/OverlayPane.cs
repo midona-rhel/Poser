@@ -115,7 +115,11 @@ public sealed class OverlayPane
                 "PLACEMENT",
                 _openPlacement,
                 next => _openPlacement = next,
-                form => PlacementRows(form, node));
+                form => PlacementRows(form, node),
+                // The house rule every other pane states: a divider stands
+                // BETWEEN sections, so the page's first draws neither the rule
+                // nor the margin above it.
+                divider: false);
             page.Section(
                 ContentTitle(node.Kind),
                 _openContent,
@@ -157,35 +161,8 @@ public sealed class OverlayPane
             node.Visible,
             next => node.Visible = next,
             help: "Hide this overlay without destroying it");
-        form.Switch(
-            "Drag on screen",
-            node.Draggable,
-            next => node.Draggable = next,
-            help: "Grab the overlay anywhere on its face and drag it. Off by "
-                + "default: a draggable overlay eats clicks meant for the "
-                + "scene.");
-
-        var position = node.Position;
-        form.Cells(cells =>
-        {
-            cells.Cell(
-                "X",
-                cell => cell.Number(
-                    "##overlay-x",
-                    position.X,
-                    next => node.Position = new Vector2(next, position.Y),
-                    perPixel: 1f,
-                    format: "0"));
-            cells.Cell(
-                "Y",
-                cell => cell.Number(
-                    "##overlay-y",
-                    position.Y,
-                    next => node.Position = new Vector2(position.X, next),
-                    perPixel: 1f,
-                    format: "0"));
-        },
-        help: "Where the overlay sits, in screen pixels from the top-left");
+        DraggableRow(form, node);
+        ScreenPointRows(form, node);
 
         form.NumericSlider(
             "Scale",
@@ -217,6 +194,98 @@ public sealed class OverlayPane
                 },
                 help: "Back to full size and full opacity");
         });
+    }
+
+    // ── the rail's overlay arm ───────────────────────────────────────────
+
+    /// <summary>Whether the inspector rail has an overlay node to edit. The
+    /// camera pane's <c>HasRailCamera</c>, for the same reason: the rail asks
+    /// the pane that owns the entity rather than resolving it a second
+    /// time.</summary>
+    public bool HasRailNode => SelectedNode() != null;
+
+    /// <summary>
+    /// The rail's section for an overlay node — the three facts a node is
+    /// adjusted BY while the eye is on the shot: where it sits, what it says,
+    /// and whether it can be dragged there directly.
+    ///
+    /// <para>It is the same seam as the pane, literally: both call the row
+    /// helpers below, so a well edited here and a well edited on the Overlay
+    /// tab are one control drawn twice and can never disagree. The rail does
+    /// NOT carry scale, opacity or the kind's own vocabulary — those are the
+    /// tab's, and duplicating a whole pane onto the rail is what the rail is
+    /// not for.</para>
+    ///
+    /// <para>An overlay's placement is SCREEN pixels, so this stands in place
+    /// of the world TRANSLATION section every other primary declares — a world
+    /// gizmo has nothing to say about a node that lives in the viewport's own
+    /// coordinates.</para>
+    /// </summary>
+    public void DrawRailPlacement(Crystarium.FormScope form)
+    {
+        if (SelectedNode() is not { } node)
+            return;
+        ScreenPointRows(form, node);
+        TextRow(form, node);
+        DraggableRow(form, node);
+    }
+
+    /// <summary>The X and Y wells. Both surfaces draw these, so the pixel
+    /// format, the per-pixel rate and the wheel step are stated once.</summary>
+    private static void ScreenPointRows(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        var position = node.Position;
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "X",
+                cell => cell.Number(
+                    "##overlay-x",
+                    position.X,
+                    next => node.Position = new Vector2(next, position.Y),
+                    perPixel: 1f,
+                    format: "0"));
+            cells.Cell(
+                "Y",
+                cell => cell.Number(
+                    "##overlay-y",
+                    position.Y,
+                    next => node.Position = new Vector2(position.X, next),
+                    perPixel: 1f,
+                    format: "0"));
+        },
+        help: "Where the overlay sits, in screen pixels from the top-left");
+    }
+
+    private static void DraggableRow(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        form.Switch(
+            "Drag on screen",
+            node.Draggable,
+            next => node.Draggable = next,
+            help: "Grab the overlay anywhere on its face and drag it. Off by "
+                + "default: a draggable overlay eats clicks meant for the "
+                + "scene.");
+    }
+
+    /// <summary>The node's own words. The LABEL is the kind's, because "Line"
+    /// and "Effect" are what the tab calls the same field — a rail row that
+    /// renamed it would read as a second, different setting.</summary>
+    private static void TextRow(
+        Crystarium.FormScope form, OverlayNodeHandle node)
+    {
+        bool status = node.Kind is not (
+            OverlayNodeKind.Talk or OverlayNodeKind.Balloon);
+        form.TextInput(
+            status ? "Effect" : "Line",
+            node.Text,
+            next => node.Text = next,
+            placeholder: status ? "What the effect is called" : "What they say",
+            help: status
+                ? "The name the status bar shows"
+                : "The words this overlay draws");
     }
 
     private void ContentRows(Crystarium.FormScope form, OverlayNodeHandle node)

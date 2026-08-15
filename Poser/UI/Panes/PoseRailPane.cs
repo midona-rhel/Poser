@@ -124,8 +124,11 @@ public class PoseRailPane
             // the Light tab. A gaze point takes none either — its buttons
             // would act on the owning actor while claiming to act on it.
             // A camera's actions live on the Camera tab the same way.
+            // An overlay node stands down for the same reason a light does:
+            // it has no bones to reset and no actor override to clear, and its
+            // own actions live on the Overlay tab.
             if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsCameraSelection)
+                !_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
             {
                 ImGui.SetCursorScreenPos(cursor);
                 if (_inspector.IsActorSelection)
@@ -164,8 +167,9 @@ public class PoseRailPane
 
         // A camera has no rotation for the rings to edit — its view is
         // angle/pan, owned by the Camera tab — so the gizmo stands down
-        // rather than drawing an inert widget.
-        if (!_inspector.IsCameraSelection)
+        // rather than drawing an inert widget. An overlay node has none
+        // either: it is flat on the screen, not placed in the world.
+        if (!_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)

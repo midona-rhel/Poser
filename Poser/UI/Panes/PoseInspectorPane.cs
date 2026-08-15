@@ -227,12 +227,14 @@ public class PoseInspectorPane
         Application.Posing.IIkConfigurationPort ikPort,
         Game.Posing.IkBakeCapture ikBake,
         IActorSpawnService spawnService,
-        CameraPane cameraPane)
+        CameraPane cameraPane,
+        OverlayPane overlayPane)
     {
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
         _cameraPane = cameraPane;
+        _overlayPane = overlayPane;
         _selection = scene.Selection;
         _scene = scene;
         _bindings = bindings;
@@ -293,6 +295,7 @@ public class PoseInspectorPane
     /// as-offset and tracking) exactly as it owns the Camera tab; the
     /// inspector only declares where they sit.</summary>
     private readonly CameraPane _cameraPane;
+    private readonly OverlayPane _overlayPane;
     private bool _openCameraTracking = true;
 
     /// <summary>Gaze and expression are humanoid concepts: a slot companion
@@ -708,6 +711,25 @@ public class PoseInspectorPane
                         next => _openCameraTracking = next,
                         _cameraPane.DrawRailTracking);
             }
+            stack.Finish();
+            return;
+        }
+
+        // An overlay node's placement is SCREEN pixels, so it declares
+        // PLACEMENT where every other primary declares TRANSLATION: a world
+        // gizmo and world xyz rows have nothing to say about a node that lives
+        // in the viewport's own coordinates. The section is the Overlay tab's
+        // own rows, drawn from the pane that owns them.
+        if (_primary is { Kind: SceneEntityKind.Overlay })
+        {
+            if (_overlayPane.HasRailNode)
+                stack.Section(
+                    "overlay-placement",
+                    "PLACEMENT",
+                    _openTranslation,
+                    next => _openTranslation = next,
+                    _overlayPane.DrawRailPlacement,
+                    divider: false);
             stack.Finish();
             return;
         }
@@ -2610,6 +2632,21 @@ public class PoseInspectorPane
             }
             return ("World object", "world object", 0);
         }
+        // An overlay names itself for the same reason a prop does: the rail's
+        // PLACEMENT rows underneath the head are live for a selected node, so
+        // a head reading "Nothing selected" would contradict them.
+        if (_primary is { Kind: SceneEntityKind.Overlay, Overlay: { } primaryOverlay })
+        {
+            foreach (var overlay in _scene.Snapshot.Overlays)
+            {
+                if (overlay.Id.Equals(primaryOverlay))
+                    return (
+                        overlay.Name,
+                        overlay.Visible ? "overlay" : "overlay · hidden",
+                        0);
+            }
+            return ("Overlay", "overlay", 0);
+        }
         return ("", "", 0);
     }
 
@@ -2631,6 +2668,13 @@ public class PoseInspectorPane
     /// its rotation is angle/pan, edited on the Camera tab.</summary>
     public bool IsCameraSelection =>
         _primary is { Kind: SceneEntityKind.Camera };
+
+    /// <summary>Whether the inspector is editing an overlay node: the rail
+    /// keeps its own PLACEMENT section and takes neither the action row nor
+    /// the rotation gizmo — a node has no bones to reset and no world rotation
+    /// for the rings to turn.</summary>
+    public bool IsOverlaySelection =>
+        _primary is { Kind: SceneEntityKind.Overlay };
 
     /// <summary>Whether the inspector is editing the actor itself rather than a
     /// bone. A gaze point counts: it belongs to the actor, so the rail keeps
