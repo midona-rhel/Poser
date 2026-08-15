@@ -8,6 +8,12 @@ namespace Poser.UI.Views;
 
 public sealed class BoneMatrixPill
 {
+    /// <summary>This pill's ImGui id, minted with the row and never rebuilt.
+    /// It is the PILL's identity, not its grid position: a viewport resize
+    /// reflows the grid, and a positional id would hand every pill a new
+    /// identity — and discard its interaction state — on every resize.
+    /// </summary>
+    public string Id = "";
     public string Label = "";
     public bool Selected;
     public object? Tag;
@@ -24,6 +30,9 @@ public sealed class BoneMatrixRow
 
 public sealed class BoneMatrixSection
 {
+    /// <summary>The heading's ImGui id; see <see cref="BoneMatrixPill.Id"/>.
+    /// </summary>
+    public string Id = "";
     public string Title = "";
     public List<BoneMatrixRow> Rows = new();
 }
@@ -85,75 +94,98 @@ public static class BoneMatrixView
         float trackW = (logicalWidth
             - metrics.ColumnGap * (columns - 1)) / columns;
 
+        // ONE id scope for the whole matrix instead of a per-element string
+        // concatenation. The elements carry their own stable ids; the prefix
+        // only has to keep two matrices drawn in one window apart, which is
+        // exactly what an id scope is for. Building the row's
+        // `$"{prefix}-{section}-{slot}"` and each pill's `$"##{row}-p{i}"`
+        // minted a few hundred strings per frame — and hashed every one of
+        // them fresh — for a table whose contents change only when the scene
+        // does.
+        ImGui.PushID(idPrefix);
         float y = origin.Y;
-        int sectionIndex = 0;
-        foreach (var section in vm.Sections)
+        try
         {
-            // .mxHead box model: 14px pad-top, 11px caps (~13px line), 5px
-            // pad-bottom → hairline at +32, rows begin at +41 (1px line + 8px margin).
-            var sectionStyle = new TextStyle
+            foreach (var section in vm.Sections)
             {
-                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                Weight = FontWeight.SemiBold,
-                Color = TextSecondary,
-            };
-            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
-            ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
-            ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
-                new Vector2(
-                    MathF.Min(
-                        width,
-                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
-                    24f * s));
-            if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
-                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
-                    "Select every bone in this group · Ctrl adds to the selection");
-            if (ImGui.IsItemClicked())
-                vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
-            float lineY = y + 32f * s;
-            dl.AddRectFilled(new Vector2(origin.X, lineY),
-                new Vector2(origin.X + width, lineY + 1f * s),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecond)));
-            y += 41f * s;
+                // .mxHead box model: 14px pad-top, 11px caps (~13px line), 5px
+                // pad-bottom → hairline at +32, rows begin at +41 (1px line +
+                // 8px margin).
+                var sectionStyle = new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                    Weight = FontWeight.SemiBold,
+                    Color = TextSecondary,
+                };
+                Crystarium.TextAt(
+                    new Vector2(origin.X, y + 15f * s), section.Title,
+                    sectionStyle);
+                ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
+                ImGui.InvisibleButton(
+                    section.Id,
+                    new Vector2(
+                        MathF.Min(
+                            width,
+                            Crystarium.MeasureText(section.Title, sectionStyle).X
+                                + 18f * s),
+                        24f * s));
+                if (ImGui.IsItemHovered())
+                    Crystarium.HoverHelp.Explain(
+                        section.Id,
+                        ImGui.GetItemRectMin(),
+                        ImGui.GetItemRectMax(),
+                        "Select every bone in this group · Ctrl adds to the selection");
+                if (ImGui.IsItemClicked())
+                    vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
+                float lineY = y + 32f * s;
+                dl.AddRectFilled(
+                    new Vector2(origin.X, lineY),
+                    new Vector2(origin.X + width, lineY + 1f * s),
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(BorderSecond)));
+                y += 41f * s;
 
-            // Row-major flow into `columns` tracks; wide rows take two slots.
-            int slot = 0;
-            float gridTop = y;
-            int gridRows = 0;
-            foreach (var row in section.Rows)
-            {
-                int span = row.Wide && columns > 1 ? 2 : 1;
-                if (slot % columns + span > columns)
-                    slot += columns - slot % columns; // wrap: wide row doesn't fit this line
+                // Row-major flow into `columns` tracks; wide rows take two
+                // slots.
+                int slot = 0;
+                float gridTop = y;
+                int gridRows = 0;
+                foreach (var row in section.Rows)
+                {
+                    int span = row.Wide && columns > 1 ? 2 : 1;
+                    // wrap: a wide row does not fit this line
+                    if (slot % columns + span > columns)
+                        slot += columns - slot % columns;
 
-                int gridRow = slot / columns;
-                int gridCol = slot % columns;
-                float cellX = origin.X
-                    + gridCol * (trackW + metrics.ColumnGap) * s;
-                float cellY = gridTop
-                    + gridRow * (metrics.RowHeight + metrics.RowGap) * s;
-                float cellW = (trackW * span
-                    + metrics.ColumnGap * (span - 1)) * s;
+                    int gridRow = slot / columns;
+                    int gridCol = slot % columns;
+                    float cellX = origin.X
+                        + gridCol * (trackW + metrics.ColumnGap) * s;
+                    float cellY = gridTop
+                        + gridRow * (metrics.RowHeight + metrics.RowGap) * s;
+                    float cellW = (trackW * span
+                        + metrics.ColumnGap * (span - 1)) * s;
 
-                DrawRow(
-                    vm, row, dl, new Vector2(cellX, cellY), cellW,
-                    s, $"{idPrefix}-{sectionIndex}-{slot}");
+                    DrawRow(vm, row, dl, new Vector2(cellX, cellY), cellW, s);
 
-                slot += span;
-                gridRows = Math.Max(gridRows, gridRow + 1);
+                    slot += span;
+                    gridRows = Math.Max(gridRows, gridRow + 1);
+                }
+                y = gridTop
+                    + (gridRows * (metrics.RowHeight + metrics.RowGap)
+                        - metrics.RowGap) * s;
             }
-            y = gridTop
-                + (gridRows * (metrics.RowHeight + metrics.RowGap)
-                    - metrics.RowGap) * s;
-            sectionIndex++;
+        }
+        finally
+        {
+            ImGui.PopID();
         }
 
         return y - origin.Y;
     }
 
     private static void DrawRow(BoneMatrixViewModel vm, BoneMatrixRow row, ImDrawListPtr dl,
-        Vector2 pos, float width, float s, string id)
+        Vector2 pos, float width, float s)
     {
         var metrics = Crystarium.ActiveTheme.Matrix;
         // pills right-aligned; label fills the rest, right-aligned with ellipsis
@@ -187,7 +219,7 @@ public static class BoneMatrixView
                 x,
                 pos.Y + (metrics.RowHeight - metrics.PillSize) / 2f * s));
             ImGui.InvisibleButton(
-                $"##{id}-p{i}",
+                pill.Id,
                 new Vector2(metrics.PillSize, metrics.PillSize) * s);
             // Capture ALL item state for THIS pill immediately after its
             // InvisibleButton: the label below submits another ImGui item, so
