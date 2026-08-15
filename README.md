@@ -35,7 +35,7 @@ Poser installs through its own Dalamud plugin repository:
 2. Add this URL under **Custom Plugin Repositories** and save:
 
    ```text
-   https://raw.githubusercontent.com/midona-rhel/Poser/master/dist/repo.json
+   https://raw.githubusercontent.com/midona-rhel/Poser/main/dist/repo.json
    ```
 
 3. Open the plugin installer (`/xlplugins`), search for **Poser**, install.
