@@ -636,7 +636,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             {
                 for (int i = 0; i < KeyboardFrame.KeyStateLength; i++)
                 {
-                    if (i == (int)VirtualKey.ESCAPE || i == (int)VirtualKey.RETURN)
+                    if (FreeCameraInputPolicy.NeverConsumed(i))
                         continue;
                     keyboard->KeyState[i] = 0;
                 }
@@ -747,19 +747,24 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         keyboard->HandleKey(VirtualKey.D);
         keyboard->HandleKey(VirtualKey.Q);
         keyboard->HandleKey(VirtualKey.E);
-        // The modifiers this path reads are consumed with the letters
-        // (Brio's EnableKeyHandlingOnKeyMod block, on by default): Shift is
-        // the second descend key and Ctrl/Alt are the speed modifiers, so
-        // leaving them in the frame hands the game a held modifier for every
-        // second the camera is descending. Turning the setting off gives the
-        // game those four back — Space included, since Space is the other
-        // half of the same rise/fall pair.
+        // The rise/fall pair goes with the letters: Space and Shift MOVE the
+        // camera, so a frame that consumes them is a frame they did something.
         if (settings.ConsumeModifiersWhileFlying)
         {
             keyboard->HandleKey(VirtualKey.SPACE);
             keyboard->HandleKey(VirtualKey.SHIFT);
-            keyboard->HandleKey(VirtualKey.CONTROL);
-            keyboard->HandleKey(VirtualKey.MENU);
+            // Ctrl and Alt are speed MODIFIERS: alone they move nothing, so
+            // they are taken only on a frame the camera is actually being
+            // flown. Taking them whenever a free camera merely happened to be
+            // live cost the game every chord built on them — the user's own
+            // hide-UI is Alt+NumPlus, and it stopped working for as long as a
+            // free camera existed (user 2026-08-15).
+            if (FreeCameraInputPolicy.IsFlying(
+                forwardBack, leftRight, upDown))
+            {
+                keyboard->HandleKey(VirtualKey.CONTROL);
+                keyboard->HandleKey(VirtualKey.MENU);
+            }
         }
 
         if (live.IsLocked)
