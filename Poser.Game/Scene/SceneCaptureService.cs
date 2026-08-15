@@ -190,9 +190,16 @@ public sealed class SceneCaptureService
             },
             _ => onCaptured(outcome ?? SceneCaptureOutcome.Fail(
                 "The scene capture produced no result.")));
+        // The refresh slot is SHARED with pose exports and the whole-scene
+        // snapshot, so losing it is an ordinary transient — the caller retries
+        // within its own window rather than losing the user's save to a
+        // background snapshot that armed a few ticks earlier. The refusal is
+        // named in scene words either way: "a pose export is already writing"
+        // explains nothing to someone who pressed Save scene.
         return begun.Success
             ? null
-            : begun.Detail ?? "The scene capture could not be armed.";
+            : "The scene capture could not be armed: " +
+                (begun.Detail ?? "the bone refresh slot was busy.");
     }
 
     /// <summary>The capture itself, run only from inside the armed refresh

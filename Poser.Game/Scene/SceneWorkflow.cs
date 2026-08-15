@@ -51,6 +51,23 @@ public sealed class SceneWorkflow : IDisposable
     /// catches a framework thread that stopped ticking entirely.</summary>
     private static readonly TimeSpan SceneCaptureTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// How long a save keeps re-offering its arm before it gives the refusal
+    /// back to the user. Every reason the arm refuses is TRANSIENT — a pose
+    /// import mid-apply, or the single bone-refresh slot held by a pose export
+    /// or by the whole-scene snapshot that armed a few ticks earlier — and each
+    /// clears within a second or so. Losing a user's whole-scene save to a
+    /// background snapshot's one-second window is not an acceptable answer, so
+    /// the save waits the window out instead of failing on the first no.
+    /// </summary>
+    private static readonly TimeSpan CaptureArmWindow = TimeSpan.FromSeconds(4);
+
+    /// <summary>Gap between arm attempts inside <see cref="CaptureArmWindow"/>
+    /// — roughly three frames, so a retry costs the framework thread nothing
+    /// and still catches the slot the tick it frees.</summary>
+    private static readonly TimeSpan CaptureArmRetryDelay =
+        TimeSpan.FromMilliseconds(50);
+
     /// <summary>Bound for every attached companion's own body to build. It is
     /// short because it is best-effort: the pose phase reports what did not
     /// make it, rather than the scene waiting on a companion that never
@@ -121,6 +138,11 @@ public sealed class SceneWorkflow : IDisposable
     /// waiting the real bound out would make asserting the timeout a
     /// fifteen-second test.</summary>
     internal TimeSpan CaptureBound { get; init; } = SceneCaptureTimeout;
+
+    /// <summary>The arm-retry window. Only the contract tests set it —
+    /// <see cref="TimeSpan.Zero"/> is exactly one attempt, which is what a test
+    /// asserting a named refusal wants.</summary>
+    internal TimeSpan ArmBound { get; init; } = CaptureArmWindow;
 
     /// <summary>Raised after any progress/receipt publication; UI reads the
     /// immutable snapshots, never workflow internals.</summary>
@@ -347,11 +369,26 @@ public sealed class SceneWorkflow : IDisposable
             string? armRefusal;
             try
             {
-                armRefusal = await _runtime.OnFramework(() =>
-                    Guard(operation, cancellation)
-                        ?? _runtime.ArmSceneCapture(
-                            operation.SceneScopeId, description,
-                            outcome => completion.TrySetResult(outcome)));
+                // Re-offered until the window runs out: every arm refusal names
+                // a slot somebody else holds for a few ticks, never a state the
+                // save can do anything about, and the first no used to end the
+                // save silently.
+                var deadline = DateTime.UtcNow + ArmBound;
+                while (true)
+                {
+                    armRefusal = await _runtime.OnFramework(() =>
+                        Guard(operation, cancellation)
+                            ?? _runtime.ArmSceneCapture(
+                                operation.SceneScopeId, description,
+                                outcome => completion.TrySetResult(outcome)));
+                    if (armRefusal is null || DateTime.UtcNow >= deadline)
+                        break;
+                    // A guard refusal is terminal — the session is gone or the
+                    // save was cancelled — and retrying it would only stall.
+                    if (Guard(operation, cancellation) is not null)
+                        break;
+                    await Task.Delay(CaptureArmRetryDelay, CancellationToken.None);
+                }
             }
             catch (Exception ex)
             {

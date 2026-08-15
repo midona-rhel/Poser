@@ -77,6 +77,11 @@ public sealed class SceneWorkflowTests
         /// <summary>Refuses the ARM — the save never reaches a capture.</summary>
         public string? CaptureArmRefusal;
 
+        /// <summary>Refusals the arm hands back ONCE each before it lands, the
+        /// way the shared bone-refresh slot refuses while a pose export or a
+        /// whole-scene snapshot is holding it.</summary>
+        public readonly Queue<string> TransientArmRefusals = new();
+
         /// <summary>Holds the armed capture open, the way a real refresh does
         /// while it waits for the update pass. <see cref="ReleaseCapture"/>
         /// lands it.</summary>
@@ -91,6 +96,8 @@ public sealed class SceneWorkflowTests
             Action<SceneCaptureOutcome> onCaptured)
         {
             Record("ArmSceneCapture");
+            if (TransientArmRefusals.Count > 0)
+                return TransientArmRefusals.Dequeue();
             if (CaptureArmRefusal is { } refusal)
                 return refusal;
             var outcome = SceneCaptureOutcome.Ok(
@@ -561,7 +568,11 @@ public sealed class SceneWorkflowTests
         {
             CaptureArmRefusal = "A pose import is applying.",
         };
-        using var workflow = new SceneWorkflow(runtime);
+        // A zero window is exactly one attempt: the named refusal, no retry.
+        using var workflow = new SceneWorkflow(runtime)
+        {
+            ArmBound = TimeSpan.Zero,
+        };
 
         Assert.True(workflow.BeginSave("shot.poserscene").Success);
         await workflow.Drain;
@@ -569,6 +580,89 @@ public sealed class SceneWorkflowTests
         Assert.Equal(new[] { "ArmSceneCapture" }, runtime.Calls);
         Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
         Assert.Contains("A pose import is applying.", workflow.Receipt.Detail);
+    }
+
+    /// <summary>
+    /// The bone-refresh slot is shared with pose exports and the whole-scene
+    /// snapshot, and the snapshot arms on its own cadence. A user's save that
+    /// arrives inside that window used to die on the first no — silently, with
+    /// no file — so the arm is re-offered until the slot frees or the window
+    /// runs out.
+    /// </summary>
+    [Fact]
+    public async Task A_transiently_busy_refresh_slot_is_waited_out_not_failed()
+    {
+        var runtime = new FakeRuntime();
+        runtime.TransientArmRefusals.Enqueue("A pose export is already writing.");
+        runtime.TransientArmRefusals.Enqueue("A pose export is already writing.");
+        using var workflow = new SceneWorkflow(runtime)
+        {
+            ArmBound = TimeSpan.FromSeconds(5),
+        };
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(
+            new[]
+            {
+                "ArmSceneCapture", "ArmSceneCapture", "ArmSceneCapture",
+                "CaptureScene", "StampMcdfHashes", "WriteScene",
+            },
+            runtime.Calls);
+        Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
+    }
+
+    /// <summary>A slot that never frees inside the window still ends in a
+    /// NAMED failure rather than a save that hangs or lies.</summary>
+    [Fact]
+    public async Task A_refresh_slot_that_never_frees_fails_the_save_by_name()
+    {
+        var runtime = new FakeRuntime
+        {
+            CaptureArmRefusal =
+                "The scene capture could not be armed: a pose export is already writing.",
+        };
+        using var workflow = new SceneWorkflow(runtime)
+        {
+            ArmBound = TimeSpan.FromMilliseconds(120),
+        };
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.DoesNotContain("WriteScene", runtime.Calls);
+        Assert.True(runtime.Calls.Count > 1, "the arm was never re-offered");
+        Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
+        Assert.Contains(
+            "could not be armed", workflow.Receipt.Detail);
+    }
+
+    /// <summary>A session that ends mid-window is terminal, not transient: the
+    /// save stops re-offering at once rather than spending the whole window on
+    /// a session that is gone.</summary>
+    [Fact]
+    public async Task A_session_that_ends_mid_window_stops_the_arm_retries()
+    {
+        var runtime = new FakeRuntime
+        {
+            CaptureArmRefusal = "A pose export is already writing.",
+        };
+        runtime.AfterCall = call =>
+        {
+            if (call == "ArmSceneCapture")
+                runtime.Session = SessionGeneration.New();
+        };
+        using var workflow = new SceneWorkflow(runtime)
+        {
+            ArmBound = TimeSpan.FromSeconds(5),
+        };
+
+        Assert.True(workflow.BeginSave("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(new[] { "ArmSceneCapture" }, runtime.Calls);
+        Assert.Equal(OperationReceiptState.Cancelled, workflow.Receipt!.State);
     }
 
     [Fact]
@@ -695,6 +789,75 @@ public sealed class SceneWorkflowTests
             runtime.Calls);
         Assert.Equal(OperationReceiptState.Applied, workflow.Receipt!.State);
         Assert.Empty(runtime.Destroyed);
+    }
+
+    /// <summary>
+    /// A scene written before the optional members existed still restores
+    /// EVERY phase. Such a file states no overlays, no borrowed map objects, no
+    /// environment, no capture origin, and — per actor — no animation, no
+    /// character file, no gaze, no companion and no placement transform. Every
+    /// one of those is an absent member the phase that owns it must read as
+    /// "nothing to do", never as a hole: a single phase treating absence as a
+    /// failure aborts the whole load and rolls back the actors, poses, props,
+    /// lights and cameras the file DOES state, which is exactly the shape of a
+    /// scene that "remembers nothing".
+    /// </summary>
+    [Fact]
+    public async Task A_scene_without_any_of_the_optional_members_restores_every_phase()
+    {
+        var lead = Actor("Lead", out var leadKey);
+        var scene = SceneWith(lead);
+        scene.Origin = null;
+        scene.Overlays = null;
+        scene.WorldObjects = null;
+        scene.Environment = null;
+        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
+        scene.Lights.Add(new SceneLight
+        {
+            Key = Guid.NewGuid(),
+            Light = new LightFile { Name = "Key" },
+        });
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(),
+            Camera = new CameraFile { Name = "Default" },
+            IsDefault = true,
+            IsLive = true,
+        });
+
+        Assert.Null(lead.Animation);
+        Assert.Null(lead.Mcdf);
+        Assert.Null(lead.Gaze);
+        Assert.Null(lead.CompanionPose);
+        Assert.Null(lead.CompanionKind);
+        Assert.Null(lead.ModelTransform);
+
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.True(workflow.BeginLoad("shot.poserscene").Success);
+        await workflow.Drain;
+
+        Assert.Equal(
+            OperationReceiptState.Applied,
+            workflow.Receipt!.State);
+        // No phase was skipped and no phase refused: an old file restores the
+        // same set of entities a new one does, minus only what it never said.
+        Assert.Contains("SpawnActor:Lead", runtime.Calls);
+        Assert.Contains("SpawnProp:Chair", runtime.Calls);
+        Assert.Contains("ArmPoseImport:Lead", runtime.Calls);
+        Assert.Contains("PlaceActor:Lead", runtime.Calls);
+        Assert.Contains("ApplyDefaultCamera", runtime.Calls);
+        Assert.Contains("SpawnLight", runtime.Calls);
+        Assert.DoesNotContain("AttachCompanion:Lead", runtime.Calls);
+        Assert.DoesNotContain("AdoptWorldObject", runtime.Calls);
+        Assert.Empty(runtime.Destroyed);
+
+        var outcome = workflow.Progress!.Outcome!;
+        Assert.True(outcome.Success);
+        Assert.All(outcome.Entities, entity =>
+            Assert.True(entity.Restored, entity.Detail));
+        Assert.Equal(leadKey, scene.Actors[0].Key);
     }
 
     /// <summary>
