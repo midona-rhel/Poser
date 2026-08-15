@@ -34,8 +34,19 @@ public sealed class UIManager : IUIManager
     private readonly IVirtualCameraService _cameras;
     private readonly SceneSession _scene;
     private readonly AnimationSceneActions _sceneActions;
-    private readonly Keybind[] _keybinds;
+    private readonly IFramework _framework;
+    private readonly KeybindDispatcher _keybinds;
+    private readonly HashSet<VirtualKey> _pollableKeys;
     private List<Dalamud.Interface.Windowing.IWindow>? _hiddenWindows;
+
+    // The draw pass's answer to "is an ImGui text field eating the keyboard",
+    // stamped with the tick it was taken on. The pump runs on the framework
+    // tick and must not touch ImGui, and a stamp that stops being refreshed
+    // means the UI stopped drawing — in which case nothing is being typed and
+    // the suppression has to lapse rather than latch. See HandleKeybinds.
+    private long _tick;
+    private long _textInputTick = long.MinValue;
+    private bool _textInput;
 
     public UIManager(
         IDalamudPluginInterface pluginInterface,
@@ -49,7 +60,8 @@ public sealed class UIManager : IUIManager
         PoseFileInspectorSection poseFileSection,
         IVirtualCameraService cameras,
         SceneSession scene,
-        AnimationSceneActions sceneActions)
+        AnimationSceneActions sceneActions,
+        IFramework framework)
     {
         _pluginInterface = pluginInterface;
         _gPoseService = gPoseService;
@@ -63,6 +75,7 @@ public sealed class UIManager : IUIManager
         _cameras = cameras;
         _scene = scene;
         _sceneActions = sceneActions;
+        _framework = framework;
 
         // Bound ONCE, in registry order: the delegates and their parsed
         // chords are the whole per-frame keybind state, so a frame that fires
@@ -70,7 +83,15 @@ public sealed class UIManager : IUIManager
         // the registry is the list, and an id it names with no handler is a
         // build-time hole, which is why the lookup throws rather than
         // skipping.
-        _keybinds = BuildKeybinds();
+        _keybinds = new KeybindDispatcher(BuildKeybinds());
+
+        // Dalamud's key state answers for the keys the GAME maps and throws
+        // for every other one. The chord vocabulary is wider than that map —
+        // the keypad and the OEM punctuation the Ktisis preset binds are not
+        // guaranteed to be in it — and a throw from inside the pump would
+        // take EVERY action down, silently, for the rest of the session. The
+        // supported set is read once and an unsupported key simply reads up.
+        _pollableKeys = [.. keyState.GetValidVirtualKeys()];
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
         _windows.Main.OnSpawnBrowserRequested += OpenSpawnBrowserAt;
@@ -79,6 +100,9 @@ public sealed class UIManager : IUIManager
 
         _pluginInterface.UiBuilder.Draw += DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi += ToggleMainWindow;
+        // Chords are polled on the TICK, never from the draw pass — see
+        // HandleKeybinds.
+        _framework.Update += OnFrameworkUpdate;
         ApplyUiHidePolicy();
 
         _eventBus.Subscribe<GPoseStateChangedEvent>(OnGPoseStateChanged);
@@ -117,7 +141,11 @@ public sealed class UIManager : IUIManager
         // on the foreground list above all of them.
         Crystarium.HoverHelp.Render();
         Interactive.EndFrame();
-        HandleKeybinds();
+        // The draw pass's ONLY keybind duty: report whether an ImGui text
+        // field is eating the keyboard this frame. The chords themselves are
+        // pumped from the tick.
+        _textInput = ImGui.GetIO().WantTextInput;
+        _textInputTick = _tick;
     }
 
     /// <summary>
@@ -125,7 +153,7 @@ public sealed class UIManager : IUIManager
     /// already makes from a button, a menu row or a strip — a chord binds an
     /// existing command, it never becomes the only way to reach one.
     /// </summary>
-    private Keybind[] BuildKeybinds()
+    private List<KeyValuePair<string, Action>> BuildKeybinds()
     {
         var handlers = new Dictionary<string, Action>(StringComparer.Ordinal)
         {
@@ -203,12 +231,10 @@ public sealed class UIManager : IUIManager
             ["Resume all actors"] = () => _sceneActions.ResumeAll(),
         };
 
-        var binds = new Keybind[KeybindRegistry.Actions.Count];
-        for (int i = 0; i < binds.Length; i++)
-        {
-            string id = KeybindRegistry.Actions[i].Id;
-            binds[i] = new Keybind(id, handlers[id]);
-        }
+        var binds = new List<KeyValuePair<string, Action>>(
+            KeybindRegistry.Actions.Count);
+        foreach (var action in KeybindRegistry.Actions)
+            binds.Add(new(action.Id, handlers[action.Id]));
         return binds;
     }
 
@@ -235,9 +261,25 @@ public sealed class UIManager : IUIManager
         _cameras.SetLive(cameras[next]);
     }
 
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        _tick++;
+        HandleKeybinds();
+    }
+
     /// <summary>
     /// Settings-configured keybinds. They are edge-triggered, GPose-only, and
     /// suppressed while an ImGui text field owns the keyboard.
+    ///
+    /// <para>Pumped from the FRAMEWORK TICK, never from the draw pass. Dalamud
+    /// raises a plugin's draw callback only while that plugin's UI is
+    /// drawable, and Poser leaves the user and automatic hides enabled by
+    /// default ("Show Poser when the game UI is hidden" is off): polling
+    /// chords from the end of the draw pass meant every chord went silent the
+    /// moment the photographer hid the HUD, and any window that threw before
+    /// the poll was reached silenced them for that frame too. Input does not
+    /// depend on drawing, so it is not polled from a draw (user 2026-08-15).
+    /// </para>
     /// </summary>
     private void HandleKeybinds()
     {
@@ -246,84 +288,27 @@ public sealed class UIManager : IUIManager
         // ImGui, so they are gated here rather than by the modal.
         if (Views.FirstRunNoticeView.Pending
             || !_gPoseService.IsGPosing
-            || ImGui.GetIO().WantTextInput)
+            || TextInputActive())
         {
-            foreach (var bind in _keybinds)
-                bind.Down = false;
+            _keybinds.Suspend();
             return;
         }
 
-        foreach (var bind in _keybinds)
-        {
-            // The SAME resolver the hover badges display, so a shown chord
-            // always matches one that fires. The resolver hands back the
-            // stored strings, so unchanged bindings compare equal and neither
-            // chord is re-parsed.
-            var slots = PoserKeybinds.Slots(bind.Name);
-            bind.Sync(slots);
-
-            bool active = ChordDown(bind.Primary) || ChordDown(bind.Secondary);
-            if (active && !bind.Down)
-            {
-                bind.Down = true;
-                bind.Run();
-            }
-            else if (!active)
-            {
-                bind.Down = false;
-            }
-        }
+        // The SAME resolver the hover badges display, so a shown chord always
+        // matches one that fires. The resolver hands back the stored strings,
+        // so unchanged bindings compare equal and neither chord is re-parsed.
+        _keybinds.Pump(PoserKeybinds.Slots, KeyDown);
     }
 
-    private bool ChordDown(KeyChord chord)
-    {
-        if (!chord.IsBound)
-            return false;
-        if (chord.Ctrl != _keyState[VirtualKey.CONTROL])
-            return false;
-        if (chord.Shift != _keyState[VirtualKey.SHIFT])
-            return false;
-        if (chord.Alt != _keyState[VirtualKey.MENU])
-            return false;
-        return _keyState[chord.Key];
-    }
+    /// <summary>The draw pass's text-input answer, and only while it is fresh:
+    /// a stamp older than a tick means the UI is not drawing at all, so no
+    /// field can be typing into and the suppression must not latch.</summary>
+    private bool TextInputActive() => _textInput && _tick - _textInputTick <= 1;
 
-    /// <summary>
-    /// One configured keybind: the action id the resolver and the hover
-    /// badges key on, the delegate it runs, and its TWO chords parsed —
-    /// string work happens only when the configured text actually changes.
-    ///
-    /// <para>The edge is the action's, not the slot's: both chords are the
-    /// same command, so holding one while tapping the other must not fire
-    /// twice.</para>
-    /// </summary>
-    private sealed class Keybind(string name, Action run)
-    {
-        public string Name { get; } = name;
-        public Action Run { get; } = run;
-        public KeyChord Primary { get; private set; }
-        public KeyChord Secondary { get; private set; }
-
-        private string _primaryText = string.Empty;
-        private string _secondaryText = string.Empty;
-
-        /// <summary>Edge state: the action was down on the previous frame.</summary>
-        public bool Down { get; set; }
-
-        public void Sync(KeybindSlots slots)
-        {
-            if (!string.Equals(slots.Primary, _primaryText, StringComparison.Ordinal))
-            {
-                _primaryText = slots.Primary;
-                Primary = KeyChord.Parse(slots.Primary);
-            }
-            if (!string.Equals(slots.Secondary, _secondaryText, StringComparison.Ordinal))
-            {
-                _secondaryText = slots.Secondary;
-                Secondary = KeyChord.Parse(slots.Secondary);
-            }
-        }
-    }
+    /// <summary>A key the game does not map reads UP rather than throwing —
+    /// see the supported-set read in the constructor.</summary>
+    private bool KeyDown(VirtualKey key) =>
+        _pollableKeys.Contains(key) && _keyState[key];
 
     private void ToggleAllUi()
     {
@@ -413,6 +398,7 @@ public sealed class UIManager : IUIManager
         _poseFileSection.OnLibraryRequested -= OpenPoseLibrary;
         _configService.OnConfigurationChanged -= ApplyConfiguration;
 
+        _framework.Update -= OnFrameworkUpdate;
         _pluginInterface.UiBuilder.Draw -= DrawUI;
         _pluginInterface.UiBuilder.OpenMainUi -= ToggleMainWindow;
     }
