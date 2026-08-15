@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<!-- Mirrors PosingCore's compile settings so the same language features
+		     and nullability rules apply to the tests. -->
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Nullable>enable</Nullable>
+		<LangVersion>preview</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<RootNamespace>Poser.Tests</RootNamespace>
+		<AssemblyName>PosingCore.Tests</AssemblyName>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<!-- PosingCore's Dalamud references are Private=false (the game supplies
+		     them at runtime). The test host has no such supplier, so everything
+		     the test process actually loads has to land in the test bin. -->
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
+
+	<!-- Same resolution order Dalamud.NET.SDK uses (Sdk.props): XIVLauncher's
+	     dev hooks directory, overridden by DALAMUD_HOME when set. This project
+	     cannot use Dalamud.NET.SDK itself because that SDK pins its own TFM,
+	     LangVersion and output layout and marks every Dalamud reference
+	     Private=false, which would leave Dalamud.dll out of the test bin. -->
+	<PropertyGroup>
+		<DalamudLibPath Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(appdata)\XIVLauncher\addon\Hooks\dev\</DalamudLibPath>
+		<DalamudLibPath Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(HOME)/.xlcore/dalamud/Hooks/dev/</DalamudLibPath>
+		<DalamudLibPath Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(HOME)/Library/Application Support/XIV on Mac/dalamud/Hooks/dev/</DalamudLibPath>
+		<DalamudLibPath Condition="'$(DALAMUD_HOME)' != ''">$(DALAMUD_HOME)/</DalamudLibPath>
+	</PropertyGroup>
+
+	<!-- Private=true (the default for a HintPath reference): these are copied
+	     next to the test assembly so IPluginLog / IFramework /
+	     IDalamudPluginInterface are loadable at test runtime. -->
+	<ItemGroup>
+		<Reference Include="Dalamud">
+			<HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
+		</Reference>
+		<Reference Include="Dalamud.Common">
+			<HintPath>$(DalamudLibPath)Dalamud.Common.dll</HintPath>
+		</Reference>
+		<Reference Include="Dalamud.Bindings.ImGui">
+			<HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGui.dll</HintPath>
+		</Reference>
+		<Reference Include="Dalamud.Bindings.ImPlot">
+			<HintPath>$(DalamudLibPath)Dalamud.Bindings.ImPlot.dll</HintPath>
+		</Reference>
+		<Reference Include="Dalamud.Bindings.ImGuizmo">
+			<HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGuizmo.dll</HintPath>
+		</Reference>
+		<Reference Include="FFXIVClientStructs">
+			<HintPath>$(DalamudLibPath)FFXIVClientStructs.dll</HintPath>
+		</Reference>
+		<Reference Include="InteropGenerator.Runtime">
+			<HintPath>$(DalamudLibPath)InteropGenerator.Runtime.dll</HintPath>
+		</Reference>
+		<Reference Include="Newtonsoft.Json">
+			<HintPath>$(DalamudLibPath)Newtonsoft.Json.dll</HintPath>
+		</Reference>
+		<Reference Include="Lumina">
+			<HintPath>$(DalamudLibPath)Lumina.dll</HintPath>
+		</Reference>
+		<Reference Include="Lumina.Excel">
+			<HintPath>$(DalamudLibPath)Lumina.Excel.dll</HintPath>
+		</Reference>
+		<Reference Include="Serilog">
+			<HintPath>$(DalamudLibPath)Serilog.dll</HintPath>
+		</Reference>
+		<Reference Include="Microsoft.Extensions.ObjectPool">
+			<HintPath>$(DalamudLibPath)Microsoft.Extensions.ObjectPool.dll</HintPath>
+		</Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+		<PackageReference Include="xunit.v3" Version="2.0.3" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" />
+		<PackageReference Include="NSubstitute" Version="5.3.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Transitional PosingCore and Game seams are exposed only to this
+		     Game-facing test assembly. -->
+		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+		<ProjectReference Include="..\Poser.Game\Poser.Game.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Using Include="Xunit" />
+	</ItemGroup>
+
+</Project>
