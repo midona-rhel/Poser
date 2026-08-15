@@ -54,6 +54,28 @@ public readonly record struct BoneId(
 
     public override string ToString() =>
         $"{Skeleton}/{PartialId}:{BoneIndex}:{CanonicalName}";
+
+    /// <summary>
+    /// Hashes the NATIVE LOOKUP KEY only, leaving
+    /// <see cref="CanonicalName"/> to <c>Equals</c>.
+    ///
+    /// <para>Equality is unchanged and still compares the name — this is a
+    /// coarser hash, not a looser identity, which is exactly what the hash
+    /// contract permits. The generated hash mixed the name in, so EVERY
+    /// dictionary probe on a bone id ran a full Marvin hash over the bone's
+    /// name (.NET does not cache string hash codes). The overlay probes a
+    /// bone-keyed dictionary about seven times per bone per frame and the
+    /// registry probes another, so a four-actor scene at ~200 bones each
+    /// hashed several thousand bone-name strings per frame to separate
+    /// lookups that partial/index already separates.</para>
+    ///
+    /// <para>Two bones can only collide here by sharing a skeleton
+    /// generation, a partial and an index while carrying DIFFERENT names —
+    /// which is precisely the identity-mismatch case the name exists to
+    /// catch, and it still resolves correctly through <c>Equals</c>.</para>
+    /// </summary>
+    public override int GetHashCode() =>
+        HashCode.Combine(Skeleton, PartialId, BoneIndex);
 }
 
 /// <summary>One spawned scene light at one exact native binding generation.</summary>

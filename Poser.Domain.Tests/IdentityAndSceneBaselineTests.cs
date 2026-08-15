@@ -44,6 +44,44 @@ public sealed class IdentityAndSceneBaselineTests
         Assert.True(first.IsValid);
     }
 
+    /// <summary>
+    /// The bone hash deliberately omits the canonical NAME so that a
+    /// dictionary probe never hashes a string; equality still carries it.
+    /// Equal ids must agree on the hash (the contract), a name-only
+    /// difference must still compare unequal (the identity guard), and the
+    /// native lookup key must keep separating what it separated before.
+    /// </summary>
+    [Fact]
+    public void Bone_hash_omits_the_name_that_equality_still_guards()
+    {
+        var actor = Actor();
+        var character = new SkeletonId(actor, PoseSlot.Character, 0);
+        var bone = new BoneId(character, 0, 4, "j_same");
+        var same = new BoneId(character, 0, 4, "j_same");
+        var renamed = new BoneId(character, 0, 4, "j_renamed");
+
+        Assert.Equal(bone.GetHashCode(), same.GetHashCode());
+        Assert.Equal(bone, same);
+        Assert.NotEqual(bone, renamed);
+        Assert.NotEqual(
+            bone.GetHashCode(),
+            new BoneId(character, 0, 5, "j_same").GetHashCode());
+        Assert.NotEqual(
+            bone.GetHashCode(),
+            new BoneId(character, 1, 4, "j_same").GetHashCode());
+        Assert.NotEqual(
+            bone.GetHashCode(),
+            new BoneId(
+                character.NextGeneration(), 0, 4, "j_same").GetHashCode());
+
+        // A rename shares the bucket and must still be its own key.
+        var map = new Dictionary<BoneId, string> { [bone] = "first" };
+        map[renamed] = "second";
+        Assert.Equal(2, map.Count);
+        Assert.Equal("first", map[bone]);
+        Assert.Equal("second", map[renamed]);
+    }
+
     [Fact]
     public void Current_scene_snapshot_round_trip_preserves_all_baseline_fields()
     {
