@@ -254,7 +254,7 @@ public sealed class SceneCaptureService
     /// <summary>
     /// Where the capture ran. The id is the durable machine fact; the NAME is
     /// persisted beside it, because the listing that groups scenes by place
-    /// runs in PosingCore, which has no game data to resolve an id with. The
+    /// runs in Poser.Core, which has no game data to resolve an id with. The
     /// resolution itself lives in <see cref="IPlaceService"/>, which pose
     /// auto-save stamps from too — a place must mean the same thing in both
     /// documents.

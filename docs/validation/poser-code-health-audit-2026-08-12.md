@@ -27,7 +27,7 @@ Independent verification on this snapshot:
   caption fields).
 - The older untracked backend audit's “zero tests” premise is stale. The test
   project is present and in the solution. The real gap is that current tests
-  concentrate on PosingCore; the Application and native lifecycle seams remain
+  concentrate on Poser.Core; the Application and native lifecycle seams remain
   largely dark.
 
 ## Fix first: confirmed correctness and safety defects
@@ -38,7 +38,7 @@ Current correctness depends on synchronous event subscription order, and even
 the intended “AutoSave first” order is defeated when the AutoSave factory
 eagerly resolves `IPoseFileService`, constructing `PosingService` first
 (`Poser/Composition/ServiceRegistration.cs:167-183`,
-`PosingCore/Files/PoseFileService.cs:25-31`,
+`Poser.Core/Files/PoseFileService.cs:25-31`,
 `Poser.Game/LegacyRuntime/PosingService.cs:63-94`). Exit can therefore restore
 the actor transform before the final snapshot captures it.
 
@@ -163,27 +163,27 @@ stable actor each tick rather than capturing a raw address
 ### 8. Make saved/recovery data durable and validated
 
 Pose, camera, and light saves use direct destination writes, so failure can
-truncate the previous valid file (`PosingCore/Files/PoseFile.cs:131-146`,
-`PosingCore/Files/CameraFile.cs:94-106`,
-`PosingCore/Files/LightFile.cs:141-156`). Implement one same-directory atomic
+truncate the previous valid file (`Poser.Core/Files/PoseFile.cs:131-146`,
+`Poser.Core/Files/CameraFile.cs:94-106`,
+`Poser.Core/Files/LightFile.cs:141-156`). Implement one same-directory atomic
 JSON writer: serialize fully, write/flush a unique temp, then replace/move while
 preserving the old destination on failure.
 
 AutoSave cleanup/final capture races its detached worker: CleanOnExit can delete
 before a worker creates its directory, or the final exit snapshot can be dropped
-by `_writeInFlight` (`PosingCore/Files/AutoSaveService.cs:201-218,238-354,543-571`).
+by `_writeInFlight` (`Poser.Core/Files/AutoSaveService.cs:201-218,238-354,543-571`).
 Coordinate worker completion: interval ticks may remain drop-not-queue, but exit
 must reserve a final snapshot and cleanup must join/cancel before deletion.
 
 Validate all loaded transforms before planning native writes. Current converters
 allow non-finite values and invalid quaternions into the plan
-(`PosingCore/Files/PoseFile.cs:119-160`,
-`PosingCore/Files/Converters/JsonNumericsConverters.cs:28-38`). Bound clipboard
+(`Poser.Core/Files/PoseFile.cs:119-160`,
+`Poser.Core/Files/Converters/JsonNumericsConverters.cs:28-38`). Bound clipboard
 decompression and library traversal/metadata reads. Detect Anamnesis name
 conversion collisions instead of last-write-wins. Fix reset-before-import to
 derive reset targets from the same successfully matched scope as writes; today
 an unknown-only or filtered file can clear unrelated authored stacks
-(`PosingCore/Files/PoseFileService.cs:194-235,268-400`).
+(`Poser.Core/Files/PoseFileService.cs:194-235,268-400`).
 
 ### 9. Repair global animation ownership semantics
 
@@ -255,7 +255,7 @@ These are justified extractions, not generic “shorten large files” work:
 Native reads in `GraphicalBonePane` violate the rendering-only boundary
 (`Poser/UI/Panes/GraphicalBonePane.cs:275-305`). Move that single race/head-map
 query behind a Game read port first. Later quarantine the remaining unsafe
-`PosingCore` entity/expression reads and rename LegacyRuntime namespaces one
+`Poser.Core` entity/expression reads and rename LegacyRuntime namespaces one
 service at a time; do not combine this with the correctness fixes above.
 
 ## Test program

@@ -269,7 +269,7 @@ public sealed class PoseFileInspectorSection
     /// options: disabled prefix categories become exclusions, the slot rows
     /// (Weapons / Emote Props / Fashion Accessories) gate their slots, and
     /// a disabled Other row bans uncategorized bones. The fold itself lives
-    /// in PosingCore beside the catalog, so the tests pin the same code the
+    /// in Poser.Core beside the catalog, so the tests pin the same code the
     /// popup runs.</summary>
     public PoseImportOptions ApplyCategoryFilter(PoseImportOptions options) =>
         Files.ImportBoneCategories.ApplyDisabledCategories(
@@ -2780,7 +2780,7 @@ public sealed class PoseFileInspectorSection
     public PoseImportOptions BuildImportOptions() => BuildOptions();
 
     /// <summary>
-    /// Brio's four-state dispatch table lives in PosingCore
+    /// Brio's four-state dispatch table lives in Poser.Core
     /// (<see cref="PoseImportOptions.ForImportType"/>, pinned by
     /// PoseImportTypeMatrixTests); this adds the switches that ride EVERY
     /// state, and hands the bone filter to the one state Brio lets it govern —

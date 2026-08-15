@@ -42,14 +42,14 @@
           "Poser.Domain": "[1.0.0, )"
         }
       },
-      "poser.domain": {
-        "type": "Project"
-      },
-      "posingcore": {
+      "poser.core": {
         "type": "Project",
         "dependencies": {
           "Poser.Domain": "[1.0.0, )"
         }
+      },
+      "poser.domain": {
+        "type": "Project"
       }
     }
   }

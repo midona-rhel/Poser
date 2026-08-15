@@ -47,8 +47,8 @@ copyleft applies.
 
 | File in this repo | Upstream | Upstream license |
 |---|---|---|
-| `PosingCore/Data/RestPoses/BrioAPose.pose`, `BrioTPose.pose` | Brio, `Resources/Embedded/Data` | GPL-3.0-only |
-| `PosingCore/Data/BoneCategories/BoneCategories.json` | Brio, `Resources/Embedded/Data/BoneCategories.json` | GPL-3.0-only |
+| `Poser.Core/Data/RestPoses/BrioAPose.pose`, `BrioTPose.pose` | Brio, `Resources/Embedded/Data` | GPL-3.0-only |
+| `Poser.Core/Data/BoneCategories/BoneCategories.json` | Brio, `Resources/Embedded/Data/BoneCategories.json` | GPL-3.0-only |
 | `Poser.Game/Data/Festivals.json` | Brio (curated festival names/phases/exclusions) | GPL-3.0-only |
 | `Poser.Game/Data/props.json` | Ktisis, `Data/Library/props.json` (community props library) | GPL-3.0-only |
 

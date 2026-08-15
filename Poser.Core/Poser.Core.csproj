@@ -30,7 +30,7 @@
 		<!-- Transitional runtime implementations now live in Poser.Game while
 		     their native entity storage is migrated out of this assembly. -->
 		<InternalsVisibleTo Include="Poser.Game" />
-		<InternalsVisibleTo Include="PosingCore.Tests" />
+		<InternalsVisibleTo Include="Poser.Core.Tests" />
 		<!-- The scene transaction lives in Poser.Game; its tests build the
 		     store's read/write outcomes directly. -->
 		<InternalsVisibleTo Include="Poser.Game.Tests" />

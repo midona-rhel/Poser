@@ -1,17 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<!-- Mirrors PosingCore's compile settings so the same language features
+		<!-- Mirrors Poser.Core's compile settings so the same language features
 		     and nullability rules apply to the tests. -->
 		<TargetFramework>net10.0-windows</TargetFramework>
 		<Nullable>enable</Nullable>
 		<LangVersion>preview</LangVersion>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<RootNamespace>Poser.Tests</RootNamespace>
-		<AssemblyName>PosingCore.Tests</AssemblyName>
+		<AssemblyName>Poser.Core.Tests</AssemblyName>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<!-- PosingCore's Dalamud references are Private=false (the game supplies
+		<!-- Poser.Core's Dalamud references are Private=false (the game supplies
 		     them at runtime). The test host has no such supplier, so everything
 		     the test process actually loads has to land in the test bin. -->
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
@@ -79,9 +79,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Transitional PosingCore and Game seams are exposed only to this
+		<!-- Transitional Poser.Core and Game seams are exposed only to this
 		     Game-facing test assembly. -->
-		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+		<ProjectReference Include="..\Poser.Core\Poser.Core.csproj" />
 		<ProjectReference Include="..\Poser.Game\Poser.Game.csproj" />
 	</ItemGroup>
 

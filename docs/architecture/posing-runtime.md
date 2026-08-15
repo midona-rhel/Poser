@@ -7,7 +7,7 @@ compiler-real even while its `LegacyRuntime` folder is a compatibility seam.
 The folder contains concrete owners such as actor/GPose, skeleton/slot/bone,
 transform/pose/IK/gaze, spawn/companion/prop, animation/presentation/
 integration/MCDF, camera/light/environment, and the native portions of files
-and configuration. They still consume `PosingCore` entities, services, and
+and configuration. They still consume `Poser.Core` entities, services, and
 policies through the transitional graph; see
 [product-and-boundaries.md](product-and-boundaries.md) for the complete
 inventory and exit proof.
@@ -87,7 +87,7 @@ generations through `StableBindingRegistry` immediately before native access.
 a gesture baseline. The remaining Game runtime ports and hooks include
 animation, presentation, integration/MCDF, scene lifecycle, and the native
 camera, lighting, environment, and skeleton-finalization hooks; these remain
-Game-owned while their transitional callers move off PosingCore.
+Game-owned while their transitional callers move off Poser.Core.
 
 - Animation/IK/physics run first; Poser reapplies persistent layers in the
   skeleton hook, then caches, reparents, caches, and publishes the final

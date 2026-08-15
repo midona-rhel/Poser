@@ -130,7 +130,7 @@ New-Item -ItemType Directory $Fresh | Out-Null
 $excludeDirs = @(
     "$Src\Brio", "$Src\Ktisis", "$Src\Anamnesis",
     "$Src\DevHost", "$Src\Norvrandt.Tests",
-    "$Src\PosingCore\Data\GameData",
+    "$Src\Poser.Core\Data\GameData",
     "$Src\.git", "$Src\.claude", "$Src\claude",
     "$Src\tools\uiverify", "$Src\tools\__pycache__",
     'bin', 'obj', '.vs', '.idea', '__pycache__'
@@ -216,7 +216,7 @@ git -C $Scratch rev-parse HEAD
 # "$Src\docs\validation" to $excludeDirs in step 4, or the two sides disagree.
 $excludedPrefixes = @(
     'Brio/', 'Ktisis/', 'DevHost/', 'Norvrandt.Tests/',
-    'PosingCore/Data/GameData/'
+    'Poser.Core/Data/GameData/'
     # , 'docs/validation/'
 )
 $isExcluded = {

@@ -26,7 +26,7 @@ republication and repository bloat, not license incompatibility.
 
 | Path | Verdict | Why |
 |---|---|---|
-| `PosingCore/Data/GameData/` (currently `WorldObjectPaths.json.gz`, ~444 KB) | **EXCLUDE** | Extracted FINAL FANTASY XIV game data. Not Poser's to redistribute, and not needed to build. Already gitignored. |
+| `Poser.Core/Data/GameData/` (currently `WorldObjectPaths.json.gz`, ~444 KB) | **EXCLUDE** | Extracted FINAL FANTASY XIV game data. Not Poser's to redistribute, and not needed to build. Already gitignored. |
 
 ## 3. Local-only and session artifacts
 
@@ -55,7 +55,7 @@ Judged, not skipped. Every one of these is tracked on `codex/release-prep` today
 | `docs/brio/parity-checklist.md`, `docs/brio/known-brio-bugs.md` | **KEEP** | Poser's own comparison notes. No upstream source is reproduced. |
 | `docs/architecture/`, `docs/features/`, `docs/process/`, `docs/README.md` | **KEEP** | The normative documentation set. |
 | `tools/Test-PoserLiveRun.ps1`, `tools/count-lines.ps1` | **KEEP** | Developer scripts, no secrets. |
-| `PosingCore/Data/RestPoses/*.pose`, `Data/BoneCategories/BoneCategories.json`, `Poser.Game/Data/Festivals.json`, `Poser.Game/Data/props.json` | **KEEP** | Upstream GPL-3.0 data files that Poser embeds and *must* ship for the plugin to work. Attributed per file in `THIRD-PARTY-LICENSES.md`; the copyleft is honoured because Poser is GPL-3.0-only. |
+| `Poser.Core/Data/RestPoses/*.pose`, `Data/BoneCategories/BoneCategories.json`, `Poser.Game/Data/Festivals.json`, `Poser.Game/Data/props.json` | **KEEP** | Upstream GPL-3.0 data files that Poser embeds and *must* ship for the plugin to work. Attributed per file in `THIRD-PARTY-LICENSES.md`; the copyleft is honoured because Poser is GPL-3.0-only. |
 | `Poser/LICENSE` | **KEEP (corrected)** | Was an MIT notice contradicting the root license; now a GPLv3 notice pointing at the root `LICENSE`. |
 | `Poser/README.md` | **KEEP (fixed 2026-08-15)** | Was a one-line stub (`# Poser`). Now says what the project directory is and points at the root README, `AGENTS.md` and `docs/`. |
 
@@ -76,7 +76,7 @@ The runbook has a hard gate that greps for `REPLACE-WITH-OWNER` before tagging.
 
 The existing `.gitignore` already covers build output, `/Brio/`, `CLAUDE.md`,
 `.claude`, `imgui.ini`, `tools/__pycache__/`, `tools/uiverify/`,
-`docs/validation/**/*.png` and `PosingCore/Data/GameData/`. Append this block so
+`docs/validation/**/*.png` and `Poser.Core/Data/GameData/`. Append this block so
 the new root also refuses everything the fresh-root build was built to leave out,
 even if someone later drops a clone or a harness back into the tree.
 
@@ -126,7 +126,7 @@ AGENTS.local.md
 /docs/validation/**/*.gif
 
 # Game-derived data. Not ours to redistribute.
-/PosingCore/Data/GameData/
+/Poser.Core/Data/GameData/
 
 # Packaged plugin output.
 *.zip

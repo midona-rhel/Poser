@@ -39,16 +39,16 @@ listed as retained is not part of the active product surface.
 
 ## Compiler-real boundaries
 
-The current solution is transitional. `PosingCore` is a shared mixed legacy
+The current solution is transitional. `Poser.Core` is a shared mixed legacy
 layer that still contains transitional unsafe/native/Dalamud/runtime code,
 including entities such as `ActorBase` and `Skeleton` and its
 `AllowUnsafeBlocks` setting. `Poser.Game` is the compiler-real native/runtime
 destination and boundary, but it is not yet the sole native/runtime assembly
-while that PosingCore code remains; in the target graph, `Poser.Game` is the
+while that Poser.Core code remains; in the target graph, `Poser.Game` is the
 sole native/runtime assembly. Many Game files are under `LegacyRuntime` and
 use `Poser.Game` namespaces. `Domain` has no project references, `Application`
 references `Domain`, `Game` references `Domain`, `Application`, and
-`PosingCore`, and host `Poser` composes all of those with the single
+`Poser.Core`, and host `Poser` composes all of those with the single
 `Poser.UI` assembly. Product UI still has host-side `Poser/UI` code alongside
 the rendering/primitives assembly; that split is transitional, not a second UI
 ownership model.
@@ -62,10 +62,10 @@ only if it can reference `Domain` and the minimum `Application` storage
 contracts while never referencing `Game`, Dalamud, ImGui, native state, or live
 UI state; otherwise it stays behind those contracts in `Application`.
 `Poser.UI` remains one assembly: there is no `UI.Kernel` project. Host `Poser`
-is composition and lifecycle wiring only. `PosingCore` eventually disappears
+is composition and lifecycle wiring only. `Poser.Core` eventually disappears
 after its callers move.
 
-Namespaces do not imply assembly ownership. `PosingCore` currently has
+Namespaces do not imply assembly ownership. `Poser.Core` currently has
 `RootNamespace` `Poser`; `LegacyRuntime` is a folder and compatibility seam
 inside `Poser.Game`. “Core”, Domain, and Game/runtime are therefore not
 interchangeable terms.
@@ -73,7 +73,7 @@ interchangeable terms.
 ## Current traversal and exit proof
 
 Before Slice 1, native writes and feature ownership still traverse the mixed
-contracts/entities in `PosingCore` and concrete `Poser.Game`/`LegacyRuntime`
+contracts/entities in `Poser.Core` and concrete `Poser.Game`/`LegacyRuntime`
 owners. The inventory is: actor and GPose discovery/lifetime; skeleton, slot,
 and bone discovery; transforms, pose application, IK, and gaze; spawn,
 companion, and prop creation/deletion; animation, presentation, integration,
@@ -96,10 +96,10 @@ only when its exact callers are zero or replaced, its composition registration
 is removed or replaced, its native leases are transferred or released, and
 the replacement passes ordinary and fault-path tests. The replacement must
 also preserve the accepted generation/lifecycle contract and keep pointers,
-addresses, indices, and native objects inside `Poser.Game`. The `PosingCore`
+addresses, indices, and native objects inside `Poser.Game`. The `Poser.Core`
 project may be removed only after its solution/project-reference edges and
 production/test callers are zero, migrated generation/lifecycle contracts are
-accepted, and no forbidden native edge remains. PosingCore codecs, assets,
+accepted, and no forbidden native edge remains. Poser.Core codecs, assets,
 and policies migrate selectively. Broad interfaces/entities, EventBus, and
 legacy mutable owners are removed after their callers move; they are not
 recreated under new generic names.

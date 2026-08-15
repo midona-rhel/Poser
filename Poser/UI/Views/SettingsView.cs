@@ -1445,7 +1445,7 @@ public static class SettingsView
         page.Section("ABOUT", form =>
         {
             form.ReadOnly("Poser", vm.Version);
-            form.ReadOnly("Stack", "Crystarium · PosingCore");
+            form.ReadOnly("Stack", "Crystarium · Poser.Core");
             form.Actions("Source", actions => actions.Button(
                 "Open repository",
                 () => vm.OnOpenRepository?.Invoke()));

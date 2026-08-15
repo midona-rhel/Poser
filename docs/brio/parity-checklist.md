@@ -106,7 +106,7 @@ them body-scope rotation-only from the import popup ("Import A-Pose"/"Import T-P
 neutral rest pose; there is no A/T-pose anywhere.
 
 **Verified 2026-08-11: PARTIAL.** A-pose/T-pose are done end-to-end: embedded
-`PosingCore/Data/RestPoses/BrioAPose.pose`/`BrioTPose.pose` (`RestPoses.cs:29-30`),
+`Poser.Core/Data/RestPoses/BrioAPose.pose`/`BrioTPose.pose` (`RestPoses.cs:29-30`),
 `CleanPoseFacade.ApplyRestPose` (one undoable edit, rotation-only body,
 reset-before-import for A→T→A idempotence), "Presets" row with A-pose/T-pose buttons in the
 import surfaces (`PoseFileInspectorSection.cs:992-999`) reachable from actor context menu,
@@ -137,7 +137,7 @@ breadcrumbs, icon-size slider, per-entry import options, "Apply To {actor}", Ctr
 config switch making every "Import" button open the library instead of the OS picker.
 
 **Poser:** absent — two raw file dialogs only. `PoseFile.Base64Image`/`Tags` are serialized
-but never surfaced (`PosingCore/Files/PoseFile.cs:23-24`).
+but never surfaced (`Poser.Core/Files/PoseFile.cs:23-24`).
 
 **Verified 2026-08-11: DONE (exceeds spec).** Full workspace mode: `PoseLibraryService` +
 `PoseLibraryPane`/`PoseLibraryView`, entered from the sidebar LIBRARY header, titlebar
@@ -167,7 +167,7 @@ Brio: `AutoSaveService` timer during GPose writing a scene file and, with
 clean-on-exit, and a "View Auto-Saves" browser (`Game/Core/AutoSaveService.cs`,
 `FileUIHelpers.cs:33-69`).
 
-**Verified 2026-08-11: DONE.** `AutoSaveService` (`PosingCore/Files/AutoSaveService.cs`),
+**Verified 2026-08-11: DONE.** `AutoSaveService` (`Poser.Core/Files/AutoSaveService.cs`),
 eagerly resolved at startup (`Poser.cs:79-82`), timer armed only in GPose, GPose-exit
 snapshot, disk-based retention counting save events, clean-on-exit, Settings rows
 (General → AUTO-SAVE incl. "Open in Explorer"), burger "Auto-saves" recovery entry plus a
@@ -191,7 +191,7 @@ animation local times zeroed, pose applied, speed restored *unless* "Freeze Acto
 (`Capabilities/Actor/ActionTimelineCapability.cs:110-181`, `FileUIHelpers.cs:78-199`).
 Ktisis is frozen by definition while posing is enabled.
 
-**Poser:** absent — `PosingCore/Files/PoseFileService.cs` has zero animation interaction, so
+**Poser:** absent — `Poser.Core/Files/PoseFileService.cs` has zero animation interaction, so
 importing onto an actor whose animation is playing applies edits against a moving baseline
 and the result is immediately fought by playback.
 
@@ -248,7 +248,7 @@ remain harness-facing (`CleanPoseFacade.cs:294,297`); this is not an absent tran
 capability, but it is not a separate Copy/Paste rail affordance.
 
 **Verified 2026-08-11: PARTIAL.** The clipboard half shipped (commit `11a4633`):
-`PosingCore/Files/PoseClipboard.cs` (Brio-compatible compressed JSON), "From clipboard"
+`Poser.Core/Files/PoseClipboard.cs` (Brio-compatible compressed JSON), "From clipboard"
 import (`PoseFileInspectorSection.cs:970-973`) and "To Clipboard" export (`:445`), both
 reachable from the actor context menu and FILES rail, with round-trip tests. Still missing:
 the Copy/Paste pair itself — `CleanPoseFacade.Copy`/`.Paste` retain **zero UI callers**
@@ -481,7 +481,7 @@ the v-slice below. Capture, an ordered load with per-step outcomes and caller-ch
 `SceneLoadOptions`, autosave on a cadence, and a versioned file with typed refusals for
 too-old/too-new/damaged documents all ship (`Poser.Game/Scene/SceneCaptureService.cs`,
 `SceneLoadOptions.cs`, `SceneAutoSaveService.cs`, `SceneRuntimeAdapter.cs`,
-`PosingCore/Files/SceneFileValidation.cs`), driven from `Poser/UI/Panes/ScenePane.cs` and
+`Poser.Core/Files/SceneFileValidation.cs`), driven from `Poser/UI/Panes/ScenePane.cs` and
 covered by `Poser.Game.Tests/Scene/SceneWorkflowTests.cs`. A scene carries actors, lights,
 camera, environment and the world objects it borrowed — appearance and gaze targets stay
 out, per the standing exclusion. `docs/features/scenes.md` is the normative description.
@@ -619,11 +619,11 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 | Undo/redo tooltips show what will be undone | (Poser's own backend) | **fixed** — both descriptions are pumped into the shell view-model (`MainWindow.cs:1348-1349`) and are what the undo/redo affordances say (`AppShellView.cs:790,799,1483,1492`) |
 | Mouse-wheel nudge on hovered gizmo rings / numeric fields | Brio `ImGuizmoExtensions.cs:10-45`; Ktisis `TransformTable.cs:200-218` | **half fixed** — numeric wells take the wheel with ImGui's own claim (`Poser.UI/Primitives/Tags/AxisWell.cs:52-85`, `PoseFileInspectorSection.cs:1865-1898`); the gizmo's rail rings are still drag-only — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Wheel-cycling the overlay disambiguation popup | Brio `PosingOverlayWindow.cs:346-450`; Ktisis `SelectableGui.cs:101-158` | **fixed** — the whole lifecycle is ported per mode, not just the cycling. The cluster preview follows the cursor, takes no input and dies with the hover in both modes; Ktisis then wheels a carried highlight the click commits, while Brio raises its second surface — an anchored pick popup that outlives the hover, takes the dots out of play while up, scrubs the selection one entry per notch and closes on Escape, a press outside, or a picked row (`SkeletonOverlayWindow.PreviewVisible`/`PickPopupOpens`/`PickPopupStaysOpen`/`BrioPickStep`, covered in `Poser.ContractTests/OverlayGizmoContractTests.cs`) |
-| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | **fixed** — separate `EntitySpeed`/`BoneSpeed` chosen per edited thing (`PosingCore/Config/TransformConfiguration.cs:18-26`), both in Settings as the "Transform Slider Speed" pair |
-| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | **fixed** — `UndoDepth` in config, wired at registration (`ServiceRegistration.cs`) and exposed in Settings; recovery-tested (`PosingCore.Tests/Core/ConfigurationRecoveryTests.cs`) |
+| Per-bone / per-actor transform movement speed | Brio `PosingTransformEditor.cs:282-318` | **fixed** — separate `EntitySpeed`/`BoneSpeed` chosen per edited thing (`Poser.Core/Config/TransformConfiguration.cs:18-26`), both in Settings as the "Transform Slider Speed" pair |
+| Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | **fixed** — `UndoDepth` in config, wired at registration (`ServiceRegistration.cs`) and exposed in Settings; recovery-tested (`Poser.Core.Tests/Core/ConfigurationRecoveryTests.cs`) |
 | "Open with GPose / Close with GPose" settings do nothing | (Poser's own settings) | **fixed** — both read now (`UIManager.cs:104,107`, `UiWindowSet.cs:89`) |
 | Sidebar/inspector dock + tree-guide settings do nothing | (Poser's own settings) | **resolved** — `ShowTreeGuides` read (`ShellSidebar.cs:192`); dock settings removed |
-| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | **fixed** — reference pictures are floating, aspect-locked, opacity-dimmed windows that join the Overlays group and persist across leaving GPose (`Poser/UI/Windows/ReferenceImageWindow.cs`, `ReferenceImageSession.cs`, `ReferenceImageGeometry.cs`, `PosingCore/Config/ReferenceImageConfiguration.cs`), covered by `Poser.ContractTests/ReferenceImageContractTests.cs` |
+| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | **fixed** — reference pictures are floating, aspect-locked, opacity-dimmed windows that join the Overlays group and persist across leaving GPose (`Poser/UI/Windows/ReferenceImageWindow.cs`, `ReferenceImageSession.cs`, `ReferenceImageGeometry.cs`, `Poser.Core/Config/ReferenceImageConfiguration.cs`), covered by `Poser.ContractTests/ReferenceImageContractTests.cs` |
 | Custom 2D pose-view images per view | Ktisis `PoseViewConfig` + Settings → Pose View | absent (embedded maps only) — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Per-race overlay bone-dot offsets | Ktisis `OffsetConfig` + offset editor | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | **fixed** — `PoserConfiguration.SpawnFrozen` applies to every actor Poser adds, the spawn browser's own rows and world adoption alike (`WorldAdoptionSource.cs:369-377`) |

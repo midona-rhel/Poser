@@ -17,7 +17,7 @@ namespace Poser.UI;
 /// Bounded, asynchronous thumbnail store for the pose library grid.
 /// <para>
 /// A .pose file may carry a top-level <c>Base64Image</c> string (see
-/// <c>PosingCore/Files/PoseFile.cs</c>). Decoding one costs a file read, a
+/// <c>Poser.Core/Files/PoseFile.cs</c>). Decoding one costs a file read, a
 /// JSON parse, a base64 decode and a texture upload — Brio does all four on
 /// the render thread via <c>CreateFromImageAsync(data).Wait()</c>, which
 /// stalls the frame once per newly visible tile. Here the decode runs on a

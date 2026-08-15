@@ -63,7 +63,7 @@ CLAUDE.md
 /tools/__pycache__/
 /tools/uiverify/
 /docs/validation/**/*.png
-/PosingCore/Data/GameData/
+/Poser.Core/Data/GameData/
 
 # The build-output rule `[Rr]elease/` above matches a directory of that name at
 # ANY depth, so it swallows the release documentation as well. Re-include the
@@ -106,7 +106,7 @@ AGENTS.local.md
 /docs/validation/**/*.gif
 
 # Game-derived data. Not ours to redistribute.
-/PosingCore/Data/GameData/
+/Poser.Core/Data/GameData/
 
 # Packaged plugin output.
 *.zip

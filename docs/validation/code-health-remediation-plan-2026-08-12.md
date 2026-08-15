@@ -26,7 +26,7 @@ Migrate one useful vertical feature at a time through the existing compiler
 real layers. Keep cohesive concrete owners and the native algorithms that
 already preserve identity, ordering, and failure behavior. Share only small
 policies with real cross-cutting contracts: typed outcomes, operation receipts,
-atomic writes, and explicit lifecycle phases. The end state removes PosingCore,
+atomic writes, and explicit lifecycle phases. The end state removes Poser.Core,
 but it does not begin with a wholesale rewrite or introduce a generic manager,
 service, mediator, capability-bag, repository, or interface-per-class layer.
 
@@ -48,7 +48,7 @@ not redo it. The corrected dependency order is:
   -> 9 animation, presentation, camera, light, and environment
   -> 10 actual in-game UI surfaces and read models
   -> 11 whole-shot and remaining product verticals
-  -> 12 PosingCore/facade/EventBus deletion and assembly enforcement
+  -> 12 Poser.Core/facade/EventBus deletion and assembly enforcement
 ~~~
 
 The order deliberately differs from the old Train 1–8 sequence. Autosave's
@@ -68,9 +68,9 @@ they are observations, not new architecture contracts.
 | Checked fact | Evidence and consequence |
 |---|---|
 | T1.1 is the accepted base | git show dd055101... is tagged poser-train-1-1-accepted-2026-08-12; its three changes harden Poser.ContractTests characterization for activation, transaction rollback, and exact replacement-generation refusal. No production code changed in that commit. |
-| The current solution is transitional | Poser.slnx still contains Poser.UI, host Poser, Poser.Application, Poser.Domain, Poser.Game, PosingCore, PosingCore.Tests, and Poser.ContractTests. The final Poser.Domain.Tests and Poser.Application.Tests targets do not yet exist; T1.1 is transitional Poser.ContractTests coverage. |
-| Current compiler direction is sound but incomplete | Poser.Domain has no project references; Poser.Application references Domain; Poser.Game references Domain, Application, and PosingCore; host Poser references all of those plus UI. The migration preserves this direction while removing the PosingCore edge. |
-| Runtime/native quarantine is not yet compiler-real | PosingCore still permits unsafe code and contains native entity/file/runtime code; Poser.Game still references it. Poser.UI is currently the Crystarium kernel project, while product UI under Poser/UI is in the host. Poser/UI/Panes/GraphicalBonePane.cs still imports native client structs. |
+| The current solution is transitional | Poser.slnx still contains Poser.UI, host Poser, Poser.Application, Poser.Domain, Poser.Game, Poser.Core, Poser.Core.Tests, and Poser.ContractTests. The final Poser.Domain.Tests and Poser.Application.Tests targets do not yet exist; T1.1 is transitional Poser.ContractTests coverage. |
+| Current compiler direction is sound but incomplete | Poser.Domain has no project references; Poser.Application references Domain; Poser.Game references Domain, Application, and Poser.Core; host Poser references all of those plus UI. The migration preserves this direction while removing the Poser.Core edge. |
+| Runtime/native quarantine is not yet compiler-real | Poser.Core still permits unsafe code and contains native entity/file/runtime code; Poser.Game still references it. Poser.UI is currently the Crystarium kernel project, while product UI under Poser/UI is in the host. Poser/UI/Panes/GraphicalBonePane.cs still imports native client structs. |
 | Native failure is inconsistent | Gaze construction is an eager, signature/hook failure path; IK and bone-hook capability loss can be silent. Current contract tests cover application seams, not the full native lifecycle. |
 | Dated gate evidence is not final acceptance | The audit snapshot reports 166 Release tests passing and a successful Release build with three warnings. Treat that as historical evidence to reverify at each accepted head; warnings must be removed or explicitly accepted by the organizer. |
 | The UI visual lab is transitional tooling | The integrated chain named above deleted `tools/ui-conformance` and owns the related UI/testing/PBI paths. The organizer accepted integrated head `cdf306e` after independent no-findings review and Release build/tests (175/175, no Debug/live). The actual in-game UI is now the sole visual oracle; no replacement lab or synthetic visual gate is authorized. |
@@ -161,8 +161,8 @@ models/actions; a separate kernel assembly is justified only by a demonstrated
 independent compile boundary, not by naming. The host keeps composition and
 lifecycle wiring only. UI has no reference to Game or native entities.
 
-Tests and tools follow the narrowest layer they exercise. PosingCore.Tests
-may be migrated with a feature, but it is not a reason to retain PosingCore.
+Tests and tools follow the narrowest layer they exercise. Poser.Core.Tests
+may be migrated with a feature, but it is not a reason to retain Poser.Core.
 The exact UI-lab/tombstone chain named at the top owns the disjoint lab and
 related documentation/PBI cleanup. Its actual-in-game-only policy is operative
 at integrated head `cdf306e`; it is not replaced by another capture, browser,
@@ -359,13 +359,13 @@ only the assignment and evidence index; it does not satisfy R6 itself.
 
 | Required reconciliation | Current role/traversal to record | Durable home and exit evidence |
 |---|---|---|
-| PosingCore versus LegacyRuntime roles | `PosingCore/PosingCore.csproj` currently supplies `Poser.Core`, `Poser.Entities`, `Poser.Services`, `Poser.Files`, `Poser.Library`, `Poser.Config`, and `Poser.Game` namespaces. Its `Entities/ActorBase.cs`, `Skeleton.cs`, `Bone.cs`, `Core/NativeHelpers.cs`, and `Game/ExpressionService.cs` still cross live/native boundaries, while `Poser.Game/LegacyRuntime` contains the concrete `Poser.Game` services. | `product-and-boundaries.md` assigns each current area to Domain, Application, host-free Persistence, Game, UI/product assets, or Host; `posing-runtime.md` keeps all unsafe/native access in Game. Evidence maps every current owner and caller before/after. |
-| PosingCore area classification | `Core/PoseMath` and bone metadata are pure candidates; `Entities`/`NativeHelpers` are live/native candidates; `Files`/`Library`/`AutoSave` are codec, index, and storage candidates; `Services` are transitional contracts; `Config` and embedded UI/data assets are product/configuration candidates. | `product-and-boundaries.md` records Domain for pure math/policies, Application for logical state/actions and narrow ports, host-free Persistence for codecs/stores when proven, Game for live entities/native adapters, UI/product assets for surface state/assets, and Host for composition. `files-and-transfer.md` owns file/autosave terminology; `posing-runtime.md` owns native ordering and ports. |
+| Poser.Core versus LegacyRuntime roles | `Poser.Core/Poser.Core.csproj` currently supplies `Poser.Core`, `Poser.Entities`, `Poser.Services`, `Poser.Files`, `Poser.Library`, `Poser.Config`, and `Poser.Game` namespaces. Its `Entities/ActorBase.cs`, `Skeleton.cs`, `Bone.cs`, `Core/NativeHelpers.cs`, and `Game/ExpressionService.cs` still cross live/native boundaries, while `Poser.Game/LegacyRuntime` contains the concrete `Poser.Game` services. | `product-and-boundaries.md` assigns each current area to Domain, Application, host-free Persistence, Game, UI/product assets, or Host; `posing-runtime.md` keeps all unsafe/native access in Game. Evidence maps every current owner and caller before/after. |
+| Poser.Core area classification | `Core/PoseMath` and bone metadata are pure candidates; `Entities`/`NativeHelpers` are live/native candidates; `Files`/`Library`/`AutoSave` are codec, index, and storage candidates; `Services` are transitional contracts; `Config` and embedded UI/data assets are product/configuration candidates. | `product-and-boundaries.md` records Domain for pure math/policies, Application for logical state/actions and narrow ports, host-free Persistence for codecs/stores when proven, Game for live entities/native adapters, UI/product assets for surface state/assets, and Host for composition. `files-and-transfer.md` owns file/autosave terminology; `posing-runtime.md` owns native ordering and ports. |
 | Features and native writes crossing the split | Actor/GPose discovery and exit (`ActorManager`, `GPoseService`); skeleton/slot/bone reads and apply hooks (`SkeletonService`, `SlotCharacterBases`, `BonePosingService`); IK/gaze/position overrides (`IKService`, `GazeService`, `PosingService`, `TransformRuntimePort`); actor/companion/prop/model/visibility spawn (`ActorSpawnService`, `PropSpawnService`); pose import/export, file/library/autosave, animation, presentation, camera, light, environment, and MCDF paths all currently cross old `Poser.Services`/entity contracts. | `posing-runtime.md` names `TransformRuntimePort` as the one native write path and records the remaining Game ports/hooks; `product-and-boundaries.md` records the feature owner and external-appearance boundary; `files-and-transfer.md` records storage/autosave ownership. Evidence is caller search plus compiler-real dependency proof, not a namespace rename. |
-| Target naming and interface policy | Current docs still say `Poser.Core` and `Poser.Runtime`, while the project is `PosingCore` and the native project is `Poser.Game`. | `product-and-boundaries.md` names Domain, Application, current `Poser.Game`, conditional host-free Persistence, current Poser.UI, and Host; `posing-runtime.md` names the native boundary. Keep `Poser.Game`, do not add `Poser.Runtime` or `Poser.UI.Kernel`, and retain concrete owners with interfaces only at real runtime/storage seams. |
-| LegacyRuntime exit/deletion criteria | `Poser.Game/LegacyRuntime` is a folder whose classes use the `Poser.Game` namespace; it is not a target assembly boundary. | `posing-runtime.md` requires characterization/ordinary tests, accepted caller migration, exact-generation and lifecycle proof, no remaining PosingCore edge, and no native write outside Game before each LegacyRuntime owner/file is removed. Failed cleanup remains recoverable; no wholesale folder deletion. |
-| Namespace quirks | `PosingCore.csproj` has RootNamespace `Poser`; `Poser.Game/LegacyRuntime/*.cs` declares `namespace Poser.Game`; `Poser.Core`, `Poser.Entities`, `Poser.Files`, and `Poser.Services` therefore do not identify separate assemblies. | `product-and-boundaries.md` is the terminology/glossary home; `posing-runtime.md` records the actual assembly/native boundary and aliases. Evidence includes namespace-to-project and project-reference checks. |
-| Terminology collision | “PosingCore”, “Poser.Core”, “Poser.Domain”, stale “Poser.Runtime”, and the `LegacyRuntime` folder are currently easy to conflate. | Reconcile the terms in the two existing homes and link from other docs. A concise `backend-migration-state` home may be proposed only if the writer proves no existing home fits; it must not become a per-class document or a substitute for this plan's non-normative assignment. |
+| Target naming and interface policy | Docs and project now agree on `Poser.Core`, and the native project is `Poser.Game`; only `Poser.Runtime` remains a stale doc-only name. | `product-and-boundaries.md` names Domain, Application, current `Poser.Game`, conditional host-free Persistence, current Poser.UI, and Host; `posing-runtime.md` names the native boundary. Keep `Poser.Game`, do not add `Poser.Runtime` or `Poser.UI.Kernel`, and retain concrete owners with interfaces only at real runtime/storage seams. |
+| LegacyRuntime exit/deletion criteria | `Poser.Game/LegacyRuntime` is a folder whose classes use the `Poser.Game` namespace; it is not a target assembly boundary. | `posing-runtime.md` requires characterization/ordinary tests, accepted caller migration, exact-generation and lifecycle proof, no remaining Poser.Core edge, and no native write outside Game before each LegacyRuntime owner/file is removed. Failed cleanup remains recoverable; no wholesale folder deletion. |
+| Namespace quirks | `Poser.Core.csproj` has RootNamespace `Poser`; `Poser.Game/LegacyRuntime/*.cs` declares `namespace Poser.Game`; `Poser.Core`, `Poser.Entities`, `Poser.Files`, and `Poser.Services` therefore do not identify separate assemblies. | `product-and-boundaries.md` is the terminology/glossary home; `posing-runtime.md` records the actual assembly/native boundary and aliases. Evidence includes namespace-to-project and project-reference checks. |
+| Terminology collision | “Poser.Core”, “Poser.Domain”, stale “Poser.Runtime”, and the `LegacyRuntime` folder are currently easy to conflate. | Reconcile the terms in the two existing homes and link from other docs. A concise `backend-migration-state` home may be proposed only if the writer proves no existing home fits; it must not become a per-class document or a substitute for this plan's non-normative assignment. |
 
 The same accepted diff must reconcile `files-and-transfer.md` event-order/
 autosave wording with the explicit SessionLifecycleCoordinator order (final
@@ -402,7 +402,7 @@ retained in place; creation/migration of the final `Poser.Domain.Tests/**`
 target and only its `Poser.slnx` project entry/reference;
 project-reference/dependency checks; and source/reference tombstones needed to
 make this plan authoritative.
-**Excluded:** runtime/native behavior, PosingCore deletion, UI surface
+**Excluded:** runtime/native behavior, Poser.Core deletion, UI surface
 rewrites, `Poser.Application.Tests/**` and its project entry, IK bake behavior,
 broad backlog prose, and any generic framework.
 
@@ -705,7 +705,7 @@ focused live artifact. No pose or persistence files are changed in this slice.
 ## Slice 6 — pose transaction and materialization strangler
 
 **State owner / sole Luna writer:** one pose-domain/runtime writer, with one
-vertical user action per candidate. Do not assign a broad “rewrite PosingCore”
+vertical user action per candidate. Do not assign a broad “rewrite Poser.Core”
 task.
 
 **Allowed:** one selected feature at a time across Poser.Domain/Posing/**,
@@ -742,7 +742,7 @@ until its exact-range review and live card pass; no simultaneous facade removal.
 
 **Review / completion evidence:** local contract tests before extraction,
 independent exact-range review/rework, native-order characterization, one
-feature diff, Release output, live artifact, and proof that no broad PosingCore
+feature diff, Release output, live artifact, and proof that no broad Poser.Core
 rewrite was bundled.
 
 ## Slice 7 — portable pose, Persistence, autosave, library, and recovery
@@ -753,8 +753,8 @@ sequential codec, atomic-store, autosave, library, and recovery candidates.
 **Allowed:** new Poser.Persistence/** only after the host-free dependency
 proof; otherwise the same host-free code remains in its current layer behind
 Application contracts; minimum Application storage contracts; the pure file,
-codec, library, and autosave sources currently under PosingCore/Files/** and
-PosingCore/Library/**; PosingCore.Tests/** format tests; disposable fixture
+codec, library, and autosave sources currently under Poser.Core/Files/** and
+Poser.Core/Library/**; Poser.Core.Tests/** format tests; disposable fixture
 directories. **Excluded:** Game/Dalamud/ImGui/native state, UI implementation,
 MCDF integration, EventBus, and project deletion.
 
@@ -806,7 +806,7 @@ facial capture only with its own receipt; Poser.Application/Integration/**,
 Poser.Game/Integration/**, IMcdfFileBoundary, and one concrete
 McdfTransaction; required Game vendor ports; focused tests. **Excluded:**
 IkBakeCapture behavior/harness, general Persistence codecs, animation,
-whole-shot scene files, UI-wide composition, and PosingCore deletion.
+whole-shot scene files, UI-wide composition, and Poser.Core deletion.
 
 **Contract:** import scheduling returns Pending; the terminal receipt is
 published only to the initiating actor/surface generation. Timeout,
@@ -993,15 +993,15 @@ dependency proof, test/live evidence, product disposition, and independent
 full-range review. No candidate may claim parity merely because Brio or Ktisis
 has a feature.
 
-## Slice 12 — proof-driven PosingCore/facade/EventBus deletion and final enforcement
+## Slice 12 — proof-driven Poser.Core/facade/EventBus deletion and final enforcement
 
 **State owner / sole Luna writer:** one final-assembly/deletion Luna writer,
 after all prior owners are accepted. Deletion is split into sequential
 facade, notification, and project-graph candidates.
 
 **Allowed:** remaining CleanPoseFacade/CleanTransformFacade callers after
-their vertical migrations; PosingCore/** files proven unused or migrated;
-PosingCore/PosingCore.csproj, PosingCore.Tests references, Poser.slnx,
+their vertical migrations; Poser.Core/** files proven unused or migrated;
+Poser.Core/Poser.Core.csproj, Poser.Core.Tests references, Poser.slnx,
 Poser.Game.csproj, host composition, EventBus/Events and broad legacy
 contract callers; source/dependency checks. **Excluded:** new feature work,
 the exact UI-lab/tombstone-chain paths owned by that chain, unresolved behavior
@@ -1012,13 +1012,13 @@ test, exact-range review, and rollback seam have passed. Delete EventBus only
 after every useful notification has a typed Application read-model/action or
 direct lifecycle edge; delete verified dead events early only when disjoint.
 Remove broad 1:1 legacy interfaces rather than replacing them with a new
-generic framework. The final solution has no PosingCore project/reference,
+generic framework. The final solution has no Poser.Core project/reference,
 Poser.Game remains the sole unsafe/native/runtime assembly, UI has no
 Runtime/native reference, Persistence is host-free if present, and Host is
 composition only.
 
 **Tests first:** compile-real project-reference graph checks; rg/source checks
-for PosingCore references, unsafe/native imports outside Game, stale generation
+for Poser.Core references, unsafe/native imports outside Game, stale generation
 writes, raw index ownership, event-order lifecycle, singleton pane state,
 detached workers, fire-and-forget cleanup, and hidden async success. Run the
 full existing contract/ordinary test inventory after each deletion candidate.
@@ -1067,7 +1067,7 @@ requirement disappears; the map below records its new owner or disposition.
 | Train 5 persistence/recovery | Slice 7; visible UI readout in Slice 10. |
 | Train 6 animation/native patch | Slice 9. |
 | Train 7 UI ownership/style | Slice 10 product surfaces; the complete accepted UI-lab/tombstone chain `727ccb7 -> cb86af7 -> 3ea67f5100ea6808a67f8dcf7d0ab3d22f9f86ea -> 9de84646a5f2d4c84c9609069d92b87100556300 -> c7d2c2e44bd008896d84f05cd716f75bcc7464f4` solely owns `tools/ui-conformance`, UI/testing, UI-workspace, and PBI-011/014/015/015A/016 dispositions/tombstones. The organizer accepted integrated head `cdf306e` after independent no-findings review and Release build/tests (175/175, no Debug/live); actual-in-game-only policy is in force. |
-| Train 8 structural extraction/DRY | Local extraction follows each Slice 1–11 contract test; final PosingCore/facade/EventBus deletion and assembly enforcement are Slice 12. The old “structural work last” rule is superseded. |
+| Train 8 structural extraction/DRY | Local extraction follows each Slice 1–11 contract test; final Poser.Core/facade/EventBus deletion and assembly enforcement are Slice 12. The old “structural work last” rule is superseded. |
 
 ### Code-health finding map
 
@@ -1089,11 +1089,11 @@ requirement disappears; the map below records its new owner or disposition.
 | Old R item | New slice or disposition |
 |---|---|
 | R1 tests in Domain/Application | T1.1 is accepted transitional Poser.ContractTests coverage only. Slice 1 creates/migrates only final Poser.Domain.Tests and retains transitional Application coverage in Poser.ContractTests. Slice 2 exclusively creates/migrates final Poser.Application.Tests and owns Application test families, migrating that coverage only after proof. Missing families continue with their owning slices. R1 is not complete at Slice 0. |
-| R2 PosingCore pure-core coverage | Slice 7 format/policy characterization and Slice 12 migration proof; preserve useful tests while the source moves. |
+| R2 Poser.Core pure-core coverage | Slice 7 format/policy characterization and Slice 12 migration proof; preserve useful tests while the source moves. |
 | R3 Gaze degradation | Slice 3. |
 | R4 capability-health surface | Slice 3 read model and Slice 10 UI. |
 | R5 namespace honesty | Only proof-driven moves in Slice 5/6/9/12; do not cosmetic-rename Poser.Game or introduce a Runtime project. |
-| R6 durable migration-state/normative cleanup | This master plan is non-normative and cannot satisfy durable cleanup. Executable Prerequisite 1A assigns the PosingCore/LegacyRuntime role, traversal, naming, namespace, terminology, and deletion-criteria reconciliation to existing product-and-boundaries/posing-runtime homes, with application-state/files-and-transfer and the accepted UI-lab/tombstone chain covering their contracts. Evidence is the accepted diff/link/contradiction and compiler-real ownership record, exact review, and organizer acceptance; no document per class and no duplicate migration plan. |
+| R6 durable migration-state/normative cleanup | This master plan is non-normative and cannot satisfy durable cleanup. Executable Prerequisite 1A assigns the Poser.Core/LegacyRuntime role, traversal, naming, namespace, terminology, and deletion-criteria reconciliation to existing product-and-boundaries/posing-runtime homes, with application-state/files-and-transfer and the accepted UI-lab/tombstone chain covering their contracts. Evidence is the accepted diff/link/contradiction and compiler-real ownership record, exact review, and organizer acceptance; no document per class and no duplicate migration plan. |
 | R7 ISessionScoped enrollment | Superseded: one explicit SessionLifecycleCoordinator owns phases; no generic enrollment interface. |
 | R8 feature-manifest registration | Superseded as a framework: Host keeps explicit composition; per-feature registration may be mechanically split only when it does not add a manifest/manager abstraction. |
 | R9 ActorIntegrationSession split | Slice 8 after file-boundary/redraw tests; McdfTransaction only, retain vendor orchestration. |
@@ -1132,7 +1132,7 @@ focused live card; Not exercised never counts as pass.
 The program is Accepted only when the organizer has recorded all of the
 following against exact reviewed heads:
 
-- PosingCore has no project, source caller, or solution/reference edge;
+- Poser.Core has no project, source caller, or solution/reference edge;
   Poser.Game remains the sole unsafe/native/runtime assembly; the dependency
   graph is compiler-real and matches the minimal target.
 - Domain math/policies are pure; Application owns logical session/scene,

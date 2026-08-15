@@ -6,7 +6,7 @@
   <Project Path="Poser.Domain.Tests/Poser.Domain.Tests.csproj" />
   <Project Path="Poser.Game/Poser.Game.csproj" />
   <Project Path="Poser.Game.Tests/Poser.Game.Tests.csproj" />
-  <Project Path="PosingCore/PosingCore.csproj" />
-  <Project Path="PosingCore.Tests/PosingCore.Tests.csproj" />
+  <Project Path="Poser.Core/Poser.Core.csproj" />
+  <Project Path="Poser.Core.Tests/Poser.Core.Tests.csproj" />
   <Project Path="Poser.ContractTests/Poser.ContractTests.csproj" />
 </Solution>

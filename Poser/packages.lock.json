@@ -60,6 +60,12 @@
           "Poser.Domain": "[1.0.0, )"
         }
       },
+      "poser.core": {
+        "type": "Project",
+        "dependencies": {
+          "Poser.Domain": "[1.0.0, )"
+        }
+      },
       "poser.domain": {
         "type": "Project"
       },
@@ -69,18 +75,12 @@
           "K4os.Compression.LZ4.Legacy": "[1.3.8, )",
           "KamiToolKit": "[1.1.17, )",
           "Poser.Application": "[1.0.0, )",
-          "Poser.Domain": "[1.0.0, )",
-          "PosingCore": "[1.0.0, )"
+          "Poser.Core": "[1.0.0, )",
+          "Poser.Domain": "[1.0.0, )"
         }
       },
       "poser.ui": {
         "type": "Project"
-      },
-      "posingcore": {
-        "type": "Project",
-        "dependencies": {
-          "Poser.Domain": "[1.0.0, )"
-        }
       }
     }
   }
