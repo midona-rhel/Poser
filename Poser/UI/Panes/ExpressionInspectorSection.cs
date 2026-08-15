@@ -30,6 +30,19 @@ public sealed class ExpressionInspectorSection
     /// <summary>Pair-consumption scratch; see <see cref="Draw"/>.</summary>
     private bool[] _consumed = new bool[32];
 
+    /// <summary>One ImGui id per action unit, minted the first time that unit
+    /// is drawn. The catalog is fixed, so the paired surface built the same
+    /// twenty strings on every frame it was up.</summary>
+    private readonly Dictionary<string, string> _sliderIds =
+        new(StringComparer.Ordinal);
+
+    private string SliderId(string unitId)
+    {
+        if (_sliderIds.TryGetValue(unitId, out var id))
+            return id;
+        return _sliderIds[unitId] = "##expr-" + unitId;
+    }
+
     public ExpressionInspectorSection(IExpressionService expressions)
         => _expressions = expressions;
 
@@ -215,7 +228,7 @@ public sealed class ExpressionInspectorSection
         ImGui.SetCursorScreenPos(
             new Vector2(sliderTop.X + indent, sliderTop.Y));
         Crystarium.Slider(
-            $"##expr-{id}",
+            SliderId(id),
             _expressions.GetWeight(actor, id),
             minimum,
             1f,

@@ -449,7 +449,16 @@ public class PoseInspectorPane
                 _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
         _primary = primary;
-        _selectionSnapshot = selected.ToArray();
+        // Copied only when it actually differs — the comparison above IS the
+        // difference test, and this runs on every frame of every tab. A fresh
+        // array per frame is an allocation charged to standing still.
+        if (selectionChanged)
+        {
+            if (_selectionSnapshot.Length != selected.Count)
+                _selectionSnapshot = new SelectionId[selected.Count];
+            for (int i = 0; i < selected.Count; i++)
+                _selectionSnapshot[i] = selected[i];
+        }
 
         // Frame-scoped legacy view for the retained section reads.
         _entity = primary switch
@@ -1263,6 +1272,20 @@ public class PoseInspectorPane
         return viewportHeight;
     }
 
+    /// <summary>The parenting footer's three toggles. Stated ONCE: the bar's
+    /// callback runs every frame the pose surface is up, and an inline array
+    /// literal there is a fresh array of three tuples per frame.</summary>
+    private static readonly (string Label, TransformComponents Component, string Help)[]
+        ParentingToggles =
+    [
+        ("Pos", TransformComponents.Position,
+            "Carry child bones along when a bone is moved"),
+        ("Rot", TransformComponents.Rotation,
+            "Turn child bones along when a bone is rotated"),
+        ("Scale", TransformComponents.Scale,
+            "Resize child bones along when a bone is scaled"),
+    ];
+
     private void DrawPoseFooter(
         Vector2 cursor,
         float width,
@@ -1281,21 +1304,7 @@ public class PoseInspectorPane
                 bar.Label(
                     "Parenting",
                     "Choose what child bones follow when you move a bone on this actor");
-                foreach (var (label, component, help) in new[]
-                {
-                    (
-                        "Pos",
-                        TransformComponents.Position,
-                        "Carry child bones along when a bone is moved"),
-                    (
-                        "Rot",
-                        TransformComponents.Rotation,
-                        "Turn child bones along when a bone is rotated"),
-                    (
-                        "Scale",
-                        TransformComponents.Scale,
-                        "Resize child bones along when a bone is scaled"),
-                })
+                foreach (var (label, component, help) in ParentingToggles)
                 {
                     bool propagates =
                         poseInfo.DefaultPropagation.HasFlag(component);
