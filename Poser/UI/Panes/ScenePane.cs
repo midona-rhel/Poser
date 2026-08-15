@@ -97,6 +97,7 @@ public sealed class ScenePane
         _verdictInbox = new();
 
     private readonly UserNotices _notices;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     /// <summary>Where the session is, for the map-mismatch line: a scene taken
     /// somewhere else loads perfectly well and looks wrong, so the dialog says
@@ -129,8 +130,10 @@ public sealed class ScenePane
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
-        UserNotices notices)
+        UserNotices notices,
+        Dalamud.Plugin.Services.IPluginLog log)
     {
+        _log = log;
         _preferences = preferences;
         _workflow = workflow;
         _snapshots = snapshots;
@@ -165,6 +168,7 @@ public sealed class ScenePane
     /// </summary>
     public void DrawBrowsers()
     {
+        AnnounceTerminal();
         if (_saveRequested)
         {
             _saveRequested = false;
@@ -173,6 +177,53 @@ public sealed class ScenePane
         _saveBrowser.Draw();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+    }
+
+    /// <summary>The operation whose terminal receipt has already been spoken,
+    /// so one save is announced once however many frames its receipt stands
+    /// for.</summary>
+    private Guid _announcedOperation;
+
+    /// <summary>
+    /// A finished save or load SPEAKS, from the shell pump rather than from
+    /// this page's own draw.
+    ///
+    /// <para>The receipt used to be readable in one place only: the LAST RESULT
+    /// section of this page, drawn only while the scene workspace is the
+    /// selected one. A save started from the library's own "Save scene" button
+    /// (<c>MainWindow.OnSaveSceneRequested</c>) leaves the user on the library,
+    /// where that section is never drawn — so an arm that lost its slot, a
+    /// capture that did not validate, or a write that could not reach its
+    /// folder all looked exactly like a save that worked, and the user went
+    /// looking for a file that was never written. The pump this runs from is
+    /// unconditional, so the answer arrives wherever the user is.</para>
+    ///
+    /// <para>It is also LOGGED, at the level the state deserves: a failure the
+    /// user reports is only diagnosable if the detail survives the toast.</para>
+    /// </summary>
+    private void AnnounceTerminal()
+    {
+        if (_workflow.Receipt is not { } receipt ||
+            receipt.State == OperationReceiptState.Pending ||
+            receipt.OperationId == _announcedOperation)
+            return;
+        _announcedOperation = receipt.OperationId;
+
+        var kind = _workflow.Progress?.Kind == SceneOperationKind.Load
+            ? "load"
+            : "save";
+        var detail = string.IsNullOrWhiteSpace(receipt.Detail)
+            ? StateLabel(receipt.State)
+            : receipt.Detail!;
+        if (receipt.State == OperationReceiptState.Applied)
+        {
+            _log.Information($"Scene {kind} applied: {detail}");
+            _notices.Done(detail);
+            return;
+        }
+
+        _log.Error($"Scene {kind} {StateLabel(receipt.State)}: {detail}");
+        _notices.Failed($"The scene {kind} did not complete. {detail}");
     }
 
     /// <summary>Refreshes the library scan when the scene workspace is opened:

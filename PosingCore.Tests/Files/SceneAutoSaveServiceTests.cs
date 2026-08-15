@@ -147,6 +147,29 @@ public sealed class SceneAutoSaveServiceTests : IDisposable
         Assert.Equal(written, service.LastResult.Path);
     }
 
+    /// <summary>The snapshot root is MADE by the first snapshot, never seeded
+    /// at construction: an absent root therefore means no snapshot has ever
+    /// been written, not that the service failed to set itself up. Stated as a
+    /// test because the absence of that folder is read as evidence whenever
+    /// scenes are reported missing.</summary>
+    [Fact]
+    public void The_first_snapshot_makes_the_root_and_its_day_folder_from_nothing()
+    {
+        using var service = Create();
+        Assert.False(Directory.Exists(_root));
+
+        service.Tick(_now);
+        Assert.False(Directory.Exists(_root));
+
+        _now = Noon.AddSeconds(61);
+        service.Tick(_now);
+
+        Assert.True(Directory.Exists(_root));
+        Assert.True(Directory.Exists(Path.Combine(
+            _root, _now.ToLocalTime().ToString("yyyy-MM-dd"))));
+        Assert.Single(Snapshots());
+    }
+
     [Fact]
     public void A_snapshot_is_readable_back_through_the_ordinary_scene_codec()
     {

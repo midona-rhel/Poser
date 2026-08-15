@@ -472,6 +472,17 @@ public sealed class SceneAutoSaveService : IDisposable
     {
         lock (_gate)
             _lastResult = result;
+        // A snapshot that could not be taken leaves NO file and no folder, and
+        // its only other reader is a section of the scene page. An empty
+        // snapshot root is read as evidence when scenes are reported missing,
+        // so the reason it is empty has to survive somewhere the user can send
+        // on. Skips stay quiet: they are the ordinary cadence saying the scene
+        // has not changed.
+        if (result.Status is SceneAutoSaveStatus.Failed
+            or SceneAutoSaveStatus.RecoveryRequired)
+        {
+            _log.Error($"Scene auto-save: {result.Detail}");
+        }
         try
         {
             Changed?.Invoke();
