@@ -298,7 +298,11 @@ public sealed class WorldAdoptionSource
     /// </summary>
     public void SetHovered(WorldAdoptionCandidate? candidate)
     {
-        if (Equals(candidate, _hoveredCandidate))
+        // Nullable.Equals, not object.Equals(object, object): the overlay asks
+        // this on EVERY frame, and the object overload boxed both nullable
+        // structs to answer it — two heap objects a frame for a comparison
+        // that is almost always "no change".
+        if (Nullable.Equals(candidate, _hoveredCandidate))
             return;
 
         if (_hoveredCandidate is { } previous)
