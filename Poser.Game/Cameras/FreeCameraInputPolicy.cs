@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Game.ClientState.Keys;
 
 namespace Poser.Game.Cameras;
@@ -18,6 +19,19 @@ namespace Poser.Game.Cameras;
 /// Being LIVE is not doing something — a free camera sits live for the whole
 /// session — so a modifier that moves nothing on its own stays the game's
 /// until the camera is actually being flown.</para>
+///
+/// <para>READING AND CONSUMING ARE TWO DIFFERENT BUFFERS, and that is the
+/// standing invariant of the whole input path (Brio's split, verbatim:
+/// <c>InputManagerService.IsKeyDown</c> reads Dalamud's <c>IKeyState</c> while
+/// <c>GameInputService.HandleInputDetour</c> only writes zeroes). The game may
+/// invoke the input detour more than once per rendered frame, so a detour that
+/// READ the same <c>KeyboardFrame</c> it zeroes would see every key already up
+/// on the later invocation: the axes would resolve to zero (that frame loses
+/// its motion) and the speed would fall back off a still-held modifier — which
+/// is why the stutter was felt specifically while holding Shift or Ctrl. The
+/// reader below is a plain key predicate over an independent buffer, so
+/// <see cref="Resolve"/> returns the same answer however many times a frame
+/// asks.</para>
 /// </summary>
 internal static class FreeCameraInputPolicy
 {
@@ -112,4 +126,46 @@ internal static class FreeCameraInputPolicy
     public static bool NeverConsumed(int virtualKey) =>
         virtualKey == (int)VirtualKey.ESCAPE
         || virtualKey == (int)VirtualKey.RETURN;
+
+    /// <summary>
+    /// The whole frame of free-camera input, resolved from one key reader in
+    /// one place. Pure: the same reader answers the same way however many
+    /// times the game invokes the input detour for a rendered frame, which is
+    /// what makes the speed multiplier stable under a held modifier.
+    /// <paramref name="keyDown"/> is null only where no key source exists (the
+    /// test constructor), and reads as every key up rather than throwing.
+    /// </summary>
+    public static FreeCameraFrameInput Resolve(
+        Func<VirtualKey, bool>? keyDown,
+        float fastMultiplier,
+        float slowMultiplier)
+    {
+        if (keyDown == null)
+            return new FreeCameraFrameInput(0, 0, 0, 1f);
+
+        return new FreeCameraFrameInput(
+            ForwardBackAxis(keyDown(VirtualKey.W), keyDown(VirtualKey.S)),
+            LeftRightAxis(keyDown(VirtualKey.A), keyDown(VirtualKey.D)),
+            UpDownAxis(keyDown(VirtualKey.SPACE), keyDown(VirtualKey.C)),
+            SpeedMultiplier(
+                keyDown(VirtualKey.SHIFT),
+                keyDown(VirtualKey.CONTROL),
+                fastMultiplier,
+                slowMultiplier));
+    }
+}
+
+/// <summary>One rendered frame's free-camera input: the three resolved axes
+/// and the speed multiplier the held modifiers ask for. A value, so a second
+/// resolve of the same key state compares equal to the first.</summary>
+internal readonly record struct FreeCameraFrameInput(
+    int ForwardBack,
+    int LeftRight,
+    int UpDown,
+    float SpeedMultiplier)
+{
+    /// <summary>Whether the camera is being FLOWN this frame — the gate the
+    /// speed modifiers' consumption sits behind.</summary>
+    public bool IsFlying =>
+        FreeCameraInputPolicy.IsFlying(ForwardBack, LeftRight, UpDown);
 }

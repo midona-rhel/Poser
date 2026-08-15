@@ -115,7 +115,14 @@ public enum MouseState
 
 /// <summary>One frame of keyboard state as the game's input handler sees it.
 /// Brio's layout: one uint per virtual key, non-zero while held; zeroing an
-/// entry consumes the key for the rest of the frame.</summary>
+/// entry consumes the key for the rest of the frame.
+///
+/// <para>POSER WRITES THIS FRAME AND NEVER READS IT. There is deliberately no
+/// key-down accessor here: the game can invoke the input handler more than
+/// once per rendered frame, so a later invocation sees the entries an earlier
+/// one consumed, and anything that decided by reading them would decide "up"
+/// for keys the user is still holding. The free camera reads Dalamud's
+/// IKeyState instead — see FreeCameraInputPolicy.</para></summary>
 [StructLayout(LayoutKind.Sequential)]
 public unsafe struct KeyboardFrame
 {
@@ -123,8 +130,6 @@ public unsafe struct KeyboardFrame
 
     public byte Unknown1;
     public fixed uint KeyState[KeyStateLength];
-
-    public bool KeyDown(VirtualKey key) => KeyState[(int)key] != 0;
 
     public void HandleKey(VirtualKey key) => KeyState[(int)key] = 0;
 }

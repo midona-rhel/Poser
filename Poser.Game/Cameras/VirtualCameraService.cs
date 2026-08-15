@@ -130,6 +130,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     // policy is drivable without the game. Null in production.
     private readonly Func<nint>? _nativeCameraOverride;
 
+    // The free camera's key SOURCE, deliberately not the frame it consumes —
+    // see FreeCameraInputPolicy for why the two must be different buffers.
+    // Null only in the test constructor, where no key source exists and every
+    // key reads up.
+    private readonly Func<VirtualKey, bool>? _keyDown;
+
     // Null only in the test ctor (no native actors exist there); every
     // actor-address deref resolves through it first — a raw IActor address
     // is a claim, not a proof (WorldActorDiscovery standard).
@@ -144,13 +150,24 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         IPluginLog log,
         IGPoseService gPose,
         IEventBus events,
-        Dalamud.Plugin.Services.IObjectTable objectTable)
+        Dalamud.Plugin.Services.IObjectTable objectTable,
+        IKeyState keyState)
     {
         _log = log;
         _framework = framework;
         _gPose = gPose;
         _events = events;
         _objectTable = objectTable;
+
+        // Dalamud's key state answers for the keys the GAME maps and throws
+        // for every other one, so the supported set is read once here and an
+        // unsupported key reads up — a throw from inside the input detour
+        // would be swallowed per frame and cost the camera its motion. Same
+        // guarded read the keybind pump uses (UIManager.KeyDown). The set is
+        // built once and never written again, so the detour thread only ever
+        // reads it.
+        var pollable = new HashSet<VirtualKey>(keyState.GetValidVirtualKeys());
+        _keyDown = key => pollable.Contains(key) && keyState[key];
 
         Hook<T>? TryHook<T>(string name, string signature, T detour)
             where T : Delegate
@@ -733,46 +750,25 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (UiTextFocusActive)
             return;
 
-        // THE AXES ARE READ BEFORE ANY KEY IS CONSUMED, and it must stay that
-        // way: the consumption below zeroes the very entries these reads look
-        // at, so a read moved after it would see every key up.
-        //
-        // A NOTE ON THE REPORTED LEFT-STRAFE STUTTER (user 2026-08-15,
-        // "moving left specifically stutters a bit"): a left-ONLY cause does
-        // not exist in this file. A and D are one statement apart, share an
-        // axis helper, are consumed from the same list, and the past-ninety
-        // flip negates the pair together. Ruled out by reading: no Poser
-        // keybind default binds a bare letter (KeybindRegistry), and the
-        // keybind pump reads Dalamud's IKeyState and consumes nothing, so it
-        // cannot race this detour. The past-ninety flip tests ROLL, matching
-        // Brio's PivotRotation (which is BrioCamera->Roll), so it cannot
-        // toggle on an ordinary yaw sweep.
-        //
-        // What IS a real stutter source, and the one divergence from Brio
-        // left standing: Brio reads its axes from Dalamud's IKeyState — a
-        // buffer independent of the frame it zeroes — and uses this detour
-        // only to CONSUME. Poser reads and zeroes the same buffer, so any
-        // invocation that lands on an already-consumed frame resolves every
-        // axis to zero and overwrites _freeForward with Vector3.Zero, costing
-        // that render frame its motion. It is direction-agnostic, so it does
-        // not explain "left only" on its own, and switching the read source
-        // is an input-path change nobody has asked for yet — left as a stated
-        // finding rather than an unapproved rewrite.
-        int forwardBack = FreeCameraInputPolicy.ForwardBackAxis(
-            keyboard->KeyDown(VirtualKey.W), keyboard->KeyDown(VirtualKey.S));
-        int leftRight = FreeCameraInputPolicy.LeftRightAxis(
-            keyboard->KeyDown(VirtualKey.A), keyboard->KeyDown(VirtualKey.D));
-        int upDown = FreeCameraInputPolicy.UpDownAxis(
-            keyboard->KeyDown(VirtualKey.SPACE),
-            keyboard->KeyDown(VirtualKey.C));
-
+        // THIS DETOUR READS ONE BUFFER AND WRITES ANOTHER, which is Brio's
+        // split verbatim and is not an implementation detail: the axes and the
+        // speed modifiers come off Dalamud's IKeyState, and the KeyboardFrame
+        // below is only ever ZEROED. The game invokes this handler more than
+        // once for some rendered frames; when it did, the old read-and-zero
+        // shape saw its own consumption on the later invocation — every axis
+        // resolved to zero (that frame lost its motion) and _freeMoveSpeed was
+        // recomputed off a Shift or Ctrl the code had itself just cleared, so
+        // a HELD modifier oscillated fast/base per invocation. That is the
+        // stutter the user felt specifically while holding Shift or Ctrl.
+        // Resolving from an independent buffer makes the answer identical for
+        // every invocation of the same frame.
         var settings = CameraSettings;
-        _freeMoveSpeed = live.MovementSpeed *
-            FreeCameraInputPolicy.SpeedMultiplier(
-                keyboard->KeyDown(VirtualKey.SHIFT),
-                keyboard->KeyDown(VirtualKey.CONTROL),
-                settings.FastMultiplier,
-                settings.SlowMultiplier);
+        var frame = FreeCameraInputPolicy.Resolve(
+            _keyDown, settings.FastMultiplier, settings.SlowMultiplier);
+        int forwardBack = frame.ForwardBack;
+        int leftRight = frame.LeftRight;
+        int upDown = frame.UpDown;
+        _freeMoveSpeed = live.MovementSpeed * frame.SpeedMultiplier;
 
         // The fly keys go whole: W A S D Space and C all MOVE the camera, so
         // a frame that consumes them is a frame they did something.
@@ -784,8 +780,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         // the game every chord built on them — the user's own hide-UI is
         // Alt+NumPlus, and it stopped working for as long as a free camera
         // existed (user 2026-08-15).
-        if (settings.ConsumeModifiersWhileFlying &&
-            FreeCameraInputPolicy.IsFlying(forwardBack, leftRight, upDown))
+        if (settings.ConsumeModifiersWhileFlying && frame.IsFlying)
         {
             foreach (var key in FreeCameraInputPolicy.SpeedModifierKeys)
                 keyboard->HandleKey(key);
