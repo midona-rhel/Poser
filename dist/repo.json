@@ -3,7 +3,7 @@
     "Author": "Midona",
     "Name": "Poser",
     "InternalName": "Poser",
-    "AssemblyVersion": "0.9.0.0",
+    "AssemblyVersion": "0.9.1.0",
     "Description": "Poser is a posing and scene tool for FINAL FANTASY XIV's group pose.\n\n- Pose actors bone by bone: overlay handles, a graphical body map, and numeric transforms\n- IK on any bone with a parent, plus mirror, link and named bone-visibility presets\n- Spawn actors and objects, or click a world handle to bring what is already there into the scene\n- Borrow the map's own objects by reference and give them back untouched on release\n- Save and restore the whole shot — actors, objects, lights, camera and environment — with load options\n- Custom lights, camera control and a free camera; snapping, group pivot and group moves\n- Gaze control and one-click expressions\n- A pose library with tags, authors and search; import and export poses, and MCDF appearance files\n- Time, weather and festival control\n- On-screen dialogue panels, chat bubbles and status lines drawn with the game's own UI\n- Reference pictures as floating, aspect-locked windows\n- Twenty-five rebindable actions with Poser, Brio and Ktisis presets\n\nThis is a beta. It is not stable and it is not finished. Poser is derivative of Anamnesis, Ktisis and Brio, and those three are the mature tools.\n\nPoser was coded with the use of artificial intelligence. The plugin says so on first launch and asks you to confirm before the workspace opens.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/midona-rhel/Poser",
@@ -20,16 +20,14 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "Punchline": "Posing, lighting and whole-scene staging for group pose. Beta.",
-    "Changelog": "First public beta. Bone posing with overlay handles, a body map and numeric transforms; IK on any bone; whole-scene save and restore with load options; spawning, world-actor adoption and borrowing the map's own objects; custom lights, camera control and a free camera; gaze and expressions; a pose library and MCDF import/export; time, weather and festivals; on-screen text nodes; reference pictures; rebindable keys. Expect defects — the full notes and the known limitations are in the repository's docs/release/CHANGELOG.md.",
+    "Changelog": "Beta 0.9.1: scene saves speak when they fail and no longer lose to the auto-save; keybinds fire with the HUD hidden; selection stops swapping back to the actor; the free camera flies Space/C with Shift/Ctrl speeds and goes deaf while typing; the bone overlap menu matches Brio and Ktisis behavior per mode; steady per-frame allocations removed; the core assembly is Poser.Core.",
     "AcceptsFeedback": true,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "LastUpdate": 1786756176,
+    "LastUpdate": 1786800195,
     "DownloadCount": 0,
     "DownloadLinkInstall": "https://raw.githubusercontent.com/midona-rhel/Poser/main/dist/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/midona-rhel/Poser/main/dist/latest.zip",
     "DownloadLinkTesting": "https://raw.githubusercontent.com/midona-rhel/Poser/main/dist/latest.zip"
   }
 ]
-
-
