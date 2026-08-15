@@ -726,7 +726,11 @@ public class SkeletonOverlayWindow : Window
         // NoInputs (PosingOverlayWindow.cs:364). Leaving the dots is the whole
         // dismissal rule, with no grace frames and no timeout on either side.
         UpdateHoveredBones(bones);
-        bool hasWorldBone = AnyHovered(bones);
+        // The cluster UpdateHoveredBones just built IS every hovered bone, so
+        // "is any bone hovered" is "is that cluster non-empty" — the walk this
+        // replaces re-asked the armature a question the first walk had already
+        // answered.
+        bool hasWorldBone = _hoverCandidates.Count > 0;
         bool brioPick = Config.BonePickBehavior == BonePickBehavior.Brio;
         // The preview is drawn AT THE CURSOR, every frame.
         _hoverAnchor = mousePos;
@@ -959,14 +963,6 @@ public class SkeletonOverlayWindow : Window
             }
         }
         return best;
-    }
-
-    private static bool AnyHovered(List<BoneDisplayData> bones)
-    {
-        for (int i = 0; i < bones.Count; i++)
-            if (bones[i].IsHovered)
-                return true;
-        return false;
     }
 
     private void UpdateHoverState(List<BoneDisplayData> bones, Vector2 mousePos)
