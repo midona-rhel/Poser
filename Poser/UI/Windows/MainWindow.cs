@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -1196,18 +1196,22 @@ public class MainWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Workspace");
         float gs = ImGuiHelpers.GlobalScale;
         _lastWidth = ImGui.GetWindowSize().X / gs;
         _lastHeight = ImGui.GetWindowSize().Y / gs;
         _lastPosition = ImGui.GetWindowPos();
-        _overlayPresentation.Reconcile(_scene.Snapshot);
-        BuildViewModel();
+        using (FrameProfiler.Scope("Shell · overlay reconcile"))
+            _overlayPresentation.Reconcile(_scene.Snapshot);
+        using (FrameProfiler.Scope("Shell · view model"))
+            BuildViewModel();
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
         if (!_contentHidden)
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        using var pumps = FrameProfiler.Scope("Shell · menus and pumps");
         DrawShellMenu();
         DrawActorContextMenu();
         DrawBonePresetMenu();
@@ -3041,7 +3045,8 @@ public class MainWindow : Window
         // action is what needs one — so it precedes the GPose gate.
         if (_libraryMode)
         {
-            _libraryPane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Library"))
+                _libraryPane.Draw(origin, size);
             return;
         }
 
@@ -3050,7 +3055,8 @@ public class MainWindow : Window
         // the workflow itself refuses the operation without a live session.
         if (_sceneMode)
         {
-            _scenePane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Scene files"))
+                _scenePane.Draw(origin, size);
             return;
         }
 
@@ -3068,13 +3074,15 @@ public class MainWindow : Window
         if (_activeTab == "Animation")
         {
             _animationCatalog.EnsureLoaded();
-            _animationPane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Animation"))
+                _animationPane.Draw(origin, size);
             return;
         }
 
         if (_activeTab == "Appearance")
         {
-            _appearancePane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Appearance"))
+                _appearancePane.Draw(origin, size);
             return;
         }
 
@@ -3082,7 +3090,8 @@ public class MainWindow : Window
         // is unique across every strip, so it is the whole dispatch.
         if (_activeTab == "Overlay")
         {
-            _overlayPane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Overlay"))
+                _overlayPane.Draw(origin, size);
             return;
         }
 
@@ -3091,10 +3100,13 @@ public class MainWindow : Window
         // the label's — the same rule "Light" already lives under.
         if (_activeTab == "Object")
         {
-            if (_selection.Primary is { Kind: SceneEntityKind.WorldObject })
-                _worldObjectsPane.Draw(origin, size);
-            else
-                _propsPane.Draw(origin, size);
+            using (FrameProfiler.Scope("Workspace · Object"))
+            {
+                if (_selection.Primary is { Kind: SceneEntityKind.WorldObject })
+                    _worldObjectsPane.Draw(origin, size);
+                else
+                    _propsPane.Draw(origin, size);
+            }
             return;
         }
 
@@ -3104,7 +3116,9 @@ public class MainWindow : Window
         // so every one of them lands here.
         if (_selection.Primary is { Kind: SceneEntityKind.Environment })
         {
-            _environmentPane.Draw(origin, size, EnvironmentTabFor(_activeTab));
+            using (FrameProfiler.Scope("Workspace · Environment"))
+                _environmentPane.Draw(
+                    origin, size, EnvironmentTabFor(_activeTab));
             return;
         }
 
@@ -3113,13 +3127,15 @@ public class MainWindow : Window
         // that does not carry the active label drops back to its own first tab.
         if (_activeTab == "Light")
         {
-            _lightPane.DrawLight(origin, size);
+            using (FrameProfiler.Scope("Workspace · Light"))
+                _lightPane.DrawLight(origin, size);
             return;
         }
 
         if (_activeTab == "Shadows")
         {
-            _lightPane.DrawShadows(origin, size);
+            using (FrameProfiler.Scope("Workspace · Shadows"))
+                _lightPane.DrawShadows(origin, size);
             return;
         }
 
@@ -3128,7 +3144,8 @@ public class MainWindow : Window
         // like the light's.
         if (_activeTab == "Camera")
         {
-            _cameraPane.DrawCamera(origin, size);
+            using (FrameProfiler.Scope("Workspace · Camera"))
+                _cameraPane.DrawCamera(origin, size);
             return;
         }
 

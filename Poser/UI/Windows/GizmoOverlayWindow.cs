@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -293,6 +293,7 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Gizmo overlay");
         // First ink of the frame. The fly-speed readout belongs to the free
         // camera and not to any selection, so it is drawn ahead of every gate
         // below — Alt, the gaze takeover, an empty selection — each of which

@@ -312,6 +312,7 @@ public class SkeletonOverlayWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Bone overlay");
         // First line of the frame, before every gate: a left press ALWAYS
         // logs, so a missing line means this method never ran that frame.
         if (Breadcrumbs && ImGui.IsMouseClicked(ImGuiMouseButton.Left))

@@ -533,7 +533,8 @@ public static class AppShellView
             }
 
             SyncKeybindHelp();
-            DrawTitlebar(vm, min, max, s, dl);
+            using (FrameProfiler.Scope("Shell · titlebar"))
+                DrawTitlebar(vm, min, max, s, dl);
 
             if (vm.Collapsed)
             {
@@ -548,17 +549,22 @@ public static class AppShellView
             float sbw = vm.Detached ? 0f : vm.SidebarWidthPx * s;
 
             if (!vm.Detached)
-                DrawSidebar(
-                    vm, new Vector2(min.X, bodyTop),
-                    new Vector2(min.X + sbw, max.Y), s, dl);
-            DrawWorkspace(
-                vm,
-                new Vector2(min.X + sbw, bodyTop),
-                new Vector2(max.X - railW, max.Y),
-                s,
-                dl);
+                using (FrameProfiler.Scope("Shell · sidebar"))
+                    DrawSidebar(
+                        vm, new Vector2(min.X, bodyTop),
+                        new Vector2(min.X + sbw, max.Y), s, dl);
+            using (FrameProfiler.Scope("Shell · workspace"))
+                DrawWorkspace(
+                    vm,
+                    new Vector2(min.X + sbw, bodyTop),
+                    new Vector2(max.X - railW, max.Y),
+                    s,
+                    dl);
             if (railW > 0f)
-                DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
+                using (FrameProfiler.Scope("Shell · inspector rail"))
+                    DrawRail(
+                        vm, new Vector2(max.X - railW, bodyTop), max, railW,
+                        s, dl);
 
             if (!vm.Detached)
                 DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);

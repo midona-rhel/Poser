@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -196,6 +196,7 @@ public sealed class PopOutWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Pop-out");
         // The frozen actor is this window's whole reason: gone means closed,
         // and it cannot retarget by design.
         if (FrozenActor() is not { } actor || !_gPose.IsGPosing)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -77,100 +77,105 @@ public class PoseRailPane
         float width = size.X;
 
         // Rail head: selected-bones summary + Linked count pill
-        var (who, sub, linked) = _inspector.RailHeader();
-        if (who.Length > 0)
+        using (FrameProfiler.Scope("Rail · head"))
         {
-            Crystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
-            if (sub.Length > 0)
-                Crystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
-
-            if (linked >= 2)
+            var (who, sub, linked) = _inspector.RailHeader();
+            if (who.Length > 0)
             {
-                // pill: link icon + count, right-aligned (mockup .linked)
-                string count = linked.ToString();
-                var countStyle = new TextStyle
-                {
-                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                    Weight = FontWeight.Medium,
-                    Color = Crystarium.ActiveTheme.AccentHover,
-                };
-                float pillW = (16f + 8f + Crystarium.MeasureText(count, countStyle).X / s) * s;
-                var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
-                var pmax = pmin + new Vector2(pillW, 18f * s);
-                dl.AddRectFilled(
-                    pmin,
-                    pmax,
-                    ImGui.ColorConvertFloat4ToU32(
-                        Crystarium.ActiveTheme.Chrome.AccentFill),
-                    Crystarium.ActiveTheme.Radii.Surface * s);
-                ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
-                Crystarium.Icon(
-                    "link",
-                    11f,
-                    Crystarium.ActiveTheme.AccentHover);
-                Crystarium.TextInBand(
-                    pmin + new Vector2(19f, 0f) * s,
-                    new Vector2(pillW - 19f * s, 18f * s),
-                    count, countStyle,
-                    TextAlign.Start, besideIcon: true);
-                if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
-                    Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
-                        "Edits apply to all the bones counted here");
-            }
-            cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
+                Crystarium.TextAt(cursor, who, new TextStyle { Size = Crystarium.ActiveTheme.Typography.BodySize, Weight = FontWeight.Medium, Color = Crystarium.ActiveTheme.Text });
+                if (sub.Length > 0)
+                    Crystarium.TextAt(cursor + new Vector2(0f, 17f) * s, sub, new TextStyle { Size = Crystarium.ActiveTheme.Typography.CaptionSize, Color = Crystarium.ActiveTheme.TextMuted, Family = FontFamily.Mono });
 
-            // A light takes no action row: neither actor overrides nor bone
-            // resets address anything it has, and its own actions live on
-            // the Light tab. A gaze point takes none either — its buttons
-            // would act on the owning actor while claiming to act on it.
-            // A camera's actions live on the Camera tab the same way.
-            // An overlay node stands down for the same reason a light does:
-            // it has no bones to reset and no actor override to clear, and its
-            // own actions live on the Overlay tab.
-            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
-            {
-                ImGui.SetCursorScreenPos(cursor);
-                if (_inspector.IsActorSelection)
+                if (linked >= 2)
                 {
-                    // Always clickable: clearing overrides is a safe no-op when
-                    // none exist.
-                    if (Crystarium.Button("Reset transform",
-                            id: "rail-actor-reset",
-                            help: "Restore every selected actor's original position, rotation, and scale",
-                            style: ControlStyle.Workspace))
-                        _inspector.ResetActorTransform();
+                    // pill: link icon + count, right-aligned (mockup .linked)
+                    string count = linked.ToString();
+                    var countStyle = new TextStyle
+                    {
+                        Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                        Weight = FontWeight.Medium,
+                        Color = Crystarium.ActiveTheme.AccentHover,
+                    };
+                    float pillW = (16f + 8f + Crystarium.MeasureText(count, countStyle).X / s) * s;
+                    var pmin = new Vector2(cursor.X + width - pillW, cursor.Y);
+                    var pmax = pmin + new Vector2(pillW, 18f * s);
+                    dl.AddRectFilled(
+                        pmin,
+                        pmax,
+                        ImGui.ColorConvertFloat4ToU32(
+                            Crystarium.ActiveTheme.Chrome.AccentFill),
+                        Crystarium.ActiveTheme.Radii.Surface * s);
+                    ImGui.SetCursorScreenPos(pmin + new Vector2(5f, 3.5f) * s);
+                    Crystarium.Icon(
+                        "link",
+                        11f,
+                        Crystarium.ActiveTheme.AccentHover);
+                    Crystarium.TextInBand(
+                        pmin + new Vector2(19f, 0f) * s,
+                        new Vector2(pillW - 19f * s, 18f * s),
+                        count, countStyle,
+                        TextAlign.Start, besideIcon: true);
+                    if (Crystarium.HoverHelp.HelpHovered(pmin, pmax))
+                        Crystarium.HoverHelp.Explain("rail-linked-pill", pmin, pmax,
+                            "Edits apply to all the bones counted here");
                 }
-                else
+                cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
+
+                // A light takes no action row: neither actor overrides nor bone
+                // resets address anything it has, and its own actions live on
+                // the Light tab. A gaze point takes none either — its buttons
+                // would act on the owning actor while claiming to act on it.
+                // A camera's actions live on the Camera tab the same way.
+                // An overlay node stands down for the same reason a light does:
+                // it has no bones to reset and no actor override to clear, and its
+                // own actions live on the Overlay tab.
+                if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
+                    !_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
                 {
-                    if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                        help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
-                        _inspector.ResetSelectedBones();
-                    ImGui.SameLine(0f, 6f * s);
-                    if (Crystarium.Button("Select children", id: "rail-children",
-                        help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
-                        _inspector.SelectChildren();
+                    ImGui.SetCursorScreenPos(cursor);
+                    if (_inspector.IsActorSelection)
+                    {
+                        // Always clickable: clearing overrides is a safe no-op when
+                        // none exist.
+                        if (Crystarium.Button("Reset transform",
+                                id: "rail-actor-reset",
+                                help: "Restore every selected actor's original position, rotation, and scale",
+                                style: ControlStyle.Workspace))
+                            _inspector.ResetActorTransform();
+                    }
+                    else
+                    {
+                        if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
+                            help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
+                            _inspector.ResetSelectedBones();
+                        ImGui.SameLine(0f, 6f * s);
+                        if (Crystarium.Button("Select children", id: "rail-children",
+                            help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
+                            _inspector.SelectChildren();
+                    }
+                    cursor.Y += 36f * s;
                 }
-                cursor.Y += 36f * s;
             }
-        }
-        else
-        {
-            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
-            cursor.Y += 22f * s;
+            else
+            {
+                Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+                cursor.Y += 22f * s;
+            }
         }
 
         // The group verbs come before the gizmo and before every section: they
         // are about the WHOLE selection, and the surfaces under them are about
         // the primary. Zero height while one entity is selected.
-        cursor.Y += _selection.Draw(cursor, width);
+        using (FrameProfiler.Scope("Rail · selection verbs"))
+            cursor.Y += _selection.Draw(cursor, width);
 
         // A camera has no rotation for the rings to edit — its view is
         // angle/pan, owned by the Camera tab — so the gizmo stands down
         // rather than drawing an inert widget. An overlay node has none
         // either: it is flat on the screen, not placed in the world.
         if (!_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
-            cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
+            using (FrameProfiler.Scope("Rail · rotation gizmo"))
+                cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
         _inspector.DrawRailSections(cursor, width);

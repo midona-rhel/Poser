@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -67,6 +67,7 @@ public class SettingsWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Settings");
         // The view paints its own chassis (bg-app + border trio); the host window is
         // an undecorated, transparent shell that only supplies position + input.
         var min = ImGui.GetWindowPos();

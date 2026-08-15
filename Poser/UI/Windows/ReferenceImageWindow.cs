@@ -262,6 +262,7 @@ public sealed class ReferenceImageWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Reference image");
         float scale = ImGuiHelpers.GlobalScale;
         var min = ImGui.GetWindowPos();
         var size = ImGui.GetWindowSize();

@@ -59,6 +59,15 @@ public class UIConfiguration
     public bool SwapRotationXY { get; set; }
 
     /// <summary>
+    /// Show the frame profiler panel, and with it record the per-draw-unit
+    /// timings the panel lists. ONE switch for both: the scopes cost a
+    /// predicted branch while nothing is reading them, and a panel showing
+    /// figures nobody asked to collect — or a collection with no panel — is
+    /// half a tool.
+    /// </summary>
+    public bool ShowFrameProfiler { get; set; }
+
+    /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by
     /// <see cref="MigrateKeybindsToSlots"/> the first time such a config

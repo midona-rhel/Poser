@@ -47,6 +47,8 @@ public sealed class ExpressionInspectorSection
         bool paired,
         Action<Crystarium.FormScope, ActorId>? expressionRow = null)
     {
+        using var profile = FrameProfiler.Scope(
+            paired ? "Surface · EXPRESSION" : "Rail · EXPRESSION");
         if (expressionRow is { } row && actorId is { } rowActor)
             row(form, rowActor);
         if (!_expressions.IsAvailable)

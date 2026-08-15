@@ -2167,6 +2167,7 @@ public sealed class PoseFileInspectorSection
 
     public void Draw(Crystarium.FormScope form, ISkeleton skeleton)
     {
+        using var profile = FrameProfiler.Scope("Surface · FILES");
         // The inspector's own mount knows exactly whose FILES section this
         // is; push it as the host target so a BONE selection (or any
         // selection shape the actor lookup does not recognise) still resolves

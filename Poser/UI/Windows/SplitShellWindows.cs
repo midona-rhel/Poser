@@ -101,6 +101,7 @@ public sealed class SidebarPartWindow : Window
     {
         if (!_main.IsOpen)
             return;
+        using var profile = FrameProfiler.Scope("Window · Scene (detached)");
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();
@@ -233,6 +234,7 @@ public sealed class ToolbarPartWindow : Window
     {
         if (!_main.IsOpen)
             return;
+        using var profile = FrameProfiler.Scope("Window · Toolbar (detached)");
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();

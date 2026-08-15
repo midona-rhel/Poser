@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -270,6 +270,7 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void Draw()
     {
+        using var profile = FrameProfiler.Scope("Window · Spawn browser");
         ReconcilePendingSpawn();
         SyncQuery();
         if (_refilter)

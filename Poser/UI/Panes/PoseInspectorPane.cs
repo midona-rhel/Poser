@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -470,6 +470,7 @@ public class PoseInspectorPane
     /// seg + strip + matrix. All editing lives in the rail (defect #2).</summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
+        using var profile = FrameProfiler.Scope("Workspace · Pose");
         float s = ImGuiHelpers.GlobalScale;
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
@@ -670,6 +671,7 @@ public class PoseInspectorPane
     /// <summary>The inspector sections, drawn inside the shell rail.</summary>
     public void DrawRailSections(Vector2 origin, float width)
     {
+        using var profile = FrameProfiler.Scope("Rail · sections");
         // The gesture guards are a PER-FRAME contract of the transform
         // SESSION, not of the transform rows: running them from inside
         // DrawTransform would skip them whenever TRANSLATION was collapsed,
@@ -941,7 +943,8 @@ public class PoseInspectorPane
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(
                     Crystarium.ActiveTheme.FormSeparator)));
-        DrawPoseFooter(footerOrigin, width, skeleton);
+        using (FrameProfiler.Scope("Surface · pose footer"))
+            DrawPoseFooter(footerOrigin, width, skeleton);
         return height;
     }
 
@@ -954,6 +957,7 @@ public class PoseInspectorPane
     {
         if (_poseView is 0 or 1)
         {
+            using var map = FrameProfiler.Scope("Surface · Body/Face map");
             ImGui.SetCursorScreenPos(cursor);
             if (DrawMapInline == null || !DrawMapInline(_poseView, new Vector2(width, viewportHeight)))
                 Crystarium.TextAt(new Vector2(cursor.X, cursor.Y + 8f * s), "Select an actor to use the map.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
@@ -962,17 +966,25 @@ public class PoseInspectorPane
 
         if (_poseView == 3)
         {
+            using var view3d = FrameProfiler.Scope("Surface · 3D");
             return PrimarySkeletonDescriptor() is { } diagramSkeleton
                 ? Draw3DView(dl, cursor, width, viewportHeight, diagramSkeleton, s)
                 : viewportHeight;
         }
 
         if (_poseView == 4)
+        {
+            using var expression = FrameProfiler.Scope("Surface · Expression");
             return DrawExpressionSurface(cursor, width, viewportHeight, s);
+        }
 
         if (_poseView == 5)
+        {
+            using var actorSurface = FrameProfiler.Scope("Surface · Actor");
             return DrawActorSurface(cursor, width, viewportHeight, s);
+        }
 
+        using var matrix = FrameProfiler.Scope("Surface · Matrix");
         return DrawMatrixSurface(cursor, width, viewportHeight, s);
     }
 
@@ -1200,6 +1212,7 @@ public class PoseInspectorPane
             _matrixRevision != _scene.Revision ||
             _matrixSkeletonId != matrixSkeleton.Id)
         {
+            using var rebuild = FrameProfiler.Scope("Matrix · rebuild");
             _matrixVm = BoneMatrixBuilder.Build(
                 matrixSkeleton,
                 _selection,
@@ -1234,14 +1247,19 @@ public class PoseInspectorPane
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
         }
-        BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
+        using (FrameProfiler.Scope("Matrix · selection sync"))
+            BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         InsetScrollSurface(
             "##pose-matrix-scroll", viewMin, viewMax, s,
-            (contentOrigin, contentWidth) => BoneMatrixView.Draw(
-                _matrixVm,
-                contentOrigin,
-                contentWidth,
-                "livemx"));
+            (contentOrigin, contentWidth) =>
+            {
+                using var rows = FrameProfiler.Scope("Matrix · rows");
+                return BoneMatrixView.Draw(
+                    _matrixVm,
+                    contentOrigin,
+                    contentWidth,
+                    "livemx");
+            });
         return viewportHeight;
     }
 
@@ -1485,6 +1503,7 @@ public class PoseInspectorPane
     /// </summary>
     private void DrawTransform(Crystarium.FormScope form)
     {
+        using var profile = FrameProfiler.Scope("Rail · TRANSLATION");
         var (transform, canEdit) = ReadTransform();
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
@@ -1655,6 +1674,8 @@ public class PoseInspectorPane
     /// buttons plus a lock never fit a control cell.</param>
     private void DrawGaze(Crystarium.FormScope form, IActor actor, bool wide)
     {
+        using var profile = FrameProfiler.Scope(
+            wide ? "Surface · GAZE" : "Rail · GAZE");
         if (!_gazeService.IsAvailable)
         {
             form.Status($"Gaze unavailable: {_gazeService.UnavailableDetail ?? "native capability unavailable."}");
@@ -2140,6 +2161,7 @@ public class PoseInspectorPane
 
     private void DrawIk(Crystarium.FormScope form)
     {
+        using var profile = FrameProfiler.Scope("Rail · IK");
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
             return;
         var ikTarget = TransformTargetId.ForBone(boneId);
@@ -2378,6 +2400,8 @@ public class PoseInspectorPane
         ISkeleton skeleton,
         bool wide)
     {
+        using var profile = FrameProfiler.Scope(
+            wide ? "Surface · POSE" : "Rail · POSE");
         var bone = _entity as IBone;
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
         form.Actions("Edit", actions =>
