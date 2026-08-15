@@ -53,8 +53,23 @@ public class ActorManager : IActorManager
     private readonly Dictionary<ushort, ActorKind> _auxiliaryRegistrations = new();
     private readonly object _auxiliaryGate = new();
 
-    // Track actor addresses to detect actual changes
-    private readonly HashSet<(nint Address, EntityId Id)> _lastActorIdentities = new();
+    // Track actor identities to detect actual changes.
+    //
+    // The key is the (address, identity) pair the EntityId is derived from,
+    // NOT the EntityId itself: this set is rebuilt and compared on every
+    // framework tick of every GPose session, and formatting "actor_{id}" per
+    // actual actor per tick was a string allocation per actor per frame for a
+    // comparison that never reads the text. Auxiliary slots key on the object
+    // INDEX and actors on the GameObjectId (a GPose clone shares its source's
+    // id), so the flag is what keeps the two namespaces from colliding —
+    // exactly what the "actor_" / "actor_aux_" prefixes did.
+    private readonly HashSet<(nint Address, ulong Key, bool Auxiliary)>
+        _lastActorIdentities = new();
+
+    // Rebuilt in place each tick and compared against the published set; a
+    // fresh set per tick was one more allocation on the same path.
+    private readonly HashSet<(nint Address, ulong Key, bool Auxiliary)>
+        _identityScratch = new();
 
     // Debounce flag to prevent multiple refreshes per frame. Written from the
     // draw thread by the auxiliary registration calls, read on the tick.
@@ -104,28 +119,28 @@ public class ActorManager : IActorManager
         }
 
         // Check for actor changes by comparing addresses
-        var currentIdentities = GetGPoseCharacterIdentities();
-        if (!currentIdentities.SetEquals(_lastActorIdentities))
+        CollectGPoseCharacterIdentities(_identityScratch);
+        if (!_identityScratch.SetEquals(_lastActorIdentities))
         {
             RefreshActors();
         }
     }
 
-    private HashSet<(nint Address, EntityId Id)> GetGPoseCharacterIdentities()
+    private void CollectGPoseCharacterIdentities(
+        HashSet<(nint Address, ulong Key, bool Auxiliary)> identities)
     {
-        var identities = new HashSet<(nint Address, EntityId Id)>();
+        identities.Clear();
         foreach (var obj in GetGPoseCharacters())
         {
-            identities.Add((obj.Address, new EntityId($"actor_{obj.GameObjectId}")));
+            identities.Add((obj.Address, obj.GameObjectId, false));
         }
         // Registered auxiliary slots participate in change detection too: the
         // CharaView body appears at 441 several frames after registration and
         // nothing else in the scene changes when it does.
         foreach (var (index, _, obj) in GetAuxiliaryObjects())
         {
-            identities.Add((obj.Address, AuxiliaryId(index)));
+            identities.Add((obj.Address, index, true));
         }
-        return identities;
     }
 
     /// <summary>
@@ -207,7 +222,8 @@ public class ActorManager : IActorManager
             }
 
             refreshed.Add(actor);
-            _lastActorIdentities.Add((gameObject.Address, id));
+            _lastActorIdentities.Add(
+                (gameObject.Address, gameObject.GameObjectId, false));
         }
 
         // Anything left in the lookup disappeared from GPose.
@@ -257,7 +273,7 @@ public class ActorManager : IActorManager
             }
 
             refreshed.Add(actor);
-            _lastActorIdentities.Add((gameObject.Address, id));
+            _lastActorIdentities.Add((gameObject.Address, index, true));
         }
 
         foreach (var removed in existingByAddress.Values)
