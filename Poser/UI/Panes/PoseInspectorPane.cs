@@ -2682,9 +2682,29 @@ public class PoseInspectorPane
     public bool IsActorSelection =>
         _primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget };
 
-    /// <summary>Whether any selected actor currently has a model-transform override.</summary>
+    /// <summary>Whether any selected actor currently has a model-transform
+    /// override. Walked rather than queried: the rail header asks this on
+    /// EVERY frame, and the LINQ form built the whole distinct actor list, a
+    /// delegate and a boxed enumerator to answer a question that stops at the
+    /// first yes. Distinctness cannot change an "any", so dropping the list
+    /// changes nothing but the allocations.</summary>
     public bool HasActorTransformOverride
-        => IsActorSelection && SelectedActorIds().Any(_viewport.HasActorOverride);
+    {
+        get
+        {
+            if (!IsActorSelection)
+                return false;
+            var selected = _selection.Selected;
+            for (int i = 0; i < selected.Count; i++)
+                if (selected[i] is
+                    {
+                        Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
+                        Actor: { } actorId
+                    } && _viewport.HasActorOverride(actorId))
+                    return true;
+            return false;
+        }
+    }
 
     /// <summary>Restores every selected actor's pre-override model transform.</summary>
     public void ResetActorTransform()
