@@ -58,6 +58,11 @@ public sealed class StableBindingRegistry
     // the whole binding table. Derived, never a second source of truth: it is
     // rebuilt from _boneBindings in the one place _boneBindings is published.
     private Dictionary<SkeletonId, ISkeleton> _skeletonBindings = new();
+    // Generation-free lookup key → currently bound bone id, derived from
+    // _boneBindings at commit alongside _skeletonBindings. See
+    // IndexBoneLookups for why the miss path may not be a linear scan.
+    private Dictionary<(Guid Actor, PoseSlot Slot, int Partial, int Index), BoneId>
+        _boneLookupIds = new();
     private Dictionary<string, ActorId> _legacyActorIds =
         new(StringComparer.Ordinal);
     private Dictionary<(string Actor, PoseSlot Slot, int Partial, int Index), BoneId>
@@ -529,6 +534,7 @@ public sealed class StableBindingRegistry
         _actorBindings = candidate.ActorBindings;
         _boneBindings = candidate.BoneBindings;
         _skeletonBindings = IndexSkeletons(_boneBindings);
+        _boneLookupIds = IndexBoneLookups(_boneBindings);
         _legacyActorIds = candidate.LegacyActorIds;
         _legacyBoneIds = candidate.LegacyBoneIds;
         _lightIds = candidate.LightIds;
@@ -842,6 +848,38 @@ public sealed class StableBindingRegistry
         return index;
     }
 
+    /// <summary>The generation-free native lookup key: which logical actor,
+    /// which slot, which partial, which index — everything a bone id names
+    /// EXCEPT the generations that go stale and the name that guards
+    /// identity.</summary>
+    private static (Guid Actor, PoseSlot Slot, int Partial, int Index)
+        LookupKey(BoneId id) =>
+        (id.Skeleton.Actor.LogicalId, id.Slot, id.PartialId, id.BoneIndex);
+
+    /// <summary>
+    /// Generation-free key → the bone id currently bound at it. Derived from
+    /// <see cref="_boneBindings"/> at commit, never a second source of truth,
+    /// exactly as <see cref="IndexSkeletons"/> is.
+    ///
+    /// <para>It exists because <see cref="Resolve(BoneId)"/>'s MISS path used
+    /// to answer "is this id merely stale?" with a linear scan of every bound
+    /// bone — with a capturing predicate allocated per call. A miss is not
+    /// rare: one replaced skeleton generation makes every bone of that
+    /// skeleton miss on the SAME frame, which turned a per-frame overlay pass
+    /// into an O(bones²) walk — hundreds of thousands of predicate
+    /// invocations in one frame, precisely when the scene is already
+    /// churning.</para>
+    /// </summary>
+    private static Dictionary<(Guid Actor, PoseSlot Slot, int Partial, int Index), BoneId>
+        IndexBoneLookups(Dictionary<BoneId, IBone> boneBindings)
+    {
+        var index =
+            new Dictionary<(Guid, PoseSlot, int, int), BoneId>(boneBindings.Count);
+        foreach (var boneId in boneBindings.Keys)
+            index[LookupKey(boneId)] = boneId;
+        return index;
+    }
+
     public BindingResult<IBone> Resolve(BoneId id)
     {
         if (_boneBindings.TryGetValue(id, out var bone))
@@ -849,21 +887,15 @@ public sealed class StableBindingRegistry
                 BindingStatus.Success,
                 bone);
 
-        var sameIndex = _boneBindings.FirstOrDefault(pair =>
-            pair.Key.Skeleton.Actor.LogicalId ==
-                id.Skeleton.Actor.LogicalId &&
-            pair.Key.Slot == id.Slot &&
-            pair.Key.PartialId == id.PartialId &&
-            pair.Key.BoneIndex == id.BoneIndex);
-        if (sameIndex.Value != null)
+        if (_boneLookupIds.TryGetValue(LookupKey(id), out var currentId))
         {
-            if (!sameIndex.Key.CanonicalName.Equals(
+            if (!currentId.CanonicalName.Equals(
                     id.CanonicalName,
                     StringComparison.Ordinal))
                 return new BindingResult<IBone>(
                     BindingStatus.IdentityMismatch,
                     Detail:
-                    $"Bone {id.PartialId}:{id.BoneIndex} changed from {id.CanonicalName} to {sameIndex.Key.CanonicalName}.");
+                    $"Bone {id.PartialId}:{id.BoneIndex} changed from {id.CanonicalName} to {currentId.CanonicalName}.");
             return new BindingResult<IBone>(
                 BindingStatus.StaleTarget,
                 Detail:
