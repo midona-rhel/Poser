@@ -266,13 +266,24 @@ public static partial class Crystarium
         /// the fixed menu width this used to wear. Everything else stays the
         /// design system's — the glass chrome, the surface radius, and the
         /// standard list row's own hover and selected treatment.</para>
+        ///
+        /// <para>INTERACTIVE says which of the two surfaces this call is. The
+        /// passive preview a cluster of dots puts at the cursor takes no input
+        /// in either reference — Ktisis' follows the pointer so it can never be
+        /// reached (<c>SelectableGui.cs:112</c>) and Brio's carries
+        /// <c>NoInputs</c> with every row inside a <c>BeginDisabled</c>
+        /// (<c>PosingOverlayWindow.cs:364,369-371</c>) — so a non-interactive
+        /// call claims no pointer ownership and never reports a click. Only
+        /// Brio's SECOND surface, the popup a click or a wheel notch opens,
+        /// has live rows.</para>
         /// </summary>
         public static int HoverList(
             string id,
             Vector2 anchor,
             IReadOnlyList<string> items,
             int selected,
-            InteractionLayer layer = InteractionLayer.HoverSurface)
+            InteractionLayer layer = InteractionLayer.HoverSurface,
+            bool interactive = true)
         {
             if (items.Count == 0)
                 return -1;
@@ -325,23 +336,28 @@ public static partial class Crystarium
             // pad, names, lane, edge, with all three pads the lane's width.
             ImGui.PushStyleVar(
                 ImGuiStyleVar.WindowPadding, new Vector2(0f, padding));
-            bool visible = ImGui.Begin(
-                id,
-                ImGuiWindowFlags.NoTitleBar
+            var flags = ImGuiWindowFlags.NoTitleBar
                 | ImGuiWindowFlags.NoDecoration
                 | ImGuiWindowFlags.NoMove
                 | ImGuiWindowFlags.NoResize
                 | ImGuiWindowFlags.NoSavedSettings
                 | ImGuiWindowFlags.NoBackground
-                | ImGuiWindowFlags.NoFocusOnAppearing);
+                | ImGuiWindowFlags.NoFocusOnAppearing;
+            if (!interactive)
+                flags |= ImGuiWindowFlags.NoInputs;
+            bool visible = ImGui.Begin(id, flags);
             int clicked = -1;
             if (visible)
             {
-                var owner = Interactive.BeginOwner(
-                    id,
-                    layer,
-                    min,
-                    max);
+                // A passive preview registers NO ownership: it must not occlude
+                // the dots it is describing, and it has no click to report.
+                var owner = interactive
+                    ? Interactive.BeginOwner(
+                        id,
+                        layer,
+                        min,
+                        max)
+                    : default;
                 DrawChrome(
                     ImGui.GetWindowDrawList(),
                     min,
@@ -373,8 +389,11 @@ public static partial class Crystarium
                                 clicked = i;
                     },
                     gutterWidth: gutter);
-                Interactive.EndOwner(owner);
+                if (interactive)
+                    Interactive.EndOwner(owner);
             }
+            if (!interactive)
+                clicked = -1;
             ImGui.End();
             ImGui.PopStyleVar();
             return clicked;
