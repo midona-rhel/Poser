@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Dalamud.Game.ClientState.Keys;
 using Poser.Game.Cameras;
 
@@ -189,5 +191,119 @@ public class FreeCameraInputPolicyTests
     public void ABackwardsClockLapsesRatherThanSticking()
     {
         Assert.False(FreeCameraInputPolicy.UiTextFocusHolds(true, sinceMs: -1));
+    }
+
+    // ---- the double-invocation stutter (user 2026-08-15) -----------------
+    //
+    // The game invokes the input handler more than once for some rendered
+    // frames. While the detour READ the same KeyboardFrame it zeroes, the
+    // later invocation of a frame saw its own consumption: the axes resolved
+    // to zero and the speed fell back off a modifier that was still held, so
+    // holding Shift or Ctrl oscillated fast/base and the flight stuttered.
+    // The frame is now resolved from an independent key buffer, and these pin
+    // that a repeated resolve cannot change its answer.
+
+    /// <summary>A key reader that models the OLD source — the game's own
+    /// keyboard frame, whose entries the detour zeroes as it consumes them. A
+    /// key reads down once and up ever after.</summary>
+    private static Func<VirtualKey, bool> ConsumingReader(params VirtualKey[] held)
+    {
+        var remaining = new HashSet<VirtualKey>(held);
+        return key => remaining.Remove(key);
+    }
+
+    /// <summary>A key reader that models Dalamud's IKeyState — a buffer this
+    /// plugin only ever reads, so a held key stays down however many times it
+    /// is asked.</summary>
+    private static Func<VirtualKey, bool> HeldReader(params VirtualKey[] held)
+    {
+        var down = new HashSet<VirtualKey>(held);
+        return down.Contains;
+    }
+
+    [Fact]
+    public void AHeldModifierKeepsItsSpeedAcrossRepeatedInvocations()
+    {
+        var reader = HeldReader(VirtualKey.W, VirtualKey.SHIFT);
+
+        var first = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+        var second = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+
+        Assert.Equal(3f, first.SpeedMultiplier);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void AHeldSlowModifierKeepsItsSpeedAcrossRepeatedInvocations()
+    {
+        var reader = HeldReader(VirtualKey.A, VirtualKey.CONTROL);
+
+        var first = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+        var second = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+
+        Assert.Equal(0.3f, first.SpeedMultiplier);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void TheAxesSurviveEveryInvocationOfTheSameFrame()
+    {
+        var reader = HeldReader(VirtualKey.W, VirtualKey.D, VirtualKey.SPACE);
+
+        var first = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+        for (int invocation = 0; invocation < 5; invocation++)
+        {
+            var again = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+            Assert.Equal(first, again);
+            Assert.True(again.IsFlying);
+        }
+
+        Assert.Equal(-1, first.ForwardBack);
+        Assert.Equal(1, first.LeftRight);
+        Assert.Equal(1, first.UpDown);
+    }
+
+    /// <summary>The bug's exact shape, kept as a specimen: resolved from a
+    /// source that is consumed as it is read, the second invocation of one
+    /// frame loses every axis and drops a still-held Shift back to base speed.
+    /// The policy is faithful to whatever source it is given — which is why
+    /// the source, not the policy, had to change.</summary>
+    [Fact]
+    public void ASelfConsumingSourceLosesTheFrameOnItsSecondInvocation()
+    {
+        var reader = ConsumingReader(VirtualKey.W, VirtualKey.SHIFT);
+
+        var first = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+        var second = FreeCameraInputPolicy.Resolve(reader, 3f, 0.3f);
+
+        Assert.Equal(-1, first.ForwardBack);
+        Assert.Equal(3f, first.SpeedMultiplier);
+        Assert.Equal(0, second.ForwardBack);
+        Assert.Equal(1f, second.SpeedMultiplier);
+        Assert.False(second.IsFlying);
+    }
+
+    /// <summary>No key source at all (the test constructor's service) reads as
+    /// every key up: the camera does not fly, rather than throwing inside the
+    /// game's input handler.</summary>
+    [Fact]
+    public void NoKeyReaderReadsAsEveryKeyUp()
+    {
+        var frame = FreeCameraInputPolicy.Resolve(null, 3f, 0.3f);
+
+        Assert.Equal(new FreeCameraFrameInput(0, 0, 0, 1f), frame);
+        Assert.False(frame.IsFlying);
+    }
+
+    /// <summary>The resolved frame answers the flying question the modifier
+    /// consumption is gated on, so the two can never disagree.</summary>
+    [Fact]
+    public void AStillFrameIsNotFlying()
+    {
+        var frame = FreeCameraInputPolicy.Resolve(
+            HeldReader(VirtualKey.SHIFT), 3f, 0.3f);
+
+        Assert.False(frame.IsFlying);
+        Assert.Equal(3f, frame.SpeedMultiplier);
     }
 }
