@@ -381,6 +381,12 @@ public class SkeletonOverlayWindow : Window
         lights.Clear();
         adopts.Clear();
         var cameraPosition = _cameraService.GetCameraPosition();
+        // ONE camera derivation and ONE viewport read for the whole frame.
+        // Every projection below used to re-walk the camera manager and call
+        // ImGui.GetIO() for itself; the bone pass alone does that once per
+        // bone per actor, so a four-actor scene paid it a thousand-odd times
+        // a frame to answer a question that cannot change within the frame.
+        _cameraService.TryBeginProjection(out var projection);
 
         // Adoption handles: everything the world holds that the scene does
         // not. They sit UNDER the scene's own handles, in paint and in
@@ -390,7 +396,7 @@ public class SkeletonOverlayWindow : Window
         for (int i = 0; i < candidates.Count; i++)
         {
             var candidate = candidates[i];
-            if (!_cameraService.WorldToScreen(candidate.Position, out var screen))
+            if (!projection.Project(candidate.Position, out var screen))
                 continue;
             adopts.Add(new AdoptDisplayData
             {
@@ -412,7 +418,7 @@ public class SkeletonOverlayWindow : Window
             if (!_presentation.IsHandleShown(lightSelectionId))
                 continue;
             if (_viewport.GetLightTransform(light.Id) is not { } lightTransform ||
-                !_cameraService.WorldToScreen(lightTransform.Position, out var lightScreen))
+                !projection.Project(lightTransform.Position, out var lightScreen))
                 continue;
             bool lightSelected = selectedIds.Contains(lightSelectionId);
             var resolved = _bindings.Resolve(light.Id);
@@ -439,7 +445,7 @@ public class SkeletonOverlayWindow : Window
             if (!_presentation.IsHandleShown(propSelectionId))
                 continue;
             if (_viewport.GetPropTransform(prop.Id) is not { } propTransform ||
-                !_cameraService.WorldToScreen(
+                !projection.Project(
                     propTransform.Position, out var propScreen))
                 continue;
             actors.Add(new ActorDisplayData
@@ -468,7 +474,7 @@ public class SkeletonOverlayWindow : Window
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             if (_presentation.IsHandleShown(actorSelectionId) &&
                 _viewport.GetActorTransform(actor.Id) is { } actorTransform &&
-                _cameraService.WorldToScreen(actorTransform.Position, out var actorScreen))
+                projection.Project(actorTransform.Position, out var actorScreen))
             {
                 actors.Add(new ActorDisplayData
                 {
@@ -531,7 +537,7 @@ public class SkeletonOverlayWindow : Window
                 if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
                     continue;
                 var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
-                if (!_cameraService.WorldToScreen(worldPos, out var screenPos))
+                if (!projection.Project(worldPos, out var screenPos))
                     continue;
                 boneScreenPositions[bone.Id] = viewportPos + screenPos;
                 boneWorldPositions[bone.Id] = worldPos;

@@ -60,6 +60,36 @@ public class CameraService : ICameraService
             : Vector3.Zero;
     }
 
+    /// <summary>
+    /// The batched half of <see cref="WorldToScreen"/>: the SAME camera
+    /// derivation and the SAME viewport read, resolved once for the whole
+    /// frame instead of once per projected point.
+    /// </summary>
+    public unsafe bool TryBeginProjection(out ScreenProjection projection)
+    {
+        projection = default;
+        var cameraManager = CameraManager.Instance();
+        if (cameraManager == null)
+            return false;
+
+        var camera = cameraManager->GetActiveCamera();
+        if (camera == null)
+            return false;
+
+        var sceneCamera = camera->CameraBase.SceneCamera;
+        var viewMatrix = sceneCamera.ViewMatrix;
+        viewMatrix.M44 = 1f;
+
+        var renderCamera = sceneCamera.RenderCamera;
+        if (renderCamera == null)
+            return false;
+
+        projection = ScreenProjection.FromMatrix(
+            viewMatrix * renderCamera->ProjectionMatrix,
+            Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize);
+        return true;
+    }
+
     public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
     {
         var cameraManager = CameraManager.Instance();
