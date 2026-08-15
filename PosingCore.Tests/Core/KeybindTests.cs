@@ -335,4 +335,41 @@ public class KeybindTests
             Assert.Equal(chord, KeyChord.Parse(chord.ToString()));
         }
     }
+
+    // ── the pump's per-tick default lookup ───────────────────────────────
+    // A shipped configuration stores no bindings at all, so EVERY registered
+    // action falls through to the default table on EVERY framework tick. The
+    // read-only accessor must therefore hand back the table's own instance;
+    // the copying one exists for the rebind UI, which edits what it is given.
+
+    [Fact]
+    public void TheSharedDefaultIsTheSameInstanceEveryTime()
+    {
+        foreach (var action in KeybindRegistry.Actions)
+            Assert.Same(
+                KeybindRegistry.SharedDefault(action.Id),
+                KeybindRegistry.SharedDefault(action.Id));
+
+        // An action the shipped table does not name is one shared unbound
+        // instance too, not a fresh empty one per call.
+        Assert.Same(
+            KeybindRegistry.SharedDefault("no such action"),
+            KeybindRegistry.SharedDefault("another missing action"));
+    }
+
+    [Fact]
+    public void TheCopyingDefaultStillHandsOutAnEditableCopy()
+    {
+        var first = KeybindRegistry.Default("Undo");
+        var second = KeybindRegistry.Default("Undo");
+
+        Assert.NotSame(first, second);
+        Assert.NotSame(KeybindRegistry.SharedDefault("Undo"), first);
+        Assert.Equal(first.Primary, second.Primary);
+
+        // Editing a copy cannot reach the shared table.
+        first.Primary = "Ctrl+Q";
+        Assert.NotEqual("Ctrl+Q", KeybindRegistry.SharedDefault("Undo").Primary);
+        Assert.NotEqual("Ctrl+Q", KeybindRegistry.Default("Undo").Primary);
+    }
 }

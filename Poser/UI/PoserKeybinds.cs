@@ -10,13 +10,19 @@ namespace Poser.UI;
 /// </summary>
 internal static class PoserKeybinds
 {
-    /// <summary>Both of an action's chords, defaults filled in.</summary>
+    /// <summary>
+    /// Both of an action's chords, defaults filled in. READ-ONLY: the fallback
+    /// hands back the registry's OWN default instance rather than a copy of
+    /// it, because this is the keybind pump's per-tick question — see
+    /// <see cref="KeybindRegistry.SharedDefault"/>. Neither caller (the pump,
+    /// the hover badges) writes to what it is given.
+    /// </summary>
     public static KeybindSlots Slots(string action)
     {
         var bindings = ConfigurationService.Instance.Config.UI.Bindings;
         return bindings.TryGetValue(action, out var slots)
             ? slots
-            : KeybindRegistry.Default(action);
+            : KeybindRegistry.SharedDefault(action);
     }
 
     /// <summary>

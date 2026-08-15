@@ -213,13 +213,32 @@ public static class KeybindRegistry
         return result;
     }
 
+    /// <summary>The one unbound instance <see cref="SharedDefault"/> hands
+    /// back for an action the shipped table does not name. Shared under the
+    /// same read-only contract as the table's own entries.</summary>
+    private static readonly KeybindSlots Unbound = new();
+
+    /// <summary>
+    /// Poser's shipped chords for one action, WITHOUT a defensive copy.
+    ///
+    /// <para>THE RETURNED OBJECT IS THE REGISTRY'S OWN AND MUST NOT BE
+    /// MUTATED. <see cref="Default"/> is the copying accessor, and the only
+    /// caller that needs it is the rebind UI, which edits what it is handed.
+    /// The KEYBIND PUMP asks this question for every registered action on
+    /// every framework tick, and a shipped configuration stores no bindings
+    /// at all (<c>UIConfiguration.Bindings</c> starts empty), so the copy was
+    /// one heap object per action per tick for the whole default install.
+    /// </para>
+    /// </summary>
+    public static KeybindSlots SharedDefault(string actionId) =>
+        PoserDefaults.TryGetValue(actionId, out var slots) ? slots : Unbound;
+
     /// <summary>Poser's shipped chords for one action, for a stored binding
     /// that has no entry at all (a config written before the action
-    /// existed).</summary>
+    /// existed). A fresh copy the caller may edit; read-only callers on a
+    /// hot path take <see cref="SharedDefault"/> instead.</summary>
     public static KeybindSlots Default(string actionId) =>
-        PoserDefaults.TryGetValue(actionId, out var slots)
-            ? slots.Copy()
-            : new KeybindSlots();
+        SharedDefault(actionId).Copy();
 
     /// <summary>The stored bindings filled out to the whole registry, so
     /// every caller iterates one shape.</summary>
