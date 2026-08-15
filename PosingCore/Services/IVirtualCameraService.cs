@@ -30,6 +30,13 @@ public interface IVirtualCameraService : IDisposable
     /// flying puts nothing on screen.</summary>
     FreeCameraSpeedNotice? SpeedNotice { get; }
 
+    /// <summary>Reported by the UI's draw pass each frame: an ImGui text
+    /// field holds the keyboard, so the free camera must not fly on those
+    /// keys (user 2026-08-15: "if there is focus in the UI, we do not
+    /// listen"). The report lapses on its own when the draw stops, so a
+    /// hidden HUD can never leave the camera stuck deaf.</summary>
+    void ReportUiTextFocus(bool focused);
+
     /// <summary>Creates a camera seeded from the current view and makes it
     /// live. Framework thread only. Returns null on failure.</summary>
     IVirtualCamera? CreateCamera(CameraKind kind);

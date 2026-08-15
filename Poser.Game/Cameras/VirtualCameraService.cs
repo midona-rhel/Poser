@@ -606,6 +606,25 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return result;
     }
 
+    /// <summary>An ImGui text field held the keyboard on the UI's last drawn
+    /// frame. The game's own <c>IsTextInputActive</c> below cannot see ImGui,
+    /// so the UI reports this itself; the stamp lapses on its own when the
+    /// draw stops, so a hidden HUD can never leave the camera stuck deaf.
+    /// </summary>
+    private bool _uiTextFocus;
+    private long _uiTextFocusAtMs;
+
+    public void ReportUiTextFocus(bool focused)
+    {
+        _uiTextFocus = focused;
+        _uiTextFocusAtMs = System.Environment.TickCount64;
+    }
+
+    private bool UiTextFocusActive =>
+        FreeCameraInputPolicy.UiTextFocusHolds(
+            _uiTextFocus,
+            System.Environment.TickCount64 - _uiTextFocusAtMs);
+
     /// <summary>Brio's input detour, whole: a live free camera eats the
     /// movement keys and the right-drag look, and a locked live camera of
     /// ANY kind eats the game's camera input outright — the orbit drag, the
@@ -657,13 +676,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
                 }
                 if (keyboard != null)
                 {
-                    keyboard->HandleKey(VirtualKey.W);
-                    keyboard->HandleKey(VirtualKey.A);
-                    keyboard->HandleKey(VirtualKey.S);
-                    keyboard->HandleKey(VirtualKey.D);
-                    keyboard->HandleKey(VirtualKey.Q);
-                    keyboard->HandleKey(VirtualKey.E);
-                    keyboard->HandleKey(VirtualKey.SPACE);
+                    foreach (var key in FreeCameraInputPolicy.MovementKeys)
+                        keyboard->HandleKey(key);
                 }
             }
         }
@@ -713,58 +727,68 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (keyboard == null || !live.MovementEnabled)
             return;
 
-        int forwardBack = 0;
-        if (keyboard->KeyDown(VirtualKey.W)) forwardBack -= 1;
-        if (keyboard->KeyDown(VirtualKey.S)) forwardBack += 1;
+        // An ImGui text field holds the keyboard: typing "was" into a name
+        // must not fly the camera, so no movement key is read OR consumed
+        // (user 2026-08-15: "if there is focus in the UI, we do not listen").
+        if (UiTextFocusActive)
+            return;
 
-        int leftRight = 0;
-        if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
-        if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
-
-        // Brio's vertical map, both pairs (InputManagerConfiguration): Q or
-        // Space rises, E or Shift falls. The axis travels with the input
-        // vector below, so it is the camera's up rather than the world's —
-        // pitched down, rising also carries you forward, exactly as Brio
-        // flies. Move2D is the switch that pins it to world vertical.
-        int upDown = 0;
-        if (keyboard->KeyDown(VirtualKey.Q) ||
-            keyboard->KeyDown(VirtualKey.SPACE))
-            upDown += 1;
-        if (keyboard->KeyDown(VirtualKey.E) ||
-            keyboard->KeyDown(VirtualKey.SHIFT))
-            upDown -= 1;
+        // THE AXES ARE READ BEFORE ANY KEY IS CONSUMED, and it must stay that
+        // way: the consumption below zeroes the very entries these reads look
+        // at, so a read moved after it would see every key up.
+        //
+        // A NOTE ON THE REPORTED LEFT-STRAFE STUTTER (user 2026-08-15,
+        // "moving left specifically stutters a bit"): a left-ONLY cause does
+        // not exist in this file. A and D are one statement apart, share an
+        // axis helper, are consumed from the same list, and the past-ninety
+        // flip negates the pair together. Ruled out by reading: no Poser
+        // keybind default binds a bare letter (KeybindRegistry), and the
+        // keybind pump reads Dalamud's IKeyState and consumes nothing, so it
+        // cannot race this detour. The past-ninety flip tests ROLL, matching
+        // Brio's PivotRotation (which is BrioCamera->Roll), so it cannot
+        // toggle on an ordinary yaw sweep.
+        //
+        // What IS a real stutter source, and the one divergence from Brio
+        // left standing: Brio reads its axes from Dalamud's IKeyState — a
+        // buffer independent of the frame it zeroes — and uses this detour
+        // only to CONSUME. Poser reads and zeroes the same buffer, so any
+        // invocation that lands on an already-consumed frame resolves every
+        // axis to zero and overwrites _freeForward with Vector3.Zero, costing
+        // that render frame its motion. It is direction-agnostic, so it does
+        // not explain "left only" on its own, and switching the read source
+        // is an input-path change nobody has asked for yet — left as a stated
+        // finding rather than an unapproved rewrite.
+        int forwardBack = FreeCameraInputPolicy.ForwardBackAxis(
+            keyboard->KeyDown(VirtualKey.W), keyboard->KeyDown(VirtualKey.S));
+        int leftRight = FreeCameraInputPolicy.LeftRightAxis(
+            keyboard->KeyDown(VirtualKey.A), keyboard->KeyDown(VirtualKey.D));
+        int upDown = FreeCameraInputPolicy.UpDownAxis(
+            keyboard->KeyDown(VirtualKey.SPACE),
+            keyboard->KeyDown(VirtualKey.C));
 
         var settings = CameraSettings;
-        _freeMoveSpeed = live.MovementSpeed;
-        if (keyboard->KeyDown(VirtualKey.CONTROL))
-            _freeMoveSpeed = live.MovementSpeed * settings.FastMultiplier;
-        else if (keyboard->KeyDown(VirtualKey.MENU))
-            _freeMoveSpeed = live.MovementSpeed * settings.SlowMultiplier;
+        _freeMoveSpeed = live.MovementSpeed *
+            FreeCameraInputPolicy.SpeedMultiplier(
+                keyboard->KeyDown(VirtualKey.SHIFT),
+                keyboard->KeyDown(VirtualKey.CONTROL),
+                settings.FastMultiplier,
+                settings.SlowMultiplier);
 
-        keyboard->HandleKey(VirtualKey.W);
-        keyboard->HandleKey(VirtualKey.A);
-        keyboard->HandleKey(VirtualKey.S);
-        keyboard->HandleKey(VirtualKey.D);
-        keyboard->HandleKey(VirtualKey.Q);
-        keyboard->HandleKey(VirtualKey.E);
-        // The rise/fall pair goes with the letters: Space and Shift MOVE the
-        // camera, so a frame that consumes them is a frame they did something.
-        if (settings.ConsumeModifiersWhileFlying)
+        // The fly keys go whole: W A S D Space and C all MOVE the camera, so
+        // a frame that consumes them is a frame they did something.
+        foreach (var key in FreeCameraInputPolicy.MovementKeys)
+            keyboard->HandleKey(key);
+        // Shift and Ctrl are speed MODIFIERS: alone they move nothing, so
+        // they are taken only on a frame the camera is actually being flown.
+        // Taking them whenever a free camera merely happened to be live cost
+        // the game every chord built on them — the user's own hide-UI is
+        // Alt+NumPlus, and it stopped working for as long as a free camera
+        // existed (user 2026-08-15).
+        if (settings.ConsumeModifiersWhileFlying &&
+            FreeCameraInputPolicy.IsFlying(forwardBack, leftRight, upDown))
         {
-            keyboard->HandleKey(VirtualKey.SPACE);
-            keyboard->HandleKey(VirtualKey.SHIFT);
-            // Ctrl and Alt are speed MODIFIERS: alone they move nothing, so
-            // they are taken only on a frame the camera is actually being
-            // flown. Taking them whenever a free camera merely happened to be
-            // live cost the game every chord built on them — the user's own
-            // hide-UI is Alt+NumPlus, and it stopped working for as long as a
-            // free camera existed (user 2026-08-15).
-            if (FreeCameraInputPolicy.IsFlying(
-                forwardBack, leftRight, upDown))
-            {
-                keyboard->HandleKey(VirtualKey.CONTROL);
-                keyboard->HandleKey(VirtualKey.MENU);
-            }
+            foreach (var key in FreeCameraInputPolicy.SpeedModifierKeys)
+                keyboard->HandleKey(key);
         }
 
         if (live.IsLocked)

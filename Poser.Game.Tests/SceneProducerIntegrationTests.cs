@@ -301,6 +301,7 @@ public sealed class SceneProducerIntegrationTests
         public IVirtualCamera? LiveCamera => null;
 
         public FreeCameraSpeedNotice? SpeedNotice => null;
+        public void ReportUiTextFocus(bool focused) { }
         public void Dispose() { }
         public IVirtualCamera? CreateCamera(CameraKind kind) => null;
         public IVirtualCamera? CloneCamera(IVirtualCamera source) => null;

@@ -146,6 +146,11 @@ public sealed class UIManager : IUIManager
         // pumped from the tick.
         _textInput = ImGui.GetIO().WantTextInput;
         _textInputTick = _tick;
+        // The free camera reads the keyboard from the game's input detour,
+        // which cannot see ImGui at all. Only the draw pass knows a text
+        // field has the keys, so it tells the camera every drawn frame; the
+        // report lapses by itself, so a hidden UI never leaves it deaf.
+        _cameras.ReportUiTextFocus(_textInput);
     }
 
     /// <summary>

@@ -494,8 +494,8 @@ public sealed class CameraPane
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
                     value => camera.MovementEnabled = value,
                     disabled: locked),
-                help: "Fly while this camera is live: WASD moves, Q or Space "
-                    + "rises, E or Shift drops");
+                help: "Fly while this camera is live: WASD moves, Space "
+                    + "rises, C drops");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
@@ -516,7 +516,7 @@ public sealed class CameraPane
             format: "0.000",
             disabled: locked,
             help: "How fast the camera flies; the mouse wheel steps it while "
-                + "flying, Ctrl speeds up, Alt slows down",
+                + "flying, Shift speeds up, Ctrl slows down",
             actions: actions => ResetArrow(
                 actions, "speed", defaults.DefaultMovementSpeed,
                 camera.MovementSpeed,

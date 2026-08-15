@@ -22,20 +22,22 @@ public class CameraConfiguration
     /// Brio's <c>DefaultFreeCameraMouseSensitivity</c>.</summary>
     public float DefaultMouseSensitivity { get; set; } = 0.1f;
 
-    /// <summary>What holding Ctrl multiplies the fly speed by (Brio's ×3;
+    /// <summary>What holding Shift multiplies the fly speed by (Brio's ×3;
     /// Ktisis calls the same knob <c>WorkcamFastMulti</c>).</summary>
     public float FastMultiplier { get; set; } = 3f;
 
-    /// <summary>What holding Alt multiplies the fly speed by (Brio's ×0.3,
+    /// <summary>What holding Ctrl multiplies the fly speed by (Brio's ×0.3,
     /// Ktisis's <c>WorkcamSlowMulti</c>).</summary>
     public float SlowMultiplier { get; set; } = 0.3f;
 
     /// <summary>
-    /// Whether Space, Shift, Ctrl and Alt are eaten while a live free camera
-    /// is flying — Brio's <c>EnableKeyHandlingOnKeyMod</c>, on by default in
-    /// both tools. Off hands them back to the game, which is what a user who
-    /// wants to jump or sprint between shots is asking for; the cost is that
-    /// descending also holds a modifier down for the game.
+    /// Whether the speed modifiers Shift and Ctrl are eaten on frames a live
+    /// free camera is actually being flown — Brio's
+    /// <c>EnableKeyHandlingOnKeyMod</c>, on by default in both tools. Off
+    /// hands them back to the game, which is what a user whose chords are
+    /// built on them is asking for. It does not govern the fly keys
+    /// themselves: W A S D Space and C move the camera, so they are always
+    /// taken while movement is enabled.
     /// </summary>
     public bool ConsumeModifiersWhileFlying { get; set; } = true;
 

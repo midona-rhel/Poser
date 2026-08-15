@@ -983,21 +983,21 @@ public static class SettingsView
         page.Section("SPEED MODIFIERS", form =>
         {
             form.Slider(
-                "Hold Ctrl",
+                "Hold Shift",
                 vm.CameraFastMultiplier,
                 1f,
                 10f,
                 next => vm.CameraFastMultiplier = next,
                 format: "0.0×",
-                help: "What holding Ctrl multiplies the fly speed by");
+                help: "What holding Shift multiplies the fly speed by");
             form.Slider(
-                "Hold Alt",
+                "Hold Ctrl",
                 vm.CameraSlowMultiplier,
                 0.05f,
                 1f,
                 next => vm.CameraSlowMultiplier = next,
                 format: "0.00×",
-                help: "What holding Alt multiplies the fly speed by");
+                help: "What holding Ctrl multiplies the fly speed by");
         });
         page.Section("GAME INPUT", form =>
         {
@@ -1005,7 +1005,7 @@ public static class SettingsView
                 "Consume modifiers while flying",
                 vm.CameraConsumeModifiers,
                 next => vm.CameraConsumeModifiers = next,
-                "Take Space, Shift, Ctrl and Alt off the game while a free camera flies; off lets your character still jump and sprint");
+                "Take the speed modifiers Shift and Ctrl off the game on frames a free camera is actually being flown; off leaves your Shift and Ctrl chords alone. The fly keys W A S D Space C are always taken");
             form.Switch(
                 "Consume all game input in GPose",
                 vm.CameraConsumeAllInput,
