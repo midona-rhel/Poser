@@ -129,18 +129,30 @@ public sealed class UIManager : IUIManager
         if (!FontRegistry.Ready)
             return;
 
-        Interactive.BeginFrame();
-        _windows.System.Draw();
-        // Outside the window system's draw pass: a reference picture closed
-        // from its own bar leaves the system here, and the dialog that adds
-        // one belongs to no window.
-        _windows.PumpReferenceImages();
-        Crystarium.FloatingMenu.EndFrame();
-        // The one hover-help card renders after every window has drawn,
-        // so registrations from any pane are complete and the card sits
-        // on the foreground list above all of them.
-        Crystarium.HoverHelp.Render();
-        Interactive.EndFrame();
+        // THE frame boundary for the draw-cost ledger: everything Poser draws
+        // is drawn from here, so this is the only place that can answer for a
+        // whole frame. The close is unconditional — a window that threw must
+        // not leave the ledger open across frames.
+        FrameProfiler.BeginFrame();
+        try
+        {
+            Interactive.BeginFrame();
+            _windows.System.Draw();
+            // Outside the window system's draw pass: a reference picture closed
+            // from its own bar leaves the system here, and the dialog that adds
+            // one belongs to no window.
+            _windows.PumpReferenceImages();
+            Crystarium.FloatingMenu.EndFrame();
+            // The one hover-help card renders after every window has drawn,
+            // so registrations from any pane are complete and the card sits
+            // on the foreground list above all of them.
+            Crystarium.HoverHelp.Render();
+            Interactive.EndFrame();
+        }
+        finally
+        {
+            FrameProfiler.EndFrame();
+        }
         // The draw pass's ONLY keybind duty: report whether an ImGui text
         // field is eating the keyboard this frame. The chords themselves are
         // pumped from the tick.
