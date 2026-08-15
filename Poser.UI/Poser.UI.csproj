@@ -25,4 +25,12 @@
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>
+
+	<ItemGroup>
+		<!-- The frame profiler's clock seam and tick scale are internal so no
+		     drawing surface can pin them; the profiler's own contract tests
+		     assert its aggregation arithmetic on exact tick counts through
+		     them. -->
+		<InternalsVisibleTo Include="Poser.ContractTests" />
+	</ItemGroup>
 </Project>
