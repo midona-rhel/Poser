@@ -105,7 +105,12 @@ public class ExpressionService : IExpressionService
     private void OnGPoseStateChanged(GPoseStateChangedEvent evt)
     {
         if (!evt.IsGPosing)
+        {
             _sessions.Clear();
+            // The probes hold a skeleton reference each; a session that has
+            // ended must not be the reason one stays reachable.
+            _probes.Clear();
+        }
     }
 
     private void LoadCatalogs()
@@ -136,7 +141,13 @@ public class ExpressionService : IExpressionService
     /// including the Roegadyn Sea Wolf/Hellsguard tribe split). A combination
     /// without a catalog — or unreadable customize data — returns null: the UI
     /// shows a quiet unavailable state and no other race's face data is ever
-    /// applied destructively.</summary>
+    /// applied destructively.
+    ///
+    /// <para>Every arm is a LITERAL rather than an interpolation over a
+    /// gender word. The rail asks this question on every frame an actor is
+    /// selected, and an interpolated key minted a fresh string — and hashed
+    /// it against the catalog table — sixty times a second to answer with the
+    /// same twenty characters it answered with last frame.</para></summary>
     private unsafe string? CatalogKeyFor(IActor actor)
     {
         try
@@ -147,21 +158,26 @@ public class ExpressionService : IExpressionService
 
             var customize = chara->DrawData.CustomizeData;
             byte race = customize.Race;
-            byte sex = customize.Sex;      // 0 masculine, 1 feminine
+            bool feminine = customize.Sex == 1;   // 0 masculine, 1 feminine
             byte tribe = customize.Tribe;
-            string gender = sex == 1 ? "Feminine" : "Masculine";
             string key = (race, tribe) switch
             {
-                (1, 2) => $"Hyur_{gender}_Highlander",
-                (1, _) => $"Hyur_{gender}_Midlander",
-                (2, _) => $"Elezen_{gender}",
-                (3, _) => $"Lalafell_{gender}",
-                (4, _) => $"Miqote_{gender}",
-                (5, 10) => $"Roegadyn_{gender}_Hellsguard",
-                (5, _) => $"Roegadyn_{gender}_SeaWolf",
-                (6, _) => $"AuRa_{gender}",
-                (7, _) => $"Hrothgar_{gender}",
-                (8, _) => $"Viera_{gender}",
+                (1, 2) => feminine
+                    ? "Hyur_Feminine_Highlander" : "Hyur_Masculine_Highlander",
+                (1, _) => feminine
+                    ? "Hyur_Feminine_Midlander" : "Hyur_Masculine_Midlander",
+                (2, _) => feminine ? "Elezen_Feminine" : "Elezen_Masculine",
+                (3, _) => feminine ? "Lalafell_Feminine" : "Lalafell_Masculine",
+                (4, _) => feminine ? "Miqote_Feminine" : "Miqote_Masculine",
+                (5, 10) => feminine
+                    ? "Roegadyn_Feminine_Hellsguard"
+                    : "Roegadyn_Masculine_Hellsguard",
+                (5, _) => feminine
+                    ? "Roegadyn_Feminine_SeaWolf"
+                    : "Roegadyn_Masculine_SeaWolf",
+                (6, _) => feminine ? "AuRa_Feminine" : "AuRa_Masculine",
+                (7, _) => feminine ? "Hrothgar_Feminine" : "Hrothgar_Masculine",
+                (8, _) => feminine ? "Viera_Feminine" : "Viera_Masculine",
                 _ => "",
             };
             return _catalogs.ContainsKey(key) ? key : null;
@@ -172,24 +188,93 @@ public class ExpressionService : IExpressionService
         }
     }
 
+    /// <summary>
+    /// One actor's answered availability, with everything that can change it.
+    /// The answer is a property of the CATALOG and the SKELETON — which units
+    /// have a target bone to write — and neither moves between frames.
+    /// </summary>
+    private sealed class UnitProbe
+    {
+        public string CatalogKey = "";
+        public ISkeleton? Skeleton;
+        public nint CharacterBase;
+        public int BoneCount;
+        public (string Id, string Label, bool Bidirectional, bool Available)[] Units =
+            Array.Empty<(string, string, bool, bool)>();
+
+        /// <summary>Whether the recorded answer still describes this actor. A
+        /// replaced slot skeleton is a new instance AND a new character base;
+        /// a partial arriving late changes the bone count without either.
+        /// </summary>
+        public bool Describes(string catalogKey, ISkeleton? skeleton) =>
+            string.Equals(CatalogKey, catalogKey, StringComparison.Ordinal)
+            && ReferenceEquals(Skeleton, skeleton)
+            && (skeleton == null
+                || (CharacterBase == skeleton.CharacterBaseAddress
+                    && BoneCount == skeleton.Bones.Count));
+    }
+
+    private readonly Dictionary<EntityId, UnitProbe> _probes = new();
+
+    /// <summary>
+    /// The catalog's units with their availability. Answered from a per-actor
+    /// probe rather than recomputed: the rail's EXPRESSION section calls this
+    /// every frame an actor is selected, and the uncached answer built a
+    /// whole-skeleton name lookup — one dictionary and one list per bone —
+    /// plus a resolve list per catalog bone, per frame, to conclude what it
+    /// concluded the frame before.
+    /// </summary>
     public IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> GetUnits(IActor actor)
     {
         if (!IsAvailable || CatalogKeyFor(actor) is not { } key)
             return Array.Empty<(string, string, bool, bool)>();
 
-        var units = _catalogs[key];
         var skeleton = _skeletons.GetSkeleton(actor);
         if (skeleton is not { IsValid: true })
-            return units.Select(u => (u.Id, u.Label, u.Bidirectional, true)).ToList();
+            skeleton = null;
 
-        var byName = BuildBoneLookup(skeleton);
-        return units
-            .Select(u => (
-                u.Id,
-                u.Label,
-                u.Bidirectional,
-                u.Bones.Keys.Any(name => ResolveExpressionBones(byName, name).Count > 0)))
-            .ToList();
+        if (_probes.TryGetValue(actor.Id, out var probe)
+            && probe.Describes(key, skeleton))
+            return probe.Units;
+
+        var units = _catalogs[key];
+        (string, string, bool, bool)[] answered;
+        if (skeleton == null)
+        {
+            answered = new (string, string, bool, bool)[units.Count];
+            for (int i = 0; i < units.Count; i++)
+                answered[i] = (
+                    units[i].Id, units[i].Label, units[i].Bidirectional, true);
+        }
+        else
+        {
+            var byName = BuildBoneLookup(skeleton);
+            answered = new (string, string, bool, bool)[units.Count];
+            for (int i = 0; i < units.Count; i++)
+            {
+                var unit = units[i];
+                bool available = false;
+                foreach (var name in unit.Bones.Keys)
+                {
+                    if (ResolveExpressionBones(byName, name).Count == 0)
+                        continue;
+                    available = true;
+                    break;
+                }
+                answered[i] =
+                    (unit.Id, unit.Label, unit.Bidirectional, available);
+            }
+        }
+
+        _probes[actor.Id] = new UnitProbe
+        {
+            CatalogKey = key,
+            Skeleton = skeleton,
+            CharacterBase = skeleton?.CharacterBaseAddress ?? 0,
+            BoneCount = skeleton?.Bones.Count ?? 0,
+            Units = answered,
+        };
+        return answered;
     }
 
     /// <summary>All bone instances per canonical name, by complete identity.</summary>

@@ -27,6 +27,9 @@ public sealed class ExpressionInspectorSection
 {
     private readonly IExpressionService _expressions;
 
+    /// <summary>Pair-consumption scratch; see <see cref="Draw"/>.</summary>
+    private bool[] _consumed = new bool[32];
+
     public ExpressionInspectorSection(IExpressionService expressions)
         => _expressions = expressions;
 
@@ -57,8 +60,15 @@ public sealed class ExpressionInspectorSection
         var units = _expressions.GetUnits(actor);
         int drawn = 0;
         // A unit consumed as the second half of a pair must not emit its own
-        // row later in the catalog order.
-        var consumed = new bool[units.Count];
+        // row later in the catalog order. The flags are RETAINED and cleared:
+        // this section draws on every frame an actor is selected, and a fresh
+        // array per frame is a per-frame allocation for a twenty-element
+        // scratch. Draw is not reentrant — each inspector calls it in turn —
+        // so one buffer serves them all.
+        if (_consumed.Length < units.Count)
+            _consumed = new bool[Math.Max(units.Count, 32)];
+        var consumed = _consumed;
+        Array.Clear(consumed, 0, units.Count);
         for (int i = 0; i < units.Count; i++)
         {
             if (consumed[i])
