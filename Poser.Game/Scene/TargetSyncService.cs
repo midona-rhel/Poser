@@ -27,8 +27,7 @@ public sealed class TargetSyncService : IDisposable
     private readonly ConfigurationService _config;
     private readonly IFramework _framework;
 
-    private ActorId? _lastPrimaryActor;
-    private nint _lastTargetAddress;
+    private readonly TargetSyncEdges _edges = new();
 
     public TargetSyncService(
         IActorManager actorManager,
@@ -64,12 +63,11 @@ public sealed class TargetSyncService : IDisposable
         // frame where both toggles are on the selection wins the race and the
         // re-read below settles both sides on the same actor.
         var primary = CurrentPrimaryActor();
-        if (primary is { } actorId &&
-            actorId != _lastPrimaryActor &&
+        if (_edges.SelectionMoved(primary) &&
             config.SelectionChangesGPoseTarget &&
             _gpose.IsGPosing)
         {
-            var resolved = _bindings.Resolve(actorId);
+            var resolved = _bindings.Resolve(primary!.Value);
             if (resolved.Success)
                 _actorManager.SetGPoseTarget(resolved.Value!);
         }
@@ -78,9 +76,7 @@ public sealed class TargetSyncService : IDisposable
         // treated as an edge: losing the target must not clear the selection.
         var target = _actorManager.GetGPoseTarget();
         var address = target?.Address ?? 0;
-        if (address != 0 &&
-            address != _lastTargetAddress &&
-            config.GPoseTargetChangesSelection)
+        if (_edges.TargetMoved(address) && config.GPoseTargetChangesSelection)
         {
             var id = _bindings.GetActorId(target!);
             if (id is null)
@@ -101,8 +97,7 @@ public sealed class TargetSyncService : IDisposable
         // the other records the resulting state as already-seen, so the
         // mirrored change is not detected as a fresh edge next tick and the
         // two directions converge instead of ping-ponging.
-        _lastPrimaryActor = CurrentPrimaryActor();
-        _lastTargetAddress = address;
+        _edges.Record(CurrentPrimaryActor(), address);
     }
 
     /// <summary>
@@ -114,4 +109,46 @@ public sealed class TargetSyncService : IDisposable
         _selection.Primary is { Kind: SceneEntityKind.Actor, Actor: { } actor }
             ? actor
             : null;
+}
+
+/// <summary>
+/// The edge memory both directions of <see cref="TargetSyncService"/> are
+/// decided against — the whole of the "only a CHANGE is pushed" rule, in one
+/// testable place.
+///
+/// <para>THE INVARIANT: a target address of zero is a GAP, not a state.
+/// GPose drops its target every time the user clicks empty world space, and
+/// recording that zero made the target's return look like a fresh edge — so
+/// a click on nothing, followed by GPose restoring the same target, re-ran
+/// the promote and yanked the selection off whatever light, camera or prop
+/// the user had just picked. Clicking around the world swapped the selection
+/// back to the actor over and over (user 2026-08-15). A gap leaves the
+/// last-seen target exactly where it was, so the same target coming back is
+/// not a change.</para>
+/// </summary>
+internal sealed class TargetSyncEdges
+{
+    private ActorId? _lastPrimaryActor;
+    private nint _lastTargetAddress;
+
+    /// <summary>Whether the primary selected actor differs from the one this
+    /// memory last recorded. No selected actor is not a change: a bone or a
+    /// light selection must not retarget the game.</summary>
+    public bool SelectionMoved(ActorId? primary) =>
+        primary is { } actor && actor != _lastPrimaryActor;
+
+    /// <summary>Whether the game's target differs from the one this memory
+    /// last recorded. A zero address is no target at all, never a change.
+    /// </summary>
+    public bool TargetMoved(nint address) =>
+        address != 0 && address != _lastTargetAddress;
+
+    /// <summary>Records the tick's outcome. The target is recorded only when
+    /// there IS one — see the invariant above.</summary>
+    public void Record(ActorId? primary, nint address)
+    {
+        _lastPrimaryActor = primary;
+        if (address != 0)
+            _lastTargetAddress = address;
+    }
 }
