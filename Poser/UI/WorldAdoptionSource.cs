@@ -256,7 +256,96 @@ public sealed class WorldAdoptionSource
         ShowActors = false;
         ShowLights = false;
         ShowWorldObjects = false;
+        // Before the listing goes, because clearing the hover needs the thing
+        // it is painted on to still be nameable.
+        SetHovered(null);
         _candidates.Clear();
+    }
+
+    // ── the hover mark ───────────────────────────────────────────────────
+
+    /// <summary>What the pointer is over, and the outline byte that object
+    /// stood with before the mark was put on it. Held together because they
+    /// are cleared together: the restore has to write back what THIS hover
+    /// found, not a value stated anywhere else.</summary>
+    private WorldAdoptionCandidate? _hoveredCandidate;
+    private byte _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+    private bool _hoveredActorPainted;
+
+    /// <summary>
+    /// Marks the world entity under the pointer, and unmarks whatever was
+    /// marked before it.
+    ///
+    /// <para>Ktisis' <c>SetHovered</c>/<c>SetHoveredActor</c> pair
+    /// (<c>Interface/Overlay/SceneDraw.cs:340-353</c>), including its
+    /// same-target early return: the overlay calls this EVERY frame, and
+    /// re-writing the mark each one would restore the mark's own value as the
+    /// resting one. The overlay also calls it with null on every frame nothing
+    /// is hovered (<c>:84-87</c>), which is what makes leaving clear it.</para>
+    ///
+    /// <para>WHICH CLASSES CARRY A MARK. Borrowed map objects wear the game's
+    /// own outline; overworld actors wear the game's own highlight. Lights
+    /// wear NEITHER, and that is not an omission — Ktisis marks neither
+    /// (<c>SetHovered</c> is called only from its world-object pass,
+    /// <c>:223</c>, and <c>SetHoveredActor</c> only from its actor pass,
+    /// <c>:266</c>; its light pass sets a hover flag and no mark at all). A
+    /// scene light has no mesh for an outline to trace.</para>
+    ///
+    /// <para>THE PAIRING IS THE CONTRACT: nothing is ever painted without this
+    /// method holding what unpaints it, and every exit — a new hover, no
+    /// hover, the adoption itself, and the session's end — runs through here.
+    /// </para>
+    /// </summary>
+    public void SetHovered(WorldAdoptionCandidate? candidate)
+    {
+        if (Equals(candidate, _hoveredCandidate))
+            return;
+
+        if (_hoveredCandidate is { } previous)
+        {
+            switch (previous.Kind)
+            {
+                case WorldAdoptionKind.WorldObject:
+                    _worldObjects?.WriteOutline(
+                        previous.WorldObject, _hoveredOutline);
+                    break;
+                case WorldAdoptionKind.Actor when _hoveredActorPainted:
+                    _worldActors?.SetHighlight(previous.Actor, false);
+                    break;
+            }
+        }
+
+        _hoveredCandidate = null;
+        _hoveredOutline = Game.WorldObjects.WorldObjectOutline.None;
+        _hoveredActorPainted = false;
+
+        if (candidate is not { } next)
+            return;
+
+        switch (next.Kind)
+        {
+            case WorldAdoptionKind.WorldObject:
+                if (_worldObjects == null ||
+                    !_worldObjects.TryReadOutline(
+                        next.WorldObject, out _hoveredOutline))
+                    return;
+                _worldObjects.WriteOutline(
+                    next.WorldObject, Game.WorldObjects.WorldObjectOutline.Hover);
+                break;
+            case WorldAdoptionKind.Actor:
+                _hoveredActorPainted =
+                    _worldActors?.SetHighlight(next.Actor, true) == true;
+                if (!_hoveredActorPainted)
+                    return;
+                break;
+            default:
+                // A light takes no mark; remembering it as hovered anyway
+                // would make the next frame's early return skip a class that
+                // DOES take one.
+                return;
+        }
+
+        _hoveredCandidate = next;
     }
 
     /// <summary>The current listing, nearest first. Empty whenever every class
@@ -285,6 +374,10 @@ public sealed class WorldAdoptionSource
     /// original suppressed until release.</summary>
     public void Adopt(in WorldAdoptionCandidate candidate)
     {
+        // The mark comes off BEFORE the thing is taken: an adopted object
+        // leaves the candidate listing, and a mark whose owner is no longer
+        // listed has nothing left to unpaint it.
+        SetHovered(null);
         switch (candidate.Kind)
         {
             case WorldAdoptionKind.Actor:

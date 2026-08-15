@@ -195,6 +195,27 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         ((DrawObject*)node)->IsVisible = visible;
     }
 
+    public bool TryReadOutline(nint address, out byte outline)
+    {
+        outline = WorldObjectOutline.None;
+        var node = Resolve(address);
+        if (node == null)
+            return false;
+        outline = ((DrawObject*)node)->OutlineFlags;
+        return true;
+    }
+
+    public void WriteOutline(nint address, byte outline)
+    {
+        var node = Resolve(address);
+        if (node == null)
+            return;
+        // Ktisis writes this field and nothing beside it — no render or
+        // culling re-state (WorldObject.SetOutline, Structs/Objects/
+        // WorldObject.cs:57-62), unlike its own Update() for a placement.
+        ((DrawObject*)node)->OutlineFlags = outline;
+    }
+
     /// <summary>The one address check every read and write goes through: a
     /// non-null pointer that still answers BgObject. An address that has
     /// stopped being one is inert rather than written blind.</summary>

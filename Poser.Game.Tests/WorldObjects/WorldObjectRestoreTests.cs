@@ -665,6 +665,29 @@ public sealed class WorldObjectRestoreTests
 
         public IReadOnlyList<nint> EnumerateLights() => Lights.ToArray();
 
+        /// <summary>Every outline byte this fake was ever asked to write, in
+        /// order. The hover contract is a PAIRING — what goes on comes off —
+        /// and a sequence is the only thing that can state it.</summary>
+        public List<(nint Address, byte Outline)> OutlineWrites { get; } = new();
+
+        public bool TryReadOutline(nint address, out byte outline)
+        {
+            if (_nodes.TryGetValue(address, out var node))
+            {
+                outline = node.Outline;
+                return true;
+            }
+            outline = WorldObjectOutline.None;
+            return false;
+        }
+
+        public void WriteOutline(nint address, byte outline)
+        {
+            OutlineWrites.Add((address, outline));
+            if (_nodes.TryGetValue(address, out var node))
+                node.Outline = outline;
+        }
+
         public bool IsAlive(nint address) => _nodes.ContainsKey(address);
 
         public bool TryRead(nint address, out Transform placement)
@@ -728,6 +751,7 @@ public sealed class WorldObjectRestoreTests
             public Transform Placement;
             public byte Flags;
             public bool Visible;
+            public byte Outline = WorldObjectOutline.None;
         }
     }
 

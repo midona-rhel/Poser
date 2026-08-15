@@ -129,4 +129,41 @@ public interface IWorldObjectPort
     /// <summary>Shows or hides one object, leaving every other draw flag as it
     /// was.</summary>
     void WriteVisible(nint address, bool visible);
+
+    /// <summary>Reads one object's outline byte — the game's own
+    /// selection-highlight state, the same mark a quest interactable wears.
+    /// </summary>
+    bool TryReadOutline(nint address, out byte outline);
+
+    /// <summary>Writes one object's outline byte. Paired with
+    /// <see cref="TryReadOutline"/> and never with a literal restore value:
+    /// the byte carries more than the colour, so what a hover puts back is
+    /// what the hover found.</summary>
+    void WriteOutline(nint address, byte outline);
+}
+
+/// <summary>
+/// The two outline bytes this feature writes.
+///
+/// <para>Verified against Ktisis' own call site: <c>OutlineChoice</c> is a byte
+/// enum whose values are <c>None = 0x03</c> through <c>Pink = 0x63</c>
+/// (<c>Ktisis/Structs/Objects/DrawObject.cs:10-18</c>), written whole into
+/// <c>DrawObject.OutlineFlags</c> by <c>WorldObject.SetOutline</c>
+/// (<c>Structs/Objects/WorldObject.cs:57-62</c>) and driven from hover in
+/// <c>SceneDraw.SetHovered</c> (<c>Interface/Overlay/SceneDraw.cs:340-346</c>)
+/// — set on enter, set back on leave. Yellow is Ktisis' own default
+/// (<c>Data/Config/Sections/OverlayConfig.cs:31</c>).</para>
+///
+/// <para>Poser writes the same values but RESTORES what it read rather than
+/// writing <c>None</c> back: the low nibble is not the colour, and a hover has
+/// no business deciding what an object's resting outline was.</para>
+/// </summary>
+public static class WorldObjectOutline
+{
+    /// <summary>No outline. Kept for the restore path's fallback only — the
+    /// hover puts back the byte it captured.</summary>
+    public const byte None = 0x03;
+
+    /// <summary>What a hovered adoption handle paints its object.</summary>
+    public const byte Hover = 0x43;
 }

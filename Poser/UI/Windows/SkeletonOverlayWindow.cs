@@ -626,6 +626,20 @@ public class SkeletonOverlayWindow : Window
             ? -1
             : NearestHovered(adopts);
         bool hasHoveredAdopt = hoveredAdoptIndex >= 0;
+        // The world entity under the pointer wears the game's own mark, and
+        // stops wearing it the moment the pointer leaves. Ktisis' rule, driven
+        // from the same place: the hover is resolved once per frame and the
+        // NULL case is stated on every frame it does not resolve
+        // (SceneDraw.cs:84-87) — that null is what makes leaving clear it.
+        var hoveredCandidates = _adoption.Candidates;
+        int hoveredCandidateIndex = hasHoveredAdopt && !pointerBlocked
+            ? adopts[hoveredAdoptIndex].Candidate
+            : -1;
+        _adoption.SetHovered(
+            hoveredCandidateIndex >= 0 &&
+            hoveredCandidateIndex < hoveredCandidates.Count
+                ? hoveredCandidates[hoveredCandidateIndex]
+                : null);
         if (hasHoveredAdopt && !pointerBlocked)
         {
             var adopt = adopts[hoveredAdoptIndex];

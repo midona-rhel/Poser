@@ -223,6 +223,31 @@ public sealed class WorldObjectService : IDisposable
         return candidates;
     }
 
+    /// <summary>Reads one graph object's outline byte. Addressed by the
+    /// CANDIDATE's address rather than by a claim, because the hover mark is
+    /// worn by things the scene has not taken.</summary>
+    public bool TryReadOutline(nint address, out byte outline)
+    {
+        if (_disposed)
+        {
+            outline = WorldObjectOutline.None;
+            return false;
+        }
+        return _port.TryReadOutline(address, out outline);
+    }
+
+    /// <summary>Writes one graph object's outline byte. The one write on this
+    /// service that is NOT gated on an adoption: the mark is transient, its
+    /// caller holds the value that undoes it, and painting it is how the user
+    /// tells which object a handle belongs to before deciding to take it.
+    /// </summary>
+    public void WriteOutline(nint address, byte outline)
+    {
+        if (_disposed)
+            return;
+        _port.WriteOutline(address, outline);
+    }
+
     /// <summary>Whether this address is already claimed.</summary>
     public bool IsAdopted(nint address)
     {

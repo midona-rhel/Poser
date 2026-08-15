@@ -269,6 +269,51 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort
     public WorldActorImportResult CloneCandidate(WorldActorCandidateId id) =>
         CloneCandidate(id, out _);
 
+    /// <summary>
+    /// Paints, or unpaints, the game's own selection highlight on a listed
+    /// overworld actor — what a hovered adoption handle marks its actor with.
+    ///
+    /// <para>The mechanism is Ktisis' own and verified at its call site:
+    /// <c>SceneDraw.SetActorHighlight</c>
+    /// (<c>Ktisis/Interface/Overlay/SceneDraw.cs:367-377</c>) casts the
+    /// wrapper's address to the client-structs GameObject and calls
+    /// <c>Highlight(colour)</c> on hover-enter and
+    /// <c>Highlight(ObjectHighlightColor.None)</c> on leave, refusing when the
+    /// object has no draw object. This is the same call, the same guard and the
+    /// same pairing.</para>
+    ///
+    /// <para>False means the highlight was not written — a stale id, an
+    /// off-thread call, or an actor with nothing drawn. A caller must read that
+    /// as "no highlight is on", never as an unpaired set.</para>
+    /// </summary>
+    public unsafe bool SetHighlight(WorldActorCandidateId id, bool highlighted)
+    {
+        if (!OnOwnerThread)
+            return false;
+        if (!_observations.TryGetValue(id, out var stored))
+            return false;
+        try
+        {
+            var native =
+                (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)
+                    stored.Address;
+            if (native == null || native->DrawObject == null)
+                return false;
+            native->Highlight(highlighted
+                ? FFXIVClientStructs.FFXIV.Client.Game.Object
+                    .ObjectHighlightColor.Yellow
+                : FFXIVClientStructs.FFXIV.Client.Game.Object
+                    .ObjectHighlightColor.None);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning(
+                $"WorldActorDiscovery: highlighting a world actor failed: {ex.Message}");
+            return false;
+        }
+    }
+
     /// <summary>The typed import with the spawned wrapper handed out for the
     /// caller's pending-select flow — the same handoff every other spawn row
     /// uses. The wrapper is already bound inside the spawn transaction; the
