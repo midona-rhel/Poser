@@ -249,19 +249,71 @@ public static partial class Crystarium
             text, style, constraint);
     }
 
+    /// <summary>
+    /// One frame's measured runs. The shell measures the SAME string two and
+    /// three times per frame BY DESIGN: a form row measures its label to lay
+    /// the label column, <see cref="TextInBand"/> measures it again to seat
+    /// the ink, and a button measures its caption once to size itself and
+    /// again to clip it. Each repeat is a font-handle push/pop pair, a
+    /// <see cref="Presentation"/> scan and a full ImGui shape, and none of
+    /// them can answer differently within one frame.
+    ///
+    /// <para>The key is the RESOLVED FONT INSTANCE plus the string. A re-bake
+    /// cannot be read through a stale entry, because the registry hands back
+    /// NEW handles rather than re-baking one in place (see
+    /// <c>FontRegistry.SetPolarity</c>), so a rebuilt face is a different key
+    /// rather than the same key carrying different metrics. A run measured
+    /// under no handle is NOT cached: it shapes against whatever font is
+    /// ambient, which this key cannot name.</para>
+    ///
+    /// <para>Two generations swap per frame, so a run that stops being
+    /// restated — every per-frame readout string — is dropped within two
+    /// frames instead of accumulating for the session.</para>
+    /// </summary>
+    private static Dictionary<(IFontHandle Font, string Text), Vector2> _measured =
+        new();
+
+    private static Dictionary<(IFontHandle Font, string Text), Vector2> _measuredAging =
+        new();
+
+    private static int _measuredFrame = -1;
+
     /// <summary>Measures the run at its intrinsic size.</summary>
     public static Vector2 MeasureText(string text, in TextStyle style)
     {
-        var (font, pushed, _, _) = ResolveStyle(style);
-        try
+        var font = ResolveFont(style);
+        if (font is not { Available: true })
         {
+            // No handle: the run shapes against whatever font is ambient,
+            // which the memo's key cannot name.
             return ImGui.CalcTextSize(Presentation(text));
         }
-        finally
+
+        if (Interactive.Frame != _measuredFrame)
         {
-            if (pushed)
-                font!.Pop();
+            _measuredFrame = Interactive.Frame;
+            (_measured, _measuredAging) = (_measuredAging, _measured);
+            _measured.Clear();
         }
+
+        var key = (font, text);
+        if (_measured.TryGetValue(key, out var size))
+            return size;
+        if (!_measuredAging.TryGetValue(key, out size))
+        {
+            // Only a MISS pays the handle push and the shape.
+            font.Push();
+            try
+            {
+                size = ImGui.CalcTextSize(Presentation(text));
+            }
+            finally
+            {
+                font.Pop();
+            }
+        }
+        _measured[key] = size;
+        return size;
     }
 
     /// <summary>
@@ -344,18 +396,29 @@ public static partial class Crystarium
             : text.Normalize(NormalizationForm.FormC);
     }
 
-    private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
-        ResolveStyle(in TextStyle style)
+    /// <summary>The face a style names, WITHOUT pushing it. Split out of
+    /// <see cref="ResolveStyle"/> so a measurement that the frame memo can
+    /// already answer never pays a font-handle push/pop pair for a shape it
+    /// does not run.</summary>
+    private static IFontHandle? ResolveFont(in TextStyle style)
     {
         if (style.Size is { } requested && !(requested > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(style), requested, "A font size must be positive.");
+        return FontRegistry.Resolve(
+            style.Family,
+            style.Weight ?? FontWeight.Regular,
+            style.Size ?? ActiveTheme.Typography.BodySize);
+    }
+
+    private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
+        ResolveStyle(in TextStyle style)
+    {
         float size = style.Size ?? ActiveTheme.Typography.BodySize;
-        var weight = style.Weight ?? FontWeight.Regular;
         var color = style.Color ?? ActiveTheme.Text;
         if (style.Disabled)
             color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
-        var font = FontRegistry.Resolve(style.Family, weight, size);
+        var font = ResolveFont(style);
         bool pushed = font is { Available: true };
         if (pushed)
             font!.Push();

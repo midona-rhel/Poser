@@ -116,6 +116,12 @@ public static class Interactive
     private static int _frame;
     private static InteractionOwner? _openingBarrier;
 
+    /// <summary>The frame <see cref="BeginFrame"/> last stamped. Read by the
+    /// composition layer's per-frame memos so they age on the SAME tick this
+    /// does, without each of them making its own <c>GetFrameCount</c>
+    /// interop call.</summary>
+    internal static int Frame => _frame;
+
     // The ImGui id whose drag press was ACCEPTED (unoccluded, enabled).
     // Ownership is what pairs DragBegan with DragEnded: a press swallowed
     // by an occluder never records an owner and therefore can never
