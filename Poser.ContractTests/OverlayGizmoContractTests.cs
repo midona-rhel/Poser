@@ -19,6 +19,50 @@ namespace Poser.ContractTests;
 /// </summary>
 public sealed class OverlayGizmoContractTests
 {
+    // ── the actor-handle name strip ──────────────────────────────────────
+    // The overlay names an actor handle on every frame, so the object-index
+    // suffix comes off with a scan rather than a regex. The regex is the
+    // SPECIFICATION, so it is what the scan is measured against here — a
+    // divergence would be the overlay disagreeing with the shell about what
+    // an actor is called.
+
+    private const string SuffixPattern = @"\s*\(\d+\)$";
+
+    [Theory]
+    [InlineData("Y'shtola Rhul (201)")]
+    [InlineData("Y'shtola Rhul(201)")]
+    [InlineData("Y'shtola Rhul   (439)")]
+    [InlineData("Y'shtola Rhul")]
+    [InlineData("")]
+    [InlineData("(201)")]
+    [InlineData(" (201)")]
+    [InlineData("Name (201) trailing")]
+    [InlineData("Name ()")]
+    [InlineData("Name (abc)")]
+    [InlineData("Name (12a)")]
+    [InlineData("Name (201")]
+    [InlineData("Name 201)")]
+    [InlineData("Name ((201))")]
+    [InlineData("Name (201)(202)")]
+    [InlineData("(0)")]
+    [InlineData("Name\t(201)")]
+    public void The_index_suffix_scan_answers_exactly_as_the_regex_does(
+        string name)
+    {
+        Assert.Equal(
+            System.Text.RegularExpressions.Regex.Replace(
+                name, SuffixPattern, ""),
+            SkeletonOverlayWindow.StripObjectIndex(name));
+    }
+
+    [Fact]
+    public void A_name_with_no_suffix_is_handed_back_uncopied()
+    {
+        // The whole point of the scan: the common frame allocates nothing.
+        var name = string.Concat("Y'shtola", " Rhul");
+        Assert.Same(name, SkeletonOverlayWindow.StripObjectIndex(name));
+    }
+
     // ── hover-list wheel (Ktisis SelectableGui.DrawSelectList) ───────────
 
     [Fact]

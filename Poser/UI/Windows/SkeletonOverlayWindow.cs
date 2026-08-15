@@ -251,9 +251,16 @@ public class SkeletonOverlayWindow : Window
     /// whole armature is taken away at once.</para></summary>
     public bool UserVisible { get; set; }
 
+    // The selection is exposed as IReadOnlyList, whose foreach boxes a fresh
+    // enumerator every time. The overlay walks it three times a frame, so
+    // every walk in this window is INDEXED — a per-frame heap object per walk
+    // is exactly what the display-model buffers below exist to avoid.
     private bool AnySelectionAnchor()
     {
-        foreach (var id in _selection.Selected)
+        var selected = _selection.Selected;
+        for (int i = 0; i < selected.Count; i++)
+        {
+            var id = selected[i];
             if (id.Kind is SceneEntityKind.Bone
                 or SceneEntityKind.Actor
                 // A gaze point belongs to an actor: keep that actor's skeleton
@@ -263,18 +270,28 @@ public class SkeletonOverlayWindow : Window
                 // actor does: its handle is the edit's on-screen anchor.
                 or SceneEntityKind.Light)
                 return true;
+        }
         return false;
     }
+
+    /// <summary>
+    /// Whether the world-click breadcrumbs below should be composed at all.
+    ///
+    /// <para>They are VERBOSE, not Debug, and every one of them is behind this
+    /// test. Dalamud's minimum level defaults to Debug for an INSTALLED plugin
+    /// and Verbose for a dev build, so at Debug the breadcrumbs were composing
+    /// interpolated strings and writing log lines on the machine of every user
+    /// who ever clicked in the viewport — while the developer who needs them
+    /// keeps them for free.</para>
+    /// </summary>
+    private bool Breadcrumbs => _log.MinimumLogLevel <= 0;
 
     public override void Draw()
     {
         // First line of the frame, before every gate: a left press ALWAYS
         // logs, so a missing line means this method never ran that frame.
-        // Debug, not Information: these are standing breadcrumbs for the
-        // world-click path, and every user click would otherwise spam the
-        // Dalamud log forever.
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Debug(
+        if (Breadcrumbs && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _log.Verbose(
                 $"[Overlay] frame-press mouse={ImGui.GetIO().MousePos} "
                 + $"alt={ImGui.GetIO().KeyAlt}");
         try
@@ -328,8 +345,9 @@ public class SkeletonOverlayWindow : Window
 
         var selectedIds = _selectedIds;
         selectedIds.Clear();
-        foreach (var id in _selection.Selected)
-            selectedIds.Add(id);
+        var selection = _selection.Selected;
+        for (int i = 0; i < selection.Count; i++)
+            selectedIds.Add(selection[i]);
         var bones = _bones;
         var actors = _actors;
         var lights = _lights;
@@ -740,8 +758,8 @@ public class SkeletonOverlayWindow : Window
 
         // Diagnostic breadcrumb for dead world clicks: one line per press
         // naming every gate that can swallow it.
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
-            _log.Debug(
+        if (Breadcrumbs && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _log.Verbose(
                 $"[Overlay] press target={worldTarget?.ToString() ?? "none"} "
                 + $"blocked={pointerBlocked} listTravel={listTravel} "
                 + $"hasWorldBone={hasWorldBone} "
@@ -792,8 +810,10 @@ public class SkeletonOverlayWindow : Window
     /// keeps that actor lit.</summary>
     private Guid? SelectedActorLineage()
     {
-        foreach (var id in _selection.Selected)
+        var selected = _selection.Selected;
+        for (int i = 0; i < selected.Count; i++)
         {
+            var id = selected[i];
             if (id.Bone is { } bone)
                 return bone.Skeleton.Actor.LogicalId;
             if (id.Actor is { } actor
@@ -1206,10 +1226,11 @@ public class SkeletonOverlayWindow : Window
             stillListed = SameCandidate(candidates[i], pending.Candidate);
         bool releaseOccluded = Interactive.PointerOccluded(
             InteractionOwner.World, pending.ReleasePoint);
-        _log.Debug(
-            $"[Overlay] adopt {pending.Candidate.Kind} "
-            + $"'{pending.Candidate.Name}' listed={stillListed} "
-            + $"occluded={releaseOccluded}");
+        if (Breadcrumbs)
+            _log.Verbose(
+                $"[Overlay] adopt {pending.Candidate.Kind} "
+                + $"'{pending.Candidate.Name}' listed={stillListed} "
+                + $"occluded={releaseOccluded}");
         if (!stillListed || releaseOccluded)
             return;
         _adoption.Adopt(pending.Candidate);
@@ -1268,9 +1289,10 @@ public class SkeletonOverlayWindow : Window
         bool releaseOccluded = Interactive.PointerOccluded(
             pending.Owner,
             pending.ReleasePoint);
-        _log.Debug(
-            $"[Overlay] commit {pending.Id} present={stillPresent} "
-            + $"occluded={releaseOccluded}");
+        if (Breadcrumbs)
+            _log.Verbose(
+                $"[Overlay] commit {pending.Id} present={stillPresent} "
+                + $"occluded={releaseOccluded}");
         if (!stillPresent || releaseOccluded)
             return;
         if (pending.Additive)
@@ -1279,10 +1301,38 @@ public class SkeletonOverlayWindow : Window
             _selection.Select(pending.Id);
     }
 
-    /// <summary>Strips the raw object-index suffix ("Name (201)"), matching
-    /// the shell's display rule.</summary>
-    private static string StripObjectIndex(string name)
-        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
+    /// <summary>
+    /// Strips the raw object-index suffix ("Name (201)"), matching the shell's
+    /// display rule.
+    ///
+    /// <para>Scanned rather than matched: this runs for EVERY actor on EVERY
+    /// frame the overlay draws, and the regex it replaces
+    /// (<c>\s*\(\d+\)$</c>) cost a cache probe, a Match and a fresh result
+    /// string each time. The scan is the same grammar — trailing whitespace,
+    /// then a parenthesised run of digits, anchored at the end — and a name
+    /// without the suffix is handed straight back rather than copied.
+    /// <c>\d</c> is Unicode Nd, which is <see cref="char.IsDigit(char)"/>, and
+    /// <c>\s</c> is <see cref="char.IsWhiteSpace(char)"/>'s set; the anchor is
+    /// the END OF STRING rather than the regex's "end, or before a final
+    /// newline", because a scene actor name cannot carry one.</para>
+    /// </summary>
+    internal static string StripObjectIndex(string name)
+    {
+        int end = name.Length;
+        if (end == 0 || name[end - 1] != ')')
+            return name;
+        int digitsEnd = end - 1;
+        int index = digitsEnd;
+        while (index > 0 && char.IsDigit(name[index - 1]))
+            index--;
+        // At least one digit, and an opening paren immediately before them.
+        if (index == digitsEnd || index == 0 || name[index - 1] != '(')
+            return name;
+        int cut = index - 1;
+        while (cut > 0 && char.IsWhiteSpace(name[cut - 1]))
+            cut--;
+        return name[..cut];
+    }
 
     /// <summary>Canonical names of every member of an ARMED IK chain on this
     /// exact skeleton. Null when no chain on the skeleton is enabled. ONE port
