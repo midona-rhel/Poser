@@ -138,6 +138,7 @@ public sealed class WorldAdoptionSource
     private readonly AnimationSession _animation;
     private readonly ConfigurationService _configuration;
     private readonly IPluginLog _log;
+    private readonly UserNotices _notices;
 
     private readonly List<WorldAdoptionCandidate> _candidates = new();
     private long _nextRefreshMs;
@@ -155,7 +156,8 @@ public sealed class WorldAdoptionSource
         SelectionSession selection,
         AnimationSession animation,
         ConfigurationService configuration,
-        IPluginLog log)
+        IPluginLog log,
+        UserNotices notices)
     {
         _worldActors = worldActors;
         _lighting = lighting;
@@ -167,6 +169,27 @@ public sealed class WorldAdoptionSource
         _animation = animation;
         _configuration = configuration;
         _log = log;
+        _notices = notices;
+    }
+
+    /// <summary>
+    /// Says a refusal to the USER as well as to the log.
+    ///
+    /// <para>Every refusal below is the answer to a CLICK — the user aimed at a
+    /// handle in the world and pressed it. A click that does nothing and
+    /// explains nothing is indistinguishable from a click that missed, which
+    /// is exactly how these read in game: the handle stayed, and the scene did
+    /// not change. The log line is kept beside it because the log carries the
+    /// status codes and the notice carries the sentence.</para>
+    ///
+    /// <para>Null-safe on purpose: the filter contract tests construct this
+    /// source with no services at all to exercise the class-filter derivation,
+    /// and a refusal path is not what they are pinning.</para>
+    /// </summary>
+    private void Refuse(string logLine, string spoken)
+    {
+        _log?.Information(logLine);
+        _notices?.Refused(spoken);
     }
 
     /// <summary>Whether the world's addable ACTORS draw handles. Session
@@ -289,9 +312,12 @@ public sealed class WorldAdoptionSource
             _pendingSelectActor = clone;
             return;
         }
-        _log.Information(
+        Refuse(
             $"[Overlay] world actor adoption refused: {result.Status} "
-            + $"{result.Detail}");
+            + $"{result.Detail}",
+            string.IsNullOrWhiteSpace(result.Detail)
+                ? "That actor could not be added to the scene."
+                : $"That actor could not be added to the scene: {result.Detail}");
     }
 
     private void AdoptLight(WorldLightCandidate candidate)
@@ -299,9 +325,12 @@ public sealed class WorldAdoptionSource
         var captured = _lighting.CaptureWorldLight(candidate);
         if (captured == null)
         {
-            _log.Information(
+            Refuse(
                 "[Overlay] world light adoption refused: the light could not "
-                + "be captured");
+                + "be captured",
+                "That light could not be taken into the scene. It is either "
+                + "already borrowed, or it has gone since the handle was "
+                + "drawn.");
             return;
         }
         _pendingSelectLight = captured;
@@ -322,9 +351,11 @@ public sealed class WorldAdoptionSource
             _pendingSelectWorldObject = adopted;
             return;
         }
-        _log.Information(
+        Refuse(
             "[Overlay] world object adoption refused: the object could not "
-            + "be taken");
+            + "be taken",
+            "That object could not be borrowed. The map no longer holds it "
+            + "there.");
     }
 
     /// <summary>Selects what was just adopted, once the scene has bound it —
@@ -364,9 +395,13 @@ public sealed class WorldAdoptionSource
             return;
         var result = _animation.Pause(actor);
         if (!result.Success)
-            _log.Information(
+            // The actor DID arrive; only the freeze the setting asked for did
+            // not. Said as its own sentence so it cannot read as the adoption
+            // having failed.
+            Refuse(
                 $"[Overlay] the adopted actor could not be frozen: "
-                + $"{result.Detail}");
+                + $"{result.Detail}",
+                "The actor was added, but could not be frozen.");
     }
 
     private void Refresh()

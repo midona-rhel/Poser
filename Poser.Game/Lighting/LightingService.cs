@@ -387,7 +387,15 @@ public sealed unsafe class LightingService : ILightingService
     private bool CanSpawn()
     {
         if (!IsAvailable)
+        {
+            // Said out loud like the other two refusals below it. This branch
+            // was the silent one, so a light that could never be made looked
+            // exactly like a click that missed.
+            _log.Warning(
+                "LightingService: lights are unavailable — the game's light "
+                + "factory was not found.");
             return false;
+        }
         if (!_gPose.IsGPosing)
         {
             _log.Warning("LightingService: lights can only be spawned in GPose");

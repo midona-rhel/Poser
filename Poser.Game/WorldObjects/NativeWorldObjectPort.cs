@@ -207,8 +207,13 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             var node = (CSObject*)address;
             return node->GetObjectType() == ObjectType.BgObject ? node : null;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            // Answering null is right — an address that cannot be read is not
+            // written — but doing it silently made every read and write past
+            // this point a no-op nobody could account for.
+            _log.Warning(
+                $"NativeWorldObjectPort: {address:X} could not be resolved: {ex.Message}");
             return null;
         }
     }
@@ -238,10 +243,13 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             if (resource != null)
                 path = resource->FileName.ToString();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // A half-loaded resource names itself by address; it is still a
-            // legitimate row.
+            // legitimate row — but the fallback is stated rather than assumed,
+            // so a listing full of hex names has a reason in the log.
+            _log.Debug(
+                $"NativeWorldObjectPort: {address:X} has no readable model name: {ex.Message}");
         }
         var node = (CSObject*)bg;
         return new WorldObjectRow(
