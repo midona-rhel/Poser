@@ -58,19 +58,18 @@ public static class FontRegistry
         public override int GetHashCode() => HashCode.Combine(Family, Weight, SizePx);
     }
 
-    private static readonly Dictionary<Key, IFontHandle> _cache = new();
+    private static Dictionary<Key, IFontHandle> _cache = new();
     private static readonly Dictionary<Key, float> _inkRise = new();
     private static readonly Dictionary<Key, float> _ascentOverCap = new();
     private static readonly HashSet<Key> _required = new();
     private static readonly HashSet<Key> _failed = new();
 
-    // Theme polarity the LIVE handles were baked at, and the re-bake waiting
-    // to replace them after a polarity switch. Pending handles are warm-up
-    // only — they are never resolved to a caller, so nothing can be drawing
-    // with one when the swap (or a discard) disposes it.
+    // The renderer keeps one complete handle set per polarity. The inactive
+    // set warms in the background, so a theme change swaps at one frame
+    // boundary.
     private static bool _bakeLight;
-    private static bool _pendingLight;
-    private static Dictionary<Key, IFontHandle>? _pending;
+    private static bool _standbyLight;
+    private static Dictionary<Key, IFontHandle>? _standby;
 
     // Resolved lazily once; null entry = file not found → Dalamud default fallback.
     private static readonly Dictionary<(FontFamily, FontWeight), string?> _files = new();
@@ -90,76 +89,73 @@ public static class FontRegistry
     public static void Register(IFontAtlas atlas)
     {
         _atlas = atlas;
-        Warm(Crystarium.ActiveTheme);
+        Activate(Crystarium.ActiveTheme);
     }
+
+    internal static bool Registered => _atlas != null;
 
     /// <summary>
     /// True once every font used by the active theme has either become
-    /// available or failed definitively. Presentation waits for this so its
-    /// first visible measurement cannot use a temporary fallback face.
-    /// Hosts call this once per frame BEFORE drawing, which is also the one
-    /// safe moment to retire superseded bakes — see <see cref="Promote"/>.
+    /// available or failed definitively. The alternate polarity may still be
+    /// warming; it never prevents the active, coherent UI from drawing.
     /// </summary>
     public static bool Ready
     {
         get
         {
-            Promote();
             if (_atlas == null || _required.Count == 0)
                 return false;
-
-            foreach (var key in _required)
-            {
-                if (_failed.Contains(key))
-                    continue;
-                if (!_cache.TryGetValue(key, out var handle))
-                    return false;
-                if (handle.Available)
-                    continue;
-                if (handle.LoadException is { } loadException)
-                {
-                    LastError ??=
-                        $"{key.Family}/{key.Weight}/{key.SizePx}px: {loadException.Message}";
-                    continue;
-                }
+            if (!Available(_cache, _required))
                 return false;
-            }
+
+            PrimeStandby();
             return true;
         }
     }
 
     /// <summary>
-    /// Creates the complete active typography matrix before presentation.
-    /// Medium and semibold share Segoe UI Semibold, while mono has one face,
-    /// so normalization keeps the atlas to fifteen distinct handles.
-    /// A theme of the opposite polarity also starts a re-bake of every cached
-    /// handle; the live ones keep drawing until that set is ready.
+    /// Makes a theme's font set active only when its matching polarity handle set
+    /// is ready. Until then the caller keeps drawing the current theme.
     /// </summary>
-    public static void Warm(in Theme theme)
+    public static bool Activate(in Theme theme)
     {
         if (_atlas == null)
-            return;
+            return false;
 
-        SetPolarity(theme.IsLight);
-        _required.Clear();
-        float[] sizes =
-        [
-            theme.Typography.ShortcutSize,
-            theme.Typography.CaptionSize,
-            theme.Typography.LabelSize,
-            theme.Typography.BodySize,
-            theme.Typography.SurfaceTitleSize,
-        ];
-        foreach (float size in sizes)
+        var required = Requirements(theme);
+        if (_cache.Count == 0)
         {
-            Require(FontFamily.Default, FontWeight.Regular, size);
-            Require(FontFamily.Default, FontWeight.SemiBold, size);
-            Require(FontFamily.Mono, FontWeight.Regular, size);
+            _bakeLight = theme.IsLight;
+            Ensure(_cache, required, _bakeLight);
+            // Registration starts asynchronous builds. Record this set now
+            // so Ready can observe it becoming available on later frames.
+            SetRequired(required);
+            if (!Available(_cache, required))
+                return false;
+            PrimeStandby();
+            return true;
         }
-        Require(
-            FontFamily.Italic,
-            FontWeight.Regular,
-            theme.Typography.LabelSize);
+
+        if (theme.IsLight == _bakeLight)
+        {
+            Ensure(_cache, required, _bakeLight);
+            if (!Available(_cache, required))
+                return false;
+            SetRequired(required);
+            PrimeStandby();
+            return true;
+        }
+
+        EnsureStandby(theme.IsLight, required);
+        if (_standby is null || !Available(_standby, required))
+            return false;
+
+        (_cache, _standby) = (_standby, _cache);
+        _bakeLight = theme.IsLight;
+        _standbyLight = !_bakeLight;
+        SetRequired(required);
+        PrimeStandby();
+        return true;
     }
 
     /// <summary>
@@ -205,82 +201,115 @@ public static class FontRegistry
         return Build(key);
     }
 
-    /// <summary>
-    /// Creates a live handle at the polarity currently on screen, plus its
-    /// counterpart in a pending re-bake so the swap misses nothing.
-    /// </summary>
+    /// <summary>Creates matching live and standby handles when both exist.</summary>
     private static IFontHandle? Build(Key key)
     {
         var handle = CacheHandle(_cache, key, _bakeLight);
-        if (handle != null && _pending is { } pending && !pending.ContainsKey(key))
-            CacheHandle(pending, key, _pendingLight);
+        if (handle != null && _standby is { } standby && !standby.ContainsKey(key))
+            CacheHandle(standby, key, _standbyLight);
         return handle;
     }
 
-    /// <summary>
-    /// Switches the bake polarity. Handles already on screen cannot be
-    /// re-baked in place, so the whole cache is re-created in the background;
-    /// switching back before that lands simply drops the pending set.
-    /// </summary>
-    private static void SetPolarity(bool light)
+    private static HashSet<Key> Requirements(in Theme theme)
     {
-        if (light == _bakeLight)
+        var required = new HashSet<Key>();
+        float[] sizes =
         {
-            DiscardPending();
-            return;
+            theme.Typography.ShortcutSize,
+            theme.Typography.CaptionSize,
+            theme.Typography.LabelSize,
+            theme.Typography.BodySize,
+            theme.Typography.SurfaceTitleSize,
+        };
+        foreach (float size in sizes)
+        {
+            AddRequired(required, FontFamily.Default, FontWeight.Regular, size);
+            AddRequired(required, FontFamily.Default, FontWeight.SemiBold, size);
+            AddRequired(required, FontFamily.Mono, FontWeight.Regular, size);
         }
+        AddRequired(
+            required, FontFamily.Italic, FontWeight.Regular,
+            theme.Typography.LabelSize);
+        return required;
+    }
+
+    private static void AddRequired(
+        HashSet<Key> required, FontFamily family, FontWeight weight, float size)
+    {
+        int sizePx = Math.Max(1, (int)MathF.Round(size));
+        required.Add(new Key(
+            family, NormalizeWeight(family, weight), sizePx));
+    }
+
+    private static void Ensure(
+        Dictionary<Key, IFontHandle> cache,
+        IEnumerable<Key> required,
+        bool light)
+    {
+        foreach (var key in required)
+            if (!cache.ContainsKey(key) && !_failed.Contains(key))
+                CacheHandle(cache, key, light);
+    }
+
+    private static bool Available(
+        IReadOnlyDictionary<Key, IFontHandle> cache,
+        IEnumerable<Key> required)
+    {
+        foreach (var key in required)
+        {
+            if (_failed.Contains(key))
+                continue;
+            if (!cache.TryGetValue(key, out var handle))
+                return false;
+            if (handle.Available)
+                continue;
+            if (handle.LoadException is { } loadException)
+            {
+                LastError ??=
+                    $"{key.Family}/{key.Weight}/{key.SizePx}px: {loadException.Message}";
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    private static void SetRequired(IEnumerable<Key> required)
+    {
+        _required.Clear();
+        _required.UnionWith(required);
+    }
+
+    private static void PrimeStandby()
+    {
         if (_cache.Count == 0)
+            return;
+        if (_standby is null || _standbyLight == _bakeLight)
         {
-            // Nothing baked yet — adopt the polarity directly.
-            DiscardPending();
-            _bakeLight = light;
-            return;
+            Dispose(_standby);
+            _standby = new Dictionary<Key, IFontHandle>();
+            _standbyLight = !_bakeLight;
         }
-        if (_pending != null)
-            return;
-
-        _pendingLight = light;
-        var pending = new Dictionary<Key, IFontHandle>();
-        _pending = pending;
-        foreach (var key in _cache.Keys)
-            CacheHandle(pending, key, light);
-        if (pending.Count == 0)
-            _pending = null; // nothing could be re-baked; keep the live set
+        Ensure(_standby, _cache.Keys, _standbyLight);
     }
 
-    /// <summary>
-    /// Retires the previous bake once its replacement is fully built. Called
-    /// from <see cref="Ready"/>, i.e. at a host's frame gate before anything
-    /// draws — the only point at which no handle can be pushed, so the
-    /// disposal here can never hit a font in use.
-    /// </summary>
-    private static void Promote()
+    private static void EnsureStandby(bool light, IEnumerable<Key> required)
     {
-        if (_pending is not { } pending)
-            return;
-        foreach (var handle in pending.Values)
+        if (_standby is null || _standbyLight != light)
         {
-            if (!handle.Available && handle.LoadException == null)
-                return;
+            Dispose(_standby);
+            _standby = new Dictionary<Key, IFontHandle>();
+            _standbyLight = light;
         }
-
-        foreach (var handle in _cache.Values)
-            handle.Dispose();
-        _cache.Clear();
-        foreach (var (key, handle) in pending)
-            _cache[key] = handle;
-        _pending = null;
-        _bakeLight = _pendingLight;
+        Ensure(_standby, required, light);
     }
 
-    private static void DiscardPending()
+    private static void Dispose(Dictionary<Key, IFontHandle>? cache)
     {
-        if (_pending is not { } pending)
+        if (cache is null)
             return;
-        // Pending handles are never handed out, so this is safe at any time.
-        foreach (var handle in pending.Values)
+        foreach (var handle in cache.Values)
             handle.Dispose();
-        _pending = null;
     }
 
     /// <summary>
@@ -344,17 +373,6 @@ public static class FontRegistry
         float capPx = face.CapHeightEm * size;
         float lineHeightPx = face.LineHeightEm * size;
         return lineHeightPx * 0.5f - (ascentPx - capPx * 0.5f);
-    }
-
-    private static void Require(FontFamily family, FontWeight weight, float size)
-    {
-        int sizePx = Math.Max(1, (int)MathF.Round(size));
-        var key = new Key(family, NormalizeWeight(family, weight), sizePx);
-        _required.Add(key);
-        if (!_cache.ContainsKey(key) && !_failed.Contains(key))
-            Build(key);
-        else if (_pending is { } pending && !pending.ContainsKey(key))
-            CacheHandle(pending, key, _pendingLight);
     }
 
     private static FontWeight NormalizeWeight(FontFamily family, FontWeight weight) =>
@@ -481,10 +499,12 @@ public static class FontRegistry
 
     public static void Dispose()
     {
-        DiscardPending();
-        foreach (var h in _cache.Values) h.Dispose();
+        Dispose(_standby);
+        _standby = null;
+        Dispose(_cache);
         _cache.Clear();
         _bakeLight = false;
+        _standbyLight = false;
         _inkRise.Clear(); // keyed like the handle cache and derived from _files
         _ascentOverCap.Clear();
         _required.Clear();

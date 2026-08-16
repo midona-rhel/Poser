@@ -852,6 +852,7 @@ public readonly record struct Theme
 public static partial class Crystarium
 {
     private static Theme _activeTheme = Theme.PictoDark;
+    private static readonly ThemeActivation _themes = new(Theme.PictoDark);
 
     /// <summary>The active theme as a value for public consumers.</summary>
     public static Theme ActiveTheme => _activeTheme;
@@ -860,10 +861,53 @@ public static partial class Crystarium
     // those reads on the current immutable value without copying Theme.
     internal static ref readonly Theme ActiveThemeRef => ref _activeTheme;
 
-    /// <summary>Atomically replaces the full token value and its derived rules.</summary>
+    /// <summary>Queues a full token replacement until its font atlas is ready.</summary>
     public static void UseTheme(Theme theme)
     {
-        _activeTheme = theme;
-        FontRegistry.Warm(theme);
+        if (!FontRegistry.Registered)
+            _themes.ActivateWithoutFonts(theme);
+        else
+            _themes.Request(theme);
+        _activeTheme = _themes.Active;
+    }
+
+    /// <summary>Advances a staged theme at the frame boundary before drawing.</summary>
+    public static bool AdvanceTheme()
+    {
+        _themes.Advance(candidate => FontRegistry.Activate(candidate));
+        _activeTheme = _themes.Active;
+        return FontRegistry.Ready;
+    }
+}
+
+/// <summary>Keeps a visible theme paired with the atlas that rasterized it.</summary>
+internal sealed class ThemeActivation
+{
+    private Theme? _pending;
+
+    public ThemeActivation(Theme active) => Active = active;
+
+    public Theme Active { get; private set; }
+
+    internal bool HasPending => _pending.HasValue;
+
+    public void ActivateWithoutFonts(Theme theme)
+    {
+        Active = theme;
+        _pending = null;
+    }
+
+    public void Request(Theme theme)
+    {
+        _pending = theme;
+    }
+
+    public void Advance(Func<Theme, bool> activate)
+    {
+        if (_pending is { } theme && activate(theme))
+        {
+            Active = theme;
+            _pending = null;
+        }
     }
 }
