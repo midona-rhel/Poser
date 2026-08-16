@@ -25,4 +25,8 @@
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Poser.ContractTests" />
+	</ItemGroup>
 </Project>
