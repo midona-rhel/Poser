@@ -106,11 +106,6 @@ public class PoseInspectorPane
     // Euler cache while a rotation drag is active (avoids quat→euler snap).
     private Vector3? _dragEuler;
 
-    // Per-row disclosure for Brio's expanded per-axis rows. Row-local, not
-    // persisted: it is a reading posture for the value in front of you, and
-    // carrying it across selections would surprise the next one.
-    private bool _expandTranslation, _expandRotation, _expandScale;
-
     /// <summary>The copied model transform, shared by every inspector instance
     /// exactly as Brio's single clipboard slot is. Null until something is
     /// copied; a paste never invents one.</summary>
@@ -1478,10 +1473,7 @@ public class PoseInspectorPane
     // ── sections ─────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The three axis rows and the ONE gesture they share: the local functions
-    /// close over the frame's running position/euler/scale, so the composed
-    /// transform is assembled from all three rather than from three
-    /// independent rows.
+    /// Draws the three transform rows with one shared gesture.
     /// </summary>
     private void DrawTransform(Crystarium.FormScope form)
     {
@@ -1534,15 +1526,6 @@ public class PoseInspectorPane
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
-        void Expander(Crystarium.ActionScope actions, bool open, Action<bool> set) =>
-            actions.IconButton(
-                open ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
-                () => set(!open),
-                help: open
-                    ? "Collapse back to one row"
-                    : "Give each axis its own full-width row",
-                id: open ? "collapse" : "expand");
-
         form.AxisVector(
             "Translation",
             pos,
@@ -1550,10 +1533,7 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandTranslation, next => _expandTranslation = next),
-            expanded: _expandTranslation);
+            disabled: !canEdit);
         form.AxisVector(
             "Rotation",
             swap ? SwapXY(euler) : euler,
@@ -1566,10 +1546,7 @@ public class PoseInspectorPane
             },
             0.5f,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandRotation, next => _expandRotation = next),
-            expanded: _expandRotation);
+            disabled: !canEdit);
         form.AxisVector(
             "Scale",
             scale,
@@ -1577,10 +1554,7 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandScale, next => _expandScale = next),
-            expanded: _expandScale);
+            disabled: !canEdit);
 
         DrawTransformClipboard(form, transform, canEdit);
 
