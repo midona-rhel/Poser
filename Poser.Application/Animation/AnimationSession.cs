@@ -13,64 +13,13 @@ public readonly record struct AnimationResult(bool Success, string? Detail = nul
     public static AnimationResult Fail(string detail) => new(false, detail);
 }
 
-/// <summary>
-/// The single authority for Poser-owned animation state.
-///
-/// Keyed by exact-generation <see cref="ActorId"/>: a redraw or
-/// replacement produces a new generation, so the old entry can never
-/// govern the new actor. Nothing here holds an address, pointer, or
-/// legacy entity — every native effect goes through
-/// <see cref="IAnimationRuntimePort"/>.
-///
-/// RESTORATION CONTRACT. An actor's entry records only what Poser
-/// authored, and each authored thing has exactly one undo:
-///   base override   → the mode/mode-param/base-timeline captured before
-///                     the FIRST override;
-///   overall speed   → stop enforcing, so the game's own per-frame
-///                     recalculation wins again (there is no remembered
-///                     value to write back, by design);
-///   slot speeds     → stop enforcing and hand each touched slot back;
-///   held expression → released (unpin facial, Straight face, idle);
-///   lips            → the captured timeline (NOT 0, which merely means
-///                     "no speech timeline");
-///   stance and pose → the family and index captured before the first
-///                     stance change;
-///   weapon          → the drawn state captured before the first change;
-///   position lock   → released;
-///   physics         → released when the last owner lets go.
-///
-/// Every capture is taken once, before the first change of its kind, so
-/// restore targets what Poser FOUND rather than an intermediate state it
-/// created. Each aspect is released only when its own restore succeeded:
-/// a failure on a still-live actor stays owned and the next Reset retries
-/// it. An actor that no longer resolves is dropped without a native
-/// write — there is nothing left to restore into.
-///
-/// Animation state is session-only: it is not transform history, not
-/// pose-file payload, and not a named pose layer.
-/// </summary>
+/// <summary>Stores animation state for the current session.</summary>
 public sealed class AnimationSession
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
 
-    /// <summary>
-    /// The scene's hold on the global physics patch, and the ONLY hold there
-    /// is. The freeze is one process-global code patch and nothing about it
-    /// is per-actor, so it has to be requestable when no actor is selected at
-    /// all — a light, a camera or the environment is a perfectly ordinary
-    /// thing to be looking at while wanting the scene's cloth to stop (user
-    /// 2026-08-14). The scene never departs, so only <see cref="ResetAll"/>
-    /// releases it.
-    ///
-    /// <para>This was once one owner among a set keyed by
-    /// <see cref="ActorId"/>, reference-counted against per-actor holds. Once
-    /// the shell's switch became the only surface that asks, the actor
-    /// entry points had no callers left, and a set that can only ever hold
-    /// the scene is a boolean wearing a reference count — worse than one,
-    /// because a future per-actor hold would freeze physics that the shell's
-    /// own switch could not then release.</para>
-    /// </summary>
+    /// <summary>Whether the session owns the global physics freeze.</summary>
     private bool _sceneOwnsPhysics;
 
     public AnimationSession(IAnimationRuntimePort port)
@@ -85,19 +34,13 @@ public sealed class AnimationSession
 
     public ActorAnimationReading? Read(ActorId actor) => _port.Read(actor);
 
-    /// <summary>
-    /// True while a multi-phase operation owns the actor's animation — a
-    /// facial bake between its capture and apply phases. Every command
-    /// that could change what the face is doing is refused, because the
-    /// captured values would then describe a face that no longer exists.
-    /// Reads stay available so surfaces can keep rendering.
-    /// </summary>
+    /// <summary>True while animation commands are temporarily suspended.</summary>
     public bool CommandsSuspended { get; private set; }
 
     public void SuspendCommands()
     {
         CommandsSuspended = true;
-        // Armed loops would replay animations into the settling baseline.
+        // Pause loop playback while commands are suspended.
         _port.LoopsSuspended = true;
     }
 
@@ -127,34 +70,58 @@ public sealed class AnimationSession
 
     // ── Base and blend ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Plays a timeline as "the animation" of the actor: the SAME
-    /// sequencer play as everything else — the references have no base
-    /// latch — recorded so the transport can display and replay the pick.
-    /// Continuity is the loop system, armed separately by the caller.
-    /// </summary>
+    /// <summary>Plays and persistently loops the actor's main timeline.</summary>
     public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
-        var result = Blend(actor, timeline);
+        if (Suspended() is { } blocked)
+            return blocked;
+        if (!_port.SupportsForceLoop)
+            return AnimationResult.Fail("Persistent animation looping is unavailable.");
+
+        var current = OverridesFor(actor);
+        var capture = current.BaseCapture ?? _port.CaptureBase(actor);
+        if (capture is not { } taken)
+            return AnimationResult.Fail("The actor is no longer available.");
+
+        // A main replacement leaves explicit layer loops unchanged.
+        _port.ClearSlotLoop(actor, AnimationSlot.Base);
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            loops.Remove(AnimationSlot.Base);
+            return o with
+            {
+                LoopedSlots = loops,
+                BaseCapture = o.BaseCapture ?? taken,
+            };
+        });
+
+        // Keep the capture when playback or the loop write fails.
+        var cleared = _port.SetForceLoop(actor, 0);
+        if (!cleared.Success)
+            return AnimationResult.Fail(
+                cleared.Detail ?? "The previous animation could not be released.");
+
+        var result = _port.Blend(actor, timeline, taken, out _);
         if (!result.Success)
-            return result;
+            return AnimationResult.Fail(result.Detail ?? "Animation failed.");
+
+        var forced = _port.SetForceLoop(actor, timeline);
+        if (!forced.Success)
+            return AnimationResult.Fail(
+                forced.Detail ?? "The animation could not be kept looping.");
+
         Mutate(actor, o => o with { BaseTimeline = timeline });
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Plays through the sequencer with the reference's mode handling.
-    /// The port captures mode state before its first Poser-made change;
-    /// that capture is owned here for restoration.
-    /// </summary>
+    /// <summary>Plays a timeline and captures state for reset.</summary>
     public AnimationResult Blend(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
 
-        // Capture the incoming timeline of the slot this play lands on
-        // (the sheet routes it), once per slot, BEFORE it is overwritten.
-        // The base slot is the base capture's job; 0 records "was empty".
+        // Capture the incoming non-base slot before replacing it.
         AnimationSlot? landing = _port.TimelineSlot(timeline);
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
@@ -188,8 +155,7 @@ public sealed class AnimationSession
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
     {
         if (Suspended() is { } blocked) return blocked;
-        // The emote entry point drives the base slot too; its restore
-        // point is captured exactly as a direct play's would be.
+        // Emote playback also changes the base slot.
         var current = OverridesFor(actor);
         var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
         var result = _port.PlayEmote(actor, emoteId);
@@ -200,8 +166,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>Restores the captured base state and clears the selection;
-    /// speed, lips, and the rest are untouched.</summary>
+    /// <summary>Restores the captured base state and clears the selection.</summary>
     public AnimationResult StopBase(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -215,26 +180,12 @@ public sealed class AnimationSession
         var result = _port.RestoreBase(actor, capture);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Base restore failed.");
-        // Ownership is released only AFTER the native restore landed; a
-        // failure keeps the capture so the next attempt retries instead
-        // of silently abandoning the override on a live actor.
+        // Keep the capture when restore fails so Reset can retry.
         Mutate(actor, o => o with { BaseTimeline = null, BaseCapture = null });
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Plays a catalog entry the way the references do, choosing the
-    /// native route from the entry rather than from a UI flag:
-    ///
-    /// Base latches the timeline so the game re-drives it as the actor's
-    /// idle; Blend hands the timeline to the sequencer, which picks the
-    /// slot and performs the engine's own blend. An emote asked to play
-    /// from the start goes through the game's emote entry point, the only
-    /// route that plays intro-then-loop; anything else, and any emote
-    /// that has no intro, falls back to the sequencer.
-    ///
-    /// Force loop is applied last so it wraps whichever route ran.
-    /// </summary>
+    /// <summary>Plays a catalog entry through its selected route.</summary>
     public AnimationResult PlayEntry(
         ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
     {
@@ -250,12 +201,7 @@ public sealed class AnimationSession
         return Blend(actor, timeline);
     }
 
-    /// <summary>
-    /// Arms or disarms Poser-driven looping for one slot: when the slot
-    /// leaves the armed timeline (the one-shot ended), the port plays it
-    /// again through the proven sequencer call. Owned state — reset
-    /// disarms it; no unproven native field is involved.
-    /// </summary>
+    /// <summary>Arms or disarms looping for one animation slot.</summary>
     public AnimationResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -278,21 +224,13 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>False when the running client does not expose the game's
-    /// forced-timeline field; surfaces hide the control rather than offer
-    /// one that cannot work.</summary>
+    /// <summary>Whether persistent main-animation looping is available.</summary>
     public bool SupportsForceLoop => _port.SupportsForceLoop;
 
-    /// <summary>False when the client's stance-transition functions were
-    /// not found; the stance controls render disabled.</summary>
+    /// <summary>Whether stance transitions are available.</summary>
     public bool SupportsStance => _port.SupportsStance;
 
-    /// <summary>
-    /// Forces a timeline to repeat. Owns no state: on every client where
-    /// <see cref="SupportsForceLoop"/> is false this cannot take effect,
-    /// and recording an override for a write that did not happen would put
-    /// a phantom entry into the restoration list.
-    /// </summary>
+    /// <summary>Writes the persistent main-animation loop value.</summary>
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {
         var result = _port.SetForceLoop(actor, timeline);
@@ -327,21 +265,10 @@ public sealed class AnimationSession
 
     public AnimationResult Pause(ActorId actor) => SetSpeed(actor, 0f);
 
-    /// <summary>Resume drops the override rather than writing 1, so an
-    /// actor the game is driving at its own speed keeps it.</summary>
+    /// <summary>Resume stops the session's speed override.</summary>
     public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
 
-    /// <summary>
-    /// Replays a timeline from the start. Replay is explicitly a RESUMING
-    /// act: a Poser-owned pause (zero speed) is released first, because a
-    /// replay that kept the zero-speed owner would freeze the very
-    /// animation it claims to restart and leave Poser owning a pause the
-    /// user asked to play through. A non-zero owned speed survives — the
-    /// user's chosen rate applies to the replayed timeline. A failed
-    /// release keeps the pause owner and plays nothing, so ownership
-    /// stays truthful. <paramref name="resumed"/> reports whether a pause
-    /// was released so surfaces can SAY which semantic ran.
-    /// </summary>
+    /// <summary>Replays a timeline and reports whether a pause was released.</summary>
     public AnimationResult Replay(ActorId actor, ushort timeline, out bool resumed)
     {
         resumed = false;
@@ -356,14 +283,7 @@ public sealed class AnimationSession
         return Blend(actor, timeline);
     }
 
-    /// <summary>
-    /// Rewinds every paused Havok control of the actor to its frame 0 —
-    /// Brio's settle rewind between pausing and importing a pose
-    /// (ActionTimelineCapability.StopSpeedAndResetTimeline, ATC:120-165).
-    /// Owns no state: a rewind is not an override and has nothing to
-    /// restore. Suspended like the other face-moving commands, because it
-    /// snaps the very blink/lip frames a face capture is measuring.
-    /// </summary>
+    /// <summary>Rewinds paused controls to their first frame.</summary>
     public AnimationResult RewindPausedControls(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -404,12 +324,7 @@ public sealed class AnimationSession
 
     // ── Lips, stance, weapon, position ────────────────────────────────
 
-    /// <summary>
-    /// Sets the lip override. Selecting None (0) RESTORES the captured
-    /// incoming timeline rather than writing 0: 0 means "no speech
-    /// timeline", which is not necessarily what the actor arrived with,
-    /// and writing it would discard the only record of that.
-    /// </summary>
+    /// <summary>Sets the lip override. None restores the captured timeline.</summary>
     public AnimationResult SetLips(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -428,7 +343,6 @@ public sealed class AnimationSession
         Mutate(actor, o => o with
         {
             Lips = clearing ? null : timeline,
-            // The capture is released only once it has been restored.
             LipsCapture = clearing ? null : (o.LipsCapture ?? capture),
         });
         return AnimationResult.Ok();
@@ -441,9 +355,7 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
-        // Choosing a stance IS leaving the animation: armed loops are
-        // disarmed first (or the next tick replays the very animation the
-        // stance just replaced), then any owned base state is released.
+        // A stance change stops the active animation first.
         var owned = OverridesFor(actor);
         if (owned.LoopedSlots.Count > 0)
         {
@@ -493,14 +405,7 @@ public sealed class AnimationSession
 
     // ── Physics (one global patch, held by the scene) ─────────────────
 
-    /// <summary>
-    /// The scene's request for the global freeze — the shell's physics
-    /// switch, which stands over every selection and over none. The hold is
-    /// recorded ONLY after the patch it implies has actually landed: a
-    /// failed patch that had already recorded the hold would report the
-    /// scene as frozen while it was still running, and the release would
-    /// then try to undo a patch that was never applied.
-    /// </summary>
+    /// <summary>Sets the scene-wide physics freeze after the change succeeds.</summary>
     public AnimationResult SetScenePhysicsFrozen(bool frozen)
     {
         if (frozen == _sceneOwnsPhysics)
@@ -510,9 +415,6 @@ public sealed class AnimationSession
         {
             var result = _port.SetPhysicsFrozen(frozen);
             if (!result.Success)
-                // The fallback names the DIRECTION that failed: this call
-                // both patches and unpatches, and "freeze failed" on a
-                // release is a report of the opposite of what was attempted.
                 return AnimationResult.Fail(
                     result.Detail ?? (frozen
                         ? "Physics freeze failed."
@@ -523,20 +425,12 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>Whether the scene holds the patch — distinct from
-    /// <see cref="IsPhysicsFrozen"/>, which is the global state however it
-    /// came to be true.</summary>
+    /// <summary>True when the scene owns the physics freeze.</summary>
     public bool SceneOwnsPhysics => _sceneOwnsPhysics;
 
     // ── Scrubbing ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// One scrub drag. Everything that could move under the drag freezes
-    /// at Begin: playback (so the game cannot advance the frame out from
-    /// under the pointer), the control identity, its duration, and the
-    /// skeleton token. Release leaves the actor paused on the frame the
-    /// user chose — resuming is a separate, deliberate act.
-    /// </summary>
+    /// <summary>State captured for one scrub drag.</summary>
     private sealed record ScrubGesture(
         ActorId Actor,
         ScrubControlId Control,
@@ -546,15 +440,11 @@ public sealed class AnimationSession
 
     private ScrubGesture? _scrub;
 
-    /// <summary>The control that drives a slot, by the reference lookup.</summary>
+    /// <summary>Finds the live control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
         _port.FindSlotControl(actor, slot, out _);
 
-    /// <summary>
-    /// Freezes playback and captures the drag's whole mapping. Fails when
-    /// the control is not present, so a scrub never starts against
-    /// geometry that is already gone.
-    /// </summary>
+    /// <summary>Starts a scrub and captures its control mapping.</summary>
     public AnimationResult BeginScrub(ActorId actor, ScrubControlId control)
     {
         var controls = _port.EnumerateControls(actor, out var token);
@@ -565,8 +455,7 @@ public sealed class AnimationSession
         if (target == null)
             return AnimationResult.Fail("That animation control is no longer present.");
 
-        // A scrub in flight for a DIFFERENT actor ends here rather than
-        // being silently retargeted.
+        // A scrub cannot move to another actor.
         if (_scrub is { } existing && !existing.Actor.Equals(actor))
             EndScrub();
 
@@ -582,16 +471,8 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Writes a frame within the drag, clamped to the duration CAPTURED
-    /// at Begin rather than a freshly read one — a duration that changes
-    /// mid-drag would otherwise stretch or jump the mapping. A skeleton
-    /// token mismatch ends the drag instead of writing through whatever
-    /// now occupies that control position. The update names its actor and
-    /// a mismatch with the gesture's actor is refused inside the session:
-    /// a value from a newly selected actor can never land in the previous
-    /// actor's gesture.
-    /// </summary>
+    /// <summary>Updates the current scrubbed frame using the captured
+    /// duration and skeleton token.</summary>
     public AnimationResult UpdateScrub(ActorId actor, float time)
     {
         if (_scrub is not { } gesture)
@@ -612,9 +493,7 @@ public sealed class AnimationSession
         return AnimationResult.Fail(result.Detail ?? "Scrub cancelled.");
     }
 
-    /// <summary>Ends the drag, leaving the actor paused on the released
-    /// frame. That pause is an ordinary speed override, so Resume
-    /// continues from exactly there.</summary>
+    /// <summary>Ends the drag and leaves the actor paused on that frame.</summary>
     public void EndScrub()
     {
         _scrub = null;
@@ -622,13 +501,7 @@ public sealed class AnimationSession
 
     // ── Expression hold ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// Puts an expression on the face and KEEPS it there while the body
-    /// animates: play the timeline through the sequencer (it routes onto
-    /// the facial layer by its own tag), then pin that layer's speed at 0
-    /// so the last frame holds. This is Brio's expression mechanism,
-    /// verbatim; there is no other way to make a face persist.
-    /// </summary>
+    /// <summary>Plays an expression and holds the facial layer at speed 0.</summary>
     public AnimationResult HoldExpression(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -642,12 +515,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Releases a held expression, in Brio's exact order: unpin the
-    /// facial layer, play "Straight face", unpin again (the game may
-    /// have re-registered a speed during the blend), then idle. The face
-    /// returns to whatever the base animation gives it.
-    /// </summary>
+    /// <summary>Releases a held expression.</summary>
     public AnimationResult ReleaseExpression(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -657,9 +525,7 @@ public sealed class AnimationSession
         var idle = Blend(actor, AnimationTimelines.Idle);
         if (!unpin.Success || !straight.Success || !again.Success || !idle.Success)
         {
-            // The face is still (partly) held; keeping HeldExpression is
-            // what lets the next release or reset retry the whole
-            // sequence instead of stranding a pinned layer.
+            // Keep the hold when release is incomplete so it can be retried.
             return AnimationResult.Fail(
                 unpin.Detail ?? straight.Detail ?? again.Detail ?? idle.Detail ??
                 "Expression release failed.");
@@ -668,36 +534,11 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Returns the FACIAL LAYER ALONE to what Poser found there: unpin the
-    /// layer, then put back the face it was showing before the first hold.
-    /// Deliberately NOT <see cref="ReleaseExpression"/>: Brio's release is the
-    /// user's whole-actor reset button and ends with idle (3) on the BASE
-    /// slot, which puts the body back to idle. A bake owns the face and
-    /// nothing else, so it tears down the face and nothing else.
-    ///
-    /// <para>THE LAYER MUST COME OFF POSER'S OWN TIMELINE EITHER WAY, and that
-    /// is not a nicety — it is what makes a bake mean anything. The bake
-    /// measures its delta against whatever the released layer settles on, so a
-    /// teardown that leaves the expression playing measures the expression
-    /// against itself: the delta comes out identity, the pose owns nothing,
-    /// and undo has nothing to take away while the face goes on grinning under
-    /// the animation nobody took off. An actor that arrived with no facial
-    /// timeline at all therefore gets the neutral face (the same timeline
-    /// <see cref="ReleaseExpression"/> uses to say "no expression") rather than
-    /// being left on the one the bake is about to quote — playing 0 is not a
-    /// way to say "nothing".</para>
-    ///
-    /// The capture is consumed here — it has just been replayed, and a later
-    /// Reset must not replay a stale timeline over the layer.
-    /// </summary>
+    /// <summary>Restores the facial layer and consumes its capture.</summary>
     public AnimationResult RestoreFacialLayer(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
-        // The KEY, not its value, is the record that Poser played here at all:
-        // no entry means there is nothing of Poser's on this layer to take
-        // off, while an entry of 0 means Poser played over a layer that was
-        // showing nothing.
+        // The key records whether Poser changed this layer.
         bool played = OverridesFor(actor)
             .SlotCaptures.TryGetValue(AnimationSlot.Facial, out var captured);
 
@@ -710,9 +551,7 @@ public sealed class AnimationSession
                 actor,
                 captured != 0 ? captured : AnimationTimelines.StraightFace);
             if (!replayed.Success)
-                // The layer is unpinned but still on Poser's timeline; the
-                // hold stays owned so Reset or a retry runs the restore
-                // again rather than stranding it.
+                // Keep the state while the layer still needs restoration.
                 return replayed;
         }
 
@@ -731,28 +570,18 @@ public sealed class AnimationSession
 
     // ── Restoration ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Restores every override Poser owns for one actor and forgets it.
-    /// Safe to call when nothing is owned. Individual failures are
-    /// aggregated so one unreachable write cannot strand the rest.
-    /// </summary>
+    /// <summary>Restores all overrides owned by one actor.</summary>
     public AnimationResult ResetActor(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
         if (!_overrides.TryGetValue(actor, out var owned))
         {
-            // Nothing is owned for this actor. Physics is not among the
-            // things that could be: the freeze is held by the scene, not by
-            // any actor, so no actor's reset can retire it.
+            // Physics belongs to the scene, not to an actor.
             _port.ClearLoops(actor);
             return AnimationResult.Ok();
         }
 
-        // Each aspect is released ONLY when its restore succeeded. What
-        // fails stays owned, so a later Reset retries it instead of the
-        // override being silently abandoned on a still-live actor. If the
-        // actor no longer resolves there is nothing left to restore into,
-        // and everything is dropped.
+        // Keep failed restores owned for the next reset.
         var failures = new List<string>();
         var remaining = owned;
         bool actorGone = !_port.IsSupported(actor) && _port.Read(actor) == null;
@@ -766,8 +595,7 @@ public sealed class AnimationSession
             return false;
         }
 
-        // Loops first: a still-armed loop would replay the animation the
-        // very restore below is removing.
+        // Clear loops before restoring the saved state.
         if (owned.LoopedSlots.Count > 0)
         {
             _port.ClearLoops(actor);
@@ -780,13 +608,7 @@ public sealed class AnimationSession
         if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))
             remaining = remaining with { OverallSpeed = null };
 
-        // A held expression is released BEFORE the speed loop clears the
-        // facial pin, so the face visibly leaves the expression instead of
-        // resuming mid-timeline from an unpinned frame. Ownership is
-        // released only when the WHOLE sequence landed; a partial failure
-        // keeps HeldExpression so the next reset reruns it. The release
-        // plays pass the existing capture so a reset never re-captures
-        // state Poser itself produced.
+        // Release a held expression before clearing its speed override.
         if (owned.HeldExpression != null &&
             Try(_port.ClearSlotSpeed(actor, AnimationSlot.Facial)) &&
             Try(_port.Blend(actor, AnimationTimelines.StraightFace, remaining.BaseCapture, out _)) &&
@@ -802,18 +624,7 @@ public sealed class AnimationSession
             }
         }
 
-        // Replay each captured incoming slot timeline. An empty capture
-        // (0) means the slot held nothing before Poser played there — if
-        // it is STILL playing, that animation is Poser's and must go.
-        // There is no proven per-slot stop in either reference, so the
-        // game's own container-wide cancellation (the stance transition's
-        // function) clears it once for all such slots — and because it is
-        // container-wide, every OTHER active slot it will take down joins
-        // the capture set with its current timeline FIRST, so the same
-        // replay-and-retry machinery brings unrelated layers back. The
-        // base restore below rebuilds the base layer. A capture is
-        // released only when its slot is actually clear or its replay
-        // landed; anything else stays owned for the next attempt.
+        // Restore captured slot timelines after clearing empty slots.
         if (owned.SlotCaptures.Count > 0)
         {
             var liveRead = _port.Read(actor);
@@ -833,12 +644,7 @@ public sealed class AnimationSession
                 cancelled = Try(_port.CancelActiveTimeline(actor));
             }
 
-            // A failed cancellation processes NOTHING: replaying would
-            // restart layers over a state the cancel never cleared, and
-            // releasing any entry would shrink the plan the retry still
-            // needs. The complete plan is preserved unchanged, the base
-            // restore below still runs for this attempt, and the cancel
-            // failure returns with the result.
+            // Do not replay slots when cancellation fails.
             if (cancelled)
             {
                 foreach (var (slot, incoming) in slots.ToList())
@@ -852,14 +658,7 @@ public sealed class AnimationSession
             remaining = remaining with { SlotCaptures = slots };
         }
 
-        // Base restoration runs AFTER the expression release and slot
-        // replays: those go through the mode dance, which would overwrite
-        // the just-restored mode and parameter if the base went back
-        // first. The base is restored on EVERY attempt, but its capture is
-        // released only once every mode-mutating dependency — expression
-        // release, cancellation, slot replays — has resolved: a retry of
-        // any of those alters or cancels the base again, and would
-        // otherwise find its restoration point already gone.
+        // Restore the base last.
         if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)) &&
             remaining.HeldExpression == null && remaining.SlotCaptures.Count == 0)
         {
@@ -900,8 +699,7 @@ public sealed class AnimationSession
             : AnimationResult.Fail(string.Join("; ", failures));
     }
 
-    /// <summary>Restores every owned actor. Used by GPose exit, plugin
-    /// disposal, and Stop/Restore All.</summary>
+    /// <summary>Restores every actor owned by the session.</summary>
     public AnimationResult ResetAll()
     {
         var failures = new List<string>();
@@ -911,11 +709,7 @@ public sealed class AnimationSession
             if (!result.Success && result.Detail is { } detail)
                 failures.Add($"{actor}: {detail}");
         }
-        // The scene's hold holds no override entry, so the loop above never
-        // saw it — and no reconcile will ever retire it, because the scene
-        // is not something that can depart. This is the one place it is
-        // released, and a failed unpatch keeps it on record rather than
-        // clearing it over a still-patched site.
+        // Release the scene-wide physics hold after actor resets.
         var scene = SetScenePhysicsFrozen(false);
         if (!scene.Success && scene.Detail is { } sceneDetail)
             failures.Add($"scene: {sceneDetail}");
@@ -924,24 +718,15 @@ public sealed class AnimationSession
             : AnimationResult.Fail(string.Join("; ", failures));
     }
 
-    /// <summary>
-    /// Drops state for actors the scene no longer contains at that exact
-    /// generation. A replaced actor's old generation is released without
-    /// touching the new one; a genuinely removed actor is restored first
-    /// when it still resolves, and dropped regardless. Called once per
-    /// structural scene change.
-    /// </summary>
+    /// <summary>Restores and removes state for actors no longer in the scene.</summary>
     public void Reconcile(SceneSnapshot snapshot)
     {
         var present = new HashSet<ActorId>(snapshot.Actors.Select(a => a.Id));
-        // Physics is deliberately absent here: the freeze is held by the
-        // scene, which cannot depart, so no actor leaving can retire it.
+        // The scene-wide physics hold is handled separately.
         var departed = _overrides.Keys.Where(id => !present.Contains(id)).ToList();
         foreach (var id in departed)
         {
-            // Attempt the native restore; an actor that no longer resolves
-            // simply has nothing left to restore into, and the entry is
-            // dropped either way so it can never be re-applied.
+            // Remove the actor's state after attempting restoration.
             ResetActor(id);
         }
     }

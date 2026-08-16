@@ -15,23 +15,7 @@ using Poser.Game.Bindings;
 
 namespace Poser.Game.Animation;
 
-/// <summary>
-/// The native side of animation. Resolves every stable id through
-/// <see cref="StableBindingRegistry"/> immediately before touching memory,
-/// so a redraw or removal fails explicitly instead of writing through a
-/// stale pointer.
-///
-/// Addresses exist ONLY inside this class. The speed detours fire on the
-/// game's thread with a raw pointer and must answer without allocating or
-/// re-scanning, so an address index is kept as a DERIVED cache: the
-/// ActorId-keyed enforcement table is authoritative, the index is
-/// rebuilt from it whenever an override changes or the scene refreshes.
-///
-/// Speed is enforced, not written once. The game recalculates its own
-/// speeds every frame; the overall-speed detour therefore lets the
-/// original run and then stomps the result (Brio's model), and the
-/// slot-speed detour substitutes the argument before the original runs.
-/// </summary>
+/// <summary>Reads and updates actor animation state.</summary>
 public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
     private readonly IFramework _framework;
@@ -39,9 +23,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _posing;
 
-    // Authoritative, stable-id keyed.
+    // State keyed by actor id.
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
-    // Derived index for the detours only; never a source of truth.
+    // Address index used by speed callbacks.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
     // Actors whose position lock THIS session created, so releasing it
     // cannot wipe a placement the user made with the gizmo.
@@ -60,30 +44,24 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private delegate void SetSlotSpeedDelegate(ActionTimelineSequencer* sequencer, uint slot, float speed);
     private readonly Hook<SetSlotSpeedDelegate>? _slotSpeedHook;
 
-    // Non-null is NOT enabled: a hook object can exist while its Enable
-    // (or the other hook's construction) failed. Commands gate on these,
-    // set only after the matching Enable returned.
+    // These flags report enabled callbacks.
     private readonly bool _overallSpeedHookEnabled;
     private readonly bool _slotSpeedHookEnabled;
 
-    // Stance transition natives (Ktisis AnimationModule). ClientStructs maps
-    // the structs but not these three entry points, so they are sig-scanned.
-    // Every struct member they touch is a verified ClientStructs symbol.
+    // Entry points used by animation operations.
     private delegate bool SetEmoteModeDelegate(EmoteController* controller, uint mode);
     private readonly SetEmoteModeDelegate? _setEmoteMode;
     private delegate nint CancelTimelineDelegate(TimelineContainer* container, nint a2, nint a3);
     private readonly CancelTimelineDelegate? _cancelTimeline;
-    // ClientStructs binds PlayEmote as PlayEmote(uint, PlayEmoteOption*),
-    // and passing a null option pointer faults inside the game. The
-    // reference calls a four-argument form with zeros for option and
-    // chair, which is the shape that is actually known to work, so that
-    // is the one used here.
+    private delegate bool SetTimelineIdDelegate(
+        ActionTimelineSequencer* sequencer, ushort timeline, nint arg);
+    private readonly SetTimelineIdDelegate? _setTimelineId;
+    // Emote callback arguments.
     private delegate bool PlayEmoteDelegate(
         EmoteController* controller, nint emoteId, nint option, nint chair);
     private readonly PlayEmoteDelegate? _playEmote;
 
-    /// <summary>Ktisis' EmoteModeEnum. These are argument VALUES for
-    /// SetEmoteMode, not struct offsets.</summary>
+    /// <summary>Values passed to the stance call.</summary>
     private const uint EmoteModeNormal = 0;
     private const uint EmoteModeSitGround = 1;
     private const uint EmoteModeSitChair = 2;
@@ -91,8 +69,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
 
-    // The physics freeze is a process-global code patch, not a per-actor
-    // enforcement; the patcher owns its site, capability state and restore.
+    // The freeze is process-wide.
     private readonly PhysicsFreezePatcher _physics;
 
     public AnimationRuntimePort(
@@ -111,19 +88,19 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _bindings = bindings;
         _posing = posing;
 
-        // A missing stance native degrades that one operation to an explicit
-        // failure; it never silently half-applies a transition.
+        // Missing stance entry points produce an explicit failure.
         _setEmoteMode = ScanDelegate<SetEmoteModeDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? F6 46 10 01", "SetEmoteMode");
         _cancelTimeline = ScanDelegate<CancelTimelineDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 80 7B 17 01", "CancelTimeline");
+        _setTimelineId = ScanDelegate<SetTimelineIdDelegate>(
+            sigScanner,
+            "E8 ?? ?? ?? ?? 4C 8B BC 24 ?? ?? ?? ?? 4C 8D 9C 24 ?? ?? ?? ?? 49 8B 5B 40",
+            "SetTimelineId");
         _playEmote = ScanDelegate<PlayEmoteDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
 
-        // Each hook is constructed AND enabled independently, and only a
-        // completed Enable sets its flag: a failure in either step, or in
-        // the other hook, can never leave a command believing a non-null
-        // but inactive hook is enforcing anything.
+        // Enable each callback independently.
         try
         {
             var speedAddress = sigScanner.ScanText(
@@ -150,9 +127,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _log.Error($"Slot-speed hook unavailable; layer speed overrides will fail explicitly: {ex.Message}");
         }
 
-        // Scan, byte validation, capability state and restore all live in
-        // the patcher; an unavailable site degrades SetPhysicsFrozen to an
-        // explicit failure with the patcher's own detail.
+        // An unavailable freeze operation returns an explicit failure.
         _physics = new PhysicsFreezePatcher(sigScanner, log);
     }
 
@@ -224,12 +199,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         SyncEnforcementIndex();
     }
 
-    /// <summary>
-    /// Rebuilds the detour-facing address index from the stable-id table.
-    /// Must run on the framework thread; called after every override
-    /// change and once per structural scene change, which is what keeps a
-    /// redrawn actor from inheriting the previous body's enforcement.
-    /// </summary>
+    /// <summary>Rebuilds the address index used by speed callbacks.</summary>
     public void SyncEnforcementIndex()
     {
         if (!_framework.IsInFrameworkUpdateThread)
@@ -253,8 +223,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _byAddress.TryGetValue(owner, out var enforcement) &&
             enforcement.OverallSpeed is { } speed)
         {
-            // Run AFTER the game's own calculation so the override wins
-            // whatever the game just decided.
+            // Apply the override after the game updates the value.
             container->OverallSpeed = speed;
             return true;
         }
@@ -292,10 +261,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 character->Timeline.TimelineSequencer.TimelineSpeeds[index]));
         }
 
-        var controls = CollectControls(character, out var token);
-        // The RAW pose family: collapsing WeaponDrawn/Umbrella/Accessory to
-        // Idle made the UI lie about the current state, which in turn made
-        // Idle unreachable (re-selecting what the control already showed).
+        // Keep the reported pose family distinct from idle.
         var poseType = character->EmoteController.CurrentPoseType;
         var stance = poseType switch
         {
@@ -315,17 +281,10 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->Timeline.IsWeaponDrawn,
             stance,
             character->EmoteController.CPoseState,
-            slots,
-            controls,
-            token);
+            slots);
     }
 
-    /// <summary>
-    /// Walks the live skeleton for every valid Havok control. Nothing is
-    /// cached: Brio re-walks from the draw object every time for exactly
-    /// this reason, so a replaced skeleton simply yields a different set
-    /// rather than a dangling pointer.
-    /// </summary>
+    /// <summary>Reads the current valid controls.</summary>
     private static List<ScrubControlReading> CollectControls(Character* character, out ulong token)
     {
         token = 0;
@@ -360,9 +319,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             }
         }
 
-        // The token identifies THIS skeleton and control layout. A redraw
-        // moves the skeleton and changes the count, so a scrub captured
-        // under the old token is refused rather than written blind.
+        // The token identifies the current skeleton and control layout.
         token = unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)result.Count);
         return result;
     }
@@ -376,20 +333,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
-    /// <summary>
-    /// The control that actually drives a slot, using Ktisis' lookup: the
-    /// control INDEX equals the slot index, and the partials are searched
-    /// for the first one holding a valid control at that index. Labelling
-    /// the first two flattened controls "Full body" and "Upper body" is
-    /// not the same thing and is wrong whenever a partial contributes a
-    /// different number of controls.
-    ///
-    /// Gated on the slot actually playing something, because an empty slot
-    /// has no meaningful time to scrub. Only Base and UpperBody are
-    /// offered: Ktisis notes the index-equals-slot correspondence does not
-    /// hold for the facial, additive, and lip slots, which live on other
-    /// partials.
-    /// </summary>
+    /// <summary>Finds the current control for a supported slot by slot index.
+    /// Empty slots and unsupported slots return null.</summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
@@ -435,16 +380,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
-    /// <summary>
-    /// The reference's play, verbatim (Ktisis AnimationManager.PlayTimeline
-    /// minus its forced-timeline write): a sheet-Pause timeline holds the
-    /// actor by entering EmoteLoop with parameter 0; playing a normal
-    /// timeline while still in that held state first returns the mode to
-    /// Normal, because the held mode otherwise eats the play. A stale
-    /// AnimLock latch (an older Poser build's base model, or Brio) is
-    /// dismantled the same way — it re-drives its own timeline over
-    /// anything played here, which is what made layering impossible.
-    /// </summary>
+    /// <summary>Applies the current mode and starts the selected timeline.
+    /// A held mode is cleared before normal playback.</summary>
     public AnimationPortResult Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
@@ -457,16 +394,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         {
             captured = new BaseAnimationCapture(
                 (byte)character->Mode,
-                character->ModeParam,
+                ReadEmoteMode(character),
                 character->Timeline.BaseOverride,
-                // The timeline actually PLAYING on the base slot, so a
-                // restore can put back what the actor was doing rather
-                // than a blanket idle.
-                character->Timeline.TimelineSequencer.TimelineIds[0]);
+                // Preserve the timeline currently on the base slot.
+                character->Timeline.TimelineSequencer.TimelineIds[0],
+                ReadForcedTimeline(&character->Timeline));
         }
 
-        PlayWithMode(character, timeline);
-        return AnimationPortResult.Ok();
+        return PlayWithMode(character, timeline)
+            ? AnimationPortResult.Ok()
+            : AnimationPortResult.Fail("The timeline entry point is unavailable.");
     }
 
     /// <summary>The slot the sheet's Stance column routes a timeline
@@ -479,13 +416,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : null;
     }
 
-    /// <summary>
-    /// The game's OWN timeline cancellation — the sig-scanned function the
-    /// stance transition already uses (Ktisis' SetPose flow). It stops
-    /// what the container is currently driving; there is no proven
-    /// per-slot stop in either reference, so this is container-wide and
-    /// callers rebuild the base afterwards.
-    /// </summary>
+    /// <summary>Stops the timeline currently driven by the container.</summary>
     public AnimationPortResult CancelActiveTimeline(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
@@ -498,8 +429,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>The base restore point as it stands right now, for plays
-    /// that go through the emote entry point rather than Blend.</summary>
+    /// <summary>Captures the current base animation state.</summary>
     public BaseAnimationCapture? CaptureBase(ActorId actor)
     {
         var character = Resolve(actor, out _);
@@ -507,35 +437,39 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return null;
         return new BaseAnimationCapture(
             (byte)character->Mode,
-            character->ModeParam,
+            ReadEmoteMode(character),
             character->Timeline.BaseOverride,
-            character->Timeline.TimelineSequencer.TimelineIds[0]);
+            character->Timeline.TimelineSequencer.TimelineIds[0],
+            ReadForcedTimeline(&character->Timeline));
     }
 
-    /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
-    /// reference does them; every member is a named ClientStructs symbol.</summary>
-    private void PlayWithMode(Character* character, ushort timeline)
+    private static uint ReadEmoteMode(Character* character) =>
+        *(uint*)&character->ModeParam;
+
+    private static void WriteEmoteMode(Character* character, uint mode) =>
+        *(uint*)&character->ModeParam = mode;
+
+    /// <summary>Applies the timeline mode and starts the selected timeline.</summary>
+    private bool PlayWithMode(Character* character, ushort timeline)
     {
         bool pause = _timelineSheet?.GetRowOrDefault(timeline)?.Pause ?? false;
         if (pause)
         {
             character->Mode = CharacterModes.EmoteLoop;
-            character->ModeParam = 0;
+            WriteEmoteMode(character, 0);
         }
-        else if (character->Mode == CharacterModes.EmoteLoop && character->ModeParam == 0)
+        else if (character->Mode == CharacterModes.EmoteLoop && ReadEmoteMode(character) == 0)
         {
             character->Mode = CharacterModes.Normal;
         }
         else if (character->Mode == CharacterModes.AnimLock)
         {
-            // Not in Ktisis: our older builds latched AnimLock+BaseOverride
-            // (Brio's base model). The latch re-drives its timeline forever,
-            // so it is dismantled on the way into any new play.
             character->Mode = CharacterModes.Normal;
-            character->ModeParam = 0;
+            WriteEmoteMode(character, 0);
             character->Timeline.BaseOverride = 0;
         }
-        character->Timeline.TimelineSequencer.PlayTimeline(timeline, null);
+        return _setTimelineId != null && _setTimelineId(
+            &character->Timeline.TimelineSequencer, timeline, nint.Zero);
     }
 
     public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
@@ -546,15 +480,15 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
-        character->ModeParam = capture.ModeParam;
-        // Play what the base slot HELD when Poser first touched the actor,
-        // so a pre-existing ordinary animation comes back instead of being
-        // flattened to idle. Idle is only the fallback for an empty slot.
-        character->Timeline.TimelineSequencer.PlayTimeline(
-            capture.BaseSlotTimeline != 0
-                ? capture.BaseSlotTimeline
-                : AnimationTimelines.Idle,
-            null);
+        WriteEmoteMode(character, capture.ModeParam);
+        // Restore the captured base timeline, using idle only when empty.
+        if (!PlayTimelineNative(
+                character,
+                capture.BaseSlotTimeline != 0
+                    ? capture.BaseSlotTimeline
+                    : AnimationTimelines.Idle))
+            return AnimationPortResult.Fail("The timeline entry point is unavailable.");
+        WriteForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return AnimationPortResult.Ok();
     }
 
@@ -568,45 +502,42 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : AnimationPortResult.Fail("The emote entry point is unavailable.");
     }
 
-    /// <summary>
-    /// NOT IMPLEMENTED on this build, deliberately.
-    ///
-    /// Force loop needs the game's persistent forced-timeline field — the
-    /// one Ktisis calls <c>ActionTimelineId</c> and re-writes so the engine
-    /// keeps re-driving a timeline instead of falling back to idle. That
-    /// field could not be proven for the current client:
-    ///
-    ///  · current ClientStructs maps no such member on TimelineContainer or
-    ///    ActionTimelineSequencer, and exposes no accessor for it (its only
-    ///    member functions are height-adjust, lips, speed, and intro/loop);
-    ///  · the only other <c>ActionTimelineId</c> in ClientStructs belongs to
-    ///    EventFramework's queued-callback payload and is unreachable here;
-    ///  · Ktisis' literal 0x2D0 cannot be inherited. Its checkout is a patch
-    ///    behind (Character.EmoteController 0x620 vs 0x630, Mode 0x2354 vs
-    ///    0x2364), and the offset is inconsistent with its own struct: it
-    ///    declares AnimationTimeline as Size 0x1F0 — which matches the
-    ///    sequencer's real extent, since TimelineTransit follows it — yet
-    ///    places the field at 0x2D0, past that end.
-    ///
-    /// The alternatives are all worse than an honest gap: BaseOverride is
-    /// already the Base latch, so routing loop through it would collapse
-    /// Blend into Base; blending Idle on disable yanks the actor off its
-    /// animation instead of merely un-looping; and probing offsets with
-    /// writes risks corrupting a live game process. So this fails
-    /// explicitly and the UI does not offer the control.
-    /// </summary>
-    /// <summary>
-    /// Plays an emote through the game's own entry point. Falls back to
-    /// blending idle when the entry point was not found, because the
-    /// alternative — leaving the pose index written with nothing driving
-    /// it — shows the actor in a state the UI claims it is not in.
-    /// </summary>
+    // The persistent timeline field is 0x2E0 bytes after TimelineContainer.
+    private const int ActionTimelineIdOffset = 0x2E0;
+
+    private static ushort ReadForcedTimeline(TimelineContainer* timeline) =>
+        *(ushort*)((byte*)timeline + ActionTimelineIdOffset);
+
+    private static void WriteForcedTimeline(
+        TimelineContainer* timeline,
+        ushort value) =>
+        *(ushort*)((byte*)timeline + ActionTimelineIdOffset) = value;
+
+    public bool SupportsForceLoop => _setTimelineId != null;
+
+    /// <summary>Writes the game's persistent action timeline field. The
+    /// actor is resolved again for every write.</summary>
+    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
+    {
+        if (_setTimelineId == null)
+            return AnimationPortResult.Fail("Persistent animation looping is unavailable.");
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        WriteForcedTimeline(&character->Timeline, timeline);
+        return AnimationPortResult.Ok();
+    }
+
+    private bool PlayTimelineNative(Character* character, ushort timeline) =>
+        _setTimelineId != null && _setTimelineId(
+            &character->Timeline.TimelineSequencer, timeline, nint.Zero);
+
+    /// <summary>Plays an emote through the emote entry point.</summary>
     private bool PlayEmoteNative(Character* character, uint emoteId)
     {
         if (_playEmote == null)
         {
-            character->Timeline.TimelineSequencer.PlayTimeline(
-                AnimationTimelines.Idle, null);
+            PlayTimelineNative(character, AnimationTimelines.Idle);
             return false;
         }
         _playEmote(&character->EmoteController, (nint)emoteId, nint.Zero, nint.Zero);
@@ -615,8 +546,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     // ── Loops ───────────────────────────────────────────
 
-    /// <summary>One armed loop. The cooldown keeps the frame or two of
-    /// play transition from re-firing the play every tick.</summary>
+    /// <summary>One armed loop and its replay cooldown.</summary>
     private sealed class LoopArm
     {
         public ushort Timeline;
@@ -652,12 +582,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public void ClearLoops(ActorId actor) => _loops.Remove(actor);
 
-    /// <summary>
-    /// The loop tick: an armed slot that no longer plays its timeline
-    /// (the one-shot ended; the game swapped its own idle in) gets the
-    /// timeline played again — the same proven call as a user pick. The
-    /// unproven forced-timeline field is never touched.
-    /// </summary>
+    /// <summary>Replays an armed slot when its timeline has ended.</summary>
     private void EnforceLoops(IFramework framework)
     {
         if (LoopsSuspended || _loops.Count == 0)
@@ -683,13 +608,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
-    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
-        AnimationPortResult.Fail(
-            "Force loop is unavailable: the game's forced-timeline field is not " +
-            "mapped for this client version.");
-
-    public bool SupportsForceLoop => false;
-
     public bool SupportsStance => _setEmoteMode != null && _cancelTimeline != null;
 
     // ── Speed ─────────────────────────────────────────────────────────
@@ -701,9 +619,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
-        // Without the ENABLED hook the game re-wins every recalculation:
-        // the value would hold for one frame and silently drift back.
-        // Refuse rather than pretend; non-null alone proves nothing.
+        // Speed overrides require an enabled callback.
         if (!_overallSpeedHookEnabled)
             return AnimationPortResult.Fail(
                 "Speed is unavailable: the game's speed hook is not active.");
@@ -720,29 +636,19 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (character == null)
             return AnimationPortResult.Fail(detail!);
 
-        // Exact ownership is resolved BEFORE enforcement drops, and the
-        // hand-back write happens only for a speed Poser actually
-        // enforced. An unconditional 1 would stomp a speed the game or
-        // another tool is driving on an actor Poser never touched — and
-        // ApplySpeedNow reaches every Havok control, so it would also
-        // unpin playback state that was never Poser's.
+        // Release only speed that this port currently enforces.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             enforcement.OverallSpeed == null)
             return AnimationPortResult.Ok();
 
         enforcement.OverallSpeed = null;
         PruneEnforcement(actor);
-        // Hand the actor back at normal speed. The container write alone
-        // is not enough: the game re-drives the container but not every
-        // Havok control, so a Poser pause (controls at 0) is released
-        // here or not at all.
+        // Restore the container and all live controls to normal speed.
         ApplySpeedNow(character, 1f);
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>Writes the container speed and every Havok control's
-    /// playback speed — the controls are what keep breathing and facial
-    /// motion running when only the container is set.</summary>
+    /// <summary>Writes speed to the container and its live controls.</summary>
     private static void ApplySpeedNow(Character* character, float speed)
     {
         character->Timeline.OverallSpeed = speed;
@@ -769,53 +675,41 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
-    /// <summary>
-    /// Brio's settle rewind, traversal-literal (ActionTimelineCapability.
-    /// StopSpeedAndResetTimeline's tick body, Brio\Brio\Capabilities\Actor\
-    /// ActionTimelineCapability.cs:120-165): DrawObject (ATC:124) →
-    /// ObjectType.CharacterBase gate (ATC:128) → CharacterBase.Skeleton
-    /// null gate (ATC:131-133) → every PartialSkeleton (ATC:136-138) →
-    /// GetHavokAnimatedSkeleton(0) (ATC:140) → every AnimationControls
-    /// entry (ATC:144-148) → hkaAnimationControl.Binding null gate
-    /// (ATC:150-152) → Binding.Animation null gate (ATC:154-156) → and
-    /// only where PlaybackSpeed == 0 (ATC:158), hkaAnimationControl.
-    /// LocalTime = 0 (ATC:160). A missing draw object or skeleton is
-    /// Brio's silent early return, not an error: there is simply nothing
-    /// to rewind.
-    /// </summary>
+    /// <summary>Rewinds paused controls to their first frame. Missing draw
+    /// objects and skeletons have nothing to rewind.</summary>
     public AnimationPortResult RewindPausedControls(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
 
-        var drawObject = character->GameObject.DrawObject;                       // ATC:124
+        var drawObject = character->GameObject.DrawObject;
         if (drawObject == null ||
-            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)      // ATC:125-129
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
             return AnimationPortResult.Ok();
-        var charaBase = (CharacterBase*)drawObject;                              // ATC:131
-        if (charaBase->Skeleton == null)                                         // ATC:132-133
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
             return AnimationPortResult.Ok();
-        var skeleton = charaBase->Skeleton;                                      // ATC:135
+        var skeleton = charaBase->Skeleton;
 
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)                 // ATC:136
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
-            var partial = &skeleton->PartialSkeletons[p];                        // ATC:138
-            var animated = partial->GetHavokAnimatedSkeleton(0);                 // ATC:140
+            var partial = &skeleton->PartialSkeletons[p];
+            var animated = partial->GetHavokAnimatedSkeleton(0);
             if (animated == null)
                 continue;
-            for (int c = 0; c < animated->AnimationControls.Length; c++)         // ATC:144
+            for (int c = 0; c < animated->AnimationControls.Length; c++)
             {
-                var control = animated->AnimationControls[c].Value;              // ATC:146
+                var control = animated->AnimationControls[c].Value;
                 if (control == null)
                     continue;
-                var binding = control->hkaAnimationControl.Binding;              // ATC:150
-                if (binding.ptr == null)                                         // ATC:151-152
+                var binding = control->hkaAnimationControl.Binding;
+                if (binding.ptr == null)
                     continue;
-                if (binding.ptr->Animation.ptr == null)                          // ATC:154-156
+                if (binding.ptr->Animation.ptr == null)
                     continue;
-                if (control->PlaybackSpeed == 0)                                 // ATC:158
-                    control->hkaAnimationControl.LocalTime = 0;                  // ATC:160
+                if (control->PlaybackSpeed == 0)
+                    control->hkaAnimationControl.LocalTime = 0;
             }
         }
         return AnimationPortResult.Ok();
@@ -844,11 +738,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (character == null)
             return AnimationPortResult.Fail(detail!);
 
-        // Same ownership rule as the overall clear: only a slot Poser
-        // pinned is handed back with a 1. Clearing an unowned slot is a
-        // native no-op — which is also Brio's exact release behavior
-        // (ResetSlotSpeedOverride only drops the dictionary entry), so
-        // the expression release's second defensive unpin stays safe.
+        // Only release speed that this port currently enforces.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             !enforcement.SlotSpeeds.Remove((int)slot))
             return AnimationPortResult.Ok();
@@ -865,25 +755,13 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
-        // Must go through the native setter: it does sequencer bookkeeping
-        // that a direct field write skips.
+        // Use the setter so the sequencer updates its state.
         character->Timeline.SetLipsOverrideTimeline(timeline);
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>
-    /// Ktisis' stance transition, which is a sequence rather than a pair of
-    /// field writes: cancel the running timeline, set the emote mode through
-    /// the game's own function, THEN write pose type and pose index, then
-    /// drive the resulting idle or emote.
-    ///
-    /// Sit-chair additionally preserves the draw and camera offsets across
-    /// the change, because the mode switch recomputes them and the actor
-    /// otherwise jumps. Ktisis also clears an unmapped EmoteController flag
-    /// and calls a recompute entry point before restoring; neither could be
-    /// verified on this client, and restoring the saved vectors after the
-    /// transition reaches the same final offsets without an unproven write.
-    /// </summary>
+    /// <summary>Changes stance after cancelling the active timeline and
+    /// restores chair offsets when needed.</summary>
     public AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = Resolve(actor, out var detail);
@@ -908,10 +786,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _ => EmoteModeNormal,
         };
 
-        // The game reports how many poses this family has. For Idle the
-        // wrap must ALSO stay inside the emote table that drives those
-        // poses: wrapping to a count the table cannot serve would step to
-        // a pose index with no emote behind it.
+        // Keep idle poses within the available emote entries.
         int available = EmoteController.GetAvailablePoses(poseType);
         if (available <= 0)
             available = 1;
@@ -923,15 +798,11 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
 
-        // A stale base latch (an older build, or Brio) re-drives its
-        // timeline the moment the transition settles — the stance holds
-        // for one playback and reverts. Dismantle it regardless of what
-        // this session owns; session bookkeeping cannot see a latch that
-        // predates it.
+        // Clear a prior base latch before changing stance.
         if (character->Mode == CharacterModes.AnimLock)
         {
             character->Mode = CharacterModes.Normal;
-            character->ModeParam = 0;
+            WriteEmoteMode(character, 0);
             character->Timeline.BaseOverride = 0;
         }
 
@@ -946,18 +817,17 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->CameraOffset = cameraOffset;
         }
 
-        // Sit and sleep stances are fully carried by the mode change above.
-        // Idle is the one family the game does not drive on its own, so its
-        // poses are played explicitly — as emotes past index 0, since those
-        // poses only exist as emotes.
+        // Non-idle stances are complete after the mode change.
         if (stance != AnimationStance.Idle)
             return AnimationPortResult.Ok();
 
         bool weaponDrawn = character->Timeline.IsWeaponDrawn;
         if (wrapped == 0)
         {
-            character->Timeline.TimelineSequencer.PlayTimeline(
-                weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle, null);
+            if (!PlayTimelineNative(
+                    character,
+                    weaponDrawn ? AnimationTimelines.BattleIdle : AnimationTimelines.Idle))
+                return AnimationPortResult.Fail("The timeline entry point is unavailable.");
         }
         else if (weaponDrawn)
         {
@@ -971,14 +841,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>
-    /// Plays the draw or sheathe timeline and then sets the weapon-state
-    /// flag. Both halves are required: the game does not update its own
-    /// flag for a timeline Poser forced, so without the second write the
-    /// actor animates but every later read still reports the old state.
-    /// Ktisis XORs a raw CombatFlags byte; ClientStructs exposes the same
-    /// state as a settable member, which needs no offset.
-    /// </summary>
+    /// <summary>Plays the draw or sheathe timeline and updates the weapon
+    /// state flag.</summary>
     public AnimationPortResult SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = Resolve(actor, out var detail);
@@ -986,19 +850,15 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (character->Timeline.IsWeaponDrawn == drawn)
             return AnimationPortResult.Ok();
-        character->Timeline.TimelineSequencer.PlayTimeline(
-            drawn ? AnimationTimelines.DrawWeapon : AnimationTimelines.SheatheWeapon, null);
+        if (!PlayTimelineNative(
+                character,
+                drawn ? AnimationTimelines.DrawWeapon : AnimationTimelines.SheatheWeapon))
+            return AnimationPortResult.Fail("The timeline entry point is unavailable.");
         character->Timeline.IsWeaponDrawn = drawn;
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>
-    /// Position lock reuses the ONE position authority (the model
-    /// transform override that already suppresses the game's per-frame
-    /// write) rather than adding a second hook. Releasing only clears an
-    /// override this port created, so a placement the user made with the
-    /// gizmo survives unlocking.
-    /// </summary>
+    /// <summary>Uses the existing transform override for position lock.</summary>
     public AnimationPortResult SetPositionLock(ActorId actor, bool locked)
     {
         if (ResolveActor(actor) is not { } legacy)
@@ -1054,9 +914,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (binding.ptr == null || binding.ptr->Animation.ptr == null)
             return AnimationPortResult.Fail("Scrub target no longer exists.");
 
-        // Re-derive the token from the live skeleton: a replacement moves
-        // the skeleton or changes the control count, and the write is
-        // refused rather than landing on whatever now occupies the slot.
+        // Reject writes when the skeleton or control layout changed.
         if (token != 0 && token != CurrentToken(skeleton))
             return AnimationPortResult.Fail("Skeleton changed; scrub cancelled.");
 
@@ -1103,9 +961,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _slotSpeedHook?.Dispose();
         _enforcement.Clear();
         _byAddress.Clear();
-        // The session restores per-actor overrides before disposal; the
-        // global code patch is the patcher's own, and its dispose restores
-        // it (or reports the failure explicitly).
         _physics.Dispose();
         GC.SuppressFinalize(this);
     }
