@@ -9,15 +9,8 @@ using Poser.Services;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// One BG object the user has taken into the scene: a name, the address it was
-/// adopted at, the placement and flags it stood with BEFORE anything was
-/// written to it, and a live write-through transform.
-///
-/// <para>The handle owns nothing native. It is a claim on an object the GAME
-/// owns, and the whole of that claim is the pair of captured values below —
-/// <see cref="InitialPlacement"/> and <see cref="InitialFlags"/> — which are
-/// what releasing it puts back. A released handle reads its last values and
-/// writes nothing, exactly as a destroyed prop's handle does.</para>
+/// A user-adopted world object and the state needed to restore it. The handle
+/// borrows the game object; it does not own or destroy the native object.
 /// </summary>
 public sealed class AdoptedWorldObject
 {
@@ -52,25 +45,20 @@ public sealed class AdoptedWorldObject
     /// is the only human-readable thing a BG object carries.</summary>
     public string Name { get; }
 
-    /// <summary>The model resource path, or the adoption address when the
-    /// object had no loaded model. It is the half of the scene-file identity
-    /// that survives a session (Ktisis names the same value <c>Path</c>,
-    /// <c>Ktisis/Structs/Objects/WorldObject.cs:32-40</c>).</summary>
+    /// <summary>The model resource path, or the adoption address when no model
+    /// is loaded.</summary>
     public string Path { get; }
 
     /// <summary>The native address the object was adopted at. Valid for this
     /// GPose session only.</summary>
     public nint Address { get; }
 
-    /// <summary>Where the object stood at the moment of adoption. THE spine of
-    /// this feature: every release, every session end and every unload writes
-    /// this value back.</summary>
+    /// <summary>Placement captured when the object was adopted and restored on
+    /// release.</summary>
     public Transform InitialPlacement { get; }
 
-    /// <summary>The draw flags the object stood with at adoption, restored
-    /// beside the placement — Ktisis restores the same byte
-    /// (<c>Scene/Entities/World/ObjectEntity.cs:42-49</c>), which is what puts
-    /// back a visibility the user toggled.</summary>
+    /// <summary>Draw flags captured when the object was adopted and restored
+    /// beside its placement.</summary>
     public byte InitialFlags { get; }
 
     /// <summary>Whether the object was drawn at adoption. Held beside the
@@ -119,43 +107,9 @@ public sealed class AdoptedWorldObject
 }
 
 /// <summary>
-/// The scene's claim on the map: which BG objects the user has adopted, and
-/// the one contract that makes adopting one safe.
-///
-/// <para>THE RESTORE CONTRACT, which is the whole feature. An adopted world
-/// object is BORROWED, never owned: Poser does not create it, never destroys
-/// it, and must never leave it displaced. Adoption captures the object's
-/// placement and draw flags before anything is written; every exit from the
-/// claim writes that pair back:</para>
-/// <list type="number">
-/// <item><description><see cref="Release"/> — the user removed it from the
-/// scene.</description></item>
-/// <item><description><see cref="ReleaseAll"/> — the scene was cleared, or a
-/// scene load replaced it.</description></item>
-/// <item><description>GPose ended: the session that made the claims is over,
-/// so every claim ends with it.</description></item>
-/// <item><description><see cref="Dispose"/> — the plugin unloaded. The last
-/// line of defence, and it runs whether or not the events above
-/// did.</description></item>
-/// </list>
-/// <para>Each is idempotent, each leaves the service holding nothing, and any
-/// two of them in either order are still correct. An address that has stopped
-/// being a BG object is dropped rather than restored onto — writing a captured
-/// transform into whatever took its place would be the one way this contract
-/// could do harm.</para>
-///
-/// <para>THE SAFETY RULE, which is NOT the actor band's rule: a BG object is
-/// not a character, so the 201–439 GPose object-index gate has nothing to say
-/// about it. The rule here is that the only objects ever written are the ones
-/// the user adopted — <see cref="IWorldObjectPort.Enumerate"/> reads the whole
-/// graph, but every write below goes through a handle that exists only because
-/// a click created it.</para>
-///
-/// <para>Brio's world-object subsystem is NOT the reference for this: its BG
-/// objects are SPAWNED (<c>BGOObject</c> calls <c>BgObject.Create</c> and
-/// <c>Dtor</c>, <c>Brio/Game/WorldObjects/Objects/BGOObject.cs:56-104</c>), so
-/// it owns and destroys them. Adopting one the map already placed is Ktisis'
-/// feature alone.</para>
+/// Tracks adopted map objects. Adoption captures placement and draw state;
+/// every release path restores that state and drops the claim. A missing or
+/// replaced native address is ignored rather than written blindly.
 /// </summary>
 public sealed class WorldObjectService : IDisposable
 {
@@ -188,19 +142,8 @@ public sealed class WorldObjectService : IDisposable
     /// </summary>
     public bool IsAvailable => !_disposed && _port.IsAvailable;
 
-    /// <summary>
-    /// Everything the world holds that the scene has not taken, UNRANGED and
-    /// UNSORTED. Already-adopted objects are filtered out by address, which is
-    /// what makes an adopted object's handle disappear from the viewport the
-    /// moment it joins the scene (Ktisis does the same filter at draw time,
-    /// <c>Ktisis/Interface/Overlay/SceneDraw.cs:201</c>).
-    ///
-    /// <para>Neither ranged nor ordered here ON PURPOSE. The range is measured
-    /// from the CAMERA and the three adoption classes share one of them, so it
-    /// belongs to the overlay's own listing pass and not to this service —
-    /// which would otherwise measure a distance from the player, over every BG
-    /// object in the zone, for the overlay to throw away and redo.</para>
-    /// </summary>
+    /// <summary>Returns unadopted world objects in the port's traversal order.
+    /// Range filtering and ordering belong to the overlay.</summary>
     public IReadOnlyList<WorldObjectCandidate> GetCandidates()
     {
         if (_disposed)
@@ -223,9 +166,8 @@ public sealed class WorldObjectService : IDisposable
         return candidates;
     }
 
-    /// <summary>Reads one graph object's outline byte. Addressed by the
-    /// CANDIDATE's address rather than by a claim, because the hover mark is
-    /// worn by things the scene has not taken.</summary>
+    /// <summary>Reads an object's outline for hover feedback. This accepts a
+    /// candidate address because hovering does not require adoption.</summary>
     public bool TryReadOutline(nint address, out byte outline)
     {
         if (_disposed)
@@ -236,11 +178,8 @@ public sealed class WorldObjectService : IDisposable
         return _port.TryReadOutline(address, out outline);
     }
 
-    /// <summary>Writes one graph object's outline byte. The one write on this
-    /// service that is NOT gated on an adoption: the mark is transient, its
-    /// caller holds the value that undoes it, and painting it is how the user
-    /// tells which object a handle belongs to before deciding to take it.
-    /// </summary>
+    /// <summary>Writes an object's transient hover outline. The caller owns
+    /// the captured value used to restore it.</summary>
     public void WriteOutline(nint address, byte outline)
     {
         if (_disposed)
@@ -506,21 +445,12 @@ public sealed class WorldObjectService : IDisposable
     /// The row label: the model file's own name without its folder or
     /// extension.
     ///
-    /// <para>It is the best name a BG object actually carries, and both
-    /// references land on it. Brio prefers a real name from its bundled path
-    /// database and falls back to exactly this when the path is not in it
-    /// (<c>BGOObject.FriendlyPath</c>,
-    /// <c>Brio/Game/WorldObjects/Objects/BGOObject.cs:18-31</c>); Poser has no
-    /// such database, so it starts where Brio ends up. Ktisis does WORSE — its
-    /// builder falls back to the object TYPE, so every BG object in its tree is
-    /// literally called "BgObject"
-    /// (<c>Ktisis/Scene/Factory/Builders/ObjectBuilder.cs:74</c>), which is why
-    /// the naming here follows Brio and not the reference.</para>
+    /// <para>The path is an opaque asset code, so the display name removes
+    /// only its folder and extension and leaves the stem unchanged.</para>
     ///
-    /// <para>The stem is kept VERBATIM rather than prettified. These are opaque
-    /// asset codes (<c>f1t2_a1_bals1</c>); title-casing one into "F1t2 A1
-    /// Bals1" makes it no more human and stops it matching what the user would
-    /// search a path for. The full path is the object pane's to show.</para>
+    /// <para>The stem is left unchanged because asset codes are opaque and
+    /// users may search for the original path. The full path remains available
+    /// in the object pane.</para>
     /// </summary>
     public static string DisplayName(string path)
     {

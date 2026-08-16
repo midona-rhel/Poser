@@ -4,20 +4,12 @@ using System.Numerics;
 namespace Poser.Domain.Transforms;
 
 /// <summary>
-/// Ktisis' hold-snap arithmetic, as pure functions over a gesture's
-/// accumulated total.
-///
-/// <para>Ktisis hands ImGuizmo a snap vector and lets it quantise
-/// (<c>Gizmo.Manipulate</c>): 5 for rotate, 0.1 for translate and scale, both
-/// divided by ten while Shift is also held. Poser draws and drives its own
-/// handles, so the same rule is applied here to the TOTAL the gesture has
-/// accumulated from its frozen start — never to a per-frame increment, which
-/// would let rounding error walk the target between steps.</para>
+/// Snap helpers for the total accumulated by a gesture. Quantising the total
+/// avoids rounding drift between frames.
 /// </summary>
 public static class GizmoSnap
 {
-    /// <summary>The precision divisor Ktisis applies when Shift joins the
-    /// snap modifier.</summary>
+    /// <summary>Divisor used by the precise snap modifier.</summary>
     public const float PrecisionDivisor = 10f;
 
     /// <summary>The live increment for a step and its precision state. A
