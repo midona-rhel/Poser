@@ -26,6 +26,10 @@ public static partial class Crystarium
 {
     public static class FloatingSurface
     {
+        // This affects surface chrome only; controls keep their own paint.
+        public static void ConfigureEffects(float fillOpacity, bool backdropBlur) =>
+            GlassChrome.Configure(fillOpacity, backdropBlur);
+
         public static bool BackdropBlurAvailable
         {
             get => GlassChrome.BackdropBlurAvailable;
@@ -58,40 +62,16 @@ public static partial class Crystarium
                 style: ControlStyle.Square(
                     ActiveTheme.Floating.CloseActionSize),
                 id: id);
-
-        /// <summary>
-        /// The implementation behind <see cref="Crystarium.OpenPopover"/>:
-        /// claims the exclusive chain BEFORE ImGui's popup stack, so the
-        /// surface owns input from the frame it opens. Deliberately
-        /// internal — <see cref="Crystarium.OpenPopover"/> is the one
-        /// public open path, and hiding this makes that compile-enforced
-        /// for every assembly outside Poser.UI.
-        /// </summary>
         internal static void OpenPopup(string id)
         {
             Interactive.ClaimExclusive(id);
             ImGui.OpenPopup(id);
         }
-
-        /// <summary>
-        /// One step of the exclusive-chain handshake: marks the surface
-        /// alive for this frame and reports whether it still owns its link
-        /// in the chain. False means an outer surface superseded it and the
-        /// caller must close — touching a surface that no longer exists is
-        /// a no-op, so the order inside is immaterial to the caller.
-        /// </summary>
         internal static bool SyncExclusive(string id)
         {
             Interactive.TouchExclusive(id);
             return Interactive.OwnsExclusive(id);
         }
-
-        /// <summary>
-        /// The closing half of the handshake: releases the surface's link
-        /// (and everything nested under it) once it is no longer open.
-        /// Returns true when it released, so callers can bail in the same
-        /// statement.
-        /// </summary>
         internal static bool ReleaseWhenClosed(string id, bool open)
         {
             if (open)
@@ -134,9 +114,7 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoResize
                 | ImGuiWindowFlags.NoScrollbar
                 | ImGuiWindowFlags.NoSavedSettings);
-            // The unwind is unconditional (PBI-013 class): a throwing body
-            // must not skip EndPopup or strand the four style entries on the
-            // global stack for every window drawn after.
+            // End and pop every Begin-time resource in reverse order, even when the body fails.
             try
             {
                 if (open)
@@ -164,9 +142,6 @@ public static partial class Crystarium
                         }
                         finally
                         {
-                            // Balanced under finally: a throwing body must not
-                            // strand the popup's owner for every enclosing
-                            // surface to trip over.
                             Interactive.EndOwner(owner);
                         }
                     }
@@ -215,9 +190,7 @@ public static partial class Crystarium
                 | ImGuiWindowFlags.NoBackground
                 | ImGuiWindowFlags.NoSavedSettings
                 | ImGuiWindowFlags.NoResize);
-            // Same unconditional unwind as Popup: End pairs with Begin no
-            // matter what the body throws, and the two style vars come off
-            // the global stack.
+            // The owner and style stack always unwind with their matching Begin call.
             try
             {
                 if (visible)
@@ -246,27 +219,9 @@ public static partial class Crystarium
                 ImGui.End();
                 ImGui.PopStyleVar(2);
             }
-            // The window's own close button clears `open` mid-frame.
             ReleaseWhenClosed(id, open);
             return visible;
         }
-
-        /// <summary>
-        /// The list a cluster of overlapping things offers, at the pointer.
-        ///
-        /// <para>ITS METRICS ARE BRIO'S, its looks are Poser's (user
-        /// 2026-08-14). Brio's own hover list and pick popup push no style at
-        /// all — grep <c>Brio/UI/Windows/Specialized/PosingOverlayWindow.cs</c>
-        /// for <c>PushStyleVar</c> and there is nothing — so its metrics ARE
-        /// ImGui's defaults: an 8px window padding, a plain full-width
-        /// <c>Selectable</c> per row carrying the name at the ambient text
-        /// size, and a window that fits itself to its longest entry
-        /// (<c>AlwaysAutoResize</c>, :364). Those three are what is copied:
-        /// the 8px pad, no per-row ornament, and a measured width instead of
-        /// the fixed menu width this used to wear. Everything else stays the
-        /// design system's — the glass chrome, the surface radius, and the
-        /// standard list row's own hover and selected treatment.</para>
-        /// </summary>
         public static int HoverList(
             string id,
             Vector2 anchor,
@@ -277,14 +232,6 @@ public static partial class Crystarium
             if (items.Count == 0)
                 return -1;
             float scale = ImGuiHelpers.GlobalScale;
-            // The list is the names in a symmetric frame (user 2026-08-15):
-            // body-size labels, LEFT-aligned, with the box's left, top and
-            // bottom padding all equal to the scrollbar lane's own width — and
-            // the lane itself, HALF the shell's, reserved on the right whether
-            // or not the list scrolls, so the frame reads the same guttered
-            // way empty or full. The glass chrome, the surface radius and the
-            // row's own hover and selected treatment stay the design
-            // system's.
             float gutter = ActiveTheme.Scrollbar.GutterWidth * 0.5f;
             float padding = gutter * scale;
             float labelSize = ActiveTheme.Typography.BodySize;
@@ -295,15 +242,10 @@ public static partial class Crystarium
             float widest = 0f;
             for (int i = 0; i < items.Count; i++)
                 widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
-            // Auto-fit: the widest name between the left pad and the right
-            // lane, bounded by the menu's two widths so a long bone name
-            // cannot run off and a short one cannot read as a sliver.
             float width = Math.Clamp(
                 widest + padding * 2f + ActiveTheme.Spacing.Two * scale,
                 ActiveTheme.Floating.MenuMinWidth * scale,
                 ActiveTheme.Floating.MenuWidth * scale);
-            // The row box hugs its label: a couple of px of breath each side
-            // is the whole difference between a menu row and a tree row.
             float rowHeight = labelSize + ActiveTheme.Spacing.Two * 2f;
             int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
             float height = rows * rowHeight * scale
@@ -320,9 +262,6 @@ public static partial class Crystarium
 
             ImGui.SetNextWindowPos(min);
             ImGui.SetNextWindowSize(max - min);
-            // Vertical padding only: the left inset is the cursor seat below,
-            // so the RIGHT edge stays the scroll lane's own — the box reads
-            // pad, names, lane, edge, with all three pads the lane's width.
             ImGui.PushStyleVar(
                 ImGuiStyleVar.WindowPadding, new Vector2(0f, padding));
             bool visible = ImGui.Begin(
@@ -356,10 +295,6 @@ public static partial class Crystarium
                     region =>
                     {
                         for (int i = 0; i < items.Count; i++)
-                            // No mark: Brio's rows are the name and nothing
-                            // else, and a bullet per row in a list of five
-                            // near-identical names is ornament, not
-                            // information.
                             if (region.ListRow(
                                     $"{id}-row-{i}",
                                     items[i],
@@ -411,27 +346,6 @@ public static partial class Crystarium
                 fromBottom ? position.Y + size.Y : position.Y);
             return position;
         }
-
-        /// <summary>
-        /// The ONE glass chassis recipe: blur behind, the glass fill, and the
-        /// asymmetric 1px glass edge, with the panel's elevation shadows.
-        /// </summary>
-        /// <param name="shadow">The elevation pass. The main
-        /// window suppresses it — a shadow under a chassis that IS the window
-        /// reads as a halo, not as elevation — while every floating surface
-        /// keeps it.</param>
-        /// <param name="blur">The backdrop blur. A surface that already
-        /// prepended its own one shell-level blur states false; prepending a
-        /// second would blur the same backdrop twice.</param>
-        /// <param name="fill">The window-wide glass fill. A surface that
-        /// grounds its own REGIONS states false: it lays one coat per pixel
-        /// itself, and a fill underneath them would be a second coat — which
-        /// stops being glass. The shell is the one such surface.</param>
-        /// <param name="border">The asymmetric glass edge. False for a surface
-        /// that draws the edge itself, LAST, so its region fills cannot hide
-        /// it; drawing it here as well would lay each edge token on itself,
-        /// brightening the white top and sides while only darkening the black
-        /// bottom.</param>
         public static void DrawChrome(
             ImDrawListPtr drawList,
             Vector2 min,
@@ -445,9 +359,6 @@ public static partial class Crystarium
             float scale = ImGuiHelpers.GlobalScale;
             if (blur)
                 GlassChrome.PrependBlur(drawList, min, max, radius * scale);
-
-            // Popup draw lists clip to their window. Temporarily widen only
-            // the chrome clip so the canonical panel shadow remains visible.
             drawList.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
             BoxRenderer.Draw(
                 drawList,
@@ -482,15 +393,6 @@ public static partial class Crystarium
                 });
             drawList.PopClipRect();
         }
-
-        /// <summary>
-        /// Places a surface on a preferred SIDE of a semantic target:
-        /// centred on that side at <paramref name="offset"/>, flipped to
-        /// the opposite side when the viewport edge is closer than the
-        /// surface, then clamped into the viewport. The third placement
-        /// rule alongside <see cref="PlaceAnchored"/> (below/above an
-        /// anchor) and <see cref="PlaceAtPoint"/> (shift-clamp a point).
-        /// </summary>
         internal static Vector2 PlaceSide(
             HoverHelpSide side,
             Vector2 targetMin,
@@ -550,7 +452,6 @@ public static partial class Crystarium
             return new Vector2(x, y);
         }
     }
-
     public readonly record struct FloatingSurfaceFrame(
         Vector2 Min,
         Vector2 Max,
