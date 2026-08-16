@@ -79,7 +79,8 @@ public static partial class Crystarium
         private readonly record struct Candidate(
             uint Id, Vector2 Min, Vector2 Max, string Text,
             string? Shortcut, HoverHelpSide Side, bool Instant,
-            bool Animated, InteractionOwner Owner);
+            bool Animated, InteractionOwner Owner, Vector2? Position = null,
+            float Alpha = 1f);
 
         private static Candidate? _candidate;
         private static uint? _pendingId;
@@ -143,6 +144,31 @@ public static partial class Crystarium
             _candidate = new Candidate(
                 ImGui.GetID(id), targetMin, targetMax, text, null, side,
                 Instant: true, animated, Interactive.CurrentOwner);
+        }
+
+        /// <summary>Draws a transient readout directly, bypassing the single
+        /// hover candidate so simultaneous notices remain visible.</summary>
+        public static void Readout(Vector2 min, string text, float opacity = 1f)
+        {
+            if (text.Length == 0 || opacity <= 0f)
+                return;
+            var readout = new Candidate(
+                0, min, min, text, null, HoverHelpSide.Bottom,
+                Instant: true, Animated: false, Owner: Interactive.CurrentOwner,
+                Position: min, Alpha: opacity);
+            Draw(readout, 1f);
+        }
+
+        public static Vector2 ReadoutSize(string text)
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            var help = Crystarium.ActiveTheme.HoverHelp;
+            var style = ContentStyle;
+            var textSize = Crystarium.MeasureText(text, style);
+            float border = help.BorderWidth * scale;
+            return new Vector2(
+                2f * border + 2f * help.PaddingX * scale + textSize.X,
+                help.CardHeight * scale);
         }
 
         /// <summary>
@@ -398,7 +424,7 @@ public static partial class Crystarium
             // preferred side, flip when the viewport edge is closer than
             // the card, then clamp the remainder.
             float offset = help.TargetOffset * scale;
-            var pos = FloatingSurface.PlaceSide(
+            var pos = c.Position ?? FloatingSurface.PlaceSide(
                 c.Side,
                 c.Min,
                 c.Max,
@@ -439,7 +465,8 @@ public static partial class Crystarium
             int blurVtxStart = fg.VtxBuffer.Size;
             GlassChrome.PrependHoverBlur(fg, animMin, animMax, radius * k);
             int blurVtxEnd = fg.VtxBuffer.Size;
-            VertexTransform.ApplyPop(fg, blurVtxStart, blurVtxEnd, center, 1f, Vector2.Zero, inness);
+            float alpha = inness * c.Alpha;
+            VertexTransform.ApplyPop(fg, blurVtxStart, blurVtxEnd, center, 1f, Vector2.Zero, alpha);
 
             // Everything below lands in one captured vertex range and is
             // popped as one composited surface: background, borders,
@@ -494,7 +521,7 @@ public static partial class Crystarium
             }
 
             int vtxEnd = fg.VtxBuffer.Size;
-            VertexTransform.ApplyPop(fg, vtxStart, vtxEnd, center, k, translate, inness);
+            VertexTransform.ApplyPop(fg, vtxStart, vtxEnd, center, k, translate, alpha);
         }
     }
 }
