@@ -1066,7 +1066,9 @@ public static class AppShellView
                 branchMin, new Vector2(shownWidth, height), shown, branchStyle,
                 fitted is null ? TextConstraint.Intrinsic : TextConstraint.Truncate(shownWidth));
             if (hovered && fitted is not null)
-                ImGui.SetTooltip(vm.BranchLabel);
+                Crystarium.HoverHelp.Preview(
+                    "build-branch", branchMin,
+                    branchMin + new Vector2(shownWidth, height), vm.BranchLabel);
         }
     }
 
