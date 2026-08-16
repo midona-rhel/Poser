@@ -115,6 +115,180 @@ public sealed class PoseFilePersistenceTests
         Assert.Equal(PoseFileStoreFailureKind.SizeLimit, result.Failure!.Kind);
     }
 
+    [Fact]
+    public void Metadata_reads_headers_and_rejects_bounded_pose_limits()
+    {
+        using var fixture = new StoreFixture();
+        var pose = ValidPose();
+        pose.Author = "Ada";
+        pose.Version = "1.2";
+        pose.Tags = ["sample", "workflow"];
+        pose.Base64Image = "thumbnail";
+        pose.TerritoryId = 129;
+        pose.PlaceName = "Limsa Lominsa";
+
+        Assert.True(AtomicPoseFileStore.Default.Write(pose, fixture.Path).Succeeded);
+        var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+
+        Assert.True(metadata.Succeeded, metadata.Failure?.Detail);
+        Assert.Equal("Ada", metadata.Author);
+        Assert.Equal("1.2", metadata.Version);
+        Assert.Equal(new[] { "sample", "workflow" }, metadata.Tags);
+        Assert.True(metadata.HasThumbnail);
+        Assert.Equal("Limsa Lominsa", metadata.PlaceName);
+
+        var invalidDocuments = new[]
+        {
+            (Json: $"{{\"Tags\":[{string.Join(",", Enumerable.Repeat("\"tag\"", PoseFileLimits.MaxTags + 1))}]}}",
+                Kind: PoseFileValidationFailureKind.TagCount),
+            (Json: $"{{\"Bones\":{{{BoneEntries(PoseFileLimits.MaxEntriesPerCollection + 1)}}}}}",
+                Kind: PoseFileValidationFailureKind.CollectionSize),
+            (Json: string.Concat(
+                    "{\"Bones\":{", BoneEntries(PoseFileLimits.MaxEntriesPerCollection),
+                    "},\"MainHand\":{",
+                    BoneEntries(PoseFileLimits.MaxEntriesPerCollection,
+                        PoseFileLimits.MaxEntriesPerCollection),
+                    "},\"OffHand\":{",
+                    BoneEntries(PoseFileLimits.MaxEntriesPerCollection,
+                        PoseFileLimits.MaxEntriesPerCollection * 2),
+                    "},\"Prop\":{",
+                    BoneEntries(PoseFileLimits.MaxEntriesPerCollection,
+                        PoseFileLimits.MaxEntriesPerCollection * 3),
+                    "},\"Ornament\":{\"overflow\":", ValidBoneJson, "}}"),
+                Kind: PoseFileValidationFailureKind.TotalEntries),
+            (Json: $"{{\"Bones\":{{\"{new string('b', PoseFileLimits.MaxBoneNameCharacters + 1)}\":{ValidBoneJson}}}}}",
+                Kind: PoseFileValidationFailureKind.BoneName),
+        };
+
+        foreach (var invalid in invalidDocuments)
+        {
+            File.WriteAllText(fixture.Path, invalid.Json);
+            var rejected = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+
+            Assert.False(rejected.Succeeded, invalid.Kind.ToString());
+            Assert.Equal(invalid.Kind, rejected.Failure!.ValidationFailure!.Kind);
+        }
+
+        using (var stream = new FileStream(fixture.Path, FileMode.Create, FileAccess.Write))
+            stream.SetLength(PoseFileLimits.MaxFileBytes + 1);
+
+        var oversized = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+        Assert.False(oversized.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.SizeLimit, oversized.Failure!.Kind);
+    }
+
+    [Fact]
+    public void Atomic_commit_reports_phase_failures_and_preserves_recovery_evidence()
+    {
+        var phaseCases = new[]
+        {
+            (Phase: PoseFileStorePhase.ReplaceDestination,
+                Existing: true, Kind: PoseFileStoreFailureKind.Replace),
+            (Phase: PoseFileStorePhase.MoveDestination,
+                Existing: false, Kind: PoseFileStoreFailureKind.Move),
+        };
+
+        foreach (var testCase in phaseCases)
+        {
+            using var fixture = new StoreFixture();
+            if (testCase.Existing)
+                File.WriteAllText(fixture.Path, "old destination");
+
+            var store = new AtomicPoseFileStore((phase, _) =>
+            {
+                if (phase == testCase.Phase)
+                    throw new IOException("injected commit failure");
+            });
+
+            var result = store.Write(ValidPose(), fixture.Path);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(testCase.Kind, result.Failure!.Kind);
+            var temporary = Assert.Single(result.RecoveryEvidencePaths);
+            Assert.EndsWith(".tmp", temporary, StringComparison.Ordinal);
+            if (testCase.Existing)
+                Assert.Equal("old destination", File.ReadAllText(fixture.Path));
+            else
+                Assert.False(File.Exists(fixture.Path));
+        }
+    }
+
+    [Fact]
+    public void Atomic_commit_reports_backup_cleanup_and_destination_loss()
+    {
+        using (var fixture = new StoreFixture())
+        {
+            File.WriteAllText(fixture.Path, "old destination");
+            var store = new AtomicPoseFileStore((phase, _) =>
+            {
+                if (phase == PoseFileStorePhase.CleanupBackup)
+                    throw new IOException("injected backup cleanup failure");
+            });
+
+            var result = store.Write(ValidPose(), fixture.Path);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(PoseFileStoreFailureKind.Cleanup, result.Failure!.Kind);
+            Assert.True(AtomicPoseFileStore.Default.Read(fixture.Path).Succeeded);
+            var backup = Assert.Single(result.RecoveryEvidencePaths);
+            Assert.EndsWith(".bak", backup, StringComparison.Ordinal);
+            Assert.True(File.Exists(backup));
+        }
+
+        var destinationLossCases = new[]
+        {
+            (Existing: true, Kind: PoseFileStoreFailureKind.Replace, Evidence: true),
+            (Existing: false, Kind: PoseFileStoreFailureKind.Move, Evidence: false),
+        };
+
+        foreach (var testCase in destinationLossCases)
+        {
+            using var fixture = new StoreFixture();
+            if (testCase.Existing)
+                File.WriteAllText(fixture.Path, "old destination");
+
+            var fileSystem = new DestinationLossFileSystem();
+            var store = new AtomicPoseFileStore(fileSystem);
+            var result = store.Write(ValidPose(), fixture.Path);
+
+            Assert.False(result.Succeeded);
+            Assert.Equal(testCase.Kind, result.Failure!.Kind);
+            Assert.False(File.Exists(fixture.Path));
+            Assert.Equal(testCase.Evidence, result.RecoveryEvidencePaths.Count != 0);
+        }
+    }
+
+    private const string ValidBoneJson =
+        "{\"Position\":\"0, 0, 0\",\"Rotation\":\"0, 0, 0, 1\",\"Scale\":\"1, 1, 1\"}";
+
+    private static string BoneEntries(int count, int start = 0) =>
+        string.Join(",", Enumerable.Range(start, count)
+            .Select(index => $"\"b{index}\":{ValidBoneJson}"));
+
+    private sealed class DestinationLossFileSystem : IPoseFileStoreFileSystem
+    {
+        private readonly SystemPoseFileStoreFileSystem _inner = new();
+
+        public Stream OpenRead(string path) => _inner.OpenRead(path);
+        public Stream CreateNew(string path) => _inner.CreateNew(path);
+        public void FlushToDisk(Stream stream) => _inner.FlushToDisk(stream);
+        public bool Exists(string path) => _inner.Exists(path);
+
+        public void Replace(string source, string destination, string backup)
+        {
+            _inner.Replace(source, destination, backup);
+            _inner.Delete(destination);
+        }
+
+        public void Move(string source, string destination)
+        {
+            _inner.Move(source, destination);
+            _inner.Delete(destination);
+        }
+
+        public void Delete(string path) => _inner.Delete(path);
+    }
+
     public static PoseFile ValidPose() => new()
     {
         Bones =

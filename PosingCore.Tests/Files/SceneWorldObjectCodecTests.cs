@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using Poser.Domain.Presentation;
 using Poser.Files;
@@ -100,6 +101,116 @@ public sealed class SceneWorldObjectCodecTests
             new[] { SceneFileValidationFailureKind.Identity,
                 SceneFileValidationFailureKind.NonFiniteNumeric,
                 SceneFileValidationFailureKind.Document });
+    }
+
+    [Fact]
+    public void Scene_codec_reports_each_world_object_and_overlay_guard()
+    {
+        var cases = new
+        (Func<string> Json, SceneStoreFailureKind StoreKind,
+            SceneFileValidationFailureKind? ValidationKind)[]
+        {
+            (() => SerializeScene(MissingWorldKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (() => SerializeScene(MissingOverlayNode()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Document),
+            (() => SerializeScene(DuplicateWorldKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (NonFiniteWorldPositionJson, SceneStoreFailureKind.Json, null),
+            (() => SerializeScene(OversizedOverlayText()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Range),
+            (() => SerializeScene(OversizedWorldObjectList()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.CollectionSize),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var json = testCase.Json();
+            var result = SceneFileStore.Default.Parse(json);
+
+            Assert.False(result.Succeeded, testCase.StoreKind.ToString());
+            Assert.Equal(testCase.StoreKind, result.Failure!.Kind);
+            if (testCase.ValidationKind is { } validationKind)
+                Assert.Equal(validationKind, result.Failure.ValidationFailure!.Kind);
+            else
+                Assert.Contains("invalid numeric value", result.Failure.Detail,
+                    StringComparison.Ordinal);
+        }
+    }
+
+    private static SceneFile MissingWorldKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = [new SceneWorldObject { Path = "bg/a.mdl" }];
+        return scene;
+    }
+
+    private static SceneFile MissingOverlayNode()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid() }];
+        return scene;
+    }
+
+    private static SceneFile DuplicateWorldKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        var key = Guid.NewGuid();
+        scene.WorldObjects =
+        [
+            new SceneWorldObject { Key = key, Path = "bg/a.mdl" },
+            new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
+        ];
+        return scene;
+    }
+
+    private static string NonFiniteWorldPositionJson()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects =
+        [new SceneWorldObject
+        {
+            Key = Guid.NewGuid(),
+            Path = "bg/a.mdl",
+        }];
+        var json = SerializeScene(scene);
+        return json.Replace(
+            "\"MapPosition\": \"0, 0, 0\"",
+            "\"MapPosition\": \"NaN, 0, 0\"",
+            StringComparison.Ordinal);
+    }
+
+    private static string SerializeScene(SceneFile scene) =>
+        System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
+
+    private static SceneFile OversizedOverlayText()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays =
+        [new SceneOverlay
+        {
+            Key = Guid.NewGuid(),
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Long text",
+                Text = new string('x', OverlayNodeLimits.MaxTextCharacters + 1),
+            },
+        }];
+        return scene;
+    }
+
+    private static SceneFile OversizedWorldObjectList()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = Enumerable.Range(0, SceneFileLimits.MaxWorldObjects + 1)
+            .Select(index => new SceneWorldObject
+            {
+                Key = Guid.NewGuid(),
+                Path = $"bg/{index}.mdl",
+            })
+            .ToList();
+        return scene;
     }
 
     private sealed class TempWorldScene : IDisposable
