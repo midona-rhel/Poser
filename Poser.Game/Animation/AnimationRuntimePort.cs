@@ -292,7 +292,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 character->Timeline.TimelineSequencer.TimelineSpeeds[index]));
         }
 
-        var controls = CollectControls(character, out var token);
         // The RAW pose family: collapsing WeaponDrawn/Umbrella/Accessory to
         // Idle made the UI lie about the current state, which in turn made
         // Idle unreachable (re-selecting what the control already showed).
@@ -315,9 +314,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->Timeline.IsWeaponDrawn,
             stance,
             character->EmoteController.CPoseState,
-            slots,
-            controls,
-            token);
+            slots);
     }
 
     /// <summary>
@@ -462,7 +459,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 // The timeline actually PLAYING on the base slot, so a
                 // restore can put back what the actor was doing rather
                 // than a blanket idle.
-                character->Timeline.TimelineSequencer.TimelineIds[0]);
+                character->Timeline.TimelineSequencer.TimelineIds[0],
+                ReadForcedTimeline(&character->Timeline));
         }
 
         PlayWithMode(character, timeline);
@@ -509,7 +507,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             (byte)character->Mode,
             character->ModeParam,
             character->Timeline.BaseOverride,
-            character->Timeline.TimelineSequencer.TimelineIds[0]);
+            character->Timeline.TimelineSequencer.TimelineIds[0],
+            ReadForcedTimeline(&character->Timeline));
     }
 
     /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
@@ -555,6 +554,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 ? capture.BaseSlotTimeline
                 : AnimationTimelines.Idle,
             null);
+        WriteForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return AnimationPortResult.Ok();
     }
 
@@ -568,33 +568,36 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : AnimationPortResult.Fail("The emote entry point is unavailable.");
     }
 
-    /// <summary>
-    /// NOT IMPLEMENTED on this build, deliberately.
-    ///
-    /// Force loop needs the game's persistent forced-timeline field — the
-    /// one Ktisis calls <c>ActionTimelineId</c> and re-writes so the engine
-    /// keeps re-driving a timeline instead of falling back to idle. That
-    /// field could not be proven for the current client:
-    ///
-    ///  · current ClientStructs maps no such member on TimelineContainer or
-    ///    ActionTimelineSequencer, and exposes no accessor for it (its only
-    ///    member functions are height-adjust, lips, speed, and intro/loop);
-    ///  · the only other <c>ActionTimelineId</c> in ClientStructs belongs to
-    ///    EventFramework's queued-callback payload and is unreachable here;
-    ///  · Ktisis' literal 0x2D0 cannot be inherited. Its checkout is a patch
-    ///    behind (Character.EmoteController 0x620 vs 0x630, Mode 0x2354 vs
-    ///    0x2364), and the offset is inconsistent with its own struct: it
-    ///    declares AnimationTimeline as Size 0x1F0 — which matches the
-    ///    sequencer's real extent, since TimelineTransit follows it — yet
-    ///    places the field at 0x2D0, past that end.
-    ///
-    /// The alternatives are all worse than an honest gap: BaseOverride is
-    /// already the Base latch, so routing loop through it would collapse
-    /// Blend into Base; blending Idle on disable yanks the actor off its
-    /// animation instead of merely un-looping; and probing offsets with
-    /// writes risks corrupting a live game process. So this fails
-    /// explicitly and the UI does not offer the control.
-    /// </summary>
+    // Ktisis 0.4.0.5's current custom overlay identifies this field as
+    // CharacterEx.Animation (0xA30) + AnimationContainer.Timeline (0x10) +
+    // AnimationTimeline.ActionTimelineId (0x2D0). Poser's Timeline field is
+    // already that outer TimelineContainer, so the equivalent offset from
+    // &character->Timeline is 0x2E0. Keep this unsafe access isolated here;
+    // never expose the pointer or offset outside the native port.
+    private const int ActionTimelineIdOffset = 0x2E0;
+
+    private static ushort ReadForcedTimeline(TimelineContainer* timeline) =>
+        *(ushort*)((byte*)timeline + ActionTimelineIdOffset);
+
+    private static void WriteForcedTimeline(
+        TimelineContainer* timeline,
+        ushort value) =>
+        *(ushort*)((byte*)timeline + ActionTimelineIdOffset) = value;
+
+    public bool SupportsForceLoop => true;
+
+    /// <summary>Writes the game's persistent action timeline field. The
+    /// actor is resolved again for every write, so a replaced generation can
+    /// never receive the old actor's value.</summary>
+    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        WriteForcedTimeline(&character->Timeline, timeline);
+        return AnimationPortResult.Ok();
+    }
+
     /// <summary>
     /// Plays an emote through the game's own entry point. Falls back to
     /// blending idle when the entry point was not found, because the
@@ -656,7 +659,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// The loop tick: an armed slot that no longer plays its timeline
     /// (the one-shot ended; the game swapped its own idle in) gets the
     /// timeline played again — the same proven call as a user pick. The
-    /// unproven forced-timeline field is never touched.
+    /// main picker uses the separate persistent forced-timeline field.
     /// </summary>
     private void EnforceLoops(IFramework framework)
     {
@@ -682,13 +685,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             }
         }
     }
-
-    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
-        AnimationPortResult.Fail(
-            "Force loop is unavailable: the game's forced-timeline field is not " +
-            "mapped for this client version.");
-
-    public bool SupportsForceLoop => false;
 
     public bool SupportsStance => _setEmoteMode != null && _cancelTimeline != null;
 

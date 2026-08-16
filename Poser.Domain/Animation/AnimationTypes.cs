@@ -154,12 +154,16 @@ public sealed record TimelineEntry(
 /// <summary>
 /// The exact native state Poser captured before its FIRST play, and the
 /// only thing that can put the actor back: character mode, mode parameter,
-/// the base-override field, and the timeline the base slot was actually
-/// playing. Stored as raw values so the domain never references native
-/// enums.
+/// the base-override field, the timeline the base slot was actually playing,
+/// and the game's forced timeline before Poser took ownership. Stored as raw
+/// values so the domain never references native enums.
 /// </summary>
 public readonly record struct BaseAnimationCapture(
-    byte Mode, byte ModeParam, ushort BaseTimeline, ushort BaseSlotTimeline = 0);
+    byte Mode,
+    byte ModeParam,
+    ushort BaseTimeline,
+    ushort BaseSlotTimeline = 0,
+    ushort ForcedTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be
@@ -192,15 +196,11 @@ public sealed record ActorAnimationReading(
     bool WeaponDrawn,
     AnimationStance Stance,
     int Pose,
-    IReadOnlyList<AnimationSlotReading> Slots,
-    IReadOnlyList<ScrubControlReading> Controls,
-    ulong SkeletonToken)
+    IReadOnlyList<AnimationSlotReading> Slots)
 {
     public static ActorAnimationReading Empty { get; } = new(
         0, 1f, 0, false, AnimationStance.Idle, 0,
-        Array.Empty<AnimationSlotReading>(),
-        Array.Empty<ScrubControlReading>(),
-        0);
+        Array.Empty<AnimationSlotReading>());
 
     public ushort TimelineFor(AnimationSlot slot)
     {
@@ -231,8 +231,8 @@ public sealed record AnimationOverrides
     public float? OverallSpeed { get; init; }
     /// <summary>Slots Poser keeps re-driving: when the slot leaves the
     /// armed timeline (the one-shot ended and the game swapped its own
-    /// idle in), the port plays it again. Poser-orchestrated — the game's
-    /// forced-timeline field is unproven for this client.</summary>
+    /// idle in), the port plays it again. These are explicit layer loops;
+    /// the main picker uses the persistent game field.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     /// <summary>Incoming timeline per non-base slot, captured once before

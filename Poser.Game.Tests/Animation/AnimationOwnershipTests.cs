@@ -143,6 +143,53 @@ public sealed class AnimationOwnershipTests
         Assert.DoesNotContain("Blend:42", port.Calls);
     }
 
+    [Fact]
+    public void Main_pick_replaces_the_loop_and_restores_the_old_value()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(
+            ActorA, AnimationSlot.UpperBody, 88, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.Equal((ushort)42, port.ForcedTimeline);
+        Assert.DoesNotContain("Read", port.Calls);
+        Assert.Contains(
+            AnimationSlot.UpperBody,
+            session.OverridesFor(ActorA).LoopedSlots.Keys);
+        Assert.Equal((ushort)77,
+            session.OverridesFor(ActorA).BaseCapture!.Value.ForcedTimeline);
+
+        // A second main pick replaces the first one instead of leaving its
+        // old loop arm alive.
+        Assert.True(session.PlayBase(ActorA, 43).Success);
+        Assert.Equal((ushort)43, port.ForcedTimeline);
+        Assert.Equal(2, port.Calls.Count(c => c == "ClearSlotLoop:Base"));
+        Assert.Contains(
+            AnimationSlot.UpperBody,
+            session.OverridesFor(ActorA).LoopedSlots.Keys);
+
+        Assert.True(session.ResetActor(ActorA).Success);
+        Assert.Equal((ushort)77, port.ForcedTimeline);
+        Assert.Null(session.OverridesFor(ActorA).BaseCapture);
+        Assert.Empty(session.OverridesFor(ActorA).LoopedSlots);
+        Assert.Contains("ClearLoops", port.Calls);
+    }
+
+    [Fact]
+    public void Main_pick_refuses_an_unavailable_generation_without_writing()
+    {
+        var port = FakePort.Create();
+        port.Available = false;
+        var session = new AnimationSession(port.Port);
+
+        var result = session.PlayBase(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend:"));
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
+    }
+
     private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
@@ -160,6 +207,8 @@ public sealed class AnimationOwnershipTests
         public bool Frozen { get; private set; }
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
+        public ushort ForcedTimeline { get; set; } = 77;
+        public bool Available { get; set; } = true;
 
         public static FakePort Create()
         {
@@ -185,7 +234,7 @@ public sealed class AnimationOwnershipTests
                     return AnimationPortResult.Ok();
                 }
                 case "IsSupported":
-                    return true;
+                    return Available;
                 case "ClearOverallSpeed":
                     Calls.Add("ClearOverallSpeed");
                     return FailClearSpeed
@@ -195,6 +244,29 @@ public sealed class AnimationOwnershipTests
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
                     return AnimationPortResult.Ok();
+                case "CaptureBase":
+                    return Available
+                        ? new BaseAnimationCapture(1, 2, 3, 4, ForcedTimeline)
+                        : null;
+                case "SetForceLoop":
+                    ForcedTimeline = (ushort)args![1]!;
+                    Calls.Add($"SetForceLoop:{ForcedTimeline}");
+                    return AnimationPortResult.Ok();
+                case "ClearLoops":
+                    Calls.Add("ClearLoops");
+                    return null;
+                case "SetSlotLoop":
+                    Calls.Add($"SetSlotLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
+                case "ClearSlotLoop":
+                    Calls.Add($"ClearSlotLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
+                case "RestoreBase":
+                    ForcedTimeline = ((BaseAnimationCapture)args![1]!).ForcedTimeline;
+                    Calls.Add("RestoreBase");
+                    return AnimationPortResult.Ok();
+                case "TimelineSlot":
+                    return (AnimationSlot?)AnimationSlot.Base;
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {

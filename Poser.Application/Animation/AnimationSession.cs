@@ -129,15 +129,50 @@ public sealed class AnimationSession
 
     /// <summary>
     /// Plays a timeline as "the animation" of the actor: the SAME
-    /// sequencer play as everything else — the references have no base
-    /// latch — recorded so the transport can display and replay the pick.
-    /// Continuity is the loop system, armed separately by the caller.
+    /// sequencer play as everything else. The main pick owns the persistent
+    /// forced-timeline field, so it replaces any previous Poser pick and
+    /// keeps looping until Reset or another main pick releases it.
     /// </summary>
     public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
-        var result = Blend(actor, timeline);
+        if (Suspended() is { } blocked)
+            return blocked;
+
+        var current = OverridesFor(actor);
+        var capture = current.BaseCapture ?? _port.CaptureBase(actor);
+        if (capture is not { } taken)
+            return AnimationResult.Fail("The actor is no longer available.");
+
+        // A main replacement removes only the legacy base polling arm. Layer
+        // loop switches are explicit and remain additive across the pick.
+        _port.ClearSlotLoop(actor, AnimationSlot.Base);
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            loops.Remove(AnimationSlot.Base);
+            return o with
+            {
+                LoopedSlots = loops,
+                BaseCapture = o.BaseCapture ?? taken,
+            };
+        });
+
+        // Capture happened before this clear. If play or the later forced
+        // write fails, the capture remains owned so Reset can restore it.
+        var cleared = _port.SetForceLoop(actor, 0);
+        if (!cleared.Success)
+            return AnimationResult.Fail(
+                cleared.Detail ?? "The previous animation could not be released.");
+
+        var result = _port.Blend(actor, timeline, taken, out _);
         if (!result.Success)
-            return result;
+            return AnimationResult.Fail(result.Detail ?? "Animation failed.");
+
+        var forced = _port.SetForceLoop(actor, timeline);
+        if (!forced.Success)
+            return AnimationResult.Fail(
+                forced.Detail ?? "The animation could not be kept looping.");
+
         Mutate(actor, o => o with { BaseTimeline = timeline });
         return AnimationResult.Ok();
     }
@@ -233,7 +268,8 @@ public sealed class AnimationSession
     /// route that plays intro-then-loop; anything else, and any emote
     /// that has no intro, falls back to the sequencer.
     ///
-    /// Force loop is applied last so it wraps whichever route ran.
+    /// The main/base route owns the persistent loop; additive layer routes do
+    /// not acquire one unless their explicit loop switch is enabled.
     /// </summary>
     public AnimationResult PlayEntry(
         ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
@@ -278,9 +314,8 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>False when the running client does not expose the game's
-    /// forced-timeline field; surfaces hide the control rather than offer
-    /// one that cannot work.</summary>
+    /// <summary>Whether the current client exposes the persistent field used
+    /// by the main animation picker to keep its choice looping.</summary>
     public bool SupportsForceLoop => _port.SupportsForceLoop;
 
     /// <summary>False when the client's stance-transition functions were
@@ -288,10 +323,8 @@ public sealed class AnimationSession
     public bool SupportsStance => _port.SupportsStance;
 
     /// <summary>
-    /// Forces a timeline to repeat. Owns no state: on every client where
-    /// <see cref="SupportsForceLoop"/> is false this cannot take effect,
-    /// and recording an override for a write that did not happen would put
-    /// a phantom entry into the restoration list.
+    /// Low-level forced-loop write. The main picker owns this through
+    /// <see cref="PlayBase"/>, which captures and restores the old value.
     /// </summary>
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {

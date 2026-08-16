@@ -36,12 +36,10 @@ public interface IAnimationRuntimePort
     // ── Base and blend ────────────────────────────────────────────────
     /// <summary>
     /// Plays a timeline through the game's own sequencer with the
-    /// reference's mode handling: a sheet-Pause timeline holds the actor
-    /// (EmoteLoop with parameter 0), and a normal play first leaves a
-    /// held or stale-latched mode, which otherwise eats the play. The
-    /// timeline row picks its own slot; there is no blend weight
-    /// anywhere. When <paramref name="existing"/> is null the pre-play
-    /// mode state is captured and returned for restoration.
+    /// reference's mode handling. The timeline row picks its own slot;
+    /// there is no blend weight here. When <paramref name="existing"/> is
+    /// null the pre-play mode, base timeline, and forced timeline are
+    /// captured for restoration.
     /// </summary>
     AnimationPortResult Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
@@ -66,11 +64,9 @@ public interface IAnimationRuntimePort
     AnimationPortResult CancelActiveTimeline(ActorId actor);
 
     // ── Loops ───────────────────────────────────────────
-    /// <summary>Arms Poser-driven looping for one slot: whenever the slot
-    /// leaves this timeline (the one-shot ended and the game swapped its
-    /// own idle in), the timeline is played again through the same proven
-    /// sequencer call. The game's forced-timeline field stays unused — it
-    /// is unproven for this client.</summary>
+    /// <summary>Arms Poser-driven looping for one additive slot. This is an
+    /// explicit layer control; the main animation uses the game's persistent
+    /// forced-timeline field instead.</summary>
     AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
     AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
@@ -83,13 +79,8 @@ public interface IAnimationRuntimePort
     /// is the only way to get intro-then-loop playback.</summary>
     AnimationPortResult PlayEmote(ActorId actor, uint emoteId);
 
-    /// <summary>
-    /// False when the game's persistent forced-timeline field is not mapped
-    /// for the running client, in which case <see cref="SetForceLoop"/>
-    /// always fails and surfaces must not offer the control. Reported
-    /// rather than silently approximated, because every approximation
-    /// (latching Base, re-blending idle) changes what the actor is doing.
-    /// </summary>
+    /// <summary>True when the current native animation overlay exposes the
+    /// persistent field used to keep a picked main animation looping.</summary>
     bool SupportsForceLoop { get; }
 
     /// <summary>False when the stance-transition functions (SetEmoteMode /
@@ -130,9 +121,9 @@ public interface IAnimationRuntimePort
     AnimationPortResult SetPositionLock(ActorId actor, bool locked);
 
     // ── Scrubbing ─────────────────────────────────────────────────────
-    /// <summary>Every currently valid Havok control, freshly enumerated.
-    /// The returned <c>SkeletonToken</c> on the reading identifies the
-    /// enumeration; writing with a stale token is refused.</summary>
+    /// <summary>Every currently valid Havok control, freshly enumerated for
+    /// an explicit scrub interaction. Ordinary animation reads never walk
+    /// this list. The token identifies the skeleton generation.</summary>
     IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
 
     /// <summary>

@@ -370,9 +370,7 @@ public sealed class ExpressionHoldTests
                         {
                             new AnimationSlotReading(
                                 AnimationSlot.Facial, LiveFacialTimeline, 1f),
-                        },
-                        Array.Empty<ScrubControlReading>(),
-                        1UL);
+                        });
                 case "TimelineSlot":
                 {
                     // The sheet's routing, reduced to this flow: idle is a

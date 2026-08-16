@@ -44,10 +44,8 @@ public sealed class AnimationPane
     private bool _openLayers = true;
     private bool _openFace = true;
     private bool _openAdvancedSlots;
-    private bool _openAdvancedControls;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
-    private IReadOnlyList<ScrubControlReading>? _scrubFrozenControls;
     private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks =
         new();
     /// <summary>Where this pane's verb outcomes go. It also removes the
@@ -269,11 +267,6 @@ public sealed class AnimationPane
                             AnimationSlots.DisplayName(slot),
                             alwaysShow: true);
                 });
-            page.Section(
-                "ADVANCED CONTROLS",
-                _openAdvancedControls,
-                next => _openAdvancedControls = next,
-                form => DrawAdvancedControls(form, actor, reading));
         });
 
         DrawPicker();
@@ -584,7 +577,6 @@ public sealed class AnimationPane
             DrawScrub(
                 form,
                 actor,
-                reading,
                 label,
                 control,
                 slot,
@@ -592,30 +584,9 @@ public sealed class AnimationPane
         }
     }
 
-    private void DrawAdvancedControls(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading)
-    {
-        var controls = AdvancedControls(reading);
-        if (controls.Count == 0)
-        {
-            form.Status("No animation controls.");
-            return;
-        }
-        foreach (var control in controls)
-            DrawScrub(
-                form,
-                actor,
-                reading,
-                control.Id.ToString(),
-                control);
-    }
-
     private void DrawScrub(
         Crystarium.FormScope form,
         ActorId actor,
-        ActorAnimationReading reading,
         string label,
         ScrubControlReading control,
         AnimationSlot? loopSlot = null,
@@ -633,7 +604,6 @@ public sealed class AnimationPane
             Report(
                 _animation.BeginScrub(actor, control.Id), "Scrub");
             _scrub = (actor, control.Id);
-            _scrubFrozenControls = reading.Controls;
         }
 
         void Commit()
@@ -1093,24 +1063,6 @@ public sealed class AnimationPane
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    private IReadOnlyList<ScrubControlReading> AdvancedControls(
-        ActorAnimationReading reading)
-    {
-        if (_scrub == null || _scrubFrozenControls == null)
-            return reading.Controls;
-        var merged = new List<ScrubControlReading>(
-            _scrubFrozenControls.Count);
-        foreach (var frozen in _scrubFrozenControls)
-        {
-            var current = frozen;
-            foreach (var live in reading.Controls)
-                if (live.Id.Equals(frozen.Id))
-                    current = live;
-            merged.Add(current);
-        }
-        return merged;
-    }
-
     private void DrawSceneMenu()
     {
         if (_sceneMenuRequested)
@@ -1247,10 +1199,7 @@ public sealed class AnimationPane
                     break;
                 }
                 _layerPicks[(actor, pick.Entry.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    pick.Entry.Name);
+                Report(played, pick.Entry.Name);
                 break;
             }
             case AnimationPickTarget.Slot:
@@ -1267,10 +1216,7 @@ public sealed class AnimationPane
                 // memory: the write key is the REQUESTED slot, not whichever
                 // slot the chosen entry declares.
                 _layerPicks[(actor, pick.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    AnimationSlots.DisplayName(pick.Slot));
+                Report(played, AnimationSlots.DisplayName(pick.Slot));
                 break;
             }
             case AnimationPickTarget.Expression:
@@ -1286,24 +1232,10 @@ public sealed class AnimationPane
         }
     }
 
-    private AnimationResult ArmLoop(
-        ActorId actor,
-        AnimationSlot slot,
-        ushort timeline,
-        AnimationResult played)
-    {
-        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return played;
-        var armed = _animation.SetSlotLoop(
-            actor, slot, timeline, true);
-        return armed.Success ? played : armed;
-    }
-
     private void EndScrub()
     {
         _animation.EndScrub();
         _scrub = null;
-        _scrubFrozenControls = null;
     }
 
     /// <summary>Kept as its own name because the expression row is drawn on
