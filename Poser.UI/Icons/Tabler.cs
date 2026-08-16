@@ -4,11 +4,7 @@ using System.Linq;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Strongly-typed Tabler icon names. Mirrors a curated subset of
-/// https://tabler.io/icons (MIT). Add a value here and a matching SVG source
-/// in <c>TablerSvgSources</c> to ship a new icon.
-/// </summary>
+/// <summary>Names for the Tabler icons shipped with Poser.</summary>
 public enum TablerIcon
 {
     Plus,
@@ -27,9 +23,11 @@ public enum TablerIcon
     Refresh,
     Settings,
     Home,
+    Library,
     Folder,
     User,
     UserPlus,
+    UserMinus,
     Crosshair,
     ArrowsMove,
     ArrowsMaximize,
@@ -47,6 +45,7 @@ public enum TablerIcon
     DeviceDesktop,
     File,
     FileText,
+    FileExport,
     Photo,
     Download,
     DeviceFloppy,
@@ -56,6 +55,7 @@ public enum TablerIcon
     ArrowDown,
     Bug,
     Stack2,
+    Copy,
     Sitemap,
     MoodSmile,
     Bolt,
@@ -69,6 +69,8 @@ public enum TablerIcon
     Walk,
     Edit,
     ArrowBackUp,
+    Archive,
+    ArchiveImport,
     Rotate,
     Atom,
     Bone,
@@ -76,6 +78,7 @@ public enum TablerIcon
     Sliders,
     Monitor,
     LayoutPanel,
+    LayoutSidebarLeft,
     Keyboard,
     Info,
     AlertTriangle,
@@ -91,6 +94,12 @@ public enum TablerIcon
     Video,
     Message,
     MessageCircle,
+    Upload,
+    Book,
+    DeviceIpadX,
+    WindowMaximize,
+    WindowMinimize,
+    BrowserX,
 }
 
 /// <summary>
@@ -177,13 +186,17 @@ public static class Tabler
         TablerIcon.Trash           => "trash",
         TablerIcon.Pin             => "pin",
         TablerIcon.ExternalLink    => "external-link",
+        TablerIcon.Upload          => "upload",
         TablerIcon.Star            => "star",
         TablerIcon.Refresh         => "refresh",
         TablerIcon.Settings        => "settings",
         TablerIcon.Home            => "home",
+        TablerIcon.Library         => "library",
+        TablerIcon.Book            => "book",
         TablerIcon.Folder          => "folder",
         TablerIcon.User            => "user",
         TablerIcon.UserPlus        => "user-plus",
+        TablerIcon.UserMinus       => "user-minus",
         TablerIcon.Crosshair       => "crosshair",
         TablerIcon.ArrowsMove      => "arrows-move",
         TablerIcon.ArrowsMaximize  => "arrows-maximize",
@@ -199,8 +212,10 @@ public static class Tabler
         TablerIcon.Circle          => "circle",
         TablerIcon.TopologyStar    => "topology-star",
         TablerIcon.DeviceDesktop   => "device-desktop",
+        TablerIcon.DeviceIpadX     => "device-ipad-x",
         TablerIcon.File            => "file",
         TablerIcon.FileText        => "file-text",
+        TablerIcon.FileExport      => "file-export",
         TablerIcon.Photo           => "photo",
         TablerIcon.Download        => "download",
         TablerIcon.DeviceFloppy    => "device-floppy",
@@ -210,6 +225,7 @@ public static class Tabler
         TablerIcon.ArrowDown       => "arrow-down",
         TablerIcon.Bug             => "bug",
         TablerIcon.Stack2          => "stack-2",
+        TablerIcon.Copy            => "copy",
         TablerIcon.Sitemap         => "sitemap",
         TablerIcon.MoodSmile       => "mood-smile",
         TablerIcon.Bolt            => "bolt",
@@ -223,6 +239,8 @@ public static class Tabler
         TablerIcon.Walk            => "walk",
         TablerIcon.Edit            => "edit",
         TablerIcon.ArrowBackUp     => "arrow-back-up",
+        TablerIcon.Archive         => "archive",
+        TablerIcon.ArchiveImport   => "archive-import",
         TablerIcon.Rotate          => "rotate",
         TablerIcon.Atom            => "atom",
         TablerIcon.Bone            => "bone",
@@ -230,6 +248,10 @@ public static class Tabler
         TablerIcon.Sliders         => "sliders",
         TablerIcon.Monitor         => "monitor",
         TablerIcon.LayoutPanel     => "layout-panel",
+        TablerIcon.LayoutSidebarLeft  => "layout-sidebar-left",
+        TablerIcon.WindowMaximize  => "window-maximize",
+        TablerIcon.WindowMinimize  => "window-minimize",
+        TablerIcon.BrowserX        => "browser-x",
         TablerIcon.Keyboard        => "keyboard",
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",

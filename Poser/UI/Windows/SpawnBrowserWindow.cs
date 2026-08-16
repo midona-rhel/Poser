@@ -347,7 +347,7 @@ public sealed class SpawnBrowserWindow : Window
             "New actor with companion slot",
             TablerIcon.Paw));
         rows.Add(ActionRow(
-            "##spawn-clone-actor", "Clone selected actor", TablerIcon.Stack2));
+            "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
