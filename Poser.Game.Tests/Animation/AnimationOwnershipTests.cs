@@ -6,12 +6,7 @@ using Poser.Domain.Scene;
 
 namespace Poser.Game.Tests.Animation;
 
-/// <summary>
-/// Ownership-truth contracts for <see cref="AnimationSession"/>: the scene's
-/// hold on the global physics patch is recorded only once the patch landed and
-/// released only once the unpatch did, no actor can retire it, and Replay is a
-/// resuming act that never retains a zero-speed owner.
-/// </summary>
+/// <summary>Checks animation ownership and restoration behavior.</summary>
 public sealed class AnimationOwnershipTests
 {
     private static readonly ActorId ActorA =
@@ -23,13 +18,12 @@ public sealed class AnimationOwnershipTests
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
 
-        // No actor is involved at all: the shell's switch stands over every
-        // selection and over none.
+        // This switch does not select an actor.
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
         Assert.True(session.SceneOwnsPhysics);
         Assert.True(port.Frozen);
 
-        // Asking again for what is already held writes nothing.
+        // Repeating the current value writes nothing.
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
         Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:True"));
 
@@ -47,8 +41,7 @@ public sealed class AnimationOwnershipTests
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
         Assert.True(session.SetSpeed(ActorA, 0f).Success);
 
-        // Resetting an actor, and losing it from the scene entirely, are both
-        // silent on a patch no actor holds.
+        // Resetting an unowned actor does nothing.
         Assert.True(session.ResetActor(ActorA).Success);
         session.Reconcile(EmptyScene(1));
 
@@ -56,8 +49,7 @@ public sealed class AnimationOwnershipTests
         Assert.True(port.Frozen);
         Assert.DoesNotContain("SetPhysicsFrozen:False", port.Calls);
 
-        // ResetAll is the one release: the scene is the only owner, and it is
-        // not something that can depart.
+        // ResetAll releases the scene-wide freeze.
         Assert.True(session.ResetAll().Success);
         Assert.False(session.SceneOwnsPhysics);
         Assert.False(port.Frozen);
@@ -75,14 +67,11 @@ public sealed class AnimationOwnershipTests
         var failed = session.ResetAll();
 
         Assert.False(failed.Success);
-        // The native's own reason reaches the caller: a reset that says only
-        // "failed" cannot be acted on, and this is the one channel the port's
-        // detail travels on.
+        // The failure detail reaches the caller.
         Assert.Contains(
             "unpatch", failed.Detail!, StringComparison.OrdinalIgnoreCase);
         Assert.True(port.Frozen);
-        // The frozen scene still has its owner on record — never a patched
-        // site nobody admits to.
+        // The state remains owned while active.
         Assert.True(session.SceneOwnsPhysics);
 
         port.FailUnfreeze = false;
@@ -103,10 +92,10 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(result.Success);
         Assert.True(resumed);
-        // No zero-speed owner survives the replay.
+        // No zero-speed state remains after replay.
         Assert.Null(session.OverridesFor(ActorA).OverallSpeed);
         Assert.False(session.IsPaused(ActorA));
-        // The pause is released BEFORE the play, so the timeline starts moving.
+        // The pause is released before playback.
         Assert.True(
             port.Calls.IndexOf("ClearOverallSpeed") < port.Calls.IndexOf("Blend:42"));
     }
@@ -138,9 +127,72 @@ public sealed class AnimationOwnershipTests
 
         Assert.False(result.Success);
         Assert.False(resumed);
-        // Truthful: the pause is still owned, and nothing was played over it.
+        // The pause remains owned and no new timeline was played.
         Assert.Equal(0f, session.OverridesFor(ActorA).OverallSpeed);
         Assert.DoesNotContain("Blend:42", port.Calls);
+    }
+
+    [Fact]
+    public void Main_pick_replaces_the_loop_and_restores_the_old_value()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(
+            ActorA, AnimationSlot.UpperBody, 88, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.Equal((ushort)42, port.ForcedTimeline);
+        Assert.DoesNotContain("Read", port.Calls);
+        Assert.Equal((uint)2,
+            session.OverridesFor(ActorA).BaseCapture!.Value.ModeParam);
+        Assert.Contains(
+            AnimationSlot.UpperBody,
+            session.OverridesFor(ActorA).LoopedSlots.Keys);
+        Assert.Equal((ushort)77,
+            session.OverridesFor(ActorA).BaseCapture!.Value.ForcedTimeline);
+
+        // A new main pick replaces the previous main loop.
+        Assert.True(session.PlayBase(ActorA, 43).Success);
+        Assert.Equal((ushort)43, port.ForcedTimeline);
+        Assert.Equal(2, port.Calls.Count(c => c == "ClearSlotLoop:Base"));
+        Assert.Contains(
+            AnimationSlot.UpperBody,
+            session.OverridesFor(ActorA).LoopedSlots.Keys);
+
+        Assert.True(session.ResetActor(ActorA).Success);
+        Assert.Equal((ushort)77, port.ForcedTimeline);
+        Assert.Null(session.OverridesFor(ActorA).BaseCapture);
+        Assert.Empty(session.OverridesFor(ActorA).LoopedSlots);
+        Assert.Contains("ClearLoops", port.Calls);
+    }
+
+    [Fact]
+    public void Main_pick_refuses_an_unavailable_generation_without_writing()
+    {
+        var port = FakePort.Create();
+        port.Available = false;
+        var session = new AnimationSession(port.Port);
+
+        var result = session.PlayBase(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend:"));
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
+    }
+
+    [Fact]
+    public void Main_pick_refuses_when_persistent_looping_is_unavailable()
+    {
+        var port = FakePort.Create();
+        port.SupportsForceLoop = false;
+        var session = new AnimationSession(port.Port);
+
+        var result = session.PlayBase(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
+        Assert.DoesNotContain("Blend:42", port.Calls);
+        Assert.False(session.OverridesFor(ActorA).HasAny);
     }
 
     private static SceneSnapshot EmptyScene(ulong revision) =>
@@ -160,6 +212,9 @@ public sealed class AnimationOwnershipTests
         public bool Frozen { get; private set; }
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
+        public ushort ForcedTimeline { get; set; } = 77;
+        public bool Available { get; set; } = true;
+        public bool SupportsForceLoop { get; set; } = true;
 
         public static FakePort Create()
         {
@@ -185,7 +240,9 @@ public sealed class AnimationOwnershipTests
                     return AnimationPortResult.Ok();
                 }
                 case "IsSupported":
-                    return true;
+                    return Available;
+                case "get_SupportsForceLoop":
+                    return SupportsForceLoop;
                 case "ClearOverallSpeed":
                     Calls.Add("ClearOverallSpeed");
                     return FailClearSpeed
@@ -195,6 +252,29 @@ public sealed class AnimationOwnershipTests
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
                     return AnimationPortResult.Ok();
+                case "CaptureBase":
+                    return Available
+                        ? new BaseAnimationCapture(1, 2, 3, 4, ForcedTimeline)
+                        : null;
+                case "SetForceLoop":
+                    ForcedTimeline = (ushort)args![1]!;
+                    Calls.Add($"SetForceLoop:{ForcedTimeline}");
+                    return AnimationPortResult.Ok();
+                case "ClearLoops":
+                    Calls.Add("ClearLoops");
+                    return null;
+                case "SetSlotLoop":
+                    Calls.Add($"SetSlotLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
+                case "ClearSlotLoop":
+                    Calls.Add($"ClearSlotLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
+                case "RestoreBase":
+                    ForcedTimeline = ((BaseAnimationCapture)args![1]!).ForcedTimeline;
+                    Calls.Add("RestoreBase");
+                    return AnimationPortResult.Ok();
+                case "TimelineSlot":
+                    return (AnimationSlot?)AnimationSlot.Base;
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {

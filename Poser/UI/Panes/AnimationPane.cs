@@ -12,19 +12,20 @@ using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
-/// <summary>Renders actor animation controls and catalog pickers.</summary>
+/// <summary>Shows animation controls and sends changes to the animation
+/// session.</summary>
 public sealed class AnimationPane
 {
     private readonly AnimationSession _animation;
     private readonly AnimationCatalog _catalog;
 
-    // The expression workspace may open before another catalog row.
+    /// <summary>Loads the catalog when an expression row needs it.</summary>
     private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
     private readonly AnimationSceneActions _sceneActions;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly SceneSession _scene;
 
-    // All picker rows share one open feed.
+    /// <summary>Shared picker surface for animation rows.</summary>
     private readonly Crystarium.SearchPicker<TimelineEntry> _picker =
         new("animation");
 
@@ -33,13 +34,11 @@ public sealed class AnimationPane
     private bool _openLayers = true;
     private bool _openFace = true;
     private bool _openAdvancedSlots;
-    private bool _openAdvancedControls;
 
     private (ActorId Actor, ScrubControlId Control)? _scrub;
-    private IReadOnlyList<ScrubControlReading>? _scrubFrozenControls;
     private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks =
         new();
-    // Commands report through the shared notification sink.
+    /// <summary>Displays results from animation actions.</summary>
     private readonly UserNotices _notices;
     private int _pickerFrame = -1;
     private int _expressionReadingFrame = -1;
@@ -48,36 +47,37 @@ public sealed class AnimationPane
         ActorAnimationReading.Empty;
     private bool _sceneMenuRequested;
 
-    // The batch menu stays anchored to its trigger.
+    /// <summary>Anchor for the actor menu.</summary>
     private System.Numerics.Vector2 _sceneMenuAnchor;
 
-    // A picker keeps its actor and feed until it closes.
+    /// <summary>Actor and feed used by the open picker.</summary>
     private ActorId? _pickActor;
     private TimelineFeed? _openFeed;
 
-    // Each row keeps one memoized catalog feed.
+    // Catalog feeds used by the picker rows.
     private readonly TimelineFeed _baseFeed;
     private readonly TimelineFeed _expressionFeed;
     private readonly TimelineFeed _lipsFeed;
     private readonly Dictionary<AnimationSlot, TimelineFeed> _slotFeeds = new();
 
-    // 0 = all, 1 = sheathed, 2 = drawn.
+    /// <summary>Weapon-state filter for base emotes.</summary>
     private int _weaponFilter;
 
     private readonly Action<int> _setWeaponFilter;
 
     private readonly GameIconResolver _icons;
 
-    // Timeline labels are cached for catalog badges.
+    /// <summary>Text for timeline id badges.</summary>
     private readonly Dictionary<uint, string> _idText = new();
 
-    // The kind keeps duplicate timeline rows distinct.
+    /// <summary>Stable keys for catalog rows.</summary>
     private readonly Dictionary<long, string> _rowKeys = new();
 
     private static readonly Func<TimelineEntry, string> TimelineName =
         static entry => entry.Name;
 
-    // Raw timelines use a kind-specific fallback glyph.
+    /// <summary>Glyph for rows the game gives no icon for — every raw timeline.
+    /// Keyed by kind so the column still reads at a glance.</summary>
     private static readonly Func<TimelineEntry, TablerIcon?> TimelineGlyph =
         static entry => entry.Kind switch
         {
@@ -90,7 +90,7 @@ public sealed class AnimationPane
     private readonly Func<TimelineEntry, string> _timelineKey;
     private readonly Func<TimelineEntry, nint> _timelineTexture;
 
-    // The lips catalog is built once after loading.
+    /// <summary>Cached lips catalog entries.</summary>
     private IReadOnlyList<TimelineEntry>? _lipsEntries;
 
     private static readonly AnimationSlot[] PrimaryLayers =
@@ -189,6 +189,8 @@ public sealed class AnimationPane
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
+            // The page's FIRST section draws no divider: the rule is a
+            // separator BETWEEN sections.
             page.Section(
                 "GENERAL",
                 _openGeneral,
@@ -215,6 +217,8 @@ public sealed class AnimationPane
                             AnimationSlots.DisplayName(slot),
                             alwaysShow: false);
                 });
+            // Expressions are drawn by the face inspector. This section holds
+            // the actor's speech layer.
             page.Section(
                 "LIPS",
                 _openFace,
@@ -232,17 +236,13 @@ public sealed class AnimationPane
                             AnimationSlots.DisplayName(slot),
                             alwaysShow: true);
                 });
-            page.Section(
-                "ADVANCED CONTROLS",
-                _openAdvancedControls,
-                next => _openAdvancedControls = next,
-                form => DrawAdvancedControls(form, actor, reading));
         });
 
         DrawPicker();
         DrawSceneMenu();
     }
 
+    // ── sections ─────────────────────────────────────────────────────────
 
     private void DrawPlayback(
         Crystarium.FormScope form,
@@ -274,6 +274,8 @@ public sealed class AnimationPane
                     "Replay",
                     () =>
                     {
+                        // Replay resumes: the session releases a Poser-owned
+                        // pause first, and the status line says when it did.
                         var result = _animation.Replay(
                             actor, current, out bool resumed);
                         Report(result, "Replay");
@@ -321,6 +323,7 @@ public sealed class AnimationPane
         });
     }
 
+    /// <summary>Draws the stance and weapon rows.</summary>
     private void DrawStance(
         Crystarium.FormScope form,
         ActorId actor,
@@ -410,6 +413,8 @@ public sealed class AnimationPane
             });
     }
 
+    /// <summary>The pose stepper seats itself in its pair cell: two equal
+    /// tracks split by the action gap.</summary>
     private static void PoseStepper(
         Crystarium.FormPairCell cell,
         bool disabled,
@@ -540,7 +545,6 @@ public sealed class AnimationPane
             DrawScrub(
                 form,
                 actor,
-                reading,
                 label,
                 control,
                 slot,
@@ -548,30 +552,9 @@ public sealed class AnimationPane
         }
     }
 
-    private void DrawAdvancedControls(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading)
-    {
-        var controls = AdvancedControls(reading);
-        if (controls.Count == 0)
-        {
-            form.Status("No animation controls.");
-            return;
-        }
-        foreach (var control in controls)
-            DrawScrub(
-                form,
-                actor,
-                reading,
-                control.Id.ToString(),
-                control);
-    }
-
     private void DrawScrub(
         Crystarium.FormScope form,
         ActorId actor,
-        ActorAnimationReading reading,
         string label,
         ScrubControlReading control,
         AnimationSlot? loopSlot = null,
@@ -589,7 +572,6 @@ public sealed class AnimationPane
             Report(
                 _animation.BeginScrub(actor, control.Id), "Scrub");
             _scrub = (actor, control.Id);
-            _scrubFrozenControls = reading.Controls;
         }
 
         void Commit()
@@ -639,7 +621,7 @@ public sealed class AnimationPane
         }
     }
 
-    /// <summary>Draws the expression controls for the face workspace.</summary>
+    /// <summary>Draws the expression row used by the face inspector.</summary>
     public void DrawExpressionRow(Crystarium.FormScope form, ActorId actor)
     {
         if (!_animation.IsSupported(actor))
@@ -647,11 +629,12 @@ public sealed class AnimationPane
             form.Status("This actor does not support expressions.");
             return;
         }
+        // The face inspector can be the first catalog consumer.
         _catalogLoader.EnsureLoaded();
         DrawExpression(form, actor, ExpressionReading(actor));
     }
 
-    // The workspace may redraw within one frame.
+    /// <summary>Reads the actor's animation state once per frame.</summary>
     private ActorAnimationReading ExpressionReading(ActorId actor)
     {
         int frame = ImGui.GetFrameCount();
@@ -663,7 +646,8 @@ public sealed class AnimationPane
             _animation.Read(actor) ?? ActorAnimationReading.Empty;
     }
 
-    /// <summary>Draws this pane's open picker.</summary>
+    /// <summary>The shared picker surface, for the pane that hosts the
+    /// expression row. Only the expression feed can be open there.</summary>
     public void DrawExpressionPicker() => DrawPicker();
 
     private void DrawLips(
@@ -738,8 +722,10 @@ public sealed class AnimationPane
             help: "Choose an expression to hold on this actor's face");
     }
 
+    // ── the one picker surface ───────────────────────────────────────────
 
-    // The picker opens for the row that reserved the trigger.
+    /// <summary>Opens the shared surface on one row's feed. The trigger button
+    /// is the last reserved item, which is what the picker anchors to.</summary>
     private void OpenPicker(TimelineFeed feed, ActorId actor, ushort current)
     {
         _pickActor = actor;
@@ -755,8 +741,10 @@ public sealed class AnimationPane
             PickerOptionsFor(feed));
     }
 
+    /// <summary>Draws the current picker feed.</summary>
     private void DrawPicker()
     {
+        // Draw the picker once per frame.
         int frame = ImGui.GetFrameCount();
         if (_pickerFrame == frame)
             return;
@@ -778,9 +766,13 @@ public sealed class AnimationPane
             Badge = feed.Badge,
             Strip = feed.KindStrip,
             SecondStrip = feed.WeaponStrip,
+            // The catalog surface is the WIDE panel: a row carries an icon, a
+            // name and a badge, and the narrow picker cuts all three.
             Width = Crystarium.ActiveTheme.Picker.WideWidth,
         };
 
+    /// <summary>One layer row's feed, created on first use and kept for the
+    /// pane's life. The slot enum bounds the dictionary.</summary>
     private TimelineFeed SlotFeed(AnimationSlot slot)
     {
         if (_slotFeeds.TryGetValue(slot, out var existing))
@@ -792,6 +784,8 @@ public sealed class AnimationPane
         return created;
     }
 
+    /// <summary>A timeline id as text, minted once and kept: it is a row's
+    /// badge on every frame the surface draws it.</summary>
     private string IdText(uint id)
     {
         if (_idText.TryGetValue(id, out var text))
@@ -801,7 +795,9 @@ public sealed class AnimationPane
         return text;
     }
 
-    // The kind and slot keep catalog row IDs unique.
+    /// <summary>A row's identity in the catalog's own terms — the timeline, the
+    /// KIND it is offered as, and the slot it plays in — so two rows for one id
+    /// never share an ImGui identity.</summary>
     private string RowKey(TimelineEntry entry)
     {
         long identity = ((long)entry.TimelineId << 16)
@@ -814,6 +810,7 @@ public sealed class AnimationPane
         return text;
     }
 
+    /// <summary>Queries and memoizes one picker row's catalog entries.</summary>
     private sealed class TimelineFeed
     {
         private readonly AnimationPane _pane;
@@ -822,11 +819,14 @@ public sealed class AnimationPane
         private readonly bool _weaponAware;
         private readonly Func<IReadOnlyList<TimelineEntry>>? _entries;
 
+        /// <summary>The kinds THIS row may offer, already stripped of the ones
+        /// its slot can never contain — so the filter never offers a choice that
+        /// returns nothing. "All" (null) is never impossible and leads.</summary>
         private readonly AnimationKind?[] _kinds;
         private readonly string[] _kindLabels;
         private int _kindIndex;
 
-        // Cache keys cover every query input.
+        // The memo, and the exact inputs its answer was computed from.
         private string? _memoQuery;
         private int _memoKind = -1;
         private int _memoWeapon = -1;
@@ -884,6 +884,9 @@ public sealed class AnimationPane
             Seed();
         }
 
+        /// <summary>An explicit list is a known enumeration, not a
+        /// catalog query, so it offers no kind filter; a slot that can hold one
+        /// kind offers no choice worth showing.</summary>
         internal PickerStrip? KindStrip =>
             _entries != null || _kindLabels.Length <= 1
                 ? null
@@ -900,6 +903,8 @@ public sealed class AnimationPane
                 ? "Building animation catalog"
                 : null;
 
+        /// <summary>Per-open kind seeding: the most useful kind the row's slot
+        /// still allows, unless the destination names one outright.</summary>
         internal void Seed()
         {
             AnimationKind? start = _seed ?? AnimationCatalog.BestKind(_slotFilter);
@@ -908,6 +913,9 @@ public sealed class AnimationPane
                 _kindIndex = 0;
         }
 
+        /// <summary>The row key the tick lands on, resolved through the feed's
+        /// OWN source — the row key carries the kind, so the id alone cannot
+        /// name it.</summary>
         internal string? SelectedKey(ushort timeline)
         {
             if (timeline == 0)
@@ -972,12 +980,15 @@ public sealed class AnimationPane
             return narrowed;
         }
 
+        /// <summary>Builds the row metadata badge.</summary>
         private string? Metadata(TimelineEntry entry) =>
             _slotFilter != null
                 ? _pane.IdText(entry.TimelineId)
                 : $"{AnimationSlots.DisplayName(entry.Slot)} · {entry.TimelineId}";
     }
 
+    /// <summary>Where a picked animation is sent. The ROW decides this; the
+    /// picker only reports the choice.</summary>
     private enum AnimationPickTarget
     {
         Base,
@@ -991,24 +1002,7 @@ public sealed class AnimationPane
         AnimationPickTarget Target,
         AnimationSlot Slot);
 
-
-    private IReadOnlyList<ScrubControlReading> AdvancedControls(
-        ActorAnimationReading reading)
-    {
-        if (_scrub == null || _scrubFrozenControls == null)
-            return reading.Controls;
-        var merged = new List<ScrubControlReading>(
-            _scrubFrozenControls.Count);
-        foreach (var frozen in _scrubFrozenControls)
-        {
-            var current = frozen;
-            foreach (var live in reading.Controls)
-                if (live.Id.Equals(frozen.Id))
-                    current = live;
-            merged.Add(current);
-        }
-        return merged;
-    }
+    // ── helpers ──────────────────────────────────────────────────────────
 
     private void DrawSceneMenu()
     {
@@ -1019,6 +1013,7 @@ public sealed class AnimationPane
                 "##anim-scene-menu",
                 _sceneMenuAnchor,
                 [
+                    // Pause identifies the freeze action.
                     new ContextMenuItem(
                         "Freeze all",
                         TablerIcon.PlayerPause),
@@ -1045,6 +1040,8 @@ public sealed class AnimationPane
             {
                 var replay = _sceneActions.ReplayAll(out int resumed);
                 Report(replay, "Replay all");
+                // Replay-all resumes paused actors by design; the status
+                // line says which semantic actually ran.
                 if (replay.Success && resumed > 0)
                     _notices.Done(
                         $"Replay resumed {resumed} paused "
@@ -1086,7 +1083,7 @@ public sealed class AnimationPane
         _ => "Accessory",
     };
 
-    // Cache lips only after the catalog returns entries.
+    /// <summary>Builds and caches the lips catalog entries.</summary>
     private IReadOnlyList<TimelineEntry> LipsEntries()
     {
         if (_lipsEntries is { } cached)
@@ -1136,10 +1133,7 @@ public sealed class AnimationPane
                     break;
                 }
                 _layerPicks[(actor, pick.Entry.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    pick.Entry.Name);
+                Report(played, pick.Entry.Name);
                 break;
             }
             case AnimationPickTarget.Slot:
@@ -1152,12 +1146,11 @@ public sealed class AnimationPane
                         AnimationSlots.DisplayName(pick.Slot));
                     break;
                 }
-                // Apply to the slot requested by the opening row.
+                // The row that opened the picker is the row that reads the
+                // memory: the write key is the REQUESTED slot, not whichever
+                // slot the chosen entry declares.
                 _layerPicks[(actor, pick.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    AnimationSlots.DisplayName(pick.Slot));
+                Report(played, AnimationSlots.DisplayName(pick.Slot));
                 break;
             }
             case AnimationPickTarget.Expression:
@@ -1173,26 +1166,13 @@ public sealed class AnimationPane
         }
     }
 
-    private AnimationResult ArmLoop(
-        ActorId actor,
-        AnimationSlot slot,
-        ushort timeline,
-        AnimationResult played)
-    {
-        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return played;
-        var armed = _animation.SetSlotLoop(
-            actor, slot, timeline, true);
-        return armed.Success ? played : armed;
-    }
-
     private void EndScrub()
     {
         _animation.EndScrub();
         _scrub = null;
-        _scrubFrozenControls = null;
     }
 
+    /// <summary>Reports an expression action.</summary>
     private void ReportExpression(AnimationResult result, string what) =>
         Report(result, what);
 
