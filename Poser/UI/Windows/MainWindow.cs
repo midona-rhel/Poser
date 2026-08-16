@@ -91,7 +91,8 @@ public class MainWindow : Window
     // Bone-visibility presets: the menu applies them to one actor, the manager
     // owns the shared store. Both hold an id, never a descriptor.
     private ActorId? _presetActorId;
-    private bool _presetMenuOpenRequested;
+    private readonly List<ContextMenuItem> _bonePresetItems = [];
+    private readonly List<Action?> _bonePresetActions = [];
     private bool _presetManagerOpen;
     private string _presetNameValue = "";
     private string? _presetSaveNote;
@@ -1215,7 +1216,6 @@ public class MainWindow : Window
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();
         DrawActorContextMenu();
-        DrawBonePresetMenu();
         // Window-level: the attach picker outlives the context menu that
         // opened it.
         _companions.DrawPicker();
@@ -3435,13 +3435,12 @@ public class MainWindow : Window
         items.Add(new ContextMenuItem(
             "Bone presets", TablerIcon.Armature,
             disabled: !actor.HasSkeleton,
-            help: "Named sets of which bones this actor shows in the overlay"));
+            help: "Named sets of which bones this actor shows in the overlay",
+            submenuItems: actor.HasSkeleton
+                ? BuildBonePresetSubmenu(actorId)
+                : null));
         actions.Add(null); // separator
-        actions.Add(() =>
-        {
-            _presetActorId = actorId;
-            _presetMenuOpenRequested = true;
-        });
+        actions.Add(null); // submenu rows dispatch through the shared menu
 
         // Pose files belong to the actor, not to whatever is selected, so the
         // actor itself is where they are reachable.
@@ -3493,82 +3492,61 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+        int presetClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick();
+        if (presetClicked >= 0 && presetClicked < _bonePresetActions.Count)
+            _bonePresetActions[presetClicked]?.Invoke();
     }
 
-    /// <summary>
-    /// The actor's bone-visibility presets: one row per stored set, checked
-    /// when the actor already shows all of it, plus Ktisis' two bulk verbs and
-    /// the route to the store itself.
-    /// </summary>
-    private void DrawBonePresetMenu()
+    private ContextMenuItem[] BuildBonePresetSubmenu(ActorId actorId)
     {
-        if (_presetActorId is not { } actorId)
-            return;
         if (FindActor(actorId.LogicalId) is not { } actor)
-        {
-            _presetActorId = null;
-            Crystarium.FloatingMenu.Dismiss("##bone-presets");
-            return;
-        }
-
+            return Array.Empty<ContextMenuItem>();
+        _presetActorId = actorId;
+        _bonePresetItems.Clear();
+        _bonePresetActions.Clear();
         var presets = _bonePresets.Presets;
-        var items = new List<ContextMenuItem>(presets.Count + 5);
-        var actions = new List<Action?>(presets.Count + 5);
         if (presets.Count == 0)
         {
-            items.Add(new ContextMenuItem(
+            _bonePresetItems.Add(new ContextMenuItem(
                 "No presets yet", TablerIcon.Circle, disabled: true,
                 help: "Show the bones you want, then save them as a preset"));
-            actions.Add(null);
+            _bonePresetActions.Add(null);
         }
         foreach (var preset in presets)
         {
             var name = preset.Name;
-            items.Add(new ContextMenuItem(
+            _bonePresetItems.Add(new ContextMenuItem(
                 name,
                 _bonePresets.IsApplied(actor, name)
                     ? TablerIcon.Check
                     : TablerIcon.Circle,
                 help: $"{preset.Bones.Count} bones"));
-            actions.Add(() => _bonePresets.Toggle(actor, name));
+            _bonePresetActions.Add(() => _bonePresets.Toggle(actor, name));
         }
 
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem(
+        _bonePresetItems.Add(ContextMenuItem.Separator);
+        _bonePresetActions.Add(null);
+        _bonePresetItems.Add(new ContextMenuItem(
             "Show bones no preset covers", TablerIcon.Crosshair,
             disabled: presets.Count == 0,
             help: "Hide everything the presets claim and show the rest"));
-        actions.Add(() => _bonePresets.ToggleOther(actor));
-        items.Add(new ContextMenuItem(
+        _bonePresetActions.Add(() => _bonePresets.ToggleOther(actor));
+        _bonePresetItems.Add(new ContextMenuItem(
             "Hide every bone", TablerIcon.EyeOff,
             help: "Take this actor's overlay back to nothing"));
-        actions.Add(() => _bonePresets.Clear(actor));
-        items.Add(ContextMenuItem.Separator);
-        actions.Add(null);
-        items.Add(new ContextMenuItem(
+        _bonePresetActions.Add(() => _bonePresets.Clear(actor));
+        _bonePresetItems.Add(ContextMenuItem.Separator);
+        _bonePresetActions.Add(null);
+        _bonePresetItems.Add(new ContextMenuItem(
             "Manage presets", TablerIcon.Edit,
             help: "Save what this actor shows as a new preset, or delete one"));
-        actions.Add(() =>
+        _bonePresetActions.Add(() =>
         {
             _presetNameValue = string.Empty;
             _presetSaveNote = null;
             _presetManagerOpen = true;
         });
-
-        if (_presetMenuOpenRequested)
-        {
-            _presetMenuOpenRequested = false;
-            var rows = items.ToArray();
-            Crystarium.FloatingMenu.Open(
-                "##bone-presets",
-                ImGui.GetMousePos(),
-                rows,
-                Crystarium.FloatingMenu.MeasureWidth(rows));
-        }
-        int clicked = Crystarium.FloatingMenu.Draw("##bone-presets");
-        if (clicked >= 0 && clicked < actions.Count)
-            actions[clicked]?.Invoke();
+        return _bonePresetItems.ToArray();
     }
 
     /// <summary>The preset STORE, which is shared by every actor: create one
