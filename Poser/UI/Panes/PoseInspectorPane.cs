@@ -75,8 +75,6 @@ public class PoseInspectorPane
     // Keep Euler values stable during a rotation drag.
     private Vector3? _dragEuler;
 
-    private bool _expandTranslation, _expandRotation, _expandScale;
-
     // All inspectors share one transform clipboard.
     private static Transform? _transformClipboard;
     private string? _transformClipboardNote;
@@ -1292,15 +1290,6 @@ public class PoseInspectorPane
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
-        void Expander(Crystarium.ActionScope actions, bool open, Action<bool> set) =>
-            actions.IconButton(
-                open ? TablerIcon.ChevronDown : TablerIcon.ChevronRight,
-                () => set(!open),
-                help: open
-                    ? "Collapse back to one row"
-                    : "Give each axis its own full-width row",
-                id: open ? "collapse" : "expand");
-
         form.AxisVector(
             "Translation",
             pos,
@@ -1308,10 +1297,7 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandTranslation, next => _expandTranslation = next),
-            expanded: _expandTranslation);
+            disabled: !canEdit);
         form.AxisVector(
             "Rotation",
             swap ? SwapXY(euler) : euler,
@@ -1323,10 +1309,7 @@ public class PoseInspectorPane
             },
             0.5f,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandRotation, next => _expandRotation = next),
-            expanded: _expandRotation);
+            disabled: !canEdit);
         form.AxisVector(
             "Scale",
             scale,
@@ -1334,10 +1317,7 @@ public class PoseInspectorPane
             Commit,
             dragSpeed,
             "0.000",
-            disabled: !canEdit,
-            actions: actions => Expander(
-                actions, _expandScale, next => _expandScale = next),
-            expanded: _expandScale);
+            disabled: !canEdit);
 
         DrawTransformClipboard(form, transform, canEdit);
 
