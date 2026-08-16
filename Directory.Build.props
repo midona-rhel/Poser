@@ -1,0 +1,10 @@
+<Project>
+  <!-- Keep release artifacts reproducible without embedding this checkout's identity. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/$(MSBuildProjectName)/</PathMap>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>None</DebugType>
+  </PropertyGroup>
+</Project>

@@ -65,6 +65,15 @@ CLAUDE.md
 /docs/validation/**/*.png
 /PosingCore/Data/GameData/
 
+# Release archives and diagnostic output
+*.zip
+/dist/
+*.log
+*.dmp
+*.mdmp
+*.core
+*.etl
+
 # The build-output rule `[Rr]elease/` above matches a directory of that name at
 # ANY depth, so it swallows the release documentation as well. Re-include the
 # directory itself; git will not descend into an excluded directory, so the
