@@ -31,8 +31,6 @@ public sealed class AnimationOwnershipTests
         port.FailUnfreeze = false;
         Assert.True(session.ResetAll().Success);
         Assert.False(session.SceneOwnsPhysics);
-        // The first unpatch refused and the retry landed, so both native
-        // attempts remain observable.
         Assert.Equal(2, port.Calls.Count(x => x == "SetPhysicsFrozen:False"));
     }
 
