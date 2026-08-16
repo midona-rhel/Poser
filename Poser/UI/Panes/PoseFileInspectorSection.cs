@@ -374,16 +374,10 @@ public sealed class PoseFileInspectorSection
     /// reusing <see cref="MenuWidth"/>.</summary>
     private const float ExportMenuWidth = 240f;
     private const float FilterMenuWidth = 216f;
-    // 78: the longest label ("Reset first") plus breath — the slack the
-    // old 96 left at the label side was exactly what the caption pairs
-    // were missing at the right edge (user: almost overflowing).
     private const float MenuLabelColumn = 78f;
-
-    /// <summary>The DENSE label column, for the import dialog's band alone:
-    /// its labels are the short ones ("Type", "Model", "Reset first") and the
-    /// band's whole complaint was empty width (user 2026-08-10), so the
-    /// column shrinks to just past the longest of them.</summary>
     private const float DenseLabelColumn = 64f;
+    // Shared by the three import option groups.
+    private const float ImportOptionLabelColumn = 64f;
 
     /// <summary>The Options/Type rows' shared checkbox column pitch: wide
     /// enough for "Expression" (box + caption + gap), so Freeze tiles exactly
@@ -706,31 +700,22 @@ public sealed class PoseFileInspectorSection
             showRender: _importPreviewPosed);
     }
 
-    /// <summary>
-    /// The dialog's OPTIONS band, full width between the columns region and
-    /// the footer: the same option sections the import menu stacks, laid out
-    /// in THREE COLUMNS — options/type, transform, scope — one group per
-    /// column, minus every action: the dialog's own Load button is its import.
-    /// Three equal column regions tile the band past the left inset; each
-    /// region's scroll gutter is its own trailing inset (the shell contract),
-    /// so the rhythm reads inset, content, gutter, content, gutter, content,
-    /// gutter — no second margin anywhere. The columns normally fit whole;
-    /// each scrolls inside its own box only when the cap bites.
-    /// </summary>
+    /// <summary>Draws the dialog's three-column options band.</summary>
     private void DrawImportOptionsBand(
         Vector2 origin, Vector2 size, string? highlighted)
     {
-        // Both run BEFORE the columns draw: the transform column greys itself
-        // off the .cmp verdict, and an armed apply-on-select must land the
-        // import on the frame the highlight moved, not the frame after.
+        // Refresh option-dependent state before drawing the columns.
         SyncCmpComponentLock(highlighted);
         SyncFaceWarning(highlighted);
         SyncApplyOnSelect(highlighted);
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Page.Inset;
-        float regionWidth = (size.X / scale - inset) / 3f;
-        float regionHeight = size.Y / scale - inset;
+        float logicalWidth = MathF.Max(0f, size.X / scale);
+        float logicalHeight = MathF.Max(1f, size.Y / scale);
+        float innerWidth = MathF.Max(1f, logicalWidth - inset * 2f);
+        float regionWidth = MathF.Max(1f, innerWidth / 3f);
+        float regionHeight = MathF.Max(1f, logicalHeight - inset * 2f);
         float tallest = 0f;
         for (int column = 0; column < 3; column++)
         {
@@ -763,9 +748,7 @@ public sealed class PoseFileInspectorSection
                 });
         }
 
-        // The popup stack's self-measure idiom: the band as REGISTERED fits
-        // the tallest column exactly from the next frame on, and the next
-        // open sizes the window around it.
+        // Re-measure after wrapping so the next frame fits the tallest column.
         float fitted = MathF.Min(ImportBandMaxHeight, tallest + inset * 2f);
         if (MathF.Abs(fitted - _importBandHeight) > 0.5f)
         {
@@ -775,11 +758,7 @@ public sealed class PoseFileInspectorSection
         }
         DrawNestedBoneFilter();
 
-        // The band draws AFTER the preview column, so without this a toggle
-        // would reach the binder only on the NEXT frame's sync — and the
-        // contract is that an option change re-poses within the frame it was
-        // made. Restating here costs one compare per frame; the binder's own
-        // dedupe keeps an unchanged frame free.
+        // Apply option changes to the preview in the same frame.
         SyncImportPreview(highlighted);
     }
 
@@ -1212,14 +1191,7 @@ public sealed class PoseFileInspectorSection
     /// </summary>
     private static readonly int[] PreviewCameraGroups = [2, 1];
 
-    /// <summary>
-    /// One section of these menus' surfaces, with the menus' column policy
-    /// stated ONCE: a dense mount (the import dialog's band) drops the title
-    /// and shrinks to <see cref="DenseLabelColumn"/>; every other mount
-    /// keeps the title and <see cref="MenuLabelColumn"/>. Every menu
-    /// section routes through here rather than restating the
-    /// dense/label-column tail per call.
-    /// </summary>
+    /// <summary>Draws one menu section with the shared form policy.</summary>
     private static float MenuSection(
         string id,
         string title,
@@ -1227,7 +1199,8 @@ public sealed class PoseFileInspectorSection
         float width,
         Action<Crystarium.FormScope> rows,
         bool divider = true,
-        bool dense = false) =>
+        bool dense = false,
+        float? labelColumnWidth = null) =>
         Crystarium.Section(
             id,
             dense ? string.Empty : title,
@@ -1237,12 +1210,11 @@ public sealed class PoseFileInspectorSection
             null,
             rows,
             divider: divider,
-            labelColumnWidth: dense ? DenseLabelColumn : MenuLabelColumn,
+            labelColumnWidth: labelColumnWidth
+                ?? (dense ? DenseLabelColumn : MenuLabelColumn),
             dense: dense);
 
-    /// <summary>The import-option section stack, shared verbatim by the
-    /// popup body, the library rail and the import dialog's options column.
-    /// Returns the y past the last section.</summary>
+    /// <summary>Draws the shared import-option section stack.</summary>
     /// <param name="previewCap">The tallest the preview image may be, in
     /// screen px; zero keeps the preview out entirely — the popup mount has
     /// no room for one and never asks.</param>
@@ -1257,30 +1229,35 @@ public sealed class PoseFileInspectorSection
         float y = origin.Y;
 
         bool preview = _previewVisible && previewCap > 0f;
+        bool leadSection = false;
         if (preview)
+        {
             y += MenuSection(
                 "##pose-preview", "Preview",
                 new Vector2(origin.X, y), width,
                 form => DrawPreviewBody(form, width, previewCap),
                 divider: false);
+            leadSection = true;
+        }
         else if (previewCap > 0f && _characterFileStated)
+        {
             y += MenuSection(
                 "##character-file", "Character file",
                 new Vector2(origin.X, y), width,
                 DrawCharacterFileBody,
                 divider: false);
+            leadSection = true;
+        }
 
-        // The rule is a divider BETWEEN sections: the first one leads the
-        // stack only when the preview does not. A DENSE stack has no headers
-        // to separate, so its three groups read as one block behind a single
-        // leading rule — three rules around four rows is a striped list, not a
-        // form.
+        // Keep the option groups contiguous; only a preceding preview or
+        // character section gets a leading rule.
         y += DrawImportTypeSection(
-            new Vector2(origin.X, y), width, divider: preview, dense: dense);
+            new Vector2(origin.X, y), width,
+            divider: leadSection, dense: dense);
         y += DrawTransformSection(
-            new Vector2(origin.X, y), width, divider: !dense, dense: dense);
+            new Vector2(origin.X, y), width, divider: false, dense: dense);
         y += DrawScopeSection(
-            new Vector2(origin.X, y), width, divider: !dense, dense: dense);
+            new Vector2(origin.X, y), width, divider: false, dense: dense);
 
         if (!withActions)
             return y;
@@ -1454,7 +1431,8 @@ public sealed class PoseFileInspectorSection
                 }
             },
             divider: divider,
-            dense: dense);
+            dense: dense,
+            labelColumnWidth: ImportOptionLabelColumn);
 
     /// <summary>The Transform group — ONE labelled cluster, the four things an
     /// import applies. Returns the section's height, px.
@@ -1514,7 +1492,8 @@ public sealed class PoseFileInspectorSection
                         Disabled: _smartImport));
             },
             divider: divider,
-            dense: dense);
+            dense: dense,
+            labelColumnWidth: ImportOptionLabelColumn);
 
     /// <summary>The Scope group — one labelled cluster of everything that
     /// narrows what an import touches, then the bone filter. Returns the
@@ -1614,7 +1593,8 @@ public sealed class PoseFileInspectorSection
                     fullWidth: dense);
             },
             divider: divider,
-            dense: dense);
+            dense: dense,
+            labelColumnWidth: ImportOptionLabelColumn);
 
     /// <summary>
     /// The live render and its seven camera commands, seated as two canvas rows
