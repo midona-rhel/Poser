@@ -17,24 +17,7 @@ namespace Poser.ContractTests;
 public sealed class PoseThumbnailCacheContractTests
 {
     [Fact]
-    public void Oversized_and_deep_inputs_never_reach_the_texture_provider()
-    {
-        var provider = Substitute.For<ITextureProvider>();
-        using var cache = new PoseThumbnailCache(provider);
-        using var fixture = new ImageFixture();
-        var oversized = fixture.WriteOversized("oversized.pose");
-        var deep = fixture.WriteDeep("deep.pose", PoseFileLimits.MaxJsonDepth + 1);
-
-        Assert.Equal(nint.Zero, cache.Get(oversized));
-        Assert.Equal(nint.Zero, cache.Get(deep));
-        Thread.Sleep(150);
-
-        provider.DidNotReceive().CreateFromImageAsync(
-            Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public void Valid_embedded_image_is_forwarded_once()
+    public void Valid_input_is_forwarded_and_malformed_inputs_are_rejected()
     {
         var provider = Substitute.For<ITextureProvider>();
         provider.CreateFromImageAsync(
@@ -44,14 +27,17 @@ public sealed class PoseThumbnailCacheContractTests
         using var fixture = new ImageFixture();
 
         cache.Get(fixture.WriteValid("valid.pose"));
-        Thread.Sleep(500);
+        Assert.Equal(nint.Zero, cache.Get(fixture.WriteOversized("oversized.pose")));
+        Assert.Equal(nint.Zero, cache.Get(
+            fixture.WriteDeep("deep.pose", PoseFileLimits.MaxJsonDepth + 1)));
 
+        WaitUntil(() => provider.ReceivedCalls().Any());
         provider.Received(1).CreateFromImageAsync(
             Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public void Clear_and_dispose_suppress_late_wraps()
+    public void Clear_and_dispose_dispose_wraps_that_complete_late()
     {
         var provider = Substitute.For<ITextureProvider>();
         var pending = new TaskCompletionSource<IDalamudTextureWrap>(
@@ -65,52 +51,28 @@ public sealed class PoseThumbnailCacheContractTests
         using (var cache = new PoseThumbnailCache(provider))
         {
             cache.Get(fixture.WriteValid("clear.pose"));
-            WaitUntil(() => provider.ReceivedCalls().GetEnumerator().MoveNext());
+            WaitUntil(() => provider.ReceivedCalls().Any());
             cache.Clear();
             pending.SetResult(clearedWrap);
-            Thread.Sleep(50);
-            cache.Tick();
+            WaitUntil(() => clearedWrap.ReceivedCalls().Any());
         }
         clearedWrap.Received(1).Dispose();
 
-        var disposedWrap = Substitute.For<IDalamudTextureWrap>();
+        provider.ClearReceivedCalls();
         var disposedPending = new TaskCompletionSource<IDalamudTextureWrap>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        provider.ClearReceivedCalls();
         provider.CreateFromImageAsync(
                 Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(disposedPending.Task);
+        var disposedWrap = Substitute.For<IDalamudTextureWrap>();
         var disposedCache = new PoseThumbnailCache(provider);
         disposedCache.Get(fixture.WriteValid("dispose.pose"));
-        WaitUntil(() => provider.ReceivedCalls().GetEnumerator().MoveNext());
+        WaitUntil(() => provider.ReceivedCalls().Any());
         disposedCache.Dispose();
         disposedPending.SetResult(disposedWrap);
-        Thread.Sleep(50);
 
+        WaitUntil(() => disposedWrap.ReceivedCalls().Any());
         disposedWrap.Received(1).Dispose();
-    }
-
-    [Fact]
-    public void Clear_disposes_a_delayed_wrap_without_a_future_tick()
-    {
-        var provider = Substitute.For<ITextureProvider>();
-        var pending = new TaskCompletionSource<IDalamudTextureWrap>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        provider.CreateFromImageAsync(
-                Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(pending.Task);
-        using var fixture = new ImageFixture();
-        var delayedWrap = Substitute.For<IDalamudTextureWrap>();
-
-        using var cache = new PoseThumbnailCache(provider);
-        cache.Get(fixture.WriteValid("clear-without-tick.pose"));
-        WaitUntil(() => provider.ReceivedCalls().GetEnumerator().MoveNext());
-        cache.Clear();
-        pending.SetResult(delayedWrap);
-
-        WaitUntil(() => delayedWrap.ReceivedCalls().Any());
-
-        delayedWrap.Received(1).Dispose();
     }
 
     private static void WaitUntil(Func<bool> predicate)

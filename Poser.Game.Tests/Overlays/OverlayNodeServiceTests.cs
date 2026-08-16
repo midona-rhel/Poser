@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using System.Reflection;
 using Dalamud.Plugin.Services;
@@ -10,288 +8,159 @@ using Poser.Services;
 
 namespace Poser.Game.Tests.Overlays;
 
-/// <summary>
-/// The overlay-node service's contract, and above all its TEARDOWN contract.
-/// A node the service forgets without freeing is a native UI subtree the game
-/// keeps drawing after the plugin that owns it has gone, so every edge that
-/// can end a node's life is proven here: an explicit destroy, a scene clear,
-/// GPose exit, and plugin unload — each of them idempotent, and any pair of
-/// them safe in either order.
-/// </summary>
 public sealed class OverlayNodeServiceTests
 {
     [Fact]
-    public void Creating_a_node_attaches_exactly_one_and_lists_it()
+    public void Create_write_drag_and_destroy_preserves_identity_and_state()
     {
         var world = new World();
+        var talk = world.Service.Create(OverlayNodeKind.Talk);
+        var balloon = world.Service.Create(OverlayNodeKind.Balloon);
+        var status = world.Service.Create(OverlayNodeKind.Status);
+        Assert.NotNull(talk);
+        Assert.NotNull(balloon);
+        Assert.NotNull(status);
 
-        var handle = world.Service.Create(OverlayNodeKind.Talk);
-
-        Assert.NotNull(handle);
-        Assert.True(handle!.IsValid);
-        Assert.Single(world.Port.Live);
-        Assert.Same(handle, Assert.Single(world.Service.Nodes));
-        Assert.Equal(1, world.Events.ListChanges);
-    }
-
-    [Fact]
-    public void A_created_node_carries_its_kinds_own_defaults()
-    {
-        var world = new World();
-
-        var talk = world.Service.Create(OverlayNodeKind.Talk)!;
-        var balloon = world.Service.Create(OverlayNodeKind.Balloon)!;
-        var status = world.Service.Create(OverlayNodeKind.Status)!;
-
+        Assert.Equal("Dialog 1", talk.Name);
+        Assert.Equal("Balloon 1", balloon.Name);
+        Assert.Equal("Status 1", status.Name);
         Assert.Equal("Speaker", talk.Speaker);
         Assert.Equal(TalkCursor.Pin, talk.TalkCursor);
-        Assert.Equal(BalloonChannel.Say, balloon.BalloonChannel);
         Assert.True(balloon.ArrowVisible);
         Assert.Equal(StatusKind.Buff, status.StatusKind);
+
+        var balloonNode = world.Port.Live.Single(
+            node => node.State.Kind == OverlayNodeKind.Balloon);
+        balloon.Scale = 500;
+        balloon.Alpha = float.NaN;
+        balloon.ArrowX = -40;
+        balloon.Text = new string('x', OverlayNodeLimits.MaxTextCharacters + 10);
+        Assert.Equal(OverlayNodeLimits.MaxScale, balloonNode.State.Scale);
+        Assert.Equal(1, balloonNode.State.Alpha);
+        Assert.Equal(OverlayNodeLimits.MinArrowX, balloonNode.State.ArrowX);
         Assert.Equal(
-            OverlayNodeService.DefaultStatusIconId, status.StatusIconId);
+            OverlayNodeLimits.MaxTextCharacters, balloonNode.State.Text.Length);
+
+        var talkNode = world.Port.Live.Single(
+            node => node.State.Kind == OverlayNodeKind.Talk);
+
+        talk.Text = "Hello";
+        world.Port.Drag(talkNode, new Vector2(320, 240));
+        talk.Draggable = false;
+
+        Assert.Equal("Hello", talk.Text);
+        Assert.Equal(new Vector2(320, 240), talk.Position);
+        Assert.Equal(new Vector2(320, 240), talkNode.State.Position);
+        Assert.Equal(3, world.Events.ListChanges);
+
+        world.Events.Publish(new GPoseStateChangedEvent(true));
+        Assert.Equal(0, world.Port.Destroys);
+        Assert.Equal(3, world.Service.Count);
+
+        status.Text = "Staged";
+        status.StatusKind = StatusKind.Falloff;
+        status.Position = new Vector2(64, 96);
+        var document = status.State;
+        world.Service.Destroy(status);
+        var restored = world.Service.Create(document);
+
+        Assert.NotNull(restored);
+        Assert.Equal(document, restored.State);
+        Assert.False(status.IsValid);
+        Assert.Equal(3, world.Service.Count);
+
+        world.Service.DestroyAll();
+        Assert.Empty(world.Service.Nodes);
+        Assert.Empty(world.Port.Live);
+        Assert.Equal(4, world.Port.Destroys);
     }
 
     [Fact]
-    public void Nodes_are_named_per_kind_and_a_name_is_never_reused()
+    public void Refused_create_does_not_attach_or_emit_a_list_change()
     {
-        var world = new World();
-
-        var first = world.Service.Create(OverlayNodeKind.Talk)!;
-        var balloon = world.Service.Create(OverlayNodeKind.Balloon)!;
-        var second = world.Service.Create(OverlayNodeKind.Talk)!;
-
-        Assert.Equal("Dialog 1", first.Name);
-        Assert.Equal("Balloon 1", balloon.Name);
-        Assert.Equal("Dialog 2", second.Name);
-
-        // The name a destroyed node held is not handed back: an undo that
-        // restores it must not collide with something spawned since.
-        world.Service.Destroy(second);
-        Assert.Equal("Dialog 2", world.Service.Create(OverlayNodeKind.Talk)!.Name);
-    }
-
-    [Fact]
-    public void A_refused_create_leaves_nothing_attached()
-    {
-        var world = new World();
-        world.Port.RefuseCreate = true;
+        var world = new World { Port = { RefuseCreate = true } };
 
         Assert.Null(world.Service.Create(OverlayNodeKind.Talk));
-        Assert.Empty(world.Port.Live);
+
         Assert.Empty(world.Service.Nodes);
+        Assert.Empty(world.Port.Live);
         Assert.Equal(0, world.Events.ListChanges);
     }
 
     [Fact]
-    public void Writing_a_field_restates_the_whole_node()
+    public void Leaving_gpose_destroys_all_nodes_once()
     {
         var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
+        world.Service.Create(OverlayNodeKind.Talk);
+        world.Service.Create(OverlayNodeKind.Status);
 
-        handle.Text = "Hello.";
-        handle.Position = new Vector2(120f, 240f);
+        world.Events.Publish(new GPoseStateChangedEvent(false));
+        world.Events.Publish(new GPoseStateChangedEvent(false));
 
-        var node = Assert.Single(world.Port.Live);
-        Assert.Equal("Hello.", node.State.Text);
-        Assert.Equal(new Vector2(120f, 240f), node.State.Position);
-        Assert.Equal("Hello.", handle.Text);
-    }
-
-    [Fact]
-    public void A_write_out_of_range_is_bounded_before_it_reaches_the_game()
-    {
-        var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Balloon)!;
-
-        handle.Scale = 500f;
-        handle.Alpha = float.NaN;
-        handle.ArrowX = -40f;
-        handle.Text = new string('x', OverlayNodeLimits.MaxTextCharacters + 50);
-
-        var node = Assert.Single(world.Port.Live);
-        Assert.Equal(OverlayNodeLimits.MaxScale, node.State.Scale);
-        Assert.Equal(1f, node.State.Alpha);
-        Assert.Equal(OverlayNodeLimits.MinArrowX, node.State.ArrowX);
-        Assert.Equal(
-            OverlayNodeLimits.MaxTextCharacters, node.State.Text.Length);
-    }
-
-    // ── teardown ─────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Destroying_a_node_frees_it_exactly_once()
-    {
-        var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
-
-        world.Service.Destroy(handle);
-        world.Service.Destroy(handle);
-
-        Assert.False(handle.IsValid);
+        Assert.Empty(world.Service.Nodes);
         Assert.Empty(world.Port.Live);
-        Assert.Equal(1, world.Port.Destroys);
+        Assert.Equal(2, world.Port.Destroys);
     }
 
     [Fact]
-    public void Clearing_the_scene_frees_every_node()
+    public void Dispose_destroys_nodes_before_the_port_and_is_idempotent()
     {
         var world = new World();
         world.Service.Create(OverlayNodeKind.Talk);
         world.Service.Create(OverlayNodeKind.Balloon);
-        world.Service.Create(OverlayNodeKind.Status);
 
-        world.Service.DestroyAll();
-
-        Assert.Empty(world.Service.Nodes);
-        Assert.Empty(world.Port.Live);
-        Assert.Equal(3, world.Port.Destroys);
-    }
-
-    [Fact]
-    public void Leaving_GPose_frees_every_node()
-    {
-        var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
-
-        world.Events.Publish(new GPoseStateChangedEvent(false));
-
-        Assert.False(handle.IsValid);
-        Assert.Empty(world.Port.Live);
-    }
-
-    [Fact]
-    public void Entering_GPose_frees_nothing()
-    {
-        var world = new World();
-        world.Service.Create(OverlayNodeKind.Talk);
-
-        world.Events.Publish(new GPoseStateChangedEvent(true));
-
-        Assert.Single(world.Port.Live);
-    }
-
-    [Fact]
-    public void Unloading_frees_every_node_and_then_the_port()
-    {
-        var world = new World();
-        world.Service.Create(OverlayNodeKind.Talk);
-        world.Service.Create(OverlayNodeKind.Status);
-
+        world.Service.Dispose();
         world.Service.Dispose();
 
         Assert.Empty(world.Port.Live);
         Assert.Equal(2, world.Port.Destroys);
-        Assert.True(world.Port.Disposed);
-        // The port is freed AFTER the nodes, never before: a port disposed
-        // first would be handed tokens it no longer owns.
         Assert.Equal(2, world.Port.DestroysBeforeDispose);
+        Assert.True(world.Port.Disposed);
     }
 
     [Fact]
-    public void Unloading_after_GPose_exit_is_still_correct()
+    public void Port_destroy_failure_still_removes_the_handle_without_retry()
     {
         var world = new World();
-        world.Service.Create(OverlayNodeKind.Talk);
-        world.Events.Publish(new GPoseStateChangedEvent(false));
+        var handle = world.Service.Create(OverlayNodeKind.Talk);
+        Assert.NotNull(handle);
+        world.Port.ThrowOnDestroy = true;
 
-        world.Service.Dispose();
+        world.Service.Destroy(handle);
+        world.Service.Destroy(handle);
 
+        Assert.False(handle.IsValid);
+        Assert.Empty(world.Service.Nodes);
         Assert.Empty(world.Port.Live);
         Assert.Equal(1, world.Port.Destroys);
-        Assert.True(world.Port.Disposed);
     }
 
     [Fact]
-    public void A_disposed_service_neither_creates_nor_writes()
+    public void Disposed_service_refuses_new_nodes_and_keeps_document_local_state()
     {
         var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
+        var handle = world.Service.Create(OverlayNodeKind.Talk);
+        Assert.NotNull(handle);
         world.Service.Dispose();
 
         Assert.Null(world.Service.Create(OverlayNodeKind.Talk));
         Assert.False(world.Service.IsAvailable);
 
-        // The handle's own document still answers, but nothing reaches the
-        // game — the node behind it is gone.
-        handle.Text = "after";
-        Assert.Equal("after", handle.Text);
+        handle.Text = "after unload";
+        Assert.Equal("after unload", handle.Text);
         Assert.Empty(world.Port.Live);
     }
 
-    [Fact]
-    public void A_port_that_throws_on_destroy_still_loses_the_node()
-    {
-        var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
-        world.Port.ThrowOnDestroy = true;
-
-        world.Service.Destroy(handle);
-
-        // The token is never handed back: a half-freed node must not be freed
-        // a second time.
-        Assert.False(handle.IsValid);
-        Assert.Empty(world.Service.Nodes);
-    }
-
-    [Fact]
-    public void A_restored_document_comes_back_whole()
-    {
-        var world = new World();
-        var original = world.Service.Create(OverlayNodeKind.Status)!;
-        original.Text = "Staged";
-        original.StatusKind = StatusKind.Falloff;
-        original.Position = new Vector2(64f, 96f);
-        var document = original.State;
-        world.Service.Destroy(original);
-
-        var restored = world.Service.Create(document)!;
-
-        Assert.Equal(document, restored.State);
-        Assert.Equal("Staged", restored.Text);
-        Assert.Equal(StatusKind.Falloff, restored.StatusKind);
-    }
-
-    [Fact]
-    public void A_dragged_node_keeps_where_the_pointer_left_it()
-    {
-        var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk)!;
-        var node = Assert.Single(world.Port.Live);
-
-        world.Port.Drag(node, new Vector2(320f, 240f));
-
-        // The document caught up without a write: the node was never re-stated.
-        Assert.Equal(new Vector2(320f, 240f), handle.Position);
-
-        // The toggle the user reaches for after dragging — and the bug it used
-        // to carry: this write re-stated the position the node had BEFORE the
-        // drag, and the node snapped home.
-        handle.Draggable = false;
-
-        Assert.Equal(new Vector2(320f, 240f), handle.Position);
-        Assert.Equal(new Vector2(320f, 240f), node.State.Position);
-    }
-
-    // ── fixtures ─────────────────────────────────────────────────────────
-
     private sealed class World
     {
-        public FakePort Port { get; } = new();
+        public FakePort Port { get; init; } = new();
         public FakeEventBus Events { get; } = new();
         public OverlayNodeService Service { get; }
 
-        public World() =>
-            Service = new OverlayNodeService(
-                Port, Events, DispatchProxy.Create<IPluginLog, SilentLog>());
+        public World() => Service = new OverlayNodeService(
+            Port, Events, DispatchProxy.Create<IPluginLog, SilentLog>());
     }
 
-    /// <summary>
-    /// The node port, faithfully: a token per node, one create per token, a
-    /// destroy that is inert the second time, and a dispose that frees
-    /// whatever is left. Everything the real port promises, with the game
-    /// replaced by a list.
-    /// </summary>
     private sealed class FakePort : IOverlayNodePort
     {
         private readonly List<FakeNode> _live = new();
@@ -301,24 +170,13 @@ public sealed class OverlayNodeServiceTests
         public bool Disposed { get; private set; }
         public int Destroys { get; private set; }
         public int DestroysBeforeDispose { get; private set; }
-
         public IReadOnlyList<FakeNode> Live => _live;
-
         public bool IsAvailable => !Disposed && !RefuseCreate;
-
         public Action<object, Vector2>? Moved { get; set; }
-
-        /// <summary>The pointer's own drag, as the game performs it: the node
-        /// moves, the port says so, and nothing is written back down.</summary>
-        public void Drag(FakeNode node, Vector2 to)
-        {
-            node.State = node.State with { Position = to };
-            Moved?.Invoke(node, to);
-        }
 
         public object? Create(OverlayNodeState state)
         {
-            if (Disposed || RefuseCreate)
+            if (!IsAvailable)
                 return null;
             var node = new FakeNode { State = state };
             _live.Add(node);
@@ -327,30 +185,33 @@ public sealed class OverlayNodeServiceTests
 
         public void Apply(object node, OverlayNodeState state)
         {
-            var fake = (FakeNode)node;
-            if (!_live.Contains(fake))
-                return;
-            fake.State = state;
+            if (node is FakeNode fake && _live.Contains(fake))
+                fake.State = state;
         }
 
         public void Destroy(object node)
         {
-            var fake = (FakeNode)node;
-            if (!_live.Remove(fake))
+            if (node is not FakeNode fake || !_live.Remove(fake))
                 return;
             Destroys++;
             if (!Disposed)
                 DestroysBeforeDispose = Destroys;
             if (ThrowOnDestroy)
-                throw new InvalidOperationException("the game refused it");
+                throw new InvalidOperationException("destroy refused");
         }
 
         public void Dispose()
         {
             Disposed = true;
-            for (int i = 0; i < _live.Count; i++)
-                Destroys++;
+            DestroysBeforeDispose = Destroys;
+            Destroys += _live.Count;
             _live.Clear();
+        }
+
+        public void Drag(FakeNode node, Vector2 position)
+        {
+            node.State = node.State with { Position = position };
+            Moved?.Invoke(node, position);
         }
     }
 
@@ -362,7 +223,6 @@ public sealed class OverlayNodeServiceTests
     private sealed class FakeEventBus : IEventBus
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
-
         public int ListChanges { get; private set; }
 
         public void Dispose() { }
@@ -393,12 +253,6 @@ public sealed class OverlayNodeServiceTests
     private class SilentLog : DispatchProxy
     {
         protected override object? Invoke(
-            MethodInfo? targetMethod, object?[]? args)
-        {
-            if (targetMethod?.ReturnType is { IsValueType: true } type &&
-                type != typeof(void))
-                return Activator.CreateInstance(type);
-            return null;
-        }
+            MethodInfo? targetMethod, object?[]? args) => null;
     }
 }

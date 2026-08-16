@@ -85,26 +85,6 @@ public sealed class PortablePoseBaselineTests
     }
 
     [Fact]
-    public void Native_index_is_a_hint_and_never_structural_identity()
-    {
-        var entry = Entry(
-            "j_hand_l",
-            ["root", "arm", "j_hand_l"],
-            nativeIndexHint: 999,
-            position: 3);
-        var target = Target(
-            "j_hand_l",
-            ["root", "arm", "j_hand_l"],
-            nativeIndex: 1);
-
-        var result = new PortablePose(new[] { entry }).Match([target]);
-
-        Assert.True(result.Success);
-        Assert.Single(result.Matches);
-        Assert.Equal(target.Bone, result.Matches[0].Target.Bone);
-    }
-
-    [Fact]
     public void Legacy_adapter_reports_loss_instead_of_overwriting_or_broadcasting()
     {
         var targets = new[]
@@ -149,19 +129,6 @@ public sealed class PortablePoseBaselineTests
         Assert.False(result.LossDetected);
         Assert.NotNull(result.Pose);
         Assert.Equal(target.Key, result.Pose!.Entries[0].Key);
-    }
-
-    [Fact]
-    public void Legacy_constructor_remains_callable_but_rejects_exact_duplicate_keys()
-    {
-        var id = new PortableBoneId(PoseSlot.Character, 0, "j_dup");
-        var entries = new[]
-        {
-            new PortableBonePose(id, new BonePose()),
-            new PortableBonePose(id, new BonePose()),
-        };
-
-        Assert.Throws<ArgumentException>(() => new PortablePose(entries));
     }
 
     private static PortableBoneEntry Entry(

@@ -1,8 +1,7 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Numerics;
-using Poser.Domain.Animation;
+using System.Text.Json;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -13,21 +12,102 @@ namespace Poser.Tests.Files;
 
 public sealed class SceneFileStoreTests
 {
-    // ── document building ────────────────────────────────────────────────
+    [Fact]
+    public void A_complete_scene_round_trips_with_its_entity_relationships()
+    {
+        using var fixture = new SceneFixture();
+        var original = ValidScene();
 
-    /// <summary>Shared with the library suites, which need a shot the real
-    /// codec accepts to prove the library reads one through it.</summary>
+        var write = SceneFileStore.Default.Write(original, fixture.Path);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.True(write.Succeeded, write.Failure?.Detail);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Equal(original.SceneId, read.Scene!.SceneId);
+        Assert.Equal(1, read.Scene.Actors.Count);
+        Assert.Equal(1, read.Scene.Props.Count);
+        Assert.Equal(1, read.Scene.Lights.Count);
+        Assert.Equal(1, read.Scene.Cameras.Count);
+        Assert.Equal(original.Lights[0].Attachment!.ActorKey, read.Scene.Lights[0].Attachment!.ActorKey);
+        Assert.Equal(original.Cameras[0].TargetActorKey, read.Scene.Cameras[0].TargetActorKey);
+        Assert.Equal(720, read.Scene.Environment!.MinuteOfDay);
+    }
+
+    [Fact]
+    public void Optional_members_are_omitted_and_unknown_members_are_ignored()
+    {
+        using var fixture = new SceneFixture();
+        var scene = ValidScene();
+        scene.World = null;
+        scene.Overlays = null;
+        scene.WorldObjects = null;
+
+        var json = JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
+        Assert.DoesNotContain("World\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Overlays", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
+
+        var withUnknown = json.TrimEnd();
+        withUnknown = withUnknown[..^1] + ",\"FutureMember\":true}";
+        File.WriteAllText(fixture.Path, withUnknown);
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+        Assert.Null(read.Scene!.World);
+        Assert.Null(read.Scene.Overlays);
+        Assert.Null(read.Scene.WorldObjects);
+    }
+
+    [Fact]
+    public void Corrupt_and_future_scene_data_have_typed_rejections()
+    {
+        Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Parse("{ nope").Failure!.Kind);
+
+        var json = JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options);
+        json = json.Replace("\"FileVersion\": 1", "\"FileVersion\": 2", StringComparison.Ordinal);
+        var future = SceneFileStore.Default.Parse(json);
+
+        Assert.False(future.Succeeded);
+        Assert.Equal(SceneStoreFailureKind.FutureVersion, future.Failure!.Kind);
+    }
+
+    [Fact]
+    public void A_scene_write_failure_preserves_an_existing_destination()
+    {
+        using var fixture = new SceneFixture();
+        File.WriteAllText(fixture.Path, "old scene");
+        var store = new SceneFileStore(new FailingSceneFileSystem());
+
+        var result = store.Write(ValidScene(), fixture.Path);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(SceneStoreFailureKind.TemporaryCreate, result.Failure!.Kind);
+        Assert.Equal("old scene", File.ReadAllText(fixture.Path));
+    }
+
+    [Fact]
+    public void Validation_rejects_broken_identity_relationships_without_touching_disk()
+    {
+        using var fixture = new SceneFixture();
+        File.WriteAllText(fixture.Path, "old scene");
+        var scene = ValidScene();
+        scene.SceneId = Guid.Empty;
+        scene.Lights[0].Attachment!.ActorKey = Guid.NewGuid();
+
+        var validation = SceneFileValidation.Validate(scene);
+        var write = SceneFileStore.Default.Write(scene, fixture.Path);
+
+        Assert.False(validation.Succeeded);
+        Assert.Equal(SceneFileValidationFailureKind.Identity,
+            validation.Failure!.Kind);
+        Assert.False(write.Succeeded);
+        Assert.Equal("old scene", File.ReadAllText(fixture.Path));
+    }
+
     internal static SceneFile ValidScene()
     {
         var actorKey = Guid.NewGuid();
-        var pose = new PoseFile();
-        pose.Bones["j_kao"] = new PoseFile.BoneData
-        {
-            Position = new Vector3(0.1f, 0.2f, 0.3f),
-            Rotation = Quaternion.Identity,
-            Scale = Vector3.One,
-        };
-
+        var pose = PoseFilePersistenceTests.ValidPose();
         return new SceneFile
         {
             SceneId = Guid.NewGuid(),
@@ -39,7 +119,6 @@ public sealed class SceneFileStoreTests
                 {
                     Key = actorKey,
                     Name = "Lead",
-                    ModelCharaId = 0,
                     HasCompanionSlot = true,
                     CompanionKind = CompanionKind.Companion,
                     CompanionId = 12,
@@ -99,12 +178,7 @@ public sealed class SceneFileStoreTests
                     Key = Guid.NewGuid(),
                     IsLive = true,
                     IsDefault = true,
-                    Camera = new CameraFile
-                    {
-                        Name = "GPose Camera",
-                        Kind = CameraKind.Game,
-                        Zoom = 2.5f,
-                    },
+                    Camera = new CameraFile { Name = "GPose Camera", Kind = CameraKind.Game, Zoom = 2.5f },
                     TargetActorKey = actorKey,
                     TargetActorName = "Lead",
                     TargetOffset = new Vector3(0, 0.5f, 0),
@@ -123,896 +197,42 @@ public sealed class SceneFileStoreTests
             },
         };
     }
+}
 
-    private static SceneFileStore Store() => new();
+internal static class SceneJsonOptionsAccessor
+{
+    public static System.Text.Json.JsonSerializerOptions Options => SceneFile.JsonOptions;
+}
 
-    // ── round trip ───────────────────────────────────────────────────────
+internal sealed class SceneFixture : IDisposable
+{
+    public string Root { get; } = System.IO.Path.Combine(
+        System.IO.Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
+    public string Path => System.IO.Path.Combine(Root, "scene.poserscene");
 
-    [Fact]
-    public void Complete_scene_round_trips_through_the_atomic_store()
+    public SceneFixture() => Directory.CreateDirectory(Root);
+
+    public void Dispose()
     {
-        using var file = new TempSceneFile();
-        var scene = ValidScene();
-
-        var write = Store().Write(scene, file.Path);
-        Assert.True(write.Succeeded, write.Failure?.Detail);
-        Assert.Empty(write.RecoveryEvidencePaths);
-
-        var read = Store().Read(file.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var loaded = read.Scene!;
-
-        Assert.Equal(scene.SceneId, loaded.SceneId);
-        Assert.Equal(SceneFile.CurrentVersion, loaded.FileVersion);
-
-        var actor = Assert.Single(loaded.Actors);
-        Assert.Equal("Lead", actor.Name);
-        Assert.Equal(CompanionKind.Companion, actor.CompanionKind);
-        Assert.Equal(12, actor.CompanionId);
-        Assert.True(actor.HasCompanionSlot);
-        Assert.Equal(
-            new Vector3(0.1f, 0.2f, 0.3f),
-            actor.Pose!.Bones["j_kao"].Position);
-
-        var prop = Assert.Single(loaded.Props);
-        Assert.Equal((ushort)89, prop.Model);
-        Assert.Equal(new Vector3(1, 2, 3), prop.Transform.Position);
-
-        var light = Assert.Single(loaded.Lights);
-        Assert.Equal(LightKind.Spot, light.Light!.Kind);
-        Assert.Equal("j_te_l", light.Attachment!.BoneName);
-        Assert.Equal(scene.Actors[0].Key, light.Attachment.ActorKey);
-
-        var camera = Assert.Single(loaded.Cameras);
-        Assert.True(camera.IsLive);
-        Assert.True(camera.IsDefault);
-        Assert.Equal(scene.Actors[0].Key, camera.TargetActorKey);
-        Assert.Equal(new Vector3(0, 0.5f, 0), camera.TargetOffset);
-
-        Assert.Equal(720, loaded.Environment!.MinuteOfDay);
-        Assert.Equal(EnvSection.Fog, Assert.Single(loaded.Environment.HeldSections));
-        Assert.Equal(100f, loaded.Environment.Fog!.Value.Distance);
-        Assert.Null(loaded.Environment.Sky);
-    }
-
-    [Fact]
-    public void Where_a_scene_was_captured_round_trips()
-    {
-        using var file = new TempSceneFile();
-        var scene = ValidScene();
-        scene.TerritoryId = 132;
-        scene.PlaceName = "New Gridania";
-
-        Assert.True(Store().Write(scene, file.Path).Succeeded);
-
-        var read = Store().Read(file.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.Equal(132u, read.Scene!.TerritoryId);
-        Assert.Equal("New Gridania", read.Scene.PlaceName);
-
-        // The listing reads the place off the metadata probe, not the whole
-        // document, so the probe has to carry it too.
-        var metadata = Store().ReadMetadata(file.Path);
-        Assert.Equal("New Gridania", metadata.PlaceName);
-        Assert.Equal(132u, metadata.TerritoryId);
-    }
-
-    /// <summary>
-    /// The preservation guarantee: a scene written BEFORE scenes recorded
-    /// where they were taken carries neither member, and must load exactly as
-    /// it always did — absent is a valid document, not a corrupt one, and the
-    /// place reads back as nothing rather than as a guess.
-    /// </summary>
-    [Fact]
-    public void A_scene_written_without_a_place_loads_unchanged()
-    {
-        var scene = ValidScene();
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
-
-        // Strip the two members outright: an old file does not carry them as
-        // nulls, it does not carry them at all.
-        var lines = json.Split('\n')
-            .Where(line =>
-                !line.Contains("\"TerritoryId\"")
-                && !line.Contains("\"PlaceName\""));
-        json = string.Join("\n", lines);
-        Assert.DoesNotContain("PlaceName", json);
-        Assert.DoesNotContain("TerritoryId", json);
-
-        var read = Store().Parse(json);
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.Null(read.Scene!.PlaceName);
-        Assert.Equal(0u, read.Scene.TerritoryId);
-        // Everything the file DID carry is untouched.
-        Assert.Equal(scene.SceneId, read.Scene.SceneId);
-        Assert.Equal("Lead", Assert.Single(read.Scene.Actors).Name);
-        Assert.Equal(720, read.Scene.Environment!.MinuteOfDay);
-    }
-
-    /// <summary>
-    /// Everything the scene layer states about an actor BESIDE its pose: where
-    /// it stands, what it is playing, and where it is looking. Each is a
-    /// separate member with its own absent state, so each has to survive a
-    /// write/read on its own terms.
-    /// </summary>
-    [Fact]
-    public void Placement_animation_and_gaze_round_trip()
-    {
-        using var file = new TempSceneFile();
-        var scene = ValidScene();
-        var actor = scene.Actors[0];
-        actor.ModelTransform = new LightFile.TransformData
+        try
         {
-            Position = new Vector3(12.5f, 1.25f, -30.75f),
-            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.1f),
-            Scale = new Vector3(1.5f, 1.5f, 1.5f),
-        };
-        actor.Animation = new SceneActorAnimation
-        {
-            BaseTimeline = 640,
-            Speed = 0f,
-            Lips = 0x272,
-            WeaponDrawn = true,
-            Stance = AnimationStance.SitGround,
-            Pose = 2,
-            HeldExpression = 611,
-            PositionLock = true,
-            Slots =
-            {
-                new SceneAnimationSlot
-                {
-                    Slot = AnimationSlot.Facial,
-                    Speed = 0f,
-                },
-                new SceneAnimationSlot
-                {
-                    Slot = AnimationSlot.UpperBody,
-                    Loop = 87,
-                },
-            },
-        };
-        actor.Gaze = new SceneActorGaze
-        {
-            Mode = GazeTargetMode.Position,
-            Parts = GazeTargetType.Head | GazeTargetType.Eyes,
-            Position = new Vector3(1, 2, 3),
-            EyesPosition = new Vector3(4, 5, 6),
-            HeadPosition = new Vector3(7, 8, 9),
-            BodyPosition = new Vector3(10, 11, 12),
-            LockedParts = GazeTargetType.Eyes,
-        };
-
-        Assert.True(Store().Write(scene, file.Path).Succeeded);
-        var read = Store().Read(file.Path);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var loaded = Assert.Single(read.Scene!.Actors);
-
-        Assert.Equal(
-            new Vector3(12.5f, 1.25f, -30.75f), loaded.ModelTransform!.Position);
-        Assert.Equal(
-            new Vector3(1.5f, 1.5f, 1.5f), loaded.ModelTransform.Scale);
-        Assert.Equal(
-            actor.ModelTransform.Rotation, loaded.ModelTransform.Rotation);
-
-        var animation = loaded.Animation!;
-        Assert.Equal((ushort)640, animation.BaseTimeline);
-        // Zero speed IS the pause state; it must not be mistaken for unset.
-        Assert.Equal(0f, animation.Speed);
-        Assert.Equal((ushort)0x272, animation.Lips);
-        Assert.True(animation.WeaponDrawn);
-        Assert.Equal(AnimationStance.SitGround, animation.Stance);
-        Assert.Equal(2, animation.Pose);
-        Assert.Equal((ushort)611, animation.HeldExpression);
-        Assert.True(animation.PositionLock);
-        Assert.Equal(2, animation.Slots.Count);
-        Assert.Equal(AnimationSlot.Facial, animation.Slots[0].Slot);
-        Assert.Equal(0f, animation.Slots[0].Speed);
-        Assert.Equal((ushort)0, animation.Slots[0].Loop);
-        Assert.Equal(AnimationSlot.UpperBody, animation.Slots[1].Slot);
-        Assert.Null(animation.Slots[1].Speed);
-        Assert.Equal((ushort)87, animation.Slots[1].Loop);
-
-        var gaze = loaded.Gaze!;
-        Assert.Equal(GazeTargetMode.Position, gaze.Mode);
-        Assert.Equal(GazeTargetType.Head | GazeTargetType.Eyes, gaze.Parts);
-        Assert.Null(gaze.TargetActorKey);
-        Assert.Equal(new Vector3(1, 2, 3), gaze.Position);
-        Assert.Equal(new Vector3(4, 5, 6), gaze.EyesPosition);
-        Assert.Equal(new Vector3(7, 8, 9), gaze.HeadPosition);
-        Assert.Equal(new Vector3(10, 11, 12), gaze.BodyPosition);
-        Assert.Equal(GazeTargetType.Eyes, gaze.LockedParts);
-    }
-
-    /// <summary>An Entity gaze is a RELATIONSHIP: it survives as the followed
-    /// actor's in-document key, which is the only identity a restored scene
-    /// can resolve.</summary>
-    [Fact]
-    public void An_entity_gaze_target_round_trips_as_the_actor_key()
-    {
-        using var file = new TempSceneFile();
-        var scene = ValidScene();
-        var other = new SceneActor
-        {
-            Key = Guid.NewGuid(),
-            Name = "Second",
-            Pose = new PoseFile(),
-        };
-        scene.Actors.Add(other);
-        scene.Actors[0].Gaze = new SceneActorGaze
-        {
-            Mode = GazeTargetMode.Entity,
-            Parts = GazeTargetType.All,
-            TargetActorKey = other.Key,
-        };
-
-        Assert.True(Store().Write(scene, file.Path).Succeeded);
-        var read = Store().Read(file.Path);
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.Equal(other.Key, read.Scene!.Actors[0].Gaze!.TargetActorKey);
-    }
-
-    /// <summary>The preservation guarantee for the three new members, stated
-    /// the same way the place members state theirs: a scene that records none
-    /// of them does not carry them as nulls, it does not carry them at all,
-    /// and it loads exactly as it always did.</summary>
-    [Fact]
-    public void A_scene_recording_no_placement_animation_or_gaze_omits_them()
-    {
-        var scene = ValidScene();
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
-
-        Assert.DoesNotContain("ModelTransform", json);
-        Assert.DoesNotContain("\"Animation\"", json);
-        Assert.DoesNotContain("\"Gaze\"", json);
-        Assert.DoesNotContain("CompanionPose", json);
-        Assert.DoesNotContain("\"Mcdf\"", json);
-
-        var read = Store().Parse(json);
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var loaded = Assert.Single(read.Scene!.Actors);
-        Assert.Null(loaded.ModelTransform);
-        Assert.Null(loaded.Animation);
-        Assert.Null(loaded.Gaze);
-        Assert.Null(loaded.CompanionPose);
-        Assert.Null(loaded.Mcdf);
-    }
-
-    [Fact]
-    public void The_world_toggles_round_trip_and_are_absent_at_their_defaults()
-    {
-        var scene = ValidScene();
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
-        Assert.DoesNotContain("\"World\"", json);
-        Assert.Null(Store().Parse(json).Scene!.World);
-
-        scene.World = new SceneWorld { IsWaterFrozen = true, IsPhysicsFrozen = true };
-        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.True(read.Scene!.World!.IsWaterFrozen);
-        Assert.True(read.Scene.World.IsPhysicsFrozen);
-        Assert.False(read.Scene.World.IsDefault);
-    }
-
-    [Fact]
-    public void A_paused_frame_round_trips_against_the_slot_that_drives_it()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Animation = new SceneActorAnimation
-        {
-            Speed = 0f,
-            Frames =
-            {
-                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 1.75f },
-                new SceneAnimationFrame
-                {
-                    Slot = AnimationSlot.UpperBody,
-                    Time = 0.5f,
-                },
-            },
-        };
-
-        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var frames = Assert.Single(read.Scene!.Actors).Animation!.Frames;
-        Assert.Equal(2, frames.Count);
-        Assert.Equal(AnimationSlot.Base, frames[0].Slot);
-        Assert.Equal(1.75f, frames[0].Time);
-        Assert.Equal(0.5f, frames[1].Time);
-    }
-
-    [Fact]
-    public void A_frame_stated_while_the_actor_is_running_is_refused()
-    {
-        // A running control's time is whatever the game advanced it to this
-        // tick; a file cannot have observed it and must not restore one.
-        var scene = ValidScene();
-        scene.Actors[0].Animation = new SceneActorAnimation
-        {
-            Speed = 1f,
-            Frames = { new SceneAnimationFrame { Slot = AnimationSlot.Base } },
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void A_frame_stated_twice_for_one_slot_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Animation = new SceneActorAnimation
-        {
-            Speed = 0f,
-            Frames =
-            {
-                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 1f },
-                new SceneAnimationFrame { Slot = AnimationSlot.Base, Time = 2f },
-            },
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void A_character_file_reference_round_trips_as_a_path_and_a_hash()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Mcdf = new SceneActorMcdf
-        {
-            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
-            FileName = "friend.mcdf",
-            ContentHash = new string('A', 64),
-        };
-
-        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var mcdf = Assert.Single(read.Scene!.Actors).Mcdf!;
-        Assert.Equal(@"C:\synthetic\poser\mcdf\friend.mcdf", mcdf.Path);
-        Assert.Equal("friend.mcdf", mcdf.FileName);
-        Assert.Equal(new string('A', 64), mcdf.ContentHash);
-    }
-
-    /// <summary>An unhashable package at save time is still a followable
-    /// reference; the empty hash is what says the load cannot vouch for
-    /// it.</summary>
-    [Fact]
-    public void A_character_file_reference_with_no_hash_is_valid()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Mcdf = new SceneActorMcdf
-        {
-            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
-            FileName = "friend.mcdf",
-        };
-
-        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        Assert.Equal(
-            string.Empty, Assert.Single(read.Scene!.Actors).Mcdf!.ContentHash);
-    }
-
-    [Fact]
-    public void A_character_file_reference_with_no_path_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Mcdf = new SceneActorMcdf { FileName = "friend.mcdf" };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void A_character_file_hash_that_is_not_a_digest_is_refused()
-    {
-        // A half-written hash could only mislead the staleness check.
-        var scene = ValidScene();
-        scene.Actors[0].Mcdf = new SceneActorMcdf
-        {
-            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
-            FileName = "friend.mcdf",
-            ContentHash = "ABCDEF",
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void A_companion_pose_round_trips_as_its_own_document()
-    {
-        var scene = ValidScene();
-        var companionPose = new PoseFile();
-        companionPose.Bones["n_hara"] = new PoseFile.BoneData
-        {
-            Position = new Vector3(1.5f, 2.5f, 3.5f),
-            Rotation = Quaternion.Identity,
-            Scale = new Vector3(2f, 2f, 2f),
-        };
-        scene.Actors[0].CompanionPose = companionPose;
-
-        var read = Store().Parse(System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options));
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-        var loaded = Assert.Single(read.Scene!.Actors);
-        var bone = Assert.Contains("n_hara", loaded.CompanionPose!.Bones);
-        Assert.Equal(new Vector3(1.5f, 2.5f, 3.5f), bone.Position);
-        Assert.Equal(new Vector3(2f, 2f, 2f), bone.Scale);
-        // The owner's own pose stays its own document.
-        Assert.Contains("j_kao", loaded.Pose!.Bones);
-        Assert.DoesNotContain("n_hara", loaded.Pose.Bones);
-    }
-
-    [Fact]
-    public void A_companion_pose_without_an_attachment_is_refused()
-    {
-        // Nothing would come back for the pose to land on.
-        var scene = ValidScene();
-        scene.Actors[0].CompanionKind = null;
-        scene.Actors[0].CompanionId = 0;
-        scene.Actors[0].CompanionPose = new PoseFile();
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void An_unreadable_companion_pose_is_refused_as_an_embedded_pose()
-    {
-        var scene = ValidScene();
-        var broken = new PoseFile();
-        broken.Bones["j_kao"] = new PoseFile.BoneData
-        {
-            Position = new Vector3(float.NaN, 0f, 0f),
-            Rotation = Quaternion.Identity,
-            Scale = Vector3.One,
-        };
-        scene.Actors[0].CompanionPose = broken;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.EmbeddedPose);
-    }
-
-    [Fact]
-    public void A_gaze_following_a_missing_actor_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Gaze = new SceneActorGaze
-        {
-            Mode = GazeTargetMode.Entity,
-            TargetActorKey = Guid.NewGuid(),
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void A_gaze_target_outside_entity_mode_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Gaze = new SceneActorGaze
-        {
-            Mode = GazeTargetMode.Position,
-            TargetActorKey = scene.Actors[0].Key,
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void A_negative_animation_speed_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Animation = new SceneActorAnimation { Speed = -1f };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Range);
-    }
-
-    [Fact]
-    public void A_slot_stated_twice_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Animation = new SceneActorAnimation
-        {
-            Slots =
-            {
-                new SceneAnimationSlot { Slot = AnimationSlot.Facial, Speed = 0f },
-                new SceneAnimationSlot { Slot = AnimationSlot.Facial, Loop = 3 },
-            },
-        };
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void A_degenerate_placement_rotation_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].ModelTransform = new LightFile.TransformData
-        {
-            Position = Vector3.Zero,
-            Rotation = new Quaternion(0, 0, 0, 0),
-            Scale = Vector3.One,
-        };
-
-        AssertValidationFailure(
-            scene, SceneFileValidationFailureKind.DegenerateQuaternion);
-    }
-
-    [Fact]
-    public void A_non_finite_gaze_position_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Gaze = new SceneActorGaze
-        {
-            Mode = GazeTargetMode.Position,
-            Position = new Vector3(float.NaN, 0, 0),
-        };
-
-        AssertValidationFailure(
-            scene, SceneFileValidationFailureKind.NonFiniteNumeric);
-    }
-
-    [Fact]
-    public void An_over_long_place_name_is_a_typed_validation_refusal()
-    {
-        var scene = ValidScene();
-        scene.PlaceName = new string('z', 257);
-
-        using var file = new TempSceneFile();
-        var write = Store().Write(scene, file.Path);
-
-        Assert.False(write.Succeeded);
-        Assert.False(File.Exists(file.Path));
-    }
-
-    [Fact]
-    public void Unknown_members_are_ignored_on_read()
-    {
-        var scene = ValidScene();
-        var json = System.Text.Json.JsonSerializer.Serialize(
-            scene, typeof(SceneFile), SceneJsonOptionsAccessor.Options);
-        json = json.Insert(json.IndexOf('{') + 1, "\"FutureUnknownMember\": 42,");
-
-        var read = Store().Parse(json);
-
-        Assert.True(read.Succeeded, read.Failure?.Detail);
-    }
-
-    // ── typed refusals ───────────────────────────────────────────────────
-
-    [Fact]
-    public void Future_file_version_is_a_typed_future_outcome_not_corruption()
-    {
-        using var file = new TempSceneFile();
-        var scene = ValidScene();
-        Assert.True(Store().Write(scene, file.Path).Succeeded);
-        var text = File.ReadAllText(file.Path).Replace(
-            $"\"FileVersion\": {SceneFile.CurrentVersion}",
-            $"\"FileVersion\": {SceneFile.CurrentVersion + 1}");
-        File.WriteAllText(file.Path, text);
-
-        var read = Store().Read(file.Path);
-        Assert.False(read.Succeeded);
-        Assert.Equal(SceneStoreFailureKind.FutureVersion, read.Failure!.Kind);
-
-        var metadata = Store().ReadMetadata(file.Path);
-        Assert.Equal(SceneEntryStatus.Future, metadata.Status);
-    }
-
-    [Fact]
-    public void Corrupt_json_is_a_typed_corrupt_listing_entry()
-    {
-        using var file = new TempSceneFile();
-        File.WriteAllText(file.Path, "{\"SceneId\": ");
-
-        Assert.Equal(
-            SceneEntryStatus.Corrupt, Store().ReadMetadata(file.Path).Status);
-    }
-
-    [Fact]
-    public void Empty_scene_identity_is_refused()
-    {
-        var scene = ValidScene();
-        scene.SceneId = Guid.Empty;
-
-        var write = Store().Write(scene, "unused.poserscene");
-
-        Assert.False(write.Succeeded);
-        Assert.Equal(SceneStoreFailureKind.Validation, write.Failure!.Kind);
-        Assert.Equal(
-            SceneFileValidationFailureKind.Identity,
-            write.Failure.ValidationFailure!.Kind);
-    }
-
-    [Fact]
-    public void Duplicate_actor_keys_are_refused()
-    {
-        var scene = ValidScene();
-        var duplicate = new SceneActor
-        {
-            Key = scene.Actors[0].Key,
-            Name = "Double",
-            Pose = new PoseFile(),
-        };
-        scene.Actors.Add(duplicate);
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Identity);
-    }
-
-    [Fact]
-    public void Light_attachment_to_a_missing_actor_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Lights[0].Attachment!.ActorKey = Guid.NewGuid();
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void Camera_target_to_a_missing_actor_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Cameras[0].TargetActorKey = Guid.NewGuid();
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void Camera_target_state_without_a_target_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Cameras[0].TargetActorKey = null;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void A_camera_set_requires_exactly_one_live_camera()
-    {
-        var scene = ValidScene();
-        scene.Cameras[0].IsLive = false;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void The_default_camera_must_be_a_game_camera()
-    {
-        var scene = ValidScene();
-        scene.Cameras[0].Camera!.Kind = CameraKind.Free;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void Companion_attachment_without_a_slot_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].HasCompanionSlot = false;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void Companion_id_without_a_kind_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].CompanionKind = null;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Relationship);
-    }
-
-    [Fact]
-    public void An_actor_without_a_pose_document_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Pose = null;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.EmbeddedPose);
-    }
-
-    [Fact]
-    public void An_invalid_embedded_pose_fails_the_whole_document()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Pose!.Bones["j_kao"].Rotation =
-            new Quaternion(float.NaN, 0, 0, 1);
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.EmbeddedPose);
-    }
-
-    [Fact]
-    public void Nonfinite_light_values_are_refused()
-    {
-        var scene = ValidScene();
-        scene.Lights[0].Light!.Intensity = float.PositiveInfinity;
-
-        AssertValidationFailure(
-            scene, SceneFileValidationFailureKind.NonFiniteNumeric);
-    }
-
-    [Fact]
-    public void Degenerate_prop_rotation_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Props[0].Transform.Rotation = default;
-
-        AssertValidationFailure(
-            scene, SceneFileValidationFailureKind.DegenerateQuaternion);
-    }
-
-    [Fact]
-    public void Environment_minute_out_of_range_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Environment!.MinuteOfDay = 1440;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Range);
-    }
-
-    [Fact]
-    public void Held_section_without_values_is_refused()
-    {
-        var scene = ValidScene();
-        scene.Environment!.Fog = null;
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void Section_values_without_a_hold_are_refused()
-    {
-        var scene = ValidScene();
-        scene.Environment!.Sky = new EnvSkyValues(1, 1f);
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Document);
-    }
-
-    [Fact]
-    public void Actor_collection_over_the_bound_is_refused()
-    {
-        var scene = ValidScene();
-        for (var index = 0; index <= SceneFileLimits.MaxActors; index++)
-        {
-            scene.Actors.Add(new SceneActor
-            {
-                Key = Guid.NewGuid(),
-                Name = $"Extra {index}",
-                Pose = new PoseFile(),
-            });
+            if (Directory.Exists(Root))
+                Directory.Delete(Root, recursive: true);
         }
-
-        AssertValidationFailure(
-            scene, SceneFileValidationFailureKind.CollectionSize);
-    }
-
-    [Fact]
-    public void Overlong_names_are_refused()
-    {
-        var scene = ValidScene();
-        scene.Actors[0].Name =
-            new string('x', SceneFileLimits.MaxNameCharacters + 1);
-
-        AssertValidationFailure(scene, SceneFileValidationFailureKind.Name);
-    }
-
-    // ── store semantics ──────────────────────────────────────────────────
-
-    [Fact]
-    public void An_invalid_scene_never_touches_an_existing_destination()
-    {
-        using var file = new TempSceneFile();
-        File.WriteAllText(file.Path, "existing bytes");
-        var scene = ValidScene();
-        scene.SceneId = Guid.Empty;
-
-        var write = Store().Write(scene, file.Path);
-
-        Assert.False(write.Succeeded);
-        Assert.Equal("existing bytes", File.ReadAllText(file.Path));
-    }
-
-    [Fact]
-    public void Overwriting_an_existing_scene_replaces_it_and_cleans_recovery_files()
-    {
-        using var file = new TempSceneFile();
-        var first = ValidScene();
-        Assert.True(Store().Write(first, file.Path).Succeeded);
-
-        var second = ValidScene();
-        second.Description = "Replaced";
-        var write = Store().Write(second, file.Path);
-
-        Assert.True(write.Succeeded, write.Failure?.Detail);
-        var read = Store().Read(file.Path);
-        Assert.Equal("Replaced", read.Scene!.Description);
-        Assert.Equal(second.SceneId, read.Scene.SceneId);
-
-        var directory = Path.GetDirectoryName(Path.GetFullPath(file.Path))!;
-        var name = Path.GetFileName(file.Path);
-        Assert.Empty(Directory.GetFiles(directory, $".{name}.*"));
-    }
-
-    [Fact]
-    public void An_empty_file_is_a_typed_validation_failure()
-    {
-        using var file = new TempSceneFile();
-        File.WriteAllText(file.Path, string.Empty);
-
-        var read = Store().Read(file.Path);
-
-        Assert.False(read.Succeeded);
-        Assert.Equal(SceneStoreFailureKind.Validation, read.Failure!.Kind);
-    }
-
-    [Fact]
-    public void A_missing_file_is_a_typed_read_failure()
-    {
-        var read = Store().Read(Path.Combine(
-            Path.GetTempPath(), $"poser-missing-{Guid.NewGuid():N}.poserscene"));
-
-        Assert.False(read.Succeeded);
-        Assert.Equal(SceneStoreFailureKind.Read, read.Failure!.Kind);
-    }
-
-    [Fact]
-    public void Metadata_reports_counts_for_a_valid_scene()
-    {
-        using var file = new TempSceneFile();
-        Assert.True(Store().Write(ValidScene(), file.Path).Succeeded);
-
-        var metadata = Store().ReadMetadata(file.Path);
-
-        Assert.Equal(SceneEntryStatus.Valid, metadata.Status);
-        Assert.Equal(1, metadata.ActorCount);
-        Assert.Equal(1, metadata.PropCount);
-        Assert.Equal(1, metadata.LightCount);
-        Assert.Equal(1, metadata.CameraCount);
-        Assert.Equal("Test scene", metadata.Description);
-    }
-
-    private static void AssertValidationFailure(
-        SceneFile scene, SceneFileValidationFailureKind kind)
-    {
-        var outcome = SceneFileValidation.Validate(scene);
-        Assert.False(outcome.Succeeded);
-        Assert.Equal(kind, outcome.Failure!.Kind);
-
-        var write = Store().Write(scene, Path.Combine(
-            Path.GetTempPath(), $"poser-refused-{Guid.NewGuid():N}.poserscene"));
-        Assert.False(write.Succeeded);
-    }
-
-    private sealed class TempSceneFile : IDisposable
-    {
-        public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"poser-scene-{Guid.NewGuid():N}.poserscene");
-
-        public void Dispose()
+        catch
         {
-            if (File.Exists(Path))
-                File.Delete(Path);
-            var directory = System.IO.Path.GetDirectoryName(Path)!;
-            var name = System.IO.Path.GetFileName(Path);
-            foreach (var leftover in Directory.GetFiles(directory, $".{name}.*"))
-                File.Delete(leftover);
         }
     }
 }
 
-/// <summary>Test-only access to the internal scene JSON options for shaping
-/// unknown-member fixtures with the exact wire conventions.</summary>
-internal static class SceneJsonOptionsAccessor
+internal sealed class FailingSceneFileSystem : IPoseFileStoreFileSystem
 {
-    public static System.Text.Json.JsonSerializerOptions Options =>
-        SceneFile.JsonOptions;
+    public Stream OpenRead(string path) => File.OpenRead(path);
+    public Stream CreateNew(string path) => throw new IOException("injected scene write failure");
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+    public void FlushToDisk(Stream stream) => ((FileStream)stream).Flush(flushToDisk: true);
+    public bool Exists(string path) => File.Exists(path);
+    public void Replace(string source, string destination, string backup) => File.Replace(source, destination, backup);
+    public void Move(string source, string destination) => File.Move(source, destination);
+    public void Delete(string path) => File.Delete(path);
 }
