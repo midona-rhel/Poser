@@ -24,17 +24,14 @@ public sealed class ShellSidebarRow
     /// children are temporarily unavailable (e.g. skeleton not yet resolved).
     /// The affordance is never erased once a row can disclose children.</summary>
     public bool ExpanderDisabled;
-    /// <summary>Set on a merged category/bone row: the chevron toggles this
-    /// key while the row body still selects the bone in Tag.</summary>
+    /// <summary>Chevron key for this row.</summary>
     public string? ExpandKey;
-    /// <summary>Stable key for the row's hide/show restore set.</summary>
+    /// <summary>Key for this row's hidden bones.</summary>
     public string? OverlayMemoryKey;
     public bool Expanded;
     public bool Active;
     public object? Tag;
-    /// <summary>Concrete bone targets for a true category/group row. The
-    /// sidebar selects these ids together; the group itself is not a fake
-    /// bone and never enters the transform pipeline.</summary>
+    /// <summary>Bones selected when this group row is clicked.</summary>
     public IReadOnlyList<Domain.Identity.BoneId>? SelectionBones;
     public bool ActorActions;
     public bool ActorVisible = true;

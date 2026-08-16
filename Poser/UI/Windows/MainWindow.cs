@@ -2328,10 +2328,7 @@ public class MainWindow : Window
             CollectCategoryBones(child, into);
     }
 
-    /// <summary>Returns the one real bone represented by a category when the
-    /// source schema has a canonical root for it. A category without one is a
-    /// group and gets concrete child roots instead of a fake selectable bone.
-    /// </summary>
+    /// <summary>Returns the root bone name for a category.</summary>
     private static string? CategoryRootBone(string categoryId) => categoryId switch
     {
         "Head" => "j_kao",
@@ -2438,9 +2435,7 @@ public class MainWindow : Window
         targets.RemoveAll(bone => !allowed.Contains(bone.Id));
     }
 
-    /// <summary>Strips the redundant "IVCS " lead from a bone label shown
-    /// under an IVCS category — the ancestry already says it (user
-    /// 2026-08-11).</summary>
+    /// <summary>Removes the redundant prefix from an IVCS bone label.</summary>
     private static string PruneIvcsLead(string label) =>
         label.StartsWith("IVCS ", StringComparison.Ordinal)
             ? label["IVCS ".Length..]
@@ -2472,10 +2467,7 @@ public class MainWindow : Window
         var overlayBones = new List<BoneId>();
         CollectCategoryBones(category, overlayBones);
 
-        // When a category has a source-backed root bone (for example Left Arm
-        // -> j_ude_a_l), the two rows are redundant: the real bone becomes
-        // the category row. Its body selects the bone while its chevron still
-        // toggles the category. Categories without a root remain groups.
+        // A category root uses the real bone row; other categories use a group row.
         var mergedBone = ResolveCategoryBone(
             category.Id, category.Label, category.AllBones);
         var selectionBones = new List<BoneDescriptor>();
@@ -3972,8 +3964,6 @@ public class MainWindow : Window
                     ? TablerIcon.Eye
                     : TablerIcon.EyeOff),
             new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
-            // The actor-scope pair Brio's filter popup puts above its
-            // categories as Select All / Select None.
             new ContextMenuItem("Show all of this actor", TablerIcon.Eye),
             new ContextMenuItem("Hide all of this actor", TablerIcon.EyeOff),
         };
