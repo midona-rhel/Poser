@@ -46,6 +46,26 @@ public sealed class CompositionContractTests
         Assert.Equal(2UL, scene.Revision);
     }
 
+    [Fact]
+    public void Successful_activation_disposes_all_resources_in_reverse_order()
+    {
+        var events = new List<string>();
+        var host = new FakeActivationHost();
+
+        var result = host.Activate(new Func<FakeActivationResource>[]
+        {
+            () => new("configuration", events),
+            () => new("scene", events),
+            () => new("presentation", events),
+        });
+        host.Dispose();
+
+        Assert.True(result.Success);
+        Assert.Equal(
+            new[] { "dispose:presentation", "dispose:scene", "dispose:configuration" },
+            events);
+    }
+
     private static SceneSnapshot Snapshot(
         ulong revision,
         params CameraDescriptor[] cameras) =>
