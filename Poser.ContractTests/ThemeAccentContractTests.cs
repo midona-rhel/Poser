@@ -94,7 +94,7 @@ public sealed class ThemeAccentContractTests
     [Fact]
     public void Theme_selector_keeps_every_persisted_choice()
     {
-        UITheme[] choices =
+        UITheme[] expectedChoices =
         [
             UITheme.Auto,
             UITheme.Light,
@@ -104,11 +104,52 @@ public sealed class ThemeAccentContractTests
             UITheme.Blue,
             UITheme.Purple,
         ];
+        string[] expectedLabels =
+        [
+            "Auto",
+            "Light",
+            "Light Gray",
+            "Gray",
+            "Dark",
+            "Blue",
+            "Purple",
+        ];
+        Assert.Equal(expectedChoices.Length, ThemeSelection.VisiblePlan.Choices.Count);
 
-        foreach (var choice in choices)
+        for (int i = 0; i < expectedChoices.Length; i++)
         {
-            var theme = ThemeSelection.Resolve(choice, 4, windowsUsesLightApps: true);
-            Assert.Equal(Theme.AccentOptions[4], theme.Accent);
+            Assert.Equal(expectedChoices[i],
+                ThemeSelection.VisiblePlan.Choices[i].Value);
+            Assert.Equal(expectedLabels[i],
+                ThemeSelection.VisiblePlan.Choices[i].Label);
+            Assert.Equal(expectedChoices[i], ThemeSelection.VisiblePlan.Values[i]);
+        }
+
+        foreach (bool windowsUsesLightApps in new[] { true, false })
+        {
+            for (int i = 0; i < expectedChoices.Length; i++)
+            {
+                UITheme choice = expectedChoices[i];
+                Theme expected = choice switch
+                {
+                    UITheme.Auto when windowsUsesLightApps => Theme.PictoLight,
+                    UITheme.Auto => Theme.PictoDark,
+                    UITheme.Light => Theme.PictoLight,
+                    UITheme.LightGray => Theme.PictoLightGray,
+                    UITheme.Gray => Theme.PictoGray,
+                    UITheme.Dark => Theme.PictoDark,
+                    UITheme.Blue => Theme.PictoBlue,
+                    UITheme.Purple => Theme.PictoPurple,
+                    _ => throw new ArgumentOutOfRangeException(),
+                };
+                Theme actual = ThemeSelection.Resolve(
+                    choice, 4, windowsUsesLightApps);
+
+                Assert.Equal(expected.IsLight, actual.IsLight);
+                Assert.Equal(expected.Surface, actual.Surface);
+                Assert.Equal(expected.SurfaceRaised, actual.SurfaceRaised);
+                Assert.Equal(Theme.AccentOptions[4], actual.Accent);
+            }
         }
     }
 
@@ -124,6 +165,13 @@ public sealed class ThemeAccentContractTests
             Assert.Equal(new Vector4(0f, 0f, 0f, 1f), plan.BaseColor);
             Assert.Equal(Vector4.One, plan.SectorColor);
             Assert.Equal(center, plan.Sector[0]);
+            Assert.Equal(
+                new[]
+                {
+                    ThemeModeGlyphPrimitive.CircleFill,
+                    ThemeModeGlyphPrimitive.SectorFill,
+                },
+                plan.Primitives);
             Assert.Equal(center + new Vector2(radius / MathF.Sqrt(2f), -radius / MathF.Sqrt(2f)), plan.Sector[1]);
             Assert.Equal(center + new Vector2(-radius / MathF.Sqrt(2f), radius / MathF.Sqrt(2f)), plan.Sector[^1]);
             Assert.All(plan.Sector[1..], point =>

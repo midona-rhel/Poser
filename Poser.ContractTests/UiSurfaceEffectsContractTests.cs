@@ -1,3 +1,4 @@
+using System.Numerics;
 using Poser.Config;
 using Poser.UI;
 
@@ -20,6 +21,9 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
     [InlineData(0.25f, UIConfiguration.MinimumFillOpacity)]
     [InlineData(0.8f, 0.8f)]
     [InlineData(2f, 1f)]
+    [InlineData(float.NaN, 1f)]
+    [InlineData(float.PositiveInfinity, 1f)]
+    [InlineData(float.NegativeInfinity, 1f)]
     public void Persisted_fill_opacity_stays_in_the_readable_range(
         float stored, float expected)
     {
@@ -35,6 +39,18 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
         Crystarium.FloatingSurface.ConfigureEffects(0.72f, backdropBlur: false);
 
         Assert.False(GlassChrome.ShouldPrependBackdropBlur);
+    }
+
+    [Fact]
+    public void Blur_recipe_has_no_tint_luminosity_or_noise_pass()
+    {
+        GlassBlurPlan plan = GlassChrome.BlurPlan;
+
+        Assert.Equal(1, plan.SubmissionCount);
+        Assert.Equal(1f, plan.BlurStrength);
+        Assert.Equal(Vector4.Zero, plan.TintColor);
+        Assert.Equal(Vector4.Zero, plan.LuminosityColor);
+        Assert.Equal(0f, plan.NoiseOpacity);
     }
 
     [Fact]

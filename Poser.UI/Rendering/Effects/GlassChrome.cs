@@ -8,23 +8,29 @@ internal static class GlassChrome
 {
     public static bool BackdropBlurAvailable { get; set; }
 
-    // Only the chrome fill reads this alpha.
     private static float _fillOpacity = 1f;
     private static bool _backdropBlur = true;
 
-    // One gate covers host support and the user's independent preference.
     internal static bool ShouldPrependBackdropBlur =>
         BackdropBlurAvailable && _backdropBlur;
 
+    internal static GlassBlurPlan BlurPlan => new(
+        SubmissionCount: 1,
+        BlurStrength: 1f,
+        TintColor: Vector4.Zero,
+        LuminosityColor: Vector4.Zero,
+        NoiseOpacity: 0f);
+
     public static void Configure(float fillOpacity, bool backdropBlur) =>
         (_fillOpacity, _backdropBlur) =
-            (Math.Clamp(fillOpacity, 0.50f, 1f), backdropBlur);
+            (ClampFillOpacity(fillOpacity), backdropBlur);
+
+    internal static float ClampFillOpacity(float value) =>
+        float.IsFinite(value) ? Math.Clamp(value, 0.50f, 1f) : 1f;
     public static Vector4 BackgroundColor
     {
         get
         {
-            // Blur is submitted behind the surface; it does not replace or
-            // strengthen the surface fill.
             var color = Crystarium.ActiveTheme.Glass.Background;
             return color with { W = color.W * _fillOpacity };
         }
@@ -32,12 +38,20 @@ internal static class GlassChrome
     public static void PrependBlur(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding)
     {
         if (!ShouldPrependBackdropBlur) return;
+        GlassBlurPlan plan = BlurPlan;
         ImGuiHelpers.PrependBlurBehind(
             drawList, min, max,
-            blurStrength: 1.0f,
+            blurStrength: plan.BlurStrength,
             rounding: rounding,
-            tintColor: default,
-            luminosityColor: Crystarium.ActiveTheme.Glass.Luminosity, // brightness(.7)
-            noiseOpacity: 0f); // picto glass has no noise
+            tintColor: plan.TintColor,
+            luminosityColor: plan.LuminosityColor,
+            noiseOpacity: plan.NoiseOpacity);
     }
 }
+
+internal readonly record struct GlassBlurPlan(
+    int SubmissionCount,
+    float BlurStrength,
+    Vector4 TintColor,
+    Vector4 LuminosityColor,
+    float NoiseOpacity);
