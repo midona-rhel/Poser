@@ -79,16 +79,37 @@ public sealed class ThemeAccentContractTests
     }
 
     [Fact]
-    public void Auto_and_legacy_modes_toggle_from_their_resolved_brightness()
+    public void Auto_and_legacy_modes_keep_their_original_theme_choices()
     {
         Assert.True(ThemeSelection.Resolve(UITheme.Auto, 0, true).IsLight);
-        Assert.Equal(UITheme.Dark, ThemeSelection.NextBrightness(true));
         Assert.True(ThemeSelection.Resolve(UITheme.LightGray, 0, false).IsLight);
-        Assert.Equal(UITheme.Dark, ThemeSelection.NextBrightness(true));
-        Assert.Equal(UITheme.Light, ThemeSelection.NextBrightness(false));
         Assert.False(ThemeSelection.Resolve(UITheme.Gray, 0, true).IsLight);
         Assert.False(ThemeSelection.Resolve(UITheme.Blue, 0, true).IsLight);
         Assert.False(ThemeSelection.Resolve(UITheme.Purple, 0, true).IsLight);
+        Assert.Equal(
+            ThemeSelection.Resolve(UITheme.Auto, 0, true).Accent,
+            ThemeSelection.Resolve(UITheme.Auto, 0, false).Accent);
+    }
+
+    [Fact]
+    public void Theme_selector_keeps_every_persisted_choice()
+    {
+        UITheme[] choices =
+        [
+            UITheme.Auto,
+            UITheme.Light,
+            UITheme.LightGray,
+            UITheme.Gray,
+            UITheme.Dark,
+            UITheme.Blue,
+            UITheme.Purple,
+        ];
+
+        foreach (var choice in choices)
+        {
+            var theme = ThemeSelection.Resolve(choice, 4, windowsUsesLightApps: true);
+            Assert.Equal(Theme.AccentOptions[4], theme.Accent);
+        }
     }
 
     [Fact]
@@ -107,7 +128,7 @@ public sealed class ThemeAccentContractTests
             Assert.Equal(center + new Vector2(-radius / MathF.Sqrt(2f), radius / MathF.Sqrt(2f)), plan.Sector[^1]);
             Assert.All(plan.Sector[1..], point =>
                 Assert.InRange(Vector2.Distance(point, center), radius - 0.0001f, radius + 0.0001f));
-            Assert.Equal(ThemeModeGlyph.HitSide * scale, 22f * scale);
+            Assert.Equal(ThemeModeGlyph.HitSide * scale, 16f * scale);
         }
     }
 }

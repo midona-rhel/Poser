@@ -183,6 +183,26 @@ public static class SettingsView
         (TablerIcon.Info, "About"),
     };
 
+    private static readonly string[] ThemeLabels =
+    [
+        "Auto",
+        "Light",
+        "Light Gray",
+        "Gray",
+        "Dark",
+        "Blue",
+        "Purple",
+    ];
+    private static readonly Vector4[] ThemeSwatches =
+    [
+        Vector4.Zero,
+        new(1f, 1f, 1f, 1f),
+        new(200f / 255f, 202f / 255f, 205f / 255f, 1f),
+        new(68f / 255f, 68f / 255f, 68f / 255f, 1f),
+        new(1f / 255f, 1f / 255f, 1f / 255f, 1f),
+        new(40f / 255f, 53f / 255f, 110f / 255f, 1f),
+        new(70f / 255f, 50f / 255f, 117f / 255f, 1f),
+    ];
     private static readonly float[] UndoDepthMarks = [0f, 200f];
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
@@ -555,16 +575,16 @@ public static class SettingsView
         });
         page.Section("THEME", form =>
         {
-            form.ThemeMode(
-                "Brightness",
-                Crystarium.ActiveTheme.IsLight,
-                () =>
+            form.ThemeSwatches(
+                "Theme",
+                ThemeSwatches,
+                (int)vm.Theme,
+                next =>
                 {
-                    vm.Theme = ThemeSelection.NextBrightness(
-                        Crystarium.ActiveTheme.IsLight);
+                    vm.Theme = (UITheme)next;
                     vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 },
-                "Toggle light and dark surfaces");
+                ThemeLabels);
             form.Swatches(
                 "Accent",
                 Theme.AccentOptions,

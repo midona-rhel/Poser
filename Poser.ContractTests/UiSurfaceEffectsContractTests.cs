@@ -17,6 +17,7 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
 
     [Theory]
     [InlineData(-1f, UIConfiguration.MinimumFillOpacity)]
+    [InlineData(0.25f, UIConfiguration.MinimumFillOpacity)]
     [InlineData(0.8f, 0.8f)]
     [InlineData(2f, 1f)]
     public void Persisted_fill_opacity_stays_in_the_readable_range(
@@ -50,5 +51,29 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
         Assert.Equal(opaqueAlpha * 0.72f, Crystarium.FloatingSurface.FillColor.W);
         Assert.Equal(text, Crystarium.ActiveTheme.Text);
         Assert.Equal(controlFill, Crystarium.ActiveTheme.Chrome.ControlFill);
+    }
+
+    [Fact]
+    public void Blur_keeps_the_existing_surface_fill_recipe()
+    {
+        Crystarium.FloatingSurface.BackdropBlurAvailable = true;
+        Crystarium.FloatingSurface.ConfigureEffects(0.72f, backdropBlur: false);
+        var noBlur = Crystarium.FloatingSurface.FillColor;
+
+        Crystarium.FloatingSurface.ConfigureEffects(0.72f, backdropBlur: true);
+        var withBlur = Crystarium.FloatingSurface.FillColor;
+        var expected = Crystarium.ActiveTheme.Glass.Background with
+        {
+            W = Crystarium.ActiveTheme.Glass.Background.W * 0.72f,
+        };
+
+        Assert.Equal(expected, noBlur);
+        Assert.Equal(noBlur, withBlur);
+        Assert.NotEqual(
+            Crystarium.ActiveTheme.Glass.BlurBackground with
+            {
+                W = Crystarium.ActiveTheme.Glass.BlurBackground.W * 0.72f,
+            },
+            withBlur);
     }
 }

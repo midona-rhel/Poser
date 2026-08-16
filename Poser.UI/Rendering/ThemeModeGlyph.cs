@@ -3,11 +3,11 @@ using System.Numerics;
 
 namespace Poser.UI;
 
-/// <summary>Paint plan for the compact brightness toggle.</summary>
+/// <summary>Paint plan for the circular System/Auto theme swatch.</summary>
 internal static class ThemeModeGlyph
 {
     internal const int ArcSegments = 20;
-    internal const float HitSide = 22f;
+    internal const float HitSide = 16f;
 
     /// <summary>The opaque white sector leaves a diagonal edge over black.</summary>
     internal static ThemeModeGlyphPlan Plan(Vector2 center, float radius)

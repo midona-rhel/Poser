@@ -36,10 +36,6 @@ internal static class ThemeSelection
             ? accentIndex
             : 0;
 
-    /// <summary>Returns the opposite explicit brightness mode.</summary>
-    public static UITheme NextBrightness(bool isLight) =>
-        isLight ? UITheme.Dark : UITheme.Light;
-
     public static void Apply(UITheme selection, int accentIndex) =>
         Crystarium.UseTheme(Resolve(selection, accentIndex));
 

@@ -18,14 +18,14 @@ internal static class GlassChrome
 
     public static void Configure(float fillOpacity, bool backdropBlur) =>
         (_fillOpacity, _backdropBlur) =
-            (Math.Clamp(fillOpacity, 0.66f, 1f), backdropBlur);
+            (Math.Clamp(fillOpacity, 0.50f, 1f), backdropBlur);
     public static Vector4 BackgroundColor
     {
         get
         {
-            var color = ShouldPrependBackdropBlur
-                ? Crystarium.ActiveTheme.Glass.BlurBackground
-                : Crystarium.ActiveTheme.Glass.Background;
+            // Blur is submitted behind the surface; it does not replace or
+            // strengthen the surface fill.
+            var color = Crystarium.ActiveTheme.Glass.Background;
             return color with { W = color.W * _fillOpacity };
         }
     }

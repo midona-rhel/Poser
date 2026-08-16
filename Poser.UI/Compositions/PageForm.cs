@@ -1097,38 +1097,60 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Draws the opaque brightness-mode glyph and toggle.</summary>
-        public void ThemeMode(
+        /// <summary>Draws the theme choices with a borderless System swatch.</summary>
+        public void ThemeSwatches(
             string label,
-            bool isLight,
-            Action onToggle,
+            IReadOnlyList<Vector4> colors,
+            int selected,
+            Action<int> onChange,
+            IReadOnlyList<string>? names = null,
             string? help = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
-            float side = ThemeModeGlyph.HitSide * row.Scale;
-            Vector2 min = row.CenterControl(ThemeModeGlyph.HitSide);
-            ImGui.SetCursorScreenPos(min);
-            bool clicked = ImGui.InvisibleButton(id, new(side));
-            var draw = ImGui.GetWindowDrawList();
-            Vector2 center = min + new Vector2(side * 0.5f);
-            float radius = side * 0.5f - row.Scale;
+            ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
+            ColorPalette(colors.Count, index =>
+            {
+                string swatchId = $"{id}##{index}";
+                if (index != 0)
+                {
+                    if (Swatch(
+                            swatchId,
+                            colors[index],
+                            index == selected,
+                            help: names is not null && index < names.Count
+                                ? names[index]
+                                : null))
+                        onChange(index);
+                    return;
+                }
 
-            ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(center, radius);
-            draw.AddCircleFilled(center, radius,
-                ImGui.ColorConvertFloat4ToU32(plan.BaseColor),
-                ThemeModeGlyph.ArcSegments * 2);
-            for (int i = 1; i < plan.Sector.Length - 1; i++)
-                draw.AddTriangleFilled(
-                    plan.Sector[0], plan.Sector[i], plan.Sector[i + 1],
-                    ImGui.ColorConvertFloat4ToU32(plan.SectorColor));
-            draw.AddCircle(center, radius,
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                    isLight ? ActiveTheme.Text : ActiveTheme.BorderStrong)),
-                ThemeModeGlyph.ArcSegments * 2,
-                MathF.Max(1f, row.Scale));
-            if (clicked)
-                onToggle();
+                var hit = Interactive.Reserve(
+                    swatchId,
+                    new Vector2(ThemeModeGlyph.HitSide *
+                        ImGuiHelpers.GlobalScale),
+                    disabled: false);
+                var center = hit.ScreenMin + hit.Size * 0.5f;
+                ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(
+                    center, hit.Size.X * 0.5f);
+                var draw = ImGui.GetWindowDrawList();
+                draw.AddCircleFilled(
+                    center,
+                    hit.Size.X * 0.5f,
+                    ImGui.ColorConvertFloat4ToU32(plan.BaseColor),
+                    ThemeModeGlyph.ArcSegments * 2);
+                for (int i = 1; i < plan.Sector.Length - 1; i++)
+                    draw.AddTriangleFilled(
+                        plan.Sector[0], plan.Sector[i], plan.Sector[i + 1],
+                        ImGui.ColorConvertFloat4ToU32(plan.SectorColor));
+                if (names is { Count: > 0 }
+                    && !string.IsNullOrEmpty(names[0])
+                    && hit.Hovered)
+                    HoverHelp.Explain(swatchId, hit.ScreenMin,
+                        hit.ScreenMax, names[0]);
+                if (hit.Clicked)
+                    onChange(0);
+            });
             _page.EndRow(row, id, help);
         }
 

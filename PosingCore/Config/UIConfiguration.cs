@@ -16,7 +16,7 @@ public enum UITheme
 public class UIConfiguration
 {
     // Below this alpha, translucent surfaces no longer read reliably.
-    public const float MinimumFillOpacity = 0.66f;
+    public const float MinimumFillOpacity = 0.50f;
 
     private float _fillOpacity = 1f;
     public UITheme Theme { get; set; } = UITheme.Dark;
