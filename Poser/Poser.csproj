@@ -1,0 +1,43 @@
+<Project Sdk="Dalamud.NET.SDK/15.0.0">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0-windows</TargetFramework>
+		<Platforms>x64</Platforms>
+		<Nullable>enable</Nullable>
+		<LangVersion>preview</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<RootNamespace>Poser</RootNamespace>
+		<ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<!-- PROPOSED first public beta. A Dalamud manifest takes a four-part
+		     numeric AssemblyVersion, so "beta" reads in the punchline and the
+		     changelog, never in the version string. Keep this in lockstep with
+		     Poser.json's AssemblyVersion. -->
+		<Version>0.9.0.0</Version>
+	</PropertyGroup>
+
+	<!-- Release identity. GPL-3.0-only, not -or-later: Poser derives from Ktisis
+	     and Brio, both bare GPLv3 with no version-upgrade clause. Evidence and
+	     the full dependency verdicts are in THIRD-PARTY-LICENSES.md. -->
+	<PropertyGroup>
+		<Authors>Midona</Authors>
+		<Copyright>Copyright (C) 2026 Midona</Copyright>
+		<PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
+		<Description>A posing and scene tool for FINAL FANTASY XIV's group pose.</Description>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Poser.ContractTests" />
+		<ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />
+		<ProjectReference Include="..\Poser.Application\Poser.Application.csproj" />
+		<ProjectReference Include="..\Poser.Game\Poser.Game.csproj" />
+		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+		<ProjectReference Include="..\Poser.UI\Poser.UI.csproj" />
+	</ItemGroup>
+
+</Project>

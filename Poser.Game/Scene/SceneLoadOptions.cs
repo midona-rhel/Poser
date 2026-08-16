@@ -1,0 +1,166 @@
+using System;
+using System.Numerics;
+using Poser.Domain.Scene;
+using Poser.Files;
+
+namespace Poser.Game.Scene;
+
+/// <summary>
+/// What a scene load is asked to do with the document it read. Every member's
+/// DEFAULT is the behaviour the load had before options existed, so
+/// <see cref="Default"/> and no options at all are the same load.
+///
+/// <para>The set is the union of both references' import options, narrowed to
+/// what Poser's own loader can actually honour: Brio's <c>Override Current
+/// Scene</c> plus its six category flags plus its two relative-position
+/// toggles (<c>UI/Controls/Stateless/FileUIHelpers.cs</c>,
+/// <c>Services/SceneService.cs ImportScene</c>), and Ktisis's five per-category
+/// load checkboxes, its <c>Keep existing actors</c> opt-out and its
+/// world-space/local-space toggle
+/// (<c>Interface/Windows/Editors/SceneWindow.cs</c>,
+/// <c>Services/Data/SceneDataService.cs Load</c>). Brio's <c>Folders</c>
+/// category has no Poser counterpart — Poser's tree has fixed sections — and
+/// is deliberately absent rather than present and inert.</para>
+///
+/// <para>The two references split the relative choice per category (Brio has
+/// separate light and world-object toggles); Poser states ONE choice, because
+/// a scene half-rebased is a scene whose entities no longer stand where they
+/// stood beside each other.</para>
+/// </summary>
+public sealed record SceneLoadOptions
+{
+    /// <summary>
+    /// Clear what the session is holding before restoring anything. FALSE is
+    /// Poser's own long-standing behaviour — a load is additive — and is kept
+    /// as the default even though BOTH references default the other way (Brio
+    /// destroys unless <c>SceneDestoryActorsBeforeImport</c> is off; Ktisis
+    /// destroys unless <c>Keep existing actors</c> is ticked).
+    ///
+    /// <para>The clear is NOT part of the load's transaction: rollback restores
+    /// what the load CREATED, and nothing can resurrect an actor the user asked
+    /// to be rid of. A load that clears therefore says so in its outcome.</para>
+    /// </summary>
+    public bool ClearExistingScene { get; init; }
+
+    public bool IncludeActors { get; init; } = true;
+    public bool IncludeProps { get; init; } = true;
+    public bool IncludeLights { get; init; } = true;
+    public bool IncludeCameras { get; init; } = true;
+    public bool IncludeEnvironment { get; init; } = true;
+    public bool IncludeOverlays { get; init; } = true;
+
+    /// <summary>
+    /// Place the scene relative to where the user is standing NOW rather than
+    /// where it was captured: every stated world position moves by
+    /// (current origin − <see cref="SceneFile.Origin"/>). Requires the document
+    /// to carry an origin; a file that does not is refused BY NAME rather than
+    /// rebased onto a guess.
+    /// </summary>
+    public bool PlaceRelativeToCurrentOrigin { get; init; }
+
+    /// <summary>Today's load, stated once.</summary>
+    public static SceneLoadOptions Default { get; } = new();
+
+    /// <summary>Whether any category at all is asked for. A load that includes
+    /// nothing is refused at admission — it would report success over an
+    /// untouched session.</summary>
+    public bool IncludesAnything =>
+        IncludeActors || IncludeProps || IncludeLights ||
+        IncludeCameras || IncludeEnvironment || IncludeOverlays;
+}
+
+/// <summary>
+/// The relative-placement rebase: one pure pass over a READ document that
+/// moves every world position it states by a single offset.
+///
+/// <para>It runs on the deserialized document before any native work, which is
+/// why the wire format stays absolute — the alternative (Ktisis's, which writes
+/// positions already relative to a saved origin) makes every number in the file
+/// meaningless without the origin beside it, and Poser's listings, diffs and
+/// codecs all read the file without one.</para>
+///
+/// <para>What moves is everything whose position is a point IN the scene:
+/// actor placements, prop transforms, world-space lights, free-camera
+/// positions, and the gaze world points an actor is looking at. What does NOT
+/// move is anything already expressed relative to something that moved with
+/// the scene — a bone-attached light (its position is the bone's), an orbit
+/// camera (it orbits its target), and a camera's target offset.</para>
+///
+/// <para>A BORROWED MAP OBJECT also does not move, and for a different reason
+/// than either: it is not Poser's to place. Its identity IS the point the map
+/// stands it at, so rebasing it would match the fixture at its real spot and
+/// then shove it by an arbitrary offset — a pillar hanging over a field. A
+/// relative load therefore leaves borrowed objects where the map has them and
+/// says so, rather than dragging the zone's own furniture along.</para>
+/// </summary>
+public static class SceneRelativePlacement
+{
+    /// <summary>
+    /// Rebases <paramref name="scene"/> onto <paramref name="currentOrigin"/>
+    /// in place. Returns null when it landed, else the named refusal — the
+    /// document states no origin, so there is nothing to rebase FROM.
+    /// </summary>
+    public static string? Rebase(SceneFile scene, Vector3 currentOrigin)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        if (scene.Origin is not { } saved)
+        {
+            return "The scene records no origin, so it cannot be placed " +
+                "relative to where you are standing. Load it as saved instead.";
+        }
+        if (!float.IsFinite(currentOrigin.X) ||
+            !float.IsFinite(currentOrigin.Y) ||
+            !float.IsFinite(currentOrigin.Z))
+        {
+            return "The current position could not be read, so the scene " +
+                "cannot be placed relative to it.";
+        }
+
+        var offset = currentOrigin - saved;
+        if (offset == Vector3.Zero)
+            return null;
+
+        foreach (var actor in scene.Actors)
+        {
+            if (actor.ModelTransform is { } placement)
+                placement.Position += offset;
+            // The gaze's world points are points in THIS scene: an actor
+            // looking at a spot on the floor must keep looking at the same spot
+            // on the moved floor. They are moved whatever the mode says,
+            // because a per-part lock can pin a point while the mode reads
+            // Camera or Entity.
+            if (actor.Gaze is { } gaze)
+            {
+                gaze.Position += offset;
+                gaze.EyesPosition += offset;
+                gaze.HeadPosition += offset;
+                gaze.BodyPosition += offset;
+            }
+        }
+
+        foreach (var prop in scene.Props)
+            prop.Transform.Position += offset;
+
+        foreach (var light in scene.Lights)
+        {
+            // An attached light's transform is stated against its bone, and
+            // the bone moved with its actor already.
+            if (light.Attachment is not null)
+                continue;
+            if (light.Light is { } document)
+                document.Transform.Position += offset;
+        }
+
+        foreach (var camera in scene.Cameras)
+        {
+            // Only a free camera states a world position; an orbit camera is
+            // angle and zoom about a target that moved with the scene, and its
+            // TargetOffset is relative to that target either way.
+            if (camera.Camera is { Kind: CameraKind.Free } document)
+                document.Position += offset;
+        }
+
+        return null;
+    }
+}
