@@ -207,7 +207,7 @@ internal static class SceneJsonOptionsAccessor
 internal sealed class SceneFixture : IDisposable
 {
     public string Root { get; } = System.IO.Path.Combine(
-        Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
+        System.IO.Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
     public string Path => System.IO.Path.Combine(Root, "scene.poserscene");
 
     public SceneFixture() => Directory.CreateDirectory(Root);
