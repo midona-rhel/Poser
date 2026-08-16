@@ -300,7 +300,7 @@ public sealed class WorldObjectTransformContractTests
         public void Dispose() { }
     }
 
-    private sealed class SilentLog : DispatchProxy
+    private class SilentLog : DispatchProxy
     {
         protected override object? Invoke(
             MethodInfo? targetMethod, object?[]? args)
