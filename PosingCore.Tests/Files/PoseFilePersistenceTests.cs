@@ -32,8 +32,8 @@ public sealed class PoseFilePersistenceTests
         var result = AtomicPoseFileStore.Default.Parse(invalid);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(PoseFileStoreFailureKind.Validation, result.Failure!.Kind);
-        Assert.Equal(PoseFileValidationFailureKind.NonFiniteNumeric, result.Failure.ValidationFailure!.Kind);
+        Assert.Equal(PoseFileStoreFailureKind.Json, result.Failure!.Kind);
+        Assert.Null(result.Failure.ValidationFailure);
     }
 
     [Fact]

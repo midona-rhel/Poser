@@ -93,8 +93,9 @@ public sealed class PoseLibraryFileActionsTests
         Assert.Equal(before, File.ReadAllBytes(beforeCorrupt));
         using var json = JsonDocument.Parse(File.ReadAllBytes(path));
         Assert.Equal("Midona", json.RootElement.GetProperty("Author").GetString());
-        Assert.Equal("[1,2,3]", json.RootElement.GetProperty("FutureBrioMember")
-            .GetProperty("Nested").ToString());
+        Assert.Equal(new[] { 1, 2, 3 }, json.RootElement
+            .GetProperty("FutureBrioMember").GetProperty("Nested")
+            .EnumerateArray().Select(item => item.GetInt32()).ToArray());
         Assert.True(AtomicPoseFileStore.Default.Read(path).Succeeded);
     }
 

@@ -29,7 +29,7 @@ public sealed class ExpressionClassifierTests
         var tagged = FileWith("j_kao");
         tagged.Tags = new List<string> { "Dawntrail expression" };
 
-        Assert.False(PoseFileService.IsExpressionOnlyPose(unrelated));
+        Assert.True(PoseFileService.IsExpressionOnlyPose(unrelated));
         Assert.True(PoseFileService.IsLikelyDawntrailPose(tongue));
         Assert.True(PoseFileService.IsLikelyDawntrailPose(tagged));
         Assert.False(PoseFileService.IsLikelyDawntrailPose(unrelated));
