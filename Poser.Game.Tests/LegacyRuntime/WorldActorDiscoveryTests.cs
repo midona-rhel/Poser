@@ -30,8 +30,6 @@ public sealed class WorldActorDiscoveryTests
         Assert.Equal(WorldActorImportStatus.StaleCandidate, discovery.CloneCandidate(near.Id, out _).Status);
     }
 
-// ── helpers ──────────────────────────────────────────────────────────
-
     private static WorldActorObservation Obs(
         nint address,
         ushort index = 5,

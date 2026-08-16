@@ -77,9 +77,7 @@ public sealed class SceneWorkflowTests
         /// <summary>Refuses the ARM — the save never reaches a capture.</summary>
         public string? CaptureArmRefusal;
 
-        /// <summary>Refusals the arm hands back ONCE each before it lands, the
-        /// way the shared bone-refresh slot refuses while a pose export or a
-        /// whole-scene snapshot is holding it.</summary>
+        /// <summary>Messages returned when capture cannot start.</summary>
         public readonly Queue<string> TransientArmRefusals = new();
 
         /// <summary>Holds the armed capture open, the way a real refresh does

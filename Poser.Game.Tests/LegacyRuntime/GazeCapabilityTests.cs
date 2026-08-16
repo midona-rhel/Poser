@@ -116,33 +116,16 @@ public sealed class GazeCapabilityTests
         Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
     }
 
-    // ── channel release: Brio ActorLookAtService.cs:89-98 ────────────────
-    // A channel outside the mask gets no _updateLookAt call, and the original
-    // loop runs unconditionally afterwards. Ceasing is not enough on its own:
-    // _updateLookAt copies into the controller's persistent per-channel slot,
-    // so a dropped channel is additionally owed ONE inactive write — Brio's
-    // released value (StopLookAt, ActorLookAtService.cs:101-108, LookMode.None
-    // on every part), which Ktisis calls GazeMode.Disabled.
-
-
-
-
-
-    // ── the hand-back debt ───────────────────────────────────────────────
-
     [Fact]
     public void Untoggling_one_channel_owes_that_channel_a_hand_back()
     {
         using var scene = GazeScene.Create();
-        // The reported case: an actor target is set, so every channel is
-        // aiming at it, and only head is untoggled.
         scene.Service.SetGazeTarget(scene.Actor, scene.Target);
         Assert.Equal(GazeTargetType.None, scene.Released());
 
         scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Eyes | GazeTargetType.Body);
 
         Assert.Equal(GazeTargetType.Head, scene.Released());
-        // The other two keep tracking, and the remembered target survives.
         Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Body, scene.Written());
         Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
     }
@@ -159,9 +142,7 @@ public sealed class GazeCapabilityTests
 
 
 
-    // ── target retention: Brio SetTargetType rewrites the mask and nothing
-    // else (ActorLookAtService.cs:164-170), so TargetMode and the stored
-    // LookAtSource survive an empty mask.
+    // The target remains stored when no gaze parts are selected.
 
 
 
@@ -169,10 +150,7 @@ public sealed class GazeCapabilityTests
 
 
 
-    // ── the character's imposed target id: Brio sets it at
-    // ActorDynamicPoseWidget.cs:201 and writes 0 back at :218 through
-    // ActorLookAtService.cs:194. Without the clear the game's own look-at keeps
-    // pointing at the actor Poser chose.
+    // The character target id is cleared when all gaze parts are disabled.
 
     [Fact]
     public void Untoggling_every_channel_clears_the_characters_imposed_target_id()
@@ -200,7 +178,6 @@ public sealed class GazeCapabilityTests
         using var scene = GazeScene.Create();
         scene.Service.SetGazeTarget(scene.Actor, scene.Target);
 
-        // Brio's RemoveObjectFromLook — the ONE path that forgets.
         scene.Service.ResetGaze(scene.Actor);
 
         var state = scene.Service.GetGazeState(scene.Actor);
@@ -209,7 +186,6 @@ public sealed class GazeCapabilityTests
         Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
     }
 
-    // ── stale remembered target ──────────────────────────────────────────
 
     [Fact]
     public void A_despawned_remembered_target_is_kept_by_id_and_stops_enforcing()
@@ -247,12 +223,6 @@ public sealed class GazeCapabilityTests
         Assert.Equal(GazeTargetType.All, scene.Written());
     }
 
-    // ── the 201-439 clone gate ───────────────────────────────────────────
-    // A GPose clone SHARES its GameObjectId with the overworld original, so an
-    // id never names a writable body on its own. Every native gaze write is
-    // gated at one funnel, and the reconciliation pass resolves the clone by
-    // scanning the GPose range instead of trusting SearchById, which scans from
-    // index 0 and answers with the original.
 
 
 
@@ -274,7 +244,6 @@ public sealed class GazeCapabilityTests
         Assert.Empty(scene.Factory.TargetWrites);
     }
 
-    // ── stale is sticky ──────────────────────────────────────────────────
 
     [Fact]
     public void A_target_returning_under_the_same_id_does_not_resume_by_itself()

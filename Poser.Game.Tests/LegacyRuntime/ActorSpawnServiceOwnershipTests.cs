@@ -43,9 +43,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.False(service.DestroyActor(actor));
         Assert.False(service.IsSpawnedActor(actor));
         Assert.Single(service.OwnershipSnapshot);
-        // The finalize stamp makes the reused occupant a different native
-        // lifetime, so a visibility read refuses instead of trusting the
-        // wrapper's remembered address.
+        // A reused slot no longer identifies the original actor.
         Assert.False(service.IsVisible(actor));
     }
     private static SpawnOwnershipLedger NewBoundLedger(
@@ -188,10 +186,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         /// the 249-slot array).</summary>
         public List<ushort> ResolvedIndexes { get; } = new();
 
-        /// <summary>The exact slot identity admitted by the last create.
-        /// Keeping this separate from <see cref="Current"/> lets a refresh
-        /// replace the occupant after the spawn transaction has captured it.
-        /// </summary>
+        /// <summary>The actor created most recently.</summary>
         public SpawnNativeDescriptor? Created { get; private set; }
 
         /// <summary>The Character finalize the real deletion runs, which the

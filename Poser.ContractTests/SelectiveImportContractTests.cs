@@ -81,8 +81,6 @@ public sealed class SelectiveImportContractTests
         Assert.Empty(receipts);
 
 
-        // Selection scope is an explicit, read-only view rather than a list
-        // that a caller can mutate behind the session's back.
         var selected = SelectionId.ForActor(import.ActorId);
         var scope = new SelectionScope(selected);
         var selectedView = Assert.IsAssignableFrom<IList<SelectionId>>(
@@ -90,8 +88,6 @@ public sealed class SelectiveImportContractTests
         Assert.Throws<NotSupportedException>(() => selectedView.Clear());
         Assert.Equal(selected, scope.Primary);
 
-        // A selected head admits its same-slot descendant through the real
-        // plan builder, while the structural filter remains slot-qualified.
         var service = RealFileService();
         var plan = service.BuildImportPlan(
             new[] { import.Skeleton },
