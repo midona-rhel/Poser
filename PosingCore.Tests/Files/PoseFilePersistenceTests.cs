@@ -131,7 +131,7 @@ public sealed class PoseFilePersistenceTests
 
 internal sealed class StoreFixture : IDisposable
 {
-    public string Root { get; } = Path.Combine(
+    public string Root { get; } = System.IO.Path.Combine(
         Path.GetTempPath(), "poser-pose-store-tests", Guid.NewGuid().ToString("N"));
 
     public string Path => System.IO.Path.Combine(Root, "pose.pose");

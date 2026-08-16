@@ -9,6 +9,7 @@ using NSubstitute;
 using Poser.Config;
 using Poser.Files;
 using Poser.Library;
+using Poser.Tests.Files;
 
 namespace Poser.Tests.Library;
 

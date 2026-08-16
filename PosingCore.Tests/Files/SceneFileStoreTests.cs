@@ -6,6 +6,7 @@ using Poser.Domain.Companions;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Files;
+using Poser.Services;
 
 namespace Poser.Tests.Files;
 
@@ -205,7 +206,7 @@ internal static class SceneJsonOptionsAccessor
 
 internal sealed class SceneFixture : IDisposable
 {
-    public string Root { get; } = Path.Combine(
+    public string Root { get; } = System.IO.Path.Combine(
         Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
     public string Path => System.IO.Path.Combine(Root, "scene.poserscene");
 
