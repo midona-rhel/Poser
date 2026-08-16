@@ -81,7 +81,7 @@ public sealed class SceneFileStoreTests
         var result = store.Write(ValidScene(), fixture.Path);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(SceneStoreFailureKind.TemporaryWrite, result.Failure!.Kind);
+        Assert.Equal(SceneStoreFailureKind.TemporaryCreate, result.Failure!.Kind);
         Assert.Equal("old scene", File.ReadAllText(fixture.Path));
     }
 
