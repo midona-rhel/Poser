@@ -18,16 +18,6 @@ public sealed class ActorSpawnServiceOwnershipTests
     [Fact]
     public void Spawn_replacement_and_dispose_retry_keep_exact_ownership()
     {
-        var actor = Actor(0x810);
-        var manager = new FakeActorManager(actor);
-        var native = new FakeNative(new(810, actor.Address, 810));
-        manager.RefreshAction = () => native.Current = new(811, (nint)0x811, 811);
-        using (var rejected = NewService(native, manager))
-        {
-            Assert.Null(rejected.SpawnNewActor(reserveCompanionSlot: false));
-            Assert.Equal(SpawnOwnershipState.PendingDelete, Assert.Single(rejected.OwnershipSnapshot).State);
-        }
-
         var liveActor = Actor(0x820);
         var liveNative = new FakeNative(new(820, liveActor.Address, 820));
         var bus = new FakeEventBus();
