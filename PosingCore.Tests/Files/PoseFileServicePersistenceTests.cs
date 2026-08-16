@@ -67,6 +67,26 @@ public sealed class PoseFileServicePersistenceTests
         Assert.Equal(sourceRotation, pose.ModelDifference.Rotation);
     }
 
+    [Fact]
+    public void ExportPose_moves_then_replaces_atomically_without_recovery_files()
+    {
+        using var file = new TempFile();
+        var service = Service();
+        var skeletons = new[] { Skeleton(Bone("j_kao", Transform.Identity)) };
+
+        Assert.True(service.ExportPose(skeletons, file.Path));
+        var first = File.ReadAllBytes(file.Path);
+        Assert.NotEmpty(first);
+
+        Assert.True(service.ExportPose(skeletons, file.Path));
+        Assert.Equal(first, File.ReadAllBytes(file.Path));
+        Assert.True(AtomicPoseFileStore.Default.Read(file.Path).Succeeded);
+
+        var directory = System.IO.Path.GetDirectoryName(file.Path)!;
+        var name = System.IO.Path.GetFileName(file.Path);
+        Assert.Empty(Directory.GetFiles(directory, $".{name}.*"));
+    }
+
     private static PoseFileService Service() =>
         new(Substitute.For<IPluginLog>(), Substitute.For<IPosingService>());
 
