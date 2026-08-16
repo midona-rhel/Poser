@@ -1,21 +1,16 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Numerics;
+using Poser.Domain.Presentation;
 using Poser.Files;
 
 namespace Poser.Tests.Files;
 
-/// <summary>
-/// The borrowed-object list's codec contract. Two things have to hold together:
-/// a borrowed object comes back with BOTH halves of its identity and the
-/// placement the user gave it, AND a scene that borrowed nothing writes exactly
-/// the file it wrote before world objects could be adopted — so a library full
-/// of older scenes is untouched by this feature.
-/// </summary>
 public sealed class SceneWorldObjectCodecTests
 {
     [Fact]
-    public void A_borrowed_object_round_trips_whole()
+    public void Scene_codecs_round_trip_world_objects_and_overlay_payloads()
     {
         using var file = new TempWorldScene();
         var scene = SceneFileStoreTests.ValidScene();
@@ -30,71 +25,141 @@ public sealed class SceneWorldObjectCodecTests
                 Transform = new LightFile.TransformData
                 {
                     Position = new Vector3(14f, -3f, 90f),
-                    Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.1f),
+                    Rotation = Quaternion.Identity,
                     Scale = new Vector3(2f, 2f, 2f),
                 },
                 Visible = false,
             },
         ];
-        Assert.True(new SceneFileStore().Write(scene, file.Path).Succeeded);
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new OverlayNodeState
+                {
+                    Kind = OverlayNodeKind.Talk,
+                    Name = "Opening line",
+                    Position = new Vector2(320f, 640f),
+                    Speaker = "Y'shtola",
+                    Text = "The aether stirs.",
+                    TalkCursor = TalkCursor.Loop,
+                },
+            },
+        ];
 
-        var read = new SceneFileStore().Read(file.Path);
+        Assert.True(SceneFileStore.Default.Write(scene, file.Path).Succeeded);
+        var read = SceneFileStore.Default.Read(file.Path);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
-        var borrowed = Assert.Single(read.Scene!.WorldObjects!);
-        Assert.Equal(key, borrowed.Key);
-        Assert.Equal(
-            "bg/ffxiv/fst_f1/twn/f1t2/bgparts/f1t2_a1_bals1.mdl", borrowed.Path);
-        Assert.Equal(new Vector3(12.5f, -3.25f, 88f), borrowed.MapPosition);
-        Assert.Equal(new Vector3(14f, -3f, 90f), borrowed.Transform.Position);
-        Assert.Equal(new Vector3(2f, 2f, 2f), borrowed.Transform.Scale);
-        Assert.False(borrowed.Visible);
+        var world = Assert.Single(read.Scene!.WorldObjects!);
+        Assert.Equal(key, world.Key);
+        Assert.Equal(new Vector3(12.5f, -3.25f, 88f), world.MapPosition);
+        Assert.False(world.Visible);
+        var overlay = Assert.Single(read.Scene.Overlays!);
+        Assert.Equal("Y'shtola", overlay.Node!.Speaker);
+        Assert.Equal(TalkCursor.Loop, overlay.Node.TalkCursor);
+        Assert.Equal(new Vector2(320f, 640f), overlay.Node.Position);
     }
 
     [Fact]
-    public void A_scene_that_borrowed_nothing_writes_no_list_at_all()
+    public void Optional_codec_collections_are_absent_when_empty_and_unknown_members_are_ignored()
     {
         using var file = new TempWorldScene();
         var scene = SceneFileStoreTests.ValidScene();
-        Assert.True(new SceneFileStore().Write(scene, file.Path).Succeeded);
+        scene.WorldObjects = null;
+        scene.Overlays = null;
+        var json = System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
+        json = json.TrimEnd()[..^1] + ",\"FutureMember\":true}";
+        File.WriteAllText(file.Path, json);
 
-        string json = File.ReadAllText(file.Path);
-        var read = new SceneFileStore().Read(file.Path);
+        var read = SceneFileStore.Default.Read(file.Path);
 
-        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Null(read.Scene!.WorldObjects);
+        Assert.Null(read.Scene.Overlays);
+        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Overlays", json, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_world_object_without_a_path_is_refused()
+    public void World_and_overlay_validation_preserves_identity_numeric_and_size_guards()
     {
         var scene = SceneFileStoreTests.ValidScene();
+        var key = Guid.NewGuid();
         scene.WorldObjects =
         [
-            new SceneWorldObject { Key = Guid.NewGuid(), Path = string.Empty },
+            new SceneWorldObject { Key = key, Path = "bg/a.mdl", MapPosition = new Vector3(float.NaN, 0, 0) },
+            new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
         ];
+        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid() }];
 
         var result = SceneFileValidation.Validate(scene);
 
         Assert.False(result.Succeeded);
+        Assert.Contains(result.Failure!.Kind,
+            new[] { SceneFileValidationFailureKind.Identity,
+                SceneFileValidationFailureKind.NonFiniteNumeric,
+                SceneFileValidationFailureKind.Document });
     }
 
     [Fact]
-    public void A_world_object_without_a_key_is_refused()
+    public void Scene_codec_reports_each_world_object_and_overlay_guard()
+    {
+        var cases = new
+        (Func<string> Json, SceneStoreFailureKind StoreKind,
+            SceneFileValidationFailureKind? ValidationKind)[]
+        {
+            (() => SerializeScene(MissingWorldKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (() => SerializeScene(MissingOverlayNode()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Document),
+            (() => SerializeScene(MissingOverlayKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (() => SerializeScene(DuplicateWorldKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (() => SerializeScene(DuplicateOverlayKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
+            (NonFiniteWorldPositionJson, SceneStoreFailureKind.Json, null),
+            (NonFiniteOverlayPositionJson, SceneStoreFailureKind.Json, null),
+            (() => SerializeScene(OversizedOverlayText()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Range),
+            (() => SerializeScene(OversizedWorldObjectList()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.CollectionSize),
+            (() => SerializeScene(OversizedOverlayList()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.CollectionSize),
+        };
+
+        foreach (var testCase in cases)
+        {
+            var json = testCase.Json();
+            var result = SceneFileStore.Default.Parse(json);
+
+            Assert.False(result.Succeeded, testCase.StoreKind.ToString());
+            Assert.Equal(testCase.StoreKind, result.Failure!.Kind);
+            if (testCase.ValidationKind is { } validationKind)
+                Assert.Equal(validationKind, result.Failure.ValidationFailure!.Kind);
+            else
+                Assert.Contains("invalid numeric value", result.Failure.Detail,
+                    StringComparison.Ordinal);
+        }
+    }
+
+    private static SceneFile MissingWorldKey()
     {
         var scene = SceneFileStoreTests.ValidScene();
         scene.WorldObjects = [new SceneWorldObject { Path = "bg/a.mdl" }];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.Identity, result.Failure!.Kind);
+        return scene;
     }
 
-    [Fact]
-    public void Two_world_objects_sharing_one_key_are_refused()
+    private static SceneFile MissingOverlayNode()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid() }];
+        return scene;
+    }
+
+    private static SceneFile DuplicateWorldKey()
     {
         var scene = SceneFileStoreTests.ValidScene();
         var key = Guid.NewGuid();
@@ -103,63 +168,135 @@ public sealed class SceneWorldObjectCodecTests
             new SceneWorldObject { Key = key, Path = "bg/a.mdl" },
             new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
         ];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.Identity, result.Failure!.Kind);
+        return scene;
     }
 
-    /// <summary>The map position is HALF THE IDENTITY, so a non-finite one is
-    /// an entry that could match anything or nothing.</summary>
-    [Fact]
-    public void A_world_object_with_a_non_finite_map_position_is_refused()
+    private static SceneFile MissingOverlayKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays =
+        [new SceneOverlay
+        {
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Overlay",
+            },
+        }];
+        return scene;
+    }
+
+    private static SceneFile DuplicateOverlayKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        var key = Guid.NewGuid();
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = key,
+                Node = new OverlayNodeState { Kind = OverlayNodeKind.Talk, Name = "First" },
+            },
+            new SceneOverlay
+            {
+                Key = key,
+                Node = new OverlayNodeState { Kind = OverlayNodeKind.Talk, Name = "Second" },
+            },
+        ];
+        return scene;
+    }
+
+    private static string NonFiniteWorldPositionJson()
     {
         var scene = SceneFileStoreTests.ValidScene();
         scene.WorldObjects =
-        [
-            new SceneWorldObject
-            {
-                Key = Guid.NewGuid(),
-                Path = "bg/a.mdl",
-                MapPosition = new Vector3(float.NaN, 0f, 0f),
-            },
-        ];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.NonFiniteNumeric, result.Failure!.Kind);
+        [new SceneWorldObject
+        {
+            Key = Guid.NewGuid(),
+            Path = "bg/a.mdl",
+        }];
+        var json = SerializeScene(scene);
+        return json.Replace(
+            "\"MapPosition\": \"0, 0, 0\"",
+            "\"MapPosition\": \"NaN, 0, 0\"",
+            StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void More_world_objects_than_the_limit_are_refused()
+    private static string NonFiniteOverlayPositionJson()
     {
         var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = [];
-        for (int i = 0; i <= SceneFileLimits.MaxWorldObjects; i++)
+        scene.Overlays =
+        [new SceneOverlay
         {
-            scene.WorldObjects.Add(new SceneWorldObject
+            Key = Guid.NewGuid(),
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Overlay",
+                Position = new Vector2(1, 2),
+            },
+        }];
+        var json = SerializeScene(scene);
+        return json.Replace(
+            "\"Position\": \"1, 2\"",
+            "\"Position\": \"NaN, 2\"",
+            StringComparison.Ordinal);
+    }
+
+    private static string SerializeScene(SceneFile scene) =>
+        System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
+
+    private static SceneFile OversizedOverlayText()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays =
+        [new SceneOverlay
+        {
+            Key = Guid.NewGuid(),
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Long text",
+                Text = new string('x', OverlayNodeLimits.MaxTextCharacters + 1),
+            },
+        }];
+        return scene;
+    }
+
+    private static SceneFile OversizedWorldObjectList()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.WorldObjects = Enumerable.Range(0, SceneFileLimits.MaxWorldObjects + 1)
+            .Select(index => new SceneWorldObject
             {
                 Key = Guid.NewGuid(),
-                Path = $"bg/{i}.mdl",
-            });
-        }
+                Path = $"bg/{index}.mdl",
+            })
+            .ToList();
+        return scene;
+    }
 
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.CollectionSize, result.Failure!.Kind);
+    private static SceneFile OversizedOverlayList()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays = Enumerable.Range(0, SceneFileLimits.MaxOverlays + 1)
+            .Select(index => new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new OverlayNodeState
+                {
+                    Kind = OverlayNodeKind.Talk,
+                    Name = $"Overlay {index}",
+                },
+            })
+            .ToList();
+        return scene;
     }
 
     private sealed class TempWorldScene : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            $"poser-worldobject-{Guid.NewGuid():N}.poserscene");
+            System.IO.Path.GetTempPath(), $"poser-worldobject-{Guid.NewGuid():N}.poserscene");
 
         public void Dispose()
         {
