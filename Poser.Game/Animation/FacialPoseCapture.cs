@@ -17,54 +17,13 @@ using LegacyTransform = Poser.Transform;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Bakes the previewed expression into the pose as one transform patch — the
-/// end state Ktisis reaches with <c>DoPoseExpression</c>, expressed in Poser's
-/// mechanism. The pending token is owner-local and session-bound: framework
-/// callbacks must prove the exact session, actor, skeleton, and bindings
-/// before any write or restoration can happen.
-///
-/// THE MECHANISM, and why each step exists.
-///
-/// Ktisis' pose store is absolute model space and its model-space sync is
-/// hooked to do nothing, so syncing the played face into the frozen pose makes
-/// the pose OWN the face outright (PosingManager.SyncFaceModelSpace,
-/// PosingManager.cs:131-152; PosingModule.cs:86-91). Poser's pose is a per-bone
-/// DELTA applied over whatever the animation gives that frame, so the same
-/// end state is only expressible as
-/// <c>stack = Diff(face-with-expression, face-after-the-facial-layer-returns)</c>.
-/// That makes the released facial layer's own output a REQUIRED measurement,
-/// which dictates everything below:
-///
-///   * The bake NEVER changes playback speed. Poser's pause writes
-///     <c>PlaybackSpeed = 0</c> to every Havok control
-///     (AnimationRuntimePort.ApplySpeedNow), so pausing before the release
-///     freezes the very state the delta is measured against — the delta comes
-///     out identity, the pose owns nothing, and the face collapses the moment
-///     speed is handed back. An actor the USER paused is equally untouched:
-///     nothing evaluates, the raw face stays on the expression, and an
-///     identity delta is then the truthful answer.
-///   * The teardown is <see cref="AnimationSession.RestoreFacialLayer"/>, not
-///     ReleaseExpression: Brio's release ends with idle (3) on the BASE slot
-///     and would reset the actor's body animation on every bake.
-///   * The face is read from the apply pass's caches, so the pass is asked to
-///     visit this skeleton on every tick the bake waits
-///     (<see cref="IBonePosingService.RequestRawTransformRefresh"/>). Nothing
-///     else refreshes <c>LastRawTransform</c>, and a skeleton nobody has posed
-///     yet is not in the pass at all.
-///   * The facial layer is DRIVEN at speed 1 across the settle, because a
-///     paused actor's layer cannot otherwise reach the state being measured
-///     (see <see cref="TakeFacialDrive"/>), and handed back before the patch.
-///   * The settle waits for the face to STOP MOVING rather than counting a
-///     fixed number of frames: a blend takes as long as it takes.
-///
-/// WHAT THE BAKED FACE IS EXACT AGAINST. The stored delta reproduces the
-/// captured face only while the facial layer's own output stays on the frame
-/// the settle ended on. That is precisely true for a paused actor — which is
-/// why the bake goes to the trouble of leaving one frozen — and it is an
-/// approximation that drifts with the animation for an actor that is running,
-/// where the face is a moving target and no delta can be exact against it.
-/// This is inherent to a delta pose over a live animation, not a defect of the
-/// measurement.
+/// Bakes the previewed expression into one transform patch. The capture reads
+/// the face, restores the facial layer, drives that layer when needed, waits
+/// for stable readings, and applies a delta against the restored layer.
+/// Pending operations are bound to the current session, actor, skeleton, and
+/// bindings; callbacks revalidate those identities before writing or restoring.
+/// The result is exact for the captured facial output and can drift while a
+/// running animation continues to change that output.
 /// </summary>
 public sealed class FacialPoseCapture : IDisposable
 {
@@ -78,24 +37,16 @@ public sealed class FacialPoseCapture : IDisposable
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly IPluginLog _log;
 
-    /// <summary>Ticks between arming and reading the face. The refresh lease
-    /// asked for during the button press is consumed by the NEXT tick's
-    /// rebuild, and the pass that acts on it runs after that tick's framework
-    /// update — so the second tick is the first one whose caches were written
-    /// by a pass that knew about this skeleton.</summary>
+    /// <summary>Ticks between arming and the first face read.</summary>
     private const int CaptureDelayTicks = 2;
 
-    /// <summary>Consecutive equal readings that prove the facial layer has
-    /// finished moving. Two, as Ktisis awaits two syncs.</summary>
+    /// <summary>Consecutive equal readings required before settling.</summary>
     private const int StableTicks = 2;
 
-    /// <summary>Upper bound on the settle. A face that never stops moving (a
-    /// running idle animation blinks) is baked against the frame it is on
-    /// rather than pending forever.</summary>
+    /// <summary>Maximum ticks spent waiting for a stable face.</summary>
     private const int SettleTimeoutTicks = 20;
 
-    /// <summary>Model-space epsilon for "this bone did not move". Below the
-    /// scale of any facial blend and above float noise.</summary>
+    /// <summary>Model-space tolerance used when comparing readings.</summary>
     private const float StableEpsilon = 1e-5f;
 
     private enum BakePhase
@@ -123,9 +74,7 @@ public sealed class FacialPoseCapture : IDisposable
         public int StableRuns;
         public int SettleTicks;
 
-        /// <summary>Whether the facial layer is currently being driven at
-        /// speed 1 for the settle. Released before the patch, and defensively
-        /// again on every terminal path.</summary>
+        /// <summary>Whether the facial slot speed override is held.</summary>
         public bool DriveHeld;
         public bool Completing;
     }
@@ -169,8 +118,7 @@ public sealed class FacialPoseCapture : IDisposable
 
     public OperationReceipt? LastReceipt => _lastReceipt;
 
-    /// <summary>Returns a receipt only for the exact actor generation that
-    /// initiated it; selection changes cannot consume another actor's result.</summary>
+    /// <summary>Returns the last receipt when it belongs to the actor.</summary>
     public OperationReceipt? ReceiptFor(ActorId actor) =>
         _lastReceipt is { TargetActorId: var target } && target == actor
             ? _lastReceipt
@@ -181,11 +129,7 @@ public sealed class FacialPoseCapture : IDisposable
         name.Equals("j_kao", StringComparison.Ordinal) ||
         name.StartsWith("j_ago", StringComparison.Ordinal);
 
-    /// <summary>
-    /// Arms capture and returns the legacy success/failure shape used by the
-    /// pane. The immutable operation receipt is available through
-    /// <see cref="LastReceipt"/> and <see cref="ReceiptChanged"/>.
-    /// </summary>
+    /// <summary>Arms capture and returns the operation's success or failure.</summary>
     public GestureResult Begin(ActorId actor, ActorDescriptor descriptor)
     {
         if (_disposed || DisposeRequested)
@@ -219,13 +163,8 @@ public sealed class FacialPoseCapture : IDisposable
                 Bones = bones,
             };
             _pending = pending;
-            // The barrier closes with the PRESS, not with the reading two
-            // ticks later: an action-unit drag or a second pick in that window
-            // would change the very face this bake is about to quote.
+            // Freeze other animation commands for the whole capture window.
             _animation.SuspendCommands();
-            // The first lease: the pass this asks for is what makes the
-            // reading two ticks from now describe the live face rather than
-            // the value the skeleton was built with.
             RequestRawRefresh(pending);
             Publish(OperationReceipt.Pending(
                 operationId,
@@ -244,8 +183,7 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
-    /// <summary>Invalidates the current operation before restoring its owned
-    /// guard and speed. A late callback therefore cannot revive the token.</summary>
+    /// <summary>Invalidates the current operation before restoring owned state.</summary>
     public OperationReceipt? CancelPending(
         string detail = "Facial capture was cancelled.")
     {
@@ -288,8 +226,7 @@ public sealed class FacialPoseCapture : IDisposable
         if (pending.Completing)
             return;
 
-        // This check precedes every possible read, write, restore, or
-        // terminal publication from this callback.
+        // Validate before any callback-side read, write, restore, or publication.
         if (!IsCurrentToken(pending))
         {
             InvalidatePending(
@@ -298,8 +235,7 @@ public sealed class FacialPoseCapture : IDisposable
             return;
         }
 
-        // Renewed every tick the bake waits: the lease is one rebuild long,
-        // and both the capture and the settle read what the pass wrote.
+        // The refresh lease lasts one rebuild, so renew it while waiting.
         RequestRawRefresh(pending);
 
         if (pending.Phase == BakePhase.Capturing)
@@ -325,9 +261,8 @@ public sealed class FacialPoseCapture : IDisposable
         if (!arrived)
             return;
 
-        // The layer has arrived where it is going. Hand it back BEFORE the
-        // patch, and settle once more: the frame the bake diffs against has to
-        // be the frame the actor keeps, not one the drive was still turning.
+        // Release the temporary drive before applying the patch, then settle
+        // once more against the frame the actor will keep.
         if (pending.DriveHeld)
         {
             ReleaseFacialDrive(pending);
@@ -338,12 +273,7 @@ public sealed class FacialPoseCapture : IDisposable
         Complete(pending);
     }
 
-    /// <summary>
-    /// The one tick that owns the whole measurement: read the face the user is
-    /// looking at, put the facial layer back, and drive that layer so it can
-    /// actually get there — in that order, because the reading must precede
-    /// everything that changes what is being read.
-    /// </summary>
+    /// <summary>Reads the face, restores the facial layer, and starts settling.</summary>
     private void CaptureAndRestore(PendingBake pending)
     {
         if (!TryReadFace(pending.Bones, out var reading, out var problem))
@@ -381,31 +311,9 @@ public sealed class FacialPoseCapture : IDisposable
     }
 
     /// <summary>
-    /// Holds the facial layer at speed 1 for the length of the settle — THE
-    /// step that makes a bake work on a paused actor.
-    ///
-    /// A Poser pause is an ENFORCED container speed: the overall-speed detour
-    /// returns true whenever it has an override (AnimationRuntimePort
-    /// .OverallSpeedDetour), which is the game's "this changed, re-apply"
-    /// signal, and the game then pushes that container speed down into every
-    /// Havok control. Brio proves the propagation from the other side: it
-    /// writes only the container and, four ticks later, finds
-    /// <c>control-&gt;PlaybackSpeed == 0</c> on every control it walks
-    /// (ActionTimelineCapability.StopSpeedAndResetTimeline, ATC:110-165).
-    /// So a control-level write cannot open the layer back up — the game
-    /// closes it again on its next recalculation.
-    ///
-    /// The per-slot speed can, because the game applies it through
-    /// <c>SetSlotSpeed</c>, which the slot hook intercepts and REPLACES with
-    /// the owned override (AnimationRuntimePort.SlotSpeedDetour). Brio's
-    /// expression pin is this same lever pointed the other way: facial 0 while
-    /// the container runs at 1. Pointed at 1 while the container is at 0, it
-    /// lets the restored facial timeline blend in, and nothing else about the
-    /// actor moves — the body stays exactly as frozen as the user left it.
-    ///
-    /// On an actor that is not paused this is the value the layer already had,
-    /// so it changes nothing. It is released before the patch is written, so
-    /// the face is measured on the frame it will keep.
+    /// Temporarily drives the facial slot at speed 1 so the layer can settle
+    /// even when the actor's overall speed is paused. Released before the patch
+    /// is written so the patch is measured against the final frame.
     /// </summary>
     private void TakeFacialDrive(PendingBake pending)
     {
@@ -416,9 +324,6 @@ public sealed class FacialPoseCapture : IDisposable
             pending.DriveHeld = true;
             return;
         }
-        // A refused drive is not a failed bake: without it the settle simply
-        // measures a layer that cannot move, which is the honest answer for
-        // an actor whose slot speeds are unavailable.
         _log.Warning(
             $"Face bake could not drive the facial layer: {driven.Detail}");
     }
@@ -458,9 +363,7 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
-    /// <summary>Every bone's current raw model-space transform, as the apply
-    /// pass last wrote it. A bone that no longer resolves ends the bake: the
-    /// captured absolutes describe a skeleton that is gone.</summary>
+    /// <summary>Reads the current raw transform for each face bone.</summary>
     private bool TryReadFace(
         IReadOnlyList<BoneId> bones,
         out List<LegacyTransform> reading,
@@ -480,7 +383,6 @@ public sealed class FacialPoseCapture : IDisposable
         return true;
     }
 
-    /// <summary>Whether the face is holding still between two readings.</summary>
     private static bool Settled(
         IReadOnlyList<LegacyTransform> current,
         IReadOnlyList<LegacyTransform> previous)
@@ -506,17 +408,7 @@ public sealed class FacialPoseCapture : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Keeps this bake's skeleton in the apply pass for one frame, so that the
-    /// raw caches it reads are the ones that pass just wrote.
-    ///
-    /// ONE skeleton, by construction: <see cref="TryPrepare"/> takes the face
-    /// bones from the descriptor's character skeleton alone, and
-    /// <see cref="Revalidate"/> ends the bake if that skeleton is replaced. So
-    /// any bone that still resolves names the skeleton the whole bake is
-    /// about; the loop exists because a single bone can be rebound while its
-    /// skeleton is fine, not because the set could straddle two skeletons.
-    /// </summary>
+    /// <summary>Requests a raw-transform refresh for the captured face bones.</summary>
     private void RequestRawRefresh(PendingBake pending)
     {
         foreach (var bone in pending.Bones)
@@ -550,8 +442,7 @@ public sealed class FacialPoseCapture : IDisposable
             return;
         }
 
-        // Revalidate immediately before handing control to the one atomic
-        // transform authority; the authority records one history patch.
+        // Revalidate before the atomic transform write.
         if (!IsCurrentToken(pending))
         {
             InvalidatePending(
@@ -596,9 +487,6 @@ public sealed class FacialPoseCapture : IDisposable
             return;
         }
 
-        // Synchronous history/port observers may dispose this owner while the
-        // command is committing. Only the still-owned exact token may tear
-        // down or publish a terminal receipt.
         if (_disposed || !ReferenceEquals(_pending, pending))
             return;
         var teardown = FinishOwnedState(pending);
@@ -680,12 +568,7 @@ public sealed class FacialPoseCapture : IDisposable
         }
     }
 
-    /// <summary>
-    /// Releases what the bake owns: the facial drive (already handed back on
-    /// the success path, still held on every cancelled one) and the command
-    /// barrier. The bake never took OVERALL speed, so it has none to hand
-    /// back — the actor plays exactly as fast after the bake as before it.
-    /// </summary>
+    /// <summary>Releases the facial drive and command barrier owned by the bake.</summary>
     private (bool Success, string? Detail) FinishOwnedState(PendingBake pending)
     {
         try
