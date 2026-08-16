@@ -1174,20 +1174,8 @@ public class GizmoOverlayWindow : Window
                 $"×{Math.Clamp(MathF.Exp(_dragLogScale), 0.001f, 1000f):0.000}",
         };
 
-        var style = new TextStyle
-        {
-            Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-            Family = FontFamily.Mono,
-            Color = Crystarium.ActiveTheme.Text,
-        };
-        var pad = new Vector2(6f, 3f) * uiScale;
         var min = mouse + new Vector2(18f, 14f) * uiScale;
-        var max = min + Crystarium.MeasureText(text, style) + pad * 2f;
-        ImGui.GetWindowDrawList().AddRectFilled(
-            min, max,
-            ImGui.ColorConvertFloat4ToU32(Crystarium.ActiveTheme.Glass.Luminosity),
-            Crystarium.ActiveTheme.Radii.Surface * uiScale);
-        Crystarium.TextAt(min + pad, text, style);
+        Crystarium.HoverHelp.Readout(min, text);
     }
 
     /// <summary>
@@ -1208,24 +1196,10 @@ public class GizmoOverlayWindow : Window
 
         float uiScale = ImGuiHelpers.GlobalScale;
         string text = notice.Text;
-        var color = Crystarium.ActiveTheme.Text;
-        var style = new TextStyle
-        {
-            Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-            Family = FontFamily.Mono,
-            Color = new Vector4(color.X, color.Y, color.Z, color.W * opacity),
-        };
-        var pad = new Vector2(6f, 3f) * uiScale;
-        var size = Crystarium.MeasureText(text, style) + pad * 2f;
+        var size = Crystarium.HoverHelp.ReadoutSize(text);
         var min = ImGui.GetMousePos() + new Vector2(18f, -14f) * uiScale
             - new Vector2(0f, size.Y);
-        var glass = Crystarium.ActiveTheme.Glass.Luminosity;
-        ImGui.GetWindowDrawList().AddRectFilled(
-            min, min + size,
-            ImGui.ColorConvertFloat4ToU32(new Vector4(
-                glass.X, glass.Y, glass.Z, glass.W * opacity)),
-            Crystarium.ActiveTheme.Radii.Surface * uiScale);
-        Crystarium.TextAt(min + pad, text, style);
+        Crystarium.HoverHelp.Readout(min, text, opacity);
     }
 
     /// <summary>
