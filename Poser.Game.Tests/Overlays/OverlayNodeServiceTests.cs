@@ -14,26 +14,65 @@ public sealed class OverlayNodeServiceTests
     public void Create_write_drag_and_destroy_preserves_identity_and_state()
     {
         var world = new World();
-        var handle = world.Service.Create(OverlayNodeKind.Talk);
-        Assert.NotNull(handle);
-        var node = Assert.Single(world.Port.Live);
+        var talk = world.Service.Create(OverlayNodeKind.Talk);
+        var balloon = world.Service.Create(OverlayNodeKind.Balloon);
+        var status = world.Service.Create(OverlayNodeKind.Status);
+        Assert.NotNull(talk);
+        Assert.NotNull(balloon);
+        Assert.NotNull(status);
 
-        handle.Text = "Hello";
-        world.Port.Drag(node, new Vector2(320, 240));
-        handle.Draggable = false;
+        Assert.Equal("Dialog 1", talk.Name);
+        Assert.Equal("Balloon 1", balloon.Name);
+        Assert.Equal("Status 1", status.Name);
+        Assert.Equal("Speaker", talk.Speaker);
+        Assert.Equal(TalkCursor.Pin, talk.TalkCursor);
+        Assert.True(balloon.ArrowVisible);
+        Assert.Equal(StatusKind.Buff, status.StatusKind);
 
-        Assert.Equal("Hello", handle.Text);
-        Assert.Equal(new Vector2(320, 240), handle.Position);
-        Assert.Equal(new Vector2(320, 240), node.State.Position);
-        Assert.Equal(1, world.Events.ListChanges);
+        var balloonNode = world.Port.Live.Single(
+            node => node.State.Kind == OverlayNodeKind.Balloon);
+        balloon.Scale = 500;
+        balloon.Alpha = float.NaN;
+        balloon.ArrowX = -40;
+        balloon.Text = new string('x', OverlayNodeLimits.MaxTextCharacters + 10);
+        Assert.Equal(OverlayNodeLimits.MaxScale, balloonNode.State.Scale);
+        Assert.Equal(1, balloonNode.State.Alpha);
+        Assert.Equal(OverlayNodeLimits.MinArrowX, balloonNode.State.ArrowX);
+        Assert.Equal(
+            OverlayNodeLimits.MaxTextCharacters, balloonNode.State.Text.Length);
 
-        world.Service.Destroy(handle);
-        world.Service.Destroy(handle);
+        var talkNode = world.Port.Live.Single(
+            node => node.State.Kind == OverlayNodeKind.Talk);
 
-        Assert.False(handle.IsValid);
+        talk.Text = "Hello";
+        world.Port.Drag(talkNode, new Vector2(320, 240));
+        talk.Draggable = false;
+
+        Assert.Equal("Hello", talk.Text);
+        Assert.Equal(new Vector2(320, 240), talk.Position);
+        Assert.Equal(new Vector2(320, 240), talkNode.State.Position);
+        Assert.Equal(3, world.Events.ListChanges);
+
+        world.Events.Publish(new GPoseStateChangedEvent(true));
+        Assert.Equal(0, world.Port.Destroys);
+        Assert.Equal(3, world.Service.Count);
+
+        status.Text = "Staged";
+        status.StatusKind = StatusKind.Falloff;
+        status.Position = new Vector2(64, 96);
+        var document = status.State;
+        world.Service.Destroy(status);
+        var restored = world.Service.Create(document);
+
+        Assert.NotNull(restored);
+        Assert.Equal(document, restored.State);
+        Assert.False(status.IsValid);
+        Assert.Equal(3, world.Service.Count);
+
+        world.Service.DestroyAll();
         Assert.Empty(world.Service.Nodes);
         Assert.Empty(world.Port.Live);
-        Assert.Equal(1, world.Port.Destroys);
+        Assert.Equal(4, world.Port.Destroys);
     }
 
     [Fact]
