@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
@@ -10,25 +11,22 @@ using Poser.Domain.Appearance;
 namespace Poser.Game.Appearance;
 
 /// <summary>
-/// Builds the model-search catalog from game data, once per session, off
-/// the framework thread — the CompanionCatalogLoader's lifecycle. The rows
-/// are Brio's NpcSelector sources the game can NAME natively: event NPCs
-/// (ENpcBase.ModelChara joined with ENpcResident's name by row id),
-/// minions, mounts and ornaments (GameDataProvider.cs:56-60). Battle NPCs
-/// are deliberately absent: their base→name link only exists in Brio's
-/// bundled LuminaSupplemental CSV (GameDataProvider.cs:64-66), a new
-/// package dependency that needs its own acceptance.
-///
-/// Admission is name + non-zero ModelChara: a human event NPC (model 0)
-/// looks the way it does through customize data Glamourer owns, so it has
-/// nothing for a model-id editor.
+/// Builds the model-search catalog off the framework thread. One successful
+/// build is retained for the lifetime of this loader. A failed build stays
+/// failed until an explicit retry.
 /// </summary>
 public sealed class ModelCatalogLoader
 {
     private readonly IDataManager _data;
     private readonly ModelCatalog _catalog;
     private readonly IPluginLog _log;
-    private bool _started;
+    private int _state;
+    private string? _lastError;
+
+    private const int Idle = 0;
+    private const int Building = 1;
+    private const int Loaded = 2;
+    private const int Failed = 3;
 
     public ModelCatalogLoader(
         IDataManager data, ModelCatalog catalog, IPluginLog log)
@@ -38,22 +36,41 @@ public sealed class ModelCatalogLoader
         _log = log;
     }
 
-    /// <summary>Starts the one-time build. Safe to call repeatedly.</summary>
+    public bool IsBuilding => Volatile.Read(ref _state) == Building;
+    public string? LastError => Volatile.Read(ref _lastError);
+
+    /// <summary>Starts one build for the current game data. Repeated calls
+    /// while building or after success do nothing.</summary>
     public void EnsureLoaded()
     {
-        if (_started)
+        if (Interlocked.CompareExchange(ref _state, Building, Idle) != Idle)
             return;
-        _started = true;
+        StartBuild();
+    }
+
+    /// <summary>Retries a failed build after an explicit user action.</summary>
+    public void Retry()
+    {
+        if (Interlocked.CompareExchange(ref _state, Building, Failed) != Failed)
+            return;
+        StartBuild();
+    }
+
+    private void StartBuild()
+    {
         Task.Run(() =>
         {
             try
             {
                 _catalog.Publish(Build());
+                Volatile.Write(ref _lastError, null);
+                Volatile.Write(ref _state, Loaded);
             }
             catch (Exception ex)
             {
                 _log.Error($"Model catalog failed to build: {ex}");
-                _catalog.Publish(Array.Empty<ModelCatalogEntry>());
+                Volatile.Write(ref _lastError, ex.Message);
+                Volatile.Write(ref _state, Failed);
             }
         });
     }
@@ -74,8 +91,7 @@ public sealed class ModelCatalogLoader
         return entries;
     }
 
-    /// <summary>Event NPCs: the model comes from ENpcBase, the name from
-    /// ENpcResident at the SAME row id — the sheets are parallel.</summary>
+    /// <summary>Joins event NPC models and names by row id.</summary>
     private void AddEventNpcs(List<ModelCatalogEntry> entries)
     {
         var bases = _data.GetExcelSheet<ENpcBase>();
@@ -124,9 +140,7 @@ public sealed class ModelCatalogLoader
         Append(entries, kindEntries);
     }
 
-    /// <summary>Sheet names arrive lowercase from the Singular column; the
-    /// catalog is the one place that knows the string came from game data.
-    /// </summary>
+    /// <summary>Formats a game-data singular name for display.</summary>
     private static string Titled(string singular) =>
         CultureInfo.InvariantCulture.TextInfo.ToTitleCase(singular);
 
