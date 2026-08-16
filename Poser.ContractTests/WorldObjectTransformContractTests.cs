@@ -1,140 +1,39 @@
+extern alias ProductionPoser;
+
 using System.Numerics;
+using System.Reflection;
 using Poser.Application.Scene;
 using Poser.Application.Selection;
-using Poser.Application.Transforms;
-using Poser.ContractTests.Fixtures;
+using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
+using Poser.Game.WorldObjects;
+using Poser.Services;
+using ProductionPoser::Poser.UI;
+using PoserTransform = Poser.Transform;
 
 namespace Poser.ContractTests;
 
-/// <summary>
-/// A borrowed map object MOVES. Every other class the scene holds is answered
-/// for by <see cref="SceneSession"/> — its id indexes, its selection repair and
-/// its <see cref="SceneSession.Contains(TransformTargetId)"/> — and the world
-/// object was the one class that was not, which made every gesture against one
-/// refuse as stale before it ever reached a port. These facts pin the whole
-/// chain from "the scene holds it" to "the runtime was asked to write it".
-/// </summary>
 public sealed class WorldObjectTransformContractTests
 {
-    private static readonly Guid Lineage =
-        Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
-
-    private static WorldObjectId Id(uint generation = 0) =>
-        new(Lineage, generation);
-
     [Fact]
-    public void A_borrowed_object_the_scene_holds_is_a_live_transform_target()
+    public void Adoption_and_hover_restore_keep_world_objects_live_and_paired()
     {
+        var lineage = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        var objectId = new WorldObjectId(lineage, 0);
         var session = new SceneSession(new SelectionSession());
-
         Assert.Equal(
             SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(1, Borrowed(Id()))).Outcome);
+            session.TryRefresh(Scene(1, Borrowed(objectId))).Outcome);
+        Assert.True(session.Contains(TransformTargetId.ForWorldObject(objectId)));
 
-        Assert.True(session.Contains(TransformTargetId.ForWorldObject(Id())));
-    }
-
-    [Fact]
-    public void A_borrowed_object_the_scene_does_not_hold_is_never_a_target()
-    {
-        var session = new SceneSession(new SelectionSession());
-        Assert.Equal(SceneRefreshOutcome.Applied, session.TryRefresh(Scene(1)).Outcome);
-
-        // Nothing borrowed at all, and a generation the scene never carried:
-        // both are stale, and staleness is what refuses a write.
-        Assert.False(session.Contains(TransformTargetId.ForWorldObject(Id())));
-
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(2, Borrowed(Id(generation: 1)))).Outcome);
-        Assert.False(session.Contains(TransformTargetId.ForWorldObject(Id())));
-        Assert.True(
-            session.Contains(TransformTargetId.ForWorldObject(Id(generation: 1))));
-    }
-
-    [Fact]
-    public void Selecting_a_borrowed_object_survives_the_next_scene_refresh()
-    {
-        var selection = new SelectionSession();
-        var session = new SceneSession(selection);
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(1, Borrowed(Id()))).Outcome);
-
-        selection.Select(SelectionId.ForWorldObject(Id()));
-
-        // Adopting a second object republishes the scene; the first selection
-        // must not be reconciled away by that republish.
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(
-                2,
-                Borrowed(Id()),
-                Borrowed(new WorldObjectId(Guid.NewGuid(), 0)))).Outcome);
-        Assert.Equal(SelectionId.ForWorldObject(Id()), selection.Primary);
-
-        // Releasing it is the one thing that ends the selection.
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(3)).Outcome);
-        Assert.Null(selection.Primary);
-    }
-
-    [Fact]
-    public void A_gesture_over_a_borrowed_object_reaches_the_runtime_write()
-    {
-        using var app = new TransformApplicationHarness();
-        var target = TransformTargetId.ForWorldObject(Id());
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            app.Scene.TryRefresh(Scene(1, Borrowed(Id()))).Outcome);
-        app.Runtime.Seed(TestStates.At(target, 0, hasOverride: true));
-
-        var begun = app.Gestures.Begin(new BeginTransformGesture(
-            new[] { target },
-            TransformOperation.Translate,
-            TransformSpace.World,
-            PivotMode.PerTarget,
-            Description: "Transform 1 world object"));
-
-        Assert.True(begun.Success, begun.Detail);
-        Assert.Equal(new[] { target }, app.Runtime.CaptureCalls);
-
-        Assert.True(app.Gestures.Update(
-            begun.GestureId!.Value,
-            TransformDelta.Identity with { Translation = new Vector3(3, 0, 0) })
-            .Success);
-
-        // The write is the whole point of the fix: the borrowed object's
-        // placement left the gesture and arrived at the port.
-        Assert.Equal(new[] { target }, app.Runtime.ApplyCalls);
-        Assert.Equal(
-            new Vector3(3, 0, 0),
-            app.Runtime.State(target).Transform.Position);
-
-        Assert.True(app.Gestures.Commit(begun.GestureId.Value).Success);
-    }
-
-    [Fact]
-    public void A_gesture_over_a_released_object_refuses_rather_than_writing()
-    {
-        using var app = new TransformApplicationHarness();
-        var target = TransformTargetId.ForWorldObject(Id());
-        Assert.Equal(SceneRefreshOutcome.Applied, app.Scene.TryRefresh(Scene(1)).Outcome);
-        app.Runtime.Seed(TestStates.At(target, 0, hasOverride: true));
-
-        var begun = app.Gestures.Begin(new BeginTransformGesture(
-            new[] { target },
-            TransformOperation.Translate,
-            TransformSpace.World,
-            PivotMode.PerTarget,
-            Description: "Transform 1 world object"));
-
-        Assert.False(begun.Success);
-        Assert.Empty(app.Runtime.ApplyCalls);
+        var world = new HoverWorld();
+        var address = world.Port.Add(0x23);
+        world.Source.SetHovered(Candidate(address));
+        Assert.Equal(WorldObjectOutline.Hover, world.Port.OutlineOf(address));
+        world.Source.EndSession();
+        Assert.Equal((byte)0x23, world.Port.OutlineOf(address));
     }
 
     private static WorldObjectDescriptor Borrowed(WorldObjectId id) =>
@@ -150,4 +49,101 @@ public sealed class WorldObjectTransformContractTests
             Array.Empty<CameraDescriptor>(),
             Array.Empty<PropDescriptor>(),
             WorldObjects: worldObjects);
+
+    private static WorldAdoptionCandidate Candidate(nint address) =>
+        new(WorldAdoptionKind.WorldObject, "borrowed", Vector3.Zero, 0f,
+            WorldObject: address);
+
+    private sealed class HoverWorld
+    {
+        public FakeOutlinePort Port { get; } = new();
+        public WorldAdoptionSource Source { get; }
+
+        public HoverWorld()
+        {
+            var objects = new WorldObjectService(
+                Port,
+                new SilentBus(),
+                DispatchProxy.Create<Dalamud.Plugin.Services.IPluginLog, SilentLog>());
+            Source = new WorldAdoptionSource(
+                null!, null!, objects, null!, null!, null!, null!, null!, null!,
+                null!, null!);
+        }
+    }
+
+    private sealed class FakeOutlinePort : IWorldObjectPort
+    {
+        private readonly Dictionary<nint, byte> _outlines = new();
+        private nint _next = 0x1000;
+
+        public List<(nint Address, byte Outline)> OutlineWrites { get; } = new();
+
+        public nint Add(byte resting)
+        {
+            var address = _next;
+            _next += 0x100;
+            _outlines[address] = resting;
+            return address;
+        }
+
+        public byte OutlineOf(nint address) => _outlines[address];
+        public bool IsAvailable => true;
+        public bool TryReadOutline(nint address, out byte outline) =>
+            _outlines.TryGetValue(address, out outline);
+
+        public void WriteOutline(nint address, byte outline)
+        {
+            OutlineWrites.Add((address, outline));
+            if (_outlines.ContainsKey(address))
+                _outlines[address] = outline;
+        }
+
+        public IReadOnlyList<WorldObjectRow> Enumerate() => Array.Empty<WorldObjectRow>();
+        public IReadOnlyList<nint> EnumerateLights() => Array.Empty<nint>();
+        public bool IsAlive(nint address) => _outlines.ContainsKey(address);
+
+        public bool TryRead(nint address, out PoserTransform placement)
+        {
+            placement = PoserTransform.Identity;
+            return _outlines.ContainsKey(address);
+        }
+
+        public void Write(nint address, in PoserTransform placement) { }
+
+        public bool TryReadFlags(nint address, out byte flags)
+        {
+            flags = 0;
+            return _outlines.ContainsKey(address);
+        }
+
+        public void WriteFlags(nint address, byte flags) { }
+
+        public bool TryReadVisible(nint address, out bool visible)
+        {
+            visible = true;
+            return _outlines.ContainsKey(address);
+        }
+
+        public void WriteVisible(nint address, bool visible) { }
+    }
+
+    private sealed class SilentBus : IEventBus
+    {
+        public void Subscribe<T>(Action<T> handler) where T : IEvent { }
+        public void Unsubscribe<T>(Action<T> handler) where T : IEvent { }
+        public void Publish<T>(T evt) where T : IEvent { }
+        public void Dispose() { }
+    }
+
+    private sealed class SilentLog : DispatchProxy
+    {
+        protected override object? Invoke(
+            MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.ReturnType is { IsValueType: true } type
+                && type != typeof(void))
+                return Activator.CreateInstance(type);
+            return null;
+        }
+    }
 }

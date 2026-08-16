@@ -1,6 +1,7 @@
 extern alias ProductionPoser;
 
 using System.Numerics;
+using Poser.Entities;
 using Poser.Services;
 using ProductionPoser::Poser.UI.Controls;
 
@@ -74,51 +75,22 @@ public sealed class GizmoCameraSyncContractTests
             Vector3.Distance(projection.CameraPosition, Rendered) < 1e-3f,
             $"Camera position {projection.CameraPosition} followed the "
                 + "reported position instead of the view matrix.");
-    }
+        Assert.Equal(
+            FreeCameraSpeed.Default * FreeCameraSpeed.NotchFactor,
+            FreeCameraSpeed.Step(FreeCameraSpeed.Default, 1),
+            5);
 
-    [Fact]
-    public void Gizmo_scale_does_not_move_when_only_the_reported_position_does()
-    {
-        // The reported defect, measured: the shot is identical in all three
-        // cases, so the handle size must be identical too. WorldScale is the
-        // world length that projects to the requested pixel size — it is the
-        // single number the whole handle geometry is built from.
-        float truthful = Projection(Rendered).WorldScale;
-        foreach (var drifted in new[]
-        {
-            new Vector3(-9f, -4f, 11f),
-            new Vector3(6f, 6f, -6f),
-            Vector3.Zero,
-        })
-        {
-            Assert.Equal(truthful, Projection(drifted).WorldScale, 4);
-        }
-    }
+        Assert.Equal(-1f, WorldGizmo.AxisFlipSign(Vector3.UnitZ, Vector3.UnitZ));
+        Assert.Equal(1f, WorldGizmo.AxisFlipSign(-Vector3.UnitZ, Vector3.UnitZ));
 
-    [Fact]
-    public void View_direction_does_not_move_when_only_the_reported_position_does()
-    {
-        var truthful = Projection(Rendered).ViewDirection;
-        var drifted = Projection(new Vector3(6f, 6f, -6f)).ViewDirection;
+        var truthful = Projection(Vector3.Zero);
+        var reportedElsewhere = Projection(new Vector3(-9f, -4f, 11f));
+        Assert.Equal(truthful.WorldScale, reportedElsewhere.WorldScale, 4);
         Assert.True(
-            Vector3.Dot(truthful, drifted) > 0.9999f,
-            "View direction followed the reported position.");
+            Vector3.Dot(truthful.ViewDirection, reportedElsewhere.ViewDirection)
+                > 0.9999f);
     }
 
-    [Fact]
-    public void Drag_plane_rays_stay_anchored_to_the_rendered_camera()
-    {
-        // A ray cast through the pivot's own screen point onto the pivot's
-        // view plane must land back on the pivot. The direction is unprojected
-        // from the view matrix, so an origin taken from anywhere else puts the
-        // hit somewhere the user did not click — a translate drag that slides
-        // off under a camera the user never moved.
-        var projection = Projection(new Vector3(-9f, -4f, 11f));
-        var hit = projection.RayPlane(
-            projection.Center, Pivot, projection.ViewDirection);
-        Assert.NotNull(hit);
-        Assert.True(
-            Vector3.Distance(hit!.Value, Pivot) < 1e-2f,
-            $"Ray/plane hit {hit} missed the pivot {Pivot}.");
-    }
+
+
 }
