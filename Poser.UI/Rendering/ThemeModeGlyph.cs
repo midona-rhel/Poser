@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Poser.Config;
 
 namespace Poser.UI;
 
@@ -78,7 +77,7 @@ internal readonly record struct ThemeModeGlyphPlan(
 }
 
 /// <summary>One visible theme choice and its swatch.</summary>
-public readonly record struct ThemeChoice(
-    UITheme Value,
+public readonly record struct ThemeChoice<TValue>(
+    TValue Value,
     string Label,
     Vector4 Swatch);

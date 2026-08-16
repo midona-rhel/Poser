@@ -19,13 +19,6 @@
 		<Copyright>Copyright (C) 2026 Midona</Copyright>
 		<PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
 	</PropertyGroup>
-
-
-	<ItemGroup>
-		<!-- Theme choices use the persisted UITheme contract from core. -->
-		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
-	</ItemGroup>
-
 	<ItemGroup>
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />

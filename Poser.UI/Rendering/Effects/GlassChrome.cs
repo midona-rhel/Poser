@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Config;
 
 namespace Poser.UI;
 internal static class GlassChrome
@@ -12,6 +11,9 @@ internal static class GlassChrome
 
     private static float _fillOpacity = 1f;
     private static bool _backdropBlur = true;
+
+    // Below this alpha, translucent surfaces no longer read reliably.
+    internal const float MinimumFillOpacity = 0.50f;
 
     internal static bool ShouldPrependBackdropBlur =>
         BackdropBlurAvailable && _backdropBlur;
@@ -24,7 +26,14 @@ internal static class GlassChrome
 
     public static void Configure(float fillOpacity, bool backdropBlur) =>
         (_fillOpacity, _backdropBlur) =
-            (UIConfiguration.ClampFillOpacity(fillOpacity), backdropBlur);
+            (ClampFillOpacity(fillOpacity), backdropBlur);
+
+    // UI callers can pass values that did not come from persisted settings.
+    internal static float ClampFillOpacity(float value) =>
+        float.IsFinite(value)
+            ? Math.Clamp(value, MinimumFillOpacity, 1f)
+            : 1f;
+
     public static Vector4 BackgroundColor
     {
         get

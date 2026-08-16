@@ -8,20 +8,20 @@ namespace Poser.UI;
 
 internal static class ThemeSelection
 {
-    internal static readonly IReadOnlyList<ThemeChoice> VisibleChoices =
-        Array.AsReadOnly(new[]
+    internal static readonly IReadOnlyList<ThemeChoice<UITheme>> VisibleChoices =
+        Array.AsReadOnly(new ThemeChoice<UITheme>[]
         {
-            new ThemeChoice(UITheme.Auto, "Auto", Vector4.Zero),
-            new ThemeChoice(UITheme.Light, "Light", Vector4.One),
-            new ThemeChoice(UITheme.LightGray, "Light Gray", new(
+            new(UITheme.Auto, "Auto", Vector4.Zero),
+            new(UITheme.Light, "Light", Vector4.One),
+            new(UITheme.LightGray, "Light Gray", new(
                 200f / 255f, 202f / 255f, 205f / 255f, 1f)),
-            new ThemeChoice(UITheme.Gray, "Gray", new(
+            new(UITheme.Gray, "Gray", new(
                 68f / 255f, 68f / 255f, 68f / 255f, 1f)),
-            new ThemeChoice(UITheme.Dark, "Dark", new(
+            new(UITheme.Dark, "Dark", new(
                 1f / 255f, 1f / 255f, 1f / 255f, 1f)),
-            new ThemeChoice(UITheme.Blue, "Blue", new(
+            new(UITheme.Blue, "Blue", new(
                 40f / 255f, 53f / 255f, 110f / 255f, 1f)),
-            new ThemeChoice(UITheme.Purple, "Purple", new(
+            new(UITheme.Purple, "Purple", new(
                 70f / 255f, 50f / 255f, 117f / 255f, 1f)),
         });
 

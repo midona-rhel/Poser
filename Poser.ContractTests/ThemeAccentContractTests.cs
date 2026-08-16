@@ -38,7 +38,7 @@ public sealed class ThemeAccentContractTests
     {
         foreach (bool windowsUsesLightApps in new[] { true, false })
         {
-            foreach (ThemeChoice choice in ThemeSelection.VisibleChoices)
+            foreach (ThemeChoice<UITheme> choice in ThemeSelection.VisibleChoices)
             {
                 for (int index = 0; index < Theme.AccentOptions.Count; index++)
                 {
@@ -117,7 +117,7 @@ public sealed class ThemeAccentContractTests
     [Fact]
     public void Theme_selector_uses_one_ordered_choice_list()
     {
-        ThemeChoice[] expectedChoices =
+        ThemeChoice<UITheme>[] expectedChoices =
         [
             new(UITheme.Auto, "Auto", Vector4.Zero),
             new(UITheme.Light, "Light", Vector4.One),

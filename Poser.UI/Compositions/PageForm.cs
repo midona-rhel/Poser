@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
-using Poser.Config;
 
 namespace Poser.UI;
 
@@ -968,12 +967,12 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Draws theme choices with a borderless Auto swatch.</summary>
-        public void ThemeSwatches(
+        /// <summary>Draws theme choices; the first uses the split swatch.</summary>
+        public void ThemeSwatches<TValue>(
             string label,
-            IReadOnlyList<ThemeChoice> choices,
+            IReadOnlyList<ThemeChoice<TValue>> choices,
             int selected,
-            Action<UITheme> onChange,
+            Action<TValue> onChange,
             string? help = null)
         {
             string id = Id(label);
@@ -982,7 +981,7 @@ public static partial class Crystarium
             ColorPalette(choices.Count, index =>
             {
                 string swatchId = $"{id}##{index}";
-                ThemeChoice choice = choices[index];
+                ThemeChoice<TValue> choice = choices[index];
                 if (index != 0)
                 {
                     if (Swatch(

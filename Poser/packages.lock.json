@@ -74,10 +74,7 @@
         }
       },
       "poser.ui": {
-        "type": "Project",
-        "dependencies": {
-          "PosingCore": "[1.0.0, )"
-        }
+        "type": "Project"
       },
       "posingcore": {
         "type": "Project",

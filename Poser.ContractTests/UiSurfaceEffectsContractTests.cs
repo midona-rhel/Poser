@@ -24,12 +24,13 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
     [InlineData(float.NaN, 1f)]
     [InlineData(float.PositiveInfinity, 1f)]
     [InlineData(float.NegativeInfinity, 1f)]
-    public void Persisted_fill_opacity_stays_in_the_readable_range(
+    public void Runtime_and_persisted_fill_opacity_clamps_match(
         float stored, float expected)
     {
         var config = new UIConfiguration { FillOpacity = stored };
 
         Assert.Equal(expected, config.FillOpacity);
+        Assert.Equal(config.FillOpacity, GlassChrome.ClampFillOpacity(stored));
     }
 
     [Theory]
@@ -39,7 +40,7 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
     [InlineData(float.NaN, 1f)]
     [InlineData(float.PositiveInfinity, 1f)]
     [InlineData(float.NegativeInfinity, 1f)]
-    public void Runtime_fill_opacity_uses_the_shared_finite_clamp(
+    public void Runtime_fill_opacity_uses_its_defensive_finite_clamp(
         float requested, float expectedFactor)
     {
         Crystarium.FloatingSurface.BackdropBlurAvailable = false;
