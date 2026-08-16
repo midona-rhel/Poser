@@ -154,7 +154,7 @@ public static partial class Crystarium
 
         public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
 
-        /// <summary>Returns and clears a child-row click from the open menu.</summary>
+        /// <summary>Returns and clears a submenu click.</summary>
         public static int ConsumeSubmenuClick()
         {
             return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
@@ -246,8 +246,7 @@ public static partial class Crystarium
             float scale,
             float menuPadding)
         {
-            // Coordinates are already in screen pixels here. Keep the gap at
-            // one physical pixel instead of scaling it with the UI.
+            // Uses screen pixels, so the gap stays one pixel.
             const float gap = 1f;
             float rightX = parentMin.X + parentSize.X + gap;
             if (rightX + childSize.X > displaySize.X)
@@ -257,11 +256,7 @@ public static partial class Crystarium
                 triggerRowMin.Y - menuPadding * scale);
         }
 
-        /// <summary>Returns the screen-space host rectangle that contains the
-        /// parent and, when open, the child surface, including the existing
-        /// chrome margin. The child is drawn in this host's draw list; keeping
-        /// the union here prevents ImGui's clip rect from cutting off a
-        /// submenu on either side.</summary>
+        /// <summary>Includes the submenu in the menu window bounds.</summary>
         internal static (Vector2 Min, Vector2 Size) HostBounds(
             Vector2 parentMin,
             Vector2 parentSize,
@@ -407,9 +402,7 @@ public static partial class Crystarium
             }
 
             float host = Crystarium.ActiveTheme.Floating.HostMargin * s;
-            // The parent draw below discovers a newly hovered child. Predict
-            // that same child before Begin so the host clip rect contains it
-            // on its first visible frame, not one frame later.
+            // Includes a newly hovered submenu in the first frame.
             bool hasPredictedSubmenu = TryGetSubmenuBounds(
                 pointer, s, io.DisplaySize,
                 out var predictedSubmenuMin, out var predictedSubmenuSize);

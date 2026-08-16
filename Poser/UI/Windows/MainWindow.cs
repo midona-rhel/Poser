@@ -3446,7 +3446,7 @@ public class MainWindow : Window
                 ? BuildBonePresetSubmenu(actorId)
                 : null));
         actions.Add(null); // separator
-        actions.Add(null); // submenu rows dispatch through the shared menu
+        actions.Add(null); // Child clicks are read separately.
 
         // Pose files belong to the actor, not to whatever is selected, so the
         // actor itself is where they are reachable.
