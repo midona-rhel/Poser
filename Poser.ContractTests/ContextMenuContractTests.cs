@@ -1,5 +1,8 @@
+extern alias ProductionPoser;
+
 using System.Numerics;
 using Poser.UI;
+using MainWindow = ProductionPoser::Poser.UI.MainWindow;
 
 namespace Poser.ContractTests;
 
@@ -98,16 +101,72 @@ public sealed class ContextMenuContractTests
     }
 
     [Fact]
-    public void Menu_icon_additions_are_registered()
+    public void Production_menu_rows_use_shared_tabler_icons()
     {
+        var shell = new ContextMenuItem[
+            (int)MainWindow.ShellCommand.OpenSettings + 1];
+        MainWindow.FillShellMenuItems(
+            shell,
+            poseTarget: true,
+            detachedShell: true,
+            sceneOpen: true,
+            contentHidden: false);
+
+        Assert.Equal("Show library", shell[(int)MainWindow.ShellCommand.ShowLibrary].Label);
+        Assert.Equal(TablerIcon.Book, shell[(int)MainWindow.ShellCommand.ShowLibrary].Icon);
+        Assert.Equal("Import pose", shell[(int)MainWindow.ShellCommand.ImportPose].Label);
+        Assert.Equal(TablerIcon.Download, shell[(int)MainWindow.ShellCommand.ImportPose].Icon);
+        Assert.Equal("Export pose", shell[(int)MainWindow.ShellCommand.ExportPose].Label);
+        Assert.Equal(TablerIcon.Upload, shell[(int)MainWindow.ShellCommand.ExportPose].Icon);
+        Assert.Equal("Pop out content", shell[(int)MainWindow.ShellCommand.PopOutContent].Label);
+        Assert.Equal(TablerIcon.WindowMaximize, shell[(int)MainWindow.ShellCommand.PopOutContent].Icon);
+        Assert.Equal("Close Scene window", shell[(int)MainWindow.ShellCommand.SceneWindow].Label);
+        Assert.Equal(TablerIcon.DeviceIpadX, shell[(int)MainWindow.ShellCommand.SceneWindow].Icon);
+        Assert.Equal("Close Inspector window", shell[(int)MainWindow.ShellCommand.InspectorWindow].Label);
+        Assert.Equal(TablerIcon.BrowserX, shell[(int)MainWindow.ShellCommand.InspectorWindow].Icon);
+        Assert.Equal("Merge the UI", shell[(int)MainWindow.ShellCommand.ToggleDetached].Label);
+        Assert.Equal(TablerIcon.WindowMinimize, shell[(int)MainWindow.ShellCommand.ToggleDetached].Icon);
+
+        MainWindow.FillShellMenuItems(
+            shell,
+            poseTarget: true,
+            detachedShell: false,
+            sceneOpen: false,
+            contentHidden: true);
+        Assert.Equal("Detach the UI", shell[(int)MainWindow.ShellCommand.ToggleDetached].Label);
+        Assert.Equal(TablerIcon.WindowMaximize, shell[(int)MainWindow.ShellCommand.ToggleDetached].Icon);
+
+        var actorRows = new List<ContextMenuItem>();
+        MainWindow.AddActorPoseFileMenuItems(
+            actorRows,
+            hasSkeleton: true,
+            hasStash: true,
+            stashedFrom: "actor",
+            stashedAt: DateTimeOffset.UnixEpoch);
+        Assert.Equal("Import pose", actorRows[1].Label);
+        Assert.Equal(TablerIcon.Download, actorRows[1].Icon);
+        Assert.Equal("Export pose", actorRows[2].Label);
+        Assert.Equal(TablerIcon.Upload, actorRows[2].Icon);
+        Assert.Equal("Stash pose", actorRows[3].Label);
+        Assert.Equal(TablerIcon.Stack2, actorRows[3].Icon);
+        Assert.Equal("Apply stashed pose", actorRows[4].Label);
+        Assert.Equal(TablerIcon.ArrowBackUp, actorRows[4].Icon);
+
         foreach (var icon in new[]
         {
-            TablerIcon.Library,
-            TablerIcon.FileExport,
+            TablerIcon.Book,
+            TablerIcon.Download,
+            TablerIcon.Upload,
+            TablerIcon.WindowMaximize,
+            TablerIcon.WindowMinimize,
+            TablerIcon.BrowserX,
+            TablerIcon.DeviceIpadX,
             TablerIcon.Copy,
             TablerIcon.UserMinus,
-            TablerIcon.Archive,
-            TablerIcon.ArchiveImport,
+            TablerIcon.Stack2,
+            TablerIcon.ArrowBackUp,
+            TablerIcon.X,
+            TablerIcon.LayoutPanel,
             TablerIcon.LayoutSidebarLeft,
         })
         {

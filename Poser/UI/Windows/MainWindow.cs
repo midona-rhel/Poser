@@ -3171,16 +3171,8 @@ public class MainWindow : Window
     private readonly OverlayPane _overlayPane;
     private readonly CompanionSection _companions;
 
-    /// <summary>
-    /// The shell's GROWABLE COMMAND LIST. Almost every action Poser offers is
-    /// meant to land here eventually, so that a collapsed bottom-bar-only
-    /// layout can still reach everything the chrome stops showing. One command
-    /// is therefore ONE member here, ONE row in <see cref="BuildShellMenu"/>
-    /// and ONE case in <see cref="InvokeShellCommand"/> — all three keyed by
-    /// this member, never by a loose index. A separator is a member with a row
-    /// and no case.
-    /// </summary>
-    private enum ShellCommand
+    /// <summary>Commands shown in the shell menu.</summary>
+    internal enum ShellCommand
     {
         ShowLibrary,
         SpawnActor,
@@ -3205,8 +3197,6 @@ public class MainWindow : Window
         if (_shellMenuOpenRequested)
         {
             _shellMenuOpenRequested = false;
-            // A short command list, not a context menu: the shell menu takes the
-            // width its own rows need rather than the canonical 260px surface.
             Crystarium.FloatingMenu.Open(
                 "##shell-burger-menu",
                 _shellMenuAnchor,
@@ -3218,16 +3208,10 @@ public class MainWindow : Window
             InvokeShellCommand((ShellCommand)clicked);
     }
 
-    /// <summary>
-    /// Restates the command rows into the retained array. The only per-frame
-    /// work is the gate itself; the rows are rewritten when — and only when —
-    /// a gate actually flips, so a warm frame writes nothing.
-    /// </summary>
+    /// <summary>Updates the shell menu when its visible state changes.</summary>
     private void BuildShellMenu()
     {
-        // The pose-file commands follow the SELECTED actor: a shell-wide menu
-        // has no right-clicked row to take a skeleton from. Same gate the actor
-        // context menu applies to the same three commands.
+        // Pose-file commands need the selected actor's skeleton.
         bool poseTarget = SelectedSkeleton() != null;
         var uiConfig = Config.ConfigurationService.Instance.Config.UI;
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
@@ -3242,56 +3226,63 @@ public class MainWindow : Window
         _shellMenuPoseTarget = poseTarget;
         _shellMenuLayoutState = layoutState;
 
-        _shellMenuItems[(int)ShellCommand.ShowLibrary] =
-            new ContextMenuItem("Show library", TablerIcon.Library);
-        _shellMenuItems[(int)ShellCommand.SpawnActor] =
+        FillShellMenuItems(
+            _shellMenuItems,
+            poseTarget,
+            uiConfig.DetachedShell,
+            sceneOpen,
+            _contentHidden);
+    }
+
+    /// <summary>Fills the shell menu rows for the current UI state.</summary>
+    internal static void FillShellMenuItems(
+        Span<ContextMenuItem> items,
+        bool poseTarget,
+        bool detachedShell,
+        bool sceneOpen,
+        bool contentHidden)
+    {
+        items[(int)ShellCommand.ShowLibrary] =
+            new ContextMenuItem("Show library", TablerIcon.Book);
+        items[(int)ShellCommand.SpawnActor] =
             new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
-        _shellMenuItems[(int)ShellCommand.ImportPose] =
+        items[(int)ShellCommand.ImportPose] =
             new ContextMenuItem(
                 "Import pose", TablerIcon.Download, disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.ExportPose] =
+        items[(int)ShellCommand.ExportPose] =
             new ContextMenuItem(
-                "Export pose", TablerIcon.FileExport, disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.AutoSaves] =
+                "Export pose", TablerIcon.Upload, disabled: !poseTarget);
+        items[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
                 "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.LayoutSeparator] =
-            ContextMenuItem.Separator;
-        _shellMenuItems[(int)ShellCommand.PopOutContent] =
+        items[(int)ShellCommand.LayoutSeparator] = ContextMenuItem.Separator;
+        items[(int)ShellCommand.PopOutContent] =
             new ContextMenuItem(
-                "Pop out content", TablerIcon.ArrowsDiagonal,
+                "Pop out content", TablerIcon.WindowMaximize,
                 disabled: !poseTarget);
-        _shellMenuItems[(int)ShellCommand.DetachSeparator] =
-            ContextMenuItem.Separator;
-        _shellMenuItems[(int)ShellCommand.ToggleDetached] =
+        items[(int)ShellCommand.DetachSeparator] = ContextMenuItem.Separator;
+        items[(int)ShellCommand.ToggleDetached] =
             new ContextMenuItem(
-                uiConfig.DetachedShell ? "Merge the UI" : "Detach the UI",
-                TablerIcon.LayoutPanel);
-        _shellMenuItems[(int)ShellCommand.WindowsSeparator] =
-            ContextMenuItem.Separator;
-        // Detached mode's window roster: windows close and reopen from this
-        // menu — the strip is the always-there surface carrying it.
-        _shellMenuItems[(int)ShellCommand.SceneWindow] =
+                detachedShell ? "Merge the UI" : "Detach the UI",
+                detachedShell ? TablerIcon.WindowMinimize : TablerIcon.WindowMaximize);
+        items[(int)ShellCommand.WindowsSeparator] = ContextMenuItem.Separator;
+        // Detached windows can be opened and closed here.
+        items[(int)ShellCommand.SceneWindow] =
             new ContextMenuItem(
                 sceneOpen ? "Close Scene window" : "Open Scene window",
-                TablerIcon.LayoutPanel,
-                disabled: !uiConfig.DetachedShell);
-        _shellMenuItems[(int)ShellCommand.InspectorWindow] =
+                sceneOpen ? TablerIcon.DeviceIpadX : TablerIcon.LayoutPanel,
+                disabled: !detachedShell);
+        items[(int)ShellCommand.InspectorWindow] =
             new ContextMenuItem(
-                _contentHidden
-                    ? "Open Inspector window"
-                    : "Close Inspector window",
-                TablerIcon.LayoutSidebarLeft,
-                disabled: !uiConfig.DetachedShell);
-        _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
-            ContextMenuItem.Separator;
-        _shellMenuItems[(int)ShellCommand.OpenSettings] =
+                contentHidden ? "Open Inspector window" : "Close Inspector window",
+                contentHidden ? TablerIcon.LayoutSidebarLeft : TablerIcon.BrowserX,
+                disabled: !detachedShell);
+        items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;
+        items[(int)ShellCommand.OpenSettings] =
             new ContextMenuItem("Open settings", TablerIcon.Settings);
     }
 
-    /// <summary>The ONE layout toggle. The window set orchestrates it — the
-    /// flag flip, the part placement, this window's reseat — so the request
-    /// only travels.</summary>
+    /// <summary>Requests the shell layout toggle.</summary>
     public event Action? OnDetachToggleRequested;
 
     internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
@@ -3307,14 +3298,11 @@ public class MainWindow : Window
                 ShowLibrary();
                 break;
             case ShellCommand.SpawnActor:
-                // Reached FROM the burger menu, so the burger's own anchor is
-                // this surface's seat too: the pointer is on a menu row that
-                // is about to vanish.
+                // The menu anchor is also the spawn browser's anchor.
                 OnSpawnBrowserRequested?.Invoke(
                     _shellMenuAnchor, SpawnBrowserTab.All);
                 break;
-            // Import/Export open the Brio menus — the ONE import and export
-            // surface; the file dialogs live inside them.
+            // Import and export use the existing pose-file menus.
             case ShellCommand.ImportPose:
                 if (SelectedSkeleton() != null)
                     _poseFileSection.RequestImportMenu(withPresets: true);
@@ -3435,8 +3423,7 @@ public class MainWindow : Window
             () => _spawnService.DestroyCompanion(actor),
         };
 
-        // Which bones the overlay shows is per actor, so the named sets hang
-        // off the actor exactly as Ktisis' presets submenu does.
+        // Bone presets belong to this actor.
         items.Add(ContextMenuItem.Separator);
         items.Add(new ContextMenuItem(
             "Bone presets", TablerIcon.Armature,
@@ -3448,26 +3435,14 @@ public class MainWindow : Window
         actions.Add(null); // separator
         actions.Add(null); // Child clicks are read separately.
 
-        // Pose files belong to the actor, not to whatever is selected, so the
-        // actor itself is where they are reachable.
-        items.Add(ContextMenuItem.Separator);
-        items.Add(new ContextMenuItem(
-            "Import pose", TablerIcon.Download, disabled: !actor.HasSkeleton));
-        items.Add(new ContextMenuItem(
-            "Export pose", TablerIcon.FileExport,
-            disabled: !actor.HasSkeleton));
-        items.Add(new ContextMenuItem(
-            "Stash pose", TablerIcon.Archive, disabled: !actor.HasSkeleton,
-            help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before."));
-        items.Add(new ContextMenuItem(
-            "Apply stashed pose", TablerIcon.ArchiveImport,
-            disabled: !actor.HasSkeleton || !_cleanPose.HasStash,
-            help: _cleanPose.HasStash
-                ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
-                : "Nothing stashed yet"));
+        AddActorPoseFileMenuItems(
+            items,
+            actor.HasSkeleton,
+            _cleanPose.HasStash,
+            _cleanPose.StashedFrom,
+            _cleanPose.StashedAt);
         actions.Add(null); // separator
-        // Both rows open the Brio menus — the ONE import/export surface;
-        // the file dialogs (and the actor-side presets) live inside them.
+        // Both rows open the existing pose-file menus.
         actions.Add(() => _poseFileSection.RequestImportMenu(withPresets: true));
         actions.Add(() => _poseFileSection.RequestExportMenu());
         actions.Add(() => _cleanPose.Stash(
@@ -3501,6 +3476,30 @@ public class MainWindow : Window
         int presetClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick();
         if (presetClicked >= 0 && presetClicked < _bonePresetActions.Count)
             _bonePresetActions[presetClicked]?.Invoke();
+    }
+
+    /// <summary>Adds pose-file rows for one actor.</summary>
+    internal static void AddActorPoseFileMenuItems(
+        List<ContextMenuItem> items,
+        bool hasSkeleton,
+        bool hasStash,
+        string? stashedFrom,
+        DateTimeOffset? stashedAt)
+    {
+        items.Add(ContextMenuItem.Separator);
+        items.Add(new ContextMenuItem(
+            "Import pose", TablerIcon.Download, disabled: !hasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Export pose", TablerIcon.Upload, disabled: !hasSkeleton));
+        items.Add(new ContextMenuItem(
+            "Stash pose", TablerIcon.Stack2, disabled: !hasSkeleton,
+            help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before."));
+        items.Add(new ContextMenuItem(
+            "Apply stashed pose", TablerIcon.ArrowBackUp,
+            disabled: !hasSkeleton || !hasStash,
+            help: hasStash
+                ? $"Apply the stashed pose to this actor. Stashed from {stashedFrom} at {stashedAt:HH:mm:ss} UTC."
+                : "Nothing stashed yet"));
     }
 
     private ContextMenuItem[] BuildBonePresetSubmenu(ActorId actorId)

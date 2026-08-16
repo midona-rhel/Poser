@@ -4,11 +4,7 @@ using System.Linq;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Strongly-typed Tabler icon names. Mirrors a curated subset of
-/// https://tabler.io/icons (MIT). Add a value here and a matching SVG source
-/// in <c>TablerSvgSources</c> to ship a new icon.
-/// </summary>
+/// <summary>Names for the Tabler icons shipped with Poser.</summary>
 public enum TablerIcon
 {
     Plus,
@@ -98,6 +94,12 @@ public enum TablerIcon
     Video,
     Message,
     MessageCircle,
+    Upload,
+    Book,
+    DeviceIpadX,
+    WindowMaximize,
+    WindowMinimize,
+    BrowserX,
 }
 
 /// <summary>
@@ -184,11 +186,13 @@ public static class Tabler
         TablerIcon.Trash           => "trash",
         TablerIcon.Pin             => "pin",
         TablerIcon.ExternalLink    => "external-link",
+        TablerIcon.Upload          => "upload",
         TablerIcon.Star            => "star",
         TablerIcon.Refresh         => "refresh",
         TablerIcon.Settings        => "settings",
         TablerIcon.Home            => "home",
         TablerIcon.Library         => "library",
+        TablerIcon.Book            => "book",
         TablerIcon.Folder          => "folder",
         TablerIcon.User            => "user",
         TablerIcon.UserPlus        => "user-plus",
@@ -208,6 +212,7 @@ public static class Tabler
         TablerIcon.Circle          => "circle",
         TablerIcon.TopologyStar    => "topology-star",
         TablerIcon.DeviceDesktop   => "device-desktop",
+        TablerIcon.DeviceIpadX     => "device-ipad-x",
         TablerIcon.File            => "file",
         TablerIcon.FileText        => "file-text",
         TablerIcon.FileExport      => "file-export",
@@ -244,6 +249,9 @@ public static class Tabler
         TablerIcon.Monitor         => "monitor",
         TablerIcon.LayoutPanel     => "layout-panel",
         TablerIcon.LayoutSidebarLeft  => "layout-sidebar-left",
+        TablerIcon.WindowMaximize  => "window-maximize",
+        TablerIcon.WindowMinimize  => "window-minimize",
+        TablerIcon.BrowserX        => "browser-x",
         TablerIcon.Keyboard        => "keyboard",
         TablerIcon.Info            => "info",
         TablerIcon.AlertTriangle   => "alert-triangle",
