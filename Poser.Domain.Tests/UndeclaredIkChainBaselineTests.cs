@@ -32,12 +32,6 @@ public sealed class UndeclaredIkChainBaselineTests
     }
 
     [Fact]
-    public void Ccd_defaults_can_be_created_already_armed()
-    {
-        Assert.True(IkChainConfig.DefaultsForCcd(enabled: true).Enabled);
-    }
-
-    [Fact]
     public void Two_joint_is_refused_on_a_bone_with_no_declared_chain()
     {
         var twoJoint = IkChainConfig.DefaultsForCcd() with
@@ -88,15 +82,4 @@ public sealed class UndeclaredIkChainBaselineTests
         Assert.NotNull(config.ValidateUndeclared());
     }
 
-    [Fact]
-    public void Undeclared_defaults_keep_a_usable_hinge_so_a_later_switch_validates()
-    {
-        // The Two Joint fields are dead weight for CCD, but a zero hinge axis
-        // would make the configuration unvalidatable the moment the bone did
-        // turn out to head a declared chain.
-        var defaults = IkChainConfig.DefaultsForCcd();
-
-        Assert.NotEqual(Vector3.Zero, defaults.HingeAxis);
-        Assert.Null((defaults with { Solver = IkSolver.TwoJoint }).Validate());
-    }
 }

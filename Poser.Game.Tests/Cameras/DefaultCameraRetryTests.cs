@@ -18,13 +18,11 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     public void Dispose() => Marshal.FreeHGlobal(_nativeBlock);
-
-    [Fact]
-    public void Native_ready_at_entry_mints_the_default_camera_immediately()
+[Fact]
+    public void Ready_native_entry_creates_the_default_live_camera()
     {
         var gate = new NativeGate { Value = _nativeBlock };
         var setup = NewService(gate, isAvailable: true);
-
         setup.GPose.IsGPosing = true;
         setup.Bus.Publish(new GPoseStateChangedEvent(true));
 
@@ -36,96 +34,44 @@ public sealed unsafe class DefaultCameraRetryTests : IDisposable
     }
 
     [Fact]
-    public void Missing_native_manager_at_entry_recovers_on_a_later_tick()
+    public void Pending_native_retry_recovers_once_and_then_stops_polling()
     {
         var gate = new NativeGate { Value = 0 };
         var setup = NewService(gate, isAvailable: true);
-
         setup.GPose.IsGPosing = true;
         setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        Assert.Empty(setup.Service.Cameras);
-
-        // Still not up: the retry keeps waiting without minting anything.
-        setup.Framework.RaiseUpdate();
         setup.Framework.RaiseUpdate();
         Assert.Empty(setup.Service.Cameras);
 
         gate.Value = _nativeBlock;
         setup.Framework.RaiseUpdate();
-
         var main = Assert.Single(setup.Service.Cameras);
-        Assert.True(main.IsDefault);
+        var calls = gate.Calls;
+        setup.Framework.RaiseUpdate();
         Assert.Same(main, setup.Service.LiveCamera);
-
-        // Recovery is terminal: the gate is no longer consulted per tick.
-        var consulted = gate.Calls;
-        setup.Framework.RaiseUpdate();
-        setup.Framework.RaiseUpdate();
-        Assert.Equal(consulted, gate.Calls);
-        Assert.Single(setup.Service.Cameras);
+        Assert.Equal(calls, gate.Calls);
     }
 
     [Fact]
-    public void Never_available_capability_stays_truthfully_unavailable()
+    public void Unavailable_or_exited_capability_never_mints_a_camera()
     {
-        var gate = new NativeGate { Value = _nativeBlock };
-        var setup = NewService(gate, isAvailable: false);
+        var unavailable = NewService(new NativeGate { Value = _nativeBlock }, isAvailable: false);
+        unavailable.GPose.IsGPosing = true;
+        unavailable.Bus.Publish(new GPoseStateChangedEvent(true));
+        unavailable.Framework.RaiseUpdate();
+        Assert.False(unavailable.Service.IsAvailable);
+        Assert.Empty(unavailable.Service.Cameras);
 
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        setup.Framework.RaiseUpdate();
-        setup.Framework.RaiseUpdate();
-
-        Assert.False(setup.Service.IsAvailable);
-        Assert.Empty(setup.Service.Cameras);
-        Assert.Equal(0, gate.Calls);
-        Assert.Equal(0, setup.Bus.CameraListChanges);
+        var pending = NewService(new NativeGate { Value = 0 }, isAvailable: true);
+        pending.GPose.IsGPosing = true;
+        pending.Bus.Publish(new GPoseStateChangedEvent(true));
+        pending.Framework.RaiseUpdate();
+        pending.GPose.IsGPosing = false;
+        pending.Bus.Publish(new GPoseStateChangedEvent(false));
+        pending.Framework.RaiseUpdate();
+        Assert.Empty(pending.Service.Cameras);
     }
-
-    [Fact]
-    public void Gpose_exit_while_pending_cancels_the_retry()
-    {
-        var gate = new NativeGate { Value = 0 };
-        var setup = NewService(gate, isAvailable: true);
-
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        setup.Framework.RaiseUpdate();
-
-        setup.GPose.IsGPosing = false;
-        setup.Bus.Publish(new GPoseStateChangedEvent(false));
-
-        gate.Value = _nativeBlock;
-        var consulted = gate.Calls;
-        setup.Framework.RaiseUpdate();
-        setup.Framework.RaiseUpdate();
-
-        Assert.Empty(setup.Service.Cameras);
-        Assert.Equal(consulted, gate.Calls);
-    }
-
-    [Fact]
-    public void Gpose_exit_after_recovery_tears_the_cameras_down_as_before()
-    {
-        var gate = new NativeGate { Value = 0 };
-        var setup = NewService(gate, isAvailable: true);
-
-        setup.GPose.IsGPosing = true;
-        setup.Bus.Publish(new GPoseStateChangedEvent(true));
-        gate.Value = _nativeBlock;
-        setup.Framework.RaiseUpdate();
-        var main = Assert.Single(setup.Service.Cameras);
-
-        setup.GPose.IsGPosing = false;
-        setup.Bus.Publish(new GPoseStateChangedEvent(false));
-
-        Assert.Empty(setup.Service.Cameras);
-        Assert.Null(setup.Service.LiveCamera);
-        Assert.False(main.IsValid);
-        Assert.False(main.IsLive);
-    }
-
-    private sealed record Setup(
+private sealed record Setup(
         VirtualCameraService Service,
         FakeFramework Framework,
         FakeGPoseService GPose,

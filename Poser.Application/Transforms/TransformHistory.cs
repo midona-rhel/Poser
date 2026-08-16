@@ -1,12 +1,8 @@
 namespace Poser.Application.Transforms;
 
 /// <summary>
-/// One undoable act. There are exactly two shapes, and the difference is not
-/// cosmetic: a transform is undone by RESTORING STATE onto a target that
-/// still exists, while a spawn or a despawn is undone by RUNNING THE OPPOSITE
-/// ACT through the service that owns the entity — there is no "before state"
-/// of an object that did not exist. One stack carries both, because undo is
-/// one ordered story and a spawn interleaves with the transforms around it.
+/// One undoable action. Transform entries restore captured state; lifecycle
+/// entries run the inverse action through the service that owns the entity.
 /// </summary>
 public abstract record HistoryEntry(string Description);
 
@@ -16,13 +12,8 @@ public sealed record TransformPatch(
     IReadOnlyList<TransformTargetState> After) : HistoryEntry(Description);
 
 /// <summary>
-/// A scene-lifecycle act: an entity entered or left the scene. The two
-/// directions are supplied by the service that owns the entity and are
-/// EXACT INVERSES of each other, each answering whether it landed — a
-/// refused spawn is a failed undo, not a silently swallowed one. Each closure
-/// carries the identity of the entity it acts on, so it re-binds across a
-/// destroy/respawn pair rather than holding a native handle that undo itself
-/// invalidated.
+/// A scene-lifecycle action. Its undo and redo delegates report whether the
+/// action landed and resolve the entity again when it is recreated.
 /// </summary>
 public sealed record SceneLifecyclePatch(
     string Description,
@@ -30,14 +21,8 @@ public sealed record SceneLifecyclePatch(
     Func<bool> Redo) : HistoryEntry(Description);
 
 /// <summary>
-/// Bounded before/after patch history.
-///
-/// <para>The bound is READ PER APPEND, not captured at construction: the depth
-/// is a user setting, so raising or lowering it takes effect on the next edit
-/// rather than on the next plugin load. Zero means undo is OFF — the stacks are
-/// emptied and the patch is dropped, so an edit still applies but nothing
-/// records it. Observers are notified either way, because the badge that reads
-/// <see cref="CanUndo"/> must learn that undo just became impossible.</para>
+/// Bounded before/after patch history. Capacity is read for each append, and
+/// zero clears both stacks while still notifying observers.
 /// </summary>
 public sealed class TransformHistory
 {
@@ -74,11 +59,7 @@ public sealed class TransformHistory
         int capacity = _capacity();
         if (capacity < 1)
         {
-            // Undo turned off: drop the stacks rather than keep a history the
-            // setting says may not be walked. This empties them exactly as
-            // Clear does, so it announces exactly as Clear does — the entry
-            // being appended is discarded too, and whatever state was put
-            // behind it goes with the rest.
+            // Capacity zero disables undo and redo, including the new entry.
             _undo.Clear();
             _redo.Clear();
             RaiseCleared();
@@ -90,9 +71,7 @@ public sealed class TransformHistory
                 _undo.RemoveAt(0);
             _redo.Clear();
         }
-        // The patch is committed before observers run. A surface observer is
-        // never part of the transaction and cannot turn committed history into
-        // an apparent apply failure (or prevent later observers from updating).
+        // Observers run after the history mutation and cannot roll it back.
         if (PatchAppended is { } observers)
             foreach (Action observer in observers.GetInvocationList())
                 try

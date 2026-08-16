@@ -9,13 +9,9 @@ namespace Poser.Game.WorldObjects;
 /// path that names it to a human, where it stood, and the draw flags it stood
 /// with.
 ///
-/// <para>The placement and the flags are captured AT WALK TIME rather than
-/// read on demand, because they are what an adoption's restore puts back —
-/// Ktisis captures the same pair in its <c>WorldObject</c> constructor
-/// (<c>Ktisis/Structs/Objects/WorldObject.cs:27-41</c>: <c>InitialTransform</c>
-/// from Position/Rotation/Scale, <c>InitialFlags</c> from the BgObject) so that
-/// the value a reset writes back can never be one the user already moved.
-/// </para>
+/// <para>Placement and flags are captured during the walk because adoption
+/// restores those values. Reading them later could capture a placement that
+/// the user has already changed.</para>
 /// </summary>
 public readonly record struct WorldObjectRow(
     nint Address,
@@ -45,16 +41,11 @@ public readonly record struct WorldObjectCandidate(
 /// game's own scene graph, and the reads and writes to the BG objects it
 /// finds. Nothing else in Poser touches a map object.
 ///
-/// <para>THE SAFETY RULE this seam owns, and which is NOT the actor band's
-/// rule: a world object is not a character, so the 201–439 GPose object-index
-/// gate says nothing about it. The rule here is OWNERSHIP BY ADOPTION —
-/// <see cref="Enumerate"/> reads the whole graph, but <see cref="Write"/> and
-/// <see cref="WriteFlags"/> are only ever reached through an adopted handle,
-/// and every adopted handle is restored before it is forgotten. Poser never
-/// creates a BG object and never destroys one; the only objects it writes are
-/// the ones the user clicked, and each of those is put back.</para>
+/// <para>Enumeration may read the whole graph, but writes are reached only
+/// through an adopted handle. Poser never creates or destroys BG objects, and
+/// restores each object before forgetting its handle.</para>
 ///
-/// <para>THE CONTRACT every implementation owes:</para>
+/// <para>Every implementation must:</para>
 /// <list type="number">
 /// <item><description><see cref="Enumerate"/> returns rows whose placement and
 /// flags are the values the world held at the moment of the walk, and never
@@ -82,19 +73,9 @@ public interface IWorldObjectPort
     /// <summary>The same walk, filtered to the graph's LIGHT-typed nodes, as
     /// bare addresses.
     ///
-    /// <para>It lives on this seam rather than beside the light service because
-    /// the world's scene graph has exactly one walk, and Ktisis reaches its
-    /// lights through that same walk and no other — one recursion, partitioned
-    /// by <c>ObjectType</c> at the end of it
-    /// (<c>Ktisis/Services/Game/WorldService.cs:39-42</c>: BG objects and
-    /// lights are two <c>Where</c> clauses over one <c>RecurseWorld()</c>).
-    /// The address is the graph node's own, which is the light: Ktisis casts it
-    /// straight through (<c>Scene/Entities/World/LightEntity.cs:114</c>,
-    /// <c>Scene/Modules/Lights/LightModule.cs:74</c>).</para>
-    ///
-    /// <para>Bare addresses rather than rows because a light's interesting
-    /// state is not the BG object's — no model path, no culling volume — and
-    /// the light service already knows how to read one from its handle.</para>
+    /// <para>The address is the graph node's own. Lights do not have BG model
+    /// paths or culling state, and the light service reads them from these
+    /// addresses.</para>
     /// </summary>
     IReadOnlyList<nint> EnumerateLights();
 
@@ -145,18 +126,9 @@ public interface IWorldObjectPort
 /// <summary>
 /// The two outline bytes this feature writes.
 ///
-/// <para>Verified against Ktisis' own call site: <c>OutlineChoice</c> is a byte
-/// enum whose values are <c>None = 0x03</c> through <c>Pink = 0x63</c>
-/// (<c>Ktisis/Structs/Objects/DrawObject.cs:10-18</c>), written whole into
-/// <c>DrawObject.OutlineFlags</c> by <c>WorldObject.SetOutline</c>
-/// (<c>Structs/Objects/WorldObject.cs:57-62</c>) and driven from hover in
-/// <c>SceneDraw.SetHovered</c> (<c>Interface/Overlay/SceneDraw.cs:340-346</c>)
-/// — set on enter, set back on leave. Yellow is Ktisis' own default
-/// (<c>Data/Config/Sections/OverlayConfig.cs:31</c>).</para>
-///
-/// <para>Poser writes the same values but RESTORES what it read rather than
-/// writing <c>None</c> back: the low nibble is not the colour, and a hover has
-/// no business deciding what an object's resting outline was.</para>
+/// <para>Poser writes the game's outline byte and restores the value it read;
+/// it does not assume that <see cref="None"/> is the object's resting state.
+/// </para>
 /// </summary>
 public static class WorldObjectOutline
 {
