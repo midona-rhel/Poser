@@ -140,21 +140,22 @@ public sealed class SelectiveImportContractTests
         Assert.True(begun.Success, begun.Detail);
         Assert.Equal(new Vector3(2f, 0f, 0f), group.Gestures.ActivePivot);
 
-        var portablePath = new BonePath("root", import.Bone.BoneName);
+        var boneId = SnapshotBone(import);
+        var portablePath = new BonePath("root", boneId.CanonicalName);
         var portable = new PortablePose(new[]
         {
             new PortableBoneEntry(
-                PortableBoneKey.From(import.Bone, portablePath),
+                PortableBoneKey.From(boneId, portablePath),
                 new BonePose(),
-                import.Bone.BoneIndex),
+                boneId.BoneIndex),
         });
         var match = portable.Match(new[]
         {
-            PortableBoneTarget.From(import.Bone, portablePath),
+            PortableBoneTarget.From(boneId, portablePath),
         });
         Assert.True(match.Success);
         Assert.Single(match.Matches);
-        Assert.Equal(import.Bone, match.Matches[0].Target.Bone);
+        Assert.Equal(boneId, match.Matches[0].Target.Bone);
     }
 
     // ── Direct selection bypasses the mode gates (Ktisis parity) ─────────
