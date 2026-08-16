@@ -1,24 +1,19 @@
 # Pose operations
 
-Discrete edits go through `PoseEditService` (stable ids): capture all →
-compute in domain → write via runtime port → roll back all on any failure →
-one history patch. Rejected while a gesture is active; undo through the same
-restore path as gestures.
+Each discrete edit captures its targets, computes the change, and writes it to
+the game. On failure it tries every captured baseline. If
+rollback cannot finish, recovery information and ownership remain available;
+the failed edit is not added to success history. A successful edit adds one
+history patch. Edits are refused during a live gesture and use the same
+restore path as undo and redo.
 
-- Mirror plane (Brio, deliberate): YZ — rotation `(x, −y, −z, w)`,
-  translation `(−x, y, z)`. (Ktisis FlipPose nets to the same plane only
-  because of its 180° root yaw; Poser mirrors per-pair without turning the
-  root.) Transfers rebase through both frozen animated baselines
-  (`d′ = B_dst⁻¹·M(B_src)·M(d)·M(B_src)⁻¹·B_dst`) because counterpart bind
-  frames differ ~180°. Governs Mirror edits, Flip bone, and Symmetry:
-  Mirror. Symmetry: Link rebases world deltas into the partner's own local
-  frame instead.
-- Mirror edits touches authored layers only: pairs exchange, center bones
-  self-mirror, one atomic history entry, animation-safe.
-- Reset = empty interactive `BonePose`; named layers untouched. Regions:
-  face `j_f_*`/`j_kao`/`j_ago*`, hair `j_kami*`/`j_ex_h*`/`j_ex_met*`, body
-  the rest. **Reset All** = expression → gaze (native pre-Poser restore) →
-  all regions → IK disarm; every step runs, failures aggregate; placement,
-  stash, tools, and disclosure survive.
-- Copy/stash/apply use `PortablePose`: atomic, history-integrated, empty
-  bones clear destination overrides, zero matches fails explicitly.
+Mirror and Flip use the YZ plane. Mirror transfers authored layers through the
+two frozen animated baselines, exchanges paired bones atomically, and leaves
+center bones self-mirrored. Symmetry Mirror uses the same reflection;
+Symmetry Link moves the world delta into the partner's local frame.
+
+Reset clears the interactive `BonePose` but keeps named layers. Reset All also
+restores expression and gaze, resets every pose region, and disarms IK.
+Placement, stash, tools, and disclosure survive. Copy, stash, and apply use
+`PortablePose`, are atomic and history-integrated, clear empty destination
+overrides, and report zero matches as an explicit refusal.
