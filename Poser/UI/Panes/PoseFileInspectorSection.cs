@@ -30,11 +30,8 @@ public sealed class PoseFileInspectorSection
     /// was written out at nine call sites and had begun to drift.</summary>
     private const string NoActorText = "Select an actor first.";
 
-    // The import menu's type pair, Brio's exact popup state: both OFF is
-    // the DEFAULT path (rotation-only toggles over everything, weapons and
-    // ex excluded, the custom bone filter live); Body-only excludes the
-    // face and honors the toggles; Expression runs the dance with every
-    // component; both = everything, all components, toggles ignored.
+    // Import mode state. Both flags clear selects the default route; the body,
+    // expression, and combined routes select their corresponding scopes.
     private bool _typeBody;
     private bool _typeExpression;
 
@@ -67,73 +64,45 @@ public sealed class PoseFileInspectorSection
     /// them having to navigate anywhere. Choosing another folder is still
     /// allowed and sticks for the rest of the session.</summary>
     private string _lastPath;
-    // Rotation-only by default, matching Brio's DefaultImporterOptions and
-    // Ktisis's ImportPoseTransforms: Translation/Scale are opt-in because a
-    // file's baked positions/scales fight IK and Customize+ scaling.
+    // Rotation is enabled by default; translation and scale are opt-in.
     private bool _rotation = true, _position, _scale;
     private bool _reset;
-    // Ktisis' selective import (PoseImportDialog.cs:141-158): live only in
-    // the import DIALOG's scope column — the quick popup stays Brio-pure
-    // (user 2026-08-10). The selection freezes as complete BoneIds at
-    // dialog confirmation; an empty or stale frozen selection is a typed
-    // refusal, never a silent full-body import.
+    // Selective import is configured in the dialog. The confirmed selection is
+    // frozen as bone ids; an empty or stale selection is refused.
     private bool _selectiveImport;
     private bool _selectiveDescendants;
-    // Ktisis' "Anchor group positions" (PoseImportDialog.cs:151-155, gated
-    // on the EFFECTIVE position component — see
-    // SelectiveImportAppliesPosition): the selective set keeps its
-    // positions, the file contributes rotation/scale.
+    // Selective imports can preserve the selected bones' positions while
+    // applying other enabled components.
     private bool _selectiveAnchor;
-    // Ktisis' standalone "Exclude ear bones" (PoseImportDialog.cs:176). It
-    // rides EVERY path — the category menu it would otherwise live in goes
-    // dead the moment Body or Expression is checked, which is exactly when
-    // ears most need holding back. Default off, Ktisis' default too.
+    // Exclude ear bones on any import route. The option is off by default.
     private bool _excludeEars;
-    // Ktisis' "Apply on selection" (PoseImportDialog.cs:44-51): picking a file
-    // in the dialog applies it there and then. Default off. The last path the
-    // armed checkbox applied, so re-drawing the same selection does not
-    // re-import it every frame.
+    // Apply a selected file immediately when enabled. Remember the last path
+    // applied so redraws do not import it repeatedly.
     private bool _applyOnSelect;
     private string? _appliedOnSelectPath;
     // Two-step reference-pose confirm: the first press arms and shows the
     // visible warning, the second applies. Any other preset disarms.
     private bool _referenceArmed;
 
-    // ── the two Brio menus (one shared state for FILES and the library) ──
-    // Import menu: Brio's import popup (FileUIHelpers.DrawImportPoseMenuPopup)
-    // — Freeze / Smart Import / Import Type / transform toggles / presets.
-    // Bone-filter menu: Brio's category filter (PosingEditorCommon.
-    // DrawBoneFilterEditor) — group tristates + per-category checkboxes.
-    // ON by default — the user's call (2026-08-09), deviating from
-    // Brio's unchecked static: smart routing is the wanted default and the
-    // Apply/Model toggles wear Brio's smart lock until it is unchecked.
+    // Shared import and bone-filter menu state for files and the library.
     private bool _smartImport = true;
     private bool _modelTransform;
-    // Brio's DefaultImporterOptions filter starts with weapon and ex
-    // disabled (PosingService.cs:45-47); the menu edits from there.
+    // These categories start disabled and are changed by the menu.
     private readonly HashSet<string> _disabledCategories =
         new(StringComparer.Ordinal) { "weapon", "ex" };
     private bool _importMenuRequested;
     private bool _importMenuWithPresets;
     private bool _boneFilterRequested;
 
-    // Seeded from config and written back on toggle: the checkbox IS the
-    // persisted FreezeActorOnPoseImport default (Brio's popup checkbox +
-    // hidden config flag as one surface).
+    // Persisted freeze-on-import setting.
     private bool _freeze;
 
-    // ── Brio's two popup recall slots (FileUIHelpers.cs:440-441) ──
-    // _lastused: whatever the last import came from, recorded by the dispatch
-    // itself (:678) so "Reapply Last Pose" repeats it through the CURRENT
-    // options rather than the ones it originally landed with. Exactly one of
-    // the two is set.
+    // Last import source, used by the reapply action. Exactly one is set.
     private string? _lastImportPath;
     private PoseFile? _lastImportPose;
 
-    // _stash: a FULL absolute pose capture the export menu fills and the
-    // import menu applies. Distinct from _poseFacade.Stash — that one holds a
-    // PortablePose for the inspector's Transfer group and carries authored
-    // layers, not a pose file.
+    // Absolute pose captured by export and consumed by the import menu. This
+    // is separate from the inspector's authored-layer transfer stash.
     private PoseFile? _poseStash;
     private DateTimeOffset? _poseStashedAt;
 

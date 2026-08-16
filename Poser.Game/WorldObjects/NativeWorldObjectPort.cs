@@ -8,33 +8,12 @@ using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 namespace Poser.Game.WorldObjects;
 
 /// <summary>
-/// The one implementation of <see cref="IWorldObjectPort"/> that touches the
-/// game: <c>World.Instance()</c>'s object graph, walked for its BG objects,
-/// and their transforms read and written in place.
-///
-/// <para>GAME-VERSION FRAGILITY, stated once: this seam depends on the shape
-/// of the graph (an object's first child and its sibling ring) and on three
-/// members of a BG object — its model resource handle for the name, its flags
-/// byte, and the render/culling re-state calls. It uses no signature scan and
-/// no hardcoded offset; every member is one FFXIVClientStructs names, so a
-/// patch that moves them breaks the BUILD rather than the game. Brio reaches
-/// the same object through a hand-written struct with literal offsets
-/// (<c>Brio/Game/WorldObjects/Interop/BgObjectEx.cs:12-24</c> — Flags at 0x38,
-/// the resource handle at 144), which is the shape this deliberately does not
-/// copy: a moved offset there is a silent wrong read.</para>
-///
-/// <para>The walk is Ktisis' own
-/// (<c>Ktisis/Services/Game/WorldService.cs:46-67</c> with
-/// <c>Structs/Objects/WorldObject.cs:82-104</c>): the world root's siblings and
-/// children, each recursed. The sibling ring is circular and the graph is not
-/// guaranteed acyclic, so this walk carries an explicit visited set and a hard
-/// node cap instead of Ktisis' pairwise address comparisons — the same
-/// traversal, terminating by construction.</para>
-///
-/// <para>The same walk answers the light service's seed. Ktisis partitions its
-/// one recursion into BG objects and lights by <c>ObjectType</c>
-/// (<c>WorldService.cs:39-42</c>), and this port does the same rather than
-/// standing a second graph walk up beside it.</para>
+/// Reads and writes BG objects through the game's world-object graph. The
+/// graph uses child and sibling links, including circular sibling rings, so
+/// traversal tracks visited addresses and limits processing to
+/// <see cref="MaxNodes"/>.
+/// Native fields are accessed through FFXIVClientStructs; writes refresh the
+/// render and culling state that depends on placement.
 /// </summary>
 public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 {
@@ -70,13 +49,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             : _lights.ToArray();
     }
 
-    /// <summary>The one traversal, partitioned at its end by object type —
-    /// Ktisis' <c>RecurseWorld()</c> is likewise walked once and split into BG
-    /// objects and lights by two <c>Where</c> clauses
-    /// (<c>WorldService.cs:39-42</c>). The partition is a parameter rather than
-    /// two collected lists because a listing pass wants one of them and
-    /// building the other would be a wasted read of every node's model
-    /// resource.</summary>
+    /// <summary>Walks the graph once and collects either BG objects or lights.
+    /// Keeping one traversal avoids a second read of the graph.</summary>
     private void Walk(bool wantLights)
     {
         _rows.Clear();
@@ -89,8 +63,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             if (world == null)
                 return;
 
-            // The root itself is not a listing row — Ktisis says the same in
-            // as many words (WorldService.cs:49, "don't include World root").
+            // The world root is a container, not a listing row.
             var root = &world->Object;
             _visited.Add((nint)root);
             PushRing(root->ChildObject);
@@ -150,11 +123,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         node->Position = placement.Position;
         node->Rotation = placement.Rotation;
         node->Scale = placement.Scale;
-        // Ktisis' WorldObject.Update() (Structs/Objects/WorldObject.cs:44-51):
-        // the placement alone does not move what is DRAWN — the render state
-        // and the BG object's culling volume both hang off it, and Brio
-        // re-states the same two after every write (BGOObject.SetTransform,
-        // Brio/Game/WorldObjects/Objects/BGOObject.cs:92-93).
+        // Placement alone does not update the dependent render and culling
+        // state, so refresh both after writing the native transform.
         node->UpdateRender();
         ((BgObject*)node)->UpdateCulling();
     }
@@ -210,9 +180,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         var node = Resolve(address);
         if (node == null)
             return;
-        // Ktisis writes this field and nothing beside it — no render or
-        // culling re-state (WorldObject.SetOutline, Structs/Objects/
-        // WorldObject.cs:57-62), unlike its own Update() for a placement.
+        // Outline is an independent field; changing it does not require a
+        // placement refresh.
         ((DrawObject*)node)->OutlineFlags = outline;
     }
 
@@ -254,9 +223,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
 
     private WorldObjectRow ReadRow(nint address, BgObject* bg)
     {
-        // Ktisis defaults the path to the address and overwrites it from the
-        // model resource when there is one (WorldObject.cs:32, :38-40), so an
-        // object with no loaded model still has a name that identifies it.
+        // Use the address when no model resource can provide a path, so an
+        // object without a loaded model still has an identifiable row.
         string path = address.ToString("X");
         try
         {

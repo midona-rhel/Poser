@@ -577,9 +577,8 @@ public sealed class WorldObjectRestoreTests
             Assert.True(names.Add(claim.Name), $"duplicate row name: {claim.Name}");
     }
 
-    /// <summary>An object with no loaded model names itself by its address
-    /// (Ktisis does the same, WorldObject.cs:32) — still a row, never a
-    /// blank.</summary>
+    /// <summary>An object with no loaded model uses its address as a name, so
+    /// it remains a visible row rather than becoming blank.</summary>
     [Fact]
     public void An_object_with_no_model_still_has_a_name()
     {

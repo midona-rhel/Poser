@@ -6,21 +6,15 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Tests.Animation;
 
 /// <summary>
-/// The one-click expression contract at the session/port boundary — the
-/// flow the FACE & LIPS Expression picker drives on a single row click.
-/// Brio's mechanism, verbatim: a pick blends the timeline through the
-/// sequencer and pins the facial layer at speed 0; a pick while a hold is
-/// active switches the expression over the pinned slot without disturbing
-/// the one pre-hold restore point; release and reset hand back per the
-/// Train 6 ownership rules (release only what landed, keep what failed).
+/// Clicking an expression applies and pauses it; choosing another replaces it
+/// without losing the original state. Releasing returns the facial layer to
+/// normal playback; resetting restores the original incoming timeline.
 /// </summary>
 public sealed class ExpressionHoldTests
 {
     private static readonly ActorId Actor =
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
 
-    /// <summary>The facial timeline the actor arrives with — the one thing
-    /// restoration must put back.</summary>
     private const ushort Incoming = 777;
 
     private const ushort Smile = 9001;
@@ -35,13 +29,10 @@ public sealed class ExpressionHoldTests
         var result = session.HoldExpression(Actor, Smile);
 
         Assert.True(result.Success);
-        // Brio's order: blend first, pin second — a pin before the play
-        // would freeze the OLD face.
+        // Blend before pinning; pinning first would freeze the previous face.
         Assert.True(
             port.Calls.IndexOf($"Blend:{Smile}") <
             port.Calls.IndexOf("SetSlotSpeed:Facial:0"));
-        // Ownership registered exactly as any pick: the held id, the pin,
-        // and the pre-hold incoming timeline as the restore point.
         Assert.Equal(Smile, session.HeldExpressionFor(Actor));
         var owned = session.OverridesFor(Actor);
         Assert.Equal(0f, owned.SlotSpeeds[AnimationSlot.Facial]);
@@ -54,21 +45,19 @@ public sealed class ExpressionHoldTests
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.HoldExpression(Actor, Smile).Success);
-        // The held expression is now what the facial slot shows; a naive
-        // second capture would record Poser's own play as "incoming".
+        // The live slot now shows the held expression. A second capture would
+        // lose the original restore point.
         port.LiveFacialTimeline = Smile;
 
         var result = session.HoldExpression(Actor, Frown);
 
         Assert.True(result.Success);
         Assert.Equal(Frown, session.HeldExpressionFor(Actor));
-        // The switch is a blend over the pinned slot, then the pin again.
+        // Switching blends the new expression, then pins the facial slot.
         int played = port.Calls.IndexOf($"Blend:{Frown}");
         Assert.True(played >= 0);
         Assert.Equal("SetSlotSpeed:Facial:0", port.Calls[played + 1]);
         var owned = session.OverridesFor(Actor);
-        // One restore point, one pin — the first hold's frames never
-        // became state Poser would "restore".
         Assert.Equal(Incoming, owned.SlotCaptures[AnimationSlot.Facial]);
         Assert.Single(owned.SlotSpeeds);
         Assert.Single(owned.SlotCaptures);
@@ -87,9 +76,8 @@ public sealed class ExpressionHoldTests
         var result = session.ResetActor(Actor);
 
         Assert.True(result.Success);
-        // Release first (unpin → straight face → unpin → idle), then the
-        // captured incoming timeline replayed — the PRE-hold face, not
-        // either expression Poser played.
+        // Reset releases the hold first, then restores the incoming timeline,
+        // not either expression that was held.
         int firstUnpin = port.Calls.IndexOf("ClearSlotSpeed:Facial");
         int straight = port.Calls.IndexOf(
             $"Blend:{AnimationTimelines.StraightFace}");
@@ -112,7 +100,6 @@ public sealed class ExpressionHoldTests
 
         Assert.False(result.Success);
         Assert.Equal("That actor is no longer in the scene.", result.Detail);
-        // Nothing landed, so nothing is owned: no hold, no pin, no capture.
         Assert.Null(session.HeldExpressionFor(Actor));
         Assert.False(session.OverridesFor(Actor).HasAny);
         Assert.DoesNotContain("SetSlotSpeed:Facial:0", port.Calls);
@@ -128,13 +115,12 @@ public sealed class ExpressionHoldTests
         var result = session.HoldExpression(Actor, Smile);
 
         Assert.False(result.Success);
-        // The hold is not owned — the face is NOT pinned, and claiming it
-        // was would strand a release nobody can perform.
+        // A failed pin leaves no held expression because it cannot be
+        // released.
         Assert.Null(session.HeldExpressionFor(Actor));
         var owned = session.OverridesFor(Actor);
         Assert.Empty(owned.SlotSpeeds);
-        // But the blend DID land on the facial slot, so its restore point
-        // stays owned for reset — truthful ownership over tidy ownership.
+        // The blend succeeded, so its incoming capture remains for reset.
         Assert.Equal(Incoming, owned.SlotCaptures[AnimationSlot.Facial]);
     }
 
@@ -164,8 +150,8 @@ public sealed class ExpressionHoldTests
         var result = session.ReleaseExpression(Actor);
 
         Assert.True(result.Success);
-        // Brio's exact order: unpin, straight face, unpin again (the game
-        // may have re-registered a speed during the blend), idle.
+        // Clear the pin, blend the neutral face, clear any speed that blend
+        // registered, then blend idle.
         Assert.Equal(
             new[]
             {
@@ -178,8 +164,6 @@ public sealed class ExpressionHoldTests
         Assert.Null(session.HeldExpressionFor(Actor));
         var owned = session.OverridesFor(Actor);
         Assert.Empty(owned.SlotSpeeds);
-        // Release leaves the face to the animation; the hand-back of the
-        // captured incoming timeline stays owned for reset.
         Assert.Equal(Incoming, owned.SlotCaptures[AnimationSlot.Facial]);
     }
 
@@ -194,8 +178,7 @@ public sealed class ExpressionHoldTests
         var failed = session.ReleaseExpression(Actor);
 
         Assert.False(failed.Success);
-        // The face is still (partly) held, and the record says so — that
-        // is what lets the next release retry the whole sequence.
+        // Keep the hold marker so the next release retries the sequence.
         Assert.Equal(Smile, session.HeldExpressionFor(Actor));
         Assert.Equal(
             0f, session.OverridesFor(Actor).SlotSpeeds[AnimationSlot.Facial]);
@@ -207,8 +190,6 @@ public sealed class ExpressionHoldTests
         Assert.Null(session.HeldExpressionFor(Actor));
         Assert.Empty(session.OverridesFor(Actor).SlotSpeeds);
     }
-
-    // ── the bake's teardown ──────────────────────────────────────────────
 
     [Fact]
     public void Bake_teardown_puts_the_facial_layer_back_and_leaves_the_body_alone()
@@ -222,29 +203,21 @@ public sealed class ExpressionHoldTests
         var result = session.RestoreFacialLayer(Actor);
 
         Assert.True(result.Success);
-        // Unpin, then the PRE-hold facial timeline — and nothing else. Brio's
-        // release ends with idle (3) on the BASE slot, which is its whole-actor
-        // reset button; a bake that ran it would put the body back to idle
-        // every time the user baked a face.
+        // Bake teardown restores only the facial layer. Releasing the hold
+        // would also blend idle on the base layer.
         Assert.Equal(
             new[] { "ClearSlotSpeed:Facial", $"Blend:{Incoming}" },
             port.Calls);
         Assert.DoesNotContain(
             $"Blend:{AnimationTimelines.StraightFace}", port.Calls);
         Assert.DoesNotContain($"Blend:{AnimationTimelines.Idle}", port.Calls);
-        // Nothing of the hold is left owned: the layer is back where it was.
         Assert.Null(session.HeldExpressionFor(Actor));
         Assert.False(session.OverridesFor(Actor).HasAny);
     }
 
     /// <summary>
-    /// The regression the bake exists to avoid. An actor that arrived with no
-    /// facial timeline records 0 — "Poser played over a layer showing nothing"
-    /// — and 0 is not a timeline that can be played back. Unpinning alone
-    /// would leave the layer running the very expression the bake is about to
-    /// quote, so the delta would be measured against itself: identity, a pose
-    /// that owns nothing, and a face that goes on grinning after undo. The
-    /// neutral face is what "nothing" means on this layer.
+    /// An empty incoming facial layer is restored with the neutral face before
+    /// the bake reads it.
     /// </summary>
     [Fact]
     public void Bake_teardown_of_an_empty_facial_layer_neutralises_it()
@@ -264,8 +237,7 @@ public sealed class ExpressionHoldTests
                 $"Blend:{AnimationTimelines.StraightFace}",
             },
             port.Calls);
-        // Still the bake's teardown and not Brio's whole-actor reset: the
-        // BASE slot is never touched.
+        // The base layer is not part of facial teardown.
         Assert.DoesNotContain($"Blend:{AnimationTimelines.Idle}", port.Calls);
         Assert.False(session.OverridesFor(Actor).HasAny);
     }
@@ -299,16 +271,14 @@ public sealed class ExpressionHoldTests
         Assert.True(session.RestoreFacialLayer(Actor).Success);
         port.Calls.Clear();
 
-        // Pressing bake again with nothing held must not replay a stale
-        // timeline over the layer, must not neutralise a face Poser is not
-        // driving, and must not refuse.
+        // With no facial capture left, a second teardown has nothing to
+        // replay and remains successful.
         var again = session.RestoreFacialLayer(Actor);
 
         Assert.True(again.Success);
         Assert.Equal(new[] { "ClearSlotSpeed:Facial" }, port.Calls);
         Assert.False(session.OverridesFor(Actor).HasAny);
 
-        // And the actor is immediately pickable again.
         port.Calls.Clear();
         Assert.True(session.HoldExpression(Actor, Frown).Success);
         Assert.Equal(Frown, session.HeldExpressionFor(Actor));
@@ -325,24 +295,18 @@ public sealed class ExpressionHoldTests
 
         Assert.True(session.RestoreFacialLayer(Actor).Success);
 
-        // A Poser pause writes PlaybackSpeed 0 to every Havok control, so a
-        // bake that paused or resumed would either freeze the state it has to
-        // measure or resume an actor the user froze on purpose.
+        // Facial teardown must not change the actor's playback pause state.
         Assert.DoesNotContain("SetOverallSpeed", port.Calls);
         Assert.DoesNotContain("ClearOverallSpeed", port.Calls);
         Assert.True(session.IsPaused(Actor));
     }
 
-    /// <summary>Recording fake at the port boundary: the facial slot shows
-    /// a configurable live timeline, expression timelines route to Facial
-    /// (idle to Base) as the sheet would, and each expression-flow write
-    /// has one switchable failure.</summary>
+    /// <summary>Minimal runtime-port fake that records expression writes.</summary>
     private class FakePort : DispatchProxy
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
 
-        /// <summary>What the facial slot is showing right now.</summary>
         public ushort LiveFacialTimeline { get; set; } = Incoming;
 
         public string? BlendFailure { get; set; }
@@ -375,8 +339,8 @@ public sealed class ExpressionHoldTests
                         1UL);
                 case "TimelineSlot":
                 {
-                    // The sheet's routing, reduced to this flow: idle is a
-                    // base timeline, everything else here is facial.
+                    // Match expression routing: idle uses Base; other tested
+                    // timelines use Facial.
                     ushort timeline = (ushort)args![0]!;
                     return (AnimationSlot?)(timeline == AnimationTimelines.Idle
                         ? AnimationSlot.Base

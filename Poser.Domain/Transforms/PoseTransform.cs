@@ -26,13 +26,9 @@ public enum PivotMode
     /// <summary>Every target about the first selected one.</summary>
     Primary,
 
-    /// <summary>Every target about the MEAN of the captured target positions:
-    /// the selection turns and scales as one body, and the body's middle stays
-    /// where it is. It is Brio's <c>Rotation (Pivot)</c> row, whose pivot is
-    /// likewise the centroid of the selected entities
-    /// (<c>Capabilities/Core/EntitManagerCapability.cs</c>). Identical to
-    /// <see cref="PerTarget"/> for one target, which is what makes it safe as
-    /// the standing rule for an entity selection.</summary>
+    /// <summary>Every target rotates and scales about the mean of the captured
+    /// target positions. With one target this is the same as
+    /// <see cref="PerTarget"/>.</summary>
     Centroid,
 
     /// <summary>Every target about a point the caller froze at Begin — a
@@ -162,12 +158,8 @@ public readonly record struct TransformDelta(
 
 public static class TransformMath
 {
-    // Sagittal mirror for model-frame symmetry deltas: lateral X negated and
-    // rotation reflected across the YZ plane, (x, −y, −z, w) — the Brio
-    // MirrorBoneTransform plane. (Ktisis FlipPose negates x/y instead, but
-    // composes that with a 180° root yaw; the net reflection is the same
-    // YZ plane. Poser mirrors per-pair without turning the root, so the
-    // plane must be applied directly.)
+    // Reflect a model-frame delta across the YZ plane: negate X and reflect
+    // the quaternion as (x, -y, -z, w).
     public static TransformDelta Mirror(TransformDelta delta)
     {
         delta = delta.Normalized();
@@ -236,13 +228,9 @@ public static class TransformMath
     }
 
     /// <summary>
-    /// Ktisis' RelativeBones (TransformTarget.cs:158-163): a secondary target
-    /// keeps the angle it held to the PRIMARY instead of receiving the
-    /// primary's raw world-frame rotation. Ktisis writes the result directly
-    /// as <c>(q_t·q_p⁻¹)·Δ·q_p</c>; Poser composes deltas, so the same result
-    /// falls out of conjugating Δ by that offset — <c>Δ' = R·Δ·R⁻¹</c> with
-    /// <c>R = q_t·q_p⁻¹</c>, which <see cref="Apply"/> then post-multiplies
-    /// onto <c>q_t = R·q_p</c> to give exactly <c>R·Δ·q_p</c>.
+    /// A secondary target keeps the angle it held to the primary instead of
+    /// receiving the primary's raw world-frame rotation. Conjugate the delta
+    /// by the target-to-primary rotation offset.
     ///
     /// <para>Translation and scale copy unchanged: the relative claim is about
     /// ANGLE, and turning a group translate into a per-target one would
