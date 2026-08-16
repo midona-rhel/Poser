@@ -95,6 +95,7 @@ public class PoseInspectorPane
     // switching the primary to another slot of the same actor on an
     // unchanged scene must rebuild the matrix.
     private SkeletonId? _matrixSkeletonId;
+    private bool? _matrixShowNsfwBones;
 
     // Primary selection identity (stable id). The legacy _entity view is
     // re-resolved from it once per draw for the retained gaze/IK/pose section
@@ -1196,9 +1197,12 @@ public class PoseInspectorPane
         var matrixSkeleton = PrimarySkeletonDescriptor();
         if (matrixSkeleton == null)
             return viewportHeight;
+        bool showNsfwBones = Config.ConfigurationService.Instance
+            .Config.Display.ShowNsfwBones;
         if (_matrixVm == null ||
             _matrixRevision != _scene.Revision ||
-            _matrixSkeletonId != matrixSkeleton.Id)
+            _matrixSkeletonId != matrixSkeleton.Id ||
+            _matrixShowNsfwBones != showNsfwBones)
         {
             _matrixVm = BoneMatrixBuilder.Build(
                 matrixSkeleton,
@@ -1234,6 +1238,7 @@ public class PoseInspectorPane
                 showNsfwBones);
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
+            _matrixShowNsfwBones = showNsfwBones;
         }
         BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         InsetScrollSurface(

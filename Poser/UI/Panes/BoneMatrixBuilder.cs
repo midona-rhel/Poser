@@ -94,7 +94,12 @@ public static class BoneMatrixBuilder
 
             if (section == null || section.Title != row.Section.ToUpperInvariant())
             {
-                section = new BoneMatrixSection { Title = row.Section.ToUpperInvariant() };
+                string title = row.Section.ToUpperInvariant();
+                section = new BoneMatrixSection
+                {
+                    Id = "##s-" + title,
+                    Title = title,
+                };
                 vm.Sections.Add(section);
             }
             var matrixRow = new BoneMatrixRow { Label = row.Label };
@@ -108,6 +113,12 @@ public static class BoneMatrixBuilder
         return vm;
     }
 
+    /// <summary>
+    /// The pill's ImGui id, minted HERE — with the row — and never again. The
+    /// bone's complete identity is what makes it unique, so the id survives a
+    /// reflow, a filter and a rebuild; the view only has to scope the whole
+    /// matrix, not concatenate a fresh string per pill per frame.
+    /// </summary>
     private static BoneMatrixPill MakePill(
         BoneDescriptor bone,
         string label,
@@ -179,7 +190,12 @@ public static class BoneMatrixBuilder
                 string title = "MORE — " + (subcategory != BoneSubcategory.None
                     ? BoneInfoService.GetSubcategoryDisplayName(subcategory)
                     : BoneInfoService.GetCategoryDisplayName(category));
-                section = new BoneMatrixSection { Title = title.ToUpperInvariant() };
+                string heading = title.ToUpperInvariant();
+                section = new BoneMatrixSection
+                {
+                    Id = "##s-" + heading,
+                    Title = heading,
+                };
                 sections[sectionKey] = section;
                 vm.Sections.Add(section);
             }

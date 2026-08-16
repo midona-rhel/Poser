@@ -8,6 +8,12 @@ namespace Poser.UI.Views;
 
 public sealed class BoneMatrixPill
 {
+    /// <summary>This pill's ImGui id, minted with the row and never rebuilt.
+    /// It is the PILL's identity, not its grid position: a viewport resize
+    /// reflows the grid, and a positional id would hand every pill a new
+    /// identity — and discard its interaction state — on every resize.
+    /// </summary>
+    public string Id = "";
     public string Label = "";
     public bool Selected;
     public object? Tag;
@@ -24,6 +30,9 @@ public sealed class BoneMatrixRow
 
 public sealed class BoneMatrixSection
 {
+    /// <summary>The heading's ImGui id; see <see cref="BoneMatrixPill.Id"/>.
+    /// </summary>
+    public string Id = "";
     public string Title = "";
     public List<BoneMatrixRow> Rows = new();
 }
@@ -37,6 +46,51 @@ public sealed class BoneMatrixViewModel
 
     /// <summary>Section heading clicked; second arg = additive (ctrl held).</summary>
     public Action<BoneMatrixSection, bool>? OnSection;
+}
+
+/// <summary>Screen-space rectangle used by the retained matrix draw pass.
+/// Layout is still calculated for every item, but only geometry intersecting
+/// the active child viewport is handed to the draw sink.</summary>
+internal readonly struct BoneMatrixGeometry
+{
+    public BoneMatrixGeometry(Vector2 min, Vector2 max)
+    {
+        Min = min;
+        Max = max;
+    }
+
+    public Vector2 Min { get; }
+    public Vector2 Max { get; }
+
+    public bool Intersects(BoneMatrixClipRect clip) =>
+        Max.X > clip.Min.X && Min.X < clip.Max.X
+            && Max.Y > clip.Min.Y && Min.Y < clip.Max.Y;
+}
+
+/// <summary>The current visible bounds of the nested matrix child. This is
+/// deliberately independent of the scrolled content origin: that origin moves
+/// as the child scrolls, while the child's clip rectangle does not.</summary>
+internal readonly struct BoneMatrixClipRect
+{
+    public BoneMatrixClipRect(Vector2 min, Vector2 max)
+    {
+        Min = min;
+        Max = max;
+    }
+
+    public Vector2 Min { get; }
+    public Vector2 Max { get; }
+}
+
+/// <summary>One shared production/test seam for Matrix emission. The
+/// production ImGui sink and the counter-bearing contract-test sink both
+/// consume the exact same retained layout traversal.</summary>
+internal interface IBoneMatrixDrawSink
+{
+    void DrawSection(BoneMatrixSection section, BoneMatrixGeometry geometry);
+    void DrawDivider(BoneMatrixGeometry geometry);
+    void DrawRow(BoneMatrixRow row, BoneMatrixGeometry geometry);
+    void DrawPill(BoneMatrixPill pill, BoneMatrixGeometry geometry);
 }
 
 /// <summary>
@@ -76,8 +130,6 @@ public static class BoneMatrixView
         var metrics = Crystarium.ActiveTheme.Matrix;
         float s = ImGuiHelpers.GlobalScale;
         float logicalWidth = width / s;
-        var dl = ImGui.GetWindowDrawList();
-
         // Only a viewport resize recomputes the responsive column fit.
         int columns = Math.Max(1, (int)MathF.Floor(
             (logicalWidth + metrics.ColumnGap)
@@ -85,36 +137,85 @@ public static class BoneMatrixView
         float trackW = (logicalWidth
             - metrics.ColumnGap * (columns - 1)) / columns;
 
+        // ONE id scope for the whole matrix instead of a per-element string
+        // concatenation. The elements carry their own stable ids; the prefix
+        // only has to keep two matrices drawn in one window apart, which is
+        // exactly what an id scope is for. Building the row's
+        // `$"{prefix}-{section}-{slot}"` and each pill's `$"##{row}-p{i}"`
+        // minted a few hundred strings per frame — and hashed every one of
+        // them fresh — for a table whose contents change only when the scene
+        // does.
+        var sink = new ImGuiBoneMatrixDrawSink(vm, ImGui.GetWindowDrawList(), s);
+        var windowMin = ImGui.GetWindowPos();
+        var windowMax = windowMin + ImGui.GetWindowSize();
+        // BeginChild owns the active nested-scroll clip. Do not use origin.Y
+        // for the top: origin is content space and moves above the child as it
+        // scrolls, while the child's clip rectangle does not. The content
+        // width is already inset from the scrollbar.
+        var clip = new BoneMatrixClipRect(
+            new Vector2(MathF.Max(origin.X, windowMin.X), windowMin.Y),
+            new Vector2(MathF.Min(origin.X + width, windowMax.X), windowMax.Y));
+
+        ImGui.PushID(idPrefix);
+        try
+        {
+            return DrawCore(vm, origin, width, s, columns, trackW, clip, ref sink);
+        }
+        finally
+        {
+            ImGui.PopID();
+        }
+    }
+
+    /// <summary>Runs the same production layout/emission orchestration with a
+    /// counter-bearing sink. Contract tests use this only to drive the exact
+    /// path called by <see cref="Draw"/>; they do not test a disconnected
+    /// helper or substitute the layout algorithm.</summary>
+    internal static float DrawForTesting<TSink>(
+        BoneMatrixViewModel vm,
+        Vector2 origin,
+        float width,
+        float scale,
+        BoneMatrixClipRect clip,
+        ref TSink sink)
+        where TSink : struct, IBoneMatrixDrawSink
+    {
+        var metrics = Crystarium.ActiveTheme.Matrix;
+        int columns = Math.Max(1, (int)MathF.Floor(
+            (width / scale + metrics.ColumnGap)
+            / (metrics.MinimumTrackWidth + metrics.ColumnGap)));
+        float trackW = (width / scale
+            - metrics.ColumnGap * (columns - 1)) / columns;
+        return DrawCore(vm, origin, width, scale, columns, trackW, clip, ref sink);
+    }
+
+    private static float DrawCore<TSink>(
+        BoneMatrixViewModel vm,
+        Vector2 origin,
+        float width,
+        float s,
+        int columns,
+        float trackW,
+        BoneMatrixClipRect clip,
+        ref TSink sink)
+        where TSink : struct, IBoneMatrixDrawSink
+    {
+        var metrics = Crystarium.ActiveTheme.Matrix;
         float y = origin.Y;
-        int sectionIndex = 0;
         foreach (var section in vm.Sections)
         {
-            // .mxHead box model: 14px pad-top, 11px caps (~13px line), 5px
-            // pad-bottom → hairline at +32, rows begin at +41 (1px line + 8px margin).
-            var sectionStyle = new TextStyle
-            {
-                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
-                Weight = FontWeight.SemiBold,
-                Color = TextSecondary,
-            };
-            Crystarium.TextAt(new Vector2(origin.X, y + 15f * s), section.Title, sectionStyle);
-            ImGui.SetCursorScreenPos(new Vector2(origin.X, y + 7f * s));
-            ImGui.InvisibleButton($"##{idPrefix}-section-{sectionIndex}",
-                new Vector2(
-                    MathF.Min(
-                        width,
-                        Crystarium.MeasureText(section.Title, sectionStyle).X + 18f * s),
-                    24f * s));
-            if (ImGui.IsItemHovered())
-                Crystarium.HoverHelp.Explain($"bmv-section-{sectionIndex}",
-                    ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
-                    "Select every bone in this group · Ctrl adds to the selection");
-            if (ImGui.IsItemClicked())
-                vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
+            var sectionGeometry = new BoneMatrixGeometry(
+                new Vector2(origin.X, y),
+                new Vector2(origin.X + width, y + 31f * s));
+            if (sectionGeometry.Intersects(clip))
+                sink.DrawSection(section, sectionGeometry);
+
             float lineY = y + 32f * s;
-            dl.AddRectFilled(new Vector2(origin.X, lineY),
-                new Vector2(origin.X + width, lineY + 1f * s),
-                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecond)));
+            var dividerGeometry = new BoneMatrixGeometry(
+                new Vector2(origin.X, lineY),
+                new Vector2(origin.X + width, lineY + 1f * s));
+            if (dividerGeometry.Intersects(clip))
+                sink.DrawDivider(dividerGeometry);
             y += 41f * s;
 
             // Row-major flow into `columns` tracks; wide rows take two slots.
@@ -124,8 +225,9 @@ public static class BoneMatrixView
             foreach (var row in section.Rows)
             {
                 int span = row.Wide && columns > 1 ? 2 : 1;
+                // wrap: a wide row does not fit this line
                 if (slot % columns + span > columns)
-                    slot += columns - slot % columns; // wrap: wide row doesn't fit this line
+                    slot += columns - slot % columns;
 
                 int gridRow = slot / columns;
                 int gridCol = slot % columns;
@@ -135,10 +237,30 @@ public static class BoneMatrixView
                     + gridRow * (metrics.RowHeight + metrics.RowGap) * s;
                 float cellW = (trackW * span
                     + metrics.ColumnGap * (span - 1)) * s;
+                var rowGeometry = new BoneMatrixGeometry(
+                    new Vector2(cellX, cellY),
+                    new Vector2(cellX + cellW, cellY + metrics.RowHeight * s));
 
-                DrawRow(
-                    vm, row, dl, new Vector2(cellX, cellY), cellW,
-                    s, $"{idPrefix}-{sectionIndex}-{slot}");
+                if (rowGeometry.Intersects(clip))
+                {
+                    sink.DrawRow(row, rowGeometry);
+                    float pillsW = (row.Pills.Count * metrics.PillSize
+                        + (row.Pills.Count - 1) * metrics.PillGap) * s;
+                    float x = cellX + cellW - pillsW;
+                    foreach (var pill in row.Pills)
+                    {
+                        var pillGeometry = new BoneMatrixGeometry(
+                            new Vector2(
+                                x,
+                                cellY + (metrics.RowHeight - metrics.PillSize) / 2f * s),
+                            new Vector2(
+                                x + metrics.PillSize * s,
+                                cellY + (metrics.RowHeight + metrics.PillSize) / 2f * s));
+                        if (pillGeometry.Intersects(clip))
+                            sink.DrawPill(pill, pillGeometry);
+                        x += (metrics.PillSize + metrics.PillGap) * s;
+                    }
+                }
 
                 slot += span;
                 gridRows = Math.Max(gridRows, gridRow + 1);
@@ -146,53 +268,95 @@ public static class BoneMatrixView
             y = gridTop
                 + (gridRows * (metrics.RowHeight + metrics.RowGap)
                     - metrics.RowGap) * s;
-            sectionIndex++;
         }
 
         return y - origin.Y;
     }
 
-    private static void DrawRow(BoneMatrixViewModel vm, BoneMatrixRow row, ImDrawListPtr dl,
-        Vector2 pos, float width, float s, string id)
+    private readonly struct ImGuiBoneMatrixDrawSink : IBoneMatrixDrawSink
     {
-        var metrics = Crystarium.ActiveTheme.Matrix;
-        // pills right-aligned; label fills the rest, right-aligned with ellipsis
-        float pillsW = (row.Pills.Count * metrics.PillSize
-            + (row.Pills.Count - 1) * metrics.PillGap) * s;
-        float labelRight = pos.X + width - pillsW - 10f * s;
+        private readonly BoneMatrixViewModel _vm;
+        private readonly ImDrawListPtr _drawList;
+        private readonly float _scale;
 
-        var labelStyle = new TextStyle
+        public ImGuiBoneMatrixDrawSink(
+            BoneMatrixViewModel vm,
+            ImDrawListPtr drawList,
+            float scale)
         {
-            Size = Crystarium.ActiveTheme.Typography.LabelSize,
-            Color = TextSecondary,
-        };
-        float labelAvail = labelRight - pos.X;
-        if (labelAvail > 0f)
-            Crystarium.TextInBand(
-                new Vector2(pos.X, pos.Y),
-                new Vector2(labelAvail, metrics.RowHeight * s),
-                row.Label, labelStyle,
-                TextConstraint.Truncate(labelAvail, TextAlign.End));
+            _vm = vm;
+            _drawList = drawList;
+            _scale = scale;
+        }
 
-        float x = pos.X + width - pillsW;
-        int i = 0;
-        foreach (var pill in row.Pills)
+        public void DrawSection(BoneMatrixSection section, BoneMatrixGeometry geometry)
         {
-            var center = new Vector2(
-                x + metrics.PillSize / 2f * s,
-                pos.Y + metrics.RowHeight / 2f * s);
-            float radius = metrics.PillSize / 2f * s;
-
+            var style = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                Weight = FontWeight.SemiBold,
+                Color = TextSecondary,
+            };
+            Crystarium.TextAt(
+                new Vector2(geometry.Min.X, geometry.Min.Y + 15f * _scale),
+                section.Title,
+                style);
             ImGui.SetCursorScreenPos(new Vector2(
-                x,
-                pos.Y + (metrics.RowHeight - metrics.PillSize) / 2f * s));
+                geometry.Min.X,
+                geometry.Min.Y + 7f * _scale));
             ImGui.InvisibleButton(
-                $"##{id}-p{i}",
-                new Vector2(metrics.PillSize, metrics.PillSize) * s);
-            // Capture ALL item state for THIS pill immediately after its
-            // InvisibleButton: the label below submits another ImGui item, so
-            // a later IsItemClicked() would belong to it — the round-1
-            // "clicking a pill selects the previous pill" defect.
+                section.Id,
+                new Vector2(
+                    MathF.Min(
+                        geometry.Max.X - geometry.Min.X,
+                        Crystarium.MeasureText(section.Title, style).X
+                            + 18f * _scale),
+                    24f * _scale));
+            if (ImGui.IsItemHovered())
+                Crystarium.HoverHelp.Explain(
+                    section.Id,
+                    ImGui.GetItemRectMin(),
+                    ImGui.GetItemRectMax(),
+                    "Select every bone in this group · Ctrl adds to the selection");
+            if (ImGui.IsItemClicked())
+                _vm.OnSection?.Invoke(section, ImGui.GetIO().KeyCtrl);
+        }
+
+        public void DrawDivider(BoneMatrixGeometry geometry) => _drawList.AddRectFilled(
+            geometry.Min,
+            geometry.Max,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(BorderSecond)));
+
+        public void DrawRow(BoneMatrixRow row, BoneMatrixGeometry geometry)
+        {
+            var metrics = Crystarium.ActiveTheme.Matrix;
+            float pillsW = (row.Pills.Count * metrics.PillSize
+                + (row.Pills.Count - 1) * metrics.PillGap) * _scale;
+            float labelRight = geometry.Max.X - pillsW - 10f * _scale;
+            var style = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                Color = TextSecondary,
+            };
+            float labelAvail = labelRight - geometry.Min.X;
+            if (labelAvail > 0f)
+                Crystarium.TextInBand(
+                    geometry.Min,
+                    new Vector2(labelAvail, metrics.RowHeight * _scale),
+                    row.Label,
+                    style,
+                    TextConstraint.Truncate(labelAvail, TextAlign.End));
+        }
+
+        public void DrawPill(BoneMatrixPill pill, BoneMatrixGeometry geometry)
+        {
+            var metrics = Crystarium.ActiveTheme.Matrix;
+            var center = (geometry.Min + geometry.Max) * 0.5f;
+            float radius = metrics.PillSize / 2f * _scale;
+            ImGui.SetCursorScreenPos(geometry.Min);
+            ImGui.InvisibleButton(pill.Id, geometry.Max - geometry.Min);
+            // Capture ALL item state immediately after this pill's button;
+            // the label below submits another ImGui item.
             bool hovered = ImGui.IsItemHovered();
             bool clicked = ImGui.IsItemClicked();
             bool ctrl = ImGui.GetIO().KeyCtrl;
@@ -200,20 +364,24 @@ public static class BoneMatrixView
 
             if (pill.Selected)
             {
-                dl.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Primary)));
-                dl.AddCircle(center, radius - 0.5f * s, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Primary)), 0, 1f * s);
+                _drawList.AddCircleFilled(center, radius,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Primary)));
+                _drawList.AddCircle(center, radius - 0.5f * _scale,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(Primary)), 0, 1f * _scale);
             }
             else
             {
                 if (hovered)
-                    dl.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(SurfaceHover)));
-                dl.AddCircle(center, radius - 0.5f * s,
-                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(hovered ? Primary50 : BorderPrimary)), 0, 1f * s);
+                    _drawList.AddCircleFilled(center, radius,
+                        ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(SurfaceHover)));
+                _drawList.AddCircle(center, radius - 0.5f * _scale,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                        hovered ? Primary50 : BorderPrimary)), 0, 1f * _scale);
             }
 
             if (pill.Label.Length > 0)
             {
-                var pillLabelStyle = new TextStyle
+                var style = new TextStyle
                 {
                     Size = Crystarium.ActiveTheme.Typography.ShortcutSize,
                     Weight = FontWeight.SemiBold,
@@ -221,17 +389,15 @@ public static class BoneMatrixView
                     Color = pill.Selected ? TextPrimary : hovered ? TextPrimary : TextSecondary,
                 };
                 Crystarium.TextInBand(
-                    new Vector2(center.X - radius, center.Y - radius),
-                    new Vector2(metrics.PillSize, metrics.PillSize) * s,
-                    pill.Label, pillLabelStyle,
+                    geometry.Min,
+                    geometry.Max - geometry.Min,
+                    pill.Label,
+                    style,
                     TextAlign.Center);
             }
 
             if (clicked)
-                vm.OnPill?.Invoke(pill, ctrl, shift);
-
-            x += (metrics.PillSize + metrics.PillGap) * s;
-            i++;
+                _vm.OnPill?.Invoke(pill, ctrl, shift);
         }
     }
 }
