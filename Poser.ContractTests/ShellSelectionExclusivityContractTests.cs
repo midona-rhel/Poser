@@ -50,4 +50,26 @@ public sealed class ShellSelectionExclusivityContractTests
         Assert.True(workspace.Enter(ShellWorkspace.Entity));
         Assert.Equal(ShellWorkspace.Entity, workspace.Workspace);
     }
+
+    [Fact]
+    public void Workspace_transitions_publish_each_left_mode_once_and_return_to_entity()
+    {
+        var selection = new SelectionSession();
+        using var workspace = new ShellWorkspaceSelection(selection);
+        var left = new List<ShellWorkspace>();
+        workspace.Left += left.Add;
+
+        Assert.True(workspace.Enter(ShellWorkspace.Library));
+        Assert.True(workspace.Enter(ShellWorkspace.Scene));
+        Assert.Equal(ShellWorkspace.Scene, workspace.Workspace);
+        Assert.Equal(new[] { ShellWorkspace.Library }, left);
+
+        selection.Select(SelectionId.ForActor(new ActorId(
+            Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), 1)));
+
+        Assert.Equal(ShellWorkspace.Entity, workspace.Workspace);
+        Assert.Equal(
+            new[] { ShellWorkspace.Library, ShellWorkspace.Scene }, left);
+        Assert.False(workspace.Leave());
+    }
 }

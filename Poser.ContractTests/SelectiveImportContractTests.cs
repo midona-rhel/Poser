@@ -271,42 +271,63 @@ public sealed class SelectiveImportContractTests
     public void Reference_pose_uses_the_same_transaction_and_never_writes_scale()
     {
         using var app = new PoseImportCaptureHarness();
+        var reference = new Transform
+        {
+            Position = new Vector3(2f, 3f, 4f),
+            Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.5f),
+            Scale = new Vector3(9f, 9f, 9f),
+        };
         app.Skeleton.CaptureReferencePose().Returns(
             new[]
             {
-                (app.Bone, new Transform
-                {
-                    Position = new Vector3(2f, 3f, 4f),
-                    Rotation = Quaternion.Identity,
-                    Scale = new Vector3(9f, 9f, 9f),
-                }),
+                (app.Bone, reference),
             });
-        app.SetNextPlan(PlanWithOneWrite(app));
+        var realFileService = RealFileService();
+        PoseImportPlan? builtPlan = null;
+        app.PoseFiles.BuildImportPlan(
+            Arg.Any<IReadOnlyList<ISkeleton>>(),
+            Arg.Any<PoseFile>(),
+            Arg.Any<PoseImportOptions>())
+            .Returns(call =>
+            {
+                builtPlan = realFileService.BuildImportPlan(
+                    call.ArgAt<IReadOnlyList<ISkeleton>>(0),
+                    call.ArgAt<PoseFile>(1),
+                    call.ArgAt<PoseImportOptions>(2));
+                return builtPlan;
+            });
         var receipts = new List<OperationReceipt>();
 
         var result = app.Facade.ApplyReferencePose(app.Actor, receipts.Add);
 
         Assert.True(result.Success, result.Detail);
-        PoseImportOptions? built = null;
         app.PoseFiles.Received(1).BuildImportPlan(
             Arg.Any<IReadOnlyList<ISkeleton>>(),
             Arg.Any<PoseFile>(),
-            Arg.Do<PoseImportOptions>(value => built = value));
-        Assert.NotNull(built);
-        Assert.True(built.ApplyRotation);
-        Assert.True(built.ApplyPosition);
-        Assert.False(built.ApplyScale);
-        Assert.True(built.ApplyBody);
-        Assert.True(built.ApplyFace);
-        Assert.False(built.ApplyMainHand);
-        Assert.False(built.ApplyOffHand);
-        Assert.False(built.ApplyProp);
-        Assert.False(built.ApplyOrnament);
+            Arg.Any<PoseImportOptions>());
+        var write = Assert.Single(builtPlan!.Writes);
+        Assert.Equal(app.Bone, write.Bone);
+        Assert.Equal(reference, write.File);
+        Assert.Equal(
+            TransformComponents.Position | TransformComponents.Rotation,
+            write.Components);
 
         app.FireRegisteredNativeAction();
         app.EndRegisteredNativeBatch();
         app.RunNextDelay(4);
         app.RunIfQueued(0);
+
+        var observed = Assert.Single(
+            app.Posing.GetPoseInfo(app.Skeleton)
+                .GetPoseInfo(app.Bone.BoneName, app.Bone.PartialId)
+                .Stacks);
+        Assert.Equal(reference.Position, observed.Transform.Position);
+        Assert.Equal(reference.Rotation, observed.Transform.Rotation);
+        Assert.Equal(Vector3.Zero, observed.Transform.Scale);
+        var final = BonePoseInfo.Combine(Transform.Identity, observed.Transform);
+        Assert.Equal(reference.Position, final.Position);
+        Assert.Equal(reference.Rotation, final.Rotation);
+        Assert.Equal(Vector3.One, final.Scale);
 
         var receipt = Assert.Single(receipts);
         Assert.Equal(OperationReceiptState.Applied, receipt.State);
