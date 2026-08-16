@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Numerics;
 
 namespace Poser.UI;
@@ -10,6 +12,25 @@ namespace Poser.UI;
 /// </summary>
 public readonly record struct Theme
 {
+    // Persisted accent positions use one palette in every brightness mode.
+    private static readonly ReadOnlyCollection<Vector4> AccentPalette =
+        Array.AsReadOnly(new[]
+        {
+            new Vector4(50f / 255f, 151f / 255f, 1f, 1f),
+            new Vector4(126f / 255f, 211f / 255f, 160f / 255f, 1f),
+            new Vector4(232f / 255f, 193f / 255f, 90f / 255f, 1f),
+            new Vector4(183f / 255f, 140f / 255f, 1f, 1f),
+            new Vector4(1f, 143f / 255f, 163f / 255f, 1f),
+            new Vector4(37f / 255f, 99f / 255f, 235f / 255f, 1f),
+            new Vector4(45f / 255f, 130f / 255f, 95f / 255f, 1f),
+            new Vector4(173f / 255f, 128f / 255f, 25f / 255f, 1f),
+            new Vector4(110f / 255f, 72f / 255f, 186f / 255f, 1f),
+            new Vector4(170f / 255f, 63f / 255f, 109f / 255f, 1f),
+        });
+
+    /// <summary>Concrete accent choices in persisted index order.</summary>
+    public static IReadOnlyList<Vector4> AccentOptions => AccentPalette;
+
     /// <summary>Dark ink on a light ground. Polarity is a rendering input,
     /// not a color: glyph rasterization is baked per polarity
     /// (<see cref="FontRegistry"/>), so every light theme must set it.</summary>
@@ -224,14 +245,6 @@ public readonly record struct Theme
             Height = 520f,
             NavigationWidth = 200f,
             LabelColumnWidth = 180f,
-            AccentOptions =
-            [
-                new(50f / 255f, 151f / 255f, 1f, 1f),
-                new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
-                new(232f / 255f, 193f / 255f, 90f / 255f, 1f),
-                new(183f / 255f, 140f / 255f, 1f, 1f),
-                new(1f, 143f / 255f, 163f / 255f, 1f),
-            ],
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -713,7 +726,6 @@ public readonly record struct Theme
         /// settings body has the room to spend.</summary>
         public float LabelColumnWidth { get; init; }
 
-        public Vector4[] AccentOptions { get; init; }
     }
 
     /// <summary>Pixel-grid rounding. The per-band text nudges this once

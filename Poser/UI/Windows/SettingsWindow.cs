@@ -133,7 +133,7 @@ public class SettingsWindow : Window
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
             Theme = c.UI.Theme,
-            AccentIndex = c.UI.AccentIndex,
+            AccentIndex = ThemeSelection.NormalizeAccentIndex(c.UI.AccentIndex),
             FillOpacity = c.UI.FillOpacity,
             BackdropBlur = c.UI.BackdropBlur,
 
@@ -326,7 +326,8 @@ public class SettingsWindow : Window
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;
         c.UI.Theme = _vm.Theme;
-        c.UI.AccentIndex = _vm.AccentIndex;
+        // Persist a concrete accent position.
+        c.UI.AccentIndex = ThemeSelection.NormalizeAccentIndex(_vm.AccentIndex);
         c.UI.FillOpacity = _vm.FillOpacity;
         // Blur is stored separately from surface alpha.
         c.UI.BackdropBlur = _vm.BackdropBlur;

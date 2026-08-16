@@ -1097,6 +1097,41 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>Draws the opaque brightness-mode glyph and toggle.</summary>
+        public void ThemeMode(
+            string label,
+            bool isLight,
+            Action onToggle,
+            string? help = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float side = ThemeModeGlyph.HitSide * row.Scale;
+            Vector2 min = row.CenterControl(ThemeModeGlyph.HitSide);
+            ImGui.SetCursorScreenPos(min);
+            bool clicked = ImGui.InvisibleButton(id, new(side));
+            var draw = ImGui.GetWindowDrawList();
+            Vector2 center = min + new Vector2(side * 0.5f);
+            float radius = side * 0.5f - row.Scale;
+
+            ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(center, radius);
+            draw.AddCircleFilled(center, radius,
+                ImGui.ColorConvertFloat4ToU32(plan.BaseColor),
+                ThemeModeGlyph.ArcSegments * 2);
+            for (int i = 1; i < plan.Sector.Length - 1; i++)
+                draw.AddTriangleFilled(
+                    plan.Sector[0], plan.Sector[i], plan.Sector[i + 1],
+                    ImGui.ColorConvertFloat4ToU32(plan.SectorColor));
+            draw.AddCircle(center, radius,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    isLight ? ActiveTheme.Text : ActiveTheme.BorderStrong)),
+                ThemeModeGlyph.ArcSegments * 2,
+                MathF.Max(1f, row.Scale));
+            if (clicked)
+                onToggle();
+            _page.EndRow(row, id, help);
+        }
+
         /// <summary>A read-only value alone on its band, at body size.
         /// </summary>
         /// <param name="icon">An already-resolved game texture, drawn in the
