@@ -18,6 +18,11 @@ public sealed class ContextMenuContractTests
             8f);
 
         Assert.Equal(new Vector2(341f, 144f), right);
+        var rightHost = Crystarium.FloatingMenu.HostBounds(
+            new Vector2(100f, 80f), new Vector2(240f, 300f), true,
+            right, new Vector2(180f, 120f), 8f);
+        Assert.Equal(new Vector2(92f, 72f), rightHost.Min);
+        Assert.Equal(new Vector2(437f, 316f), rightHost.Size);
 
         var left = Crystarium.FloatingMenu.PlaceSubmenu(
             new Vector2(600f, 80f),
@@ -29,6 +34,17 @@ public sealed class ContextMenuContractTests
             8f);
 
         Assert.Equal(new Vector2(419f, 144f), left);
+        var leftHost = Crystarium.FloatingMenu.HostBounds(
+            new Vector2(600f, 80f), new Vector2(180f, 300f), true,
+            left, new Vector2(180f, 120f), 8f);
+        Assert.Equal(new Vector2(411f, 72f), leftHost.Min);
+        Assert.Equal(new Vector2(377f, 316f), leftHost.Size);
+
+        var parentOnlyHost = Crystarium.FloatingMenu.HostBounds(
+            new Vector2(100f, 80f), new Vector2(240f, 300f), false,
+            default, default, 8f);
+        Assert.Equal(new Vector2(92f, 72f), parentOnlyHost.Min);
+        Assert.Equal(new Vector2(256f, 316f), parentOnlyHost.Size);
     }
 
     [Fact]
@@ -80,5 +96,23 @@ public sealed class ContextMenuContractTests
             ref pending, parent.SubmenuItems));
         Assert.Equal(-1, Crystarium.FloatingMenu.AcceptSubmenuClick(
             1, parent.SubmenuItems));
+    }
+
+    [Fact]
+    public void Menu_icon_additions_are_registered()
+    {
+        foreach (var icon in new[]
+        {
+            TablerIcon.Library,
+            TablerIcon.FileExport,
+            TablerIcon.Copy,
+            TablerIcon.UserMinus,
+            TablerIcon.Archive,
+            TablerIcon.ArchiveImport,
+            TablerIcon.LayoutSidebarLeft,
+        })
+        {
+            Assert.NotNull(Tabler.Get(icon));
+        }
     }
 }
