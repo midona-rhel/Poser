@@ -31,6 +31,21 @@ public sealed class GazeCapabilityTests
         Assert.Empty(factory.Hooks);
     }
 
+    [Fact]
+    public void Missing_loop_signature_refuses_hook_admission()
+    {
+        var factory = new TestNativeFactory
+        {
+            LoopScan = () => throw new InvalidOperationException("missing"),
+        };
+
+        using var service = Create(factory);
+
+        AssertUnavailable(service, "loop signature");
+        Assert.Equal(0, factory.HookCreateCount);
+        Assert.Empty(factory.Hooks);
+    }
+
 
 
     [Fact]
@@ -79,6 +94,26 @@ public sealed class GazeCapabilityTests
 
         Assert.Equal(1, hook.DisposeCount);
         Assert.Equal(2, factory.EventBusUnsubscriptions);
+    }
+
+    [Fact]
+    public void Character_target_writes_use_the_gpose_clone_not_the_overworld_original()
+    {
+        using var scene = GazeScene.Create();
+
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
+
+        Assert.NotEqual(scene.CloneAddress, scene.OriginalAddress);
+        Assert.Equal(
+            scene.OriginalAddress,
+            scene.ObjectTable.SearchById(GazeScene.ActorId)!.Address);
+        Assert.NotEmpty(scene.WrittenAddresses());
+        Assert.All(
+            scene.WrittenAddresses(),
+            address => Assert.Equal(scene.CloneAddress, address));
+        Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
     }
 
     // ── channel release: Brio ActorLookAtService.cs:89-98 ────────────────
