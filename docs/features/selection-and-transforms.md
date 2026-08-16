@@ -1,52 +1,24 @@
 # Selection and transforms
 
-- All surfaces mutate the one `SelectionSession` and re-read per frame; mode
-  changes never clear selection. Ring drags own the pointer through release
-  (`GizmoPointerOwnership`) so ending a drag never picks a bone.
-- One drag or typed edit = one gesture = one history patch. Baselines freeze
-  at pointer-down; every frame dispatches the TOTAL delta — no feedback, so
-  nothing compounds. Escape cancels once; tool/space/pivot/selection changes
-  cancel rather than mutate a live drag. Multi-selection applies the delta to
-  each target's own frozen baseline, never the primary's absolute.
-- Frames (Brio, deliberate): wells edit **model-space** values; gizmo World
-  mode manipulates the character's model axes, so well drags match World
-  arrows 1:1; Local = the bone's own axes.
-- Gizmos (Brio's split, deliberate): the inspector ball projects
-  **direction-only** — camera ROTATION only, one X-mirror handedness
-  decision, fixed pixel radius at the widget centre — so only camera
-  rotation reorients it. The world overlay is **perspective-correct**:
-  the real view/projection matrices place every handle at the pivot's
-  world position, sized in world units measured at the pivot's depth
-  (stable perceived size, no off-centre shear); an unprojectable pivot
-  draws nothing.
-- World tools are fully custom pastel (no stock ImGuizmo): Translate
-  shafts/arrowheads/planes, Rotate rings + camera-roll circle, Scale
-  local-axis knobs + uniform centre, Universal composing all three with
-  deterministic hover priority. Drawn geometry IS hit geometry; each
-  handle's tangent/plane mapping freezes at grab and the true
-  positive-rotation tangent is epsilon-derived through the surface's own
-  projection. Ctrl 0.1× / Shift 10× / both 1×.
-- Pivot (Rotate + bone only): Self rotates in place; Parent orbits the frozen
-  parent position using the parent→child radial frame. The gizmo draws at the
-  pivot it rotates around. Inspector wells always rotate in place.
-- Symmetry adds the `_l`/`_r` partner as an explicit target (Mirror =
-  reflected, Link = same-local-motion; math in
-  [pose operations](pose-operations.md)). Linked bones is the separate
-  Anamnesis eyes/Viera-ears catalog, resolved per partial. Ctrl selection
-  may span slots of one actor; symmetry, linked lookup, ancestry, and
-  parent traversal never cross a slot boundary.
-- Overlay bone visibility is a session mask over bone ids that starts empty;
-  the sidebar eyes opt bones in, and a selection anchor bypasses it. Named
-  **presets** (Ktisis) sit on top: a preset is a set of canonical bone NAMES in
-  config, so any actor can wear it, and whether it reads as applied is DERIVED
-  from the mask rather than stored beside it — the check marks and the overlay
-  cannot disagree, and the mask stays the single writer.
-- Precision wells: drag with modifiers, double-click for numeric entry,
-  Escape cancels. X/Y/Z are literal axes. A wheel notch over a well is a
-  discrete step scaled by that well's own drag modifiers, so a notch and a drag
-  pixel obey one rule; it has no release to wait for, so it commits itself and
-  one notch is one undo step. The wheel is CLAIMED, not merely read
-  (`SetItemUsingMouseWheel`) — an unclaimed notch would step the value and
-  scroll the shell out from under the pointer at the same time — and the claim
-  only holds while the well is the hovered item, so a notch anywhere else
-  scrolls normally.
+All surfaces share one ordered selection list. Changing mode does not clear it.
+Ctrl toggles compatible targets, Shift selects the visible range, and symmetry,
+linked lookup, ancestry, and parent traversal stay within a slot.
+
+One drag or typed edit is one gesture and one history patch. Baselines freeze at
+pointer-down; each frame applies the total delta from those baselines. Escape,
+tool/space/pivot changes, and selection changes cancel the gesture.
+Multi-selection applies each target's delta to its own baseline. Ring drags
+keep pointer ownership through release, so ending a drag cannot pick a bone.
+
+Frame wells edit model-space values. World and Local gizmo spaces keep their
+different axis meanings. Self rotates in place; Parent orbits around the
+frozen parent position. The world overlay is perspective-correct and draws
+nothing for an unprojectable pivot. Inspector rotation stays in place.
+
+The overlay visibility mask is the only writer for bone visibility. A selected
+anchor stays visible when the mask hides other bones. Presets are sets of
+canonical names whose applied state comes from that mask.
+
+Precision wells support modifiers, numeric entry, Escape cancellation, and
+wheel steps. A wheel notch belongs to the hovered well, uses that well's drag
+modifiers, and commits one undo step; unclaimed wheel input scrolls the surface.
