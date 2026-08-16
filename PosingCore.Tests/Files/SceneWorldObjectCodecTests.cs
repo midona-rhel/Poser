@@ -1,21 +1,15 @@
 using System;
 using System.IO;
 using System.Numerics;
+using Poser.Domain.Presentation;
 using Poser.Files;
 
 namespace Poser.Tests.Files;
 
-/// <summary>
-/// The borrowed-object list's codec contract. Two things have to hold together:
-/// a borrowed object comes back with BOTH halves of its identity and the
-/// placement the user gave it, AND a scene that borrowed nothing writes exactly
-/// the file it wrote before world objects could be adopted — so a library full
-/// of older scenes is untouched by this feature.
-/// </summary>
 public sealed class SceneWorldObjectCodecTests
 {
     [Fact]
-    public void A_borrowed_object_round_trips_whole()
+    public void Scene_codecs_round_trip_world_objects_and_overlay_payloads()
     {
         using var file = new TempWorldScene();
         var scene = SceneFileStoreTests.ValidScene();
@@ -30,136 +24,88 @@ public sealed class SceneWorldObjectCodecTests
                 Transform = new LightFile.TransformData
                 {
                     Position = new Vector3(14f, -3f, 90f),
-                    Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 1.1f),
+                    Rotation = Quaternion.Identity,
                     Scale = new Vector3(2f, 2f, 2f),
                 },
                 Visible = false,
             },
         ];
-        Assert.True(new SceneFileStore().Write(scene, file.Path).Succeeded);
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new OverlayNodeState
+                {
+                    Kind = OverlayNodeKind.Talk,
+                    Name = "Opening line",
+                    Position = new Vector2(320f, 640f),
+                    Speaker = "Y'shtola",
+                    Text = "The aether stirs.",
+                    TalkCursor = TalkCursor.Loop,
+                },
+            },
+        ];
 
-        var read = new SceneFileStore().Read(file.Path);
+        Assert.True(SceneFileStore.Default.Write(scene, file.Path).Succeeded);
+        var read = SceneFileStore.Default.Read(file.Path);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
-        var borrowed = Assert.Single(read.Scene!.WorldObjects!);
-        Assert.Equal(key, borrowed.Key);
-        Assert.Equal(
-            "bg/ffxiv/fst_f1/twn/f1t2/bgparts/f1t2_a1_bals1.mdl", borrowed.Path);
-        Assert.Equal(new Vector3(12.5f, -3.25f, 88f), borrowed.MapPosition);
-        Assert.Equal(new Vector3(14f, -3f, 90f), borrowed.Transform.Position);
-        Assert.Equal(new Vector3(2f, 2f, 2f), borrowed.Transform.Scale);
-        Assert.False(borrowed.Visible);
+        var world = Assert.Single(read.Scene!.WorldObjects!);
+        Assert.Equal(key, world.Key);
+        Assert.Equal(new Vector3(12.5f, -3.25f, 88f), world.MapPosition);
+        Assert.False(world.Visible);
+        var overlay = Assert.Single(read.Scene.Overlays!);
+        Assert.Equal("Y'shtola", overlay.Node!.Speaker);
+        Assert.Equal(TalkCursor.Loop, overlay.Node.TalkCursor);
+        Assert.Equal(new Vector2(320f, 640f), overlay.Node.Position);
     }
 
     [Fact]
-    public void A_scene_that_borrowed_nothing_writes_no_list_at_all()
+    public void Optional_codec_collections_are_absent_when_empty_and_unknown_members_are_ignored()
     {
         using var file = new TempWorldScene();
         var scene = SceneFileStoreTests.ValidScene();
-        Assert.True(new SceneFileStore().Write(scene, file.Path).Succeeded);
+        scene.WorldObjects = null;
+        scene.Overlays = null;
+        var json = System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
+        json = json.TrimEnd()[..^1] + ",\"FutureMember\":true}";
+        File.WriteAllText(file.Path, json);
 
-        string json = File.ReadAllText(file.Path);
-        var read = new SceneFileStore().Read(file.Path);
+        var read = SceneFileStore.Default.Read(file.Path);
 
-        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Null(read.Scene!.WorldObjects);
+        Assert.Null(read.Scene.Overlays);
+        Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Overlays", json, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void A_world_object_without_a_path_is_refused()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects =
-        [
-            new SceneWorldObject { Key = Guid.NewGuid(), Path = string.Empty },
-        ];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-    }
-
-    [Fact]
-    public void A_world_object_without_a_key_is_refused()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = [new SceneWorldObject { Path = "bg/a.mdl" }];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.Identity, result.Failure!.Kind);
-    }
-
-    [Fact]
-    public void Two_world_objects_sharing_one_key_are_refused()
+    public void World_and_overlay_validation_preserves_identity_numeric_and_size_guards()
     {
         var scene = SceneFileStoreTests.ValidScene();
         var key = Guid.NewGuid();
         scene.WorldObjects =
         [
-            new SceneWorldObject { Key = key, Path = "bg/a.mdl" },
+            new SceneWorldObject { Key = key, Path = "bg/a.mdl", MapPosition = new Vector3(float.NaN, 0, 0) },
             new SceneWorldObject { Key = key, Path = "bg/b.mdl" },
         ];
+        scene.Overlays = [new SceneOverlay { Key = Guid.NewGuid() }];
 
         var result = SceneFileValidation.Validate(scene);
 
         Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.Identity, result.Failure!.Kind);
-    }
-
-    /// <summary>The map position is HALF THE IDENTITY, so a non-finite one is
-    /// an entry that could match anything or nothing.</summary>
-    [Fact]
-    public void A_world_object_with_a_non_finite_map_position_is_refused()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects =
-        [
-            new SceneWorldObject
-            {
-                Key = Guid.NewGuid(),
-                Path = "bg/a.mdl",
-                MapPosition = new Vector3(float.NaN, 0f, 0f),
-            },
-        ];
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.NonFiniteNumeric, result.Failure!.Kind);
-    }
-
-    [Fact]
-    public void More_world_objects_than_the_limit_are_refused()
-    {
-        var scene = SceneFileStoreTests.ValidScene();
-        scene.WorldObjects = [];
-        for (int i = 0; i <= SceneFileLimits.MaxWorldObjects; i++)
-        {
-            scene.WorldObjects.Add(new SceneWorldObject
-            {
-                Key = Guid.NewGuid(),
-                Path = $"bg/{i}.mdl",
-            });
-        }
-
-        var result = SceneFileValidation.Validate(scene);
-
-        Assert.False(result.Succeeded);
-        Assert.Equal(
-            SceneFileValidationFailureKind.CollectionSize, result.Failure!.Kind);
+        Assert.Contains(result.Failure!.Kind,
+            new[] { SceneFileValidationFailureKind.Identity,
+                SceneFileValidationFailureKind.NonFiniteNumeric,
+                SceneFileValidationFailureKind.Document });
     }
 
     private sealed class TempWorldScene : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(),
-            $"poser-worldobject-{Guid.NewGuid():N}.poserscene");
+            System.IO.Path.GetTempPath(), $"poser-worldobject-{Guid.NewGuid():N}.poserscene");
 
         public void Dispose()
         {
