@@ -22,9 +22,7 @@ using LegacyTransform = Poser.Transform;
 
 namespace Poser.UI;
 
-/// <summary>
-/// What type of entity the gizmo is targeting.
-/// </summary>
+/// <summary>Entity type targeted by the gizmo.</summary>
 internal enum GizmoTargetType
 {
     None,
@@ -33,21 +31,12 @@ internal enum GizmoTargetType
     Light,
     Prop,
 
-    /// <summary>A borrowed map object. It manipulates exactly as a prop does —
-    /// one world transform, no pose, no override — and differs only in what
-    /// ending its claim means, which is not the gizmo's business.</summary>
+    /// <summary>Borrowed world object with one editable world transform.</summary>
     WorldObject
 }
 
-/// <summary>
-/// Unified in-world gizmo overlay for actor and bone transforms. Every
-/// tool — Translate, Rotate, Scale, and the composed Universal — is the
-/// custom pastel presentation drawn through the perspective-correct
-/// <see cref="WorldGizmoProjection"/> (Brio's overlay path: real camera
-/// view/projection matrices, stable perceived size at the pivot's depth).
-/// No stock ImGuizmo is drawn or hit-tested. All manipulation dispatches
-/// deltas through the clean TransformGestureService lifecycle.
-/// </summary>
+/// <summary>Overlay for actor, bone, light, prop, and world-object transforms.
+/// Gestures use the projected world gizmo and transform service.</summary>
 public class GizmoOverlayWindow : Window
 {
     private readonly SelectionSession _selection;
@@ -59,42 +48,23 @@ public class GizmoOverlayWindow : Window
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly CleanPoseFacade _cleanPose;
     private readonly IGazeService _gazeService;
-    // Only for the fly-speed readout: the wheel changes the live free
-    // camera's speed inside the game's input handler, and this overlay is
-    // where that change gets to say so.
+    // Used for the free-camera speed readout.
     private readonly IVirtualCameraService _virtualCameras;
-    // Selection carries stable descriptors; the gaze service takes a live
-    // IActor. The registry is the only sanctioned bridge, and a stale
-    // binding means the overlay draws nothing rather than guessing.
+    // Resolves stable selections to live actors.
     private readonly Game.Bindings.StableBindingRegistry _bindings;
-    // Only for Brio's GizmoStaysWhenAllBonesAreDisabled: with that switch off,
-    // a bone the overlay is not showing has no gizmo either, and the overlay's
-    // mask is the one place that knows.
+    // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
 
     private static Config.GizmoConfiguration GizmoConfig =>
         Config.ConfigurationService.Instance.Config.Gizmo;
 
-    /// <summary>The handles' constant perceived span, before UI scale, times
-    /// the configured size (Ktisis' <c>Gizmo.ScaleFactor</c>). 80px is the span
-    /// Poser has always drawn, so a scale of 1 changes nothing. The GAZE gizmo
-    /// takes the same span, exactly as Ktisis' gaze gizmo takes its own scale
-    /// factor from the same setting family.</summary>
+    /// <summary>Configured handle span before UI scaling.</summary>
     private static float HandleSpanPixels =>
         80f * Math.Clamp(GizmoConfig.GizmoScale, 0.5f, 2f);
-    // Begin and Update both carry a failure DETAIL that the overlay used to
-    // drop on the floor: a refused gesture is indistinguishable in game from
-    // a gizmo that simply does nothing. Verbose, so it costs nothing until
-    // someone is looking for it.
+    // Reports gesture failures at verbose level.
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
-    /// <summary>
-    /// Everything one gizmo gesture froze at Begin: the engaged handle,
-    /// tool, orientation, domain space, pivot, and the presentation
-    /// baseline. Nothing here re-reads editor state mid-drag — a mismatch
-    /// cancels the gesture instead of changing its meaning. No native
-    /// entity is retained.
-    /// </summary>
+    /// <summary>State fixed when a transform gesture begins.</summary>
     private sealed class GizmoGesture
     {
         public required TransformGestureId Id { get; init; }
@@ -106,42 +76,21 @@ public class GizmoOverlayWindow : Window
         public LegacyTransform Current;
         public PivotMode PivotMode { get; init; } = PivotMode.PerTarget;
         public Vector3 Pivot { get; init; }
-        // The toolbar pivot choice frozen at Begin: a mid-drag pivot change
-        // cancels the gesture instead of changing its meaning.
+        // Pivot choice is fixed for the gesture.
         public Core.RotationPivot PivotChoice { get; init; } = Core.RotationPivot.Self;
     }
 
-    // ONE overlay-wide interaction lifecycle: a single gesture slot, the
-    // target kind that owns it, and one suppression flag. A cancelled or
-    // superseded gesture (Escape, tool/space change, target-kind change,
-    // external cancellation, failed update) must not allow ANY new Begin —
-    // actor or bone — while the same mouse press is still held.
+    // One gesture slot and one press-suppression flag cover the overlay.
     private GizmoGesture? _gesture;
     private GizmoTargetType _gestureTargetType = GizmoTargetType.None;
     private bool _beginSuppressed;
 
-    // Drag state frozen at Begin. The engaged handle's mapping (axis,
-    // plane, tangent) never re-derives mid-drag; presentation may follow
-    // the camera and, for translate, the moving target.
-    //
-    // The projection is part of that frozen mapping. Translate and Scale
-    // convert mouse position into a world point by intersecting the view
-    // ray with the drag plane, so a LIVE camera would move that
-    // intersection while the mouse is still — orbiting or panning
-    // mid-drag would inject a delta the user never asked for. The frozen
-    // copy keeps one mouse position meaning one world point for the whole
-    // gesture; the camera still moves the drawn handles, because
-    // presentation is rebuilt from the live camera every frame.
+    // Handle mapping and projection are fixed at Begin.
     private WorldGizmoProjection? _dragProjection;
     private Vector3 _dragPivotWorld;
     private Quaternion _dragRingFrame = Quaternion.Identity;
     private Vector3 _dragAxisWorld;
-    // The engaged layout's axis-flip signs, latched at Begin and fed back
-    // into every per-frame rebuild while the gesture lives: presentation
-    // follows the live camera, so without the latch a translate carrying
-    // the pivot across the camera plane (or an orbit mid-drag) would flip
-    // the drawn arrow away from the frozen drag mapping. Stock ImGuizmo
-    // latches mAxisFactor while mbUsing for exactly this.
+    // Axis signs are fixed at Begin so drawn and dragged axes stay aligned.
     private float[]? _dragTranslateSigns;
     private float[]? _dragScaleSigns;
     private Vector3 _ringAxisModel;
@@ -149,9 +98,7 @@ public class GizmoOverlayWindow : Window
     private Vector2 _dragMouseOrigin;
     private float _ringDistance;
     private float _ringAngle;
-    // Sweep-trail presentation state frozen at Begin: the world radial at
-    // the ring grab point (axis rings), and the screen radial plus spin
-    // sign (roll, whose ring is a screen circle on both surfaces).
+    // Ring sweep state is fixed at Begin.
     private Vector3 _ringGrabRadial = Vector3.UnitX;
     private Vector2 _ringGrabScreenRadial = Vector2.UnitX;
     private float _rollSweepSign = 1f;
@@ -164,38 +111,20 @@ public class GizmoOverlayWindow : Window
     private float _dragPrevUniformPixels;
     private Matrix4x4 _dragInvModel = Matrix4x4.Identity;
 
-    /// <summary>
-    /// The engaged gaze-target handle and the drag mapping frozen at Begin.
-    /// Deliberately NOT a <see cref="GizmoGesture"/>: the gaze anchor has no
-    /// gesture lifecycle. Every drag frame writes the world point straight to
-    /// the gaze service, so there is nothing to commit, cancel, or restore —
-    /// which is also why it carries no history (Ktisis and Brio both treat
-    /// gaze as live state, not an undoable transform).
-    /// </summary>
+    /// <summary>Frozen state for a gaze-point drag.</summary>
     private sealed class GazeGesture
     {
         public required WorldHandle Handle { get; init; }
-        /// <summary>The gaze point being dragged, frozen with the rest of the
-        /// mapping so every frame of one drag writes the same point — a
-        /// selection change mid-drag drops the gesture rather than redirecting
-        /// its writes.</summary>
+        /// <summary>Selected gaze part.</summary>
         public required GazePart Part { get; init; }
-        // Frozen for the same reason the transform drag freezes its own: a
-        // live camera would move the ray/plane intersection under a still
-        // mouse, injecting a delta the user never asked for.
+        // Projection and plane are fixed for the drag.
         public required WorldGizmoProjection Projection { get; init; }
         public required Vector3 AxisWorld { get; init; }
-        /// <summary>The layout's axis-flip signs at Begin, fed back into
-        /// every rebuild while the drag lives — presentation follows the
-        /// live camera, so without this latch a drag that carries the
-        /// anchor across the camera plane would flip the drawn arrow away
-        /// from the frozen mapping (stock ImGuizmo latches mAxisFactor
-        /// while mbUsing for the same reason).</summary>
+        /// <summary>Axis signs fixed at Begin.</summary>
         public required float[] TranslateSigns { get; init; }
         public required Vector3 PlanePoint { get; init; }
         public required Vector3 PlaneNormal { get; init; }
-        /// <summary>The anchor position at Begin; the total offset applies to
-        /// this, never to the value the service just echoed back.</summary>
+        /// <summary>Anchor position captured at Begin.</summary>
         public required Vector3 Start { get; init; }
         public Vector3 PrevHit;
         public Vector3 Accum;
@@ -215,12 +144,7 @@ public class GizmoOverlayWindow : Window
             _cleanTransforms.Cancel(id);
     }
 
-    /// <summary>
-    /// Reconciles the overlay lifecycle BEFORE the target-type branch runs:
-    /// a selection-kind change (Actor↔Bone↔None) or an external cancellation
-    /// clears stale local gesture state and suppresses every new Begin until
-    /// the original mouse press ends.
-    /// </summary>
+    /// <summary>Clears stale gestures before drawing the target branch.</summary>
     private void ReconcileInteractionLifecycle(GizmoTargetType currentTarget)
     {
         if (_gesture is { } gesture)
@@ -293,21 +217,13 @@ public class GizmoOverlayWindow : Window
 
     public override void Draw()
     {
-        // First ink of the frame. The fly-speed readout belongs to the free
-        // camera and not to any selection, so it is drawn ahead of every gate
-        // below — Alt, the gaze takeover, an empty selection — each of which
-        // would otherwise swallow it.
+        // Draw the free-camera notice before interaction gates.
         DrawFreeCameraSpeed();
 
         var targetType = GetGizmoTargetType();
         ReconcileInteractionLifecycle(targetType);
 
-        // Holding Alt hides the world gizmo along with the skeleton overlay.
-        // An ACTIVE drag is never interrupted: the chrome disappears but the
-        // manipulation and its value readout carry on (DrawWorldGizmo skips
-        // the handle drawing while Alt is down). With no drag there is
-        // nothing to grab on an invisible gizmo, so the frame is skipped and
-        // a press begun while hidden cannot Begin after Alt releases.
+        // Alt hides idle gizmos and suppresses new grabs; active drags continue.
         if (ImGui.GetIO().KeyAlt && _gesture == null && _gazeGesture == null)
         {
             if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -315,13 +231,7 @@ public class GizmoOverlayWindow : Window
             return;
         }
 
-        // The gaze point is a first-class selectable entity: it owns the
-        // overlay WHEN AND ONLY WHEN the primary selection IS that gaze
-        // target. A GazeTarget primary makes GetGizmoTargetType() return None,
-        // so no actor or bone gizmo competes for the frame — and selecting the
-        // actor again brings the actor gizmo back, Position mode or not. An
-        // in-flight transform gesture still finishes its press before gaze can
-        // take over, so no gesture is ever left open by the swap.
+        // A selected gaze target owns the overlay while in position mode.
         var gaze = _gesture == null ? GazeContext() : null;
         if (gaze is { } context)
         {
@@ -331,11 +241,7 @@ public class GizmoOverlayWindow : Window
             return;
         }
 
-        // A gaze drag whose point stopped being the primary selection (another
-        // entity selected, binding gone stale, mode left Position) is dropped,
-        // not carried: there is nothing left to write to. Suppression follows
-        // the same rule as the transform lifecycle — no new Begin while that
-        // press is still held.
+        // Drop a gaze drag when its selection is no longer valid.
         if (_gazeGesture != null)
         {
             _gazeGesture = null;
@@ -346,17 +252,7 @@ public class GizmoOverlayWindow : Window
             DrawWorldGizmo(targetType, PointerOverInterface());
     }
 
-    /// <summary>
-    /// The gaze point that owns the overlay this frame, or null. Requires a
-    /// GazeTarget primary whose actor still resolves to a live actor and whose
-    /// gaze is still in Position mode — a selection left behind by a mode exit
-    /// is inert, drawing nothing rather than guessing at a point that no longer
-    /// exists. The selected part chooses which point the gizmo sits on; an
-    /// absent part is the shared anchor. The whole state travels with it: the
-    /// in-world part markers must read the SAME snapshot the pivot came from,
-    /// and a second GetGazeState call would be both a redundant service hit
-    /// and a second chance for the two to disagree.
-    /// </summary>
+    /// <summary>Returns the active gaze point and its current state.</summary>
     private (IActor Actor, GazePart Part, Vector3 Position, GazeState State)? GazeContext()
     {
         if (_selection.Primary is not
@@ -375,9 +271,7 @@ public class GizmoOverlayWindow : Window
         return (actor, part, PartPosition(state, part), state);
     }
 
-    /// <summary>Where one gaze part sits: the anchor is the shared point every
-    /// enabled unlocked part follows, the rest are the divergeable per-part
-    /// points the inspector edits.</summary>
+    /// <summary>Returns the world position for one gaze part.</summary>
     private static Vector3 PartPosition(GazeState state, GazePart part) => part switch
     {
         GazePart.Eyes => state.EyesPosition,
@@ -386,8 +280,7 @@ public class GizmoOverlayWindow : Window
         _ => state.Position,
     };
 
-    /// <summary>Maps a selectable part onto the service's part flag. Anchor has
-    /// no flag of its own — it writes through SetGazePosition instead.</summary>
+    /// <summary>Maps a gaze part to its service target.</summary>
     private static GazeTargetType ToTargetType(GazePart part) => part switch
     {
         GazePart.Eyes => GazeTargetType.Eyes,
@@ -395,15 +288,7 @@ public class GizmoOverlayWindow : Window
         _ => GazeTargetType.Body,
     };
 
-    /// <summary>
-    /// The gaze-target gizmo: the same perspective world-gizmo path the
-    /// selection uses, restricted to the Move tool with identity frames, so
-    /// its handles are the world axes and only TranslateAxis/TranslatePlane
-    /// can ever be hit. Every drag frame writes the selected point straight to
-    /// the gaze service — no CleanTransformFacade gesture, no history entry, no
-    /// commit on release (reference parity: neither Ktisis nor Brio makes
-    /// gaze undoable).
-    /// </summary>
+    /// <summary>Draws and updates the active gaze-point Move gizmo.</summary>
     private void DrawGazeGizmo(
         IActor actor, GazePart part, Vector3 anchor, GazeState state,
         bool occluded)
@@ -417,17 +302,14 @@ public class GizmoOverlayWindow : Window
                 projection, TransformTool.Move,
                 Quaternion.Identity, Quaternion.Identity, Quaternion.Identity,
                 uiScale,
-                // A live drag pins the axis-flip signs it began with, so the
-                // anchor crossing the camera plane mid-drag cannot flip the
-                // drawn arrow away from the frozen mapping.
+                // Active drags keep their initial axis signs.
                 _gazeGesture?.TranslateSigns)
             : null;
 
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        // Interface occlusion suppresses hover and Begin, never an active
-        // drag — identical to the selection gizmo.
+        // Interface occlusion suppresses hover and Begin, not active drags.
         if (_gazeGesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
@@ -436,9 +318,7 @@ public class GizmoOverlayWindow : Window
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, _gazeGesture?.Handle);
 
-        // Drawn after the handles so it reads on top of them: the handles are
-        // identical for all four points and say nothing about which one they
-        // are holding.
+        // Draw the active-part marker over the handles.
         if (projection != null)
             DrawGazeIdentity(projection, state, part, uiScale, io.KeyAlt);
 
@@ -459,16 +339,11 @@ public class GizmoOverlayWindow : Window
         if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
             UpdateGazeGesture(active, actor, io, mouse);
         else
-            // Release ends the drag and nothing else: the service already
-            // holds every frame's value.
+            // Release ends the drag.
             _gazeGesture = null;
     }
 
-    /// <summary>
-    /// The eight whole-pixel directions the gaze glyphs are underpainted in to
-    /// give them a black outline: four cardinal, four diagonal, so a stroke is
-    /// ringed on every side. Multiplied by the outline radius at the draw.
-    /// </summary>
+    /// <summary>Eight directions used for glyph underpaint.</summary>
     private static readonly Vector2[] GlyphOutlineOffsets =
     [
         new(-1f, -1f), new(0f, -1f), new(1f, -1f),
@@ -476,18 +351,7 @@ public class GizmoOverlayWindow : Window
         new(-1f, 1f), new(0f, 1f), new(1f, 1f),
     ];
 
-    /// <summary>
-    /// In-world identification for the gaze gizmo. The gaze target is four
-    /// points sharing one handle set, so the gizmo alone cannot say which one
-    /// is being held: the held point's own glyph — an eye, a head, a body —
-    /// sits ON the point in the selection accent, and the part points that
-    /// diverge from it carry the same glyphs dimmed at their own positions,
-    /// which IS the "gaze control is three points" story. No text: the icon is
-    /// the whole label.
-    /// The part markers are chrome and follow the Alt hide with the handles;
-    /// the held glyph is feedback and survives it, exactly like
-    /// <see cref="DrawDragReadout"/>.
-    /// </summary>
+    /// <summary>Draws the selected gaze glyph and diverged part markers.</summary>
     private static void DrawGazeIdentity(
         WorldGizmoProjection projection,
         GazeState state,
@@ -495,42 +359,18 @@ public class GizmoOverlayWindow : Window
         float uiScale,
         bool chromeHidden)
     {
-        // The live selection accent the skeleton overlay marks selected bones
-        // and actors with, split by WorldGizmo.Draw's alpha-emphasis grammar
-        // rather than a second palette: full alpha is the held point, the dim
-        // pair is context. Computed before the chrome branch because the held
-        // glyph outlives it.
+        // The held glyph is bright; diverged markers are dim.
         var accent = Crystarium.ActiveTheme.Palette.Primary;
         var held = ColorEx.ApplyAlpha(accent with { W = 1f });
         var diverged = ColorEx.ApplyAlpha(accent with { W = 0.45f });
 
-        // Glyph sizes, named because the coincidence clearance below is
-        // derived from them and must not drift when either one is retuned.
         const float HeldSide = 16f;
         const float MarkerSide = 13f;
 
-        // The outline radius, in WHOLE pixels. Whole is not cosmetic:
-        // SvgDocument.RenderCore FLOORS the box origin before it rasterizes
-        // (its bake cache wants a zero sub-pixel phase), so a fractional
-        // offset can floor straight back onto the glyph's own origin and
-        // paint nothing at all — the diagonals, at 1.25 * 0.707 = 0.88 px,
-        // would disappear outright. Rounded to pixels every underpaint pass
-        // is displaced exactly, and one pixel at 100 % scale matches the
-        // 1.1-1.3 px these 2-unit Tabler strokes render at 13-16 px.
+        // Whole-pixel outline radius keeps the marker legible.
         float ring = MathF.Max(1f, MathF.Round(1.25f * uiScale));
 
-        // A screen-space square centred on the point, so the glyph keeps one
-        // legible size at any depth — the same reason the crosshair it
-        // replaces was drawn in screen space.
-        //
-        // Contrast is an 8-way black UNDERPAINT, not a pipeline feature:
-        // Crystarium's icon path (IconIn -> DrawIconBox -> SvgBoxCore) has no
-        // shadow or outline option, and these glyphs are strokes rather than
-        // filled shapes, so nothing can be inset. Cost is one extra bake, not
-        // eight: SvgIconTextureCache keys on box SIZE and tint and never on
-        // position, so all eight offset passes reuse a single cached quad.
-        // The outline alpha is the glyph's own — a dimmed marker gets a
-        // dimmed outline instead of turning into a black blob.
+        // Markers use a screen-space square with an underpaint outline.
         static void IconAt(
             Vector2 at, float side, string name, Vector4 color, float outline)
         {
@@ -544,18 +384,12 @@ public class GizmoOverlayWindow : Window
             Crystarium.IconIn(at - half, at + half, name, color);
         }
 
-        // Two glyph boxes touching is the point at which a dimmed marker
-        // starts eating into the held glyph now sitting on the centre, so
-        // that — half of each side plus the outline ring — IS the clearance.
-        // Anything inside it is a part that has not meaningfully diverged
-        // from the held point, which is every part in Anchor mode.
+        // Keep diverged markers clear of the held glyph.
         float clearance = (HeldSide + MarkerSide) * 0.5f * uiScale + ring;
 
         if (!chromeHidden)
         {
-            // The projection was built on the held point, so its Center IS
-            // that point, and the centred held glyph already names it — a
-            // marker there would only duplicate it.
+            // Skip a marker that overlaps the held point.
             void PartMarker(GazePart each)
             {
                 if (!projection.Project(PartPosition(state, each), out var at) ||
@@ -571,21 +405,12 @@ public class GizmoOverlayWindow : Window
             PartMarker(GazePart.Body);
         }
 
-        // ON the point, not beside it. The centre of a Move gizmo is empty by
-        // construction: WorldGizmo.Build sets only TranslateActive for that
-        // tool, so there is no uniform-scale knob to draw or to hit there, the
-        // axis shafts start at 0.2 of the 80 px gizmo (16 px out) and the
-        // plane quads at 0.35 (28 px), and HitTest's centre branch is gated on
-        // UniformActive. An 8 px half-extent therefore clears every handle and
-        // every grab band. Drawn last so it reads over the chrome, and outside
-        // the chrome gate so it survives an Alt-hidden drag.
+        // The held marker is centered on the active point.
         IconAt(
             projection.Center, HeldSide * uiScale, PartIcon(part), held, ring);
     }
 
-    /// <summary>The glyph that stands for one gaze point: the eye, head, and
-    /// body icons, so the overlay says which point it holds without a word of
-    /// text. The shared anchor every part follows takes the eye.</summary>
+    /// <summary>Returns the icon name for a gaze part.</summary>
     private static string PartIcon(GazePart part) => part switch
     {
         GazePart.Head => "head",
@@ -593,12 +418,7 @@ public class GizmoOverlayWindow : Window
         _ => "eye",
     };
 
-    /// <summary>
-    /// Freezes the grabbed handle's drag plane against the anchor. The same
-    /// mapping the translate handles use, self-contained because the gesture
-    /// version is interleaved with scale/ring state this path has none of.
-    /// A degenerate plane or missed ray declines to begin.
-    /// </summary>
+    /// <summary>Starts a gaze drag with a frozen plane.</summary>
     private void BeginGazeGesture(
         WorldHandleHit grab,
         WorldGizmo.Layout layout,
@@ -607,15 +427,14 @@ public class GizmoOverlayWindow : Window
         Vector3 anchor,
         Vector2 mouse)
     {
-        // The LAYOUT's signed axis, not a re-derived FrameAxis: the drag
-        // must map along the same vector the grabbed arrow was drawn with.
+        // Use the layout's signed axis.
         var axisWorld = layout.SignedTranslateAxis(grab.Handle.Axis);
         Vector3 planeNormal;
         switch (grab.Handle.Kind)
         {
             case WorldHandleKind.TranslateAxis:
             {
-                // The drag plane contains the axis and faces the camera.
+                // The axis plane faces the camera.
                 var normal = projection.ViewDirection -
                     axisWorld * Vector3.Dot(projection.ViewDirection, axisWorld);
                 if (normal.LengthSquared() < 1e-6f)
@@ -625,6 +444,10 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.TranslatePlane:
                 planeNormal = axisWorld;
+                break;
+            case WorldHandleKind.TranslateCenter:
+                // The centre uses the frozen camera-facing plane.
+                planeNormal = projection.ViewDirection;
                 break;
             default:
                 return;
@@ -647,14 +470,7 @@ public class GizmoOverlayWindow : Window
         };
     }
 
-    /// <summary>
-    /// One drag frame: accumulate the modifier-scaled world increment against
-    /// the frozen mapping and push the TOTAL offset from the frozen Start to
-    /// the gaze service. The service's own echo is never read back as the
-    /// next baseline. The frozen part decides the write: the anchor moves every
-    /// enabled unlocked part with it, a single part moves only itself and works
-    /// even while locked.
-    /// </summary>
+    /// <summary>Updates a gaze drag from its frozen plane.</summary>
     private void UpdateGazeGesture(
         GazeGesture gesture,
         IActor actor,
@@ -679,15 +495,7 @@ public class GizmoOverlayWindow : Window
             _gazeService.SetPartPosition(actor, ToTargetType(gesture.Part), target);
     }
 
-    /// <summary>
-    /// True when a real interactive surface — the main window, settings,
-    /// any popup/dropdown/modal, the bone hover list — owns the pointer.
-    /// The overlay is NoInputs, so ImGui's hover test never resolves to it
-    /// and any hovered window is by definition something in front of the
-    /// game that must own the click instead of the gizmo. An open popup
-    /// blocks regardless of pointer position because it is modal to the
-    /// click that dismisses it.
-    /// </summary>
+    /// <summary>Returns whether another interface owns the pointer.</summary>
     private static bool PointerOverInterface() =>
         ImGui.IsWindowHovered(
             ImGuiHoveredFlags.AnyWindow |
@@ -709,30 +517,21 @@ public class GizmoOverlayWindow : Window
         };
     }
 
-    /// <summary>An attached light's transform is re-derived from its bone every
-    /// tick, so it is not manipulable: the drag would be overwritten before it
-    /// was ever seen. Same answer as no target at all.</summary>
+    /// <summary>Attached lights are not transform targets.</summary>
     private bool IsAttached(LightId light)
     {
         var resolved = _bindings.Resolve(light);
         return resolved.Success && resolved.Value is { AttachedBone: not null };
     }
 
-    /// <summary>The shared effective transform selection: same resolver the
-    /// inspector consumes, so primary, order, baseline, and placement agree.</summary>
+    /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
 
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
 
-    /// <summary>
-    /// Enforces the frozen-gesture contract each frame: an externally
-    /// cancelled gesture (selection change, scene invalidation, undo guard)
-    /// clears local presentation state; Escape cancels and restores the
-    /// frozen baseline; a tool, orientation, or pivot change cancels rather
-    /// than mutating the drag. Returns the surviving gesture or null.
-    /// </summary>
+    /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
         TransformOrientation currentOrientation,
@@ -777,13 +576,7 @@ public class GizmoOverlayWindow : Window
             _beginSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
     }
 
-    /// <summary>
-    /// The one world-gizmo path for actors and bones: resolves the target
-    /// and frames, builds the perspective layout for the active tool,
-    /// hit-tests/draws the custom handles, and runs Begin/Update/Commit
-    /// through the clean gesture lifecycle. Actor and light targets use an
-    /// identity model matrix (their model space IS world space).
-    /// </summary>
+    /// <summary>Draws and updates the world transform gizmo.</summary>
     private void DrawWorldGizmo(GizmoTargetType targetType, bool occluded)
     {
         bool isBone = targetType == GizmoTargetType.Bone;
@@ -803,17 +596,11 @@ public class GizmoOverlayWindow : Window
                 { Kind: TransformTargetKind.Bone, Bone: { } primaryBoneId })
                 return;
             primaryBone = primaryBoneId;
-            // Brio's GizmoStaysWhenAllBonesAreDisabled, in its OFF state: a
-            // bone the overlay is not showing loses its gizmo too. Poser's
-            // long-standing behaviour is the ON state, so this returns only
-            // when the user has deliberately asked for the other one — and an
-            // engaged drag is never interrupted, because hiding a bone
-            // mid-gesture would strand the gesture open.
+            // Hidden bones suppress new gizmos but do not cancel active drags.
             if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null
                 && !_presentation.IsVisible(primaryBoneId))
                 return;
-            // Skeleton matrix query also refreshes/registers the skeleton
-            // caches inside the runtime boundary.
+            // Querying the skeleton matrix refreshes its runtime cache.
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
                 return;
             modelMatrix = skeletonMatrix;
@@ -855,10 +642,7 @@ public class GizmoOverlayWindow : Window
         var pivotChoice = _editorState.RotationPivot;
         var gesture = GuardGesture(tool, orientation, pivotChoice);
 
-        // Live memory only seeds a gesture. During a drag the frozen
-        // presentation baseline feeds the manipulation, exactly like Brio's
-        // tracking transform — reading Havok model-space back every frame
-        // can turn a rotation into an apparent orbit.
+        // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
         if (gesture is { } presented)
         {
@@ -900,10 +684,7 @@ public class GizmoOverlayWindow : Window
 
         Matrix4x4.Decompose(modelMatrix, out _, out var actorRotation, out _);
 
-        // Frames (world-space axis bases). Brio parity: World manipulates
-        // the character's MODEL axes — the same frame the numeric wells
-        // edit; Local the target's own axes. Scale handles are always the
-        // target's local axes (stock-gizmo parity: scale is local-only).
+        // Global uses model axes; Local uses target axes. Scale is local.
         var localFrame = Quaternion.Normalize(
             actorRotation * currentTransform.Rotation);
         var translateFrame = orientation == TransformOrientation.Global
@@ -911,9 +692,7 @@ public class GizmoOverlayWindow : Window
             : localFrame;
         var scaleFrame = localFrame;
 
-        // Parent pivot applies to the Rotate tool on bones only: the rings
-        // orbit the frozen parent position with the parent→child radial
-        // frame. Parent with no valid parent degrades to Self.
+        // Parent pivot applies only to bone rotation with a valid parent.
         bool pivotActive = tool == TransformTool.Rotate && isBone &&
             pivotChoice != Core.RotationPivot.Self;
         Vector3? restPivot = null;
@@ -941,8 +720,7 @@ public class GizmoOverlayWindow : Window
             ringFrame = translateFrame;
         }
 
-        // Pivot: rings freeze it for the complete drag; translate follows
-        // the moving target; everything else sits on the target.
+        // Rings use a frozen pivot; translation follows the target.
         Vector3 pivotModel = pivotActive && restPivot is { } rest
             ? rest
             : currentTransform.Position;
@@ -964,38 +742,19 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        // Interface occlusion suppresses hover and Begin, never an active
-        // drag: once engaged, the handle keeps the pointer until release
-        // even if the cursor crosses a window.
-        // Brio's Posing_DisableGizmo: a held modifier stops the gizmo
-        // answering the pointer so the bone dot behind a handle can be
-        // clicked. It suppresses HOVER and therefore Begin and pointer
-        // ownership, and never an engaged drag — the same shape as occlusion.
+        // Occlusion and the configured modifier suppress new grabs only.
         bool gizmoSuppressed = SkeletonOverlayWindow.HoldModifierDown(
             GizmoConfig.DisableGizmoModifier);
         if (gesture == null && layout != null && !occluded && !gizmoSuppressed)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
-        // Occlusion suppresses ownership, not presentation. The shell draws
-        // later and covers only the portion beneath it; visible handles
-        // outside the shell remain present instead of vanishing wholesale.
-        // Alt hides the chrome without ending an engaged drag — the value
-        // readout below stays as the only feedback.
+        // Occlusion suppresses hover/ownership but not handle drawing.
         if (layout != null && !io.KeyAlt)
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, gesture?.Handle);
 
-        // The overlay window is NoInputs, so it claims the mouse from the
-        // game itself. BOTH capture calls are required and cover different
-        // intervals: the direct assignment owns events arriving after this
-        // draw within the current frame, and the next-frame override owns
-        // events arriving after the next NewFrame but before this window
-        // draws again — NewFrame otherwise recomputes the flag from hovered
-        // windows, and the overlay is not one. Dropping either reopens a
-        // window in which the game also sees the click.
-        // GizmoPointerOwnership additionally stops Poser's own selection
-        // surfaces from treating the click, or its release frame, as a pick.
+        // Capture current and next-frame mouse input.
         if (hover != null || gesture != null)
         {
             io.WantCaptureMouse = true;
@@ -1015,11 +774,11 @@ public class GizmoOverlayWindow : Window
                 translateFrame, scaleFrame, ringFrame, mouse);
         }
 
-        // The drag consumes the FROZEN projection, never this frame's.
+        // Active drags use the frozen projection.
         if (_gesture is { } active && ImGui.IsMouseDown(ImGuiMouseButton.Left))
             UpdateGesture(active, _dragProjection, io, mouse);
 
-        // Commit exactly once on release.
+        // Commit once on release.
         if (_gesture is { } completed && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
             _cleanTransforms.Commit(completed.Id);
@@ -1034,16 +793,7 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    /// <summary>
-    /// The stock-gizmo manipulation trail Brio and Ktisis get from ImGuizmo:
-    /// ring drags sweep a filled pie from the grab point through the dragged
-    /// angle; translate drags draw the travel guide from the drag origin to
-    /// the current position. Drawn every drag frame — including while Alt
-    /// hides the gizmo chrome, where it is the remaining visual feedback.
-    /// The axis-ring pie is built by rotating the frozen grab radial by the
-    /// applied angle about the applied axis and projecting through the live
-    /// camera, so it cannot disagree with the motion it depicts.
-    /// </summary>
+    /// <summary>Draws the active drag trail.</summary>
     private void DrawDragSweep(
         GizmoGesture gesture,
         WorldGizmoProjection? projection,
@@ -1055,7 +805,8 @@ public class GizmoOverlayWindow : Window
         var dl = ImGui.GetWindowDrawList();
         var color = gesture.Handle.Kind switch
         {
-            WorldHandleKind.Roll or WorldHandleKind.TranslatePlane =>
+            WorldHandleKind.Roll or WorldHandleKind.TranslatePlane or
+            WorldHandleKind.TranslateCenter =>
                 new Vector4(1f, 1f, 1f, 1f),
             _ => gesture.Handle.Axis switch
             {
@@ -1069,11 +820,7 @@ public class GizmoOverlayWindow : Window
         uint edge = ImGui.ColorConvertFloat4ToU32(
             ColorEx.ApplyAlpha(color with { W = 0.6f }));
 
-        // These bindings have no concave fill, and a pie past 180° is
-        // concave. A fan of triangles fills any sweep, but each triangle
-        // would AA-fringe its shared edges into visible seams — so the
-        // interior fills with AA off and ONE closed path stroke smooths
-        // the silhouette.
+        // Fill the pie without anti-aliased seams, then stroke its outline.
         void FillPie(Vector2 hub, IReadOnlyList<Vector2> arc)
         {
             if (arc.Count < 2)
@@ -1143,6 +890,7 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.TranslateAxis:
             case WorldHandleKind.TranslatePlane:
+            case WorldHandleKind.TranslateCenter:
             {
                 if (!projection.Project(_dragPivotWorld, out var start) ||
                     !projection.Project(
@@ -1156,19 +904,15 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    /// <summary>
-    /// The manipulation value readout (Brio/Ktisis show ImGuizmo's value
-    /// labels the same way): total ring angle, world-space translation
-    /// offset, or scale factor, following the cursor for the whole drag.
-    /// While Alt hides the gizmo chrome this is the surviving feedback.
-    /// </summary>
+    /// <summary>Draws the active transform readout.</summary>
     private void DrawDragReadout(GizmoGesture gesture, Vector2 mouse, float uiScale)
     {
         string text = gesture.Handle.Kind switch
         {
             WorldHandleKind.RotateRing or WorldHandleKind.Roll =>
                 $"{RotationGizmoRings.AxisName(gesture.Handle.Kind == WorldHandleKind.Roll ? RotationGizmoRings.RollAxis : gesture.Handle.Axis)}  {_ringAngle * (180f / MathF.PI):+0.0;-0.0}°",
-            WorldHandleKind.TranslateAxis or WorldHandleKind.TranslatePlane =>
+            WorldHandleKind.TranslateAxis or WorldHandleKind.TranslatePlane or
+            WorldHandleKind.TranslateCenter =>
                 $"X {_dragAccumWorld.X:+0.000;-0.000}  Y {_dragAccumWorld.Y:+0.000;-0.000}  Z {_dragAccumWorld.Z:+0.000;-0.000}",
             _ =>
                 $"×{Math.Clamp(MathF.Exp(_dragLogScale), 0.001f, 1000f):0.000}",
@@ -1178,14 +922,7 @@ public class GizmoOverlayWindow : Window
         Crystarium.HoverHelp.Readout(min, text);
     }
 
-    /// <summary>
-    /// The free camera's fly-speed readout: the multiple of the default speed
-    /// the last wheel notch produced, held by the cursor for a second and
-    /// gone. Same chip as the drag readout, seated ABOVE the cursor so a
-    /// notch turned mid-drag does not land on the value the drag is showing.
-    /// Nothing is drawn unless a free camera is live and its speed has just
-    /// moved.
-    /// </summary>
+    /// <summary>Draws the current free-camera speed notice.</summary>
     private void DrawFreeCameraSpeed()
     {
         if (_virtualCameras.SpeedNotice is not { } notice)
@@ -1202,11 +939,7 @@ public class GizmoOverlayWindow : Window
         Crystarium.HoverHelp.Readout(min, text, opacity);
     }
 
-    /// <summary>
-    /// Freezes the engaged handle's complete drag mapping, then opens the
-    /// clean gesture. Ray-based handles that cannot establish a stable
-    /// mapping (degenerate plane, no intersection) decline to begin.
-    /// </summary>
+    /// <summary>Freezes the handle mapping and opens the transform gesture.</summary>
     private void BeginGesture(
         WorldHandleHit grab,
         WorldGizmo.Layout layout,
@@ -1235,8 +968,7 @@ public class GizmoOverlayWindow : Window
         if (!Matrix4x4.Invert(modelMatrix, out var invModel))
             return;
 
-        // Per-kind frozen mapping, established BEFORE the service gesture
-        // so a failed mapping never opens one.
+        // Resolve the mapping before opening the service gesture.
         Vector3 axisWorld = Vector3.UnitX;
         Vector3 planeNormal = Vector3.UnitY;
         Vector3 initialHit = Vector3.Zero;
@@ -1247,13 +979,11 @@ public class GizmoOverlayWindow : Window
             case WorldHandleKind.TranslateAxis:
             case WorldHandleKind.ScaleAxis:
             {
-                // The LAYOUT's signed axis, not a re-derived FrameAxis: the
-                // grabbed arrow was drawn along the camera-facing sign, and
-                // the frozen mapping must be the same vector.
+                // Use the layout's signed axis so drawing and dragging agree.
                 axisWorld = kind == WorldHandleKind.TranslateAxis
                     ? layout.SignedTranslateAxis(axisIndex)
                     : layout.SignedScaleAxis(axisIndex);
-                // The drag plane contains the axis and faces the camera.
+                // The axis plane faces the camera.
                 var normal = projection.ViewDirection -
                     axisWorld * Vector3.Dot(projection.ViewDirection, axisWorld);
                 if (normal.LengthSquared() < 1e-6f)
@@ -1272,10 +1002,17 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.TranslatePlane:
             {
-                // Sign-transparent for the plane itself (a plane and its
-                // mirror normal intersect identically), consumed from the
-                // layout anyway so every gesture axis has one origin.
+                // Plane handles use their signed normal.
                 planeNormal = layout.SignedTranslateAxis(axisIndex);
+                if (projection.RayPlane(mouse, pivotWorld, planeNormal) is not { } hit)
+                    return;
+                initialHit = hit;
+                break;
+            }
+            case WorldHandleKind.TranslateCenter:
+            {
+                // The centre stays on the projection's frozen camera plane.
+                planeNormal = projection.ViewDirection;
                 if (projection.RayPlane(mouse, pivotWorld, planeNormal) is not { } hit)
                     return;
                 initialHit = hit;
@@ -1293,11 +1030,7 @@ public class GizmoOverlayWindow : Window
                         : axisIndex);
                 ringTangent = WorldGizmo.PositiveTangentPerspective(
                     projection, rings, ringHit, mouse, layout.RingWorldRadius);
-                // Sweep-trail anchors. The axis-ring pie replays the REAL
-                // rotation on the grab radial, so its screen motion matches
-                // the ring spin by the same construction as the tangent.
-                // Roll sweeps in screen space, signed so the pie opens in
-                // the direction positive drag actually moves.
+                // Save ring sweep anchors.
                 if (kind == WorldHandleKind.RotateRing)
                     _ringGrabRadial = Vector3.Transform(
                         RotationGizmoRings.LocalRingPoint(
@@ -1317,29 +1050,22 @@ public class GizmoOverlayWindow : Window
 
         var operation = kind switch
         {
-            WorldHandleKind.TranslateAxis or WorldHandleKind.TranslatePlane =>
+            WorldHandleKind.TranslateAxis or WorldHandleKind.TranslatePlane or
+            WorldHandleKind.TranslateCenter =>
                 DomainOperation.Translate,
             WorldHandleKind.ScaleAxis or WorldHandleKind.ScaleUniform =>
                 DomainOperation.Scale,
             _ => DomainOperation.Rotate,
         };
-        // Ring gestures always dispatch world-composed rotation deltas (the
-        // frozen model-space axis carries the frame); linear handles use
-        // the orientation mode's space.
+        // Rings use world space; linear handles use the selected orientation.
         var space = ringHandle
             ? DomainSpace.World
             : orientation == TransformOrientation.Global
                 ? DomainSpace.World
                 : DomainSpace.Local;
 
-        // Parent pivot routes through the clean gesture with a frozen
-        // custom pivot; there is no second orbit session. A selection of more
-        // than one ENTITY turns and scales about its own middle, so the world
-        // gizmo and the rail's rotation rings move the same selection the same
-        // way — Brio makes the identical split, centroid for a multi-entity
-        // selection and per-bone for bones
-        // (UI/Windows/Specialized/PosingOverlayWindow.cs, the
-        // `isMultiEntity && not Bone` branch).
+        // Parent rotation uses a frozen custom pivot. Multi-entity groups use
+        // a centroid pivot.
         var cleanPivotMode = PivotMode.PerTarget;
         Vector3? cleanCustomPivot = null;
         if (ringHandle && isBone && pivotActive)
@@ -1349,11 +1075,7 @@ public class GizmoOverlayWindow : Window
         }
         else if (!isBone && targets.Count > 1)
         {
-            // Brio's group pivot for a multi-entity selection is the CENTROID
-            // (TransformHelper.ApplyDeltaToMultiple(..., centroid, true)), not
-            // whichever entity happens to be primary: rotating three actors
-            // about the middle of the three is what "rotate the group" means,
-            // and pivoting on a corner swings the other two around it.
+            // Group transforms use the captured centroid.
             cleanPivotMode = PivotMode.Centroid;
         }
 
@@ -1405,9 +1127,7 @@ public class GizmoOverlayWindow : Window
             Start = currentTransform,
             Current = currentTransform,
             PivotMode = cleanPivotMode,
-            // The pivot the GESTURE froze, not one derived here: under
-            // Centroid it is the middle of the captured targets, which this
-            // surface never computes.
+            // Use the service's captured pivot.
             Pivot = _cleanTransforms.ActivePivot
                 ?? cleanCustomPivot
                 ?? currentTransform.Position,
@@ -1438,23 +1158,10 @@ public class GizmoOverlayWindow : Window
         _dragPivotDepth = _cameraService.GetDepthToPosition(pivotWorld);
     }
 
-    /// <summary>The pivot's distance from the camera, frozen at Begin. Ktisis'
-    /// ray-snap asks the game for the world point under the pointer; Poser's
-    /// camera service unprojects at a GIVEN depth, so the snap lands on the
-    /// camera-facing plane the target started on. It is a plane snap, not a
-    /// collision snap — it will not put a foot on the floor — and it is what
-    /// the available primitive can honestly do.</summary>
+    /// <summary>Pivot depth captured at Begin for ray-snap.</summary>
     private float _dragPivotDepth;
 
-    /// <summary>
-    /// One frame of the engaged handle's drag: every kind accumulates
-    /// modifier-scaled increments against its frozen mapping and dispatches
-    /// the TOTAL delta from the frozen Start — no frame feeds a result back
-    /// as the next baseline. <paramref name="projection"/> is the camera
-    /// frozen at Begin, so mouse-to-world conversion is independent of
-    /// camera movement during the gesture; a degenerate ray holds the last
-    /// value rather than jumping.
-    /// </summary>
+    /// <summary>Updates one engaged handle from its frozen mapping.</summary>
     private void UpdateGesture(
         GizmoGesture gesture,
         WorldGizmoProjection? projection,
@@ -1462,12 +1169,7 @@ public class GizmoOverlayWindow : Window
         Vector2 mouse)
     {
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
-        // Ktisis' two snap modifiers. Hold-snap quantises the gesture's TOTAL
-        // (Ctrl, and Ctrl+Shift for a tenth of the step); ray-snap replaces a
-        // translate's position outright (Shift). Both are read live, so a
-        // modifier pressed mid-drag takes effect on the next frame exactly as
-        // it does in Ktisis, and released again the drag returns to the
-        // unsnapped total it has been accumulating all along.
+        // Ctrl enables hold-snap; Shift enables translate ray-snap.
         var gizmoConfig = GizmoConfig;
         bool holdSnap = gizmoConfig.AllowHoldSnap && io.KeyCtrl;
         float rotationStep = holdSnap
@@ -1476,9 +1178,7 @@ public class GizmoOverlayWindow : Window
         float linearStep = holdSnap
             ? GizmoSnap.Increment(gizmoConfig.SnapLinearStep, io.KeyShift)
             : 0f;
-        // Shift during a translate. When both options are on, Shift wins for
-        // translate — Ktisis runs its raycast AFTER ImGuizmo and overwrites
-        // the translation the snap produced, so this is the same precedence.
+        // Shift ray-snap takes precedence for translation.
         bool raySnap = gizmoConfig.AllowRaySnap && io.KeyShift;
 
         switch (gesture.Handle.Kind)
@@ -1492,9 +1192,7 @@ public class GizmoOverlayWindow : Window
                 if (delta == 0f)
                     return;
                 _ringAngle += delta / RotationGizmoRings.PixelsPerRadian;
-                // The accumulated angle keeps running unsnapped; only what is
-                // APPLIED lands on the grid, so releasing Ctrl mid-drag
-                // returns the ring to exactly where the pointer has put it.
+                // Accumulate unsnapped angle; snap only the applied value.
                 var totalRotation = Quaternion.CreateFromAxisAngle(
                     _ringAxisModel,
                     GizmoSnap.SnapRadiansToDegrees(_ringAngle, rotationStep));
@@ -1505,10 +1203,7 @@ public class GizmoOverlayWindow : Window
                 };
                 if (!DispatchUpdate(gesture, newTransform))
                     return;
-                // Under Custom AND Centroid the primary orbits the pivot like
-                // every other target, so the handle drawn on it has to orbit
-                // too; under PerTarget and Primary the primary turns on the
-                // spot and there is nothing to correct.
+                // Custom and centroid pivots orbit the primary target.
                 if (gesture.PivotMode is PivotMode.Custom or PivotMode.Centroid)
                 {
                     newTransform = newTransform with
@@ -1524,23 +1219,29 @@ public class GizmoOverlayWindow : Window
             }
             case WorldHandleKind.TranslateAxis:
             case WorldHandleKind.TranslatePlane:
+            case WorldHandleKind.TranslateCenter:
             {
                 if (projection?.RayPlane(mouse, _dragPlanePoint, _dragPlaneNormal)
                     is not { } hit)
                     return;
-                var step = gesture.Handle.Kind == WorldHandleKind.TranslateAxis
-                    ? _dragAxisWorld * Vector3.Dot(hit - _dragPrevHit, _dragAxisWorld)
-                    : hit - _dragPrevHit;
+                var step = WorldGizmo.TranslationStep(
+                    gesture.Handle.Kind, hit, _dragPrevHit, _dragAxisWorld);
                 _dragPrevHit = hit;
                 step *= multiplier;
-                // Ray-snap has to run even on a still frame: the pointer may
-                // be moving over a plane the drag axis cannot follow, and the
-                // snapped position is an absolute, not an accumulation.
+                // Ray-snap uses an absolute position, including on still frames.
                 if (step == Vector3.Zero && !raySnap)
                     return;
                 _dragAccumWorld += step;
                 Vector3 position;
-                if (raySnap)
+                if (raySnap && gesture.Handle.Kind == WorldHandleKind.TranslateCenter)
+                {
+                    // Centre ray-snap remains on the frozen plane; live
+                    // camera depth unprojection would move it in depth.
+                    position = WorldGizmo.TranslationFromFrozenPlane(
+                        gesture.Start.Position, hit, _dragPivotWorld,
+                        _dragInvModel);
+                }
+                else if (raySnap)
                 {
                     position = Vector3.Transform(
                         _cameraService.ScreenToWorld(mouse, _dragPivotDepth),
@@ -1564,10 +1265,8 @@ public class GizmoOverlayWindow : Window
                     is not { } hit)
                     return;
                 float t = Vector3.Dot(hit - _dragPlanePoint, _dragAxisWorld);
-                // The factor is the along-axis distance ratio (stock-gizmo
-                // semantics), accumulated in log space so Ctrl/Shift
-                // sensitivity applies to increments. Crossing the pivot
-                // holds the last value instead of flipping sign.
+                // The axis ratio accumulates in log space; crossing the
+                // pivot holds the last value.
                 if (MathF.Abs(t) < 1e-4f ||
                     MathF.Sign(t) != MathF.Sign(_dragPrevAxisT))
                     return;
@@ -1575,7 +1274,12 @@ public class GizmoOverlayWindow : Window
                     (MathF.Log(MathF.Abs(t)) - MathF.Log(MathF.Abs(_dragPrevAxisT))) *
                     multiplier;
                 _dragPrevAxisT = t;
-                ApplyScale(gesture, gesture.Handle.Axis, linearStep);
+                // Alt switches an engaged axis drag to uniform scale. The
+                // factor remains relative to the frozen starting components.
+                ApplyScale(
+                    gesture,
+                    WorldGizmo.ScaleAxisForModifier(
+                        gesture.Handle.Axis, io.KeyAlt), linearStep);
                 return;
             }
             case WorldHandleKind.ScaleUniform:
@@ -1593,18 +1297,7 @@ public class GizmoOverlayWindow : Window
         }
     }
 
-    /// <summary>
-    /// Applies the accumulated log-space factor to one axis of the frozen
-    /// Start scale, or to all three for the uniform handle.
-    ///
-    /// <para>Snapping lands on the value the handle OWNS: an axis handle
-    /// quantises its own component and leaves the other two exactly where the
-    /// pose put them, and the uniform handle quantises the FACTOR, because
-    /// quantising three components independently is what would stop a uniform
-    /// scale being uniform. ImGuizmo, which is what Ktisis hands its snap
-    /// vector to, snaps all three components either way; that is the one place
-    /// this deliberately does not follow it.</para>
-    /// </summary>
+    /// <summary>Applies the accumulated factor to the frozen start scale.</summary>
     private void ApplyScale(GizmoGesture gesture, int axis, float snapStep)
     {
         float factor = Math.Clamp(MathF.Exp(_dragLogScale), 0.001f, 1000f);
@@ -1616,16 +1309,14 @@ public class GizmoOverlayWindow : Window
             0 => start with { X = GizmoSnap.Snap(start.X * factor, snapStep) },
             1 => start with { Y = GizmoSnap.Snap(start.Y * factor, snapStep) },
             2 => start with { Z = GizmoSnap.Snap(start.Z * factor, snapStep) },
-            _ => start * factor,
+            _ => WorldGizmo.ApplyUniformScale(start, factor),
         };
         var newTransform = gesture.Start with { Scale = scale };
         if (DispatchUpdate(gesture, newTransform))
             gesture.Current = newTransform;
     }
 
-    /// <summary>Dispatches the total delta; a failed update (scene-revision
-    /// self-cancellation, invalid delta, runtime apply failure) cancels
-    /// without double restoration and suppresses re-Begin for this press.</summary>
+    /// <summary>Dispatches the total delta and cancels failed updates.</summary>
     private bool DispatchUpdate(GizmoGesture gesture, Transform newTransform)
     {
         var update = _cleanTransforms.Update(
