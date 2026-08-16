@@ -1,8 +1,10 @@
 extern alias ProductionPoser;
 
 using System.Numerics;
+using Dalamud.Configuration;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Newtonsoft.Json;
 using NSubstitute;
 using Poser.Application.Animation;
 using ProductionPoser::Poser.Config;
@@ -40,52 +42,57 @@ public sealed class ReferenceImageContractTests
     [Fact]
     public void Session_persists_identity_placement_opacity_and_hidden_lifetime()
     {
-        var stored = new PoserConfiguration();
-        var roster = stored.ReferenceImages;
-        var first = roster.Add(@"C:\poses\sheet.png");
-        first.X = 12f;
-        first.Y = 24f;
-        first.Width = 640f;
-        first.Height = 320f;
-        first.Hidden = true;
-
-        var second = roster.Add(first.FilePath);
-        Assert.NotEqual(first.Id, second.Id);
-        Assert.Equal("sheet", first.Name);
-
+        string? storedJson = null;
         var plugin = Substitute.For<IDalamudPluginInterface>();
-        plugin.GetPluginConfig().Returns(stored);
+        plugin.GetPluginConfig().Returns(_ => storedJson is null
+            ? null
+            : JsonConvert.DeserializeObject<PoserConfiguration>(storedJson));
+        plugin.SavePluginConfig(Arg.Any<IPluginConfiguration>()).Do(call =>
+        {
+            var saved = Assert.IsType<PoserConfiguration>(
+                call.Arg<IPluginConfiguration>());
+            storedJson = JsonConvert.SerializeObject(saved);
+        });
         var notices = Substitute.For<INotificationManager>();
         var configuration = new ConfigurationService(plugin);
         var textures = Substitute.For<ITextureProvider>();
         using var session = new ReferenceImageSession(
             textures, configuration, new UserNotices(notices));
 
-        session.Restore();
-        var instance = Assert.Single(session.Instances, item => item.Id == first.Id);
-        session.SetOpacity(instance, 0f);
+        var instance = session.Add(@"C:\poses\sheet.png");
+        session.SetOpacity(instance, 0.4f);
         session.SetPlacement(
             instance, new Vector2(100f, 110f), new Vector2(800f, 400f));
-        session.SetHidden(instance, false);
+        session.SetHidden(instance, true);
+        session.Dispose();
 
-        Assert.Equal(ReferenceImageConfiguration.MinimumOpacity,
-            instance.Entry.Opacity);
-        Assert.Equal(100f, instance.Entry.X);
-        Assert.Equal(110f, instance.Entry.Y);
-        Assert.Equal(800f, instance.Entry.Width);
-        Assert.Equal(400f, instance.Entry.Height);
-        Assert.False(ReferenceImageSession.IsHidden(instance));
+        Assert.NotNull(storedJson);
+        var stored = JsonConvert.DeserializeObject<PoserConfiguration>(
+            storedJson!)!;
+        var savedEntry = Assert.Single(stored.ReferenceImages.Images);
+        Assert.Equal(0.4f, savedEntry.Opacity);
+        Assert.Equal(100f, savedEntry.X);
+        Assert.Equal(110f, savedEntry.Y);
+        Assert.Equal(800f, savedEntry.Width);
+        Assert.Equal(400f, savedEntry.Height);
+        Assert.True(savedEntry.Hidden);
+        Assert.NotSame(configuration.Config, stored);
 
-        var duplicate = session.Duplicate(instance);
-        Assert.NotEqual(instance.Id, duplicate.Id);
-        Assert.Equal(instance.Entry.Opacity, duplicate.Entry.Opacity);
-        session.Close(duplicate);
-        Assert.DoesNotContain(duplicate.Entry, roster.Images);
+        var reloadedConfiguration = new ConfigurationService(plugin);
+        using var reloadedSession = new ReferenceImageSession(
+            textures, reloadedConfiguration, new UserNotices(notices));
+        reloadedSession.Restore();
 
-        session.Close(instance);
-        Assert.DoesNotContain(first, roster.Images);
-        Assert.Empty(session.Instances);
-        plugin.Received().SavePluginConfig(stored);
+        Assert.NotSame(stored, reloadedConfiguration.Config);
+        var restored = Assert.Single(reloadedSession.Instances);
+        Assert.Equal(savedEntry.Id, restored.Id);
+        Assert.Equal(savedEntry.FilePath, restored.Entry.FilePath);
+        Assert.Equal(0.4f, restored.Entry.Opacity);
+        Assert.Equal(100f, restored.Entry.X);
+        Assert.Equal(110f, restored.Entry.Y);
+        Assert.Equal(800f, restored.Entry.Width);
+        Assert.Equal(400f, restored.Entry.Height);
+        Assert.True(ReferenceImageSession.IsHidden(restored));
     }
 
     [Fact]
