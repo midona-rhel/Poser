@@ -851,12 +851,19 @@ public readonly record struct Theme
 
 public static partial class Crystarium
 {
-    public static Theme ActiveTheme { get; private set; } = Theme.PictoDark;
+    private static Theme _activeTheme = Theme.PictoDark;
+
+    /// <summary>The active theme as a value for public consumers.</summary>
+    public static Theme ActiveTheme => _activeTheme;
+
+    // The UI renderer reads several tokens for every text submission. Keep
+    // those reads on the current immutable value without copying Theme.
+    internal static ref readonly Theme ActiveThemeRef => ref _activeTheme;
 
     /// <summary>Atomically replaces the full token value and its derived rules.</summary>
     public static void UseTheme(Theme theme)
     {
-        ActiveTheme = theme;
+        _activeTheme = theme;
         FontRegistry.Warm(theme);
     }
 }

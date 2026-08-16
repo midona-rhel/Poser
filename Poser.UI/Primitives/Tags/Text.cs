@@ -200,7 +200,8 @@ public static partial class Crystarium
         float bandMinY, float bandHeight, float measuredHeight,
         in TextStyle style, bool besideIcon = false)
     {
-        float size = style.Size ?? ActiveTheme.Typography.BodySize;
+        ref readonly var theme = ref ActiveThemeRef;
+        float size = style.Size ?? theme.Typography.BodySize;
         float rise = FontRegistry.InkRise(
             style.Family, style.Weight ?? FontWeight.Regular, size);
         if (besideIcon)
@@ -347,14 +348,15 @@ public static partial class Crystarium
     private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
         ResolveStyle(in TextStyle style)
     {
+        ref readonly var theme = ref ActiveThemeRef;
         if (style.Size is { } requested && !(requested > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(style), requested, "A font size must be positive.");
-        float size = style.Size ?? ActiveTheme.Typography.BodySize;
+        float size = style.Size ?? theme.Typography.BodySize;
         var weight = style.Weight ?? FontWeight.Regular;
-        var color = style.Color ?? ActiveTheme.Text;
+        var color = style.Color ?? theme.Text;
         if (style.Disabled)
-            color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
+            color = color.Fade(theme.Chrome.DisabledOpacity);
         var font = FontRegistry.Resolve(style.Family, weight, size);
         bool pushed = font is { Available: true };
         if (pushed)
@@ -380,7 +382,7 @@ public static partial class Crystarium
             text = Presentation(text);
             var dl = ImGui.GetWindowDrawList();
             uint packed = ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(color));
-            var origin = ActiveTheme.Optical.Snap(position);
+            var origin = ActiveThemeRef.Optical.Snap(position);
             switch (constraint.Mode)
             {
                 case TextConstraint.FitMode.Truncate:
