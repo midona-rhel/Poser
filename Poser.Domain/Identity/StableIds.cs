@@ -5,6 +5,7 @@ public readonly record struct ActorId(Guid LogicalId, uint Generation)
 {
     public static ActorId New() => new(Guid.NewGuid(), 0);
     public ActorId NextGeneration() => new(LogicalId, checked(Generation + 1));
+    public override int GetHashCode() => HashCode.Combine(LogicalId, Generation);
     public override string ToString() => $"{LogicalId:N}@{Generation}";
 }
 
@@ -30,6 +31,7 @@ public readonly record struct SkeletonId(
 {
     public SkeletonId NextGeneration() =>
         new(Actor, Slot, checked(Generation + 1));
+    public override int GetHashCode() => HashCode.Combine(Actor, Slot, Generation);
     public override string ToString() => $"{Actor}/{Slot}/s{Generation}";
 }
 
@@ -51,6 +53,12 @@ public readonly record struct BoneId(
         BoneIndex >= 0 &&
         Skeleton.Slot != PoseSlot.Unknown &&
         !string.IsNullOrWhiteSpace(CanonicalName);
+
+    // Partial/index are the native lookup discriminators. CanonicalName is
+    // still compared by the generated Equals implementation as an exact
+    // mismatch guard, but hashing it makes every lookup re-hash the string.
+    public override int GetHashCode() =>
+        HashCode.Combine(Skeleton, PartialId, BoneIndex);
 
     public override string ToString() =>
         $"{Skeleton}/{PartialId}:{BoneIndex}:{CanonicalName}";
@@ -216,6 +224,40 @@ public readonly record struct SelectionId
     /// world gizmo can own it.</summary>
     public static SelectionId ForGazeTarget(ActorId actor, GazePart part = GazePart.Anchor) =>
         new(SceneEntityKind.GazeTarget, actor, null, null, null, gaze: part);
+
+    public override int GetHashCode() => Kind switch
+    {
+        SceneEntityKind.Actor => HashCode.Combine(Kind, Actor),
+        SceneEntityKind.Bone when Bone is { } bone =>
+            HashCode.Combine(Kind, bone),
+        SceneEntityKind.Bone =>
+            HashCode.Combine(Kind, OwnerActorLineage, ExternalId),
+        SceneEntityKind.Light => HashCode.Combine(Kind, Light),
+        SceneEntityKind.Camera => HashCode.Combine(Kind, Camera),
+        SceneEntityKind.Prop => HashCode.Combine(Kind, Prop),
+        SceneEntityKind.Overlay => HashCode.Combine(Kind, Overlay),
+        SceneEntityKind.WorldObject => HashCode.Combine(Kind, WorldObject),
+        SceneEntityKind.GazeTarget => HashCode.Combine(Kind, Actor, Gaze),
+        SceneEntityKind.Environment => Kind.GetHashCode(),
+        _ => HashAllFields(),
+    };
+
+    private int HashAllFields()
+    {
+        var hash = new HashCode();
+        hash.Add(Kind);
+        hash.Add(Actor);
+        hash.Add(Bone);
+        hash.Add(ExternalId);
+        hash.Add(OwnerActorLineage);
+        hash.Add(Light);
+        hash.Add(Gaze);
+        hash.Add(Camera);
+        hash.Add(Prop);
+        hash.Add(Overlay);
+        hash.Add(WorldObject);
+        return hash.ToHashCode();
+    }
 
     public override string ToString() => Kind switch
     {
