@@ -112,6 +112,7 @@ public sealed class AppShellViewModel
     public string SidebarSearch = "";
     public string StatusLeft = "2 actors";
     public string StatusRight = "142 bones · 60 fps";
+    public string BranchLabel = "";
 
     /// <summary>The world-adoption classes, in the source's own order. Retained
     /// by the binder and restated in place, never rebuilt per frame.</summary>
@@ -1044,6 +1045,31 @@ public static class AppShellView
             new Vector2(rightWidth, height),
             vm.StatusRight,
             style);
+
+        if (!string.IsNullOrEmpty(vm.BranchLabel))
+        {
+            float rightEdge = max.X - StatusInset * s - rightWidth - StatusTextGap * s;
+            float leftEdge = dotMin.X + dot + StatusTextGap * s + leftWidth + StatusTextGap * s;
+            float available = MathF.Max(0f, rightEdge - leftEdge);
+            if (!(available > 0f))
+                return;
+            var branchStyle = style with { Color = theme.Accent };
+            string? fitted = Crystarium.FitTruncated(vm.BranchLabel, branchStyle, available);
+            string shown = fitted ?? vm.BranchLabel;
+            float shownWidth = fitted is null ? Crystarium.MeasureText(shown, branchStyle).X : available;
+            var branchMin = new Vector2(rightEdge - shownWidth, min.Y);
+            ImGui.SetCursorScreenPos(branchMin);
+            ImGui.InvisibleButton("##build-branch", new Vector2(shownWidth, height));
+            bool hovered = ImGui.IsItemHovered();
+            ImGui.SetCursorScreenPos(branchMin);
+            Crystarium.TextInBand(
+                branchMin, new Vector2(shownWidth, height), shown, branchStyle,
+                fitted is null ? TextConstraint.Intrinsic : TextConstraint.Truncate(shownWidth));
+            if (hovered && fitted is not null)
+                Crystarium.HoverHelp.Preview(
+                    "build-branch", branchMin,
+                    branchMin + new Vector2(shownWidth, height), vm.BranchLabel);
+        }
     }
 
     /// <summary>The 6px col-resize strip on the sidebar's right edge. Raw
