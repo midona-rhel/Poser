@@ -57,7 +57,7 @@ public sealed class WorldObjectRestoreTests
         Assert.Equal(Placed, world.Port.PlacementOf(address));
         Assert.Equal((byte)0x21, world.Port.FlagsOf(address));
         Assert.True(world.Port.VisibleOf(address));
-        Assert.Equal(0, world.Port.Destroys);
+        Assert.True(world.Port.IsAlive(address));
         Assert.False(adopted.IsValid);
     }
 
@@ -83,7 +83,7 @@ public sealed class WorldObjectRestoreTests
     {
         var world = new World();
         var dead = world.Port.Add("bg/tree.mdl", Placed);
-        world.Port.Remove(dead);
+        world.Port.Kill(dead);
         Assert.Null(world.Service.Adopt(dead));
 
         world.Port.Add("bg/tree.mdl", Placed with { Position = Placed.Position + new Vector3(20, 0, 0) });

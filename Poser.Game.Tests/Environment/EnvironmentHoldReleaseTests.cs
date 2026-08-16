@@ -65,11 +65,11 @@ public sealed class EnvironmentHoldReleaseTests
     [Fact]
     public void Missing_native_signatures_keep_capabilities_unavailable_and_safe()
     {
-        var factory = new TestFactory { MissingTimeSignature = true, MissingWeatherSignature = true };
+        var factory = new TestFactory { ThrowOnTime = true, ThrowOnWeather = true };
         var state = ClientStateProxy.Create(out var events);
         using var service = Create(factory, state);
-        Assert.False(service.IsTimeAvailable);
-        Assert.False(service.IsWeatherAvailable);
+        Assert.False(service.IsTimeFreezeAvailable);
+        Assert.False(service.IsWeatherOverrideAvailable);
         events.RaiseTerritoryChanged(1);
         events.RaiseLogout();
         Assert.False(service.IsTimeFrozen);
