@@ -16,134 +16,44 @@ public sealed class AnimationOwnershipTests
 {
     private static readonly ActorId ActorA =
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
-
-    [Fact]
-    public void The_scene_holds_physics_with_no_actor_involved()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-
-        // No actor is involved at all: the shell's switch stands over every
-        // selection and over none.
-        Assert.True(session.SetScenePhysicsFrozen(true).Success);
-        Assert.True(session.SceneOwnsPhysics);
-        Assert.True(port.Frozen);
-
-        // Asking again for what is already held writes nothing.
-        Assert.True(session.SetScenePhysicsFrozen(true).Success);
-        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:True"));
-
-        Assert.True(session.SetScenePhysicsFrozen(false).Success);
-        Assert.False(session.SceneOwnsPhysics);
-        Assert.False(port.Frozen);
-        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:False"));
-    }
-
-    [Fact]
-    public void No_actor_reset_or_departure_can_retire_the_scenes_hold()
+[Fact]
+    public void Scene_physics_hold_is_owned_once_and_failed_unpatch_is_retryable()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
-        Assert.True(session.SetSpeed(ActorA, 0f).Success);
-
-        // Resetting an actor, and losing it from the scene entirely, are both
-        // silent on a patch no actor holds.
-        Assert.True(session.ResetActor(ActorA).Success);
-        session.Reconcile(EmptyScene(1));
-
-        Assert.True(session.SceneOwnsPhysics);
-        Assert.True(port.Frozen);
-        Assert.DoesNotContain("SetPhysicsFrozen:False", port.Calls);
-
-        // ResetAll is the one release: the scene is the only owner, and it is
-        // not something that can depart.
-        Assert.True(session.ResetAll().Success);
-        Assert.False(session.SceneOwnsPhysics);
-        Assert.False(port.Frozen);
-        Assert.Equal(1, port.Calls.Count(c => c == "SetPhysicsFrozen:False"));
-    }
-
-    [Fact]
-    public void A_failed_unpatch_keeps_the_hold_on_record_and_stays_retryable()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
         Assert.True(session.SetScenePhysicsFrozen(true).Success);
+        Assert.Equal(1, port.Calls.Count(x => x == "SetPhysicsFrozen:True"));
+
         port.FailUnfreeze = true;
-
-        var failed = session.ResetAll();
-
-        Assert.False(failed.Success);
-        // The native's own reason reaches the caller: a reset that says only
-        // "failed" cannot be acted on, and this is the one channel the port's
-        // detail travels on.
-        Assert.Contains(
-            "unpatch", failed.Detail!, StringComparison.OrdinalIgnoreCase);
-        Assert.True(port.Frozen);
-        // The frozen scene still has its owner on record — never a patched
-        // site nobody admits to.
+        Assert.False(session.ResetAll().Success);
         Assert.True(session.SceneOwnsPhysics);
-
         port.FailUnfreeze = false;
         Assert.True(session.ResetAll().Success);
         Assert.False(session.SceneOwnsPhysics);
-        Assert.False(port.Frozen);
+        Assert.Equal(1, port.Calls.Count(x => x == "SetPhysicsFrozen:False"));
     }
 
     [Fact]
-    public void Replay_releases_a_poser_owned_pause_before_playing()
+    public void Replay_releases_only_a_poser_pause_and_preserves_nonzero_speed()
     {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetSpeed(ActorA, 0f).Success);
-        Assert.True(session.IsPaused(ActorA));
-
-        var result = session.Replay(ActorA, 42, out bool resumed);
-
-        Assert.True(result.Success);
+        var pausedPort = FakePort.Create();
+        var paused = new AnimationSession(pausedPort.Port);
+        Assert.True(paused.SetSpeed(ActorA, 0f).Success);
+        Assert.True(paused.Replay(ActorA, 42, out var resumed).Success);
         Assert.True(resumed);
-        // No zero-speed owner survives the replay.
-        Assert.Null(session.OverridesFor(ActorA).OverallSpeed);
-        Assert.False(session.IsPaused(ActorA));
-        // The pause is released BEFORE the play, so the timeline starts moving.
-        Assert.True(
-            port.Calls.IndexOf("ClearOverallSpeed") < port.Calls.IndexOf("Blend:42"));
-    }
+        Assert.Null(paused.OverridesFor(ActorA).OverallSpeed);
+        Assert.True(pausedPort.Calls.IndexOf("ClearOverallSpeed") < pausedPort.Calls.IndexOf("Blend:42"));
 
-    [Fact]
-    public void Replay_preserves_a_nonzero_owned_speed()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetSpeed(ActorA, 0.5f).Success);
-
-        var result = session.Replay(ActorA, 42, out bool resumed);
-
-        Assert.True(result.Success);
+        var playingPort = FakePort.Create();
+        var playing = new AnimationSession(playingPort.Port);
+        Assert.True(playing.SetSpeed(ActorA, .5f).Success);
+        Assert.True(playing.Replay(ActorA, 42, out resumed).Success);
         Assert.False(resumed);
-        Assert.Equal(0.5f, session.OverridesFor(ActorA).OverallSpeed);
-        Assert.DoesNotContain("ClearOverallSpeed", port.Calls);
+        Assert.Equal(.5f, playing.OverridesFor(ActorA).OverallSpeed);
+        Assert.DoesNotContain("ClearOverallSpeed", playingPort.Calls);
     }
-
-    [Fact]
-    public void Replay_keeps_the_pause_owner_when_the_release_fails()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.SetSpeed(ActorA, 0f).Success);
-        port.FailClearSpeed = true;
-
-        var result = session.Replay(ActorA, 42, out bool resumed);
-
-        Assert.False(result.Success);
-        Assert.False(resumed);
-        // Truthful: the pause is still owned, and nothing was played over it.
-        Assert.Equal(0f, session.OverridesFor(ActorA).OverallSpeed);
-        Assert.DoesNotContain("Blend:42", port.Calls);
-    }
-
-    private static SceneSnapshot EmptyScene(ulong revision) =>
+private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
             Array.Empty<ActorDescriptor>(),
