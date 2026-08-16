@@ -403,7 +403,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    // ── Physics (one global patch, held by the scene) ─────────────────
+    // ── Physics ──────────────────────────────────────────────────────
 
     /// <summary>Sets the scene-wide physics freeze after the change succeeds.</summary>
     public AnimationResult SetScenePhysicsFrozen(bool frozen)
@@ -471,8 +471,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>Updates the current scrubbed frame using the captured
-    /// duration and skeleton token.</summary>
+    /// <summary>Updates the current scrubbed frame.</summary>
     public AnimationResult UpdateScrub(ActorId actor, float time)
     {
         if (_scrub is not { } gesture)

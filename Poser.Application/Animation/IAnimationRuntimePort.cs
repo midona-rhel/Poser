@@ -59,12 +59,10 @@ public interface IAnimationRuntimePort
 
     // ── Speed ─────────────────────────────────────────────────────────
     AnimationPortResult SetOverallSpeed(ActorId actor, float speed);
-    /// <summary>Stops enforcing overall speed; the game's own value wins
-    /// again from its next recalculation.</summary>
+    /// <summary>Stops enforcing overall speed.</summary>
     AnimationPortResult ClearOverallSpeed(ActorId actor);
 
-    /// <summary>Rewinds paused animation controls to their first frame.
-    /// Controls that are still playing are unchanged.</summary>
+    /// <summary>Rewinds paused controls.</summary>
     AnimationPortResult RewindPausedControls(ActorId actor);
     AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
     AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot);
@@ -79,8 +77,7 @@ public interface IAnimationRuntimePort
     /// <summary>Enumerates controls for a scrub interaction.</summary>
     IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
 
-    /// <summary>Finds the live control for a supported animation slot.
-    /// Returns null when the slot has no control.</summary>
+    /// <summary>Finds the live control for a slot.</summary>
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
 
     /// <summary>Writes a control's local time when the token still matches.</summary>

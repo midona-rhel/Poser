@@ -12,8 +12,7 @@ using Poser.Domain.Scene;
 
 namespace Poser.UI;
 
-/// <summary>Shows animation controls and sends changes to the animation
-/// session.</summary>
+/// <summary>Shows animation controls.</summary>
 public sealed class AnimationPane
 {
     private readonly AnimationSession _animation;
@@ -76,8 +75,7 @@ public sealed class AnimationPane
     private static readonly Func<TimelineEntry, string> TimelineName =
         static entry => entry.Name;
 
-    /// <summary>Glyph for rows the game gives no icon for — every raw timeline.
-    /// Keyed by kind so the column still reads at a glance.</summary>
+    /// <summary>Glyphs for entries without icons.</summary>
     private static readonly Func<TimelineEntry, TablerIcon?> TimelineGlyph =
         static entry => entry.Kind switch
         {
@@ -189,8 +187,6 @@ public sealed class AnimationPane
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
-            // The page's FIRST section draws no divider: the rule is a
-            // separator BETWEEN sections.
             page.Section(
                 "GENERAL",
                 _openGeneral,
@@ -217,8 +213,6 @@ public sealed class AnimationPane
                             AnimationSlots.DisplayName(slot),
                             alwaysShow: false);
                 });
-            // Expressions are drawn by the face inspector. This section holds
-            // the actor's speech layer.
             page.Section(
                 "LIPS",
                 _openFace,
@@ -274,8 +268,6 @@ public sealed class AnimationPane
                     "Replay",
                     () =>
                     {
-                        // Replay resumes: the session releases a Poser-owned
-                        // pause first, and the status line says when it did.
                         var result = _animation.Replay(
                             actor, current, out bool resumed);
                         Report(result, "Replay");
@@ -413,8 +405,7 @@ public sealed class AnimationPane
             });
     }
 
-    /// <summary>The pose stepper seats itself in its pair cell: two equal
-    /// tracks split by the action gap.</summary>
+    /// <summary>Draws paired pose buttons.</summary>
     private static void PoseStepper(
         Crystarium.FormPairCell cell,
         bool disabled,
@@ -646,8 +637,7 @@ public sealed class AnimationPane
             _animation.Read(actor) ?? ActorAnimationReading.Empty;
     }
 
-    /// <summary>The shared picker surface, for the pane that hosts the
-    /// expression row. Only the expression feed can be open there.</summary>
+    /// <summary>Draws the expression picker.</summary>
     public void DrawExpressionPicker() => DrawPicker();
 
     private void DrawLips(
@@ -724,8 +714,7 @@ public sealed class AnimationPane
 
     // ── the one picker surface ───────────────────────────────────────────
 
-    /// <summary>Opens the shared surface on one row's feed. The trigger button
-    /// is the last reserved item, which is what the picker anchors to.</summary>
+    /// <summary>Opens a picker feed.</summary>
     private void OpenPicker(TimelineFeed feed, ActorId actor, ushort current)
     {
         _pickActor = actor;
@@ -766,13 +755,10 @@ public sealed class AnimationPane
             Badge = feed.Badge,
             Strip = feed.KindStrip,
             SecondStrip = feed.WeaponStrip,
-            // The catalog surface is the WIDE panel: a row carries an icon, a
-            // name and a badge, and the narrow picker cuts all three.
             Width = Crystarium.ActiveTheme.Picker.WideWidth,
         };
 
-    /// <summary>One layer row's feed, created on first use and kept for the
-    /// pane's life. The slot enum bounds the dictionary.</summary>
+    /// <summary>Returns the feed for a layer.</summary>
     private TimelineFeed SlotFeed(AnimationSlot slot)
     {
         if (_slotFeeds.TryGetValue(slot, out var existing))
@@ -784,8 +770,7 @@ public sealed class AnimationPane
         return created;
     }
 
-    /// <summary>A timeline id as text, minted once and kept: it is a row's
-    /// badge on every frame the surface draws it.</summary>
+    /// <summary>Returns cached timeline text.</summary>
     private string IdText(uint id)
     {
         if (_idText.TryGetValue(id, out var text))
@@ -795,9 +780,7 @@ public sealed class AnimationPane
         return text;
     }
 
-    /// <summary>A row's identity in the catalog's own terms — the timeline, the
-    /// KIND it is offered as, and the slot it plays in — so two rows for one id
-    /// never share an ImGui identity.</summary>
+    /// <summary>Returns a stable picker-row key.</summary>
     private string RowKey(TimelineEntry entry)
     {
         long identity = ((long)entry.TimelineId << 16)
@@ -819,14 +802,12 @@ public sealed class AnimationPane
         private readonly bool _weaponAware;
         private readonly Func<IReadOnlyList<TimelineEntry>>? _entries;
 
-        /// <summary>The kinds THIS row may offer, already stripped of the ones
-        /// its slot can never contain — so the filter never offers a choice that
-        /// returns nothing. "All" (null) is never impossible and leads.</summary>
+        /// <summary>Available catalog kinds.</summary>
         private readonly AnimationKind?[] _kinds;
         private readonly string[] _kindLabels;
         private int _kindIndex;
 
-        // The memo, and the exact inputs its answer was computed from.
+        // Cached query result.
         private string? _memoQuery;
         private int _memoKind = -1;
         private int _memoWeapon = -1;
@@ -884,9 +865,7 @@ public sealed class AnimationPane
             Seed();
         }
 
-        /// <summary>An explicit list is a known enumeration, not a
-        /// catalog query, so it offers no kind filter; a slot that can hold one
-        /// kind offers no choice worth showing.</summary>
+        /// <summary>Optional kind filter.</summary>
         internal PickerStrip? KindStrip =>
             _entries != null || _kindLabels.Length <= 1
                 ? null
@@ -903,8 +882,7 @@ public sealed class AnimationPane
                 ? "Building animation catalog"
                 : null;
 
-        /// <summary>Per-open kind seeding: the most useful kind the row's slot
-        /// still allows, unless the destination names one outright.</summary>
+        /// <summary>Sets the initial kind.</summary>
         internal void Seed()
         {
             AnimationKind? start = _seed ?? AnimationCatalog.BestKind(_slotFilter);
@@ -913,9 +891,7 @@ public sealed class AnimationPane
                 _kindIndex = 0;
         }
 
-        /// <summary>The row key the tick lands on, resolved through the feed's
-        /// OWN source — the row key carries the kind, so the id alone cannot
-        /// name it.</summary>
+        /// <summary>Returns the selected row key.</summary>
         internal string? SelectedKey(ushort timeline)
         {
             if (timeline == 0)
@@ -987,8 +963,7 @@ public sealed class AnimationPane
                 : $"{AnimationSlots.DisplayName(entry.Slot)} · {entry.TimelineId}";
     }
 
-    /// <summary>Where a picked animation is sent. The ROW decides this; the
-    /// picker only reports the choice.</summary>
+    /// <summary>Animation pick destination.</summary>
     private enum AnimationPickTarget
     {
         Base,
@@ -1040,8 +1015,6 @@ public sealed class AnimationPane
             {
                 var replay = _sceneActions.ReplayAll(out int resumed);
                 Report(replay, "Replay all");
-                // Replay-all resumes paused actors by design; the status
-                // line says which semantic actually ran.
                 if (replay.Success && resumed > 0)
                     _notices.Done(
                         $"Replay resumed {resumed} paused "
@@ -1146,9 +1119,7 @@ public sealed class AnimationPane
                         AnimationSlots.DisplayName(pick.Slot));
                     break;
                 }
-                // The row that opened the picker is the row that reads the
-                // memory: the write key is the REQUESTED slot, not whichever
-                // slot the chosen entry declares.
+                // Store the requested layer.
                 _layerPicks[(actor, pick.Slot)] = timeline;
                 Report(played, AnimationSlots.DisplayName(pick.Slot));
                 break;

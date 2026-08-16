@@ -203,8 +203,7 @@ public sealed class AnimationOwnershipTests
             Array.Empty<CameraDescriptor>(),
             Array.Empty<PropDescriptor>());
 
-    /// <summary>Recording animation-port fake: physics patch state, one
-    /// switchable unfreeze/clear failure, everything else succeeds.</summary>
+    /// <summary>Recording animation-port fake.</summary>
     private class FakePort : DispatchProxy
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;

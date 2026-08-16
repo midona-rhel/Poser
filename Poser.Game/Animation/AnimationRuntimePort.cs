@@ -27,8 +27,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
     // Address index used by speed callbacks.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
-    // Actors whose position lock THIS session created, so releasing it
-    // cannot wipe a placement the user made with the gizmo.
+    // Position locks created by this session.
     private readonly HashSet<ActorId> _positionLocks = new();
 
     private sealed class Enforcement
@@ -333,8 +332,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
-    /// <summary>Finds the current control for a supported slot by slot index.
-    /// Empty slots and unsupported slots return null.</summary>
+    /// <summary>Finds the current control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
@@ -380,8 +378,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     // ── Base, blend, loop ─────────────────────────────────────────────
 
-    /// <summary>Applies the current mode and starts the selected timeline.
-    /// A held mode is cleared before normal playback.</summary>
+    /// <summary>Starts a timeline with the current mode.</summary>
     public AnimationPortResult Blend(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
     {
@@ -406,8 +403,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : AnimationPortResult.Fail("The timeline entry point is unavailable.");
     }
 
-    /// <summary>The slot the sheet's Stance column routes a timeline
-    /// onto, or null when the row is missing or unmapped.</summary>
+    /// <summary>Returns a timeline's target slot.</summary>
     public AnimationSlot? TimelineSlot(ushort timeline)
     {
         var stance = _timelineSheet?.GetRowOrDefault(timeline)?.Stance;
@@ -443,6 +439,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             ReadForcedTimeline(&character->Timeline));
     }
 
+    // ModeParam is a four-byte native value.
     private static uint ReadEmoteMode(Character* character) =>
         *(uint*)&character->ModeParam;
 
@@ -481,7 +478,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
         WriteEmoteMode(character, capture.ModeParam);
-        // Restore the captured base timeline, using idle only when empty.
+        // Restore the captured base timeline.
         if (!PlayTimelineNative(
                 character,
                 capture.BaseSlotTimeline != 0
@@ -502,7 +499,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : AnimationPortResult.Fail("The emote entry point is unavailable.");
     }
 
-    // The persistent timeline field is 0x2E0 bytes after TimelineContainer.
+    // ActionTimelineId is at TimelineContainer+0x2E0.
     private const int ActionTimelineIdOffset = 0x2E0;
 
     private static ushort ReadForcedTimeline(TimelineContainer* timeline) =>
@@ -515,8 +512,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public bool SupportsForceLoop => _setTimelineId != null;
 
-    /// <summary>Writes the game's persistent action timeline field. The
-    /// actor is resolved again for every write.</summary>
+    /// <summary>Writes the persistent timeline.</summary>
     public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
     {
         if (_setTimelineId == null)
@@ -675,8 +671,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
-    /// <summary>Rewinds paused controls to their first frame. Missing draw
-    /// objects and skeletons have nothing to rewind.</summary>
+    /// <summary>Rewinds paused controls.</summary>
     public AnimationPortResult RewindPausedControls(ActorId actor)
     {
         var character = Resolve(actor, out var detail);
@@ -760,8 +755,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>Changes stance after cancelling the active timeline and
-    /// restores chair offsets when needed.</summary>
+    /// <summary>Changes stance.</summary>
     public AnimationPortResult SetStance(ActorId actor, AnimationStance stance, int pose)
     {
         var character = Resolve(actor, out var detail);
@@ -798,7 +792,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
         var cameraOffset = preserveOffsets ? character->CameraOffset : default;
 
-        // Clear a prior base latch before changing stance.
+        // Clear the base latch.
         if (character->Mode == CharacterModes.AnimLock)
         {
             character->Mode = CharacterModes.Normal;
@@ -841,8 +835,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>Plays the draw or sheathe timeline and updates the weapon
-    /// state flag.</summary>
+    /// <summary>Updates weapon state.</summary>
     public AnimationPortResult SetWeaponDrawn(ActorId actor, bool drawn)
     {
         var character = Resolve(actor, out var detail);

@@ -104,8 +104,7 @@ public static class AnimationTimelines
         _ => 1,
     };
 
-    /// <summary>Wraps a pose index into the stance's valid range in both
-    /// directions, so stepping past either end lands on a real pose.</summary>
+    /// <summary>Wraps a pose index to the stance range.</summary>
     public static int WrapPose(int pose, AnimationStance stance, bool weaponDrawn)
     {
         int count = PoseCount(stance, weaponDrawn);

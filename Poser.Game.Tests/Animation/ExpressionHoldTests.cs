@@ -334,8 +334,7 @@ public sealed class ExpressionHoldTests
                         });
                 case "TimelineSlot":
                 {
-                    // The sheet's routing, reduced to this flow: idle is a
-                    // base timeline, everything else here is facial.
+                    // Idle uses the base slot.
                     ushort timeline = (ushort)args![0]!;
                     return (AnimationSlot?)(timeline == AnimationTimelines.Idle
                         ? AnimationSlot.Base
