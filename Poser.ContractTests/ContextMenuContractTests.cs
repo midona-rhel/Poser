@@ -69,8 +69,7 @@ public sealed class ContextMenuContractTests
         var submenuMin = new Vector2(341f, 152f);
         var submenuSize = new Vector2(180f, 120f);
 
-        // The live row logic keeps the child open while the pointer crosses
-        // the one-pixel bridge between the two surfaces.
+        // Keeps the submenu open while the pointer crosses the gap.
         Assert.True(Crystarium.FloatingMenu.KeepSubmenuOpen(
             new Vector2(340.5f, 176f), parentRowMin, parentRowMax,
             submenuMin, submenuSize, parentMin, parentSize));
