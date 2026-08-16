@@ -66,11 +66,8 @@ public sealed class SkeletonOverlayPresentation
         }
     }
 
-    /// <summary>
-    /// The sidebar eye is a hide/show switch, not a reset-to-all switch. When
-    /// a row has anything visible, keep exactly that visible subset and hide
-    /// it. The next click restores only those exact current-generation ids.
-    /// </summary>
+    /// <summary>Hides visible bones and restores the same set on the next
+    /// toggle.</summary>
     public void ToggleVisibleWithMemory(
         string key, IReadOnlyList<BoneId> bones)
     {
