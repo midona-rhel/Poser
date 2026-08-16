@@ -218,9 +218,18 @@ public sealed class SelectiveImportContractTests
         app.RunNextDelay(4);
         app.RunIfQueued(0);
 
-        var receipt = Assert.Single(receipts);
-        Assert.Equal(OperationReceiptState.Applied, receipt.State);
-        Assert.Equal(app.ActorId, receipt.TargetActorId);
+        Assert.Collection(
+            receipts,
+            pending =>
+            {
+                Assert.Equal(OperationReceiptState.Pending, pending.State);
+                Assert.Equal(app.ActorId, pending.TargetActorId);
+            },
+            applied =>
+            {
+                Assert.Equal(OperationReceiptState.Applied, applied.State);
+                Assert.Equal(app.ActorId, applied.TargetActorId);
+            });
         Assert.False(app.Imports.IsPending);
         Assert.Null(app.History.PeekUndo());
     }
@@ -340,9 +349,18 @@ public sealed class SelectiveImportContractTests
         Assert.Equal(reference.Rotation, final.Rotation);
         Assert.Equal(Vector3.One, final.Scale);
 
-        var receipt = Assert.Single(receipts);
-        Assert.Equal(OperationReceiptState.Applied, receipt.State);
-        Assert.Equal(app.ActorId, receipt.TargetActorId);
+        Assert.Collection(
+            receipts,
+            pending =>
+            {
+                Assert.Equal(OperationReceiptState.Pending, pending.State);
+                Assert.Equal(app.ActorId, pending.TargetActorId);
+            },
+            applied =>
+            {
+                Assert.Equal(OperationReceiptState.Applied, applied.State);
+                Assert.Equal(app.ActorId, applied.TargetActorId);
+            });
     }
 
 }
