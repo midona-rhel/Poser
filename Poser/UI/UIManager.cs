@@ -102,7 +102,7 @@ public sealed class UIManager : IUIManager
 
     private void DrawUI()
     {
-        if (!FontRegistry.Ready)
+        if (!Crystarium.AdvanceTheme())
             return;
 
         Interactive.BeginFrame();
