@@ -91,6 +91,20 @@ public sealed class GizmoCameraSyncContractTests
                 > 0.9999f);
     }
 
+    [Fact]
+    public void Drag_plane_ray_reaches_the_rendered_world_point()
+    {
+        var projection = Projection(new Vector3(-9f, -4f, 11f));
+        var planePoint = new Vector3(0f, 0f, 0f);
+        var planeNormal = Vector3.UnitY;
+        var intended = new Vector3(0.75f, 0f, -0.4f);
 
+        Assert.True(projection.Project(intended, out var screen));
+        var hit = projection.RayPlane(screen, planePoint, planeNormal);
 
+        Assert.True(hit.HasValue);
+        Assert.True(Vector3.Distance(intended, hit.Value) < 1e-3f,
+            $"Ray-plane hit {hit.Value} missed rendered point {intended}.");
+        Assert.True(MathF.Abs(hit.Value.Y) < 1e-5f);
+    }
 }

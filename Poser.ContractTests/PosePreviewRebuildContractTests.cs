@@ -3,6 +3,7 @@ extern alias ProductionPoser;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Poser.Application.Operations;
 using Poser.ContractTests.Fixtures;
 using Poser.Domain.Identity;
 using Poser.Files;
@@ -49,6 +50,33 @@ public sealed class PosePreviewRebuildContractTests
             First, options, Second, options));
         Assert.False(PosePreviewBinder.NeedsRebuild(
             First, options, First, options));
+    }
+
+    [Fact]
+    public void Rebuilt_preview_body_is_published_and_apply_reaches_one_receipt()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var sceneActors = app.Scene.Snapshot.Actors.Count;
+        var body = app.AddPreviewBody();
+        var receipts = new List<OperationReceipt>();
+
+        var begun = app.BeginPreviewWriteImport(body, receipts.Add);
+
+        Assert.True(begun.Success, begun.Detail);
+        Assert.Equal(sceneActors, app.Scene.Snapshot.Actors.Count);
+        Assert.Equal(body.Actor, app.Bindings.Resolve(body.ActorId).Value);
+
+        app.FirePreviewNativeAction(body);
+        Assert.Equal(1, app.PreviewStackCount(body));
+        app.EndPreviewNativeBatch(body);
+        app.RunNextDelay(4);
+        app.RunIfQueued(0);
+
+        var receipt = Assert.Single(receipts);
+        Assert.Equal(OperationReceiptState.Applied, receipt.State);
+        Assert.Equal(body.ActorId, receipt.TargetActorId);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(app.History.PeekUndo());
     }
 
 

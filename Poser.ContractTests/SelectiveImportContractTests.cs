@@ -162,13 +162,155 @@ public sealed class SelectiveImportContractTests
 
 
 
+    [Fact]
+    public void Selected_import_arms_one_transaction_with_anchor_and_mode_bypass()
+    {
+        using var app = new PoseImportCaptureHarness();
+        app.SetNextPlan(PlanWithOneWrite(app));
+        var receipts = new List<OperationReceipt>();
+        var options = new PoseImportOptions
+        {
+            ApplyPosition = true,
+            ApplyRotation = true,
+            ApplyScale = true,
+            ApplyBody = false,
+            ApplyFace = false,
+            ApplyMainHand = false,
+            ApplyOffHand = false,
+            ApplyProp = false,
+            ApplyOrnament = false,
+            AnchorSelectedPositions = true,
+            FilterIncludesDescendants = true,
+        };
+
+        var result = app.Facade.ImportPose(
+            app.Actor,
+            new PoseFile(),
+            options,
+            "selected import",
+            receipts.Add,
+            new[] { SnapshotBone(app) });
+
+        Assert.True(result.Success, result.Detail);
+        PoseImportOptions? built = null;
+        app.PoseFiles.Received(1).BuildImportPlan(
+            Arg.Any<IReadOnlyList<ISkeleton>>(),
+            Arg.Any<PoseFile>(),
+            Arg.Do<PoseImportOptions>(value => built = value));
+        Assert.NotNull(built);
+        Assert.True(IsReducedHeadFilter(built!));
+        Assert.True(built.AnchorSelectedPositions);
+        Assert.False(built.ApplyBody);
+        Assert.False(built.ApplyFace);
+
+        app.FireRegisteredNativeAction();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+        app.RunIfQueued(0);
+
+        var receipt = Assert.Single(receipts);
+        Assert.Equal(OperationReceiptState.Applied, receipt.State);
+        Assert.Equal(app.ActorId, receipt.TargetActorId);
+        Assert.False(app.Imports.IsPending);
+        Assert.Null(app.History.PeekUndo());
+    }
+
+    [Fact]
+    public void Real_plan_applies_direct_selection_through_disabled_modes_and_anchors_position()
+    {
+        using var app = new PoseImportCaptureHarness();
+        var file = FileWith("j_kao", "j_mab_l");
+        file.Bones["j_kao"].Position = new Vector3(4f, 5f, 6f);
+        file.Bones["j_mab_l"].Position = new Vector3(7f, 8f, 9f);
+        file.MainHand["n_hara"] = new PoseFile.BoneData
+        {
+            Position = new Vector3(10f, 11f, 12f),
+            Rotation = Quaternion.Identity,
+            Scale = Vector3.One,
+        };
+        var options = new PoseImportOptions
+        {
+            ApplyPosition = true,
+            ApplyRotation = true,
+            ApplyScale = true,
+            ApplyBody = false,
+            ApplyFace = false,
+            ApplyMainHand = false,
+            BoneFilter = new HashSet<(PoseSlot, string)>
+            {
+                (PoseSlot.Character, "j_kao"),
+                (PoseSlot.MainHand, "n_hara"),
+            },
+            FilterIncludesDescendants = true,
+            AnchorSelectedPositions = true,
+        };
+
+        var plan = RealFileService().BuildImportPlan(
+            new[] { app.Skeleton, app.WeaponSkeleton }, file, options);
+
+        Assert.Contains(
+            plan.Writes,
+            write => write.Bone == app.Bone &&
+                write.Components == (TransformComponents.Rotation |
+                    TransformComponents.Scale));
+        Assert.DoesNotContain(plan.Writes, write => write.Bone == app.FaceBone);
+        Assert.Contains(
+            plan.Writes,
+            write => write.Bone == app.WeaponBone &&
+                write.Components == (TransformComponents.Rotation |
+                    TransformComponents.Scale));
+    }
+
     // ── Anchor positions (Ktisis "Anchor group positions") ───────────────
 
 
 
 
 
-    // ── Reference pose ───────────────────────────────────────────────────
+    [Fact]
+    public void Reference_pose_uses_the_same_transaction_and_never_writes_scale()
+    {
+        using var app = new PoseImportCaptureHarness();
+        app.Skeleton.CaptureReferencePose().Returns(
+            new[]
+            {
+                (app.Bone, new Transform
+                {
+                    Position = new Vector3(2f, 3f, 4f),
+                    Rotation = Quaternion.Identity,
+                    Scale = new Vector3(9f, 9f, 9f),
+                }),
+            });
+        app.SetNextPlan(PlanWithOneWrite(app));
+        var receipts = new List<OperationReceipt>();
 
+        var result = app.Facade.ApplyReferencePose(app.Actor, receipts.Add);
+
+        Assert.True(result.Success, result.Detail);
+        PoseImportOptions? built = null;
+        app.PoseFiles.Received(1).BuildImportPlan(
+            Arg.Any<IReadOnlyList<ISkeleton>>(),
+            Arg.Any<PoseFile>(),
+            Arg.Do<PoseImportOptions>(value => built = value));
+        Assert.NotNull(built);
+        Assert.True(built.ApplyRotation);
+        Assert.True(built.ApplyPosition);
+        Assert.False(built.ApplyScale);
+        Assert.True(built.ApplyBody);
+        Assert.True(built.ApplyFace);
+        Assert.False(built.ApplyMainHand);
+        Assert.False(built.ApplyOffHand);
+        Assert.False(built.ApplyProp);
+        Assert.False(built.ApplyOrnament);
+
+        app.FireRegisteredNativeAction();
+        app.EndRegisteredNativeBatch();
+        app.RunNextDelay(4);
+        app.RunIfQueued(0);
+
+        var receipt = Assert.Single(receipts);
+        Assert.Equal(OperationReceiptState.Applied, receipt.State);
+        Assert.Equal(app.ActorId, receipt.TargetActorId);
+    }
 
 }
