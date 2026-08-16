@@ -28,6 +28,17 @@ namespace Poser.UI;
 /// </summary>
 public static class FontRegistry
 {
+    // Dear ImGui documents OversampleH=1 as a visible quality loss for TTF
+    // faces. Segoe is not a pixel font, so snapping every glyph advance to a
+    // whole pixel compounds that loss at the 10-14 px sizes used here. Keep
+    // vertical sampling at one (Y positions are already snapped by the text
+    // renderer), but retain horizontal sub-pixel coverage and advances.
+    private const int HorizontalOversample = 2;
+    private const int VerticalOversample = 1;
+    private const bool SnapGlyphsHorizontally = false;
+    private const int FallbackHorizontalOversample = 1;
+    private const bool SnapFallbackGlyphsHorizontally = true;
+
     // Glyph alpha bakes as pow(clamp(coverage * multiply, 0, 1), 1 / gamma).
     // BOTH values are stated on every config: SafeFontConfig's constructor
     // defaults RasterizerGamma to 1.7, so an unset gamma silently stacks on
@@ -381,12 +392,8 @@ public static class FontRegistry
                         // No glyph offset: with that sizing, ImGui's baseline (scaled
                         // ascent) already coincides with the browser's line-box
                         // placement, and any nudge here shifts EVERY text run.
-                        var config = new SafeFontConfig
-                        {
-                            SizePx = key.SizePx * TtfMetrics.CssScale(file),
-                            RasterizerMultiply = RasterizerMultiply,
-                            RasterizerGamma = gamma,
-                        };
+                        var config = FontConfig(
+                            key.SizePx * TtfMetrics.CssScale(file), gamma);
                         var added = tk.AddFontFromFile(file, config);
                         // CJK coverage for the Default family only —
                         // mono wells and italic hints have no CJK use,
@@ -400,16 +407,14 @@ public static class FontRegistry
                             && WindowsFontFallback.ResolveJapanese(
                                 (int)key.Weight) is { } cjkFace)
                         {
-                            var cjk = new SafeFontConfig
-                            {
-                                SizePx = key.SizePx * TtfMetrics.CssScale(
+                            var cjk = FontConfig(
+                                key.SizePx * TtfMetrics.CssScale(
                                     cjkFace.Path, cjkFace.FaceIndex),
-                                FontNo = cjkFace.FaceIndex,
-                                MergeFont = added,
-                                GlyphRanges = CjkMergeRanges,
-                                RasterizerMultiply = RasterizerMultiply,
-                                RasterizerGamma = gamma,
-                            };
+                                gamma,
+                                mergedFallback: true);
+                            cjk.FontNo = cjkFace.FaceIndex;
+                            cjk.MergeFont = added;
+                            cjk.GlyphRanges = CjkMergeRanges;
                             tk.AddFontFromFile(cjkFace.Path, cjk);
                         }
                     }
@@ -435,6 +440,37 @@ public static class FontRegistry
             return null;
         }
     }
+
+    private static SafeFontConfig FontConfig(
+        float sizePx,
+        float gamma,
+        bool mergedFallback = false) => new()
+    {
+        SizePx = sizePx,
+        OversampleH = mergedFallback
+            ? FallbackHorizontalOversample
+            : HorizontalOversample,
+        OversampleV = VerticalOversample,
+        PixelSnapH = mergedFallback
+            ? SnapFallbackGlyphsHorizontally
+            : SnapGlyphsHorizontally,
+        RasterizerMultiply = RasterizerMultiply,
+        RasterizerGamma = gamma,
+    };
+
+    internal static FontRasterizationContract RasterizationContract(
+        bool light,
+        bool mergedFallback = false) =>
+        new(
+            mergedFallback
+                ? FallbackHorizontalOversample
+                : HorizontalOversample,
+            VerticalOversample,
+            mergedFallback
+                ? SnapFallbackGlyphsHorizontally
+                : SnapGlyphsHorizontally,
+            RasterizerMultiply,
+            light ? LightRasterizerGamma : DarkRasterizerGamma);
 
     /// <summary>
     /// Maps family+weight to a system font file. Cached; null means "not found, use Dalamud default".
@@ -493,3 +529,10 @@ public static class FontRegistry
         _atlas = null;
     }
 }
+
+internal readonly record struct FontRasterizationContract(
+    int OversampleH,
+    int OversampleV,
+    bool PixelSnapH,
+    float RasterizerMultiply,
+    float RasterizerGamma);

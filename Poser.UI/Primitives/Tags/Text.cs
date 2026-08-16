@@ -250,19 +250,45 @@ public static partial class Crystarium
             text, style, constraint);
     }
 
+    // The same label is commonly measured once for layout and again for ink
+    // seating in a single immediate-mode frame. Keep only two bounded frame
+    // generations: stable labels avoid another font push and shape, while
+    // dynamic readouts disappear from the memo within two frames.
+    private static readonly TextMeasurementMemo MeasurementMemo = new();
+
     /// <summary>Measures the run at its intrinsic size.</summary>
     public static Vector2 MeasureText(string text, in TextStyle style)
     {
-        var (font, pushed, _, _) = ResolveStyle(style);
+        var font = ResolveFont(style);
+        if (font is not { Available: true })
+            return ImGui.CalcTextSize(Presentation(text));
+        return MeasureResolved(text, font, alreadyPushed: false);
+    }
+
+    private static Vector2 MeasureResolved(
+        string text,
+        IFontHandle font,
+        bool alreadyPushed,
+        bool alreadyPresented = false)
+    {
+        int frame = ImGui.GetFrameCount();
+        if (MeasurementMemo.TryGet(frame, font, text, out var measured))
+            return measured;
+
+        if (!alreadyPushed)
+            font.Push();
         try
         {
-            return ImGui.CalcTextSize(Presentation(text));
+            measured = ImGui.CalcTextSize(
+                alreadyPresented ? text : Presentation(text));
         }
         finally
         {
-            if (pushed)
-                font!.Pop();
+            if (!alreadyPushed)
+                font.Pop();
         }
+        MeasurementMemo.Store(frame, font, text, measured);
+        return measured;
     }
 
     /// <summary>
@@ -345,19 +371,27 @@ public static partial class Crystarium
             : text.Normalize(NormalizationForm.FormC);
     }
 
-    private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
-        ResolveStyle(in TextStyle style)
+    private static IFontHandle? ResolveFont(in TextStyle style)
     {
         ref readonly var theme = ref ActiveThemeRef;
         if (style.Size is { } requested && !(requested > 0f))
             throw new ArgumentOutOfRangeException(
                 nameof(style), requested, "A font size must be positive.");
+        return FontRegistry.Resolve(
+            style.Family,
+            style.Weight ?? FontWeight.Regular,
+            style.Size ?? theme.Typography.BodySize);
+    }
+
+    private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
+        ResolveStyle(in TextStyle style)
+    {
+        ref readonly var theme = ref ActiveThemeRef;
         float size = style.Size ?? theme.Typography.BodySize;
-        var weight = style.Weight ?? FontWeight.Regular;
         var color = style.Color ?? theme.Text;
         if (style.Disabled)
             color = color.Fade(theme.Chrome.DisabledOpacity);
-        var font = FontRegistry.Resolve(style.Family, weight, size);
+        var font = ResolveFont(style);
         bool pushed = font is { Available: true };
         if (pushed)
             font!.Push();
@@ -451,7 +485,15 @@ public static partial class Crystarium
                 }
                 default:
                     dl.AddText(origin, packed, text);
-                    return measure ? ImGui.CalcTextSize(text) : default;
+                    if (!measure)
+                        return default;
+                    return font is { Available: true }
+                        ? MeasureResolved(
+                            text,
+                            font,
+                            alreadyPushed: true,
+                            alreadyPresented: true)
+                        : ImGui.CalcTextSize(text);
             }
         }
         finally
@@ -692,5 +734,47 @@ public static partial class Crystarium
         }
         if (builder.Length > 0)
             yield return builder.ToString();
+    }
+}
+
+internal sealed class TextMeasurementMemo
+{
+    private Dictionary<(IFontHandle Font, string Text), Vector2> _current = new();
+    private Dictionary<(IFontHandle Font, string Text), Vector2> _aging = new();
+    private int _frame = int.MinValue;
+
+    internal bool TryGet(
+        int frame,
+        IFontHandle font,
+        string text,
+        out Vector2 size)
+    {
+        Advance(frame);
+        var key = (font, text);
+        if (_current.TryGetValue(key, out size))
+            return true;
+        if (!_aging.TryGetValue(key, out size))
+            return false;
+        _current[key] = size;
+        return true;
+    }
+
+    internal void Store(
+        int frame,
+        IFontHandle font,
+        string text,
+        Vector2 size)
+    {
+        Advance(frame);
+        _current[(font, text)] = size;
+    }
+
+    private void Advance(int frame)
+    {
+        if (frame == _frame)
+            return;
+        _frame = frame;
+        (_current, _aging) = (_aging, _current);
+        _current.Clear();
     }
 }
