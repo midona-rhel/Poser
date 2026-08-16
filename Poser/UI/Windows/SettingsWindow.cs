@@ -124,6 +124,8 @@ public class SettingsWindow : Window
             BoneLineOpacityWhileUsing = c.Skeleton.BoneLineOpacityWhileUsing,
             SkeletonLineToCircle = c.Skeleton.SkeletonLineToCircle,
             HideSkeletonWhileDragging = c.Skeleton.HideSkeletonWhileDragging,
+            HideSkeletonOnActorSelection =
+                c.Skeleton.HideSkeletonOnActorSelection,
             DimInactiveActors = c.Skeleton.DimInactiveActors,
             InactiveActorOpacity = c.Skeleton.InactiveActorOpacity,
             ActiveActorSource = (int)c.Skeleton.ActiveActorSource,
@@ -351,6 +353,8 @@ public class SettingsWindow : Window
         c.Skeleton.BoneLineOpacityWhileUsing = _vm.BoneLineOpacityWhileUsing;
         c.Skeleton.SkeletonLineToCircle = _vm.SkeletonLineToCircle;
         c.Skeleton.HideSkeletonWhileDragging = _vm.HideSkeletonWhileDragging;
+        c.Skeleton.HideSkeletonOnActorSelection =
+            _vm.HideSkeletonOnActorSelection;
         c.Skeleton.DimInactiveActors = _vm.DimInactiveActors;
         c.Skeleton.InactiveActorOpacity =
             Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);

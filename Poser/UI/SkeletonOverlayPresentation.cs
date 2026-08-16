@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -21,6 +22,8 @@ public enum OverlayVisibility
 public sealed class SkeletonOverlayPresentation
 {
     private readonly HashSet<BoneId> _shown = new();
+    private readonly Dictionary<string, HashSet<BoneId>> _hiddenSubsets =
+        new(StringComparer.Ordinal);
 
     /// <summary>Whether anything at all is opted in.</summary>
     public bool AnyVisible => _shown.Count > 0;
@@ -63,19 +66,68 @@ public sealed class SkeletonOverlayPresentation
         }
     }
 
+    /// <summary>
+    /// The sidebar eye is a hide/show switch, not a reset-to-all switch. When
+    /// a row has anything visible, keep exactly that visible subset and hide
+    /// it. The next click restores only those exact current-generation ids.
+    /// </summary>
+    public void ToggleVisibleWithMemory(
+        string key, IReadOnlyList<BoneId> bones)
+    {
+        if (string.IsNullOrWhiteSpace(key) || bones.Count == 0)
+            return;
+
+        var state = Resolve(bones);
+        if (state != OverlayVisibility.None)
+        {
+            var remembered = new HashSet<BoneId>();
+            foreach (var bone in bones)
+            {
+                if (_shown.Contains(bone))
+                {
+                    remembered.Add(bone);
+                    _shown.Remove(bone);
+                }
+            }
+            if (remembered.Count > 0)
+                _hiddenSubsets[key] = remembered;
+            return;
+        }
+
+        if (_hiddenSubsets.Remove(key, out var saved))
+        {
+            var current = new HashSet<BoneId>(bones);
+            foreach (var bone in saved)
+                if (current.Contains(bone))
+                    _shown.Add(bone);
+            return;
+        }
+
+        SetVisible(bones, true);
+    }
+
     public void Reconcile(SceneSnapshot snapshot)
     {
-        if (_shown.Count == 0)
-            return;
         var present = new HashSet<BoneId>();
         foreach (var actor in snapshot.Actors)
             foreach (var skeleton in actor.Skeletons)
                 foreach (var bone in skeleton.Bones)
                     present.Add(bone.Id);
         _shown.RemoveWhere(bone => !present.Contains(bone));
+        foreach (var key in new List<string>(_hiddenSubsets.Keys))
+        {
+            var saved = _hiddenSubsets[key];
+            saved.RemoveWhere(bone => !present.Contains(bone));
+            if (saved.Count == 0)
+                _hiddenSubsets.Remove(key);
+        }
     }
 
-    public void Clear() => _shown.Clear();
+    public void Clear()
+    {
+        _shown.Clear();
+        _hiddenSubsets.Clear();
+    }
 
     // ── world manip handles ──────────────────────────────────────────────
 

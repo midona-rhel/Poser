@@ -156,6 +156,35 @@ public sealed class BoneVisibilityPresetContractTests
             config.Skeleton.BoneVisibilityPresets.Select(preset => preset.Name));
     }
 
+    [Fact]
+    public void Skeleton_eye_restores_only_the_exact_subset_and_drops_old_generation()
+    {
+        Assert.True(new PoserConfiguration().Skeleton.HideSkeletonOnActorSelection);
+        var presentation = new SkeletonOverlayPresentation();
+        var actor = Actor("j_kao", "j_kubi", "j_ude_a_l");
+        var bones = Bones(actor, "j_kao", "j_kubi", "j_ude_a_l");
+        presentation.SetVisible(bones[..2], true);
+
+        presentation.ToggleVisibleWithMemory("actor/skeleton", bones);
+        Assert.False(presentation.AnyVisible);
+
+        presentation.ToggleVisibleWithMemory("actor/skeleton", bones);
+        Assert.True(presentation.IsVisible(bones[0]));
+        Assert.True(presentation.IsVisible(bones[1]));
+        Assert.False(presentation.IsVisible(bones[2]));
+
+        var replacement = ActorWithId(
+            actor.Id.NextGeneration(), "j_kao", "j_kubi", "j_ude_a_l");
+        presentation.Reconcile(Scene(
+            replacement,
+            Bones(replacement, "j_kao", "j_kubi", "j_ude_a_l")));
+        var current = Bones(replacement, "j_kao", "j_kubi", "j_ude_a_l");
+        presentation.ToggleVisibleWithMemory("actor/skeleton", current);
+        Assert.True(presentation.IsVisible(current[0]));
+        Assert.True(presentation.IsVisible(current[1]));
+        Assert.True(presentation.IsVisible(current[2]));
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────
 
     private static BoneVisibilityPresetService Service(
@@ -174,24 +203,32 @@ public sealed class BoneVisibilityPresetContractTests
     }
 
     private static ActorDescriptor Actor(params string[] bones) =>
-        new(
-            ActorId.New(),
-            "Fixture",
-            new[] { Skeleton(PoseSlot.Character, bones) });
+        ActorWithId(ActorId.New(), bones);
 
-    private static ActorDescriptor ActorWithWeapon(string body, string weapon) =>
+    private static ActorDescriptor ActorWithId(
+        ActorId actor, params string[] bones) =>
         new(
-            ActorId.New(),
+            actor,
+            "Fixture",
+            new[] { Skeleton(actor, PoseSlot.Character, bones) });
+
+    private static ActorDescriptor ActorWithWeapon(string body, string weapon)
+    {
+        var actor = ActorId.New();
+        return new(
+            actor,
             "Fixture",
             new[]
             {
-                Skeleton(PoseSlot.Character, new[] { body }),
-                Skeleton(PoseSlot.MainHand, new[] { weapon }),
+                Skeleton(actor, PoseSlot.Character, new[] { body }),
+                Skeleton(actor, PoseSlot.MainHand, new[] { weapon }),
             });
+    }
 
-    private static SkeletonDescriptor Skeleton(PoseSlot slot, string[] bones)
+    private static SkeletonDescriptor Skeleton(
+        ActorId actor, PoseSlot slot, string[] bones)
     {
-        var id = new SkeletonId(ActorId.New(), slot, 0);
+        var id = new SkeletonId(actor, slot, 0);
         var descriptors = new List<BoneDescriptor>(bones.Length);
         for (int i = 0; i < bones.Length; i++)
             descriptors.Add(new BoneDescriptor(
@@ -205,4 +242,25 @@ public sealed class BoneVisibilityPresetContractTests
             .Where(bone => names.Contains(bone.Id.CanonicalName))
             .Select(bone => bone.Id)
             .ToArray();
+
+    private static SceneSnapshot Scene(
+        ActorDescriptor actor, BoneId[] bones) =>
+        new(
+            Revision: actor.Id.Generation + 1,
+            Actors: new[]
+            {
+                actor with
+                {
+                    Skeletons = new[]
+                    {
+                        new SkeletonDescriptor(
+                            bones[0].Skeleton,
+                            bones.Select(bone => new BoneDescriptor(
+                                bone, bone.CanonicalName, null)).ToArray()),
+                    },
+                },
+            },
+            Lights: Array.Empty<LightDescriptor>(),
+            Cameras: Array.Empty<CameraDescriptor>(),
+            Props: Array.Empty<PropDescriptor>());
 }

@@ -768,7 +768,7 @@ public sealed class ShellSidebar
                     help: state switch
                     {
                         0 => "Show in skeleton overlay",
-                        1 => "Some of this is in the overlay; show all of it",
+                        1 => "Hide the currently shown bones",
                         _ => "Hide from skeleton overlay",
                     },
                     id: "##overlay",

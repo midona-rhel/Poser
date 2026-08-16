@@ -66,6 +66,11 @@ public class SkeletonConfiguration
     /// default rule.</summary>
     public bool ShowSelectedBonesOnly { get; set; } = false;
 
+    /// <summary>Keep the armature hidden when only an actor is selected. A
+    /// selected bone, gaze target, or light still provides its own useful
+    /// on-screen anchor.</summary>
+    public bool HideSkeletonOnActorSelection { get; set; } = true;
+
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();

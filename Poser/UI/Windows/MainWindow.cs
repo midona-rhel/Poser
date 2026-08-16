@@ -84,6 +84,7 @@ public class MainWindow : Window
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
     private bool _boneCtxOpenRequested;
     private IReadOnlyList<BoneId>? _ctxOverlayBones;
+    private string? _ctxOverlayMemoryKey;
     private bool _overlayCtxOpenRequested;
     private bool _renameOpen;
     private string _renameValue = "";
@@ -822,6 +823,7 @@ public class MainWindow : Window
             else if (row.OverlayBones != null)
             {
                 _ctxOverlayBones = row.OverlayBones;
+                _ctxOverlayMemoryKey = row.OverlayMemoryKey;
                 _overlayCtxOpenRequested = true;
             }
         };
@@ -971,8 +973,11 @@ public class MainWindow : Window
         {
             if (row.OverlayBones is not { } bones)
                 return;
-            _overlayPresentation.SetVisible(
-                bones, !_overlayPresentation.AreVisible(bones));
+            if (row.OverlayMemoryKey is { } key)
+                _overlayPresentation.ToggleVisibleWithMemory(key, bones);
+            else
+                _overlayPresentation.SetVisible(
+                    bones, !_overlayPresentation.AreVisible(bones));
         };
         _vm.OverlayVisibilityOf =
             bones => (int)_overlayPresentation.Resolve(bones);
@@ -2194,6 +2199,10 @@ public class MainWindow : Window
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
+                var abdomen = skeleton!.Bones.FirstOrDefault(
+                    bone => string.Equals(
+                        bone.Id.CanonicalName, "n_hara",
+                        StringComparison.Ordinal));
                 var allBoneIds = new BoneId[byName.Count];
                 int i = 0;
                 foreach (var (bone, _) in byName.Values)
@@ -2209,7 +2218,14 @@ public class MainWindow : Window
                     Expanded = skeletonExpanded,
                     IsLastChild = skeletonLast,
                     TreeLines = childLines,
-                    Tag = skeletonKey,
+                    Active = abdomen != null
+                        && _selection.IsSelected(
+                            SelectionId.ForBone(abdomen.Id)),
+                    Tag = abdomen is { } rootBone
+                        ? SelectionId.ForBone(rootBone.Id)
+                        : null,
+                    ExpandKey = skeletonKey,
+                    OverlayMemoryKey = skeletonKey,
                     OverlayBones = allBoneIds,
                 });
                 if (skeletonExpanded)
@@ -2315,6 +2331,75 @@ public class MainWindow : Window
             CollectCategoryBones(child, into);
     }
 
+    /// <summary>Returns the one real bone represented by a category when the
+    /// source schema has a canonical root for it. A category without one is a
+    /// group and gets concrete child roots instead of a fake selectable bone.
+    /// </summary>
+    private static string? CategoryRootBone(string categoryId) => categoryId switch
+    {
+        "Head" => "j_kao",
+        "Spine" => "j_kosi",
+        "LeftArm" => "j_ude_a_l",
+        "RightArm" => "j_ude_a_r",
+        "LeftLeg" => "j_asi_a_l",
+        "RightLeg" => "j_asi_a_r",
+        "Tail" => "n_sippo_a",
+        "Hair" => "j_kami_a",
+        "LeftEye" => "j_f_eye_l",
+        "RightEye" => "j_f_eye_r",
+        "Mouth" => "j_ago",
+        _ => null,
+    };
+
+    private static void CollectCategorySelectionBones(
+        BuiltCategory category, List<BoneDescriptor> into)
+    {
+        var rootName = CategoryRootBone(category.Id);
+        var root = rootName == null
+            ? null
+            : category.AllBones.Find(
+                bone => string.Equals(
+                    bone.Id.CanonicalName, rootName,
+                    StringComparison.Ordinal));
+        if (root is { } realBone)
+        {
+            into.Add(realBone);
+            return;
+        }
+
+        foreach (var bone in category.AllBones)
+            into.Add(bone);
+        foreach (var child in category.Children)
+            CollectCategorySelectionBones(child, into);
+    }
+
+    private static void RemoveSelectedDescendants(
+        BuiltCategory category, List<BoneDescriptor> targets)
+    {
+        var parents = new Dictionary<BoneId, BoneId?>();
+        void Index(BuiltCategory current)
+        {
+            foreach (var bone in current.AllBones)
+                parents[bone.Id] = bone.Parent;
+            foreach (var child in current.Children)
+                Index(child);
+        }
+        Index(category);
+        var selected = targets.Select(bone => bone.Id).ToHashSet();
+        targets.RemoveAll(bone =>
+        {
+            var parent = bone.Parent;
+            while (parent is { } ancestor)
+            {
+                if (selected.Contains(ancestor))
+                    return true;
+                if (!parents.TryGetValue(ancestor, out parent))
+                    break;
+            }
+            return false;
+        });
+    }
+
     /// <summary>Strips the redundant "IVCS " lead from a bone label shown
     /// under an IVCS category — the ancestry already says it (user
     /// 2026-08-11).</summary>
@@ -2349,12 +2434,28 @@ public class MainWindow : Window
         var overlayBones = new List<BoneId>();
         CollectCategoryBones(category, overlayBones);
 
-        // When a category contains a bone whose display name IS the category
-        // name (Head → j_head "Head"), the two rows are redundant: the bone
-        // becomes the category row. Its body selects the bone (Tag) while
-        // its chevron toggles the category (ExpandKey).
-        var mergedBone = category.AllBones.Find(
-            bone => bone.DisplayName == category.Label);
+        // When a category has a source-backed root bone (for example Left Arm
+        // -> j_ude_a_l), the two rows are redundant: the real bone becomes
+        // the category row. Its body selects the bone while its chevron still
+        // toggles the category. Categories without a root remain groups.
+        var rootName = CategoryRootBone(category.Id);
+        var mergedBone = rootName == null
+            ? category.AllBones.Find(
+                bone => bone.DisplayName == category.Label)
+            : category.AllBones.Find(
+                bone => string.Equals(
+                    bone.Id.CanonicalName, rootName,
+                    StringComparison.Ordinal));
+        var selectionBones = new List<BoneDescriptor>();
+        if (mergedBone == null)
+        {
+            CollectCategorySelectionBones(category, selectionBones);
+            RemoveSelectedDescendants(category, selectionBones);
+        }
+        var selectionIds = selectionBones
+            .Select(bone => bone.Id)
+            .Distinct()
+            .ToArray();
         section.Rows.Add(new ShellSidebarRow
         {
             Label = categoryLabel,
@@ -2365,11 +2466,20 @@ public class MainWindow : Window
             IsLastChild = isLast,
             TreeLines = lines,
             Active = mergedBone != null
-                && _selection.IsSelected(SelectionId.ForBone(mergedBone.Id)),
+                ? _selection.IsSelected(SelectionId.ForBone(mergedBone.Id))
+                : selectionIds.Any(id =>
+                    _selection.IsSelected(SelectionId.ForBone(id))),
             Tag = mergedBone != null
                 ? SelectionId.ForBone(mergedBone.Id)
-                : catKey,
-            ExpandKey = mergedBone != null ? catKey : null,
+                : selectionIds.Length > 0
+                    ? SelectionId.ForBoneGroup(
+                        selectionIds[0].Skeleton.Actor, category.Id)
+                    : catKey,
+            ExpandKey = catKey,
+            OverlayMemoryKey = catKey,
+            SelectionBones = mergedBone == null && selectionIds.Length > 0
+                ? selectionIds
+                : null,
             OverlayBones = overlayBones.ToArray(),
         });
         if (!expanded)
@@ -2508,6 +2618,7 @@ public class MainWindow : Window
                 IsLastChild = groupLast,
                 TreeLines = lines,
                 Tag = slotKey,
+                OverlayMemoryKey = slotKey,
                 OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
             if (!slotExpanded)
@@ -2590,6 +2701,7 @@ public class MainWindow : Window
             Active = _selection.IsSelected(selectionId),
             Tag = selectionId,
             ExpandKey = expandKey,
+            OverlayMemoryKey = "bone:" + bone.Id,
             OverlayBones = new[] { bone.Id },
         };
     }
@@ -3008,6 +3120,23 @@ public class MainWindow : Window
         if (row.Tag is not SelectionId id) return;
 
         var io = ImGui.GetIO();
+        if (row.SelectionBones is { Count: > 0 }
+            && id.Kind == SceneEntityKind.Bone
+            && id.Bone is null)
+        {
+            if (io.KeyCtrl)
+            {
+                foreach (var bone in row.SelectionBones)
+                    _selection.Toggle(SelectionId.ForBone(bone));
+            }
+            else
+            {
+                _selection.Select(SelectionId.ForBone(row.SelectionBones[0]));
+                for (int i = 1; i < row.SelectionBones.Count; i++)
+                    _selection.Add(SelectionId.ForBone(row.SelectionBones[i]));
+            }
+            return;
+        }
         if (io.KeyShift && _selection.Anchor is { } anchor)
         {
             // Range order follows the rows currently visible to the user;
@@ -3811,24 +3940,22 @@ public class MainWindow : Window
         if (owner == null)
         {
             _ctxOverlayBones = null;
+            _ctxOverlayMemoryKey = null;
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
-        // Tri-state, like the row's own eye: a partly shown group's verb is
-        // "show the rest", never "hide" — Brio's mixed checkbox clicks into
-        // ALL for the same reason.
         var state = _overlayPresentation.Resolve(bones);
-        bool visible = state == OverlayVisibility.All;
         var items = new[]
         {
             new ContextMenuItem(
                 state switch
                 {
-                    OverlayVisibility.All => "Hide category from overlay",
-                    OverlayVisibility.Partial => "Show the rest of this category",
-                    _ => "Show category in overlay",
+                    OverlayVisibility.None => "Show category in overlay",
+                    _ => "Hide the currently shown bones",
                 },
-                visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+                state == OverlayVisibility.None
+                    ? TablerIcon.Eye
+                    : TablerIcon.EyeOff),
             new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
             // The actor-scope pair Brio's filter popup puts above its
             // categories as Select All / Select None.
@@ -3853,7 +3980,12 @@ public class MainWindow : Window
         switch (clicked)
         {
             case 0:
-                _overlayPresentation.SetVisible(bones, !visible);
+                if (_ctxOverlayMemoryKey is { } memoryKey)
+                    _overlayPresentation.ToggleVisibleWithMemory(
+                        memoryKey, bones);
+                else
+                    _overlayPresentation.SetVisible(
+                        bones, state == OverlayVisibility.None);
                 break;
             case 1:
                 _overlayPresentation.SetVisible(ownerBones, false);
@@ -3866,6 +3998,8 @@ public class MainWindow : Window
                 _overlayPresentation.SetVisible(ownerBones, false);
                 break;
         }
+        _ctxOverlayBones = null;
+        _ctxOverlayMemoryKey = null;
     }
 
     // ── light / camera / prop context menus ─────────────────────────────
