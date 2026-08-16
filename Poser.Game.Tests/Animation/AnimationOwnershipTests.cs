@@ -190,9 +190,9 @@ public sealed class AnimationOwnershipTests
         var result = session.PlayBase(ActorA, 42);
 
         Assert.False(result.Success);
-        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
-        Assert.DoesNotContain("Blend:42", port.Calls);
+        Assert.Empty(port.Calls);
         Assert.False(session.OverridesFor(ActorA).HasAny);
+        Assert.Empty(session.OwnedActors);
     }
 
     private static SceneSnapshot EmptyScene(ulong revision) =>
@@ -253,6 +253,7 @@ public sealed class AnimationOwnershipTests
                     args[3] = null;
                     return AnimationPortResult.Ok();
                 case "CaptureBase":
+                    Calls.Add("CaptureBase");
                     return Available
                         ? new BaseAnimationCapture(1, 2, 3, 4, ForcedTimeline)
                         : null;
