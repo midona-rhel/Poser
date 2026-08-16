@@ -21,13 +21,7 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// Actor-scoped runtime presentation and external-appearance controls. The
-/// pane owns state and callbacks; Crystarium owns every row and placement.
-///
-/// <para>All three external-appearance rows drive ONE shared
-/// <see cref="Crystarium.SearchPicker{T}"/>: the surface is drained at
-/// the top of the frame and dispatched by owner name, so a selection change
-/// while a popover is open cannot retarget the pending pick.</para>
+/// Actor-scoped presentation and appearance controls.
 /// </summary>
 public sealed class AppearancePane
 {
@@ -41,9 +35,7 @@ public sealed class AppearancePane
     private readonly StableBindingRegistry _bindings;
     private readonly ITextureProvider _textures;
 
-    /// <summary>Every outcome this pane produces is the answer to a button
-    /// the user pressed, so it goes to the notification channel rather than a
-    /// row of the page. The page states standing facts only.</summary>
+    /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
 
     private bool _openModel = true;
@@ -62,12 +54,10 @@ public sealed class AppearancePane
     private static readonly Func<ExternalItem, string> ItemKey =
         static item => item.Id.ToString("N");
 
-    /// <summary>The exact actor captured when a picker opened. A selection
-    /// change while the popover is open never retargets the pending pick.</summary>
+    /// <summary>Actor captured when the picker opened.</summary>
     private ActorId? _pickerActor;
 
-    // ── model search picker (its own surface: the rows are catalog rows
-    // with kind strip, icons and a model-id badge, not ExternalItems) ────
+    // Model picker state.
     private readonly Crystarium.SearchPicker<ModelCatalogEntry> _modelPicker =
         new("appearance-model");
     private ActorId? _modelPickerActor;
@@ -87,13 +77,10 @@ public sealed class AppearancePane
         ModelCatalogKind.Mount, ModelCatalogKind.Ornament,
     ];
 
-    // Per-frame row callbacks may allocate nothing: memoized query answer,
-    // cached key/badge strings, remembered missing icons (a game icon
-    // lookup THROWS for absent ids — an exception per row per frame is a
-    // frame-rate cliff).
+    // Query and icon results are memoized between frames.
     private string? _modelMemoQuery;
     private int _modelMemoKind = -1;
-    private bool _modelMemoLoaded;
+    private int _modelMemoVersion = -1;
     private IReadOnlyList<ModelCatalogEntry> _modelMemo =
         Array.Empty<ModelCatalogEntry>();
     private readonly Dictionary<(ModelCatalogKind Kind, uint RowId), string>
@@ -113,12 +100,7 @@ public sealed class AppearancePane
         new("Import Character File", new[] { ".mcdf" }, isSaveMode: false);
     private readonly Crystarium.FileDialog _mcdfExportBrowser =
         new("Export Character File", new[] { ".mcdf" }, isSaveMode: true);
-    /// <summary>Where the character-file browsers open. It starts at the
-    /// library's MCDFs home — the one folder the MCDF tab is guaranteed to be
-    /// scanning — so an exported character file appears in the tab the user
-    /// goes looking for it in without them having to navigate anywhere.
-    /// Choosing another folder is still allowed and sticks for the rest of the
-    /// session.</summary>
+    /// <summary>Folder used by character-file browsers.</summary>
     private string _mcdfPath;
     private ActorId? _mcdfActor;
     private string _mcdfDescription = string.Empty;
@@ -175,16 +157,11 @@ public sealed class AppearancePane
                 page.EmptyState();
                 return;
             }
-            // Sections that cannot serve the actor are ABSENT, not disabled
-            // with an excuse: wet/tint rows need presentation support, and the
-            // human-appearance surfaces (external plugins, MCDF) mean nothing
-            // on a creature model.
+            _modelLoader.EnsureLoaded();
+            // Unsupported sections are omitted for creature models.
             bool creature = IsCreature(actor);
 
-            // The model IS the actor's identity, so its section leads and is
-            // never absent: any character actor can wear any ModelChara row,
-            // and 0 brings the human look back (the customize/equipment bytes
-            // survive in DrawData behind a creature model).
+            // Model controls remain available for creature models.
             page.Section("MODEL", _openModel, next => _openModel = next,
                 form => ModelRows(form, actor),
                 divider: false);
@@ -222,12 +199,7 @@ public sealed class AppearancePane
         });
     }
 
-    /// <summary>The model-id editor: a search selector over every named
-    /// model (Brio's NpcSelector data, model id only — customize and
-    /// equipment stay Glamourer's) beside the numeric field, all applied
-    /// through the ownership session so the incoming id is captured once
-    /// and Reset restores it exactly. Every apply is a full actor redraw;
-    /// the numeric buffer applies on click, never per keystroke.</summary>
+    /// <summary>Edits the actor's model id and supports named model search.</summary>
     private void ModelRows(Crystarium.FormScope form, ActorId id)
     {
         if (_model.Read(id) is not { } current)
@@ -252,11 +224,7 @@ public sealed class AppearancePane
                 + "and ornaments by name or model id; Reset restores the "
                 + "model it came in with.");
 
-        // ONE row: the number, the steppers that walk it, and the apply that
-        // commits it (user 2026-08-15). The "Current" readout that used to
-        // stand under the field is gone with it — the selector above already
-        // names what the actor draws as, so the readout restated it, and the
-        // field itself is re-seeded from the actor on every apply.
+        // The numeric field is applied explicitly.
         form.TextInputActions(
             "Model id",
             _modelText,
@@ -286,8 +254,7 @@ public sealed class AppearancePane
             });
     }
 
-    /// <summary>Walks the DRAFT, never the actor: an apply is a full redraw,
-    /// so a stepper that applied would redraw once per click.</summary>
+    /// <summary>Changes the draft value without changing the actor.</summary>
     private void StepModelId(int delta)
     {
         int value = int.TryParse(
@@ -315,17 +282,14 @@ public sealed class AppearancePane
         _notices.Refused("Model id must be a whole number.");
     }
 
-    /// <summary>Applies a model outcome and re-seeds the numeric buffer
-    /// from the actor's new current id.</summary>
+    /// <summary>Reports a model result and refreshes the numeric field.</summary>
     private void ReportModel(PresentationResult result, string what)
     {
         Report(result, what);
         _modelActor = null;
     }
 
-    /// <summary>The search trigger's readout: the catalog's name for the
-    /// id when one exists — the picker shows visuals, the trigger names
-    /// the current one — otherwise the bare fact.</summary>
+    /// <summary>Returns a catalog name or the numeric model id.</summary>
     private string ModelDisplayName(int current)
     {
         if (current == 0)
@@ -335,13 +299,10 @@ public sealed class AppearancePane
             : $"Model {ModelIdText(current)}";
     }
 
-    // ── model search picker ──────────────────────────────────────────────
-
-    /// <summary>Opens the model search against the actor frozen here,
-    /// seeded to the row drawing as the current id when one exists.</summary>
+    /// <summary>Opens model search for the captured actor.</summary>
     private void OpenModelPicker(ActorId actor)
     {
-        _modelLoader.EnsureLoaded();
+        _modelLoader.Retry();
         _modelPickerActor = actor;
         int current = _model.Read(actor) ?? 0;
         string? selectedKey =
@@ -354,17 +315,15 @@ public sealed class AppearancePane
             ModelEntryName,
             _modelEntryKey,
             selectedKey,
-            _modelCatalog.IsLoaded ? null : "Building model catalog…",
+            ModelCatalogLoadStatus(),
             ModelPickerOptions());
     }
 
-    /// <summary>The kind strip is CONTROLLED — its selection lives here —
-    /// so the open surface is re-told its options each frame before it
-    /// draws. A pick applies through the ownership session against the
-    /// actor frozen at open.</summary>
+    /// <summary>Updates the open picker and applies its frozen actor selection.</summary>
     private void DrainModelPicker()
     {
         _modelPicker.Update(ModelPickerOptions());
+        _modelPicker.SetLoadStatus(ModelCatalogLoadStatus());
         if (_modelPicker.Draw() is not { } pick
             || _modelPickerActor is not { } target)
             return;
@@ -381,20 +340,18 @@ public sealed class AppearancePane
             : TablerIcon.Paw,
         Badge = _modelEntryBadge,
         Strip = new PickerStrip(ModelKindLabels, _modelKindIndex, _setModelKind),
-        // A row carries an icon, a name and a badge, and the narrow picker
-        // cuts all three.
         Width = Crystarium.ActiveTheme.Picker.WideWidth,
     };
 
     private IReadOnlyList<ModelCatalogEntry> ComputeModelSearch(string search)
     {
-        bool loaded = _modelCatalog.IsLoaded;
+        int version = _modelCatalog.PublicationVersion;
         if (_modelMemoQuery == search && _modelMemoKind == _modelKindIndex
-            && _modelMemoLoaded == loaded)
+            && _modelMemoVersion == version)
             return _modelMemo;
         _modelMemoQuery = search;
         _modelMemoKind = _modelKindIndex;
-        _modelMemoLoaded = loaded;
+        _modelMemoVersion = version;
         _modelMemo = _modelCatalog.Search(
             search,
             ModelKindValues[Math.Clamp(
@@ -403,8 +360,14 @@ public sealed class AppearancePane
         return _modelMemo;
     }
 
-    /// <summary>Row ids are only unique WITHIN a sheet, so a row's picker
-    /// identity is the kind and the id.</summary>
+    private string? ModelCatalogLoadStatus() =>
+        _modelCatalog.IsLoaded
+            ? null
+            : _modelLoader.IsBuilding
+                ? "Building model catalog…"
+                : _modelLoader.LastError ?? "Building model catalog…";
+
+    /// <summary>Combines sheet kind and row id into a stable picker key.</summary>
     private string ModelRowKey(ModelCatalogEntry entry)
     {
         var identity = (entry.Kind, entry.RowId);
@@ -424,13 +387,7 @@ public sealed class AppearancePane
         return text;
     }
 
-    /// <summary>
-    /// Resolves a row's game icon to an ImGui handle, or 0 when there is
-    /// none. Sheet icon ids are not guaranteed to exist and GetFromGameIcon
-    /// THROWS for those, so this uses the try-variant, catches anyway, and
-    /// remembers the failures. The WRAP is never cached: shared textures
-    /// must be re-resolved each frame.
-    /// </summary>
+    /// <summary>Resolves a row icon and remembers missing ids.</summary>
     private nint ResolveIcon(uint iconId)
     {
         if (iconId == 0 || _missingIcons.Contains(iconId))
@@ -451,11 +408,7 @@ public sealed class AppearancePane
         return wrap is null ? 0 : (nint)wrap.Handle.Handle;
     }
 
-    /// <summary>A creature is a native attached companion, a catalog spawn, or
-    /// any actor currently drawing a non-zero model id — either way a
-    /// non-humanoid model the human-appearance surfaces (Glamourer designs,
-    /// Customize+ profiles, MCDF) cannot serve. The rows come back the moment
-    /// the model id returns to 0.</summary>
+    /// <summary>Returns whether the actor uses a creature model.</summary>
     private bool IsCreature(ActorId id)
     {
         if (Describe(id) is { IsCompanion: true })
@@ -467,8 +420,7 @@ public sealed class AppearancePane
             || _spawn.GetModelCharaId(live) != 0;
     }
 
-    /// <summary>The shared surface's pick, dispatched by owner name against the
-    /// actor frozen when it opened. Reports under the ITEM's name.</summary>
+    /// <summary>Dispatches a pick to the actor captured when it opened.</summary>
     private void DrainPicker()
     {
         if (_picker.Draw() is not { } pick || _pickerActor is not { } target)
@@ -553,9 +505,7 @@ public sealed class AppearancePane
             help: "Take over this actor's wetness so weather and water stop "
                 + "changing it. Turning it off restores the game's values.");
 
-        // Fresh re-read: the sliders answer to what the session holds NOW, not
-        // to the copy the section opened with — the switch above may have just
-        // changed it.
+        // Read the latest override after the switch callback.
         var refreshed = _presentation.OverridesFor(actor);
         bool wetOn = refreshed.Wetness != null;
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
@@ -711,10 +661,7 @@ public sealed class AppearancePane
                 unavailable: !mcdfOwnedNow);
         }
 
-        // The OperationReceipt is the terminal authority (application-state.md:
-        // "UI renders the receipt"): the status row exists only when the
-        // receipt has left Pending. The outcome text and skipped-resources
-        // list remain derived display riding on that gate.
+        // Pending receipts do not expose a terminal status.
         if (_integration.McdfReceipt is not { } receipt
             || receipt.State == OperationReceiptState.Pending)
             return;
@@ -739,11 +686,7 @@ public sealed class AppearancePane
         form.Status(detail!, skipped);
     }
 
-    // ── picker and dialogs ───────────────────────────────────────────────
-
-    /// <summary>Loads what the surface is about to show and arms it against the
-    /// actor frozen here. CAPTIONLESS: the row's own label names the pick.
-    /// </summary>
+    /// <summary>Loads picker items for the captured actor.</summary>
     private void OpenPicker(
         ActorId actor,
         string owner,
@@ -796,8 +739,6 @@ public sealed class AppearancePane
         });
     }
 
-    // ── state ────────────────────────────────────────────────────────────
-
     private static Vector4? TintFor(
         PresentationOverrides owned,
         PresentationReading reading,
@@ -810,8 +751,7 @@ public sealed class AppearancePane
             _notices.Failed($"{what}: {result.Detail}");
     }
 
-    /// <summary>Reports an external-integration outcome and invalidates the
-    /// readout cache, which is what every reset callback needs.</summary>
+    /// <summary>Reports an integration result and invalidates its readout.</summary>
     private void ReportExternal(IntegrationResult result, string what)
     {
         if (!result.Success)
@@ -819,8 +759,7 @@ public sealed class AppearancePane
         _readoutAt = DateTime.MinValue;
     }
 
-    /// <summary>The wetness a slider must edit, read at DISPATCH time rather
-    /// than captured at row-build time.</summary>
+    /// <summary>Reads wetness when the slider action is dispatched.</summary>
     private WetnessState CurrentWetness(ActorId actor) =>
         _presentation.OverridesFor(actor).Wetness
         ?? (_presentation.Read(actor) is { } reading ? reading.Wetness : default);
@@ -858,8 +797,7 @@ public sealed class AppearancePane
             collection.Success && collection.Value is { } assignment
                 ? assignment.EffectiveName
                 : "—";
-        // The picker's selected key is derived HERE: it is a per-actor readout,
-        // and the rows format nothing they can cache.
+        // The selected key follows the current actor readout.
         _collectionKey =
             collection.Success && collection.Value is { } selectedCollection
                 ? selectedCollection.EffectiveId.ToString("N")
@@ -879,9 +817,7 @@ public sealed class AppearancePane
         }
     }
 
-    /// <summary>The one wording for an MCDF phase. Shared, not copied: the
-    /// library pane states the same live phase beside the apply that
-    /// started it.</summary>
+    /// <summary>Returns the shared label for an MCDF phase.</summary>
     internal static string PhaseLabel(McdfPhase phase) => phase switch
     {
         McdfPhase.Reading => "Reading",
