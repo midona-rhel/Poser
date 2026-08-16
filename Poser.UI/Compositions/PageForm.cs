@@ -9,24 +9,19 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    // ── InspectorSection.module.css constants ────────────────────────
-    /// <summary><c>.section { border-top: 1px }</c>, in logical px — the
-    /// height the flow cursor gives the rule between the section's
-    /// margin and its padding.</summary>
+    /// <summary>Logical section-rule thickness.</summary>
     private const float SectionRuleThickness = 1f;
 
-    /// <summary><c>.chevron { width: 24px }</c>.</summary>
+    /// <summary>Disclosure slot width.</summary>
     private const float SectionChevronSlot = 24f;
 
-    /// <summary><c>.chevron { opacity: .3 }</c> — the resting collapsed
-    /// rung.</summary>
+    /// <summary>Collapsed disclosure opacity.</summary>
     private const float SectionChevronOpacity = 0.3f;
 
-    /// <summary><c>.chevronExpanded { opacity: 0 }</c>.</summary>
+    /// <summary>Expanded disclosure opacity.</summary>
     private const float SectionChevronExpandedOpacity = 0f;
 
-    /// <summary><c>.header:hover .chevron { opacity: 1 !important }</c>.
-    /// </summary>
+    /// <summary>Hovered disclosure opacity.</summary>
     private const float SectionChevronHoverOpacity = 1f;
 
     private const int SectionChevronChannel = 0;
@@ -36,9 +31,7 @@ public static partial class Crystarium
     private static Vector4 FormValueColor => ActiveTheme.FormValue;
     private static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
-    /// <param name="labelColumnWidth">Per-page override of the form's label
-    /// column (logical px); null keeps the shared
-    /// <see cref="Theme.FormTokens.LabelColumnWidth"/> token.</param>
+    /// <param name="labelColumnWidth">Optional logical label-column width.</param>
     public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
         float? labelColumnWidth = null)
     {
@@ -56,19 +49,9 @@ public static partial class Crystarium
         page.Complete(origin, size.X);
     }
 
-    /// <param name="divider">The rule is a divider BETWEEN sections, so the
-    /// first section of a rail states false and draws neither the rule nor the
-    /// margin above it.</param>
-    /// <param name="onOpenChanged">Null makes the section NON-collapsible —
-    /// no header hit-test, no chevron — for hosts like popovers where a
-    /// section is structure, not disclosure.</param>
-    /// <param name="dense">The COMPACT form: rows pack at the checklist's
-    /// <see cref="Theme.ControlTokens.ListRowHeight"/> pitch instead of the
-    /// form row's, and the header drops its pre-title padding — for hosts
-    /// like the import dialog's options band, where a section is a tight
-    /// column and the ordinary form's breathing room reads as emptiness.
-    /// Every metric stays a theme token; only which token is consulted
-    /// changes.</param>
+    /// <param name="divider">Draws the leading separator.</param>
+    /// <param name="onOpenChanged">Enables disclosure when supplied.</param>
+    /// <param name="dense">Uses the compact row pitch.</param>
     public static float Section(
         string id,
         string title,
@@ -96,13 +79,7 @@ public static partial class Crystarium
         TablerIcon? Icon = null,
         string? Id = null);
 
-    /// <summary>One toggle inside an inline cluster
-    /// (<see cref="FormScope.Checkboxes(string, CheckItem[])"/>): its caption,
-    /// its state, and the reason it alone may be dead. The per-item flag is
-    /// what lets a whole family stand as ONE labelled row — "Apply: position,
-    /// rotation, scale, model" gates the three bone components on the import
-    /// type and the model transform on something else entirely, and a
-    /// row-level flag would force them back into separate rows.</summary>
+    /// <summary>One checkbox item in an inline group.</summary>
     public readonly record struct CheckItem(
         string Caption,
         bool Value,
@@ -114,11 +91,7 @@ public static partial class Crystarium
     {
         private readonly List<ActionItem> _items = new();
 
-        /// <param name="id">The button's identity where its CAPTION is not a
-        /// stable one. Two actions on one row whose captions can coincide —
-        /// two keybind slots both reading "Unbound" — would otherwise share a
-        /// seat. Defaults to the caption, exactly as
-        /// <see cref="IconButton"/>'s defaults to its glyph name.</param>
+        /// <param name="id">Optional stable button identity.</param>
         public void Button(string label, Action onClick,
             ControlStyle style = default, bool disabled = false,
             string? help = null,
@@ -127,9 +100,7 @@ public static partial class Crystarium
             _items.Add(new(
                 label, onClick, style, help, disabled, variant, Id: id));
 
-        /// <summary>A square icon action seated in the row like a text
-        /// button — for a glyph-stated toggle (a lock) whose word would
-        /// outweigh the control it annotates.</summary>
+        /// <summary>Adds a square icon action.</summary>
         public void IconButton(TablerIcon icon, Action onClick,
             bool disabled = false, string? help = null,
             string? id = null) =>
@@ -162,11 +133,7 @@ public static partial class Crystarium
             _dense = dense;
         }
 
-        /// <summary>The pitch this page's rows pack at, logical px: the
-        /// checklist token when dense, the form token otherwise. Every row
-        /// primitive centres and advances against THIS rather than reading
-        /// the form token directly, which is the whole of the dense
-        /// mechanism.</summary>
+        /// <summary>Logical row height for this page.</summary>
         internal float RowHeight => _dense
             ? ActiveTheme.Controls.ListRowHeight
             : ActiveTheme.Controls.FormRowHeight;
@@ -194,34 +161,17 @@ public static partial class Crystarium
             _y += ActiveTheme.Page.StatusLineHeight;
         }
 
-        /// <param name="divider">The rule is a divider BETWEEN
-        /// sections, so a page's FIRST section states false and draws neither
-        /// the rule nor the margin above it.</param>
+        /// <param name="divider">Draws the leading separator.</param>
         public void Section(
             string title, Action<FormScope> content, bool divider = true) =>
             DrawSection(title, true, null, content, divider);
 
-        /// <param name="divider">Same rule for a collapsible section: a page's
-        /// FIRST section states false.</param>
+        /// <param name="divider">Draws the leading separator.</param>
         public void Section(string title, bool open, Action<bool> onOpenChanged,
             Action<FormScope> content, bool divider = true) =>
             DrawSection(title, open, onOpenChanged, content, divider);
 
-        /// <summary>
-        /// InspectorSection.module.css, whole box. <c>.section</c> leads
-        /// with <c>margin-top: 10px</c>, a 1px
-        /// <c>--color-border-secondary</c> <c>border-top</c> and
-        /// <c>padding-top: 10px</c>; the rule is the section's ONLY
-        /// separator, drawn above the header rather than beside the
-        /// title. Then the 26px <c>.header</c> flex row: <c>.title</c> at
-        /// the content edge, <c>.chevron</c> pushed to the far edge by
-        /// <c>margin-left: auto</c>.
-        ///
-        /// <para>The margin belongs to the rule: a section that draws no
-        /// divider keeps only the header's own padding, so it sits as far
-        /// under the page top as every other header sits under its rule.
-        /// </para>
-        /// </summary>
+        /// <summary>Draws one form section.</summary>
         private void DrawSection(string title, bool open,
             Action<bool>? onOpenChanged, Action<FormScope> content,
             bool divider = true)
@@ -238,18 +188,14 @@ public static partial class Crystarium
                 _y += SectionRuleThickness;
             }
 
-            // An EMPTY title is a pure row container: no header row, no
-            // padding a header would justify — checklist hosts inside
-            // popovers state sections for the row machinery alone.
+            // Empty titles omit the header.
             if (string.IsNullOrEmpty(title))
             {
                 content(new FormScope(this, title));
                 return;
             }
 
-            // Dense sections spend nothing above the title: the header row's
-            // own centering is the whole gap, which is what lets a band
-            // column fit two tight rows under it.
+            // Dense sections omit header padding.
             if (!_dense)
                 _y += page.SectionPaddingTop;
 
@@ -277,8 +223,7 @@ public static partial class Crystarium
                 content(new FormScope(this, title));
         }
 
-        /// <summary>The section rule as a LIST break, breathing one action
-        /// gap on either side — <see cref="FormScope.Divider"/>.</summary>
+        /// <summary>Draws an inline section separator.</summary>
         internal void DrawInlineRule()
         {
             var page = ActiveTheme.Page;
@@ -353,19 +298,9 @@ public static partial class Crystarium
             _section = section;
         }
 
-        /// <param name="scale">The travel mapping. <see cref="SliderScale.Log"/>
-        /// gives the bottom of the range most of the track — for a value whose
-        /// perceptual response is front-loaded, which a wide linear range
-        /// squanders.</param>
-        /// <param name="readout">Replaces <paramref name="format"/> for the
-        /// mono readout alone, so a slider can BE its own clock (or any other
-        /// derived unit) instead of shipping a second read-only row beside
-        /// it.</param>
-        /// <param name="actions">Buttons at the row's right edge, outboard of
-        /// the numeric well — the reset arrow the references put beside a
-        /// slider. They take their width off the TRACK, so the well stays in
-        /// its column and a row with actions still reads against one without.
-        /// </param>
+        /// <param name="scale">Slider travel mapping.</param>
+        /// <param name="readout">Optional value formatter.</param>
+        /// <param name="actions">Optional trailing actions.</param>
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string? format = null, string? help = null,
             bool disabled = false, ControlStyle style = default,
@@ -392,8 +327,7 @@ public static partial class Crystarium
                 if (actionWidth > 0f)
                     actionGap = ActiveTheme.Page.ActionGap * row.Scale;
             }
-            // The track stops one ActionGap short of the well, exactly as
-            // NumericSlider spaces the same pair.
+            // Keep a gap between track and value well.
             float controlWidth = row.ControlWidth -
                 ActiveTheme.Form.ValueColumnWidth * row.Scale -
                 ActiveTheme.Page.ActionGap * row.Scale -
@@ -413,10 +347,7 @@ public static partial class Crystarium
                 onCommit: onCommit,
                 scale: scale,
                 logCurvature: logCurvature);
-            // A custom readout is presentation only (a clock, not a number)
-            // and stays plain text; every plain number takes the STANDARD
-            // numeric well — drag to adjust, double-click to type — with the
-            // adaptive three-digit label unless a format is stated.
+            // Custom readouts use text; numeric readouts use a value well.
             var bandOrigin = new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - actionWidth - actionGap -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale,
@@ -522,24 +453,16 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Several checkbox+caption groups sharing ONE row — for
-        /// short component flags that would each waste a full row alone.
-        /// Help rides per box.</summary>
+        /// <summary>Draws checkbox groups on one row.</summary>
         public void Checkboxes(string label, params CheckItem[] items) =>
             Checkboxes(label, disabled: false, items);
 
-        /// <summary>Row-level disabled — Brio disables its whole transform
-        /// icon row at once. It ORs with each item's own flag: the row states
-        /// what kills every member, the item what kills only itself.
-        /// Disabled boxes fade through the control's own idiom; the captions
-        /// fade with them; the help still explains on hover.</summary>
+        /// <summary>Row-level disabled combines with each item's own flag.</summary>
         public void Checkboxes(
             string label, bool disabled, params CheckItem[] items) =>
             Checkboxes(label, disabled, fullWidth: false, items);
 
-        /// <summary>Full-width variant: the boxes start at the row's LEFT
-        /// edge instead of the control column — for a caption row seated
-        /// under its own Label row when the pairs need the whole width.</summary>
+        /// <summary>Draws checkbox groups across the full row.</summary>
         public void Checkboxes(
             string label,
             bool disabled,
@@ -547,18 +470,7 @@ public static partial class Crystarium
             params CheckItem[] items) =>
             Checkboxes(label, disabled, fullWidth, 0f, items);
 
-        /// <summary><paramref name="columnWidth"/> (logical, &gt; 0) tiles the
-        /// items on a FIXED grid instead of packing by caption width, so item
-        /// N of one row sits exactly under item N of the next — stacked pairs
-        /// (Freeze/Smart over Body/Expression) read as a grid, not a ragged
-        /// flow.
-        ///
-        /// <para>A cluster that outgrows its row WRAPS to the next line at the
-        /// same start x and the row reports the taller pitch, so the same
-        /// cluster stands on one line in a wide band and folds in a narrow
-        /// rail without ever running under the scroll gutter. Wrapping is what
-        /// lets a whole toggle family be stated as ONE labelled row at every
-        /// width instead of one row per pair.</para></summary>
+        /// <summary>Draws checkbox groups in wrapping columns.</summary>
         public void Checkboxes(
             string label,
             bool disabled,
@@ -590,9 +502,7 @@ public static partial class Crystarium
                     Crystarium.MeasureText(item.Caption, captionStyle).X;
                 float itemX = pitch > 0f ? originX + column * pitch : x;
                 float itemWidth = boxSide + gap * 0.75f + captionWidth;
-                // The first item of a line always draws, however wide: a
-                // caption with nowhere to wrap to must overflow visibly
-                // rather than start an empty line above itself.
+                // Each line contains at least one item.
                 if (itemX > originX && itemX + itemWidth > right)
                 {
                     line++;
@@ -617,12 +527,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, null, row.RowHeight * (line + 1));
         }
 
-        /// <summary>
-        /// One CHECKLIST row — the box at the row's left edge, the caption
-        /// beside it, no label column (Brio's bone-filter list shape).
-        /// <paramref name="partial"/> paints the tristate dot;
-        /// <paramref name="indent"/> steps a child row in under its group.
-        /// </summary>
+        /// <summary>Draws one checklist row.</summary>
         public void CheckRow(
             string caption,
             bool value,
@@ -636,7 +541,7 @@ public static partial class Crystarium
             var row = _page.BeginRow(string.Empty);
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
-            // A checklist packs at the LIST pitch, not the form row's.
+            // Checklists use the compact row height.
             float rowHeight =
                 ActiveTheme.Controls.ListRowHeight * row.Scale;
             float x = row.Origin.X + (indent ? gap * 2f : 0f);
@@ -661,13 +566,10 @@ public static partial class Crystarium
                 ActiveTheme.Controls.ListRowHeight);
         }
 
-        /// <summary>An inline rule BETWEEN row runs — the section rule's own
-        /// paint at list scale, for checklist group breaks.</summary>
+        /// <summary>Draws an inline checklist separator.</summary>
         public void Divider() => _page.DrawInlineRule();
 
-        /// <summary>Segmented row: the pill fills the control cell at its own
-        /// navigation height, not the workspace height a text control takes.
-        /// </summary>
+        /// <summary>Draws a segmented control row.</summary>
         public void Segmented(string label, string[] items,
             int selected, Action<int> onChange, string? help = null,
             ControlStyle style = default)
@@ -727,15 +629,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>
-        /// A value trigger with an optional action strip right-aligned beside
-        /// it. The trigger IS the row — it is what opens the picker — so it
-        /// keeps the value column as a FLOOR, the same guarantee the progress
-        /// row gives its bar: an intrinsically-measured strip is free to be
-        /// wider than the column it sits in (three worded buttons on a rail
-        /// row are), and a trigger sized by plain subtraction disappears
-        /// there.
-        /// </summary>
+        /// <summary>Draws a picker with optional trailing actions.</summary>
         public void Picker(
             string label,
             string value,
@@ -779,11 +673,7 @@ public static partial class Crystarium
                 help: help,
                 id: id);
             if (actionScope.Items.Count > 0)
-                // Right-aligned while the strip fits. A strip too wide for
-                // what the trigger left starts AFTER the trigger and runs off
-                // the right edge, where the region clips it — right-aligning
-                // it would instead walk it left over the trigger and the
-                // label, hiding the row's own control behind its actions.
+                // Actions remain after the picker when space is limited.
                 DrawActions(
                     actionScope.Items,
                     row.ControlOrigin.X + MathF.Max(
@@ -796,13 +686,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>
-        /// A picker trigger with an optional Reset beside it. Two inversions of
-        /// the plain <see cref="Picker"/> row are deliberate: the reset owns a
-        /// PERMANENT slot so ownership changes never resize the trigger under
-        /// the pointer, and the unavailability help sits on the BUTTON while
-        /// the row's own help sits on the row.
-        /// </summary>
+        /// <summary>Draws a picker with an optional reset action.</summary>
         public void Selector(string label, string value, Action select, Action reset,
             bool available, bool owned, string? help = null,
             string? disabledHelp = null, ControlStyle style = default)
@@ -843,8 +727,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Progress row: the bar absorbs whatever the readout and the
-        /// cancel action leave.</summary>
+        /// <summary>Draws a progress bar with optional cancellation.</summary>
         public void Progress(string label, float fraction, string readout,
             Action? cancel = null, bool cancelDisabled = false,
             string? cancelHelp = null, string? help = null,
@@ -887,10 +770,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>A lone numeric well — drag to adjust, double-click to
-        /// type — for a value whose range is unbounded or whose travel does
-        /// not deserve a track. The well is the slider readout's twin, at the
-        /// standard value-column width.</summary>
+        /// <summary>Draws a numeric input well.</summary>
         public void Number(
             string label,
             float value,
@@ -1000,11 +880,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>An editable value with right-anchored actions; the field
-        /// takes whatever the actions leave it. The text counterpart of
-        /// <see cref="SwitchActions"/> and <see cref="ReadOnlyWithActions"/> —
-        /// a path row whose value is typed AND whose folder can be opened is
-        /// one row, not a field row followed by a button row.</summary>
+        /// <summary>Draws an editable value with trailing actions.</summary>
         public void TextInputActions(
             string label,
             string value,
@@ -1043,10 +919,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <param name="fullWidth">The buttons span the WHOLE row, label column
-        /// included — for a set that cannot fit a control cell. Callers pass an
-        /// empty label with it and state the caption on a
-        /// <see cref="Label"/> row above.</param>
+        /// <param name="fullWidth">Uses the full row width.</param>
         public void Actions(string label, Action<ActionScope> content,
             string? help = null, bool alignRight = false,
             bool fullWidth = false)
@@ -1064,8 +937,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Equal tracks, one per well, each centring its own
-        /// caption-plus-well group.</summary>
+        /// <summary>Draws color wells in equal tracks.</summary>
         public void ColorWells(string label, Action<ColorWellScope> content,
             string? help = null)
         {
@@ -1078,9 +950,7 @@ public static partial class Crystarium
                 wellRows * ActiveTheme.Controls.FormRowHeight);
         }
 
-        /// <summary>The colour-choice row: the palette pill at its natural
-        /// width, seated in the band. A name list rides as per-dot help.
-        /// </summary>
+        /// <summary>Draws a color-swatch row.</summary>
         public void Swatches(
             string label,
             IReadOnlyList<Vector4> colors,
@@ -1097,11 +967,43 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>A read-only value alone on its band, at body size.
-        /// </summary>
-        /// <param name="icon">An already-resolved game texture, drawn in the
-        /// control cell's own icon slot; 0 is no mark and costs the value no
-        /// width.</param>
+        /// <summary>Draws the theme-mode control.</summary>
+        public void ThemeMode(
+            string label,
+            bool isLight,
+            Action onToggle,
+            string? help = null)
+        {
+            string id = Id(label);
+            var row = _page.BeginRow(label);
+            float side = ThemeModeGlyph.HitSide * row.Scale;
+            Vector2 min = row.CenterControl(ThemeModeGlyph.HitSide);
+            ImGui.SetCursorScreenPos(min);
+            bool clicked = ImGui.InvisibleButton(id, new(side));
+            var draw = ImGui.GetWindowDrawList();
+            Vector2 center = min + new Vector2(side * 0.5f);
+            float radius = side * 0.5f - row.Scale;
+
+            ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(center, radius);
+            draw.AddCircleFilled(center, radius,
+                ImGui.ColorConvertFloat4ToU32(plan.BaseColor),
+                ThemeModeGlyph.ArcSegments * 2);
+            for (int i = 1; i < plan.Sector.Length - 1; i++)
+                draw.AddTriangleFilled(
+                    plan.Sector[0], plan.Sector[i], plan.Sector[i + 1],
+                    ImGui.ColorConvertFloat4ToU32(plan.SectorColor));
+            draw.AddCircle(center, radius,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                    isLight ? ActiveTheme.Text : ActiveTheme.BorderStrong)),
+                ThemeModeGlyph.ArcSegments * 2,
+                MathF.Max(1f, row.Scale));
+            if (clicked)
+                onToggle();
+            _page.EndRow(row, id, help);
+        }
+
+        /// <summary>Draws a read-only value.</summary>
+        /// <param name="icon">Optional image texture.</param>
         public void ReadOnly(string label, string value, string? help = null,
             bool unavailable = false, nint icon = 0)
         {
@@ -1139,8 +1041,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>A read-only value with right-anchored actions; the value
-        /// is cut to whatever the actions leave it.</summary>
+        /// <summary>Draws a read-only value with trailing actions.</summary>
         public void ReadOnlyWithActions(string label, string value,
             Action<ActionScope> content, string? help = null,
             bool unavailable = false)
@@ -1172,10 +1073,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <param name="warning">The line reports something the user has to
-        /// resolve — a conflict, a value that will not take — rather than
-        /// explaining the rows above it, and takes the theme's warning tone
-        /// instead of the hint tone.</param>
+        /// <param name="warning">Uses the warning colour.</param>
         public void Status(
             string text, string? help = null, bool warning = false)
         {
@@ -1200,16 +1098,8 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>
-        /// A row of the caller's own height that the caller draws itself: the
-        /// band's screen origin and screen size are handed over, the form
-        /// keeps the seat, the flow advance and the help region. For content
-        /// no control row can state — a rendered image, a plot — never as a
-        /// way around the typed rows.
-        /// </summary>
-        /// <param name="height">The row's height in LOGICAL px, like every
-        /// other row's; the band handed to <paramref name="draw"/> is already
-        /// scaled.</param>
+        /// <summary>Draws custom row content.</summary>
+        /// <param name="height">Logical row height.</param>
         public void Canvas(
             string id,
             float height,
@@ -1224,13 +1114,7 @@ public static partial class Crystarium
             _page.EndRow(row, rowId, help, height);
         }
 
-        /// <summary>
-        /// Two controls on one form row. The band splits at the ROW MIDDLE and
-        /// each half is a miniature form row — the same label slot, then the
-        /// control — so the two read as a pair rather than as a control with a
-        /// stray field beside it. Each callback is handed its own control cell
-        /// and seats itself there.
-        /// </summary>
+        /// <summary>Draws two controls on one row.</summary>
         public void Pair(
             string leftLabel,
             Action<FormPairCell> drawLeft,
@@ -1248,20 +1132,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>
-        /// N controls on one form row — <see cref="Pair"/>'s rule generalised.
-        /// The band splits into EQUAL tracks and each track is a miniature form
-        /// row: the label slot, then the control cell. The label slot is the
-        /// page's own column so a cell's control starts on the same x a full
-        /// row's does, except where the track is too narrow to spare it — a
-        /// track never gives its label more than half of itself, which is what
-        /// keeps a three-cell row's controls usable.
-        ///
-        /// <para>Help rides per CELL where a cell states one, because three
-        /// controls on a band do not share a meaning; the row's own
-        /// <paramref name="help"/> is the fallback for a row whose cells state
-        /// none, and the two never both register.</para>
-        /// </summary>
+        /// <summary>Draws multiple controls on one row.</summary>
         public void Cells(Action<FormCellScope> content, string? help = null)
         {
             ArgumentNullException.ThrowIfNull(content);
@@ -1272,8 +1143,7 @@ public static partial class Crystarium
                 return;
             string id = Id(scope.Key());
             var row = _page.BeginRow(string.Empty);
-            // Tracks breathe off one another: a slider's right-aligned
-            // readout must never touch the next track's label.
+            // Leave a gap between adjacent tracks.
             float gap = ActiveTheme.Spacing.Six * row.Scale;
             float track =
                 (row.Width - gap * (items.Count - 1)) / items.Count;
@@ -1318,15 +1188,8 @@ public static partial class Crystarium
                 row.Scale));
         }
 
-        /// <param name="actions">Optional actions right-aligned on the wells'
-        /// line. The strip is taken out of the band BEFORE the three-way
-        /// split, so the wells shrink to make room; in the stacked variant it
-        /// rides the wells line, not the label line.</param>
-        /// <param name="expanded">Brio's expanded drag row (ImBrio.Drag.cs:
-        /// 63-89): the three axes become three full-width rows so a value that
-        /// will not fit a third of the band gets the whole of it. This is the
-        /// caller's disclosure, not a width fallback — the STACKED variant
-        /// below is the width fallback and the two are independent.</param>
+        /// <param name="actions">Optional trailing actions.</param>
+        /// <param name="expanded">Uses separate axis rows.</param>
         public void AxisVector(
             string label,
             Vector3 value,
@@ -1364,9 +1227,7 @@ public static partial class Crystarium
             float available = fullWidth || stacked
                 ? row.Width
                 : row.ControlWidth;
-            // The strip is measured against the whole band and taken out of
-            // it before the split, so the wells share only what is left. With
-            // no actions the band IS the wells' region, untouched.
+            // Actions reduce the shared axis width.
             float actionWidth = actionScope.Items.Count == 0
                 ? 0f
                 : MeasureActions(actionScope.Items, row.Scale, available);
@@ -1424,9 +1285,7 @@ public static partial class Crystarium
                     actionScope.Items,
                     originX + available - actionWidth,
                     actionWidth,
-                    // DrawActions band-centres on the row height from the top
-                    // it is handed, so the stacked variant hands it the wells'
-                    // line rather than the row's own top.
+                    // Stacked actions align with the axis wells.
                     stacked
                         ? row.Origin.Y
                             + ActiveTheme.Controls.FormRowHeight * row.Scale
@@ -1442,12 +1301,7 @@ public static partial class Crystarium
                     : null);
         }
 
-        /// <summary>Three full-width rows, one per axis. The actions strip
-        /// rides the FIRST row alone: it annotates the vector, not the X
-        /// axis, and repeating it three times would read as three separate
-        /// controls. The help likewise lands once, on the last row, so the
-        /// hover region covers the block's bottom edge rather than
-        /// re-explaining each axis.</summary>
+        /// <summary>Draws one full-width row per axis.</summary>
         private void ExpandedAxisRows(
             string label,
             Vector3 value,
@@ -1525,18 +1379,12 @@ public static partial class Crystarium
 
         private string Id(string label) => _page.RowId(_section, label);
 
-        // One counter per unlabelled row KIND, reset with the section (a
-        // FormScope is minted per section per frame).
+        // Counters are scoped to one form section.
         private int _actionRows;
         private int _readOnlyActionRows;
         private int _statusRows;
 
-        /// <summary>The id for a row whose label cannot identify it.
-        /// <c>Id("")</c> is ONE string for every unlabelled row of a
-        /// section, so the row's kind names it and a repeat takes an
-        /// ordinal. The first of a kind keeps the bare kind name, which is
-        /// what every already-correct id in the product is; only the
-        /// repeats that used to alias move.</summary>
+        /// <summary>Builds a unique id for an unlabelled row.</summary>
         private string UnlabelledId(string kind, ref int seen)
         {
             int ordinal = seen++;
@@ -1544,10 +1392,7 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>The wells of one <see cref="FormScope.ColorWells"/> row. Each
-    /// well takes an equal track and centres its caption-plus-well group in it;
-    /// a null value is an UNAVAILABLE well — disabled, neutral fill, explaining
-    /// itself through <c>unavailableHelp</c>.</summary>
+    /// <summary>Collects color wells for one form row.</summary>
     public sealed class ColorWellScope
     {
         private readonly FormRowScope _row;
@@ -1573,16 +1418,12 @@ public static partial class Crystarium
             bool hdr = false) =>
             _items.Add(new(label, value, onChange, unavailableHelp, style, hdr));
 
-        /// <returns>The number of form rows the wells occupied.</returns>
+        /// <returns>Number of occupied rows.</returns>
         internal int Draw()
         {
             if (_items.Count == 0)
                 return 1;
-            // Wells wrap: every group shares the WIDEST caption's label band,
-            // so labels start flush and the wells sit in straight columns;
-            // that uniform group (plus one gap of breathing) sets the minimum
-            // track, and the row splits into as many equal tracks as fit —
-            // later rows reuse the same tracks.
+            // Each row uses equal-width well tracks.
             float gap = ActiveTheme.Page.ActionGap * _row.Scale;
             float widestLabel = 0f;
             foreach (var entry in _items)
@@ -1652,9 +1493,7 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>A track of a <see cref="Crystarium.FormScope.Cells"/> row,
-    /// stated in call order. A cell names its label, seats its own control in
-    /// the cell it is handed, and may carry its own help.</summary>
+    /// <summary>Stores one cell in a multi-cell form row.</summary>
     public sealed class FormCellScope
     {
         private readonly List<FormCellItem> _items = new();
@@ -1671,9 +1510,7 @@ public static partial class Crystarium
 
         internal IReadOnlyList<FormCellItem> Items => _items;
 
-        /// <summary>The row's identity: its cells' labels, exactly as
-        /// <see cref="Crystarium.FormScope.Pair"/> mints its own from the two
-        /// halves it was handed.</summary>
+        /// <summary>Builds the row identifier from cell labels.</summary>
         internal string Key()
         {
             var labels = new string[_items.Count];
@@ -1683,22 +1520,10 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>A track never gives its label more than this share of itself:
-    /// past two cells the page's label column would leave the control
-    /// nothing.</summary>
+    /// <summary>Maximum label share within one cell.</summary>
     private const float FormCellLabelShare = 0.5f;
 
-    /// <summary>One half of a <see cref="Crystarium.FormScope.Pair"/>
-    /// row — or one track of a <see cref="Crystarium.FormScope.Cells"/> row:
-    /// the control's screen origin at the row's TOP, its pixel width, and
-    /// the frame scale. <see cref="Center"/> seats a control of a known logical
-    /// height exactly as <see cref="FormRowScope.CenterControl"/> does.
-    ///
-    /// <para>The four control helpers below are the same controls the full-row
-    /// <see cref="Crystarium.FormScope"/> rows draw, seated in the cell instead
-    /// of in the row band — a cell that wants anything else still seats it by
-    /// hand off <see cref="Center"/> and <see cref="Constrain"/>.</para>
-    /// </summary>
+    /// <summary>Provides positioning for one paired form control.</summary>
     public readonly record struct FormPairCell(
         Vector2 Origin, float Width, float Scale)
     {
@@ -1707,8 +1532,7 @@ public static partial class Crystarium
             Origin.Y + (ActiveTheme.Controls.FormRowHeight - controlHeight)
                 * 0.5f * Scale);
 
-        /// <summary>The cell's slider, carrying the SAME mono readout a full
-        /// row's does, taken out of the cell's right edge.</summary>
+        /// <summary>Draws a slider with a right-aligned value.</summary>
         public void Slider(
             string id, float value, float minimum, float maximum,
             Action<float> onChange, string? format = null,
@@ -1739,8 +1563,7 @@ public static partial class Crystarium
                 help,
                 scale: scale,
                 logCurvature: logCurvature);
-            // Same band contract as the full-row slider: plain text for a
-            // custom readout, the standard numeric well for every number.
+            // Custom values use text; numeric values use the standard readout.
             var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
             if (readout is { } custom)
                 DrawTextRight(
@@ -1787,9 +1610,7 @@ public static partial class Crystarium
             Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
         }
 
-        /// <summary>The cell's lone numeric well — the full-row
-        /// <see cref="Crystarium.FormScope.Number"/> at the same standard
-        /// value-column width, seated in the cell's track.</summary>
+        /// <summary>Draws a numeric value well.</summary>
         public void Number(
             string id, float value, Action<float> onChange,
             float perPixel, string format = "0.00",
@@ -1823,9 +1644,7 @@ public static partial class Crystarium
                 id, value, onChange, Constrain(), rgbOnly, disabled, help);
         }
 
-        /// <summary>The cell's trigger button, its caption cut to the cell
-        /// exactly as a <see cref="Crystarium.FormScope.Picker"/> row cuts
-        /// its own.</summary>
+        /// <summary>Draws a button in the cell.</summary>
         public void Button(
             string id, string label, Action onClick,
             bool disabled = false, string? help = null)
@@ -1850,9 +1669,7 @@ public static partial class Crystarium
                 id: id);
         }
 
-        /// <summary>The cell's read-only value — plain text in the control
-        /// seat, the full-row <see cref="Crystarium.FormScope.ReadOnly"/>'s
-        /// twin. A fact is stated, never dressed as a disabled input.</summary>
+        /// <summary>Draws a read-only cell value.</summary>
         public void Text(string value, bool unavailable = false)
         {
             LabelInBand(
@@ -1896,11 +1713,7 @@ public static partial class Crystarium
                 id, items, selected, onChange, style, disabled, help);
         }
 
-        /// <summary>The caller's style bound to this cell's track. The pair
-        /// contract is that a half's control never paints past its track, so
-        /// the cell's span becomes the style's <see
-        /// cref="ControlStyle.MaxWidth"/> — capping whatever the control
-        /// resolves for itself, its own usability floors included.</summary>
+        /// <summary>Limits a style to this cell's width.</summary>
         public ControlStyle Constrain(ControlStyle style = default) =>
             style with { MaxWidth = MathF.Max(1f, Width / Scale) };
     }
@@ -1913,14 +1726,10 @@ public static partial class Crystarium
         public float ControlWidth { get; }
         public float Scale { get; }
 
-        /// <summary>The label column span in SCREEN px (already scaled),
-        /// like <see cref="ControlWidth"/> — the page's override or the
-        /// shared token.</summary>
+        /// <summary>Scaled label-column width.</summary>
         public float LabelWidth { get; }
 
-        /// <summary>The row's pitch in LOGICAL px — the page's dense or
-        /// ordinary token, stated once so centering and advancing agree.
-        /// </summary>
+        /// <summary>Logical row height.</summary>
         public float RowHeight { get; }
 
         internal FormRowScope(
@@ -1954,8 +1763,7 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
-            // An icon action is a square: its width IS the row's control
-            // height.
+            // Icon actions are square.
             if (action.Icon != null)
             {
                 committed += ControlSizing.Height(
@@ -2045,11 +1853,7 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>Pins a control to the region a row hands it. The span is
-    /// DERIVED — the row's width less its label column, less whatever a strip
-    /// beside it took — so it reaches zero on a narrow rail or a collapsed
-    /// pane and goes through <see cref="UiWidth.Region"/>, which answers that
-    /// with a hairline instead of throwing out of the frame.</summary>
+    /// <summary>Limits a control to its row region.</summary>
     private static ControlStyle InRegion(
         ControlStyle style, float width, bool fillByDefault) =>
         style.Width.Kind == UiWidthKind.Fill
@@ -2067,14 +1871,7 @@ public static partial class Crystarium
             ? style with { Height = UiHeight.Workspace }
             : style;
 
-    /// <summary>
-    /// <c>.section { border-top: 1px solid --color-border-secondary }</c>:
-    /// the rule above a section header, and the section's ONLY separator.
-    /// The y is rounded HERE — the rule is a hairline and the flow that
-    /// places it carries fractional logical spans, so snapping is part of
-    /// the paint rather than something each caller remembers.
-    /// <paramref name="origin"/> is the rule's unrounded left end.
-    /// </summary>
+    /// <summary>Draws the section separator on a pixel boundary.</summary>
     private static void PaintSectionRule(
         ImDrawListPtr drawList, Vector2 origin, float width, float scale) =>
         ControlPaint.Separator(
@@ -2084,18 +1881,7 @@ public static partial class Crystarium
             scale,
             FormSeparatorColor);
 
-    /// <summary>
-    /// The 26px <c>.header</c> row's content — the <c>.title</c> and the
-    /// <c>.chevron</c> — painted into a rect whose hit testing is the
-    /// caller's. The chevron is drawn BEFORE the title, as the flex row's own
-    /// order.
-    /// <para><paramref name="identity"/> is the header's ImGui id and
-    /// doubles as the interactive flag: a static header (no
-    /// <c>onOpenChanged</c>) reserves nothing, so it has no id, no
-    /// disclosure, no motion channel, and no 24px slot shrinking the
-    /// title. Zero is therefore "not interactive", which is exactly what a
-    /// header that never called <c>GetID</c> has.</para>
-    /// </summary>
+    /// <summary>Draws a section header and optional disclosure control.</summary>
     private static void PaintSectionHeader(
         in InteractionResult hit, uint identity, string title, bool open,
         Vector2 min, float width)
@@ -2103,18 +1889,12 @@ public static partial class Crystarium
         float scale = ImGuiHelpers.GlobalScale;
         float headerHeight = ActiveTheme.Page.SectionHeaderHeight * scale;
         bool hovered = hit.Hovered;
-        // The glyph box the flex row hands the chevron. `.title`
-        // has no shrink floor in CSS and would simply overrun it;
-        // truncating at the slot is the draw-list equivalent.
+        // Reserve the disclosure slot before measuring the title.
         float titleWidth = identity != 0
             ? width - SectionChevronSlot * scale
             : width;
 
-        // `.header { color: --color-text-tertiary }` lifted to
-        // --color-text-primary by `.header:hover`. The row declares no
-        // transition, so the swap is instant — only the chevron's own
-        // opacity animates. The chevron inherits this same
-        // `currentColor`.
+        // Header text brightens while hovered.
         var headerColor = ColorEx.ApplyAlpha(
             hovered ? ActiveTheme.Text : FormLabelColor);
         if (identity != 0)
@@ -2122,7 +1902,6 @@ public static partial class Crystarium
                 identity,
                 new(min.X + width, min.Y + headerHeight * 0.5f),
                 headerColor, open, hovered, scale);
-        // `.title { font-weight: 600; font-size: 12px }`.
         LabelInBand(
             min,
             new(titleWidth, headerHeight),
@@ -2135,23 +1914,7 @@ public static partial class Crystarium
             });
     }
 
-    /// <summary>
-    /// InspectorSection <c>.chevron</c>: a 24px flex box pinned to the
-    /// header's far edge by <c>margin-left: auto</c>, holding
-    /// <c>&lt;IconChevronRight size={14} /&gt;</c>. Collapsed it sits at
-    /// <c>opacity: .3</c> pointing right; <c>.chevronExpanded</c> takes it
-    /// to <c>opacity: 0</c> and <c>rotate(90deg)</c>, which the shipped
-    /// chevron-down glyph already IS — a draw list cannot rotate an SVG,
-    /// so the rotation is a glyph swap and only the opacity animates over
-    /// the declared 200ms <c>--ease-default</c> transition.
-    ///
-    /// <para>Deviation: the module ALSO declares
-    /// <c>.section:hover .chevron { opacity: .5 }</c> — a section-wide
-    /// hover including the content below the header. Only the header owns
-    /// an interaction rect here, so the .5 rung is unreachable and the
-    /// chevron goes straight from its resting rung to the
-    /// <c>.header:hover</c> rung.</para>
-    /// </summary>
+    /// <summary>Draws the disclosure glyph and its opacity transition.</summary>
     private static void DrawDisclosure(
         uint identity, Vector2 headerRight, Vector4 color,
         bool open, bool hovered, float scale)
@@ -2203,11 +1966,7 @@ public static partial class Crystarium
             TextConstraint.Truncate(width));
     }
 
-    /// <summary>The label slot's width, in SCREEN px: the page's base column
-    /// (its override or the shared token, in logical px), widened to the
-    /// measured run when the label would otherwise truncate beside unclaimed
-    /// row space (measure first, constrain only on overflow), and capped at
-    /// half the row so a degenerate label cannot evict its control.</summary>
+    /// <summary>Calculates the scaled label-column width.</summary>
     private static float LabelColumn(
         string label, float width, float scale, float baseColumn)
     {
@@ -2222,8 +1981,7 @@ public static partial class Crystarium
             needed + ActiveTheme.Page.ActionGap * scale, width * 0.5f);
     }
 
-    /// <summary>The form's label slot: 12px regular in the label column,
-    /// band-centred at the row height.</summary>
+    /// <summary>Draws a form label.</summary>
     private static void FormLabel(
         Vector2 origin, float columnWidth, float scale, string label,
         float? rowHeight = null) =>

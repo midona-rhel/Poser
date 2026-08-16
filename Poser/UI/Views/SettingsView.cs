@@ -10,8 +10,7 @@ using Poser.Library;
 
 namespace Poser.UI.Views;
 
-/// <summary>One configured library root, edited free of the persisted
-/// <c>LibrarySourceConfig</c> until Save.</summary>
+/// <summary>Editable library source.</summary>
 public sealed class LibrarySourceVm
 {
     public string Name = "";
@@ -19,8 +18,7 @@ public sealed class LibrarySourceVm
     public bool Enabled = true;
 }
 
-/// <summary>One third-party plugin Poser talks to, as of the last probe:
-/// whether it answered, and what it said if it did not.</summary>
+/// <summary>Integration probe result.</summary>
 public sealed record IntegrationStatusVm(
     string Name, bool Available, string Detail);
 
@@ -28,10 +26,7 @@ public sealed class SettingsViewModel
 {
     public int Category = 1;
     public float BoneDotRadius = 5f;
-    // Mirrors SkeletonConfiguration defaults: selected/hovered come from the
-    // accent (Palette.Primary until AccentIndex drives the theme), the rest
-    // are muted fixed tones — no theme token matches them (overlay colors
-    // must be opaque; TextMuted-style alpha tones vanish over scenery).
+    // Selected and hovered overlay colours begin from the persisted accent.
     public Vector4 OverlaySelected =
         Crystarium.ActiveTheme.Palette.Primary;
     public Vector4 OverlayHovered = Vector4.Lerp(
@@ -54,38 +49,29 @@ public sealed class SettingsViewModel
     public bool LinkSiblingBones;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
-    /// <summary>How many edits undo keeps. Zero turns undo off, which is why
-    /// the slider bottoms out there rather than at one.</summary>
+    /// <summary>Maximum retained undo entries.</summary>
     public int UndoDepth = 200;
 
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 60f;
-    /// <summary>Free numeric text, not a bounded slider: a shoot with hundreds
-    /// of recovery points is a legitimate setup. Held as the raw string the
-    /// user is typing and parsed at the config boundary, so a half-typed value
-    /// never collapses to a number mid-keystroke.</summary>
+    /// <summary>Draft auto-save retention text.</summary>
     public string AutoSaveMaxKept = "10";
     public bool AutoSaveCleanOnExit;
 
-    /// <summary>Whether the same cadence also snapshots the WHOLE scene.</summary>
+    /// <summary>Enables whole-scene snapshots.</summary>
     public bool SceneSnapshotsEnabled = true;
 
-    /// <summary>Kept whole-scene snapshots, same free-text contract as
-    /// <see cref="AutoSaveMaxKept"/>: one snapshot is one large document, so
-    /// its retention is counted separately from the per-actor poses.</summary>
+    /// <summary>Draft whole-scene retention text.</summary>
     public string SceneSnapshotsMaxKept = "5";
-    /// <summary>The auto-save root on disk, for the Open-in-Explorer row.
-    /// Empty when the binder has no auto-save service to ask.</summary>
+    /// <summary>Current auto-save folder.</summary>
     public string AutoSaveFolder = "";
 
-    /// <summary>Index into <c>SkeletonShapeLabels</c>, matching
-    /// <c>SkeletonViewMode</c>'s declaration order.</summary>
+    /// <summary>Skeleton view-mode label index.</summary>
     public int SkeletonShape;
 
     public bool SelectedBonesOnly;
 
-    /// <summary>Index into <c>BonePickBehaviorLabels</c>, matching
-    /// <c>BonePickBehavior</c>'s declaration order.</summary>
+    /// <summary>Bone-pick behavior label index.</summary>
     public int BonePickBehavior;
 
     public bool ShowSkeletonLines = true;
@@ -97,8 +83,7 @@ public sealed class SettingsViewModel
 
     public bool DimInactiveActors;
     public float InactiveActorOpacity = 0.5f;
-    /// <summary>Index into <see cref="ActiveActorLabels"/>, matching
-    /// <see cref="ActiveActorSource"/>'s declaration order.</summary>
+    /// <summary>Active-actor source label index.</summary>
     public int ActiveActorSource;
 
     public bool ShowFriendlyBoneNames = true;
@@ -110,18 +95,15 @@ public sealed class SettingsViewModel
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
     public bool KeepGizmoWhenBonesHidden = true;
-    /// <summary>Indices into <see cref="HoldModifierLabels"/>, matching
-    /// <see cref="OverlayHoldModifier"/>'s declaration order.</summary>
+    /// <summary>Overlay modifier label indices.</summary>
     public int DisableDotsModifier;
     public int DisableGizmoModifier;
 
-    /// <summary>Mirrors <c>TransformConfiguration</c>'s defaults — the
-    /// constant every numeric transform row was written with.</summary>
+    /// <summary>Draft transform speeds.</summary>
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
 
-    /// <summary>Mirrors <c>CameraConfiguration</c>'s defaults, which are what
-    /// the camera already did before any of it was configurable.</summary>
+    /// <summary>Draft camera controls.</summary>
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
     public float CameraDefaultSensitivity = 0.1f;
     public float CameraFastMultiplier = 3f;
@@ -134,20 +116,15 @@ public sealed class SettingsViewModel
     public bool TreeGuides = true;
     public bool SwapRotationXY;
 
-    /// <summary>The three Dalamud UI-hide answers. Mirrors
-    /// <c>UIConfiguration</c>'s defaults: the two Poser used to force stay on,
-    /// the new one starts where Poser's behaviour already was.</summary>
+    /// <summary>Draft UI visibility settings.</summary>
     public bool ShowInGPose = true;
     public bool ShowInCutscene = true;
     public bool ShowWhenGameUiHidden;
 
-    /// <summary>The EXTRA scanned folders. The Poser homes are edited on their
-    /// own rows and are deliberately absent from this list, so each of the four
-    /// paths has exactly ONE place it can be changed.</summary>
+    /// <summary>Editable non-home library sources.</summary>
     public List<LibrarySourceVm> LibrarySources = [];
 
-    /// <summary>The four Poser home folders, as editable drafts. Blank means
-    /// "the shipped default", which the binder resolves on Save.</summary>
+    /// <summary>Editable home-folder drafts.</summary>
     public string PoseFolder = "";
     public string SceneFolder = "";
     public string McdfFolder = "";
@@ -158,29 +135,20 @@ public sealed class SettingsViewModel
     public string LibraryNewName = "";
     public string LibraryNewPath = "";
 
-    /// <summary>Every registered action's two chords, edited free of the
-    /// persisted config until Save. Always complete — the binder fills it
-    /// through <see cref="KeybindRegistry.Resolve"/> — so a row can index it
-    /// without asking whether the action is there.</summary>
+    /// <summary>Editable keybind slots.</summary>
     public Dictionary<string, KeybindSlots> Bindings =
         KeybindRegistry.Bindings(KeybindPreset.Poser);
 
-    /// <summary>The action whose slot is capturing, and which slot: 0 is
-    /// primary, 1 secondary. Null is "no capture in progress" — the state the
-    /// page opens in and returns to on Escape.</summary>
+    /// <summary>Current keybind capture target.</summary>
     public string? RebindingAction;
     public int RebindingSlot;
 
     public int PresetIndex;
-    /// <summary>The preset switcher's first press arms; the second applies.
-    /// Overwriting every chord is not something a stray click gets to do.
-    /// </summary>
+    /// <summary>Whether the selected preset is armed.</summary>
     public bool PresetArmed;
     public string PresetStatus = "";
 
-    /// <summary>Bumped by every chord that moves. The conflict scan is a
-    /// whole-table pass, so it runs when the table changes rather than once
-    /// a frame.</summary>
+    /// <summary>Invalidates the keybind conflict cache.</summary>
     public int BindingRevision;
     private int _conflictRevision = -1;
     private Dictionary<KeybindRegistry.SlotRef, IReadOnlyList<string>>
@@ -201,21 +169,13 @@ public sealed class SettingsViewModel
 
     public string Version = "dev";
 
-    /// <summary>What Poser found when it last asked each integration whether
-    /// it was there. Snapshotted at open and on Refresh rather than read per
-    /// frame: each answer is an IPC call, and a settings page has no business
-    /// making three of them every draw.</summary>
+    /// <summary>Latest integration status snapshot.</summary>
     public List<IntegrationStatusVm> Integrations = [];
 
-    /// <summary>Non-empty when the stored config could not be read on load —
-    /// the sentence <c>ConfigurationService</c> minted, naming the backup.
-    /// Shown as a warning wherever the reset rows are, because that is the
-    /// page a user who lost their settings ends up on.</summary>
+    /// <summary>Configuration load failure message.</summary>
     public string ConfigLoadFailure = "";
 
-    /// <summary>Which reset is armed, if any. First press arms, second
-    /// applies: wiping settings is not something a stray click gets to do —
-    /// the preset switcher's idiom, for the same reason.</summary>
+    /// <summary>Armed reset scope.</summary>
     public ConfigResetScope? ResetArmed;
     public string ResetStatus = "";
 
@@ -223,29 +183,20 @@ public sealed class SettingsViewModel
     public Action? OnCancel;
     public Action? OnClose;
     public Action? OnOpenRepository;
-    /// <summary>Opens one of the credited upstream repositories in the
-    /// browser.</summary>
+    /// <summary>Opens a repository URL.</summary>
     public Action<string>? OnOpenUrl;
-    /// <summary>Opens a folder in the OS file explorer, creating it first when
-    /// it does not exist yet (a seeded Brio/Anamnesis root may never have been
-    /// created by its own tool).</summary>
+    /// <summary>Opens a folder in the file explorer.</summary>
     public Action<string>? OnOpenFolder;
     public Action<UITheme, int>? OnThemePreview;
 
-    /// <summary>Applies a confirmed reset and reloads this view model from the
-    /// config it just replaced. Unlike every other row, a reset WRITES
-    /// immediately — it is a discard, so there is nothing for Cancel to keep.
-    /// </summary>
+    /// <summary>Applies a reset and reloads the view model.</summary>
     public Action<ConfigResetScope>? OnResetConfig;
 
-    /// <summary>Re-probes every integration and rewrites
-    /// <see cref="Integrations"/>.</summary>
+    /// <summary>Refreshes integration status.</summary>
     public Action? OnRefreshIntegrations;
 }
 
-/// <summary>Which slice of the config a reset row throws away. One per
-/// <c>ConfigurationService</c> reset method, so the four that existed with no
-/// caller each have exactly one button.</summary>
+/// <summary>Configuration slice to reset.</summary>
 public enum ConfigResetScope
 {
     All,
@@ -254,14 +205,7 @@ public enum ConfigResetScope
     UI,
 }
 
-/// <summary>
-/// Settings: the shared <see cref="Crystarium.WindowFrame"/> is the whole
-/// chassis — chrome, both bars, the rail band and its rule — and this view only
-/// fills the two rectangles it hands back. The rail carries the category rows,
-/// the body hosts the page through the shared scroll seam exactly as the shell
-/// hosts a pane, and the rebind capture runs last as the named raw-input
-/// boundary.
-/// </summary>
+/// <summary>Renders settings pages inside the shared window frame.</summary>
 public static class SettingsView
 {
     public static float DesignWidth =>
@@ -270,9 +214,7 @@ public static class SettingsView
     public static float DesignHeight =>
         Crystarium.ActiveTheme.Settings.Height;
 
-    /// <summary>The rail row's glyph slot: a 2px left margin, then a row-height
-    /// square the small glyph centres in; the label starts where it ends.
-    /// </summary>
+    /// <summary>Navigation icon left margin.</summary>
     private const float NavigationIconMargin = 2f;
 
     private const float NavigationPillRadius = 5f;
@@ -290,31 +232,8 @@ public static class SettingsView
         (TablerIcon.Info, "About"),
     };
 
-    private static readonly string[] ThemeLabels =
-    [
-        "Auto",
-        "Light",
-        "Light Gray",
-        "Gray",
-        "Dark",
-        "Blue",
-        "Purple",
-    ];
-
-    /// <summary>The two depths worth snapping to: Off, and the shipped
-    /// default the slider otherwise has no way back to.</summary>
+    /// <summary>Undo-depth slider marks.</summary>
     private static readonly float[] UndoDepthMarks = [0f, 200f];
-
-    private static readonly Vector4[] ThemeSwatches =
-    [
-        new(0.50f, 0.50f, 0.50f, 1f),
-        new(1f, 1f, 1f, 1f),
-        new(200f / 255f, 202f / 255f, 205f / 255f, 1f),
-        new(68f / 255f, 68f / 255f, 68f / 255f, 1f),
-        new(1f / 255f, 1f / 255f, 1f / 255f, 1f),
-        new(40f / 255f, 53f / 255f, 110f / 255f, 1f),
-        new(70f / 255f, 50f / 255f, 117f / 255f, 1f),
-    ];
 
     public static void Draw(SettingsViewModel vm, Vector2 origin)
     {
@@ -355,8 +274,7 @@ public static class SettingsView
             CaptureRebind(vm);
     }
 
-    /// <summary>The rail's content: the frame owns the band and its rule, this
-    /// owns the inset and the rows.</summary>
+    /// <summary>Draws settings navigation.</summary>
     private static void DrawNavigation(
         SettingsViewModel vm,
         WindowFrameRect rail)
@@ -382,12 +300,7 @@ public static class SettingsView
             });
     }
 
-    /// <summary>
-    /// One rail row. The settings rail is NOT a tree row: its pill runs flush
-    /// to the row box and its glyph is full opacity, so the row is drawn here
-    /// from primitives rather than through <c>TreeRow</c>. Only Settings has
-    /// this shape, so it stays private to the view.
-    /// </summary>
+    /// <summary>Draws one settings navigation row.</summary>
     private static bool NavigationRow(
         string id,
         string label,
@@ -399,8 +312,7 @@ public static class SettingsView
         float scale = ImGuiHelpers.GlobalScale;
         float height = theme.Controls.ListRowHeight * scale;
 
-        // Rows stack flush at the row height: the ambient vertical spacing is
-        // the surrounding flow's, not the rail's.
+        // Navigation rows have no vertical item gap.
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(
             ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
@@ -439,8 +351,7 @@ public static class SettingsView
         return hit.Activated;
     }
 
-    /// <summary>The body slot: one scroll seam holding the category page.
-    /// </summary>
+    /// <summary>Draws the selected settings page.</summary>
     private static void DrawPage(SettingsViewModel vm, WindowFrameRect body)
     {
         float scale = ImGuiHelpers.GlobalScale;
@@ -455,8 +366,7 @@ public static class SettingsView
                 ImGui.GetCursorScreenPos(),
                 new Vector2(region.ContentWidth * scale, height),
                 page => DrawCategory(vm, page),
-                // Settings rows carry sentence-length labels; the shared
-                // 94px column truncates them.
+                // Settings labels use a wider column.
                 labelColumnWidth:
                     Crystarium.ActiveTheme.Settings.LabelColumnWidth));
     }
@@ -553,10 +463,6 @@ public static class SettingsView
                 marks: UndoDepthMarks,
                 help: "How many edits Poser can undo; zero turns undo off");
         }, divider: false);
-        // Auto-save lives beside the other GPose-lifecycle switches: it starts
-        // and stops with GPose exactly as Open/Close with GPose do, and the
-        // Library category is about reading existing pose folders, not writing
-        // recovery ones.
         page.Section("AUTO-SAVE", form =>
         {
             form.Switch(
@@ -595,11 +501,7 @@ public static class SettingsView
                 vm.AutoSaveCleanOnExit,
                 next => vm.AutoSaveCleanOnExit = next,
                 "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
-            // The folder row moved to POSER FOLDERS, where it is editable
-            // rather than merely openable — one place per path.
         });
-        // Brio's Transform Slider Speed group, in the same General page it
-        // sits on there.
         page.Section("TRANSFORM SPEED", form =>
         {
             form.Slider(
@@ -621,9 +523,6 @@ public static class SettingsView
         });
         page.Section("RESET", form =>
         {
-            // The load-failure notice lives here and nowhere else: this is the
-            // page that explains what happened to the settings and the page
-            // that offers to start them over.
             if (vm.ConfigLoadFailure.Length > 0)
                 form.Status(vm.ConfigLoadFailure, warning: true);
             ResetRow(
@@ -635,9 +534,7 @@ public static class SettingsView
         });
     }
 
-    /// <summary>One armed reset button. The caption IS the state — "Reset" or
-    /// "Confirm reset" — and arming any row disarms every other, so two rows
-    /// can never both be one click from firing.</summary>
+    /// <summary>Draws a reset action with confirmation state.</summary>
     private static void ResetRow(
         SettingsViewModel vm,
         Crystarium.FormScope form,
@@ -719,19 +616,19 @@ public static class SettingsView
         });
         page.Section("THEME", form =>
         {
-            form.Swatches(
-                "Theme",
-                ThemeSwatches,
-                (int)vm.Theme,
-                next =>
+            form.ThemeMode(
+                "Brightness",
+                Crystarium.ActiveTheme.IsLight,
+                () =>
                 {
-                    vm.Theme = (UITheme)next;
+                    vm.Theme = ThemeSelection.NextBrightness(
+                        Crystarium.ActiveTheme.IsLight);
                     vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
                 },
-                ThemeLabels);
+                "Toggle light and dark surfaces");
             form.Swatches(
                 "Accent",
-                Crystarium.ActiveTheme.Settings.AccentOptions,
+                Theme.AccentOptions,
                 vm.AccentIndex,
                 next =>
                 {
@@ -751,11 +648,6 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        // The armature's own two display options. They stood on the toolbar
-        // for one round and came off it on the user's call (2026-08-14): a
-        // standing preference about how the overlay LOOKS belongs in Settings,
-        // and the master overlay switch that stood beside them is gone
-        // entirely — bone visibility is decided per actor.
         page.Section("ARMATURE", form =>
         {
             form.Dropdown(
@@ -864,23 +756,19 @@ public static class SettingsView
             "Put the bone dot, line and color settings back to their defaults"));
     }
 
-    /// <summary>Labels for <c>SkeletonViewMode</c>, in its declaration
-    /// order.</summary>
+    /// <summary>Labels for skeleton view modes.</summary>
     private static readonly string[] SkeletonShapeLabels =
         ["Dots", "Octahedra", "Joints"];
 
-    /// <summary>Labels for <c>BonePickBehavior</c>, in its declaration
-    /// order.</summary>
+    /// <summary>Labels for bone-pick behaviors.</summary>
     private static readonly string[] BonePickBehaviorLabels =
         ["Ktisis", "Brio"];
 
-    /// <summary>Labels for <c>ActiveActorSource</c>, in its declaration
-    /// order.</summary>
+    /// <summary>Labels for active-actor sources.</summary>
     private static readonly string[] ActiveActorLabels =
         ["GPose target", "Selection", "Either"];
 
-    /// <summary>Labels for <c>OverlayHoldModifier</c>, in its declaration
-    /// order.</summary>
+    /// <summary>Labels for overlay modifiers.</summary>
     private static readonly string[] HoldModifierLabels =
         ["Off", "Ctrl", "Shift"];
 
@@ -950,13 +838,7 @@ public static class SettingsView
                 "Off means hiding a bone from the overlay takes its gizmo with it"));
     }
 
-    /// <summary>
-    /// The camera decisions that belong to the user rather than to one
-    /// camera: what a new free camera starts out flying like, what the speed
-    /// modifiers are worth, and how much of the game's own input a live
-    /// camera takes. Per-camera Speed and Sensitivity rows still override the
-    /// defaults — this page seeds them, it does not replace them.
-    /// </summary>
+    /// <summary>Draws camera defaults and input settings.</summary>
     private static void DrawCamera(
         SettingsViewModel vm,
         Crystarium.PageScope page)
@@ -1037,9 +919,6 @@ public static class SettingsView
                 vm.TreeGuides,
                 next => vm.TreeGuides = next,
                 "Show hierarchy connector lines"));
-        // The three hide decisions the game makes for every plugin. Poser
-        // forced the first two on before they were a choice, so those are the
-        // defaults; the third is new and starts off, which is what Poser did.
         page.Section("VISIBILITY", form =>
         {
             form.Switch(
@@ -1065,8 +944,6 @@ public static class SettingsView
                 next => vm.SwapRotationXY = next,
                 "Show the rotation row's first two columns exchanged. "
                     + "The pose itself is unchanged"));
-        // Keybinds live in UIConfiguration too, so this reset takes them with
-        // it — which is also the row K4 asks for, stated where it is true.
         page.Section("RESET", form => ResetRow(
             vm,
             form,
@@ -1078,13 +955,10 @@ public static class SettingsView
     private static readonly string[] PresetLabels =
         ["Poser", "Brio", "Ktisis"];
 
-    /// <summary>Both slot buttons take the SAME fixed width, which is the
-    /// whole of the two-column reading: a chord's column is a column because
-    /// every row's slot starts and ends on the same x.</summary>
+    /// <summary>Fixed keybind slot width.</summary>
     private const float KeybindSlotWidth = 132f;
 
-    /// <summary>An unbound slot says so in words. It is a legal state, not a
-    /// missing value, and a blank button would read as a broken row.</summary>
+    /// <summary>Caption for an unbound keybind slot.</summary>
     private const string UnboundCaption = "Unbound";
 
     private static void DrawKeybinds(
@@ -1125,10 +999,6 @@ public static class SettingsView
             {
                 for (int i = start; i < start + count; i++)
                     DrawKeybindRow(vm, form, KeybindRegistry.Actions[i]);
-                // Ktisis's per-group reset, unarmed like its own: a group is a
-                // handful of rows the user can see, so the button's blast
-                // radius is on screen beside it — unlike the preset switcher,
-                // which replaces every chord on the page.
                 form.Actions(
                     string.Empty,
                     actions => actions.Button(
@@ -1139,10 +1009,7 @@ public static class SettingsView
             });
     }
 
-    /// <summary>Restores one group's shipped chords, BOTH slots. Poser's own
-    /// defaults are what "default" means here, whichever preset the switcher
-    /// is currently showing — a reset is a return, not a re-application.
-    /// </summary>
+    /// <summary>Restores one keybind group to its default chords.</summary>
     private static void ResetKeybindGroup(
         SettingsViewModel vm, string group, int start, int count)
     {
@@ -1156,9 +1023,7 @@ public static class SettingsView
             $"{group} chords are back to Poser's defaults. Save to keep them.";
     }
 
-    /// <summary>The registry's order IS the page's order and its groups ARE
-    /// the sections, so the runs are cut once from the registry rather than
-    /// filtered per frame.</summary>
+    /// <summary>Keybind group spans in registry order.</summary>
     private static readonly (string Group, int Start, int Count)[]
         KeybindGroups = BuildKeybindGroups();
 
@@ -1196,8 +1061,7 @@ public static class SettingsView
             },
             help: action.Help);
 
-        // Both halves of a collision flag, so the row that was edited last
-        // carries no more blame than the row it landed on.
+        // A conflict in either slot marks the action row.
         var conflicts = vm.Conflicts;
         var others = conflicts.TryGetValue(
                 new KeybindRegistry.SlotRef(action.Id, 0), out var primary)
@@ -1222,9 +1086,7 @@ public static class SettingsView
         bool capturing = vm.RebindingSlot == slot
             && string.Equals(vm.RebindingAction, action.Id, StringComparison.Ordinal);
         string chord = slots[slot];
-        // The caption is the chord, so the two slots can read identically
-        // ("Unbound" beside "Unbound"); the slot's own id is what keeps them
-        // apart as controls.
+        // Slot ids keep duplicate chord captions distinct.
         actions.Button(
             capturing
                 ? "Press a key"
@@ -1245,10 +1107,7 @@ public static class SettingsView
             id: slot == 0 ? "primary" : "secondary");
     }
 
-    /// <summary>The preset switcher's confirm. First press arms with the
-    /// visible warning; the second replaces BOTH slots of every action,
-    /// because a preset is a statement about the whole table and a leftover
-    /// secondary would be a chord the preset never claimed.</summary>
+    /// <summary>Applies the armed keybind preset.</summary>
     private static void ApplyPreset(SettingsViewModel vm)
     {
         string name = PresetLabels[vm.PresetIndex];
@@ -1272,10 +1131,6 @@ public static class SettingsView
     {
         page.Section("POSER FOLDERS", form =>
         {
-            // The four homes Poser owns. Poses, Scenes and MCDFs are SCANNED
-            // roots, so a save that lands in one shows up in its tab without
-            // the user navigating anywhere; auto-saves are written rather than
-            // scanned, and the service reads its root once at load.
             HomeFolder(
                 form, vm, "Poses", vm.PoseFolder,
                 next => vm.PoseFolder = next,
@@ -1322,9 +1177,7 @@ public static class SettingsView
         }, divider: false);
         page.Section("SOURCE FOLDERS", form =>
         {
-            // The remove is deferred past the loop: the action fires DURING the
-            // row that owns it, and shortening the list under the iteration
-            // would drop the row after it for a frame.
+            // Defer removal until after the source loop.
             int removing = -1;
             for (int i = 0; i < vm.LibrarySources.Count; i++)
             {
@@ -1377,13 +1230,7 @@ public static class SettingsView
         });
     }
 
-    /// <summary>
-    /// One Poser home: the path is typed, the button opens it, and the row
-    /// below states the only two things that can be wrong with a typed path —
-    /// it is blank (the shipped folder is used) or it does not exist yet. There
-    /// is no folder PICKER in the codebase and a file dialog cannot return a
-    /// directory, so validation stands in for browsing.
-    /// </summary>
+    /// <summary>Draws one editable home folder.</summary>
     private static void HomeFolder(
         Crystarium.FormScope form,
         SettingsViewModel vm,
@@ -1412,8 +1259,7 @@ public static class SettingsView
             form.Status("Folder does not exist yet — Poser creates it.");
     }
 
-    /// <summary>Commits the add-source drafts, naming the source after its
-    /// last path segment when the name is left blank.</summary>
+    /// <summary>Commits the add-source drafts.</summary>
     private static void AddLibrarySource(SettingsViewModel vm)
     {
         string path = vm.LibraryNewPath.Trim();
@@ -1452,8 +1298,6 @@ public static class SettingsView
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);
 
-        // The same attribution the first-run notice carries, from the same
-        // list — Settings is where a user goes looking for it afterwards.
         page.Section("DERIVED FROM", form =>
         {
             form.Actions("Repositories", actions =>
@@ -1470,10 +1314,6 @@ public static class SettingsView
                 "Poser is derivative of and heavily inspired by these projects.");
         });
 
-        // Brio's per-integration status line and refresh button. Poser calls
-        // Penumbra, Glamourer and Customize+ throughout, and when one of them
-        // is missing the features that ride on it degrade quietly — this is
-        // the row that says which.
         page.Section("INTEGRATIONS", form =>
         {
             foreach (var integration in vm.Integrations)
@@ -1494,18 +1334,7 @@ public static class SettingsView
         });
     }
 
-    /// <summary>
-    /// The raw-input boundary: while a slot is capturing, the next key press
-    /// becomes its chord. Escape abandons the capture and Backspace clears
-    /// the slot — unbound is a state the user has to be able to reach, and
-    /// the only key that could mean "none" is one that cannot also be a
-    /// chord.
-    ///
-    /// <para>The scan is <see cref="KeyChord.CapturableKeys"/> and nothing
-    /// else, so the keys the page can capture are exactly the keys a stored
-    /// chord can name — a press it cannot store is a press it ignores rather
-    /// than one it records unfirably.</para>
-    /// </summary>
+    /// <summary>Captures the next supported keybind input.</summary>
     private static void CaptureRebind(SettingsViewModel vm)
     {
         if (vm.RebindingAction is not { } action

@@ -1,18 +1,35 @@
 using System;
+using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Complete replaceable UI token value. Applying one theme replaces colors,
-/// typography, geometry, radii, shadows, motion, and optical corrections
-/// together; primitives never fall back to process-wide metric constants.
-/// </summary>
+/// <summary>UI token values.</summary>
 public readonly record struct Theme
 {
-    /// <summary>Dark ink on a light ground. Polarity is a rendering input,
-    /// not a color: glyph rasterization is baked per polarity
-    /// (<see cref="FontRegistry"/>), so every light theme must set it.</summary>
+    // The persisted accent index has the same color in both theme modes.
+    private static readonly ReadOnlyCollection<Vector4> AccentPalette =
+        Array.AsReadOnly(new[]
+        {
+            // Bright accent set.
+            new Vector4(50f / 255f, 151f / 255f, 1f, 1f),
+            new Vector4(126f / 255f, 211f / 255f, 160f / 255f, 1f),
+            new Vector4(232f / 255f, 193f / 255f, 90f / 255f, 1f),
+            new Vector4(183f / 255f, 140f / 255f, 1f, 1f),
+            new Vector4(1f, 143f / 255f, 163f / 255f, 1f),
+            // Darker accent set.
+            new Vector4(37f / 255f, 99f / 255f, 235f / 255f, 1f),
+            new Vector4(45f / 255f, 130f / 255f, 95f / 255f, 1f),
+            new Vector4(173f / 255f, 128f / 255f, 25f / 255f, 1f),
+            new Vector4(110f / 255f, 72f / 255f, 186f / 255f, 1f),
+            new Vector4(170f / 255f, 63f / 255f, 109f / 255f, 1f),
+        });
+
+    /// <summary>Concrete accent choices, in their persisted index order.</summary>
+    public static IReadOnlyList<Vector4> AccentOptions => AccentPalette;
+
+    /// <summary>Whether the theme uses light surfaces.</summary>
     public bool IsLight { get; init; }
 
     public Vector4 Surface { get; init; }
@@ -56,13 +73,11 @@ public readonly record struct Theme
     public ChromeTokens Chrome { get; init; }
     public HoverHelpTokens HoverHelp { get; init; }
 
-    /// <summary>The accepted Picto-derived dark foundation.</summary>
+    /// <summary>Dark theme foundation.</summary>
     public static Theme PictoDark => new()
     {
         IsLight = false,
-        // Color identity flows from the committed PictoTokens projection of the
-        // canonical tokens.css. Fields not wired to a token are product
-        // extensions and are declared explicitly below.
+            // Shared dark theme colors.
         Surface = PictoTokens.Dark.BgApp,
         SurfaceRaised = PictoTokens.Dark.Surface1,
         SurfaceSunken = PictoTokens.Dark.Surface2,
@@ -77,7 +92,7 @@ public readonly record struct Theme
         BorderStrong = PictoTokens.Dark.BorderPrimary,
         Accent = PictoTokens.Dark.Primary,
         AccentHover = PictoTokens.Dark.Primary60,
-        // Derivation: there is no --color-primary-80 token.
+            // Active accent opacity.
         AccentActive = PictoTokens.Dark.Primary with { W = 0.80f },
         Success = new(0.30f, 0.80f, 0.40f, 1f),
         Warning = new(1.00f, 0.70f, 0.20f, 1f),
@@ -86,10 +101,7 @@ public readonly record struct Theme
         Spacing = new() { One = 2f, Two = 4f, Three = 6f, Four = 8f, Six = 12f, Eight = 16f },
         Controls = new()
         {
-            // 34, not the transcribed 30: stacked full-height controls (the
-            // 30px segmented pill) leave property rows no separation at 30.
-            // The pitch is a deliberate deviation from Picto's rhythm, kept
-            // HERE so every form row reads one number.
+            // Form row pitch.
             FormRowHeight = 34f,
             WorkspaceHeight = 26f,
             ComfortableHeight = 32f,
@@ -224,14 +236,6 @@ public readonly record struct Theme
             Height = 520f,
             NavigationWidth = 200f,
             LabelColumnWidth = 180f,
-            AccentOptions =
-            [
-                new(50f / 255f, 151f / 255f, 1f, 1f),
-                new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
-                new(232f / 255f, 193f / 255f, 90f / 255f, 1f),
-                new(183f / 255f, 140f / 255f, 1f, 1f),
-                new(1f, 143f / 255f, 163f / 255f, 1f),
-            ],
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -252,7 +256,7 @@ public readonly record struct Theme
         },
         Glass = new()
         {
-            // Background: accepted precomposited no-blur fallback (deviation).
+            // Fallback background without blur.
             Background = new(34f / 255f, 35f / 255f, 38f / 255f, 0.97f),
             BlurBackground = PictoTokens.Dark.GlassBg,
             BorderTop = PictoTokens.Dark.GlassBorderTop,
@@ -277,7 +281,7 @@ public readonly record struct Theme
             AccentFillBorder = PictoTokens.Dark.Primary30,
             Checkmark = new(1f, 1f, 1f, 0.99f),
             Danger = PictoTokens.Dark.Negative,
-            // Derivation: --color-negative at the hover-fill alpha.
+            // Negative hover fill.
             DangerHover = PictoTokens.Dark.Negative with { W = 0.12f },
             UnavailableFill = new(0f, 0f, 0f, 0.12f),
             ColorWellBorder = PictoTokens.Dark.BorderPrimary,
@@ -354,15 +358,7 @@ public readonly record struct Theme
 
     public static Theme Default => PictoDark;
 
-    /// <summary>
-    /// Re-derives the primary color family from a chosen accent. Every stop
-    /// mirrors how tokens.css derives it from <c>--color-primary</c>: the
-    /// N-suffixed tokens are <c>color-mix(… N%, transparent)</c> — the same
-    /// RGB at alpha N/100 — and AccentActive/DangerHover-style stops are the
-    /// declared fixed-alpha derivations above. Accent index 0 never routes
-    /// here: the theme's own baked primary IS the default accent, so the
-    /// accepted baseline stays byte-for-byte.
-    /// </summary>
+    /// <summary>Updates colors derived from the accent.</summary>
     public Theme WithAccent(Vector4 accent) => this with
     {
         Accent = accent,
@@ -420,8 +416,7 @@ public readonly record struct Theme
         Vector4 borderStrong,
         Vector4 border)
     {
-        // Light-scheme chrome comes from the light token cascade; lightgray
-        // only overrides surfaces and borders, which arrive as parameters.
+            // Light-gray surface and border overrides.
         var primary = PictoTokens.Light.Primary;
         return theme with
         {
@@ -429,10 +424,7 @@ public readonly record struct Theme
             Surface = surface,
             SurfaceRaised = raised,
             SurfaceSunken = sunken,
-            // Deviation from --color-text-primary (pure black): body text on a
-            // light ground uses the Windows 11 89% black, which reads as ink
-            // instead of a hole. Secondary/tertiary already carry their own
-            // alphas and are unchanged.
+            // Body-text opacity on light surfaces.
             Text = PictoTokens.Light.TextPrimary with { W = 0.894f },
             TextDim = PictoTokens.Light.TextSecondary,
             TextMuted = PictoTokens.Light.TextTertiary,
@@ -514,23 +506,16 @@ public readonly record struct Theme
         public float ComfortableHeight { get; init; }
         public float NavigationHeight { get; init; }
 
-        /// <summary>GlassInput <c>.searchWrap { height: 36px }</c> — the
-        /// search variant's own box, taller than <c>.input</c>'s 32.</summary>
+        /// <summary>Search control height.</summary>
         public float SearchHeight { get; init; }
 
-        /// <summary>GlassInput <c>.input { padding: 0 10px }</c>, which is
-        /// also <c>.searchWrap { padding: 0 0 0 10px }</c>. Not a
-        /// <see cref="SpacingTokens"/> step — the 2/4/6/8/12/16 scale has
-        /// no 10.</summary>
+        /// <summary>Input horizontal padding.</summary>
         public float InputPaddingX { get; init; }
 
-        /// <summary>GlassInput <c>.searchWrap { gap: 6px }</c> — between
-        /// the leading icon and the field.</summary>
+        /// <summary>Search icon gap.</summary>
         public float SearchIconGap { get; init; }
 
-        /// <summary>GlassInput <c>.input:disabled { opacity: 0.5 }</c>,
-        /// pushed as ImGui's DisabledAlpha so the WHOLE field (frame,
-        /// border, value, placeholder) fades as one CSS box.</summary>
+        /// <summary>Disabled input opacity.</summary>
         public float InputDisabledOpacity { get; init; }
 
         public float ShellIconAction { get; init; }
@@ -551,11 +536,10 @@ public readonly record struct Theme
     {
         public float Inset { get; init; }
         public float MaximumContentWidth { get; init; }
-        /// <summary>InspectorSection <c>.section { margin-top }</c>.</summary>
+        /// <summary>Section top margin.</summary>
         public float SectionMarginTop { get; init; }
 
-        /// <summary>InspectorSection <c>.section { padding-top }</c> —
-        /// the gap between the top rule and the header row.</summary>
+        /// <summary>Section header padding.</summary>
         public float SectionPaddingTop { get; init; }
 
         public float ActionGap { get; init; }
@@ -651,9 +635,7 @@ public readonly record struct Theme
         public float ViewportInset { get; init; }
         public float HostMargin { get; init; }
         public float MenuWidth { get; init; }
-        /// <summary>Floor for a content-fit floating menu
-        /// (<c>FloatingMenu.MeasureWidth</c>); the fixed <see cref="MenuWidth"/>
-        /// surface ignores it.</summary>
+        /// <summary>Minimum content-fit menu width.</summary>
         public float MenuMinWidth { get; init; }
         public float MenuPadding { get; init; }
         public float MenuRowPadding { get; init; }
@@ -691,13 +673,10 @@ public readonly record struct Theme
     {
         public float Width { get; init; }
         public float Height { get; init; }
-        /// <summary>The quick-menu rail, rule included — the Settings rail's
-        /// share of its own window (200 of 720), taken on this one.</summary>
+        /// <summary>File-dialog rail width.</summary>
         public float RailWidth { get; init; }
 
-        /// <summary>The preview column, which mirrors the rail so the explorer
-        /// sits centred between two equal margins when a preview is up.
-        /// </summary>
+        /// <summary>File-dialog preview width.</summary>
         public float PreviewWidth { get; init; }
     }
 
@@ -707,17 +686,12 @@ public readonly record struct Theme
         public float Height { get; init; }
         public float NavigationWidth { get; init; }
 
-        /// <summary>Settings pages override the form's default label column:
-        /// behavior rows carry sentence-length labels ("Game target follows
-        /// selection") that truncate at the shared 94px token, and the wide
-        /// settings body has the room to spend.</summary>
+        /// <summary>Settings label-column width.</summary>
         public float LabelColumnWidth { get; init; }
 
-        public Vector4[] AccentOptions { get; init; }
     }
 
-    /// <summary>Pixel-grid rounding. The per-band text nudges this once
-    /// carried are gone: text seats on font metrics, not a token.</summary>
+    /// <summary>Pixel-grid rounding.</summary>
     public readonly record struct OpticalTokens
     {
         public Vector2 Snap(Vector2 position) =>
@@ -774,12 +748,9 @@ public readonly record struct Theme
         public Vector4 Primary { get; init; }
         public Vector4 PrimaryHover { get; init; }
         public Vector4 PrimaryFocus { get; init; }
-        /// <summary>Accent wash behind primary-colored content
-        /// (--color-primary-10): sidebar drop-inside targets, marquee
-        /// selection, the rail's linked-bone pill.</summary>
+        /// <summary>Primary-color wash.</summary>
         public Vector4 AccentFill { get; init; }
-        /// <summary>The 1px edge that pairs with <see cref="AccentFill"/>
-        /// (--color-primary-30).</summary>
+        /// <summary>Accent-fill border.</summary>
         public Vector4 AccentFillBorder { get; init; }
         public Vector4 Checkmark { get; init; }
         public Vector4 Danger { get; init; }
@@ -790,22 +761,16 @@ public readonly record struct Theme
         public Vector4 PickerBorder { get; init; }
         public Vector4 ModalDim { get; init; }
         public Vector4 ModalFooter { get; init; }
-        /// <summary>Window-frame rail (quick access, source lists) fill — a
-        /// translucent overlay like <see cref="ModalFooter"/>, never an opaque
-        /// surface: on a glass window an opaque rail blots out the backdrop
-        /// blur in that region while the rest of the window stays glass.</summary>
+        /// <summary>Window rail fill.</summary>
         public Vector4 RailFill { get; init; }
         public Vector4 SegmentShadow { get; init; }
         public Vector4 SegmentSelected { get; init; }
-        /// <summary>SidebarRow.module.css <c>.selected::before</c> /
-        /// <c>.active::before</c> fill (--color-surface-active).</summary>
+        /// <summary>Selected sidebar fill.</summary>
         public Vector4 SidebarSelected { get; init; }
-        /// <summary>SidebarRow.module.css <c>.row:hover::before</c> fill
-        /// (--color-surface-hover).</summary>
+        /// <summary>Hovered sidebar fill.</summary>
         public Vector4 SidebarHover { get; init; }
         public Vector4 SwitchOff { get; init; }
-        /// <summary>ToggleSwitch.module.css knob fill — white in every scheme
-        /// (the spec's 16px white knob), so no theme overrides it.</summary>
+        /// <summary>Switch knob fill.</summary>
         public Vector4 SwitchKnob { get; init; }
         public Vector4 SwitchShadow { get; init; }
         public Vector4 SwitchHighlight { get; init; }
@@ -815,36 +780,30 @@ public readonly record struct Theme
         public float ControlDisabledOpacity { get; init; }
     }
 
-    /// <summary>
-    /// KbdTooltip geometry, read straight off picto's
-    /// <c>KbdTooltip.tsx</c> tooltip styles and
-    /// <c>KbdTooltip.module.css</c>.
-    /// </summary>
+    /// <summary>Hover-help layout tokens.</summary>
     public readonly record struct HoverHelpTokens
     {
-        /// <summary>Mantine Tooltip <c>offset={6}</c>.</summary>
+        /// <summary>Target offset.</summary>
         public float TargetOffset { get; init; }
-        /// <summary>tooltip style <c>height: 24</c> (border-box).</summary>
+        /// <summary>Card height.</summary>
         public float CardHeight { get; init; }
-        /// <summary>tooltip style <c>padding: '0 6px'</c>.</summary>
+        /// <summary>Horizontal padding.</summary>
         public float PaddingX { get; init; }
-        /// <summary><c>.content { gap: 4px }</c>.</summary>
+        /// <summary>Content gap.</summary>
         public float ContentGap { get; init; }
-        /// <summary><c>.kbd { height: 16px }</c>.</summary>
+        /// <summary>Badge height.</summary>
         public float BadgeHeight { get; init; }
-        /// <summary><c>.kbd { min-width: 16px }</c>.</summary>
+        /// <summary>Minimum badge width.</summary>
         public float BadgeMinimumWidth { get; init; }
-        /// <summary><c>.kbd { padding: 0 4px }</c>.</summary>
+        /// <summary>Badge horizontal padding.</summary>
         public float BadgePaddingX { get; init; }
-        /// <summary><c>.kbd { border-radius: 3px }</c> — a badge-only
-        /// radius that is NOT Radii.Small (2px).</summary>
+        /// <summary>Badge radius.</summary>
         public float BadgeRadius { get; init; }
-        /// <summary>tooltip style <c>border: '1px solid …'</c>. The card
-        /// is content-sized, so the border adds to its outer width.</summary>
+        /// <summary>Border width.</summary>
         public float BorderWidth { get; init; }
-        /// <summary>Mantine <c>pop</c> OUT <c>translateY(10px)</c>.</summary>
+        /// <summary>Exit rise.</summary>
         public float PopRise { get; init; }
-        /// <summary>Mantine <c>pop</c> OUT <c>scale(.9)</c>.</summary>
+        /// <summary>Exit scale.</summary>
         public float PopScaleOut { get; init; }
     }
 }
@@ -856,8 +815,7 @@ public static partial class Crystarium
     /// <summary>The active theme as a value for public consumers.</summary>
     public static Theme ActiveTheme => _activeTheme;
 
-    // The UI renderer reads several tokens for every text submission. Keep
-    // those reads on the current immutable value without copying Theme.
+    // The active theme is stored by reference.
     internal static ref readonly Theme ActiveThemeRef => ref _activeTheme;
 
     /// <summary>Atomically replaces the full token value and its derived rules.</summary>
