@@ -10,6 +10,7 @@ using Poser.Application.Animation;
 using Poser.Config;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.UI;
 using ProductionPoser::Poser.UI;
 
 namespace Poser.ContractTests;
@@ -47,7 +48,8 @@ public sealed class ReferenceImageContractTests
         plugin.GetPluginConfig().Returns(_ => storedJson is null
             ? null
             : JsonConvert.DeserializeObject<PoserConfiguration>(storedJson));
-        plugin.SavePluginConfig(Arg.Any<IPluginConfiguration>()).Do(call =>
+        plugin.When(value => value.SavePluginConfig(
+                Arg.Any<IPluginConfiguration>())).Do(call =>
         {
             var saved = Assert.IsType<PoserConfiguration>(
                 call.Arg<IPluginConfiguration>());
