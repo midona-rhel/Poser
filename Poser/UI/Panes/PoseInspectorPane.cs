@@ -28,20 +28,7 @@ using DomainDeltaMode = Poser.Domain.Transforms.TransformDeltaMode;
 
 namespace Poser.UI;
 
-/// <summary>
-/// The Pose tab of the AppShell — the `.insp/.prow/.scrub` grammar bound to
-/// the live posing stack.
-/// <para>The rail manipulates WHAT IS SELECTED and nothing else, so its
-/// sections are typed by the primary: nothing selected declares none; a bone
-/// declares TRANSLATION plus IK (only where the port supports that bone's
-/// chain); an actor declares TRANSLATION, GAZE, EXPRESSION and POSE; any other
-/// kind declares TRANSLATION alone. FILES is not a selection property and
-/// lives on the workspace Actor tab plus the actor context menu, never in the
-/// rail.</para>
-/// <para>The workspace surface carries Body, Face, Matrix, 3D, Expression and
-/// Actor. The rotation pivot moved to the toolbar selector beside Local/World
-/// (orbit-rotation-design.md).</para>
-/// </summary>
+/// <summary>Renders pose inspector controls.</summary>
 public class PoseInspectorPane
 {
     private readonly IBonePosingService _bonePosingService;
@@ -61,28 +48,20 @@ public class PoseInspectorPane
     /// <summary>Renders the Body/Face map inline through GraphicalBonePane.</summary>
     public Func<int, Vector2, bool>? DrawMapInline;
 
-    /// <summary>The actor's picked-expression row (preview, release, bake),
-    /// drawn at the top of the EXPRESSION section. It belongs to THIS window's
-    /// animation pane, which owns the catalog feed and the shared picker the
-    /// row opens — the row is here because an expression is a face edit, and
-    /// the click path to it must not detour through the animation tab.</summary>
+    /// <summary>Renders the selected actor's expression row.</summary>
     public Action<Crystarium.FormScope, ActorId>? DrawExpressionRow;
 
     /// <summary>Mirror selection state on the graphical maps (SidesSwapped).</summary>
     public Func<bool>? GetMapMirror;
     public Action<bool>? SetMapMirror;
 
-    /// <summary>Brio's <c>SwapRotationXandY</c> (PosingConfiguration.cs:44):
-    /// the rotation row DISPLAYS and WRITES its first two columns exchanged.
-    /// It is a reading convention, not a different rotation — the quaternion
-    /// underneath and every other surface are untouched.</summary>
+    /// <summary>Gets whether rotation X and Y are displayed swapped.</summary>
     public Func<bool>? GetSwapRotationXY;
 
     /// <summary>Resolves the same actor nickname/display name used by the scene tree.</summary>
     public Func<IActor, string>? ActorDisplayNameProvider;
 
-    /// <summary>Stable-id display name for snapshot actor descriptors (the
-    /// scene tree's display API), used by the gaze target picker.</summary>
+    /// <summary>Gets a display name for an actor descriptor.</summary>
     public Func<Domain.Scene.ActorDescriptor, string>? DescriptorDisplayName;
     // 0 body map, 1 face map, 2 matrix, 3 3D, 4 expression, 5 actor
     private int _poseView = 2;
@@ -91,14 +70,10 @@ public class PoseInspectorPane
     private BoneMatrixViewModel? _matrixVm;
     private string _matrixFilter = "";
     private ulong _matrixRevision;
-    // Complete skeleton identity (actor generation, SLOT, slot generation):
-    // switching the primary to another slot of the same actor on an
-    // unchanged scene must rebuild the matrix.
+    // Full skeleton identity invalidates the cache when the slot changes.
     private SkeletonId? _matrixSkeletonId;
 
-    // Primary selection identity (stable id). The legacy _entity view is
-    // re-resolved from it once per draw for the retained gaze/IK/pose section
-    // reads; it is never used as selection or transform command identity.
+    // Commands use stable selection identity; the entity resolves per draw.
     private SelectionId? _primary;
     private IEntity? _entity;
     private SelectionId[] _selectionSnapshot = Array.Empty<SelectionId>();
@@ -106,30 +81,18 @@ public class PoseInspectorPane
     // Euler cache while a rotation drag is active (avoids quat→euler snap).
     private Vector3? _dragEuler;
 
-    /// <summary>The copied model transform, shared by every inspector instance
-    /// exactly as Brio's single clipboard slot is. Null until something is
-    /// copied; a paste never invents one.</summary>
+    /// <summary>Stores the copied actor model transform.</summary>
     private static Transform? _transformClipboard;
     private string? _transformClipboardNote;
-    // Display and model baselines for one application-owned transform gesture.
+    // Gesture deltas are measured from these fixed display and model baselines.
     private Transform? _dragStart;
     private Transform? _cleanModelStart;
     private Transform? _cleanDisplayedCurrent;
     private TransformGestureId? _cleanGesture;
-    // Immutable parent model transform captured at Begin (bone gestures with
-    // a parent). Composition never re-reads the live animated parent.
-
-    // A cancelled scrub/ball gesture (Escape, selection change, scene
-    // invalidation) must not re-Begin while the same pointer interaction is
-    // still active: suppression holds until the pointer deactivates.
+    // Suppresses restart until the active pointer interaction ends.
     private bool _gestureRestartSuppressed;
 
-    /// <summary>
-    /// Per-frame gesture guard for the drag wells and the rotation ball:
-    /// clears suppression when the pointer released, drops local state when
-    /// the service cancelled the gesture externally, and cancels exactly once
-    /// on Escape, restoring the frozen baseline with no history item.
-    /// </summary>
+    /// <summary>Maintains active transform gesture state.</summary>
     private void UpdateGestureGuards()
     {
         if (_gestureRestartSuppressed &&
@@ -141,7 +104,7 @@ public class PoseInspectorPane
 
         if (_cleanTransforms.ActiveGesture != gesture)
         {
-            // Externally cancelled — the service already restored.
+            // The service restored the cancelled gesture.
             ClearTransformSession();
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
         }
@@ -158,18 +121,13 @@ public class PoseInspectorPane
     private bool _openIk;
     private bool _openPose = true;
 
-    // The workspace tabs carry their OWN open state: collapsing a section on
-    // one surface must not collapse the rail's copy of it, or the other way
-    // round.
+    // Workspace sections keep separate open state.
     private bool _openSurfaceExpression = true;
     private bool _openSurfaceGaze = true;
     private bool _openSurfacePose = true;
     private bool _openSurfaceFiles = true;
 
-    /// <summary>The gaze picker's candidate scratch: retained and refilled, so
-    /// a per-frame list never lands on the heap. The names array is
-    /// reallocated only when the scene's actor count changes, because a
-    /// dropdown reads its item count from the array's own length.</summary>
+    /// <summary>Stores gaze target candidates and labels.</summary>
     private readonly List<Domain.Scene.ActorDescriptor> _gazeOthers = new();
     private string[] _gazeNames = Array.Empty<string>();
 
@@ -189,9 +147,7 @@ public class PoseInspectorPane
     private static readonly string[] CcdSolverItems = ["CCD"];
     private static readonly string[] TargetModeItems = ["Relative", "Fixed"];
 
-    // The joint captions and their help, per chain kind. Both triples are
-    // fixed text, so the row states which set it wants rather than minting one
-    // interpolated string per slider per frame.
+    // Fixed labels and help for IK joint rows.
     private static readonly string[] ArmJointLabels =
         ["Shoulder", "Elbow", "Hand"];
     private static readonly string[] LegJointLabels = ["Hip", "Knee", "Foot"];
@@ -241,16 +197,12 @@ public class PoseInspectorPane
         _cleanPose = cleanPose;
         _gazeService = gazeService;
         _editorState = editorState;
-        // The import dialog's IK banner. The section owns no IK port and the
-        // pane already resolves an actor's chains for the bulk buttons, so the
-        // one enumeration answers both.
+        // Shares the inspector's IK state query.
         _poseFileSection.IsAnyIkArmed = AnyIkArmedOnSelection;
         Reset3DCamera();
     }
 
-    /// <summary>Whether any chain of the actor the rail is pointed at is
-    /// solving. False with nothing selected: a warning about a limb nobody is
-    /// looking at is noise.</summary>
+    /// <summary>Checks whether the selected actor has an active IK chain.</summary>
     private bool AnyIkArmedOnSelection()
     {
         if (OwnerBone() is not { } owner)
@@ -261,9 +213,7 @@ public class PoseInspectorPane
         return false;
     }
 
-    /// <summary>Any bone of the actor the rail is pointed at — the chain
-    /// enumeration keys on an actor lineage and only reads the bone for
-    /// that.</summary>
+    /// <summary>Gets a bone on the selected actor.</summary>
     private BoneId? OwnerBone()
     {
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } selected })
@@ -286,33 +236,22 @@ public class PoseInspectorPane
 
     private readonly IActorSpawnService _spawnService;
 
-    /// <summary>The camera pane owns the camera rail sections (translation-
-    /// as-offset and tracking) exactly as it owns the Camera tab; the
-    /// inspector only declares where they sit.</summary>
+    /// <summary>Renders camera rail controls.</summary>
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
     private bool _openCameraTracking = true;
 
-    /// <summary>Gaze and expression are humanoid concepts: a slot companion
-    /// or a catalog spawn (minion/mount/accessory) gets neither section.
-    /// </summary>
+    /// <summary>Checks whether an actor is a creature.</summary>
     private bool IsCreature(IActor actor) =>
         actor.IsCompanion || _spawnService.GetSpawnedKind(actor) is not null;
 
-    // Retained resolution. The resolver reads exactly two things — the ordered
-    // selection and the scene snapshot — and building its answer costs a
-    // dictionary of the primary actor's WHOLE bone set, so those two are the
-    // key and a frame that changes neither resolves nothing. Every result is a
-    // fresh object; a Targets list already handed to a gesture is never
-    // mutated by a later resolution.
+    // Caches by ordered selection and revision; the first target is primary.
     private readonly List<SelectionId> _effectiveKey = new();
     private ulong _effectiveRevision;
     private bool _effectivePrimed;
     private EffectiveTransformSelection? _effective;
 
-    /// <summary>The shared effective transform selection (resolver): first
-    /// surviving root in original selection order is the primary; the
-    /// inspector and gizmo consume the same resolution.</summary>
+    /// <summary>Gets the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection()
     {
         var selected = _selection.Selected;
@@ -329,9 +268,7 @@ public class PoseInspectorPane
         return _effective;
     }
 
-    /// <summary>Ordered element-wise compare against the retained key. The
-    /// resolution depends on selection ORDER (the first entry is the primary),
-    /// so a count or set comparison would not be sound.</summary>
+    /// <summary>Compares ordered selection identifiers.</summary>
     private static bool SameSelection(
         List<SelectionId> cached,
         IReadOnlyList<SelectionId> current)
@@ -366,11 +303,7 @@ public class PoseInspectorPane
     {
         var result = new List<ActorId>();
         foreach (var id in _selection.Selected)
-            // A gaze point is a property OF its actor, so every actor-wide
-            // action (reset transform, flip) addresses its owner exactly as a
-            // direct actor selection would. Distinct: an actor and its own gaze
-            // point in one selection name ONE actor, and a doubled Mirror would
-            // undo itself.
+            // Gaze targets use their owning actor.
             if (id is
                 {
                     Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -380,15 +313,12 @@ public class PoseInspectorPane
         return result;
     }
 
-    /// <summary>Matrix and 3D operate on the primary bone's slot skeleton;
-    /// an actor primary uses the Character slot.</summary>
+    /// <summary>Gets the skeleton for the primary selection.</summary>
     private SkeletonDescriptor? PrimarySkeletonDescriptor()
     {
         var (lineage, slot) = _primary switch
         {
-            // The gaze point's owner IS the subject the surfaces describe, so
-            // Matrix/3D keep showing that actor's Character skeleton instead of
-            // emptying while a point is selected.
+            // Gaze targets use the actor's Character skeleton.
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
                 Actor: { } actorId } =>
                 ((Guid?)actorId.LogicalId, PoseSlot.Character),
@@ -404,8 +334,7 @@ public class PoseInspectorPane
         return null;
     }
 
-    /// <summary>Bones of the EXACT skeleton (slot and generations) owning
-    /// the given bone — never a Character fallback or cross-slot set.</summary>
+    /// <summary>Gets bones from the exact owning skeleton.</summary>
     private IReadOnlyList<BoneDescriptor>? SlotBonesOf(BoneId bone)
     {
         foreach (var actor in _scene.Snapshot.Actors)
@@ -429,14 +358,11 @@ public class PoseInspectorPane
 
         if (!Nullable.Equals(primary, _primary) || selectionChanged)
         {
-            // The rail-head summary is a pure function of the selection plus
-            // the probed inputs at its cache; this is its selection key.
+            // Selection changes invalidate the rail header.
             _railHeaderPrimed = false;
             AppShellView.CancelAxisEdit();
             bool hadGesture = _cleanGesture != null;
-            // Cancel exactly once: when the service already cancelled the
-            // gesture (its own SelectionChanged subscription), only local
-            // state clears here.
+            // Cancel only an active service gesture.
             ClearTransformSession(cancel:
                 _cleanGesture is { } liveGesture &&
                 _cleanTransforms.ActiveGesture == liveGesture);
@@ -446,12 +372,10 @@ public class PoseInspectorPane
         _primary = primary;
         _selectionSnapshot = selected.ToArray();
 
-        // Frame-scoped legacy view for the retained section reads.
+        // Resolves the entity for this draw.
         _entity = primary switch
         {
-            // A gaze point resolves to the actor that owns it: OwningActor and
-            // OwningSkeleton feed the gaze/expression/pose sections and the
-            // whole content column, and a point selection must not blank them.
+            // Gaze targets resolve to their actor.
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
                 Actor: { } actorId } =>
                 _bindings.Resolve(actorId) is { Success: true } actor ? actor.Value : null,
@@ -461,8 +385,7 @@ public class PoseInspectorPane
         };
     }
 
-    /// <summary>Content column (Pose tab): the Anamnesis surface ONLY —
-    /// seg + strip + matrix. All editing lives in the rail (defect #2).</summary>
+    /// <summary>Renders the pose workspace.</summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         float s = ImGuiHelpers.GlobalScale;
@@ -522,16 +445,7 @@ public class PoseInspectorPane
         return "";
     }
 
-    /// <summary>
-    /// World-space context for the inspector's rotation rings: ring frame
-    /// and the world→model axis conversion, derived from the same real
-    /// actor/bone facts the in-world gizmo consumes — so the inspector's
-    /// red/green/blue describe the same real rotation axes, even though the
-    /// two surfaces project them differently. Local frames the target's own current world
-    /// orientation; World uses world axes; the Parent pivot uses the
-    /// parent→child radial frame; the frame follows the presentation result
-    /// during a drag while applied deltas stay on the frozen baseline.
-    /// </summary>
+    /// <summary>Gets world-space ring axes and model-axis conversion.</summary>
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
         var (transform, canEdit) = ReadTransform();
@@ -559,9 +473,7 @@ public class PoseInspectorPane
             }
             else
             {
-                // Brio parity: World mode manipulates the character's MODEL
-                // axes (Brio feeds ImGuizmo through the model matrix), the
-                // same frame the numeric wells edit.
+                // Global mode uses model axes.
                 frameWorld = _editorState.TransformOrientation == TransformOrientation.Global
                     ? actorRotation
                     : Quaternion.Normalize(actorRotation * model.Rotation);
@@ -569,21 +481,14 @@ public class PoseInspectorPane
             return (frameWorld, actorRotation, canEdit);
         }
 
-        // Actor selection: the displayed transform IS the world transform,
-        // so the axis conversion is identity.
+        // Actor transforms use world axes.
         var frame = _editorState.TransformOrientation == TransformOrientation.Global
             ? Quaternion.Identity
             : Quaternion.Normalize(transform.Rotation);
         return (frame, Quaternion.Identity, canEdit);
     }
 
-    /// <summary>
-    /// Compact ring-gizmo input: the TOTAL model-frame rotation from drag
-    /// start, applied through the same clean gesture as every other rotation
-    /// surface. The displayed values are model-space, so the delta
-    /// pre-multiplies the frozen drag-start rotation directly. No frame
-    /// feeds a native result back as the next frame's baseline.
-    /// </summary>
+    /// <summary>Applies the total model-space delta to the frozen drag start.</summary>
     public void RotateSelectionGizmo(Quaternion totalDelta)
     {
         UpdateGestureGuards();
@@ -595,24 +500,18 @@ public class PoseInspectorPane
         if (_cleanGesture == null || _dragStart is not { } start)
             return;
         var rotation = Quaternion.Normalize(totalDelta * start.Rotation);
-        _dragEuler = null; // the numeric wells re-derive from the quaternion
+        _dragEuler = null; // Numeric rows derive Euler values from the quaternion.
         ApplyTransformSession(transform with { Rotation = rotation });
     }
 
-    /// <summary>Rotation-gizmo drag end: push history.</summary>
+    /// <summary>Commits the rotation gesture.</summary>
     public void CommitRotation()
     {
         CommitTransformSession();
         ClearTransformSession();
     }
 
-    /// <summary>
-    /// A column of stacked <see cref="Crystarium.Section"/>s: one flow
-    /// cursor, one id prefix, and the flow-cursor restore the hosting view
-    /// expects — the "next band" bookkeeping the rail and the Actor tab
-    /// each restated as a local closure plus repeated
-    /// <c>SetCursorScreenPos(origin.X, cursor.Y)</c> stanzas.
-    /// </summary>
+    /// <summary>Stacks inspector sections vertically.</summary>
     private struct SectionStack
     {
         private readonly string _prefix;
@@ -628,9 +527,7 @@ public class PoseInspectorPane
             _cursor = origin;
         }
 
-        /// <summary>Whether any section has been stacked yet — the
-        /// divider-after-first policy stated as <c>divider: stack.Any</c>.
-        /// </summary>
+        /// <summary>Gets whether the stack contains a section.</summary>
         public bool Any { get; private set; }
 
         public void Section(
@@ -656,37 +553,27 @@ public class PoseInspectorPane
         /// <summary>Bottom of the stack, absolute Y.</summary>
         public readonly float Bottom => _cursor.Y;
 
-        /// <summary>Restores the window flow cursor under the stack — the
-        /// pane's contract with the hosting view.</summary>
+        /// <summary>Restores the flow cursor below the stack.</summary>
         public readonly void Finish() =>
             ImGui.SetCursorScreenPos(new Vector2(_originX, _cursor.Y));
     }
 
-    /// <summary>The inspector sections, drawn inside the shell rail.</summary>
+    /// <summary>Renders inspector rail sections.</summary>
     public void DrawRailSections(Vector2 origin, float width)
     {
-        // The gesture guards are a PER-FRAME contract of the transform
-        // SESSION, not of the transform rows: running them from inside
-        // DrawTransform would skip them whenever TRANSLATION was collapsed,
-        // and a cancelled gesture would stay stranded until the section
-        // reopened.
+        // Updates gesture state every frame.
         UpdateGestureGuards();
 
         var stack = new SectionStack("pose-rail", origin, width);
 
-        // Nothing selected declares NO sections: the rail head already says
-        // "Nothing selected", and a stack of headers over an empty selection
-        // would claim there is something to manipulate.
+        // Empty selections have no rail sections.
         if (_primary == null)
         {
             stack.Finish();
             return;
         }
 
-        // A camera's rail is the camera pane's: TRANSLATION edits the
-        // camera's OFFSET (its one positional fact), and TRACKING is the
-        // Ktisis graft — the whole tracking surface lives here, not on the
-        // Camera tab.
+        // Camera controls are provided by the camera pane.
         if (_primary is { Kind: SceneEntityKind.Camera })
         {
             if (_cameraPane.HasRailCamera)
@@ -710,11 +597,7 @@ public class PoseInspectorPane
             return;
         }
 
-        // An overlay node's placement is SCREEN pixels, so it declares
-        // PLACEMENT where every other primary declares TRANSLATION: a world
-        // gizmo and world xyz rows have nothing to say about a node that lives
-        // in the viewport's own coordinates. The section is the Overlay tab's
-        // own rows, drawn from the pane that owns them.
+        // Overlay placement uses screen coordinates.
         if (_primary is { Kind: SceneEntityKind.Overlay })
         {
             if (_overlayPane.HasRailNode)
@@ -729,10 +612,7 @@ public class PoseInspectorPane
             return;
         }
 
-        // The rule is a divider BETWEEN sections, and TRANSLATION is the
-        // rail's first for every primary that HAS one — a gaze point's
-        // position is the world handle's alone, and xyz rows here would
-        // edit the owning actor while claiming to edit the point.
+        // Gaze targets use the world handle instead of transform rows.
         if (_primary is not { Kind: SceneEntityKind.GazeTarget })
             stack.Section(
                 "translation",
@@ -744,9 +624,7 @@ public class PoseInspectorPane
 
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } railBone })
         {
-            // A bone IK cannot reach — a partial root with no parent — gets no
-            // section at all rather than a disabled ghost; the rail states what
-            // this bone can do.
+            // Only supported bones expose IK controls.
             if (_ikPort.IsSupported(TransformTargetId.ForBone(railBone)))
                 stack.Section(
                     "ik",
@@ -755,9 +633,7 @@ public class PoseInspectorPane
                     next => _openIk = next,
                     DrawIk);
         }
-        // A gaze point declares the same sections as its actor: the point was
-        // selected FROM the GAZE section, so that section has to survive the
-        // click that selected it.
+        // Gaze targets retain actor gaze controls.
         else if (_primary is
                  { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget })
         {
@@ -793,8 +669,7 @@ public class PoseInspectorPane
         stack.Finish();
     }
 
-    /// <summary>Whether any bone carries a Poser-authored layer (the
-    /// Mirror edits availability predicate).</summary>
+    /// <summary>Checks whether a selected bone has a posing layer.</summary>
     public bool HasAuthoredEdits =>
         OwningSkeleton() is { } skeleton && _cleanPose.HasAuthoredEdits(skeleton.Actor);
 
@@ -808,8 +683,7 @@ public class PoseInspectorPane
         float s)
     {
         float tabsHeightPx = AppShellView.ToolbarHeight;
-        // The one footer height every workspace bottom bar uses (the library's
-        // action row is the reference), so controls seat at normal size.
+        // Uses the shared workspace footer height.
         float footerHeightPx =
             Crystarium.ActiveTheme.Floating.ModalBarHeight;
         float width = size.X;
@@ -818,8 +692,7 @@ public class PoseInspectorPane
         float footerHeight = footerHeightPx * s;
         float bodyHeight = Math.Max(1f, height - tabsHeight - footerHeight);
 
-        // The mode selector and footer belong to the viewport chrome. Only the
-        // selected surface between them scrolls.
+        // Only the selected workspace surface scrolls.
         float segmentedHeightPx =
             Crystarium.ActiveTheme.Controls.NavigationHeight;
         ImGui.SetCursorScreenPos(cursor + new Vector2(
@@ -854,9 +727,7 @@ public class PoseInspectorPane
             var resetStyle = ControlStyle.Workspace;
             var resetSize =
                 Crystarium.MeasureButton("Reset View", resetStyle);
-            // Right-aligned to the WORKSPACE bar's edge — where the Physics
-            // switch sits — not to the narrower 3D viewport below (user
-            // 2026-08-03); the mirror bar above states the same span.
+            // Aligns with the workspace bar edge.
             ImGui.SetCursorScreenPos(new Vector2(
                 cursor.X + width + AppShellView.ScrollbarWidth * s
                     - resetSize.X,
@@ -889,8 +760,7 @@ public class PoseInspectorPane
         ImGui.SetCursorScreenPos(bodyOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         float bodyContentHeight = bodyHeight;
-        // Every pose surface is a bounded viewport, so switching modes cannot
-        // introduce a scrollbar or shift the shared chrome.
+        // Each pose surface uses a fixed viewport.
         var bodyFlags =
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
         if (ImGui.BeginChild("##pose-surface-content",
@@ -902,12 +772,7 @@ public class PoseInspectorPane
                 false, bodyFlags))
         {
             var scrolledOrigin = ImGui.GetCursorScreenPos();
-            // The scrolling surfaces (matrix, Expression, Actor) span the
-            // pane's scrollbar gutter too, so their scrollbar sits at the
-            // pane edge instead of floating a gutter early. THIS IS THE ONLY
-            // PLACE that widening happens — it is already in the width every
-            // surface below is handed, and the width of the child they draw
-            // in, so nothing downstream may add it again.
+            // Scrolling surfaces include the pane scrollbar gutter.
             float surfaceWidth = _poseView switch
             {
                 2 or 4 or 5 => width
@@ -971,22 +836,7 @@ public class PoseInspectorPane
         return DrawMatrixSurface(cursor, width, viewportHeight, s);
     }
 
-    /// <summary>The bounded band a SECTION surface draws in: one page
-    /// action-gap under the mode strip, one page inset above the footer.
-    /// False when the viewport leaves the band no area.
-    ///
-    /// <para>The band spans the width it is HANDED and adds nothing to it.
-    /// Its callers are the scrolling surfaces, and the host already widened
-    /// their box to the workspace's inner edge — <c>surfaceWidth</c> in
-    /// <see cref="DrawPoseSurface"/> is the pane's width plus the gutter and
-    /// the trailing inset the shell took off, and the child they draw in is
-    /// that same width. Adding those two a SECOND time here put the region
-    /// 24px past its own parent, which clipped the scrollbar out of existence
-    /// and let the content run to the visible edge (user 2026-08-14: the
-    /// Expression and matrix rows with no bar and no trailing room). Spanning
-    /// exactly the child means one gutter and one trailing inset come off
-    /// inside it, which is what a Page keeps, and both edges land on the
-    /// Page-hosted inspectors'.</para></summary>
+    /// <summary>Gets a surface band using the supplied width and gutter.</summary>
     private static bool SurfaceBand(
         Vector2 cursor,
         float width,
@@ -1002,22 +852,7 @@ public class PoseInspectorPane
         return max.X > min.X && max.Y > min.Y;
     }
 
-    /// <summary>
-    /// One scrolling workspace surface: the region spans min→max, the content
-    /// keeps ONE page inset clear of the scrollbar, and the height the body
-    /// reports is registered as the scroll extent. A body that drew only an
-    /// empty-state note reports 0 and registers nothing, exactly as the
-    /// hand-rolled stanzas did.
-    ///
-    /// <para>One inset, not a per-surface count: <see cref="Crystarium.Page"/>
-    /// keeps exactly one, and a section surface that keeps a different number
-    /// is a section surface whose right edge does not line up with the
-    /// light, camera, prop or appearance inspector beside it. The band
-    /// (<see cref="SurfaceBand"/>) is what makes one inset land where a Page's
-    /// does.</para>
-    /// </summary>
-    /// <param name="body">Handed the content origin and the content width in
-    /// SCREEN px; returns the consumed height in screen px.</param>
+    /// <summary>Draws a scrolling workspace surface.</summary>
     private static void InsetScrollSurface(
         string id,
         Vector2 min,
@@ -1045,9 +880,7 @@ public class PoseInspectorPane
             });
     }
 
-    /// <summary>The workspace's Expression tab: the same section the rail
-    /// declares for an actor primary, given the width a face full of weight
-    /// sliders needs.</summary>
+    /// <summary>Draws the workspace expression tab.</summary>
     private float DrawExpressionSurface(
         Vector2 cursor,
         float width,
@@ -1090,9 +923,7 @@ public class PoseInspectorPane
         return viewportHeight;
     }
 
-    /// <summary>The workspace's Actor tab: the actor-wide sections — gaze,
-    /// pose actions, and the pose files that are a property of the actor
-    /// rather than of the selection.</summary>
+    /// <summary>Draws the workspace actor tab.</summary>
     private float DrawActorSurface(
         Vector2 cursor,
         float width,
@@ -1295,8 +1126,7 @@ public class PoseInspectorPane
             separator: ActionBarSeparator.None);
     }
 
-    /// <summary>3D view: orbitable projection of the skeleton (Anamnesis
-    /// Pose3DView equivalent) — drag orbits, click dots selects.</summary>
+    /// <summary>Draws the interactive skeleton projection.</summary>
     private float _orbitYaw;
     private float _orbitPitch;
     private float _orbitZoom;
@@ -1313,9 +1143,7 @@ public class PoseInspectorPane
 
     private float Draw3DView(ImDrawListPtr dl, Vector2 origin, float width, float height, SkeletonDescriptor skeleton, float s)
     {
-        // The 3D canvas uses the shared page inset on every side. Chrome,
-        // camera input, projection, clipping, dot hit testing, and the hint
-        // label all use the same content rectangle.
+        // Uses the shared page inset.
         var camera = Crystarium.ActiveTheme.Pose3D;
         float inset = Crystarium.ActiveTheme.Page.Inset * s;
         var min = origin + new Vector2(inset, inset);
@@ -1374,20 +1202,14 @@ public class PoseInspectorPane
             }
         }
 
-        // Keep the skeleton caches fresh regardless of what the gizmo
-        // targets: with an ACTOR selected the bone-gizmo path (which folds
-        // the per-frame UpdateBoneTransforms/cache registration) never runs,
-        // and with the skeleton overlay defaulting Off nothing else
-        // refreshed either — the 3D view froze. One skeleton-matrix query
-        // performs that refresh.
+        // Refreshes skeleton caches even when no bone gizmo runs.
         if (skeleton.Bones.Count > 0)
             _viewport.GetSkeletonModelMatrix(skeleton.Bones[0].Id);
 
-        // model-space bones (viewport projection) → orbit view → orthographic
+        // Projects model-space bones into the orbit view.
         var positions = new Dictionary<BoneId, Vector3>();
         var center = Vector3.Zero;
-        // Extended/IVCS bones are DISPLAY-suppressed here like everywhere else;
-        // the snapshot's IsHidden and the selection are untouched.
+        // Hidden bones are not drawn.
         bool showNsfw = Config.ConfigurationService.Instance
             .Config.Display.ShowNsfwBones;
         foreach (var bone in skeleton.Bones)
@@ -1472,9 +1294,7 @@ public class PoseInspectorPane
 
     // ── sections ─────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Draws the three transform rows with one shared gesture.
-    /// </summary>
+    /// <summary>Draws transform rows with one shared gesture.</summary>
     private void DrawTransform(Crystarium.FormScope form)
     {
         var (transform, canEdit) = ReadTransform();
@@ -1513,16 +1333,11 @@ public class PoseInspectorPane
             ClearTransformSession();
         }
 
-        // Brio's Transform Slider Speed pair: a bone and a whole entity are
-        // dragged at different magnitudes, so the drag speed is the user's to
-        // set per kind. Rotation keeps its own constant — degrees per pixel
-        // does not vary with the thing being turned.
+        // Translation speed depends on the selected target kind.
         float dragSpeed = Config.ConfigurationService.Instance.Config
             .Transform.For(_entity is IBone);
 
-        // Brio's SwapRotationXandY, applied at the ROW only: the value read out
-        // of the quaternion and the value written back both pass through the
-        // same exchange, so nothing downstream ever sees swapped axes.
+        // Swaps only the rotation row's X and Y values.
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
@@ -1541,7 +1356,7 @@ public class PoseInspectorPane
             () =>
             {
                 Commit();
-                // The numeric wells re-derive from the quaternion again.
+                // Numeric rows re-derive Euler values from the quaternion.
                 _dragEuler = null;
             },
             0.5f,
@@ -1562,17 +1377,7 @@ public class PoseInspectorPane
             form.Status("Freeze the actor's animation to move it.");
     }
 
-    /// <summary>
-    /// Copy/paste of an actor's MODEL transform — Brio's scope exactly, and
-    /// for its reason: a bone's numbers are meaningless on another bone, so
-    /// Brio disables the control outright whenever a bone is selected
-    /// (PosingTransformEditor.cs:129-134). Poser states the same limit as the
-    /// row's own absence rather than as a disabled ghost, which is how the
-    /// rest of this rail declines.
-    ///
-    /// <para>The paste is a non-interactive absolute write, so it lands as one
-    /// undoable entry and never opens a gesture.</para>
-    /// </summary>
+    /// <summary>Draws actor model transform copy and paste controls.</summary>
     private void DrawTransformClipboard(
         Crystarium.FormScope form,
         Transform current,
@@ -1603,6 +1408,7 @@ public class PoseInspectorPane
                         new Domain.Transforms.PoseTransform(
                             copied.Position, copied.Rotation, copied.Scale),
                         "Paste transform");
+                    // Paste is an absolute undoable write without a gesture.
                     _transformClipboardNote =
                         written.Success ? null : written.Detail;
                 },
@@ -1615,18 +1421,12 @@ public class PoseInspectorPane
             form.Status(note);
     }
 
-    // Quiet inline note after an Actor-mode click with no valid target actor.
+    // Displays an invalid actor target note.
     private bool _gazeActorUnavailableNote;
 
-    // The last typed gaze refusal, so a refused click states its reason
-    // instead of appearing to do nothing. Cleared by the next accepted one,
-    // and carries its own actor so a note cannot survive onto another one.
+    // Stores the latest gaze refusal for its actor.
     private (nint Actor, string Text)? _gazeRefusal;
 
-    /// <param name="wide">The workspace Actor tab. The rail's control cell is
-    /// ~150px, so the narrow form keeps Mode and At on rows of their own; the
-    /// parts are chips on a full-width row in BOTH forms, because three text
-    /// buttons plus a lock never fit a control cell.</param>
     private void DrawGaze(Crystarium.FormScope form, IActor actor, bool wide)
     {
         if (!_gazeService.IsAvailable)
@@ -1637,11 +1437,7 @@ public class PoseInspectorPane
 
         var state = _gazeService.GetGazeState(actor);
 
-        // Target discovery is scene membership: every other actor the
-        // SceneSession snapshot represents is eligible — the same read
-        // boundary as the sidebar, so the picker can never disagree with the
-        // tree. Candidates are stable descriptors excluded by lineage; the
-        // live native object is resolved only when matching or applying.
+        // Targets come from the current scene snapshot.
         var sourceLineage = _bindings.GetActorId(actor)?.LogicalId;
         var others = _gazeOthers;
         others.Clear();
@@ -1649,8 +1445,7 @@ public class PoseInspectorPane
             if (sourceLineage is not { } source || candidate.Id.LogicalId != source)
                 others.Add(candidate);
 
-        // Every refusable gaze call routes through here, so the note is always
-        // the outcome of the most recent one.
+        // Records the latest gaze operation result.
         void Record(GazeResult result) =>
             _gazeRefusal = result.Success
                 ? null
@@ -1685,14 +1480,11 @@ public class PoseInspectorPane
                 }));
             }
             state = _gazeService.GetGazeState(actor);
-            // The service's OWN answer decides, not the click: a refused mode
-            // change must not move the selection.
+            // Only accepted mode changes update selection.
             SyncPointSelection(previousMode, state.Mode);
         }
 
-        // The point exists only while Position owns the gaze. Entering hands
-        // the world gizmo the anchor without a second click; leaving hands the
-        // actor back rather than stranding a selection nothing can move.
+        // Position mode selects the gaze point.
         void SyncPointSelection(GazeTargetMode previous, GazeTargetMode current)
         {
             if (previous == current || _bindings.GetActorId(actor) is not { } actorId)
@@ -1706,15 +1498,12 @@ public class PoseInspectorPane
                 _selection.Select(SelectionId.ForActor(actorId));
         }
 
-        // Resolved at DRAW time so the paired form's right cell reads the mode
-        // the left cell may just have changed.
+        // Reads the current mode after form updates.
         (string[] Items, int Selected) TargetItems()
         {
             if (others.Count == 0)
                 return (NoOtherActors, -1);
-            // A dropdown reads its item count from the array's length, so the
-            // buffer is exact — and therefore reallocated only when the scene
-            // gains or loses an actor.
+            // Dropdown labels match the actor count.
             if (_gazeNames.Length != others.Count)
                 _gazeNames = new string[others.Count];
             var targetAddress = _gazeService.GetGazeTargetAddress(actor);
@@ -1788,10 +1577,7 @@ public class PoseInspectorPane
         else
             _gazeActorUnavailableNote = false;
 
-        // The remembered target outliving its actor is a standing condition, so
-        // it is stated whether or not a click has just been refused — but only
-        // in Actor mode, where it is actually refusing something. Both notes
-        // draw: a stale target must not swallow an unrelated refusal.
+        // Actor mode reports stale targets and refusals.
         if (state.TargetStale && state.Mode == GazeTargetMode.Entity)
             form.Status("The remembered gaze target has left the scene. Choose another actor.");
         if (_gazeRefusal is { } refusal && refusal.Actor == actor.Address)
@@ -1813,20 +1599,7 @@ public class PoseInspectorPane
         }
     }
 
-    /// <summary>
-    /// The gaze parts and their locks, per part. Wide: ONE "Parts" row of
-    /// part chips, each followed by its own lock icon. Narrow: one switch
-    /// row per part with the lock icon as its action — three chips plus
-    /// three locks cannot fit the rail's control cell.
-    ///
-    /// Point mode adds, per part, a world-point row of its own, carrying the
-    /// select-point and camera-snap actions on that row rather than on the
-    /// part's switch or chip — they act on the point, so they sit with the
-    /// numbers that state it. The rail's point row is full-width and
-    /// captionless — the switch row directly above it is its caption, the
-    /// same pairing the IK hinge axis uses — while the workspace states the
-    /// part in the label column, because its chips share one row.
-    /// </summary>
+    /// <summary>Draws gaze parts and locks.</summary>
     private void DrawGazeParts(
         Crystarium.FormScope form,
         IActor actor,
@@ -1834,9 +1607,7 @@ public class PoseInspectorPane
         bool wide,
         Action<GazeResult> record)
     {
-        // The CONFIGURED mode gates the chips, not whether anything is being
-        // enforced: with every part off the mode is still remembered, and the
-        // chips are how it gets resumed.
+        // Gaze mode controls chip availability.
         bool off = state.Mode == GazeTargetMode.None;
         bool point = state.Mode == GazeTargetMode.Position;
 
@@ -1858,11 +1629,7 @@ public class PoseInspectorPane
         {
             bool locked = _gazeService.IsPartLocked(actor, part);
             actions.IconButton(
-                // Unlocked is an OPEN lock, never a struck-through one: a
-                // slash says "locking is unavailable here", and the state
-                // being shown is that the part CAN be locked and is not.
-                // The sidebar's camera lock already states the pair this way
-                // (user 2026-08-14, asked twice).
+                // An open lock represents an unlocked part.
                 locked ? TablerIcon.Lock : TablerIcon.LockOpen,
                 () => _gazeService.SetPartLock(actor, part, !locked),
                 disabled: !enabled,
@@ -1872,8 +1639,7 @@ public class PoseInspectorPane
                 id: $"lock-{label}");
         }
 
-        // Point mode only. The snap rides the part's own point row, beside the
-        // XYZ wells it overwrites.
+        // Point mode displays the camera snap action.
         void CameraIcon(
             Crystarium.ActionScope actions,
             string label,
@@ -1892,10 +1658,7 @@ public class PoseInspectorPane
                 id: $"camera-{label}");
         }
 
-        // Point mode only, on the point row ahead of the snap. The world gizmo
-        // grabs whatever is selected, so this is how a part's own point gets a
-        // handle out there — the wells beside it are the same point, typed
-        // instead of dragged.
+        // Point mode selects the part's world handle.
         void PointIcon(
             Crystarium.ActionScope actions,
             string label,
@@ -1920,8 +1683,7 @@ public class PoseInspectorPane
                 id: $"point-{label}");
         }
 
-        // The live per-part target, not the shared anchor: a locked or
-        // separately dragged part keeps its own point.
+        // Reads the live target for this gaze part.
         Vector3 PartPoint(GazeTargetType part) => part switch
         {
             GazeTargetType.Eyes => state.EyesPosition,
@@ -1929,7 +1691,7 @@ public class PoseInspectorPane
             _ => state.BodyPosition,
         };
 
-        // Fixed text per part rather than one interpolated caption per frame.
+        // Uses fixed labels for gaze parts.
         static string PointLabel(GazeTargetType part) => part switch
         {
             GazeTargetType.Eyes => "Eyes point",
@@ -1946,8 +1708,7 @@ public class PoseInspectorPane
                     _gazeService.SetPartPosition(actor, part, next);
                     state = _gazeService.GetGazeState(actor);
                 },
-                // Live all the way down: the write IS the edit, so there is
-                // no commit to close and no history entry to open.
+                // The write applies immediately.
                 null,
                 0.005f,
                 "0.000",
@@ -2005,26 +1766,13 @@ public class PoseInspectorPane
         }
     }
 
-    // Preserve the raw hinge-axis wells while dragging. Valid intermediate
-    // values are sent through the port immediately so the solver follows the
-    // scrub; the runtime keeps the normalized configuration.
+    // Preserves raw scrub values while the runtime normalizes the configuration.
     private Vector3? _ikAxisScratch;
 
-    // Why a bake was refused BEFORE it started. Once a bake is armed the
-    // capture owns the status line, because the outcome lands a couple of
-    // frames after the click. Carries its own target so the note cannot
-    // survive onto another bone's IK section.
+    // Stores an IK bake refusal for its target.
     private (TransformTargetId Target, string Text)? _ikBakeNote;
 
-    /// <summary>
-    /// Every IK chain this ACTOR has, above the selected chain's own controls,
-    /// with Ktisis' pair of bulk buttons over it (ActorPropertyList.cs:326-346
-    /// — each disabled once it would do nothing). The rail is otherwise typed
-    /// by the selection, and this row is the one place that has to escape
-    /// that: arming four limbs one selection at a time is four detours, and
-    /// there was previously no surface at all that showed which chains were
-    /// live without visiting each endpoint in turn.
-    /// </summary>
+    /// <summary>Draws the actor's IK chain controls.</summary>
     private void DrawIkChainList(
         Crystarium.FormScope form,
         BoneId selected,
@@ -2059,18 +1807,14 @@ public class PoseInspectorPane
     {
         foreach (var chain in chains)
         {
-            // Read each chain's own configuration rather than reusing one:
-            // an arm and a leg carry different gains and hinge limits, and a
-            // bulk toggle must not flatten them onto each other.
+            // Each chain keeps its own configuration.
             if (_ikPort.Get(chain) is { } chainConfig &&
                 chainConfig.Enabled != enabled)
                 _ikPort.Set(chain, chainConfig with { Enabled = enabled });
         }
     }
 
-    /// <summary>Which of the listed chains the rail is currently editing —
-    /// the row names the selection so the bulk buttons cannot be mistaken for
-    /// controls over the one chain below them.</summary>
+    /// <summary>Gets the IK chain selected in the rail.</summary>
     private string SelectedChainLabel(
         IReadOnlyList<TransformTargetId> chains,
         TransformTargetId selectedTarget) =>
@@ -2080,11 +1824,7 @@ public class PoseInspectorPane
               " below"
             : "Live IK across every limb of this actor";
 
-    /// <summary>Every supported IK endpoint present on the owning actor, in
-    /// the fixed chain order, deduplicated and confirmed by the port. Weapon
-    /// and prop skeletons are included because the port resolves a chain
-    /// against the endpoint's OWN slot skeleton, not the Character one.
-    /// </summary>
+    /// <summary>Gets supported IK chains for an actor.</summary>
     private IReadOnlyList<TransformTargetId> ActorIkChains(BoneId owner)
     {
         var chains = new List<TransformTargetId>();
@@ -2168,9 +1908,7 @@ public class PoseInspectorPane
             help: eligible
                 ? "Bend the bones above this one to follow it as you move it"
                 : "This bone has no parent for IK to bend");
-        // The armed bake's own progress/failure wins: it outlives the click
-        // that started it, while _ikBakeNote only ever holds an up-front
-        // refusal.
+        // Active bake status takes precedence over refusal notes.
         if ((_ikBake.Note ?? _ikBakeNote) is { } note &&
             note.Target.Equals(ikTarget))
             form.Status(note.Text);
@@ -2227,10 +1965,7 @@ public class PoseInspectorPane
                 next => Apply(config with { EnforceEndRotation = next }),
                 help: "Make the solver keep this bone's own rotation, not just its position");
 
-            // The three gain rows swap their captions between arm and leg
-            // chains; both triples are fixed text. Two Joint only ever renders
-            // for a declared chain, so the arm reading is the fallback that
-            // cannot be reached rather than a guess.
+            // Arm and leg chains use different gain labels.
             var definition =
                 Domain.Posing.IkChains.ForEndpoint(boneId.CanonicalName);
             bool isArm = definition?.IsArm ?? true;
@@ -2344,9 +2079,6 @@ public class PoseInspectorPane
         }
     }
 
-    /// <param name="wide">The workspace Actor tab. The rail's control cell
-    /// cannot hold the reset set, so the narrow form states the caption on its
-    /// own row and gives the buttons the full row width.</param>
     private void DrawPoseActions(
         Crystarium.FormScope form,
         ISkeleton skeleton,
@@ -2382,20 +2114,12 @@ public class PoseInspectorPane
                 "Apply stash",
                 () => _cleanPose.ApplyStash(skeleton.Actor),
                 disabled: !hasStash,
-                // A live clock: this one string says something different
-                // every second.
+                // This status updates every second.
                 help: hasStash
                     ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
                     : "Nothing stashed yet");
         });
-        // No import-flavored controls in the rail — the user's rule
-        // (2026-08-08): rest-pose presets live with the import surfaces
-        // (actor menu now; the Brio-style import popup once it lands),
-        // never in the inspector. Reference pose stays UI-hidden until its
-        // capture path is proven in game.
-        // All resets are ONE set — LAST, under Edit and Transfer. "All"
-        // reaches far past the regions beside it, so it carries the Danger
-        // variant to say so.
+        // Reset controls use the shared action set.
         void Resets(Crystarium.ActionScope actions)
         {
             if (bone != null)
@@ -2405,8 +2129,7 @@ public class PoseInspectorPane
                     "Bone",
                     () =>
                     {
-                        // A VirtualBone primary can carry no selection ids;
-                        // that path keeps the pivot-resolving facade overload.
+                        // Virtual bones use the pivot-resolving overload.
                         if (SelectedBoneIds().Count > 0)
                             ResetSelectedBones();
                         else
@@ -2446,15 +2169,7 @@ public class PoseInspectorPane
 
     // ── rail helpers (header summary, children, flip, freeze state) ─────
 
-    // The rail-head tuple, recomputed only when its inputs move: the compute
-    // builds LINQ chains and joined strings proportional to the selection and
-    // the rail asks EVERY frame — exactly the multi-bone posing state a user
-    // holds longest. Key: selection identity (SetSelection clears the primed
-    // flag) plus allocation-free probes for the inputs that move without a
-    // selection change — scene revision (names, linked siblings, light and
-    // camera descriptors), the linked-bones toggle, and the actor
-    // transform-override flag. Nickname edits arrive through the
-    // configuration-changed hook.
+    // Caches the rail header until its inputs change.
     private (string Who, string Sub, int Linked) _railHeader = ("", "", 0);
     private bool _railHeaderPrimed;
     private ulong _railHeaderRevision;
@@ -2462,18 +2177,12 @@ public class PoseInspectorPane
     private bool _railHeaderOverride;
     private bool _railHeaderConfigHooked;
 
-    /// <summary>Selected-bones summary for the rail head (Anamnesis right
-    /// column): who = display summary, sub = game bone names, linked = number
-    /// of bones an edit applies to (pill hidden below 2). Cached; see the
-    /// key fields above.</summary>
+    /// <summary>Gets the cached rail header summary.</summary>
     public (string Who, string Sub, int Linked) RailHeader()
     {
         if (!_railHeaderConfigHooked)
         {
-            // Actor display names come from configuration (nicknames): a
-            // rename must refresh a head whose selection did not change.
-            // Hooked on first use — draw time — so the pane never races the
-            // configuration service's own bootstrap.
+            // Actor display name changes invalidate the header.
             _railHeaderConfigHooked = true;
             Config.ConfigurationService.Instance.OnConfigurationChanged +=
                 () => _railHeaderPrimed = false;
@@ -2510,7 +2219,7 @@ public class PoseInspectorPane
             if (bones.Count == 1)
             {
                 var bone = bones[0];
-                // Linked partners resolve within the primary bone's OWN slot.
+                // Linked partners stay within the primary slot.
                 var siblings = SlotBonesOf(bone);
                 int linked = _bonePosingService.LinkedBonesEnabled && siblings != null
                     ? 1 + BoneLinkCatalog.GetLinked(bone.CanonicalName).Count(linkName =>
@@ -2531,10 +2240,7 @@ public class PoseInspectorPane
                 + (actors.Count > 3 ? " …" : "");
             return ($"{actors.Count} actors", names, 0);
         }
-        // The head names the OWNING actor for a gaze point too, because an
-        // empty head would take the rail's whole action row (Reset transform)
-        // with it; the sub still says which point, because the head must not
-        // claim the actor itself is selected.
+        // Gaze targets display their owning actor.
         if (_primary is { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor })
             return (ActorLabel(gazeActor), _primary?.Gaze switch
             {
@@ -2575,10 +2281,7 @@ public class PoseInspectorPane
             }
             return ("Camera", "camera", 0);
         }
-        // A prop names itself for the same reason a light does: the rail's
-        // TRANSLATION rows underneath the head are live for a selected prop,
-        // so a head reading "Nothing selected" contradicted the very rows it
-        // stands over.
+        // Props display their own name.
         if (_primary is { Kind: SceneEntityKind.Prop, Prop: { } primaryProp })
         {
             foreach (var prop in _scene.Snapshot.Props)
@@ -2588,9 +2291,7 @@ public class PoseInspectorPane
             }
             return ("Object", "object", 0);
         }
-        // A borrowed map object names itself for the same reason a prop does,
-        // and its subtitle says WHOSE it is: the rail's rows move the map's own
-        // furniture, and the head is where that fact belongs.
+        // Map objects display their owner and name.
         if (_primary is
             { Kind: SceneEntityKind.WorldObject, WorldObject: { } primaryWorld })
         {
@@ -2606,9 +2307,7 @@ public class PoseInspectorPane
             }
             return ("World object", "world object", 0);
         }
-        // An overlay names itself for the same reason a prop does: the rail's
-        // PLACEMENT rows underneath the head are live for a selected node, so
-        // a head reading "Nothing selected" would contradict them.
+        // Overlays display their own name.
         if (_primary is { Kind: SceneEntityKind.Overlay, Overlay: { } primaryOverlay })
         {
             foreach (var overlay in _scene.Snapshot.Overlays)
@@ -2624,35 +2323,23 @@ public class PoseInspectorPane
         return ("", "", 0);
     }
 
-    /// <summary>Whether the inspector is editing a light: the rail keeps its
-    /// TRANSLATION section and rotation gizmo, but neither the actor nor the
-    /// bone action row addresses anything a light has.</summary>
+    /// <summary>Checks whether the primary selection is a light.</summary>
     public bool IsLightSelection =>
         _primary is { Kind: SceneEntityKind.Light };
 
-    /// <summary>Whether the primary is a gaze point: the rail names the
-    /// owning actor but offers neither transform rows nor action buttons —
-    /// the point is the world handle's alone.</summary>
+    /// <summary>Checks whether the primary selection is a gaze target.</summary>
     public bool IsGazeSelection =>
         _primary is { Kind: SceneEntityKind.GazeTarget };
 
-    /// <summary>Whether the inspector is editing a camera: the rail keeps
-    /// TRANSLATION (the camera's offset) and gains TRACKING, but neither the
-    /// action row nor the rotation gizmo addresses anything a camera has —
-    /// its rotation is angle/pan, edited on the Camera tab.</summary>
+    /// <summary>Checks whether the primary selection is a camera.</summary>
     public bool IsCameraSelection =>
         _primary is { Kind: SceneEntityKind.Camera };
 
-    /// <summary>Whether the inspector is editing an overlay node: the rail
-    /// keeps its own PLACEMENT section and takes neither the action row nor
-    /// the rotation gizmo — a node has no bones to reset and no world rotation
-    /// for the rings to turn.</summary>
+    /// <summary>Checks whether the primary selection is an overlay.</summary>
     public bool IsOverlaySelection =>
         _primary is { Kind: SceneEntityKind.Overlay };
 
-    /// <summary>Whether the inspector is editing the actor itself rather than a
-    /// bone. A gaze point counts: it belongs to the actor, so the rail keeps
-    /// the actor actions instead of offering bone resets that address nothing.</summary>
+    /// <summary>Checks whether the primary selection uses actor actions.</summary>
     public bool IsActorSelection =>
         _primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget };
 
@@ -2668,8 +2355,7 @@ public class PoseInspectorPane
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
 
-    /// <summary>Resets every selected bone's pose as ONE history entry;
-    /// falls back to the primary bone when the selection carries no bone ids.</summary>
+    /// <summary>Resets selected bones in one history entry.</summary>
     public void ResetSelectedBones()
     {
         var bones = SelectedBoneIds();
@@ -2684,9 +2370,7 @@ public class PoseInspectorPane
             _cleanPose.ResetBone(TransformTargetId.ForBone(boneId), boneId.CanonicalName);
     }
 
-    /// <summary>Adds every descendant of the selected bones to the
-    /// selection, each traversed within its OWN slot skeleton — multi-slot
-    /// selections included, and never across a slot boundary.</summary>
+    /// <summary>Adds descendants from each selected bone's skeleton.</summary>
     public void SelectChildren()
     {
         var selected = SelectedBoneIds();
@@ -2739,30 +2423,23 @@ public class PoseInspectorPane
         switch (EffectiveSelection()?.Primary)
         {
             case { Kind: TransformTargetKind.Actor, Actor: { } actorId }:
-                // Brio ModelPosingCapability and Ktisis' ITransform target both
-                // allow model transforms while animation is playing. The
-                // override service keeps the draw-object transform stable.
+                // The override service stabilizes animated actor transforms.
                 return _viewport.GetActorTransform(actorId) is { } actorValue
                     ? (ToLegacy(actorValue), true)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Bone, Bone: { } boneId }:
-                // Brio parity: bones display and edit MODEL-space values —
-                // the frame Brio's PosingTransformEditor edits (LastTransform)
-                // and the same frame the gizmo's World mode manipulates, so
-                // dragging a number moves exactly along a World-gizmo axis.
+                // Bone rows use model-space transforms.
                 return ViewportBoneModel(boneId) is { } model
                     ? (model, true)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Light, Light: { } lightId }:
-                // A light's transform IS world space. An attached light is
-                // read-only here: the per-frame bone follow would overwrite
-                // any edit before it was ever seen.
+                // Attached lights are read-only because bone follow overwrites edits.
                 return _viewport.GetLightTransform(lightId) is { } lightValue
                     ? (ToLegacy(lightValue),
                         _bindings.Resolve(lightId).Value?.AttachedBone == null)
                     : (Transform.Identity, false);
             case { Kind: TransformTargetKind.Prop, Prop: { } propId }:
-                // A prop's transform IS world space, exactly like a light's.
+                // Props use world-space transforms.
                 return _viewport.GetPropTransform(propId) is { } propValue
                     ? (ToLegacy(propValue), true)
                     : (Transform.Identity, false);
@@ -2771,8 +2448,7 @@ public class PoseInspectorPane
                 Kind: TransformTargetKind.WorldObject,
                 WorldObject: { } worldObjectId
             }:
-                // A borrowed map object's transform IS world space, exactly
-                // like a prop's.
+                // Map objects use world-space transforms.
                 return _viewport.GetWorldObjectTransform(worldObjectId)
                     is { } worldObjectValue
                     ? (ToLegacy(worldObjectValue), true)
@@ -2809,14 +2485,7 @@ public class PoseInspectorPane
             {
                 targets = effective.Targets;
                 modelStart = displayedStart;
-                // More than one entity moves and turns as ONE body: the
-                // selection's own middle is the pivot, so three actors turned
-                // together swing around each other instead of each spinning on
-                // the spot. It is Brio's `Rotation (Pivot)` row
-                // (UI/Widgets/Core/EntityManagerWidget.cs) as the standing rule
-                // rather than as a second set of drags, and it collapses to the
-                // per-target pivot exactly when there is one target — so a
-                // single entity behaves as it always has.
+                // Multi-selection rotation uses the selection center.
                 pivotMode = targets.Count > 1
                     ? DomainPivot.Centroid
                     : DomainPivot.PerTarget;
@@ -2830,9 +2499,7 @@ public class PoseInspectorPane
                 targets = effective.Targets;
                 modelStart = primaryModel;
                 pivotMode = DomainPivot.PerTarget;
-                // The toolbar pivot governs every rotation surface through
-                // the one gesture path: Parent freezes a custom model-space
-                // pivot at Begin.
+                // Parent pivot is captured when the gesture begins.
                 if (operation == DomainOperation.Rotate &&
                     _editorState.RotationPivot == Core.RotationPivot.Parent &&
                     ViewportParentModel(primaryBoneId)?.Position is { } frozenPivot)
@@ -2891,8 +2558,7 @@ public class PoseInspectorPane
 
     private void ApplyTransformSession(Transform displayedAfter)
     {
-        // Lights have no legacy entity view; their selection kind is the
-        // authorization the entity check gives actors and bones.
+        // Lights are identified by selection kind.
         if (_entity is not (IActor or IBone) &&
             _primary is not { Kind: SceneEntityKind.Light } &&
             _primary is not { Kind: SceneEntityKind.Prop } &&
@@ -2913,11 +2579,7 @@ public class PoseInspectorPane
         var update = _cleanTransforms.Update(gesture, delta);
         if (!update.Success)
         {
-            // Covers scene-revision self-cancellation, invalid deltas, and
-            // runtime apply failure: Cancel only while the service still owns
-            // this gesture id (otherwise it is already cancelled), always
-            // clear local presentation state, and suppress restart until the
-            // pointer interaction deactivates.
+            // Clear state and suppress restart until pointer release.
             ClearTransformSession(cancel:
                 _cleanTransforms.ActiveGesture == gesture);
             _gestureRestartSuppressed = ImGui.IsMouseDown(ImGuiMouseButton.Left);
@@ -2958,9 +2620,7 @@ public class PoseInspectorPane
             Divide(numerator.Z, denominator.Z));
     }
 
-    /// <summary>The scene identity of <see cref="OwningActor"/> — a gaze point
-    /// and a bone both name their owner, exactly as
-    /// <see cref="PrimarySkeletonDescriptor"/> resolves lineage.</summary>
+    /// <summary>Gets the owning actor identity.</summary>
     private ActorId? OwningActorId()
     {
         if (_primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
