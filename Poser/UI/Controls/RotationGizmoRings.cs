@@ -44,6 +44,11 @@ public static class RotationGizmoRings
     public const int RingPoints = 96;
     public const int RollAxis = 3;
 
+    // Ring topology never depends on the camera, target, or gesture. Keep
+    // the unit directions once; Project and WorldGizmo.ProjectRings still
+    // transform every point from the current frame and view each draw.
+    private static readonly Vector3[][] UnitRingPoints = BuildUnitRingPoints();
+
     /// <summary>Shared drag-sensitivity policy: Ctrl fine (0.1×), Shift
     /// coarse (10×), Ctrl+Shift back to 1×.</summary>
     public static float ModifierMultiplier(ImGuiIOPtr io) =>
@@ -130,6 +135,29 @@ public static class RotationGizmoRings
     /// <summary>Unit direction of ring point <paramref name="index"/> on
     /// axis <paramref name="axis"/>'s circle in the gizmo frame.</summary>
     public static Vector3 LocalRingPoint(int axis, int index)
+    {
+        // Preserve the old fallback semantics for callers outside the normal
+        // range: any non-X/Y axis means Z, and an invalid index still follows
+        // the mathematical formula instead of changing its exception shape.
+        if ((uint)index >= RingPoints)
+            return ComputeLocalRingPoint(axis, index);
+
+        return UnitRingPoints[axis is 0 or 1 ? axis : 2][index];
+    }
+
+    private static Vector3[][] BuildUnitRingPoints()
+    {
+        var points = new Vector3[3][];
+        for (int axis = 0; axis < points.Length; axis++)
+        {
+            points[axis] = new Vector3[RingPoints];
+            for (int index = 0; index < RingPoints; index++)
+                points[axis][index] = ComputeLocalRingPoint(axis, index);
+        }
+        return points;
+    }
+
+    private static Vector3 ComputeLocalRingPoint(int axis, int index)
     {
         float t = index / (float)(RingPoints - 1) * MathF.Tau;
         return axis switch

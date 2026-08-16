@@ -26,14 +26,21 @@ public sealed class GizmoAxisFlipContractTests
     /// row-vector convention, exactly what WorldGizmoProjection consumes.</summary>
     private sealed class FakeCamera(Vector3 position, Vector3 target) : ICameraService
     {
-        public Matrix4x4 GetViewMatrix() =>
-            Matrix4x4.CreateLookAt(position, target, Vector3.UnitY);
+        public Vector3 Position { get; set; } = position;
+        public Vector3 Target { get; set; } = target;
+        public int ViewReads { get; private set; }
+
+        public Matrix4x4 GetViewMatrix()
+        {
+            ViewReads++;
+            return Matrix4x4.CreateLookAt(Position, Target, Vector3.UnitY);
+        }
 
         public Matrix4x4 GetProjectionMatrix() =>
             Matrix4x4.CreatePerspectiveFieldOfView(
                 MathF.PI / 4f, 16f / 9f, 0.1f, 100f);
 
-        public Vector3 GetCameraPosition() => position;
+        public Vector3 GetCameraPosition() => Position;
 
         public bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
         {
@@ -44,10 +51,10 @@ public sealed class GizmoAxisFlipContractTests
         public Vector3 ScreenToWorld(Vector2 screenPos, float depth) => default;
 
         public float GetDepthToPosition(Vector3 worldPos) =>
-            Vector3.Distance(position, worldPos);
+            Vector3.Distance(Position, worldPos);
 
         public Vector3 GetLookDirection() =>
-            Vector3.Normalize(target - position);
+            Vector3.Normalize(Target - Position);
     }
 
     private static WorldGizmoProjection Projection(Vector3 cameraPosition)
@@ -297,5 +304,59 @@ public sealed class GizmoAxisFlipContractTests
         Assert.NotNull(latched.Rings);
         for (int a = 0; a < 3; a++)
             Assert.Equal(natural.Rings!.Points[a], latched.Rings!.Points[a]);
+    }
+
+    [Fact]
+    public void Rotation_projection_refreshes_camera_geometry_but_reuses_ring_topology()
+    {
+        var camera = new FakeCamera(new Vector3(0f, 0f, 10f), Vector3.Zero);
+        var first = RotationGizmoRings.Project(
+            camera, new Vector2(100f, 100f), Quaternion.Identity, 80f);
+
+        Assert.True(first.Valid);
+        Assert.Equal(1, camera.ViewReads);
+
+        int frontIndex = -1;
+        for (int i = 1; i < RotationGizmoRings.RingPoints; i++)
+        {
+            if (first.Front[0][i])
+            {
+                frontIndex = i;
+                break;
+            }
+        }
+        Assert.InRange(frontIndex, 1, RotationGizmoRings.RingPoints - 1);
+        var hit = RotationGizmoRings.HitTest(
+            first, first.Points[0][frontIndex], 2f);
+        Assert.NotNull(hit);
+        Assert.True(
+            RotationGizmoRings.PositiveTangent(
+                first, hit!.Value, first.Points[0][frontIndex]).LengthSquared()
+            > 0.99f);
+        Assert.Equal(1, camera.ViewReads);
+
+        // Camera and target-frame changes must refresh projected geometry;
+        // the unit ring directions remain the same exact topology for both
+        // the inspector and world projection paths.
+        var topology = RotationGizmoRings.LocalRingPoint(0, frontIndex);
+        camera.Position = new Vector3(4f, 2f, 8f);
+        var second = RotationGizmoRings.Project(
+            camera,
+            new Vector2(130f, 90f),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.4f),
+            92f);
+
+        Assert.True(second.Valid);
+        Assert.Equal(2, camera.ViewReads);
+        Assert.NotEqual(first.Points[0][frontIndex], second.Points[0][frontIndex]);
+        Assert.Equal(topology, RotationGizmoRings.LocalRingPoint(0, frontIndex));
+
+        var worldProjection = WorldGizmoProjection.Create(
+            camera, new Vector2(1920f, 1080f), Vector3.Zero, 80f);
+        Assert.NotNull(worldProjection);
+        var world = WorldGizmo.ProjectRings(
+            worldProjection!, Quaternion.Identity, 1f, 1f);
+        Assert.True(world.Valid);
+        Assert.Equal(3, camera.ViewReads);
     }
 }
