@@ -1,10 +1,13 @@
 extern alias ProductionPoser;
 
 using System.Numerics;
+using NSubstitute;
 using Poser.Application.Transforms;
 using Poser.ContractTests.Fixtures;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
+using Poser.Entities;
 using ProductionPoser::Poser.UI;
 
 namespace Poser.ContractTests;
@@ -19,6 +22,110 @@ namespace Poser.ContractTests;
 /// </summary>
 public sealed class OverlayGizmoContractTests
 {
+    [Fact]
+    public void Overlay_slot_read_batches_the_live_refresh_and_refuses_stale_order()
+    {
+        var actor = TestIds.Actor();
+        var skeletonId = new SkeletonId(actor, PoseSlot.Character, 4);
+        var root = new BoneId(skeletonId, 0, 0, "root");
+        var hand = new BoneId(skeletonId, 0, 1, "hand");
+        var descriptor = new SkeletonDescriptor(
+            skeletonId,
+            new[]
+            {
+                new BoneDescriptor(root, "Root", null),
+                new BoneDescriptor(hand, "Hand", root),
+            });
+        var liveRoot = Substitute.For<IBone>();
+        liveRoot.PartialId.Returns(0);
+        liveRoot.BoneIndex.Returns(0);
+        liveRoot.BoneName.Returns("root");
+        liveRoot.LastTransform.Returns(new Transform(new Vector3(1f, 2f, 3f)));
+        var liveHand = Substitute.For<IBone>();
+        liveHand.PartialId.Returns(0);
+        liveHand.BoneIndex.Returns(1);
+        liveHand.BoneName.Returns("hand");
+        liveHand.LastTransform.Returns(new Transform(new Vector3(4f, 5f, 6f)));
+        var liveSkeleton = Substitute.For<ISkeleton>();
+        liveSkeleton.IsValid.Returns(true);
+        liveSkeleton.Bones.Returns(new[] { liveRoot, liveHand });
+
+        var source = new OverlayNativeSource
+        {
+            Skeleton = liveSkeleton,
+            AvailableId = skeletonId,
+        };
+        var reader = new SkeletonOverlayNativeRefresh(source);
+        var transforms = new List<SkeletonOverlayTransform>();
+        var eligible = new List<int> { 0, 1 };
+        var counters = default(SkeletonOverlayNativeRefreshCounters);
+
+        Assert.True(reader.TryReadSlot(
+            descriptor, eligible, transforms, ref counters, out _));
+        Assert.Equal(1, counters.MatrixRefreshes);
+        Assert.Equal(1, counters.SkeletonResolves);
+        Assert.Equal(2, counters.TransformCopies);
+        Assert.Equal(1, source.MatrixCalls);
+        Assert.Equal(1, source.SkeletonCalls);
+        Assert.Equal(new Vector3(4f, 5f, 6f), transforms[1].Value.Position);
+
+        liveHand.BoneName.Returns("stale-hand");
+        Assert.False(reader.TryReadSlot(
+            descriptor, eligible, transforms, ref counters, out _));
+        Assert.Empty(transforms);
+        Assert.Equal(2, counters.MatrixRefreshes);
+        Assert.Equal(2, counters.SkeletonResolves);
+        Assert.Equal(2, counters.TransformCopies);
+        Assert.Equal(2, source.MatrixCalls);
+        Assert.Equal(2, source.SkeletonCalls);
+
+        liveHand.BoneName.Returns("hand");
+        source.AvailableId = skeletonId with { Generation = 5 };
+        eligible.Add(0);
+        Assert.False(reader.TryReadSlot(
+            descriptor, eligible, transforms, ref counters, out _));
+        Assert.Empty(transforms);
+        Assert.Equal(3, counters.MatrixRefreshes);
+        Assert.Equal(3, counters.SkeletonResolves);
+        Assert.Equal(2, counters.TransformCopies);
+
+        source.AvailableId = skeletonId;
+        eligible.Clear();
+        eligible.Add(0);
+        eligible.Add(1);
+        Assert.True(reader.TryReadSlot(
+            descriptor, eligible, transforms, ref counters, out _));
+        Assert.Equal(4, counters.MatrixRefreshes);
+        Assert.Equal(4, counters.SkeletonResolves);
+        Assert.Equal(4, counters.TransformCopies);
+
+        eligible.Clear();
+        Assert.False(reader.TryReadSlot(
+            descriptor, eligible, transforms, ref counters, out _));
+        Assert.Equal(4, counters.MatrixRefreshes);
+        Assert.Equal(4, counters.SkeletonResolves);
+    }
+
+    private sealed class OverlayNativeSource : ISkeletonOverlayNativeSource
+    {
+        public ISkeleton? Skeleton { get; set; }
+        public SkeletonId AvailableId { get; set; }
+        public int MatrixCalls { get; private set; }
+        public int SkeletonCalls { get; private set; }
+
+        public Matrix4x4? GetSkeletonModelMatrix(BoneId id)
+        {
+            MatrixCalls++;
+            return Matrix4x4.Identity;
+        }
+
+        public ISkeleton? ResolveSkeleton(SkeletonId id)
+        {
+            SkeletonCalls++;
+            return id == AvailableId ? Skeleton : null;
+        }
+    }
+
     // ── hover-list wheel (Ktisis SelectableGui.DrawSelectList) ───────────
 
     [Fact]

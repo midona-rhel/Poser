@@ -161,6 +161,10 @@ public class SkeletonOverlayWindow : Window
     private readonly Dictionary<BoneId, Vector2> _boneScreenPositions = new();
     private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
     private readonly List<BoneDisplayData> _hoverCandidates = new();
+    private readonly SkeletonOverlayNativeRefresh _nativeRefresh;
+    private readonly List<int> _eligibleBoneIndices = new();
+    private readonly List<SkeletonOverlayTransform> _overlayTransforms = new();
+    private SkeletonOverlayNativeRefreshCounters _nativeRefreshCounters;
 
     // Hover list state (Ktisis-style). The frozen candidates outlive the
     // frame that found them, so this list is NOT one of the per-frame
@@ -222,6 +226,7 @@ public class SkeletonOverlayWindow : Window
         _presentation = presentation;
         _ikPort = ikPort;
         _bindings = bindings;
+        _nativeRefresh = new SkeletonOverlayNativeRefresh(viewport, bindings);
         _adoption = adoption;
         _actorManager = actorManager;
         _log = log;
@@ -250,6 +255,9 @@ public class SkeletonOverlayWindow : Window
     /// sidebar's per-bone eyes are what normally decides, and this is how the
     /// whole armature is taken away at once.</para></summary>
     public bool UserVisible { get; set; }
+
+    internal SkeletonOverlayNativeRefreshCounters NativeRefreshCounters =>
+        _nativeRefreshCounters;
 
     private bool AnySelectionAnchor()
     {
@@ -290,6 +298,7 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawCore()
     {
+        _nativeRefreshCounters = default;
         var drawList = ImGui.GetBackgroundDrawList();
         var viewportPos = ImGui.GetMainViewport().Pos;
         var io = ImGui.GetIO();
@@ -461,11 +470,6 @@ public class SkeletonOverlayWindow : Window
             if (descriptors.Count == 0)
                 continue;
 
-            // The skeleton-matrix query refreshes/registers skeleton caches
-            // inside the runtime boundary.
-            if (_viewport.GetSkeletonModelMatrix(descriptors[0].Id) is not { } modelMatrix)
-                continue;
-
             var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
 
@@ -473,8 +477,11 @@ public class SkeletonOverlayWindow : Window
             var boneWorldPositions = _boneWorldPositions;
             boneScreenPositions.Clear();
             boneWorldPositions.Clear();
-            foreach (var bone in descriptors)
+            var eligibleBoneIndices = _eligibleBoneIndices;
+            eligibleBoneIndices.Clear();
+            for (int i = 0; i < descriptors.Count; i++)
             {
+                var bone = descriptors[i];
                 // Opted-in bones draw while the master switch is on; a
                 // SELECTED bone draws regardless — the anchor rule, which is
                 // what stops the switch stranding an edit with no on-screen
@@ -486,13 +493,28 @@ public class SkeletonOverlayWindow : Window
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
-                if (_viewport.GetBoneModelTransform(bone.Id) is not { } boneTransform)
-                    continue;
-                var worldPos = Vector3.Transform(boneTransform.Position, modelMatrix);
+                eligibleBoneIndices.Add(i);
+            }
+
+            var overlayTransforms = _overlayTransforms;
+            if (!_nativeRefresh.TryReadSlot(
+                    slotSkeleton,
+                    eligibleBoneIndices,
+                    overlayTransforms,
+                    ref _nativeRefreshCounters,
+                    out var modelMatrix))
+                continue;
+
+            for (int i = 0; i < overlayTransforms.Count; i++)
+            {
+                var transform = overlayTransforms[i];
+                var worldPos = Vector3.Transform(
+                    transform.Value.Position,
+                    modelMatrix);
                 if (!_cameraService.WorldToScreen(worldPos, out var screenPos))
                     continue;
-                boneScreenPositions[bone.Id] = viewportPos + screenPos;
-                boneWorldPositions[bone.Id] = worldPos;
+                boneScreenPositions[transform.Id] = viewportPos + screenPos;
+                boneWorldPositions[transform.Id] = worldPos;
             }
 
             foreach (var bone in descriptors)
