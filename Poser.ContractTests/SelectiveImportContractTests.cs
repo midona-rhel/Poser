@@ -167,7 +167,16 @@ public sealed class SelectiveImportContractTests
     public void Selected_import_arms_one_transaction_with_anchor_and_mode_bypass()
     {
         using var app = new PoseImportCaptureHarness();
-        app.SetNextPlan(PlanWithOneWrite(app));
+        PoseImportOptions? built = null;
+        app.PoseFiles.BuildImportPlan(
+            Arg.Any<IReadOnlyList<ISkeleton>>(),
+            Arg.Any<PoseFile>(),
+            Arg.Any<PoseImportOptions>())
+            .Returns(call =>
+            {
+                built = call.ArgAt<PoseImportOptions>(2);
+                return PlanWithOneWrite(app);
+            });
         var receipts = new List<OperationReceipt>();
         var options = new PoseImportOptions
         {
@@ -193,17 +202,17 @@ public sealed class SelectiveImportContractTests
             new[] { SnapshotBone(app) });
 
         Assert.True(result.Success, result.Detail);
-        PoseImportOptions? built = null;
         app.PoseFiles.Received(1).BuildImportPlan(
             Arg.Any<IReadOnlyList<ISkeleton>>(),
             Arg.Any<PoseFile>(),
-            Arg.Do<PoseImportOptions>(value => built = value));
+            Arg.Any<PoseImportOptions>());
         Assert.NotNull(built);
         Assert.True(IsReducedHeadFilter(built!));
         Assert.True(built.AnchorSelectedPositions);
         Assert.False(built.ApplyBody);
         Assert.False(built.ApplyFace);
 
+        app.RunNextDelay(4);
         app.FireRegisteredNativeAction();
         app.EndRegisteredNativeBatch();
         app.RunNextDelay(4);
@@ -313,6 +322,7 @@ public sealed class SelectiveImportContractTests
             TransformComponents.Position | TransformComponents.Rotation,
             write.Components);
 
+        app.RunNextDelay(4);
         app.FireRegisteredNativeAction();
         app.EndRegisteredNativeBatch();
         app.RunNextDelay(4);
