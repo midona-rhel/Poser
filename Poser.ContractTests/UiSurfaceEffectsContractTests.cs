@@ -88,6 +88,28 @@ public sealed class UiSurfaceEffectsContractTests : IDisposable
         Assert.Equal(controlFill, Crystarium.ActiveTheme.Chrome.ControlFill);
     }
 
+    [Theory]
+    [InlineData(0.50f)]
+    [InlineData(1f)]
+    public void Hover_labels_keep_an_opaque_unblurred_surface(float fillOpacity)
+    {
+        Crystarium.FloatingSurface.BackdropBlurAvailable = true;
+        Crystarium.FloatingSurface.ConfigureEffects(fillOpacity, true);
+
+        BoxStyle style = Crystarium.HoverHelp.SurfaceStyle;
+
+        Assert.Equal(1f, style.BackgroundColor!.Value.W);
+        Assert.Equal(
+            Crystarium.ActiveTheme.Glass.Background with { W = 1f },
+            style.BackgroundColor);
+        Assert.Equal(
+            Crystarium.ActiveTheme.HoverHelp.BorderWidth,
+            style.BorderWidth);
+        Assert.Equal(
+            Crystarium.ActiveTheme.Shadows.HoverHelp,
+            style.BoxShadow);
+    }
+
     [Fact]
     public void Blur_keeps_the_existing_surface_fill_recipe()
     {

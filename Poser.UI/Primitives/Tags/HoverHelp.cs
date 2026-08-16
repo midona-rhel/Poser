@@ -36,6 +36,25 @@ public static partial class Crystarium
         private static double _phaseStart;
         private static float PopDuration =>
             _card.Animated ? Crystarium.ActiveTheme.Motion.HoverPop : 0f;
+        internal static BoxStyle SurfaceStyle
+        {
+            get
+            {
+                var secondary = Crystarium.ActiveTheme.Border;
+                var help = Crystarium.ActiveTheme.HoverHelp;
+                return new BoxStyle
+                {
+                    BackgroundColor = GlassChrome.OpaqueBackgroundColor,
+                    BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
+                    BorderWidth = help.BorderWidth,
+                    BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
+                    BorderLeftColor = secondary,
+                    BorderRightColor = secondary,
+                    BorderBottomColor = secondary,
+                    BoxShadow = Crystarium.ActiveTheme.Shadows.HoverHelp,
+                };
+            }
+        }
         public static void Explain(string id, Vector2 targetMin, Vector2 targetMax,
             string text, string? shortcut = null, HoverHelpSide side = HoverHelpSide.Bottom,
             bool animated = true)
@@ -270,21 +289,14 @@ public static partial class Crystarium
                     animMax);
 
             var fg = ImGui.GetForegroundDrawList();
-            // Tooltips animate their card over the unblurred scene.
+            // Tooltips animate over the scene without backdrop blur.
             float alpha = inness * c.Alpha;
             int vtxStart = fg.VtxBuffer.Size;
-            var secondary = Crystarium.ActiveTheme.Border;
-            BoxRenderer.Draw(fg, pos, pos + new Vector2(cardW, cardH), new BoxStyle
-            {
-                BackgroundColor = GlassChrome.BackgroundColor,
-                BorderRadius = Crystarium.ActiveTheme.Radii.Medium,
-                BorderWidth = help.BorderWidth,
-                BorderTopColor = Crystarium.ActiveTheme.Glass.BorderTop,
-                BorderLeftColor = secondary,
-                BorderRightColor = secondary,
-                BorderBottomColor = secondary,
-                BoxShadow = Crystarium.ActiveTheme.Shadows.HoverHelp,
-            });
+            BoxRenderer.Draw(
+                fg,
+                pos,
+                pos + new Vector2(cardW, cardH),
+                SurfaceStyle);
             float x = pos.X + border + help.PaddingX * scale;
             float midY = pos.Y + cardH * 0.5f;
 

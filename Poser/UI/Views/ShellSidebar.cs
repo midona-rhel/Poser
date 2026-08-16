@@ -474,18 +474,25 @@ public sealed class ShellSidebar
 
         if (!section.ShowPlus)
             return;
-        // The plus uses the same trailing content edge as row actions.
         float side = theme.Controls.SwitchHeight;
-        var plusMin = new Vector2(
-            at.X + (width - theme.Scrollbar.GutterWidth - side) * scale, at.Y);
-        ImGui.SetCursorScreenPos(plusMin);
-        if (Crystarium.SidebarSectionPlusButton(
+        var plus = Crystarium.SidebarTrailingAction(
+            new Vector2(
+                at.X + (width - theme.Scrollbar.GutterWidth) * scale,
+                at.Y),
+            entry.Height,
+            side,
+            theme.Controls.IconContentScale,
+            ActionGap,
+            scale);
+        ImGui.SetCursorScreenPos(plus.HitMin);
+        if (Crystarium.IconButton(
+                TablerIcon.Plus,
                 style: ControlStyle.Square(side),
-                id: entry.Id))
-            // The spawn surface opens from the button's bottom-left.
+                id: entry.Id,
+                iconSize: plus.GlyphSide / scale))
             _vm.OnSectionPlus?.Invoke(
                 entry.Section,
-                new Vector2(plusMin.X, plusMin.Y + side * scale));
+                plus.SpawnAnchor);
     }
 
     /// <summary>Draws a selectable header target using row pill geometry.</summary>
@@ -661,7 +668,7 @@ public sealed class ShellSidebar
 
             if (row.OverlayBones is not { } bones)
                 return;
-            // Mixed visibility uses a split eye without a selected background.
+            // A filled pupil marks visible descendants on the inactive eye.
             int state = _vm.OverlayVisibilityOf?.Invoke(bones) ?? 2;
             ImGui.SetCursorScreenPos(origin);
             string help = state switch

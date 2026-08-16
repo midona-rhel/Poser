@@ -967,7 +967,7 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Draws theme choices; the first uses the split swatch.</summary>
+        /// <summary>Draws theme choices through the shared swatch control.</summary>
         public void ThemeSwatches<TValue>(
             string label,
             IReadOnlyList<ThemeChoice<TValue>> choices,
@@ -982,30 +982,17 @@ public static partial class Crystarium
             {
                 string swatchId = $"{id}##{index}";
                 ThemeChoice<TValue> choice = choices[index];
-                if (index != 0)
-                {
-                    if (Swatch(
-                            swatchId,
-                            choice.Swatch,
-                            index == selected,
-                            help: choice.Label))
-                        onChange(choice.Value);
-                    return;
-                }
-
-                var hit = Interactive.Reserve(
-                    swatchId,
-                    new Vector2(ThemeModeGlyph.HitSide *
-                        ImGuiHelpers.GlobalScale),
-                    disabled: false);
-                var center = hit.ScreenMin + hit.Size * 0.5f;
-                ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(
-                    center, hit.Size.X * 0.5f);
-                ThemeModeGlyph.Draw(ImGui.GetWindowDrawList(), plan);
-                if (hit.Hovered)
-                    HoverHelp.Explain(swatchId, hit.ScreenMin,
-                        hit.ScreenMax, choice.Label);
-                if (hit.Clicked)
+                bool clicked = index == 0
+                    ? ThemeModeSwatch(
+                        swatchId,
+                        index == selected,
+                        help: choice.Label)
+                    : Swatch(
+                        swatchId,
+                        choice.Swatch,
+                        index == selected,
+                        help: choice.Label);
+                if (clicked)
                     onChange(choice.Value);
             });
             _page.EndRow(row, id, help);

@@ -1,65 +1,61 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
 internal readonly record struct SidebarVisibilityPlan(
-    float SplitX,
-    float InactiveOpacity,
-    float ActiveOpacity);
+    float EyeOpacity,
+    Vector2 PupilCenter,
+    float PupilRadius,
+    float PupilOpacity);
+
+public readonly record struct SidebarTrailingActionGeometry(
+    Vector2 HitMin,
+    Vector2 HitMax,
+    Vector2 GlyphMin,
+    Vector2 GlyphMax,
+    Vector2 Center,
+    Vector2 SpawnAnchor,
+    float GlyphSide);
 
 public static partial class Crystarium
 {
-    internal const float SidebarPlusInkOffset = 1f;
     internal const float SidebarInactiveVisibilityOpacity = 0.45f;
 
-    internal static (Vector2 Min, Vector2 Max) SidebarPlusInkBounds(
-        Vector2 min, Vector2 max, float scale)
+    public static SidebarTrailingActionGeometry SidebarTrailingAction(
+        Vector2 contentRightTop,
+        float bandHeight,
+        float actionSide,
+        float contentScale,
+        float trailingGap,
+        float scale)
     {
-        var offset = new Vector2(SidebarPlusInkOffset * scale, 0f);
-        return (min - offset, max - offset);
+        var hitMin = new Vector2(
+            contentRightTop.X - (trailingGap + actionSide) * scale,
+            contentRightTop.Y + (bandHeight - actionSide) * 0.5f * scale);
+        var hitMax = hitMin + new Vector2(actionSide * scale);
+        var center = (hitMin + hitMax) * 0.5f;
+        float glyphSide = actionSide * contentScale * scale;
+        var glyphMin = center - new Vector2(glyphSide * 0.5f);
+        return new SidebarTrailingActionGeometry(
+            hitMin,
+            hitMax,
+            glyphMin,
+            glyphMin + new Vector2(glyphSide),
+            center,
+            new Vector2(hitMin.X, hitMax.Y),
+            glyphSide);
     }
 
-    internal static SidebarVisibilityPlan SidebarVisibilitySplit(
+    internal static SidebarVisibilityPlan SidebarChildVisibility(
         Vector2 min, Vector2 max) => new(
-            MathF.Round((min.X + max.X) * 0.5f),
             SidebarInactiveVisibilityOpacity,
+            (min + max) * 0.5f,
+            MathF.Min(max.X - min.X, max.Y - min.Y) * 0.075f,
             1f);
 
-    /// <summary>Draws the section plus left of the button's center.</summary>
-    public static bool SidebarSectionPlusButton(
-        Action? onClick = null,
-        ControlStyle style = default,
-        string? help = null,
-        string? id = null)
-    {
-        var size = IconButtonSize(style);
-        return RenderIconButton(
-            id ?? "sidebar-section-plus",
-            size,
-            style.Selected,
-            disabled: false,
-            help,
-            (min, max, opacity, background) =>
-            {
-                var bounds = SidebarPlusInkBounds(
-                    min, max, ImGuiHelpers.GlobalScale);
-                DrawButtonIcon(
-                    bounds.Min,
-                    bounds.Max,
-                    TablerIcon.Plus,
-                    16f,
-                    opacity,
-                    background,
-                    flipX: false,
-                    strokeWidth: 1.5f);
-            },
-            onClick);
-    }
-
-    /// <summary>Draws inactive and active halves of one visibility mark.</summary>
+    /// <summary>Draws an inactive eye with a filled child-state pupil.</summary>
     public static bool SidebarMixedVisibilityToggle(
         Action? onClick = null,
         ControlStyle style = default,
@@ -88,36 +84,20 @@ public static partial class Crystarium
     private static void DrawSidebarMixedVisibility(
         Vector2 min, Vector2 max, float opacity)
     {
-        var plan = SidebarVisibilitySplit(min, max);
+        var plan = SidebarChildVisibility(min, max);
         var draw = ImGui.GetWindowDrawList();
-        draw.PushClipRect(min, new Vector2(plan.SplitX, max.Y), true);
-        try
-        {
-            DrawLegacyButtonIcon(
-                min,
-                max,
-                TablerIcon.Eye,
-                opacity * plan.InactiveOpacity,
-                flipX: false);
-        }
-        finally
-        {
-            draw.PopClipRect();
-        }
+        DrawLegacyButtonIcon(
+            min,
+            max,
+            TablerIcon.Eye,
+            opacity * plan.EyeOpacity,
+            flipX: false);
 
-        draw.PushClipRect(new Vector2(plan.SplitX, min.Y), max, true);
-        try
-        {
-            DrawLegacyButtonIcon(
-                min,
-                max,
-                TablerIcon.Eye,
-                opacity * plan.ActiveOpacity,
-                flipX: false);
-        }
-        finally
-        {
-            draw.PopClipRect();
-        }
+        draw.AddCircleFilled(
+            plan.PupilCenter,
+            plan.PupilRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                ActiveTheme.Chrome.Text.Fade(opacity * plan.PupilOpacity))),
+            16);
     }
 }

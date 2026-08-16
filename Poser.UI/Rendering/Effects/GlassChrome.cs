@@ -42,6 +42,10 @@ internal static class GlassChrome
             return color with { W = color.W * _fillOpacity };
         }
     }
+
+    internal static Vector4 OpaqueBackgroundColor =>
+        Crystarium.ActiveTheme.Glass.Background with { W = 1f };
+
     public static void PrependBlur(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding)
     {
         if (!ShouldPrependBackdropBlur) return;

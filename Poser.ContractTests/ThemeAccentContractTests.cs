@@ -131,7 +131,7 @@ public sealed class ThemeAccentContractTests
     }
 
     [Fact]
-    public void Theme_mode_glyph_is_opaque_and_keeps_a_slash_edge_when_scaled()
+    public void Theme_mode_glyph_is_two_equal_opaque_halves()
     {
         foreach (float scale in new[] { 1f, 2f })
         {
@@ -139,21 +139,54 @@ public sealed class ThemeAccentContractTests
             float radius = 10f * scale;
             ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(center, radius);
 
+            Assert.Equal(center, plan.Center);
+            Assert.Equal(radius, plan.Radius);
             Assert.Equal(new Vector4(0f, 0f, 0f, 1f), plan.BaseColor);
-            Assert.Equal(Vector4.One, plan.SectorColor);
-            Assert.Equal(center, plan.Sector[0]);
+            Assert.Equal(Vector4.One, plan.HalfColor);
             Assert.Equal(
                 new[]
                 {
                     ThemeModeGlyphPrimitive.CircleFill,
-                    ThemeModeGlyphPrimitive.SectorFill,
+                    ThemeModeGlyphPrimitive.HalfFill,
                 },
                 plan.Primitives);
-            Assert.Equal(center + new Vector2(radius / MathF.Sqrt(2f), -radius / MathF.Sqrt(2f)), plan.Sector[1]);
-            Assert.Equal(center + new Vector2(-radius / MathF.Sqrt(2f), radius / MathF.Sqrt(2f)), plan.Sector[^1]);
-            Assert.All(plan.Sector[1..], point =>
+            Assert.Equal(ThemeModeGlyph.ArcSegments + 1, plan.Half.Length);
+            Assert.Equal(center + new Vector2(radius / MathF.Sqrt(2f), -radius / MathF.Sqrt(2f)), plan.Half[0]);
+            Assert.Equal(center + new Vector2(-radius / MathF.Sqrt(2f), radius / MathF.Sqrt(2f)), plan.Half[^1]);
+            Assert.DoesNotContain(center, plan.Half);
+            Assert.All(plan.Half, point =>
                 Assert.InRange(Vector2.Distance(point, center), radius - 0.0001f, radius + 0.0001f));
-            Assert.Equal(ThemeModeGlyph.HitSide * scale, 16f * scale);
+            float halfArea = PolygonArea(plan.Half, center);
+            float fullArea = 0.5f * ThemeModeGlyph.ArcSegments * 2f
+                * radius * radius
+                * MathF.Sin(MathF.PI / ThemeModeGlyph.ArcSegments);
+            Assert.Equal(fullArea * 0.5f, halfArea, 3);
         }
+    }
+
+    [Fact]
+    public void Shared_swatch_layout_spaces_hits_and_selection_rings()
+    {
+        SwatchLayoutPlan plan = Crystarium.SwatchLayout(7);
+
+        Assert.Equal(20f, plan.HitSide);
+        Assert.Equal(7f, plan.DotRadius);
+        Assert.Equal(4f, plan.SlotGap);
+        Assert.Equal(24f, plan.CenterPitch);
+        Assert.Equal(178f, plan.PaletteWidth);
+        Assert.Equal(11f, plan.ActiveOuterRadius);
+        Assert.True(plan.CenterPitch > plan.ActiveOuterRadius * 2f);
+    }
+
+    private static float PolygonArea(Vector2[] points, Vector2 center)
+    {
+        float twiceArea = 0f;
+        for (int i = 0; i < points.Length; i++)
+        {
+            Vector2 a = points[i] - center;
+            Vector2 b = points[(i + 1) % points.Length] - center;
+            twiceArea += a.X * b.Y - a.Y * b.X;
+        }
+        return MathF.Abs(twiceArea) * 0.5f;
     }
 }

@@ -9,28 +9,43 @@ public sealed class SidebarPresentationContractTests
     [Theory]
     [InlineData(1f)]
     [InlineData(2f)]
-    public void Section_plus_moves_only_its_ink(float scale)
+    public void Section_plus_matches_the_trailing_action_geometry(float scale)
     {
-        var min = new Vector2(100f, 40f);
-        var max = new Vector2(120f, 60f);
+        var contentRightTop = new Vector2(200f * scale, 40f * scale);
 
-        var bounds = Crystarium.SidebarPlusInkBounds(min, max, scale);
+        SidebarTrailingActionGeometry geometry =
+            Crystarium.SidebarTrailingAction(
+                contentRightTop,
+                bandHeight: 20f,
+                actionSide: 20f,
+                contentScale: 0.7f,
+                trailingGap: 2f,
+                scale);
 
-        Assert.Equal(min.X - scale, bounds.Min.X);
-        Assert.Equal(max.X - scale, bounds.Max.X);
-        Assert.Equal(min.Y, bounds.Min.Y);
-        Assert.Equal(max.Y, bounds.Max.Y);
+        Assert.Equal(new Vector2(178f, 40f) * scale, geometry.HitMin);
+        Assert.Equal(new Vector2(198f, 60f) * scale, geometry.HitMax);
+        Assert.Equal(new Vector2(188f, 50f) * scale, geometry.Center);
+        Assert.Equal(new Vector2(181f, 43f) * scale, geometry.GlyphMin);
+        Assert.Equal(new Vector2(195f, 57f) * scale, geometry.GlyphMax);
+        Assert.Equal(14f * scale, geometry.GlyphSide);
+        Assert.Equal(geometry.Center,
+            (geometry.HitMin + geometry.HitMax) * 0.5f);
+        Assert.Equal(geometry.Center,
+            (geometry.GlyphMin + geometry.GlyphMax) * 0.5f);
+        Assert.Equal(new Vector2(178f, 60f) * scale,
+            geometry.SpawnAnchor);
     }
 
     [Fact]
-    public void Mixed_visibility_splits_one_mark_without_selected_state()
+    public void Mixed_visibility_fills_only_the_inactive_eyes_pupil()
     {
-        var plan = Crystarium.SidebarVisibilitySplit(
+        var plan = Crystarium.SidebarChildVisibility(
             new Vector2(10f, 20f), new Vector2(30f, 40f));
 
-        Assert.Equal(20f, plan.SplitX);
-        Assert.Equal(0.45f, plan.InactiveOpacity);
-        Assert.Equal(1f, plan.ActiveOpacity);
+        Assert.Equal(0.45f, plan.EyeOpacity);
+        Assert.Equal(new Vector2(20f, 30f), plan.PupilCenter);
+        Assert.Equal(1.5f, plan.PupilRadius);
+        Assert.Equal(1f, plan.PupilOpacity);
     }
 
     [Fact]
