@@ -555,6 +555,11 @@ public class MainWindow : Window
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
     {
+        _vm.BranchLabel = BuildMetadata.Branch is "" or "unknown" or "detached" or "main" or "master"
+            ? ""
+            : BuildMetadata.Commit.Length == 0
+                ? BuildMetadata.Branch
+                : $"{BuildMetadata.Branch} · {BuildMetadata.Commit}";
         Size = new Vector2(DefaultWidth, DefaultHeight);
         SizeCondition = ImGuiCond.FirstUseEver;
         // Escape is the deselect chord, not the dismiss-the-workspace one —

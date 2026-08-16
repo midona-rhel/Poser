@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Numerics;
 
 namespace Poser.UI;
@@ -10,6 +12,25 @@ namespace Poser.UI;
 /// </summary>
 public readonly record struct Theme
 {
+    // Persisted accent positions use one palette in every brightness mode.
+    private static readonly ReadOnlyCollection<Vector4> AccentPalette =
+        Array.AsReadOnly(new[]
+        {
+            new Vector4(50f / 255f, 151f / 255f, 1f, 1f),
+            new Vector4(126f / 255f, 211f / 255f, 160f / 255f, 1f),
+            new Vector4(232f / 255f, 193f / 255f, 90f / 255f, 1f),
+            new Vector4(183f / 255f, 140f / 255f, 1f, 1f),
+            new Vector4(1f, 143f / 255f, 163f / 255f, 1f),
+            new Vector4(37f / 255f, 99f / 255f, 235f / 255f, 1f),
+            new Vector4(45f / 255f, 130f / 255f, 95f / 255f, 1f),
+            new Vector4(173f / 255f, 128f / 255f, 25f / 255f, 1f),
+            new Vector4(110f / 255f, 72f / 255f, 186f / 255f, 1f),
+            new Vector4(170f / 255f, 63f / 255f, 109f / 255f, 1f),
+        });
+
+    /// <summary>Concrete accent choices in persisted index order.</summary>
+    public static IReadOnlyList<Vector4> AccentOptions => AccentPalette;
+
     /// <summary>Dark ink on a light ground. Polarity is a rendering input,
     /// not a color: glyph rasterization is baked per polarity
     /// (<see cref="FontRegistry"/>), so every light theme must set it.</summary>
@@ -224,14 +245,6 @@ public readonly record struct Theme
             Height = 520f,
             NavigationWidth = 200f,
             LabelColumnWidth = 180f,
-            AccentOptions =
-            [
-                new(50f / 255f, 151f / 255f, 1f, 1f),
-                new(126f / 255f, 211f / 255f, 160f / 255f, 1f),
-                new(232f / 255f, 193f / 255f, 90f / 255f, 1f),
-                new(183f / 255f, 140f / 255f, 1f, 1f),
-                new(1f, 143f / 255f, 163f / 255f, 1f),
-            ],
         },
         Motion = new() { Fast = 0.10f, Default = 0.20f, Slow = 0.40f, MenuExit = 0.08f, HoverOpenDelay = 0.40f, HoverPop = 0.15f },
         Palette = new()
@@ -713,7 +726,6 @@ public readonly record struct Theme
         /// settings body has the room to spend.</summary>
         public float LabelColumnWidth { get; init; }
 
-        public Vector4[] AccentOptions { get; init; }
     }
 
     /// <summary>Pixel-grid rounding. The per-band text nudges this once
@@ -851,12 +863,63 @@ public readonly record struct Theme
 
 public static partial class Crystarium
 {
-    public static Theme ActiveTheme { get; private set; } = Theme.PictoDark;
+    private static Theme _activeTheme = Theme.PictoDark;
+    private static readonly ThemeActivation _themes = new(Theme.PictoDark);
 
-    /// <summary>Atomically replaces the full token value and its derived rules.</summary>
+    /// <summary>The active theme as a value for public consumers.</summary>
+    public static Theme ActiveTheme => _activeTheme;
+
+    // The UI renderer reads several tokens for every text submission. Keep
+    // those reads on the current immutable value without copying Theme.
+    internal static ref readonly Theme ActiveThemeRef => ref _activeTheme;
+
+    /// <summary>Queues a full token replacement until its font atlas is ready.</summary>
     public static void UseTheme(Theme theme)
     {
-        ActiveTheme = theme;
-        FontRegistry.Warm(theme);
+        if (!FontRegistry.Registered)
+            _themes.ActivateWithoutFonts(theme);
+        else
+            _themes.Request(theme);
+        _activeTheme = _themes.Active;
+    }
+
+    /// <summary>Advances a staged theme at the frame boundary before drawing.</summary>
+    public static bool AdvanceTheme()
+    {
+        _themes.Advance(candidate => FontRegistry.Activate(candidate));
+        _activeTheme = _themes.Active;
+        return FontRegistry.Ready;
+    }
+}
+
+/// <summary>Keeps a visible theme paired with the atlas that rasterized it.</summary>
+internal sealed class ThemeActivation
+{
+    private Theme? _pending;
+
+    public ThemeActivation(Theme active) => Active = active;
+
+    public Theme Active { get; private set; }
+
+    internal bool HasPending => _pending.HasValue;
+
+    public void ActivateWithoutFonts(Theme theme)
+    {
+        Active = theme;
+        _pending = null;
+    }
+
+    public void Request(Theme theme)
+    {
+        _pending = theme;
+    }
+
+    public void Advance(Func<Theme, bool> activate)
+    {
+        if (_pending is { } theme && activate(theme))
+        {
+            Active = theme;
+            _pending = null;
+        }
     }
 }

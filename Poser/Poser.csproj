@@ -17,6 +17,41 @@
 		<Version>0.9.0.0</Version>
 	</PropertyGroup>
 
+	<!-- Branch identity is captured by the build, never discovered by the
+	     plugin at runtime. CI may provide any of the conventional branch
+	     variables; local builds fall back to the checked-out build branch. -->
+	<PropertyGroup>
+		<BuildBranch Condition="'$(BuildBranch)' == ''">$(GITHUB_HEAD_REF)</BuildBranch>
+		<BuildBranch Condition="'$(BuildBranch)' == ''">$(GITHUB_REF_NAME)</BuildBranch>
+		<BuildBranch Condition="'$(BuildBranch)' == ''">$(BUILD_SOURCEBRANCHNAME)</BuildBranch>
+		<BuildBranch Condition="'$(BuildBranch)' == ''">$(SourceBranchName)</BuildBranch>
+	</PropertyGroup>
+	<Target Name="CaptureBuildBranch" BeforeTargets="CoreCompile">
+		<Exec Condition="'$(BuildBranch)' == ''" Command="git branch --show-current" ConsoleToMSBuild="true" IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="BuildBranch" />
+		</Exec>
+		<Exec Condition="'$(BuildCommit)' == ''" Command="git rev-parse --short=7 HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true">
+			<Output TaskParameter="ConsoleOutput" PropertyName="BuildCommit" />
+		</Exec>
+		<PropertyGroup>
+			<!-- Branch names are untrusted input to generated source. Keep one
+			     printable line, cap its size, and escape C# string delimiters. -->
+			<BuildBranch>$([System.Text.RegularExpressions.Regex]::Replace('$(BuildBranch)', '[^ -~]', ''))</BuildBranch>
+			<BuildBranch Condition="$([System.String]::Copy('$(BuildBranch)').Length) &gt; 128">$([System.String]::Copy('$(BuildBranch)').Substring(0, 128))</BuildBranch>
+			<BuildBranch>$([System.String]::Copy('$(BuildBranch)').Replace('\', '\\').Replace('&quot;', '\&quot;'))</BuildBranch>
+			<BuildCommit>$([System.Text.RegularExpressions.Regex]::Replace('$(BuildCommit)', '[^0-9A-Fa-f]', ''))</BuildCommit>
+			<BuildCommit Condition="$([System.String]::Copy('$(BuildCommit)').Length) &gt; 7">$([System.String]::Copy('$(BuildCommit)').Substring(0, 7))</BuildCommit>
+		</PropertyGroup>
+		<ItemGroup>
+			<BuildMetadataLine Include="namespace Poser { internal static class BuildMetadata { public const string Branch = &quot;$(BuildBranch)&quot;%3B public const string Commit = &quot;$(BuildCommit)&quot;%3B } }" />
+		</ItemGroup>
+		<WriteLinesToFile File="$(IntermediateOutputPath)BuildMetadata.g.cs" Overwrite="true" Encoding="UTF-8"
+			Lines="@(BuildMetadataLine)" />
+	</Target>
+	<ItemGroup>
+		<Compile Include="$(IntermediateOutputPath)BuildMetadata.g.cs" Visible="false" />
+	</ItemGroup>
+
 	<!-- Release identity. GPL-3.0-only, not -or-later: Poser derives from Ktisis
 	     and Brio, both bare GPLv3 with no version-upgrade clause. Evidence and
 	     the full dependency verdicts are in THIRD-PARTY-LICENSES.md. -->

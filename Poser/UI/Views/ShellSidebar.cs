@@ -7,20 +7,8 @@ using Dalamud.Interface.Utility;
 namespace Poser.UI.Views;
 
 /// <summary>
-/// The shell sidebar's search field, section headers and tree, drawn
-/// imperatively over a FLAT cache of visible entries.
-///
-/// <para>The cache is rebuilt only when the scene revision, the filter text or
-/// an expansion changes; a warm frame walks no section/row tree, builds no
-/// string and submits only the band the clipper reports. Everything that can
-/// change without a structural change — selection, badges, actor visibility,
-/// the paused state — is read from the LIVE view-model row through the cached
-/// (section, row) path, so the cache never has to hold a stale snapshot.</para>
-///
-/// <para>Expansion is NOT stored here. Rows carry Expanded/ExpandKey from the
-/// view-model builder; a disclosure click flows out through
-/// <see cref="AppShellViewModel.OnRowExpandToggled"/> and only marks the cache
-/// dirty, so the next frame re-splices from the rebuilt rows.</para>
+/// Draws the shell sidebar from a flattened structural cache. Live row state
+/// is read from the current view model and expansion remains caller-owned.
 /// </summary>
 public sealed class ShellSidebar
 {
@@ -30,12 +18,10 @@ public sealed class ShellSidebar
     /// <summary>The search field's own top inset inside that band.</summary>
     private const float SearchTop = 6f;
 
-    /// <summary>TreeRow's action-strip gap: the seats it reports are spaced by
-    /// it, and the caller has to walk the strip with the same step.</summary>
+    /// <summary>Gap between row actions.</summary>
     private const float ActionGap = 2f;
 
-    /// <summary>TreeRow's own pill geometry, which a selectable header wears
-    /// verbatim so section and row selection are one image.</summary>
+    /// <summary>Selectable section pill geometry.</summary>
     private const float HeaderPillRadius = 5f;
     private const float HeaderPillInset = 1f;
 
@@ -45,12 +31,7 @@ public sealed class ShellSidebar
 
     private enum EntryKind : byte { Header, Row }
 
-    /// <summary>
-    /// One visible entry, flattened. Everything here is DERIVED — the id
-    /// string, the lower-cased label the filter reads, the guide mask the
-    /// view-model states as a bool array, the vertical offset — so no frame
-    /// has to compute it again.
-    /// </summary>
+    /// <summary>A flattened section header or row.</summary>
     private readonly struct Entry
     {
         internal Entry(
@@ -99,24 +80,17 @@ public sealed class ShellSidebar
             top, Height);
     }
 
-    /// <summary>Every entry the view model states, flattened once per
-    /// structural change. The filter reads THIS — never the view model.
-    /// </summary>
+    /// <summary>All flattened entries before filtering.</summary>
     private readonly List<Entry> _source = new();
 
     /// <summary>The entries the filter kept, at their vertical offsets.
     /// </summary>
     private readonly List<Entry> _entries = new();
 
-    /// <summary>Slot (one TreeRow pitch) to the first entry that reaches into
-    /// it: the clipper reports slots, and this turns its band into the entry
-    /// range without a search.</summary>
+    /// <summary>First entry intersecting each clipper slot.</summary>
     private readonly List<int> _slots = new();
 
-    /// <summary>Per-section row counts at the last rebuild. The view model is
-    /// rebuilt every frame, so a structural change that does NOT bump the
-    /// revision would otherwise leave the cached paths pointing past the end.
-    /// </summary>
+    /// <summary>Per-section row counts from the last rebuild.</summary>
     private readonly List<int> _rowCounts = new();
 
     /// <summary>Filter scratch, parallel to <see cref="_source"/>: what the
@@ -127,14 +101,10 @@ public sealed class ShellSidebar
     private readonly Action<Crystarium.ScrollRegionScope> _drawTree;
     private readonly Action<string> _setSearch;
 
-    /// <summary>The frame's view model. Written by <see cref="Draw"/> before
-    /// anything can read it, so the hoisted callbacks always dispatch against
-    /// the model the frame was handed.</summary>
+    /// <summary>The current frame's view model.</summary>
     private AppShellViewModel _vm = null!;
 
-    /// <summary>The ONE rebuild flag: the scene revision, a structural change,
-    /// the row pitch, or a disclosure click. The filter is the one input that
-    /// does not reach it — a keystroke refilters the cache in place.</summary>
+    /// <summary>Marks structural cache state and filter state separately.</summary>
     private bool _dirty = true;
     private bool _refilter = true;
     private ulong _revision;
@@ -144,27 +114,17 @@ public sealed class ShellSidebar
     private float _totalHeight;
     private int _slotCount;
 
-    /// <summary>Per-frame: the settings' tree-guide switch, inverted for
-    /// <see cref="TreeRowProps.HideGuides"/>. Hoisted so a host without a
-    /// configuration service never dereferences one.
-    /// </summary>
+    /// <summary>The current tree-guide setting.</summary>
     private bool _hideGuides;
 
     public ShellSidebar()
     {
-        // Hoisted once: a per-frame lambda is exactly the cost this sidebar
-        // exists to remove.
+        // Reuse callbacks across frames.
         _drawTree = DrawTree;
         _setSearch = next => _vm.SidebarSearch = next;
     }
 
-    /// <summary>
-    /// Draws the whole sidebar body into <paramref name="origin"/>/
-    /// <paramref name="size"/> (screen space, already scaled): the search band
-    /// on top, the tree in its own scroll region beneath it. The box is the
-    /// sidebar's CONTENT box — the chassis, the divider rule and the status bar
-    /// belong to the shell that seats this.
-    /// </summary>
+    /// <summary>Draws the search band and scrollable tree.</summary>
     public void Draw(AppShellViewModel vm, Vector2 origin, Vector2 size)
     {
         ArgumentNullException.ThrowIfNull(vm);
@@ -174,7 +134,7 @@ public sealed class ShellSidebar
         float inset = theme.Page.Inset;
         float width = size.X / scale;
 
-        // The pill spans the cell between the content inset and the 1px rule.
+        // The search pill stops before the trailing rule.
         float pillWidth = MathF.Max(1f, width - inset * 2f - 1f);
         ImGui.SetCursorScreenPos(origin + new Vector2(inset, SearchTop) * scale);
         Crystarium.FilterPill(
@@ -186,13 +146,11 @@ public sealed class ShellSidebar
 
         Sync(vm, theme);
 
-        // Read once per frame, and tolerate hosts that run this view with no
-        // configuration service: no service means the guides stay on.
+        // Missing configuration keeps guides visible.
         _hideGuides = Config.ConfigurationService.Instance is { } config
             && !config.Config.UI.ShowTreeGuides;
 
-        // The search field stays OUTSIDE the scroll child so a large skeleton
-        // cannot push the sidebar's primary navigation affordance out of view.
+        // Search remains fixed above the scrolling tree.
         float treeHeight = MathF.Max(1f, size.Y / scale - SearchBandHeight);
         ImGui.SetCursorScreenPos(origin + new Vector2(0f, SearchBandHeight * scale));
         Crystarium.ScrollRegion(TreeId, width, treeHeight, _drawTree);
@@ -215,7 +173,7 @@ public sealed class ShellSidebar
             _refilter = true;
         }
 
-        // The row pitch is the cache's grid; a theme swap moves it.
+        // A row-pitch change invalidates cached positions.
         if (_pitch != theme.Controls.ListRowHeight)
         {
             _pitch = theme.Controls.ListRowHeight;
@@ -240,8 +198,7 @@ public sealed class ShellSidebar
         return false;
     }
 
-    /// <summary>Flattens the view model ONCE: every string the tree needs is
-    /// minted here and nowhere else.</summary>
+    /// <summary>Flattens the current section and row structure.</summary>
     private void Rebuild(AppShellViewModel vm, Theme theme)
     {
         _dirty = false;
@@ -280,14 +237,8 @@ public sealed class ShellSidebar
     }
 
     /// <summary>
-    /// The visible list: the filter pass over the cache's own lower-cased
-    /// labels, the vertical offsets, and the clipper's slot index. A keystroke
-    /// runs THIS and nothing else.
-    ///
-    /// <para>A row survives when it matches, when a descendant matches (it is
-    /// the branch that reaches one), or when an ancestor matches (a matched
-    /// group keeps its contents) — exactly the rows the view-model builder's
-    /// own filter keeps, so running both is idempotent.</para>
+    /// Filters entries and rebuilds their offsets. Matches keep their
+    /// ancestors and descendants.
     /// </summary>
     private void Splice(Theme theme)
     {
@@ -309,9 +260,7 @@ public sealed class ShellSidebar
         }
 
         _totalHeight = y;
-        // The clipper's grid is the ROW pitch, and the tail band is folded into
-        // the last slot — so the seek its End() performs can never overshoot
-        // the real content height.
+        // Fold the tail into the final clipper slot.
         _slotCount = Math.Max(1, (int)(_totalHeight / _pitch));
         _slots.Clear();
         int at = 0;
@@ -324,9 +273,7 @@ public sealed class ShellSidebar
         }
     }
 
-    /// <summary>Marks the source entries the filter keeps. Headers always
-    /// survive: a section states what the sidebar contains, filtered or
-    /// not.</summary>
+    /// <summary>Marks matching entries while keeping every header.</summary>
     private void Keep()
     {
         int count = _source.Count;
@@ -343,8 +290,7 @@ public sealed class ShellSidebar
             return;
         }
 
-        // Matches, and every row under a matched row. A header resets the
-        // walk: sections do not nest.
+        // A matched row keeps its descendants within the same section.
         int inside = int.MaxValue;
         for (int i = 0; i < count; i++)
         {
@@ -367,7 +313,7 @@ public sealed class ShellSidebar
             _kept[i] = match || entry.Depth > inside;
         }
 
-        // Ancestors: walking back, the nearest shallower row is the parent.
+        // A backward pass keeps each match's ancestors.
         int wanted = -1;
         for (int i = count - 1; i >= 0; i--)
         {
@@ -381,9 +327,7 @@ public sealed class ShellSidebar
         }
     }
 
-    /// <summary>The view model's per-ancestor sibling flags as the painter's
-    /// trunk mask, verbatim: bit <c>a</c> is <c>TreeLines[a]</c>, and bit 0 is
-    /// unused exactly as depth 0 has no trunk.</summary>
+    /// <summary>Converts ancestor sibling flags to the painter's trunk mask.</summary>
     private static uint Trunks(bool[]? lines)
     {
         if (lines == null)
@@ -396,8 +340,7 @@ public sealed class ShellSidebar
         return mask;
     }
 
-    /// <summary>A row's interaction identity: its STABLE tag, exactly as the
-    /// declared shell keyed its holders.</summary>
+    /// <summary>Returns a stable row identity.</summary>
     private static string RowId(ShellSidebarRow row) =>
         row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
 
@@ -419,8 +362,7 @@ public sealed class ShellSidebar
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Page.Inset;
         float gutter = theme.Scrollbar.GutterWidth;
-        // The gutter is the content's TRAILING inset, not a narrower box: a
-        // row's fill bleeds under the bar while its content stops at it.
+        // Row fills extend beneath the gutter while content stops before it.
         float width = MathF.Max(1f, region.ContentWidth + gutter - inset);
         var origin = ImGui.GetCursorScreenPos() + new Vector2(inset * scale, 0f);
 
@@ -442,8 +384,7 @@ public sealed class ShellSidebar
         }
         clipper.End();
 
-        // The clipper's seek stops at the last whole slot; the tail band is
-        // what makes the scroll extent the real content height.
+        // The tail band preserves the exact scroll extent.
         ImGui.SetCursorScreenPos(
             origin + new Vector2(-inset * scale, _totalHeight * scale));
         ImGui.Dummy(Vector2.Zero);
@@ -464,16 +405,13 @@ public sealed class ShellSidebar
         {
             Icon = row.IconName == null ? row.Icon : null,
             IconName = row.IconName,
-            // Nested rows draw no mark; their guide column already spans the
-            // same distance the root's icon cell does. ForceIcon opts one back
-            // in for a nested row that is a thing rather than a grouping.
+            // Nested groups omit marks unless the row forces one.
             HideIcon = row.Depth > 0 && !row.ForceIcon,
             Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
             Depth = row.Depth,
             Trunks = entry.Trunks,
             IsLastChild = row.IsLastChild,
-            // Live: the ink is the only thing the switch changes, so no
-            // cached entry (least of all Trunks) has to be invalidated.
+            // Guide visibility does not change row geometry.
             HideGuides = _hideGuides,
             Expander = row.HasChildren
                 ? row.Expanded
@@ -503,8 +441,7 @@ public sealed class ShellSidebar
                 break;
             case TreeRowAction.Expander:
                 _vm.OnRowExpandToggled?.Invoke(row);
-                // The expansion lives in the builder; the cache only has to
-                // re-splice once the rebuilt rows arrive.
+                // The builder owns expansion; this only invalidates structure.
                 _dirty = true;
                 break;
             case TreeRowAction.Context:
@@ -517,9 +454,7 @@ public sealed class ShellSidebar
         in Entry entry, Vector2 at, float width, float scale, Theme theme)
     {
         var section = _vm.Sections[entry.Section];
-        // Selectable is read LIVE off the section through the cached index,
-        // exactly as a row's Active is: a header changing state is not a
-        // structural change and must never dirty the flat cache.
+        // Selection is live state and does not invalidate structure.
         if (section.Selectable)
             PaintHeaderTarget(in entry, section, at, width, scale, theme);
 
@@ -529,9 +464,7 @@ public sealed class ShellSidebar
             Weight = FontWeight.Medium,
             Color = theme.TextMuted,
         };
-        // The band is the header SLOT, not the run's own line box — a band
-        // equal to the measured height collapses the centering term and the
-        // seat degenerates to a hand pad.
+        // Center the title in the complete header slot.
         Crystarium.TextInBand(
             new Vector2(at.X + theme.Spacing.Two * scale, at.Y),
             new Vector2(width * scale, entry.Height * scale),
@@ -541,29 +474,28 @@ public sealed class ShellSidebar
 
         if (!section.ShowPlus)
             return;
-        // The header's plus stops at the gutter, like every row's content.
         float side = theme.Controls.SwitchHeight;
-        var plusMin = new Vector2(
-            at.X + (width - theme.Scrollbar.GutterWidth - side) * scale, at.Y);
-        ImGui.SetCursorScreenPos(plusMin);
+        var plus = Crystarium.SidebarTrailingAction(
+            new Vector2(
+                at.X + (width - theme.Scrollbar.GutterWidth) * scale,
+                at.Y),
+            entry.Height,
+            side,
+            theme.Controls.IconContentScale,
+            ActionGap,
+            scale);
+        ImGui.SetCursorScreenPos(plus.HitMin);
         if (Crystarium.IconButton(
                 TablerIcon.Plus,
                 style: ControlStyle.Square(side),
-                id: entry.Id))
-            // The spawn surface hangs off THIS button's bottom-left, the
-            // burger's rule, never off the pointer.
+                id: entry.Id,
+                iconSize: plus.GlyphSide / scale))
             _vm.OnSectionPlus?.Invoke(
                 entry.Section,
-                new Vector2(plusMin.X, plusMin.Y + side * scale));
+                plus.SpawnAnchor);
     }
 
-    /// <summary>
-    /// A selectable header's hit target and its highlight: the SAME pill the
-    /// tree row wears — root inset, gutter-stopped right edge, the shaved
-    /// bottom pixel — so a selected section and a selected row read as one
-    /// language. The header's own typography is untouched; the pill states the
-    /// selection.
-    /// </summary>
+    /// <summary>Draws a selectable header target using row pill geometry.</summary>
     private void PaintHeaderTarget(
         in Entry entry,
         ShellSidebarSection section,
@@ -573,8 +505,7 @@ public sealed class ShellSidebar
         Theme theme)
     {
         ImGui.SetCursorScreenPos(at);
-        // The plus reserves under the header's own id, so the header's target
-        // is pushed one level down rather than minting a second id string.
+        // Scope the overlapping header target below the plus id.
         ImGui.PushID(entry.Id);
         var hit = Interactive.Reserve(
             HeaderSelectId,
@@ -603,11 +534,7 @@ public sealed class ShellSidebar
             _vm.OnSectionSelected?.Invoke(entry.Section);
     }
 
-    /// <summary>
-    /// The row's action strip, seated at the origin the row reported. Outcomes
-    /// are RETURNED, never handed to a callback: a click dispatches against the
-    /// live row here, so the strip costs no closure per frame.
-    /// </summary>
+    /// <summary>Draws and dispatches the row's live action strip.</summary>
     private void PaintActions(
         ShellSidebarRow row,
         string id,
@@ -623,8 +550,7 @@ public sealed class ShellSidebar
         {
             if (row.ActorActions)
             {
-                // The manip-handle toggle leads every entity strip: whether
-                // this entity's world handle draws at all (user 2026-08-12).
+                // The first action toggles the actor's world handle.
                 bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
                 ImGui.SetCursorScreenPos(origin);
                 if (Crystarium.TemporaryIconToggle(
@@ -638,9 +564,7 @@ public sealed class ShellSidebar
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
 
-                // The crosshair is the ACTIVE-actor mark: the game's target
-                // wears it at full opacity, everyone else faded — the live
-                // camera's own treatment.
+                // The crosshair marks the game's current target.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
@@ -653,9 +577,7 @@ public sealed class ShellSidebar
                         dimmed: !row.ActorTargeted))
                     _vm.OnActorTarget?.Invoke(row);
 
-                // Hidden fades rather than wearing a slash — the one
-                // engaged/faded language every action slot speaks
-                // (user 2026-08-11).
+                // A faded eye means the actor is hidden.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Eye,
@@ -666,9 +588,7 @@ public sealed class ShellSidebar
                         dimmed: !row.ActorVisible))
                     _vm.OnActorVisibility?.Invoke(row);
 
-                // The icon states the STATE: play while playing, pause while
-                // paused — at plain opacity either way; state is the glyph's
-                // to tell, not the fade's (user 2026-08-11).
+                // The glyph reports the current animation state.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.ActorPaused
@@ -684,9 +604,7 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Two slots, the actor strip's first and second: the manip-handle
-            // toggle, then the eye (a light's on-state, a prop's draw
-            // visibility).
+            // Entity rows expose handle and visibility actions.
             if (row.LightActions)
             {
                 bool handleShown = _vm.IsHandleShown?.Invoke(row) ?? true;
@@ -716,10 +634,7 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Two slots: the lock protecting the framing, then the camera's
-            // inline verb — "look through me". Both fade when off rather
-            // than wearing a slash: an unlocked camera and a parked camera
-            // both still work, they are just not in that state.
+            // Camera rows expose lock and live-view actions.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
@@ -753,26 +668,28 @@ public sealed class ShellSidebar
 
             if (row.OverlayBones is not { } bones)
                 return;
-            // 0 none, 1 partial, 2 all. The middle state is drawn as the eye
-            // at FULL strength but not lit — the row is showing something, so
-            // it must not read as switched off, and it is not showing
-            // everything, so it must not read as switched on either. Brio
-            // spells the same three states with a tri-state checkbox; a
-            // sidebar row has an eye, so the eye carries them.
+            // A filled pupil marks visible descendants on the inactive eye.
             int state = _vm.OverlayVisibilityOf?.Invoke(bones) ?? 2;
             ImGui.SetCursorScreenPos(origin);
-            if (Crystarium.TemporaryIconToggle(
-                    TablerIcon.Eye,
-                    selected: state == 1,
+            string help = state switch
+            {
+                0 => "Show in skeleton overlay",
+                1 => "Some of this is in the overlay; show all of it",
+                _ => "Hide from skeleton overlay",
+            };
+            bool changed = state == 1
+                ? Crystarium.SidebarMixedVisibilityToggle(
                     style: square,
-                    help: state switch
-                    {
-                        0 => "Show in skeleton overlay",
-                        1 => "Some of this is in the overlay; show all of it",
-                        _ => "Hide from skeleton overlay",
-                    },
+                    help: help,
+                    id: "##overlay")
+                : Crystarium.TemporaryIconToggle(
+                    TablerIcon.Eye,
+                    selected: false,
+                    style: square,
+                    help: help,
                     id: "##overlay",
-                    dimmed: state == 0))
+                    dimmed: state == 0);
+            if (changed)
                 _vm.OnOverlayVisibility?.Invoke(row);
         }
         finally

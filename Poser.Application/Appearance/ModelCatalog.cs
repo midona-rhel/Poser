@@ -1,47 +1,50 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using Poser.Domain.Appearance;
 
 namespace Poser.Application.Appearance;
 
 /// <summary>
-/// The searchable name→ModelChara catalog behind the Model ID editor's
-/// search (Brio's NpcSelector data, minus the whole-appearance apply its
-/// call site performs — customize/equipment belong to Glamourer). Holds one
-/// flat list and answers filtered queries; it never touches the game, so
-/// the loader can populate it off the framework thread and every surface
-/// reads the same rows.
+/// The searchable ModelChara rows used by the model editor. The catalog is
+/// populated off the framework thread and then read by every UI surface.
 /// </summary>
 public sealed class ModelCatalog
 {
     private IReadOnlyList<ModelCatalogEntry> _entries = Array.Empty<ModelCatalogEntry>();
+    private int _publicationVersion;
+    private int _loaded;
 
-    public bool IsLoaded { get; private set; }
-    public int Count => _entries.Count;
-    public IReadOnlyList<ModelCatalogEntry> Entries => _entries;
+    public bool IsLoaded => Volatile.Read(ref _loaded) != 0;
+    public int PublicationVersion => Volatile.Read(ref _publicationVersion);
+    public int Count => Volatile.Read(ref _entries).Count;
+    public IReadOnlyList<ModelCatalogEntry> Entries => Volatile.Read(ref _entries);
 
     public void Publish(IReadOnlyList<ModelCatalogEntry> entries)
     {
-        _entries = entries;
-        IsLoaded = true;
+        ArgumentNullException.ThrowIfNull(entries);
+        var copy = new ModelCatalogEntry[entries.Count];
+        for (int i = 0; i < entries.Count; i++)
+            copy[i] = entries[i];
+        var snapshot = Array.AsReadOnly(copy);
+        Volatile.Write(ref _entries, snapshot);
+        Volatile.Write(ref _loaded, 1);
+        Interlocked.Increment(ref _publicationVersion);
     }
 
     /// <summary>
-    /// Case-insensitive name search composed with the kind filter. An empty
-    /// query matches everything; a null kind means no kind restriction. A
-    /// bare number is the same box finding the rows that DRAW as that
-    /// ModelChara id (Brio folds the id into its search text,
-    /// NpcSelector.cs:117-123).
+    /// Searches names and model ids with an optional kind filter.
     /// </summary>
     public IReadOnlyList<ModelCatalogEntry> Search(
         string query,
         ModelCatalogKind? kind = null,
         int limit = 512)
     {
+        var entries = Volatile.Read(ref _entries);
         var results = new List<ModelCatalogEntry>();
         bool matchAll = string.IsNullOrWhiteSpace(query);
         bool numeric = int.TryParse(query, out var queriedId);
-        foreach (var entry in _entries)
+        foreach (var entry in entries)
         {
             if (kind != null && entry.Kind != kind)
                 continue;
@@ -56,11 +59,11 @@ public sealed class ModelCatalog
         return results;
     }
 
-    /// <summary>The first row drawing as the id, for naming a current model
-    /// id in a readout; many rows can share one model, any name serves.</summary>
+    /// <summary>Returns the first row drawing as the supplied model id.</summary>
     public ModelCatalogEntry? FindByModelCharaId(int modelCharaId)
     {
-        foreach (var entry in _entries)
+        var entries = Volatile.Read(ref _entries);
+        foreach (var entry in entries)
             if (entry.ModelCharaId == modelCharaId)
                 return entry;
         return null;

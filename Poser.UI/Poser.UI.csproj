@@ -19,10 +19,12 @@
 		<Copyright>Copyright (C) 2026 Midona</Copyright>
 		<PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
 	</PropertyGroup>
-
-
 	<ItemGroup>
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Poser.ContractTests" />
 	</ItemGroup>
 </Project>

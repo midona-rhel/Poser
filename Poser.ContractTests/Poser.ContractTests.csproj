@@ -19,6 +19,12 @@
     <Reference Include="Dalamud">
       <HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
     </Reference>
+    <Reference Include="Lumina">
+      <HintPath>$(DalamudLibPath)Lumina.dll</HintPath>
+    </Reference>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DalamudLibPath)Lumina.Excel.dll</HintPath>
+    </Reference>
     <!-- Dalamud persists IPluginConfiguration through Newtonsoft, so the
          config round-trip characterization uses the real serializer rather
          than a stand-in. -->
@@ -39,6 +45,7 @@
     <ProjectReference Include="..\Poser\Poser.csproj">
       <Aliases>ProductionPoser</Aliases>
     </ProjectReference>
+    <ProjectReference Include="..\Poser.UI\Poser.UI.csproj" />
   </ItemGroup>
 
   <ItemGroup>

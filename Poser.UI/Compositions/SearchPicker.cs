@@ -6,27 +6,17 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
-/// <summary>One head strip: a segmented control shown under the search field.
-/// A null strip declares nothing and costs the surface no height.</summary>
+/// <summary>A segmented control shown under the search field.</summary>
 public readonly record struct PickerStrip(
     string[] Labels, int Selected, Action<int> OnChange);
 
-/// <summary>
-/// The picker's OPTIONAL capabilities, all defaulted off. A caller that states
-/// none of them opens the plain name list; a catalog surface states its own
-/// query, the row marks, the badge and its strips.
-/// </summary>
+/// <summary>Optional picker behavior and row presentation.</summary>
 public record struct PickerOptions<T> where T : class
 {
-    /// <summary>The caller's OWN filter, told the field's query and answering
-    /// with the whole visible list. REPLACES the built-in name contains — a
-    /// catalog that matches ids and narrows by kind is not a predicate over a
-    /// label.</summary>
+    /// <summary>Returns the visible items for a query.</summary>
     public Func<string, IReadOnlyList<T>>? Query;
 
-    /// <summary>Resolved game texture for the row's 16px mark. Wins over
-    /// <see cref="Glyph"/>, which is the fallback for rows with no image.
-    /// </summary>
+    /// <summary>Returns a row texture. A glyph is used when this returns zero.</summary>
     public Func<T, nint>? Texture;
 
     public Func<T, TablerIcon?>? Glyph;
@@ -43,69 +33,47 @@ public record struct PickerOptions<T> where T : class
 
 public static partial class Crystarium
 {
-    // ---- OverlayShell geometry ------------------------------------------
-    /// <summary><c>.header</c>: the caption band the MULTI variant carries.
-    /// </summary>
+    /// <summary>Caption band height.</summary>
     private const float PickerHeaderHeight = 40f;
 
-    /// <summary><c>.searchArea</c>/<c>.searchRow</c>, which is also
-    /// GlassInput's natural search height.</summary>
+    /// <summary>Search row height.</summary>
     private const float PickerSearchHeight = 36f;
 
-    /// <summary><c>.checkRow</c> — the PILL's own height.</summary>
+    /// <summary>Selectable row height.</summary>
     private const float PickerRowHeight = 28f;
 
-    /// <summary>The pill breathes 2px off each neighbouring row, so the list's
-    /// pitch is the pill plus both gaps.</summary>
+    /// <summary>Vertical gap above and below each row.</summary>
     private const float PickerPillVGap = 2f;
 
     private const float PickerRowPitch = PickerRowHeight + PickerPillVGap * 2f;
 
-    /// <summary><c>.checkBox</c> is 14px, and the single-select tick occupies
-    /// the SAME slot so both variants' labels line up.</summary>
+    /// <summary>Shared checkbox and selection-mark slot.</summary>
     private const float PickerCheckSlot = 14f;
 
-    /// <summary>The check slot breathes its own square inset INSIDE the pill,
-    /// which lands it at the gutter base under the search glyph.</summary>
+    /// <summary>Centers the selection slot within a row.</summary>
     private const float PickerRowPadding =
         (PickerRowHeight - PickerCheckSlot) * 0.5f;
 
-    /// <summary>The picker's bar is HALF the shell gutter, and the pill
-    /// breathes that same half against the panel's left edge.</summary>
+    /// <summary>Scrollbar gutter share reserved beside rows.</summary>
     private const float PickerBarShare = 0.5f;
 
-    /// <summary>The list breathes against the chrome above and the panel
-    /// bottom.</summary>
+    /// <summary>Vertical list padding.</summary>
     private const float PickerListVPad = 4f;
 
-    /// <summary>The clear cross breathes off the gutter instead of sitting
-    /// flush against it.</summary>
+    /// <summary>Right padding for the search clear button.</summary>
     private const float PickerSearchClearPad = 6f;
 
-    /// <summary>FilterPill's own left pad; the search row's margin tops it up
-    /// to the gutter base.</summary>
+    /// <summary>Search field inner padding.</summary>
     private const float PickerSearchInnerPad = 10f;
 
-    /// <summary>The tick inside the slot, at the stroke that keeps a glyph
-    /// that small legible.</summary>
+    /// <summary>Selection-mark size and stroke.</summary>
     private const float PickerCheckGlyph = 10f;
 
     private const float PickerCheckStroke = 3f;
 
     /// <summary>
-    /// THE picker. Every variant — single-select, multi-select, a catalog with
-    /// marks and head strips — is this object told different things, because
-    /// they share everything except what a row's activation MEANS: a pick
-    /// decides and closes, a toggle does not.
-    ///
-    /// <para>Retained, and that is what makes anchoring trivial:
-    /// <see cref="Open"/> samples the rect of the item just reserved (the
-    /// trigger), and <see cref="Draw"/> runs the popup lifetime once a frame
-    /// from then on.</para>
-    ///
-    /// <para>Both shapes are CONTROLLED. The only state the picker owns is the
-    /// filter query, a draft nobody outside the open surface can act on; a
-    /// multi caller keeps its own key set and is told each flip.</para>
+    /// Shared picker implementation for single- and multi-select surfaces.
+    /// The picker owns only popup and query state; callers own selections.
     /// </summary>
     public sealed class SearchPicker<T> where T : class
     {
@@ -113,15 +81,12 @@ public static partial class Crystarium
         private readonly string _filterId;
         private readonly string _listId;
 
-        // Retained delegates: the popup, the scroll region and the field all
-        // take callbacks, and a closure per frame would be this control's whole
-        // warm-frame cost.
+        // Retained callbacks avoid per-frame allocations.
         private readonly Action _body;
         private readonly Action<ScrollRegionScope> _list;
         private readonly Action<string> _onQuery;
 
-        // The visible list, refilled in place. A caller-supplied Query answers
-        // with its own list and this one is left alone.
+        // Used by the built-in label filter.
         private readonly List<T> _filtered = new();
 
         private bool _openRequested;
@@ -140,7 +105,7 @@ public static partial class Crystarium
         private string? _loadError;
         private PickerOptions<T> _options;
 
-        // Per-frame draw state, written by Draw and read by the two callbacks.
+        // Draw callbacks share this per-frame state.
         private IReadOnlyList<T> _visible = Array.Empty<T>();
         private T? _picked;
         private float _panelWidth;
@@ -156,17 +121,13 @@ public static partial class Crystarium
             _onQuery = next => _query = next;
         }
 
-        /// <summary>Who the open surface belongs to, null while it is closed —
-        /// a caller driving several rows off one picker asks this before it
-        /// acts on a pick.</summary>
+        /// <summary>Owner of the open surface, or null while closed.</summary>
         public string? Owner { get; private set; }
 
         public bool IsOpen => ImGui.IsPopupOpen(_popupId);
 
         /// <summary>
-        /// Single-select: a row picks its item and closes, and the chosen row
-        /// carries a tick. CAPTIONLESS by rule — the trigger that opened the
-        /// surface already names the pick.
+        /// A row picks its item and closes.
         /// </summary>
         public void Open(
             string owner,
@@ -184,10 +145,7 @@ public static partial class Crystarium
         }
 
         /// <summary>
-        /// Multi-select: a row toggles its checkbox and the surface stays. The
-        /// caller owns the selection as a SET OF KEYS — held by reference, so a
-        /// set mutated in place is seen the same frame — and is told each flip
-        /// as <c>(item, selected)</c>.
+        /// A row toggles its checkbox and the surface stays open.
         /// </summary>
         public void OpenMulti(
             string owner,
@@ -208,22 +166,21 @@ public static partial class Crystarium
             _onToggle = onToggle;
         }
 
-        /// <summary>
-        /// Re-states the options of an OPEN surface. The strips are controlled
-        /// like everything else here — their selection lives in the caller — so
-        /// a segment click has to reach the next frame's draw. A caller with
-        /// strips calls this each frame before <see cref="Draw"/>; a caller
-        /// without them never needs it.
-        /// </summary>
+        /// <summary>Updates options for an open surface.</summary>
         public void Update(in PickerOptions<T> options)
         {
             if (ImGui.IsPopupOpen(_popupId))
                 _options = options;
         }
 
-        /// <summary>Draws the surface if it is up. Returns the single-select
-        /// pick — a multi toggle reports through its own callback, because a
-        /// toggle is not the end of the interaction.</summary>
+        /// <summary>Updates the visible loading or failure status.</summary>
+        public void SetLoadStatus(string? loadError)
+        {
+            if (ImGui.IsPopupOpen(_popupId))
+                _loadError = loadError;
+        }
+
+        /// <summary>Draws the surface and returns a single-select result.</summary>
         public (string Owner, T Item)? Draw()
         {
             if (_openRequested)
@@ -240,20 +197,14 @@ public static partial class Crystarium
 
             var theme = ActiveTheme;
             _panelWidth = _options.Width > 0f ? _options.Width : theme.Picker.Width;
-            // The list the surface is SHOWING. A caller that owns its filter
-            // already applied the query; the built-in name contains is the
-            // DEFAULT filter, not a second one. Every count below — the panel's
-            // height included — is that list's.
+            // A caller query supplies the visible list.
             _visible = _options.Query is { } query ? query(_query) : Filter();
 
             int rows = Math.Clamp(
                 _visible.Count,
                 theme.Picker.MinimumRows,
                 theme.Picker.MaximumRows);
-            // The panel is its OWN composition's height: chrome plus padded
-            // rows. The pad is the LIST's and the row term is the PILL's, not
-            // the pitch's — which is why a full list always keeps the last
-            // pill's breathing scrollable.
+            // Height includes chrome, list padding, and visible row bodies.
             _listHeight = PickerListVPad * 2f + rows * PickerRowHeight;
             float panelHeight =
                 (_caption is null ? 0f : PickerHeaderHeight)
@@ -262,9 +213,7 @@ public static partial class Crystarium
                 + _listHeight;
 
             _picked = null;
-            // OPAQUE panel: the glass shell let the page bleed through in game,
-            // so the treatment is bare and this class paints fill, border and
-            // shadows itself.
+            // The picker paints its own opaque panel.
             FloatingSurface.Popup(
                 _popupId,
                 new FloatingSurfaceProps
@@ -300,9 +249,7 @@ public static partial class Crystarium
                 _key = key;
             _loadError = loadError;
             _options = options;
-            // The query is a DRAFT: it means nothing outside the open surface,
-            // so each open starts empty. Strip selections are the caller's and
-            // persist by construction.
+            // Each open starts with an empty query. Callers retain strip state.
             _query = string.Empty;
             _openRequested = true;
         }
@@ -311,8 +258,7 @@ public static partial class Crystarium
             (_options.Strip is null ? 0 : 1)
             + (_options.SecondStrip is null ? 0 : 1);
 
-        /// <summary>A strip is a segmented pill breathing the list's own
-        /// vertical pad on each side.</summary>
+        /// <summary>Height of a strip with vertical padding.</summary>
         private static float StripHeight() =>
             ActiveTheme.Controls.NavigationHeight + PickerListVPad * 2f;
 
@@ -330,7 +276,6 @@ public static partial class Crystarium
             return _filtered;
         }
 
-        // ---- the surface -------------------------------------------------
         private void DrawBody()
         {
             float scale = ImGuiHelpers.GlobalScale;
@@ -340,8 +285,7 @@ public static partial class Crystarium
             PaintPanel(draw, min, min + ImGui.GetWindowSize(), theme);
 
             var origin = ImGui.GetCursorScreenPos();
-            // EVERY line in the surface starts on one x: the scroll gutter is
-            // the base, and the bar appearing never reflows content.
+            // The fixed gutter keeps content aligned when the scrollbar appears.
             float inset = theme.Scrollbar.GutterWidth;
             float pillInset = inset * PickerBarShare;
             float rowWidth = MathF.Max(0f, _panelWidth - pillInset * 2f);
@@ -363,10 +307,7 @@ public static partial class Crystarium
                 y += PickerHeaderHeight;
             }
 
-            // The island's own left pad is FilterPill's 10; a margin makes up
-            // the difference so the search glyph sits over the CHECK slots and
-            // the search text over the labels. The extra right inset is the
-            // clear cross's breathing.
+            // Align the search glyph and text with row marks and labels.
             float searchMargin = MathF.Max(
                 0f, pillInset + PickerRowPadding - PickerSearchInnerPad);
             var searchOrigin = origin + new Vector2(0f, y * scale);
@@ -390,15 +331,13 @@ public static partial class Crystarium
                 });
             y += PickerSearchHeight;
 
-            // The strips read as refinements OF the search, so they sit below
-            // it, inset by the row's own pill inset so pill and rows share one
-            // left edge.
+            // Strips share the row inset below the search field.
             y = DrawStrip(_options.Strip, 0, origin, y, pillInset, rowWidth, scale);
             y = DrawStrip(
                 _options.SecondStrip, 1, origin, y, pillInset, rowWidth, scale);
 
             ImGui.SetCursorScreenPos(origin + new Vector2(0f, y * scale));
-            // Half-width bar: bar + its padding = the left content base.
+            // The bar and its padding occupy the left gutter.
             ScrollRegion(_listId, _panelWidth, _listHeight, _list, pillInset);
 
             if (_picked != null)
@@ -426,13 +365,11 @@ public static partial class Crystarium
             return y + StripHeight();
         }
 
-        // ---- the list ----------------------------------------------------
         private void DrawRows(ScrollRegionScope region)
         {
             _ = region;
             float scale = ImGuiHelpers.GlobalScale;
-            // The rows place themselves; ImGui's ambient vertical spacing would
-            // inflate the scrolled extent past the last one.
+            // Rows include their own vertical spacing.
             var spacing = ImGui.GetStyle().ItemSpacing;
             ImGui.PushStyleVar(
                 ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
@@ -446,9 +383,7 @@ public static partial class Crystarium
                     EmptyLine("No matches.");
                 else
                     ClippedRows(scale);
-                // Trailing breathing is INVISIBLE to ImGui's scroll extent — no
-                // item covers it — so max-scroll would pin the last pill to the
-                // viewport edge without this.
+                // The trailing dummy keeps bottom padding in the scroll extent.
                 ImGui.Dummy(new Vector2(0f, pad));
             }
             finally
@@ -457,8 +392,7 @@ public static partial class Crystarium
             }
         }
 
-        /// <summary>The list is clipped at the row pitch, so a catalog of
-        /// thousands submits only the band the viewport shows.</summary>
+        /// <summary>Draws only rows visible in the current clip range.</summary>
         private void ClippedRows(float scale)
         {
             var clipper = new ImGuiListClipper();
@@ -496,9 +430,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(
                 new Vector2(bandMin.X, bandMin.Y + PickerRowPitch * scale));
 
-            // Selection carries the stronger overlay and hover the fainter one;
-            // hover cascades OVER selection, and the press shares hover's so a
-            // held row does not blink.
+            // Hover and press use the same overlay above selection.
             var fill = hit.Hovered || hit.Active
                 ? theme.Chrome.WeakOverlay
                 : active ? theme.Chrome.ActiveOverlay : Vector4.Zero;
@@ -513,9 +445,7 @@ public static partial class Crystarium
             float x = pillMin.X + PickerRowPadding * scale;
             float centerY = pillMin.Y + pillSize.Y * 0.5f;
 
-            // The multi variant's slot is a real .checkBox; the single
-            // variant's is a bare slot holding the same tick. Same box either
-            // way, which is what keeps the two variants' labels on one line.
+            // Both modes reserve the same mark slot to align labels.
             float slot = PickerCheckSlot * scale;
             var slotMin = new Vector2(x, centerY - slot * 0.5f);
             if (multi)
@@ -535,8 +465,7 @@ public static partial class Crystarium
             }
             x += slot + gap;
 
-            // The caller's resolved image, or the glyph it named as the
-            // fallback for the rows the game gives no icon for.
+            // A glyph is the fallback when no texture is available.
             nint texture = _options.Texture is { } toTexture ? toTexture(item) : 0;
             TablerIcon? glyph = _options.Glyph is { } toGlyph ? toGlyph(item) : null;
             if (texture != 0 || glyph is not null)
@@ -594,7 +523,7 @@ public static partial class Crystarium
                     },
                     besideIcon: true);
 
-            // Picking is a decision and closes; toggling is not and does not.
+            // Single-select closes; multi-select remains open.
             if (!hit.Clicked)
                 return;
             if (_onToggle is { } toggle)
@@ -603,8 +532,7 @@ public static partial class Crystarium
                 _picked = item;
         }
 
-        /// <summary>The list's empty state: one caption on a row band, padded
-        /// to where the labels above it would have started.</summary>
+        /// <summary>Draws an empty-state caption aligned with row labels.</summary>
         private void EmptyLine(string text)
         {
             float scale = ImGuiHelpers.GlobalScale;
@@ -630,17 +558,11 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>
-    /// The picker's panel, OPAQUE. The glass shell is translucency, and with no
-    /// backdrop blur in game the page bleeds straight through it. Same accepted
-    /// resolution as the dropdown popup: the glass tone FLATTENED over the
-    /// surface, under a 1px border and the panel shadows, at the popup's own
-    /// Surface rounding.
-    /// </summary>
+    /// <summary>Paints the picker panel and its border.</summary>
     private static void PaintPanel(
         ImDrawListPtr draw, Vector2 min, Vector2 max, Theme theme)
     {
-        // The shadows escape the popup's own clip exactly as the dropdown's do.
+        // Panel shadows extend beyond the popup clip.
         draw.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
         try
         {
@@ -663,9 +585,7 @@ public static partial class Crystarium
         }
     }
 
-    /// <summary>OverlayShell's inset bottom hairline, which the caption band
-    /// and the search area each carry. Painted inside the box, so it costs the
-    /// band no height and nothing above it shifts.</summary>
+    /// <summary>Paints an inset bottom divider without changing layout.</summary>
     private static void PaintRule(
         ImDrawListPtr draw, Vector2 min, Vector2 band, float scale, Theme theme)
     {
@@ -676,14 +596,11 @@ public static partial class Crystarium
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(theme.Border)));
     }
 
-    /// <summary>OverlayShell's <c>.checkBox</c>: a filled square under a 1px
-    /// INSET outline, becoming solid primary with the outline dropped when
-    /// checked — which is why the two states are one box and not two.</summary>
+    /// <summary>Paints the shared checked and unchecked mark box.</summary>
     private static void PaintCheckBox(
         ImDrawListPtr draw, Vector2 min, Vector2 max, bool @checked, Theme theme)
     {
-        // --color-pressed-overlay is not carried by the generated projection,
-        // so it is derived on the same terms as Chrome.DangerHover.
+        // Derive the pressed overlay from the available chrome colors.
         Vector4? outline = @checked
             ? null
             : theme.Chrome.ActiveOverlay with { W = 0.20f };
@@ -700,9 +617,7 @@ public static partial class Crystarium
         });
     }
 
-    /// <summary>Band-centred label, constrained ONLY on overflow: the truncate
-    /// clip's snapped edge shaves a fitting run's descender otherwise.
-    /// </summary>
+    /// <summary>Centers a label and clips it only when it overflows.</summary>
     private static void LabelInBand(
         Vector2 min, Vector2 band, string text, in TextStyle style,
         bool besideIcon = false)

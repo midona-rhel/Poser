@@ -45,11 +45,7 @@ public class Poser : IDalamudPlugin
         log.Info($"Starting {PluginConstants.PluginName}...");
 
         _commandManager = commandManager;
-
-        // Initialize bone info service with logger
         BoneInfoService.Initialize(log);
-
-        // Build DI container
         _serviceProvider = ConfigureServices(
             pluginInterface,
             log,
@@ -65,26 +61,19 @@ public class Poser : IDalamudPlugin
             targetManager,
             chatGui,
             notificationManager);
-
-        // Initialize configuration service (sets static Instance, must be before UI)
         log.Debug("Load stage: configuration");
         var configuration =
             _serviceProvider.GetRequiredService<ConfigurationService>();
         ThemeSelection.Apply(
             configuration.Config.UI.Theme,
             configuration.Config.UI.AccentIndex);
-
-        // Activate periodic auto-save. Final GPose capture is requested by the
-        // lifecycle coordinator before the legacy exit event is published.
+        // Install the saved surface recipe before any UI draws.
+        Crystarium.FloatingSurface.ConfigureEffects(
+            configuration.Config.UI.FillOpacity,
+            configuration.Config.UI.BackdropBlur);
+        // Resolving these lazy singletons activates their subscriptions in runtime order before UI draws.
         log.Debug("Load stage: auto-save");
         _ = _serviceProvider.GetRequiredService<IAutoSaveService>();
-
-        // The whole-scene snapshot has framework subscriptions as its only
-        // activity — the same lazy-singleton hazard: resolve it or it never
-        // ticks.
-        // The scene auto-save resolution drags the whole scene runtime graph
-        // in behind it; each link is resolved by name here so a construction
-        // that blocks names its own constructor in the log.
         log.Debug("Load link: prop spawns");
         _ = _serviceProvider.GetRequiredService<Game.PropSpawnService>();
         log.Debug("Load link: overlay nodes");
@@ -111,25 +100,12 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<SceneWorkflow>();
         log.Debug("Load stage: scene auto-save");
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
-
-        // Activate the clean scene owner before constructing presentation.
-        // Singleton registration is lazy: without resolving this service its
-        // actor/skeleton subscriptions never run and SceneSession stays empty.
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
-
-        // Target sync is another lazy singleton with framework subscriptions
-        // as its only activity; resolve it or it never ticks.
         log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
-
-        // Create the active theme's complete typography matrix before any
-        // presentation surface can measure with a fallback face.
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
-
-        // Icons bake to a texture once and draw as one quad after that; the
-        // wrap is the keepalive, so the cache disposing an entry releases it.
-        Crystarium.IconTextureUploader = (pixels, width, height) =>
+        Func<byte[], int, int, (nint, IDisposable?)> textureUploader = (pixels, width, height) =>
         {
             var wrap = textureProvider.CreateFromRaw(
                 RawImageSpecification.Rgba32(width, height),
@@ -137,15 +113,11 @@ public class Poser : IDalamudPlugin
                 "Crystarium icon");
             return ((nint)wrap.Handle.Handle, wrap);
         };
-
-        // Dalamud provides real backdrop blur for the retained glass surfaces.
+        Crystarium.IconTextureUploader = textureUploader;
+        Crystarium.PanelShadowTextureUploader = textureUploader;
         Crystarium.FloatingSurface.BackdropBlurAvailable = true;
-
-        // Initialize UI Manager (triggers subscription to draw events)
         log.Debug("Load stage: UI manager");
         _ = _serviceProvider.GetRequiredService<IUIManager>();
-
-        // Register the /poser command
         _commandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Open Poser. Use \"/poser test\" for the focused in-game validation harness."
@@ -211,10 +183,6 @@ public class Poser : IDalamudPlugin
         var lifecycle = serviceProvider.GetService<ISessionLifecycleCoordinator>();
         try
         {
-            // Unload is the same lifecycle edge as ordinary GPose exit. Marshal
-            // the live graph read to the framework thread and join it before
-            // provider teardown. A failed/canceled hop is logged as evidence;
-            // it never claims that final capture completed.
             if (framework.IsInFrameworkUpdateThread)
                 gpose.ExitForUnload();
             else
@@ -228,10 +196,6 @@ public class Poser : IDalamudPlugin
         }
         finally
         {
-            // A failed or canceled framework hop cannot claim that the exit
-            // edge ran. Close token admission before cleanup can dispose any
-            // provider-owned collaborator, so no late GPose entry can reopen
-            // the graph during teardown.
             serviceProvider.GetService<PoseImportCapture>()?
                 .InvalidateForHostTeardown(
                     "Pose import invalidated because framework unload dispatch did not complete its drain.");
@@ -261,6 +225,7 @@ public class Poser : IDalamudPlugin
             {
                 _commandManager.RemoveHandler(CommandName);
                 Crystarium.IconTextureUploader = null;
+                Crystarium.PanelShadowTextureUploader = null;
                 FontRegistry.Dispose();
             });
     }

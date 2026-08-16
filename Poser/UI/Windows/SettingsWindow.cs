@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -13,13 +13,6 @@ using Poser.Services;
 using Poser.UI.Views;
 
 namespace Poser.UI;
-
-/// <summary>
-/// Binder for <see cref="SettingsView"/> (view+binder pattern —
-/// docs/architecture/ui-workspace.md): loads a <see cref="SettingsViewModel"/> from
-/// <see cref="ConfigurationService"/> when opened, renders the pure view, and writes
-/// back + saves on Save. Cancel/close discards.
-/// </summary>
 public class SettingsWindow : Window
 {
     private SettingsViewModel _vm = new();
@@ -37,9 +30,6 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
-        // Settings closes through Cancel or the chrome's own X, both of which
-        // discard deliberately. Escape belongs to the deselect chord, and an
-        // Escape that silently threw away a page of edits read as a crash.
         RespectCloseHotkey = false;
     }
 
@@ -53,8 +43,11 @@ public class SettingsWindow : Window
     {
         if (!_saving)
         {
+            // Cancel restores the persisted preview state.
             var ui = ConfigurationService.Instance.Config.UI;
             ThemeSelection.Apply(ui.Theme, ui.AccentIndex);
+            Crystarium.FloatingSurface.ConfigureEffects(
+                ui.FillOpacity, ui.BackdropBlur);
         }
         _saving = false;
     }
@@ -67,8 +60,6 @@ public class SettingsWindow : Window
 
     public override void Draw()
     {
-        // The view paints its own chassis (bg-app + border trio); the host window is
-        // an undecorated, transparent shell that only supplies position + input.
         var min = ImGui.GetWindowPos();
         var owner = Interactive.BeginOwner(
             "poser-settings",
@@ -142,7 +133,9 @@ public class SettingsWindow : Window
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
             Theme = c.UI.Theme,
-            AccentIndex = c.UI.AccentIndex,
+            AccentIndex = ThemeSelection.NormalizeAccentIndex(c.UI.AccentIndex),
+            FillOpacity = c.UI.FillOpacity,
+            BackdropBlur = c.UI.BackdropBlur,
 
             TransformEntitySpeed = c.Transform.EntitySpeed,
             TransformBoneSpeed = c.Transform.BoneSpeed,
@@ -164,10 +157,6 @@ public class SettingsWindow : Window
 
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
-
-            // The homes are drafts of the CONFIGURED value, not of the shipped
-            // one: a user who never touched them sees the shipped path as the
-            // field's placeholder and Save leaves it shipped.
             PoseFolder = c.Library.ResolvePoseRoot(),
             SceneFolder = c.Library.ResolveSceneRoot(),
             McdfFolder = c.Library.ResolveMcdfRoot(),
@@ -182,6 +171,7 @@ public class SettingsWindow : Window
             OnCancel = () => IsOpen = false,
             OnClose = () => IsOpen = false,
             OnThemePreview = ThemeSelection.Apply,
+            OnSurfaceEffectsPreview = Crystarium.FloatingSurface.ConfigureEffects,
         };
         _vm.OnOpenRepository = () =>
             Process.Start(new ProcessStartInfo("https://github.com/midona-rhel/Poser") { UseShellExecute = true });
@@ -192,25 +182,13 @@ public class SettingsWindow : Window
                 return;
             try
             {
-                // A seeded source (Brio/Anamnesis defaults) may point at a
-                // folder its own tool never created; Explorer errors on a
-                // missing path, so create it — the library scans it from now
-                // on anyway ("scanned once it exists").
                 System.IO.Directory.CreateDirectory(path);
                 Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
             }
             catch
             {
-                // An unreachable path (bad drive letter, permissions) has no
-                // surface here beyond doing nothing; the row's Status line
-                // already shows the path itself.
             }
         };
-
-        // Library sources: edited as copies, so Cancel leaves the configured
-        // roots untouched. The Poser homes are NOT among them — they have
-        // their own rows, and listing them twice would give one path two
-        // editors that disagree.
         foreach (var source in c.Library.Sources)
         {
             if (IsHomeSource(source.Name))
@@ -224,18 +202,9 @@ public class SettingsWindow : Window
         }
 
         ReadIntegrations(_vm);
-
-        // Keybinds: the stored slots filled out to the whole registry and
-        // COPIED, so Cancel leaves the live bindings untouched exactly as it
-        // does the library roots.
         _vm.Bindings = KeybindRegistry.Resolve(c.UI.Bindings);
         _vm.BindingRevision++;
     }
-
-    /// <summary>Probes each integration once and writes the answers into the
-    /// view model. Each property is a version call over IPC behind its own
-    /// ten-second cache, so this is deliberately a snapshot rather than
-    /// something the rows read while drawing.</summary>
     private void ReadIntegrations(SettingsViewModel vm)
     {
         vm.Integrations.Clear();
@@ -252,14 +221,6 @@ public class SettingsWindow : Window
             _integrations.CustomizePlus.Available,
             _integrations.CustomizePlus.Detail));
     }
-
-    /// <summary>
-    /// The confirmed reset: the config service replaces the slice, the theme
-    /// is restated because a Display or whole reset may have changed it, and
-    /// the view model is rebuilt from what is now stored. Rebuilding is the
-    /// point — the page must not go on showing the values that were just
-    /// thrown away, and unsaved edits are exactly what a reset discards.
-    /// </summary>
     private void ResetConfig(ConfigResetScope scope)
     {
         var svc = ConfigurationService.Instance;
@@ -281,8 +242,6 @@ public class SettingsWindow : Window
 
         int category = _vm.Category;
         LoadFromConfig();
-        // The reset came from a page; that page stays on screen to show the
-        // result rather than throwing the user back to Display.
         _vm.Category = category;
         _vm.ResetStatus = "Reset. These are the shipped defaults.";
         ThemeSelection.Apply(
@@ -301,14 +260,7 @@ public class SettingsWindow : Window
         c.LinkSiblingBones = _vm.LinkSiblingBones;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;
         c.SelectionChangesGPoseTarget = _vm.TargetFollowsSelection;
-        // Clamped, not trusted: the slider is bounded but the stored value is
-        // also what a hand-edited config file hands back.
         c.UndoDepth = Math.Clamp(_vm.UndoDepth, 0, 500);
-
-        // The interval slider is a float row over integer config; the kept count
-        // is free text, so it parses here and an unusable draft (empty, blank,
-        // non-numeric, zero, overflowing int) leaves the stored value alone
-        // rather than resetting the user's retention behind their back.
         c.AutoSave.Enabled = _vm.AutoSaveEnabled;
         c.AutoSave.IntervalSeconds = (int)MathF.Round(_vm.AutoSaveIntervalSeconds);
         if (int.TryParse(
@@ -321,8 +273,6 @@ public class SettingsWindow : Window
         _vm.AutoSaveMaxKept =
             c.AutoSave.MaxAutoSaves.ToString(CultureInfo.InvariantCulture);
         c.AutoSave.CleanOnExit = _vm.AutoSaveCleanOnExit;
-        // Same free-text contract as the pose count: an unusable draft leaves
-        // the stored retention alone.
         c.AutoSave.SceneSnapshots = _vm.SceneSnapshotsEnabled;
         if (int.TryParse(
                 _vm.SceneSnapshotsMaxKept.Trim(),
@@ -356,9 +306,6 @@ public class SettingsWindow : Window
             Math.Clamp(_vm.InactiveActorOpacity, 0f, 1f);
         c.Skeleton.ActiveActorSource =
             (ActiveActorSource)Math.Clamp(_vm.ActiveActorSource, 0, 2);
-        // The friendly-name switch is a DISPLAY rule the bone tables answer,
-        // and every entity that has already resolved its own name reads it
-        // live — so publishing it here is the whole of applying it.
         c.Skeleton.ShowFriendlyBoneNames = _vm.ShowFriendlyBoneNames;
         Core.BoneInfo.BoneInfoService.ShowFriendlyNames =
             _vm.ShowFriendlyBoneNames;
@@ -379,16 +326,16 @@ public class SettingsWindow : Window
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;
         c.UI.Theme = _vm.Theme;
-        c.UI.AccentIndex = _vm.AccentIndex;
+        // Persist a concrete accent position.
+        c.UI.AccentIndex = ThemeSelection.NormalizeAccentIndex(_vm.AccentIndex);
+        c.UI.FillOpacity = _vm.FillOpacity;
+        // Blur is stored separately from surface alpha.
+        c.UI.BackdropBlur = _vm.BackdropBlur;
 
         c.Transform.EntitySpeed =
             Math.Clamp(_vm.TransformEntitySpeed, 0.0005f, 0.05f);
         c.Transform.BoneSpeed =
             Math.Clamp(_vm.TransformBoneSpeed, 0.0005f, 0.05f);
-
-        // Clamped like the undo depth, and for the same reason: the sliders
-        // are bounded but a hand-edited file is not, and these seed every
-        // camera created from now on.
         c.Camera.DefaultMovementSpeed = Math.Clamp(
             _vm.CameraDefaultSpeed,
             FreeCameraSpeed.Minimum,
@@ -407,9 +354,6 @@ public class SettingsWindow : Window
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
         c.UI.SwapRotationXY = _vm.SwapRotationXY;
-
-        // Replaced whole, never merged: an action dropped from the registry
-        // has no row to clear it from, and a stale entry would keep firing.
         c.UI.Bindings.Clear();
         foreach (var (action, slots) in _vm.Bindings)
             c.UI.Bindings[action] = slots.Copy();
@@ -417,9 +361,6 @@ public class SettingsWindow : Window
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
         c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
         c.Library.Sources.Clear();
-        // The homes lead the rebuilt list — they seat first on the rail, and
-        // SetHomeRoot appends the ones an empty list has none of. Blank drafts
-        // land on the shipped path rather than on nothing.
         c.Library.SetHomeRoot(
             LibraryConfiguration.PoseSourceName,
             LibraryConfiguration.DefaultPoseRoot,
@@ -447,25 +388,18 @@ public class SettingsWindow : Window
                 Enabled = source.Enabled,
             });
         }
-        // The homes are CONFIGURED roots and the scan aborts on the first one
-        // it cannot observe, so a freshly typed path exists before the config
-        // change that re-roots the library reaches the scanner.
         c.Library.EnsureHomeRootsExist();
-
-        // Read once at load by the auto-save service, so this is the stored
-        // value the NEXT session starts on; the settings page says so.
         c.AutoSave.RootDirectory = _vm.AutoSaveFolderDraft.Trim().Length == 0
             ? _autoSave.RootDirectory
             : _vm.AutoSaveFolderDraft.Trim();
 
         _saving = true;
         ThemeSelection.Apply(c.UI.Theme, c.UI.AccentIndex);
+        Crystarium.FloatingSurface.ConfigureEffects(
+            c.UI.FillOpacity, c.UI.BackdropBlur);
         svc.ApplyChange();
         IsOpen = false;
     }
-
-    /// <summary>Whether a source name is one of the Poser homes, which the
-    /// extra-folders list neither shows nor writes.</summary>
     private static bool IsHomeSource(string name)
     {
         foreach (var (home, _) in LibraryConfiguration.Homes)

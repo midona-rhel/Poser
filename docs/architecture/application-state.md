@@ -1,85 +1,46 @@
 # Application state
 
-`Poser.Application` owns logical scene, selection, gesture, history, session,
-transaction, recovery, and read-model state. It does not own pointers, native
-entities, framework services, or live UI state.
+`Poser.Application` keeps the current scene, selection, edits, undo history,
+session information, and recovery information. It stores ids and values, not
+game addresses, native entities, or live UI state.
 
-- `ActorId` is lineage plus generation. `SkeletonId` is actor plus slot
-  (Character/MainHand/OffHand/Prop/Ornament) plus that slot's generation;
-  replacing a weapon bumps only its slot. `BoneId` adds partial, index, and
-  canonical name and inherits the one slot field. Commands require an exact
-  generation match: stale is `StaleTarget`, never an address/name or cross-slot
-  fallback. Bone groups are selection-only.
-- `SceneSession` converges on one pointer-free `SceneSnapshot` and revision;
-  `Contains(target)` is the staleness guard. `SelectionSession` is the sole
-  ordered stable-id selection. UI rows and the viewport consume read models,
-  while surface state such as filters, disclosure, hover, and picker lifetime
-  remains local to each UI surface.
-- A gesture captures all baselines once, applies total deltas from those
-  frozen values, rolls back on partial failure, and commits one
-  `TransformPatch`. Cancel and undo/redo use the same restore path; discrete
-  edits are rejected during a gesture. There is one transform history owner.
-- `PortablePose` is actor-independent and matches structural
-  `PortableBoneKey`/`BonePath` identity, retains ordered duplicate-name
-  variants, and treats the native index only as a hint; legacy
-  slot-plus-partial-plus-name matching or broadcast requires the explicit
-  compatibility adapter or legacy matching policy;
-  named producer layers never transfer. Transform and pose contracts cross to
-  the native boundary through the narrow ports described in
-  [posing-runtime.md](posing-runtime.md).
+`ActorId` includes an actor's generation. `SkeletonId` also includes its slot
+and slot generation, so replacing a weapon does not replace the character
+slot. `BoneId` identifies its skeleton, partial, native index, and canonical
+name. Commands require the current generation and refuse stale targets.
 
-## Transactions, identity, and receipts
+`SceneSession` provides one scene snapshot and a revision. `Contains` is the
+staleness check. `SelectionSession` owns ordered stable-id selection. Selection
+scopes preserve compatibility groups and anchors. Filters, disclosure, hover,
+and picker lifetime stay in the UI.
 
-Application workflows own logical transactions and rollback/recovery meaning;
-Game owns native materialization and native failure evidence; optional
-Persistence owns codecs and atomic storage. A transaction is not a generic
-manager or mediator framework. `OperationReceipt` is an immutable read model
-carrying the session generation and an operation state/outcome: `Pending` is
-  a non-terminal acknowledgement; `Applied`, `RolledBack`, `Failed`,
-  `RecoveryRequired`, and `Cancelled` are terminal outcomes. The workflow owns
-its active operation epoch, and late results are rejected against the exact
-session and epoch. UI renders the receipt; it does not infer success from
-callbacks or hidden state. File and MCDF transaction details live in
-[files-and-transfer.md](../features/files-and-transfer.md).
+One drag or typed transform edit is one gesture. It captures each baseline
+once, then applies total deltas from those values. If a write fails, the
+gesture attempts to restore every captured baseline. If restore cannot finish,
+the recovery information and ownership stay available for retry; the failed
+gesture is not added to success history. Cancel and undo/redo use the same
+restore path, and discrete edits cannot interleave with a live gesture.
+
+`PortablePose` does not depend on an actor. It uses bone paths and keys, keeps
+duplicate-name variants in order, and uses game indices only to find bones.
+Legacy matching and broadcast are explicit compatibility choices. Game access
+goes through [posing-runtime.md](posing-runtime.md).
+
+## Results and recovery
+
+Application decides whether an operation succeeded, failed, rolled back, or
+needs recovery. Game reports game-side work and failures. Storage handles file
+formats and safe writes. The UI shows whether an operation is running, finished,
+failed, or needs recovery. Results from an old session or operation are ignored.
 
 ## Session lifecycle
 
-This slice gives `SessionLifecycleCoordinator` one idempotent normal-exit and
-plugin-unload edge. It does not yet own startup or the complete session phase
-machine; those remain deferred to Slice 3. Event-subscription or
-dependency-construction order is not a lifecycle contract. The first accepted
-framework-thread GPose entry mints one opaque `SessionGeneration`; duplicate
-entry observations return that token, and a later normal re-entry mints a new
-one. Exit clears the active token before capture/worker drain and the legacy
-false-GPose event. A reentrant or running exit cannot admit a new token.
-`InvalidateForUnload` is an any-thread, idempotent permanent admission closure;
-it clears the token without capture, events, or native work.
+`SessionLifecycleCoordinator` gives each GPose session a unique token.
+Repeated entry keeps the current token. Normal exit clears it before the final
+autosave starts; the next entry gets a new token. Repeating exit is safe.
+`InvalidateForUnload` closes the session without autosave, events, or game work.
 
-On a successfully dispatched framework-thread exit edge it attempts/reserves
-the immutable final autosave capture when applicable, while the graph and
-session are still readable. Disabled autosave or no eligible actors may return
-`NotCaptured`; `CleanOnExit` instead closes periodic admission and drains the
-owned worker without reserving a final pose. The edge then drains and joins the
-owned worker to a terminal result, deletes only after that drain for
-`CleanOnExit`, and publishes the existing legacy false-GPose event exactly
-once.
-
-This ordering is conditional on successful framework-thread lifecycle
-dispatch. If dispatch faults or is canceled, the host logs the failure,
-permanently invalidates session admission before cleanup, and guarantees
-provider disposal; this slice does not claim that final capture, worker
-drain/join, or the legacy false event completed before provider disposal
-begins.
-
-The worker receives immutable snapshots only and never reads live Game/runtime
-state. On the successfully dispatched edge it is joined before
-unload/provider disposal; a dispatch fault or cancellation does not claim that
-join occurred. Capture and worker failures are typed; a final snapshot is not
-successful merely because capture returned. Operation-epoch invalidation,
-Poser-owned restoration, native/resource teardown, and binding clearing remain
-with the current legacy subscribers and are deferred migration work for Slice
-3.
-Autosave file layout, retention, and autosave storage rules are normative in
-[files-and-transfer.md](../features/files-and-transfer.md).
-The autosave health read model remains storage-owned there; Application only
-interprets its terminal persistence meaning through the final-capture receipt.
+When GPose closes, Poser asks for one final autosave before cleanup. Taking or
+queuing that snapshot does not prove it was saved. GPose cleanup is reported
+separately, and the background worker receives snapshots only. Autosave rules
+are in [files-and-transfer.md](../features/files-and-transfer.md).
