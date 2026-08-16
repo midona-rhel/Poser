@@ -557,14 +557,13 @@ public static class SettingsView
         {
             form.ThemeSwatches(
                 "Theme",
-                ThemeSelection.VisiblePlan.Swatches,
+                ThemeSelection.VisibleChoices,
                 ThemeSelection.VisibleIndex(vm.Theme),
                 next =>
                 {
-                    vm.Theme = ThemeSelection.VisiblePlan.Values[next];
+                    vm.Theme = next;
                     vm.OnThemePreview?.Invoke(vm.Theme, vm.AccentIndex);
-                },
-                ThemeSelection.VisiblePlan.Labels);
+                });
             form.Swatches(
                 "Accent",
                 Theme.AccentOptions,

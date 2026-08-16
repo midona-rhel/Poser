@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Config;
 
 namespace Poser.UI;
 internal static class GlassChrome
@@ -14,19 +16,15 @@ internal static class GlassChrome
     internal static bool ShouldPrependBackdropBlur =>
         BackdropBlurAvailable && _backdropBlur;
 
-    internal static GlassBlurPlan BlurPlan => new(
-        SubmissionCount: 1,
-        BlurStrength: 1f,
-        TintColor: Vector4.Zero,
-        LuminosityColor: Vector4.Zero,
-        NoiseOpacity: 0f);
+    internal static IReadOnlyList<GlassBlurSubmission> BlurSubmissions { get; } =
+        Array.AsReadOnly(new[]
+        {
+            new GlassBlurSubmission(1f, Vector4.Zero, Vector4.Zero, 0f),
+        });
 
     public static void Configure(float fillOpacity, bool backdropBlur) =>
         (_fillOpacity, _backdropBlur) =
-            (ClampFillOpacity(fillOpacity), backdropBlur);
-
-    internal static float ClampFillOpacity(float value) =>
-        float.IsFinite(value) ? Math.Clamp(value, 0.50f, 1f) : 1f;
+            (UIConfiguration.ClampFillOpacity(fillOpacity), backdropBlur);
     public static Vector4 BackgroundColor
     {
         get
@@ -38,7 +36,7 @@ internal static class GlassChrome
     public static void PrependBlur(ImDrawListPtr drawList, Vector2 min, Vector2 max, float rounding)
     {
         if (!ShouldPrependBackdropBlur) return;
-        GlassBlurPlan plan = BlurPlan;
+        GlassBlurSubmission plan = BlurSubmissions[0];
         ImGuiHelpers.PrependBlurBehind(
             drawList, min, max,
             blurStrength: plan.BlurStrength,
@@ -49,8 +47,7 @@ internal static class GlassChrome
     }
 }
 
-internal readonly record struct GlassBlurPlan(
-    int SubmissionCount,
+internal readonly record struct GlassBlurSubmission(
     float BlurStrength,
     Vector4 TintColor,
     Vector4 LuminosityColor,

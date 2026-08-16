@@ -8,7 +8,7 @@ using ThemeSelection = ProductionPoser::Poser.UI.ThemeSelection;
 
 namespace Poser.ContractTests;
 
-/// <summary>Tests accent and brightness state contracts.</summary>
+/// <summary>Tests theme selection and accent contracts.</summary>
 public sealed class ThemeAccentContractTests
 {
     [Fact]
@@ -34,19 +34,42 @@ public sealed class ThemeAccentContractTests
     }
 
     [Fact]
-    public void Every_valid_accent_index_survives_light_and_dark_resolution()
+    public void Visible_themes_and_accents_resolve_to_exact_foundations()
     {
-        for (int index = 0; index < Theme.AccentOptions.Count; index++)
+        foreach (bool windowsUsesLightApps in new[] { true, false })
         {
-            var light = ThemeSelection.Resolve(UITheme.Light, index);
-            var dark = ThemeSelection.Resolve(UITheme.Dark, index);
+            foreach (ThemeChoice choice in ThemeSelection.VisibleChoices)
+            {
+                for (int index = 0; index < Theme.AccentOptions.Count; index++)
+                {
+                    Theme expected = choice.Value switch
+                    {
+                        UITheme.Auto when windowsUsesLightApps => Theme.PictoLight,
+                        UITheme.Auto => Theme.PictoDark,
+                        UITheme.Light => Theme.PictoLight,
+                        UITheme.LightGray => Theme.PictoLightGray,
+                        UITheme.Gray => Theme.PictoGray,
+                        UITheme.Dark => Theme.PictoDark,
+                        UITheme.Blue => Theme.PictoBlue,
+                        UITheme.Purple => Theme.PictoPurple,
+                        _ => throw new ArgumentOutOfRangeException(),
+                    };
+                    Vector4 accent = Theme.AccentOptions[index];
+                    Theme actual = ThemeSelection.Resolve(
+                        choice.Value, index, windowsUsesLightApps);
 
-            Assert.Equal(Theme.AccentOptions[index], light.Accent);
-            Assert.Equal(index, ThemeSelection.NormalizeAccentIndex(index));
-            Assert.Equal(light.Accent, dark.Accent);
-            Assert.Equal(light.Accent, light.Chrome.Primary);
-            Assert.Equal(light.Accent, light.Palette.Primary);
-            Assert.Equal(light.Accent with { W = 0.60f }, light.AccentHover);
+                    Assert.Equal(expected.WithAccent(accent), actual);
+                    Assert.Equal(accent, actual.Accent);
+                    Assert.Equal(accent with { W = 0.60f }, actual.AccentHover);
+                    Assert.Equal(accent with { W = 0.80f }, actual.AccentActive);
+                    Assert.Equal(accent, actual.Chrome.Primary);
+                    Assert.Equal(accent with { W = 0.60f }, actual.Chrome.PrimaryHover);
+                    Assert.Equal(accent with { W = 0.50f }, actual.Chrome.PrimaryFocus);
+                    Assert.Equal(accent with { W = 0.10f }, actual.Chrome.AccentFill);
+                    Assert.Equal(accent with { W = 0.30f }, actual.Chrome.AccentFillBorder);
+                    Assert.Equal(accent, actual.Palette.Primary);
+                }
+            }
         }
     }
 
@@ -92,65 +115,19 @@ public sealed class ThemeAccentContractTests
     }
 
     [Fact]
-    public void Theme_selector_keeps_every_persisted_choice()
+    public void Theme_selector_uses_one_ordered_choice_list()
     {
-        UITheme[] expectedChoices =
+        ThemeChoice[] expectedChoices =
         [
-            UITheme.Auto,
-            UITheme.Light,
-            UITheme.LightGray,
-            UITheme.Gray,
-            UITheme.Dark,
-            UITheme.Blue,
-            UITheme.Purple,
+            new(UITheme.Auto, "Auto", Vector4.Zero),
+            new(UITheme.Light, "Light", Vector4.One),
+            new(UITheme.LightGray, "Light Gray", new(200f / 255f, 202f / 255f, 205f / 255f, 1f)),
+            new(UITheme.Gray, "Gray", new(68f / 255f, 68f / 255f, 68f / 255f, 1f)),
+            new(UITheme.Dark, "Dark", new(1f / 255f, 1f / 255f, 1f / 255f, 1f)),
+            new(UITheme.Blue, "Blue", new(40f / 255f, 53f / 255f, 110f / 255f, 1f)),
+            new(UITheme.Purple, "Purple", new(70f / 255f, 50f / 255f, 117f / 255f, 1f)),
         ];
-        string[] expectedLabels =
-        [
-            "Auto",
-            "Light",
-            "Light Gray",
-            "Gray",
-            "Dark",
-            "Blue",
-            "Purple",
-        ];
-        Assert.Equal(expectedChoices.Length, ThemeSelection.VisiblePlan.Choices.Count);
-
-        for (int i = 0; i < expectedChoices.Length; i++)
-        {
-            Assert.Equal(expectedChoices[i],
-                ThemeSelection.VisiblePlan.Choices[i].Value);
-            Assert.Equal(expectedLabels[i],
-                ThemeSelection.VisiblePlan.Choices[i].Label);
-            Assert.Equal(expectedChoices[i], ThemeSelection.VisiblePlan.Values[i]);
-        }
-
-        foreach (bool windowsUsesLightApps in new[] { true, false })
-        {
-            for (int i = 0; i < expectedChoices.Length; i++)
-            {
-                UITheme choice = expectedChoices[i];
-                Theme expected = choice switch
-                {
-                    UITheme.Auto when windowsUsesLightApps => Theme.PictoLight,
-                    UITheme.Auto => Theme.PictoDark,
-                    UITheme.Light => Theme.PictoLight,
-                    UITheme.LightGray => Theme.PictoLightGray,
-                    UITheme.Gray => Theme.PictoGray,
-                    UITheme.Dark => Theme.PictoDark,
-                    UITheme.Blue => Theme.PictoBlue,
-                    UITheme.Purple => Theme.PictoPurple,
-                    _ => throw new ArgumentOutOfRangeException(),
-                };
-                Theme actual = ThemeSelection.Resolve(
-                    choice, 4, windowsUsesLightApps);
-
-                Assert.Equal(expected.IsLight, actual.IsLight);
-                Assert.Equal(expected.Surface, actual.Surface);
-                Assert.Equal(expected.SurfaceRaised, actual.SurfaceRaised);
-                Assert.Equal(Theme.AccentOptions[4], actual.Accent);
-            }
-        }
+        Assert.Equal(expectedChoices, ThemeSelection.VisibleChoices.ToArray());
     }
 
     [Fact]

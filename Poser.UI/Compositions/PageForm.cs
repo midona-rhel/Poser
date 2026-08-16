@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using Poser.Config;
 
 namespace Poser.UI;
 
@@ -967,31 +968,29 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Draws the theme choices with a borderless System swatch.</summary>
+        /// <summary>Draws theme choices with a borderless Auto swatch.</summary>
         public void ThemeSwatches(
             string label,
-            IReadOnlyList<Vector4> colors,
+            IReadOnlyList<ThemeChoice> choices,
             int selected,
-            Action<int> onChange,
-            IReadOnlyList<string>? names = null,
+            Action<UITheme> onChange,
             string? help = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
             ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
-            ColorPalette(colors.Count, index =>
+            ColorPalette(choices.Count, index =>
             {
                 string swatchId = $"{id}##{index}";
+                ThemeChoice choice = choices[index];
                 if (index != 0)
                 {
                     if (Swatch(
                             swatchId,
-                            colors[index],
+                            choice.Swatch,
                             index == selected,
-                            help: names is not null && index < names.Count
-                                ? names[index]
-                                : null))
-                        onChange(index);
+                            help: choice.Label))
+                        onChange(choice.Value);
                     return;
                 }
 
@@ -1004,13 +1003,11 @@ public static partial class Crystarium
                 ThemeModeGlyphPlan plan = ThemeModeGlyph.Plan(
                     center, hit.Size.X * 0.5f);
                 ThemeModeGlyph.Draw(ImGui.GetWindowDrawList(), plan);
-                if (names is { Count: > 0 }
-                    && !string.IsNullOrEmpty(names[0])
-                    && hit.Hovered)
+                if (hit.Hovered)
                     HoverHelp.Explain(swatchId, hit.ScreenMin,
-                        hit.ScreenMax, names[0]);
+                        hit.ScreenMax, choice.Label);
                 if (hit.Clicked)
-                    onChange(0);
+                    onChange(choice.Value);
             });
             _page.EndRow(row, id, help);
         }

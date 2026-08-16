@@ -22,6 +22,11 @@
 
 
 	<ItemGroup>
+		<!-- Theme choices use the persisted UITheme contract from core. -->
+		<ProjectReference Include="..\PosingCore\PosingCore.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<!-- Exclude nested build output from source globbing. -->
 		<Compile Remove="Rendering\bin\**\*.cs;Rendering\obj\**\*.cs" />
 	</ItemGroup>

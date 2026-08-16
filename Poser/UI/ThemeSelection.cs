@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Win32;
 using System.Collections.Generic;
 using System.Numerics;
@@ -7,44 +8,22 @@ namespace Poser.UI;
 
 internal static class ThemeSelection
 {
-    internal static readonly ThemeSelectionPlan VisiblePlan =
-        new(
-            [
-                new(UITheme.Auto, "Auto"),
-                new(UITheme.Light, "Light"),
-                new(UITheme.LightGray, "Light Gray"),
-                new(UITheme.Gray, "Gray"),
-                new(UITheme.Dark, "Dark"),
-                new(UITheme.Blue, "Blue"),
-                new(UITheme.Purple, "Purple"),
-            ],
-            [
-                UITheme.Auto,
-                UITheme.Light,
-                UITheme.LightGray,
-                UITheme.Gray,
-                UITheme.Dark,
-                UITheme.Blue,
-                UITheme.Purple,
-            ],
-            [
-                Vector4.Zero,
-                new(1f, 1f, 1f, 1f),
-                new(200f / 255f, 202f / 255f, 205f / 255f, 1f),
-                new(68f / 255f, 68f / 255f, 68f / 255f, 1f),
-                new(1f / 255f, 1f / 255f, 1f / 255f, 1f),
-                new(40f / 255f, 53f / 255f, 110f / 255f, 1f),
-                new(70f / 255f, 50f / 255f, 117f / 255f, 1f),
-            ],
-            [
-                "Auto",
-                "Light",
-                "Light Gray",
-                "Gray",
-                "Dark",
-                "Blue",
-                "Purple",
-            ]);
+    internal static readonly IReadOnlyList<ThemeChoice> VisibleChoices =
+        Array.AsReadOnly(new[]
+        {
+            new ThemeChoice(UITheme.Auto, "Auto", Vector4.Zero),
+            new ThemeChoice(UITheme.Light, "Light", Vector4.One),
+            new ThemeChoice(UITheme.LightGray, "Light Gray", new(
+                200f / 255f, 202f / 255f, 205f / 255f, 1f)),
+            new ThemeChoice(UITheme.Gray, "Gray", new(
+                68f / 255f, 68f / 255f, 68f / 255f, 1f)),
+            new ThemeChoice(UITheme.Dark, "Dark", new(
+                1f / 255f, 1f / 255f, 1f / 255f, 1f)),
+            new ThemeChoice(UITheme.Blue, "Blue", new(
+                40f / 255f, 53f / 255f, 110f / 255f, 1f)),
+            new ThemeChoice(UITheme.Purple, "Purple", new(
+                70f / 255f, 50f / 255f, 117f / 255f, 1f)),
+        });
 
     public static Theme Resolve(UITheme selection, int accentIndex)
         => Resolve(selection, accentIndex, WindowsUsesLightApps());
@@ -79,8 +58,8 @@ internal static class ThemeSelection
 
     internal static int VisibleIndex(UITheme value)
     {
-        for (int i = 0; i < VisiblePlan.Values.Count; i++)
-            if (VisiblePlan.Values[i] == value)
+        for (int i = 0; i < VisibleChoices.Count; i++)
+            if (VisibleChoices[i].Value == value)
                 return i;
         return 0;
     }
@@ -104,13 +83,3 @@ internal static class ThemeSelection
         }
     }
 }
-
-internal readonly record struct ThemeSelectionChoice(
-    UITheme Value,
-    string Label);
-
-internal readonly record struct ThemeSelectionPlan(
-    IReadOnlyList<ThemeSelectionChoice> Choices,
-    IReadOnlyList<UITheme> Values,
-    IReadOnlyList<Vector4> Swatches,
-    IReadOnlyList<string> Labels);
