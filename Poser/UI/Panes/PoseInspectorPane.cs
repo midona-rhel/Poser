@@ -1230,7 +1230,8 @@ public class PoseInspectorPane
                     foreach (var id in ids.Skip(additive ? 0 : 1))
                         _selection.Add(id);
                 },
-                _matrixFilter);
+                _matrixFilter,
+                showNsfwBones);
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
         }

@@ -43,8 +43,8 @@ public static class BoneMatrixBuilder
     /// <summary>Extended/IVCS bones are DISPLAY-suppressed while
     /// Display.ShowNsfwBones is off. Read live per build; the snapshot's own
     /// IsHidden and every selection path are untouched.</summary>
-    private static bool IsSuppressed(BoneDescriptor bone)
-        => !Config.ConfigurationService.Instance.Config.Display.ShowNsfwBones
+    private static bool IsSuppressed(BoneDescriptor bone, bool showNsfwBones)
+        => !showNsfwBones
             && BoneInfoService.IsNsfw(bone.Id.CanonicalName);
 
     public static BoneMatrixViewModel Build(
@@ -52,7 +52,8 @@ public static class BoneMatrixBuilder
         SelectionSession selection,
         Action<SelectionId, bool, bool> onBone,
         Action<IReadOnlyList<SelectionId>, bool> onGroup,
-        string? filter = null)
+        string? filter = null,
+        bool showNsfwBones = false)
     {
         var vm = new BoneMatrixViewModel
         {
@@ -77,7 +78,7 @@ public static class BoneMatrixBuilder
             {
                 var gameName = AnamnesisBoneNameConverter.ToGame(name);
                 var matches = skeleton.Bones.Where(bone =>
-                    !bone.IsHidden && !IsSuppressed(bone) &&
+                    !bone.IsHidden && !IsSuppressed(bone, showNsfwBones) &&
                     (bone.Id.CanonicalName == gameName || bone.Id.CanonicalName == name));
                 foreach (var bone in matches)
                 {
@@ -102,7 +103,7 @@ public static class BoneMatrixBuilder
         }
 
         // ── trailing fallback: curated-but-uncovered bones, generated clustering
-        AppendGenerated(vm, skeleton, selection, covered);
+        AppendGenerated(vm, skeleton, selection, covered, showNsfwBones);
         ApplyFilter(vm, filter);
         return vm;
     }
@@ -115,6 +116,9 @@ public static class BoneMatrixBuilder
         var id = SelectionId.ForBone(bone.Id);
         return new BoneMatrixPill
         {
+            Id = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"##p{bone.Id}"),
             Label = label,
             Selected = selection.IsSelected(id),
             Tag = new MatrixPillTag(id, bone.DisplayName, bone.Id.CanonicalName),
@@ -125,7 +129,8 @@ public static class BoneMatrixBuilder
         BoneMatrixViewModel vm,
         SkeletonDescriptor skeleton,
         SelectionSession selection,
-        HashSet<(string BoneName, int PartialId)> covered)
+        HashSet<(string BoneName, int PartialId)> covered,
+        bool showNsfwBones)
     {
         // cluster: (category, subcategory, base name) → pills
         var clusters = new Dictionary<(BoneCategory, BoneSubcategory, string), (string Label, List<PillInfo> Pills)>();
@@ -133,7 +138,7 @@ public static class BoneMatrixBuilder
 
         foreach (var bone in skeleton.Bones)
         {
-            if (bone.IsHidden || IsSuppressed(bone) ||
+            if (bone.IsHidden || IsSuppressed(bone, showNsfwBones) ||
                 covered.Contains((bone.Id.CanonicalName, bone.Id.PartialId))) continue;
 
             var data = BoneInfoService.GetBoneData(bone.Id.CanonicalName);
