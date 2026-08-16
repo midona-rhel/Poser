@@ -3189,7 +3189,9 @@ public class MainWindow : Window
         AutoSaves,
         LayoutSeparator,
         PopOutContent,
+        DetachSeparator,
         ToggleDetached,
+        WindowsSeparator,
         SceneWindow,
         InspectorWindow,
         SettingsSeparator,
@@ -3241,7 +3243,7 @@ public class MainWindow : Window
         _shellMenuLayoutState = layoutState;
 
         _shellMenuItems[(int)ShellCommand.ShowLibrary] =
-            new ContextMenuItem("Show library", TablerIcon.Photo);
+            new ContextMenuItem("Show library", TablerIcon.Library);
         _shellMenuItems[(int)ShellCommand.SpawnActor] =
             new ContextMenuItem("Spawn actor", TablerIcon.UserPlus);
         _shellMenuItems[(int)ShellCommand.ImportPose] =
@@ -3249,20 +3251,24 @@ public class MainWindow : Window
                 "Import pose", TablerIcon.Download, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.ExportPose] =
             new ContextMenuItem(
-                "Export pose", TablerIcon.DeviceFloppy, disabled: !poseTarget);
+                "Export pose", TablerIcon.FileExport, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
-                "Auto-saves", TablerIcon.ArrowBackUp, disabled: !poseTarget);
+                "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
         _shellMenuItems[(int)ShellCommand.LayoutSeparator] =
             ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.PopOutContent] =
             new ContextMenuItem(
                 "Pop out content", TablerIcon.ArrowsDiagonal,
                 disabled: !poseTarget);
+        _shellMenuItems[(int)ShellCommand.DetachSeparator] =
+            ContextMenuItem.Separator;
         _shellMenuItems[(int)ShellCommand.ToggleDetached] =
             new ContextMenuItem(
                 uiConfig.DetachedShell ? "Merge the UI" : "Detach the UI",
                 TablerIcon.LayoutPanel);
+        _shellMenuItems[(int)ShellCommand.WindowsSeparator] =
+            ContextMenuItem.Separator;
         // Detached mode's window roster: windows close and reopen from this
         // menu — the strip is the always-there surface carrying it.
         _shellMenuItems[(int)ShellCommand.SceneWindow] =
@@ -3275,7 +3281,7 @@ public class MainWindow : Window
                 _contentHidden
                     ? "Open Inspector window"
                     : "Close Inspector window",
-                TablerIcon.Monitor,
+                TablerIcon.LayoutSidebarLeft,
                 disabled: !uiConfig.DetachedShell);
         _shellMenuItems[(int)ShellCommand.SettingsSeparator] =
             ContextMenuItem.Separator;
@@ -3379,17 +3385,17 @@ public class MainWindow : Window
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Stack2),
+            new("Clone", TablerIcon.Copy),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
             // so its two verbs live here, out of every pane.
-            new("Attach companion", TablerIcon.Paw,
+            new("Attach companion", TablerIcon.UserPlus,
                 disabled: !_spawnService.HasCompanionSlot(actor),
                 help: _spawnService.HasCompanionSlot(actor)
                     ? "Attach a minion, mount or ornament to this actor"
                     : "Only actors spawned with a companion slot can attach one"),
-            new("Detach companion", TablerIcon.X,
+            new("Detach companion", TablerIcon.UserMinus,
                 disabled: _spawnService.GetCompanionInfo(actor) is null),
         };
         var actions = new List<Action?>
@@ -3448,13 +3454,13 @@ public class MainWindow : Window
         items.Add(new ContextMenuItem(
             "Import pose", TablerIcon.Download, disabled: !actor.HasSkeleton));
         items.Add(new ContextMenuItem(
-            "Export pose", TablerIcon.DeviceFloppy,
+            "Export pose", TablerIcon.FileExport,
             disabled: !actor.HasSkeleton));
         items.Add(new ContextMenuItem(
-            "Stash pose", TablerIcon.ArrowDown, disabled: !actor.HasSkeleton,
+            "Stash pose", TablerIcon.Archive, disabled: !actor.HasSkeleton,
             help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before."));
         items.Add(new ContextMenuItem(
-            "Apply stashed pose", TablerIcon.ArrowBackUp,
+            "Apply stashed pose", TablerIcon.ArchiveImport,
             disabled: !actor.HasSkeleton || !_cleanPose.HasStash,
             help: _cleanPose.HasStash
                 ? $"Apply the stashed pose to this actor. Stashed from {_cleanPose.StashedFrom} at {_cleanPose.StashedAt:HH:mm:ss} UTC."
@@ -3745,7 +3751,7 @@ public class MainWindow : Window
                 hidden ? "Show" : "Hide",
                 hidden ? TablerIcon.Eye : TablerIcon.EyeOff),
             new ContextMenuItem("Rename", TablerIcon.Edit),
-            new ContextMenuItem("Duplicate", TablerIcon.Stack2),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Remove", TablerIcon.Trash),
         };
         if (_referenceCtxOpenRequested)
@@ -3885,7 +3891,7 @@ public class MainWindow : Window
             new(light.IsOn ? "Switch off" : "Switch on",
                 light.IsOn ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Stack2),
+            new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             ContextMenuItem.Separator,
         };
@@ -3958,7 +3964,7 @@ public class MainWindow : Window
             new(prop.Visible ? "Hide" : "Show",
                 prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Stack2),
+            new("Clone", TablerIcon.Copy),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
         };
@@ -4018,7 +4024,7 @@ public class MainWindow : Window
             new(camera.IsLocked ? "Unlock" : "Lock",
                 camera.IsLocked ? TablerIcon.LockOpen : TablerIcon.Lock),
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
-            new("Clone", TablerIcon.Stack2),
+            new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
             new("Reset properties", TablerIcon.Refresh,
                 disabled: camera.IsLocked),
