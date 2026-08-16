@@ -185,6 +185,64 @@ public sealed class BoneVisibilityPresetContractTests
         Assert.True(presentation.IsVisible(current[2]));
     }
 
+    [Fact]
+    public void Bone_rows_use_real_roots_without_duplicate_labels_or_targets()
+    {
+        var actor = ActorId.New();
+        var head = new BoneDescriptor(
+            new BoneId(
+                new SkeletonId(actor, PoseSlot.Character, 0),
+                0, 1, "j_head"),
+            "Head",
+            Parent: null);
+        var headRoot = new BoneDescriptor(
+            new BoneId(
+                new SkeletonId(actor, PoseSlot.Character, 0),
+                0, 2, "j_kao"),
+            "Face bone",
+            Parent: null);
+        var leftArm = new BoneDescriptor(
+            new BoneId(
+                new SkeletonId(actor, PoseSlot.Character, 0),
+                0, 3, "j_ude_a_l"),
+            "Arm Left",
+            Parent: null);
+
+        Assert.Equal(
+            head.Id,
+            ProductionPoser::Poser.UI.MainWindow.ResolveCategoryBone(
+                "Head", "Head", new[] { head, headRoot })!.Id);
+        Assert.Equal(
+            leftArm.Id,
+            ProductionPoser::Poser.UI.MainWindow.ResolveCategoryBone(
+                "LeftArm", "Left Arm", new[] { leftArm })!.Id);
+
+        var abdomen = new BoneDescriptor(
+            new BoneId(
+                new SkeletonId(actor, PoseSlot.Character, 0),
+                0, 4, "n_hara"),
+            "Abdomen",
+            Parent: null);
+        Assert.Equal(
+            abdomen.Id,
+            ProductionPoser::Poser.UI.MainWindow.ResolveCharacterRootBone(
+                new[] { abdomen })!.Id);
+        Assert.Null(
+            ProductionPoser::Poser.UI.MainWindow.ResolveCharacterRootBone(
+                new[] { leftArm }));
+
+        var child = new BoneDescriptor(
+            new BoneId(
+                new SkeletonId(actor, PoseSlot.Character, 0),
+                0, 5, "j_ude_b_l"),
+            "Forearm Left",
+            Parent: leftArm.Id);
+        Assert.Equal(
+            new[] { leftArm.Id },
+            ProductionPoser::Poser.UI.MainWindow.NonOverlappingBoneTargets(
+                new[] { leftArm, child }));
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────
 
     private static BoneVisibilityPresetService Service(

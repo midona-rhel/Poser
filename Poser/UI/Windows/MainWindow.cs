@@ -2199,10 +2199,7 @@ public class MainWindow : Window
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
-                var abdomen = skeleton!.Bones.FirstOrDefault(
-                    bone => string.Equals(
-                        bone.Id.CanonicalName, "n_hara",
-                        StringComparison.Ordinal));
+                var abdomen = ResolveCharacterRootBone(skeleton!.Bones);
                 var allBoneIds = new BoneId[byName.Count];
                 int i = 0;
                 foreach (var (bone, _) in byName.Values)
@@ -2351,6 +2348,58 @@ public class MainWindow : Window
         _ => null,
     };
 
+    internal static BoneDescriptor? ResolveCategoryBone(
+        string categoryId,
+        string categoryLabel,
+        IReadOnlyList<BoneDescriptor> bones)
+    {
+        var displayMatch = bones.FirstOrDefault(
+            bone => string.Equals(
+                bone.DisplayName, categoryLabel,
+                StringComparison.Ordinal));
+        if (displayMatch != null)
+            return displayMatch;
+
+        var rootName = CategoryRootBone(categoryId);
+        return rootName == null
+            ? null
+            : bones.FirstOrDefault(
+                bone => string.Equals(
+                    bone.Id.CanonicalName, rootName,
+                    StringComparison.Ordinal));
+    }
+
+    internal static BoneDescriptor? ResolveCharacterRootBone(
+        IReadOnlyList<BoneDescriptor> bones) =>
+        bones.FirstOrDefault(
+            bone => string.Equals(
+                bone.Id.CanonicalName, "n_hara",
+                StringComparison.Ordinal));
+
+    internal static BoneId[] NonOverlappingBoneTargets(
+        IReadOnlyList<BoneDescriptor> candidates)
+    {
+        var parents = candidates.ToDictionary(
+            bone => bone.Id, bone => bone.Parent);
+        var selected = candidates.Select(bone => bone.Id).ToHashSet();
+        return candidates
+            .Where(bone =>
+            {
+                var parent = bone.Parent;
+                while (parent is { } ancestor)
+                {
+                    if (selected.Contains(ancestor))
+                        return false;
+                    if (!parents.TryGetValue(ancestor, out parent))
+                        break;
+                }
+                return true;
+            })
+            .Select(bone => bone.Id)
+            .Distinct()
+            .ToArray();
+    }
+
     private static void CollectCategorySelectionBones(
         BuiltCategory category, List<BoneDescriptor> into)
     {
@@ -2376,28 +2425,17 @@ public class MainWindow : Window
     private static void RemoveSelectedDescendants(
         BuiltCategory category, List<BoneDescriptor> targets)
     {
-        var parents = new Dictionary<BoneId, BoneId?>();
+        var candidates = new List<BoneDescriptor>();
         void Index(BuiltCategory current)
         {
-            foreach (var bone in current.AllBones)
-                parents[bone.Id] = bone.Parent;
+            candidates.AddRange(current.AllBones);
             foreach (var child in current.Children)
                 Index(child);
         }
         Index(category);
-        var selected = targets.Select(bone => bone.Id).ToHashSet();
-        targets.RemoveAll(bone =>
-        {
-            var parent = bone.Parent;
-            while (parent is { } ancestor)
-            {
-                if (selected.Contains(ancestor))
-                    return true;
-                if (!parents.TryGetValue(ancestor, out parent))
-                    break;
-            }
-            return false;
-        });
+        var allowed = NonOverlappingBoneTargets(candidates)
+            .ToHashSet();
+        targets.RemoveAll(bone => !allowed.Contains(bone.Id));
     }
 
     /// <summary>Strips the redundant "IVCS " lead from a bone label shown
@@ -2438,14 +2476,8 @@ public class MainWindow : Window
         // -> j_ude_a_l), the two rows are redundant: the real bone becomes
         // the category row. Its body selects the bone while its chevron still
         // toggles the category. Categories without a root remain groups.
-        var rootName = CategoryRootBone(category.Id);
-        var mergedBone = rootName == null
-            ? category.AllBones.Find(
-                bone => bone.DisplayName == category.Label)
-            : category.AllBones.Find(
-                bone => string.Equals(
-                    bone.Id.CanonicalName, rootName,
-                    StringComparison.Ordinal));
+        var mergedBone = ResolveCategoryBone(
+            category.Id, category.Label, category.AllBones);
         var selectionBones = new List<BoneDescriptor>();
         if (mergedBone == null)
         {
