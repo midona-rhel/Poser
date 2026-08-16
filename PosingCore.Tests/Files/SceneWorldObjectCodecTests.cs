@@ -114,12 +114,19 @@ public sealed class SceneWorldObjectCodecTests
                 SceneFileValidationFailureKind.Identity),
             (() => SerializeScene(MissingOverlayNode()), SceneStoreFailureKind.Validation,
                 SceneFileValidationFailureKind.Document),
+            (() => SerializeScene(MissingOverlayKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
             (() => SerializeScene(DuplicateWorldKey()), SceneStoreFailureKind.Validation,
                 SceneFileValidationFailureKind.Identity),
+            (() => SerializeScene(DuplicateOverlayKey()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.Identity),
             (NonFiniteWorldPositionJson, SceneStoreFailureKind.Json, null),
+            (NonFiniteOverlayPositionJson, SceneStoreFailureKind.Json, null),
             (() => SerializeScene(OversizedOverlayText()), SceneStoreFailureKind.Validation,
                 SceneFileValidationFailureKind.Range),
             (() => SerializeScene(OversizedWorldObjectList()), SceneStoreFailureKind.Validation,
+                SceneFileValidationFailureKind.CollectionSize),
+            (() => SerializeScene(OversizedOverlayList()), SceneStoreFailureKind.Validation,
                 SceneFileValidationFailureKind.CollectionSize),
         };
 
@@ -164,6 +171,41 @@ public sealed class SceneWorldObjectCodecTests
         return scene;
     }
 
+    private static SceneFile MissingOverlayKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays =
+        [new SceneOverlay
+        {
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Overlay",
+            },
+        }];
+        return scene;
+    }
+
+    private static SceneFile DuplicateOverlayKey()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        var key = Guid.NewGuid();
+        scene.Overlays =
+        [
+            new SceneOverlay
+            {
+                Key = key,
+                Node = new OverlayNodeState { Kind = OverlayNodeKind.Talk, Name = "First" },
+            },
+            new SceneOverlay
+            {
+                Key = key,
+                Node = new OverlayNodeState { Kind = OverlayNodeKind.Talk, Name = "Second" },
+            },
+        ];
+        return scene;
+    }
+
     private static string NonFiniteWorldPositionJson()
     {
         var scene = SceneFileStoreTests.ValidScene();
@@ -177,6 +219,27 @@ public sealed class SceneWorldObjectCodecTests
         return json.Replace(
             "\"MapPosition\": \"0, 0, 0\"",
             "\"MapPosition\": \"NaN, 0, 0\"",
+            StringComparison.Ordinal);
+    }
+
+    private static string NonFiniteOverlayPositionJson()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays =
+        [new SceneOverlay
+        {
+            Key = Guid.NewGuid(),
+            Node = new OverlayNodeState
+            {
+                Kind = OverlayNodeKind.Talk,
+                Name = "Overlay",
+                Position = new Vector2(1, 2),
+            },
+        }];
+        var json = SerializeScene(scene);
+        return json.Replace(
+            "\"Position\": \"1, 2\"",
+            "\"Position\": \"NaN, 2\"",
             StringComparison.Ordinal);
     }
 
@@ -208,6 +271,23 @@ public sealed class SceneWorldObjectCodecTests
             {
                 Key = Guid.NewGuid(),
                 Path = $"bg/{index}.mdl",
+            })
+            .ToList();
+        return scene;
+    }
+
+    private static SceneFile OversizedOverlayList()
+    {
+        var scene = SceneFileStoreTests.ValidScene();
+        scene.Overlays = Enumerable.Range(0, SceneFileLimits.MaxOverlays + 1)
+            .Select(index => new SceneOverlay
+            {
+                Key = Guid.NewGuid(),
+                Node = new OverlayNodeState
+                {
+                    Kind = OverlayNodeKind.Talk,
+                    Name = $"Overlay {index}",
+                },
             })
             .ToList();
         return scene;

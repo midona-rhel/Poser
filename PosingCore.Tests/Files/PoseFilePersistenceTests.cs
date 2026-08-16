@@ -141,6 +141,8 @@ public sealed class PoseFilePersistenceTests
         {
             (Json: $"{{\"Tags\":[{string.Join(",", Enumerable.Repeat("\"tag\"", PoseFileLimits.MaxTags + 1))}]}}",
                 Kind: PoseFileValidationFailureKind.TagCount),
+            (Json: $"{{\"Tags\":[\"{new string('t', PoseFileLimits.MaxTagCharacters + 1)}\"]}}",
+                Kind: PoseFileValidationFailureKind.TagLength),
             (Json: $"{{\"Bones\":{{{BoneEntries(PoseFileLimits.MaxEntriesPerCollection + 1)}}}}}",
                 Kind: PoseFileValidationFailureKind.CollectionSize),
             (Json: string.Concat(
@@ -178,6 +180,32 @@ public sealed class PoseFilePersistenceTests
     }
 
     [Fact]
+    public void Metadata_numeric_wire_matches_full_parse_for_long_and_culture_split_values()
+    {
+        using var fixture = new StoreFixture();
+        var positions = new[]
+        {
+            $"{new string('9', 400)}, 0, 0",
+            "1,25, 2,5, 3,75",
+        };
+
+        foreach (var position in positions)
+        {
+            var json = PoseWithPosition(position);
+            File.WriteAllText(fixture.Path, json);
+
+            var metadata = AtomicPoseFileStore.Default.ReadMetadata(fixture.Path);
+            var parsed = AtomicPoseFileStore.Default.Parse(json);
+
+            Assert.False(metadata.Succeeded, position);
+            Assert.False(parsed.Succeeded, position);
+            Assert.Equal(parsed.Failure!.Kind, metadata.Failure!.Kind);
+            Assert.Equal(parsed.Failure.ValidationFailure?.Kind,
+                metadata.Failure.ValidationFailure?.Kind);
+        }
+    }
+
+    [Fact]
     public void Atomic_commit_reports_phase_failures_and_preserves_recovery_evidence()
     {
         var phaseCases = new[]
@@ -211,6 +239,26 @@ public sealed class PoseFilePersistenceTests
             else
                 Assert.False(File.Exists(fixture.Path));
         }
+    }
+
+    [Fact]
+    public void Temp_revalidation_fails_before_commit_and_leaves_destination_untouched()
+    {
+        using var fixture = new StoreFixture();
+        var old = new byte[] { 0x13, 0x37, 0x42 };
+        File.WriteAllBytes(fixture.Path, old);
+        var store = new AtomicPoseFileStore((phase, path) =>
+        {
+            if (phase == PoseFileStorePhase.ReopenTemporary)
+                File.WriteAllText(path!, "not a pose document");
+        });
+
+        var result = store.Write(ValidPose(), fixture.Path);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(PoseFileStoreFailureKind.TemporaryReopen, result.Failure!.Kind);
+        Assert.Equal(old, File.ReadAllBytes(fixture.Path));
+        Assert.Empty(result.RecoveryEvidencePaths);
     }
 
     [Fact]
@@ -264,6 +312,11 @@ public sealed class PoseFilePersistenceTests
     private static string BoneEntries(int count, int start = 0) =>
         string.Join(",", Enumerable.Range(start, count)
             .Select(index => $"\"b{index}\":{ValidBoneJson}"));
+
+    private static string PoseWithPosition(string position) =>
+        string.Concat(
+            "{\"Bones\":{\"j_kao\":{\"Position\":\"", position,
+            "\",\"Rotation\":\"0, 0, 0, 1\",\"Scale\":\"1, 1, 1\"}}}}");
 
     private sealed class DestinationLossFileSystem : IPoseFileStoreFileSystem
     {
