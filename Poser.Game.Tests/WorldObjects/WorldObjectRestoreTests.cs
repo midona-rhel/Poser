@@ -88,7 +88,7 @@ public sealed class WorldObjectRestoreTests
 
         world.Port.Add("bg/tree.mdl", Placed with { Position = Placed.Position + new Vector3(20, 0, 0) });
         Assert.Null(world.Service.AdoptByIdentity("bg/tree.mdl", Placed.Position, Moved, true, out var detail));
-        Assert.Contains("not found", detail!);
+        Assert.Contains("not standing", detail!);
         Assert.Equal(0, world.Port.Writes);
     }
 private sealed class World

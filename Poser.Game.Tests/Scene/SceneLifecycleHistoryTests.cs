@@ -96,7 +96,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal("Remove 1 entity", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Empty(world.Actors.Live);
-        Assert.Single(world.Props.Live);
+        Assert.Equal(2, world.Props.Live.Count);
     }
 
     [Fact]
