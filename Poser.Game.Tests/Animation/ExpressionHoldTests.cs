@@ -49,11 +49,14 @@ public sealed class ExpressionHoldTests
         port.FailClearSlotSpeed = true;
         Assert.False(session.ReleaseExpression(Actor).Success);
         Assert.Equal(Smile, session.HeldExpressionFor(Actor));
+        Assert.Equal(Incoming, session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
 
         port.FailClearSlotSpeed = false;
         Assert.True(session.RestoreFacialLayer(Actor).Success);
         Assert.Null(session.HeldExpressionFor(Actor));
-        Assert.Equal(Incoming, session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
+        Assert.DoesNotContain(
+            AnimationSlot.Facial,
+            session.OverridesFor(Actor).SlotCaptures.Keys);
     }
 private class FakePort : DispatchProxy
     {
@@ -102,6 +105,7 @@ private class FakePort : DispatchProxy
                 }
                 case "Blend":
                     Calls.Add($"Blend:{args![1]}");
+                    LiveFacialTimeline = (ushort)args[1]!;
                     args[3] = null;
                     return BlendFailure is { } refusal
                         ? AnimationPortResult.Fail(refusal)

@@ -17,14 +17,17 @@ public sealed class WorldActorDiscoveryTests
         adapter.World.AddRange([observed, Obs((nint)0x20, index: 6, name: "Far", distance: 9, kind: WorldActorKind.Player), Obs(nint.Zero), Obs((nint)0x30, index: 200)]);
         var seam = new CloneSeam();
         var discovery = NewDiscovery(adapter, seam);
-        var first = Assert.Single(discovery.RefreshCandidates());
-        Assert.Equal("Near", first.Name);
-        Assert.True(discovery.CloneCandidate(first.Id, out _).Success);
+        var first = discovery.RefreshCandidates();
+        Assert.Equal(2, first.Count);
+        Assert.Equal("Near", first[0].Name);
+        Assert.Equal("Far", first[1].Name);
+        var near = first[0];
+        Assert.True(discovery.CloneCandidate(near.Id, out _).Success);
         adapter.World.Clear();
         adapter.World.Add(observed with { Address = (nint)0x11, GameObjectId = 2 });
         var replacement = Assert.Single(discovery.RefreshCandidates());
-        Assert.NotEqual(first.Id, replacement.Id);
-        Assert.Equal(WorldActorImportStatus.StaleCandidate, discovery.CloneCandidate(first.Id, out _).Status);
+        Assert.NotEqual(near.Id, replacement.Id);
+        Assert.Equal(WorldActorImportStatus.StaleCandidate, discovery.CloneCandidate(near.Id, out _).Status);
     }
 
 // ── helpers ──────────────────────────────────────────────────────────

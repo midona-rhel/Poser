@@ -53,7 +53,10 @@ public sealed class ActorSpawnServiceOwnershipTests
         Assert.False(service.DestroyActor(actor));
         Assert.False(service.IsSpawnedActor(actor));
         Assert.Single(service.OwnershipSnapshot);
-        Assert.True(service.IsVisible(actor));
+        // The finalize stamp makes the reused occupant a different native
+        // lifetime, so a visibility read refuses instead of trusting the
+        // wrapper's remembered address.
+        Assert.False(service.IsVisible(actor));
     }
     private static SpawnOwnershipLedger NewBoundLedger(
         out SpawnOwnershipRecord record,
@@ -195,6 +198,12 @@ public sealed class ActorSpawnServiceOwnershipTests
         /// the 249-slot array).</summary>
         public List<ushort> ResolvedIndexes { get; } = new();
 
+        /// <summary>The exact slot identity admitted by the last create.
+        /// Keeping this separate from <see cref="Current"/> lets a refresh
+        /// replace the occupant after the spawn transaction has captured it.
+        /// </summary>
+        public SpawnNativeDescriptor? Created { get; private set; }
+
         /// <summary>The Character finalize the real deletion runs, which the
         /// real adapter's hook observes.</summary>
         public Action<nint, ushort?>? OnDestroyed { get; set; }
@@ -208,7 +217,11 @@ public sealed class ActorSpawnServiceOwnershipTests
             // The game builds in the slot it is named; uint.MaxValue means
             // "next available", which here is the seeded occupant's slot.
             var slot = index == uint.MaxValue ? Current?.Index : (ushort)index;
-            return slot ?? SpawnClientObjects.NoIndex;
+            if (slot is not { } created || Current is not { } occupant
+                || occupant.Index != created)
+                return SpawnClientObjects.NoIndex;
+            Created = occupant;
+            return created;
         }
 
         public ClientObjectSnapshot? GetObjectByIndex(ushort index)
