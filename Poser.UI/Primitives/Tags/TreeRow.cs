@@ -8,49 +8,28 @@ namespace Poser.UI;
 
 public enum SidebarExpander { None, Collapsed, Open }
 
-/// <summary>
-/// What one gesture on a <see cref="Crystarium.TreeRow"/> resolved to. A
-/// single value, not a flag per target: the row and its disclosure are two
-/// overlapping reserves and ImGui lets only the item that OWNS the press
-/// complete a release, so a double activation is unrepresentable.
-/// </summary>
+/// <summary>The result of one tree-row gesture.</summary>
 public enum TreeRowAction { None, Selected, Expander, Context }
 
-/// <summary>
-/// One sidebar/tree row's inputs. Everything the guides need is
-/// <see cref="Depth"/>, <see cref="Trunks"/> and <see cref="IsLastChild"/>;
-/// the branch shape is DERIVED from those plus the disclosure, never stated.
-/// </summary>
+/// <summary>Visual and interaction state for one tree row.</summary>
 public record struct TreeRowProps
 {
-    /// <summary>The row's mark. A texture WINS over both glyph forms — a
-    /// resolved portrait is the concrete thing the row is about — and the glyph
-    /// beside it is the fallback for rows whose image never resolved.</summary>
+    /// <summary>The fallback icon when no texture is available.</summary>
     public TablerIcon? Icon;
 
-    /// <summary>The registry NAME form, for glyphs the enum does not carry.
-    /// </summary>
+    /// <summary>A registered icon name.</summary>
     public string? IconName;
 
-    /// <summary>Already-resolved game texture. The caller owns lifetime:
-    /// Dalamud's shared textures must be re-resolved every frame.</summary>
+    /// <summary>A caller-owned texture resolved for this frame.</summary>
     public IDalamudTextureWrap? IconTexture;
 
-    /// <summary>Suppress the mark AND its advance: a nested row draws no icon,
-    /// and its guide column already spans the same distance.</summary>
+    /// <summary>Removes the icon and its spacing.</summary>
     public bool HideIcon;
 
-    /// <summary>The label's type size, or null for the standing body size the
-    /// scene tree reads at. Stated only by rows that are NOT the tree — a
-    /// dense transient list at the pointer wants the caption size and a row
-    /// box to match, and shrinking the shared token would take the whole
-    /// sidebar with it.</summary>
+    /// <summary>An optional label size override.</summary>
     public float? LabelSize;
 
-    /// <summary>Centre the label in its zone instead of seating it at the
-    /// start. Stated only by rows that are NOT the tree — a transient pick
-    /// list at the pointer centres its names (user 2026-08-15); a tree row
-    /// centring under its guides would break the indent grid.</summary>
+    /// <summary>Centers the label inside its available span.</summary>
     public bool CenterLabel;
 
     /// <summary>Right-aligned mono readout (counts, "you", "spawned").</summary>
@@ -59,29 +38,20 @@ public record struct TreeRowProps
     /// <summary>0 is a root row; each level costs one indent.</summary>
     public int Depth;
 
-    /// <summary>Bitmask over ANCESTOR depths: bit <c>a</c> set means a sibling
-    /// line continues at depth <c>a</c>. A mask rather than an array keeps the
-    /// warm path free of a per-row allocation; bit 0 is unused because depth 0
-    /// has no trunk.</summary>
+    /// <summary>Ancestor depths whose sibling lines continue.</summary>
     public uint Trunks;
 
     /// <summary>Last child of its parent — the branch is an L, not a T.
     /// </summary>
     public bool IsLastChild;
 
-    /// <summary>Suppress the connector INK only. The trunk column, the pill's
-    /// inset and the label zone are unchanged, so a row keeps its exact
-    /// geometry with the guides off and nothing reflows. Stated as HIDE so the
-    /// record's default draws them.</summary>
+    /// <summary>Hides guides without changing row geometry.</summary>
     public bool HideGuides;
 
-    /// <summary><see cref="SidebarExpander.None"/> reserves no chevron at all,
-    /// so the row's whole width selects.</summary>
+    /// <summary>The disclosure state.</summary>
     public SidebarExpander Expander;
 
-    /// <summary>The affordance is shown but faded and inert. It is never ERASED
-    /// once a row can disclose, so the column does not reflow when a skeleton
-    /// resolves.</summary>
+    /// <summary>Shows an inert disclosure without changing layout.</summary>
     public bool ExpanderDisabled;
 
     public bool Selected;
@@ -89,14 +59,10 @@ public record struct TreeRowProps
     /// <summary>Drag-hover: the accent fill over its own hairline.</summary>
     public bool DropTarget;
 
-    /// <summary>Right padding for the row's CONTENT under a scroll gutter. The
-    /// pill's right edge, the badge and the action strip all stop here.
-    /// </summary>
+    /// <summary>Right padding reserved for the scroll gutter.</summary>
     public float TrailingInset;
 
-    /// <summary>How many square icon actions the CALLER will draw after the row
-    /// returns. The row reserves their span so the label truncates against it
-    /// and reports where the strip starts.</summary>
+    /// <summary>Action slots reserved after the label.</summary>
     public int ActionSlots;
 
     /// <summary>The action square's logical side; 0 takes the shell's switch
@@ -109,10 +75,7 @@ public static partial class Crystarium
     /// <summary>The indent one level costs.</summary>
     private const float TreeIndent = 20f;
 
-    /// <summary>Where depth 1's trunk stands: the 16px expander slot plus half
-    /// the root row's 16px icon. Every deeper trunk is this plus whole indents,
-    /// which keeps a terminal branch on the same grid as the root icon above
-    /// it.</summary>
+    /// <summary>Depth one's trunk position.</summary>
     private const float TreeRootTrunk = 24f;
 
     /// <summary>A nested label's distance from its own trunk.</summary>
@@ -121,14 +84,10 @@ public static partial class Crystarium
     /// <summary>The root row's disclosure slot, left of the icon.</summary>
     private const float TreeRootSlot = 16f;
 
-    /// <summary>A bare list row's label inset — no disclosure, no mark, so the
-    /// label sits this snug pad off the pill's edge rather than an empty
-    /// expander slot away from it.</summary>
+    /// <summary>Label inset for rows without a disclosure or icon.</summary>
     private const float TreeBareLabelPad = 6f;
 
-    /// <summary>The disclosure's box: the hit rect and the drawn mark are one
-    /// rectangle, so the chevron can never be clickable where it is not
-    /// visible.</summary>
+    /// <summary>The disclosure's visible and interactive box.</summary>
     private const float TreeChevronBox = 18f;
 
     private const float TreeChevronCenter = 8f;
@@ -137,26 +96,21 @@ public static partial class Crystarium
     /// never runs under a selection.</summary>
     private const float TreePillClearance = 10f;
 
-    /// <summary>A root pill's own inset (CSS <c>--row-inset</c>).</summary>
+    /// <summary>A root pill's horizontal inset.</summary>
     private const float TreeRootPillInset = 1f;
 
     private const float TreeIconSide = 16f;
 
     private const float TreeIconGap = 6f;
 
-    /// <summary>CONSTANT: lifting it on hover would need the slot's own hover
-    /// state, and a stateful slot reserves — the one thing row content may not
-    /// do.</summary>
+    /// <summary>Resting icon opacity.</summary>
     private const float TreeIconOpacity = 0.85f;
 
     /// <summary>The strip's gap, and the gap that ends it at the content edge.
     /// </summary>
     private const float TreeActionGap = 2f;
 
-    /// <summary>A trunk's FREE ends — the ones meeting the NEIGHBOURING row
-    /// rather than this row's own arm — drop two PHYSICAL px.
-    /// Both ends move together, so consecutive rows still edge-join exactly
-    /// while an end that TERMINATES at the arm stays put.</summary>
+    /// <summary>Extends free trunk ends to the neighboring row.</summary>
     private const float TreeGuideDrop = 2f;
 
     private const float TreePillRadius = 5f;
@@ -164,14 +118,10 @@ public static partial class Crystarium
     /// <summary>The one animated channel of the pill's opacity.</summary>
     private const int TreeRowHighlightChannel = 0;
 
-    /// <summary>The branch a row's OWN depth column draws — a function of the
-    /// depth, of whether the row discloses, and of whether it is its parent's
-    /// last.</summary>
+    /// <summary>The connector shape at the row's depth.</summary>
     private enum TreeBranch { None, Tee, Elbow, Fork, ForkLast }
 
-    /// <summary>Where one depth's trunk stands, measured from the row's left
-    /// edge: the ONE definition the pill's inset and the guide ink share.
-    /// </summary>
+    /// <summary>Returns a trunk's horizontal position.</summary>
     private static float TreeTrunkX(int depth) =>
         TreeRootTrunk + (depth - 1) * TreeIndent;
 
@@ -184,22 +134,8 @@ public static partial class Crystarium
         TreeRow(id, label, in props, out _, style);
 
     /// <summary>
-    /// The one sidebar/tree row: a 26px band carrying the highlight pill, the
-    /// connector guides, the disclosure, the mark, the label and a right-aligned
-    /// badge.
-    ///
-    /// <para>ACTIONS ARE THE CALLER'S. State <see cref="TreeRowProps.ActionSlots"/>
-    /// and the row reserves the strip's span — the label truncates against it —
-    /// then reports <paramref name="actionsOrigin"/>, the screen-space top-left
-    /// of the first square. The caller seats its own controls there and restores
-    /// the cursor; nothing about their appearance is this row's business.</para>
-    ///
-    /// <para>The row and its disclosure are TWO REAL RESERVES: the row is
-    /// submitted first and yields arbitration through
-    /// <c>SetItemAllowOverlap</c>, so a press landing on the chevron — or on a
-    /// caller's action — takes ImGui's active id AWAY from it and the outcomes
-    /// are mutually exclusive by construction rather than by a mouse-x
-    /// comparison.</para>
+    /// Draws a tree row and reports the first reserved action position.
+    /// The disclosure and action controls own presses inside their boxes.
     /// </summary>
     public static TreeRowAction TreeRow(
         string id,
@@ -209,8 +145,7 @@ public static partial class Crystarium
         ControlStyle style = default)
     {
         var theme = ActiveTheme;
-        // Content and Fill both resolve to the available region here, so
-        // UiWidth.Fixed is the only width path that changes the row.
+        // A fixed width is the only explicit width override.
         var metrics = ControlSizing.Resolve(
             style,
             ImGui.GetContentRegionAvail().X / ImGuiHelpers.GlobalScale,
@@ -226,38 +161,30 @@ public static partial class Crystarium
                 ? props.IsLastChild ? TreeBranch.ForkLast : TreeBranch.Fork
                 : props.IsLastChild ? TreeBranch.Elbow : TreeBranch.Tee;
 
-        // Rows stack seamlessly at exactly 26px — suppress ImGui's ambient
-        // vertical ItemSpacing for the reserve.
+        // Rows stack without ambient vertical spacing.
         var spacing = ImGui.GetStyle().ItemSpacing;
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
         uint identity = ImGui.GetID(id);
         var hit = Interactive.Reserve(
             id, new Vector2(metrics.Width, height), disabled: false);
         ImGui.PopStyleVar();
-        // Yielded for EVERY later reserving sibling, not just the disclosure:
-        // the caller's action strip is the row's second overlapping target, and
-        // ImGui refuses hover to a later item while an earlier one owns it.
+        // Later disclosure and action controls own their overlapping boxes.
         bool chevronReserves = discloses && !props.ExpanderDisabled;
         if (chevronReserves || props.ActionSlots > 0)
             ImGui.SetItemAllowOverlap();
         var dl = ImGui.GetWindowDrawList();
 
-        // Never hit.Clicked: a press is not an activation, and it is precisely
-        // the press frame on which both items are momentarily live.
+        // Selection completes on release.
         var action = hit.Activated
             ? TreeRowAction.Selected
             : TreeRowAction.None;
-        // The context edge is read from ImGui directly: the reservation reports
-        // the LEFT button's edges alone, and rows have always opened their menu
-        // on "hovered and right-clicked" rather than on a release-inside.
+        // Context menus open on a hovered right-button press.
         if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
             action = TreeRowAction.Context;
 
         float contentRight = hit.ScreenMax.X - props.TrailingInset * scale;
 
-        // ---- the pill -----------------------------------------------------
-        // Which rule paints it this frame. Transparent means no rule matched,
-        // which is also why fading OUT is instant.
+        // Transparent means no highlight rule matched.
         var fill = props.DropTarget
             ? theme.Chrome.AccentFill
             : props.Selected
@@ -274,10 +201,7 @@ public static partial class Crystarium
         float pillOpacity = highlight[0].Scalar;
         if (fill.W > 0f && pillOpacity > 0f)
         {
-            // A nested pill starts clear of its own branch arm; a root pill
-            // carries the 1px CSS inset. The 1px bottom shave is the same
-            // accepted look. The right edge is the CONTENT edge, not the
-            // window edge.
+            // Nested pills clear their connector and stop at the content edge.
             float inset = (depth == 0
                 ? TreeRootPillInset
                 : TreeTrunkX(depth) + TreePillClearance) * scale;
@@ -305,9 +229,7 @@ public static partial class Crystarium
                 dl, hit.ScreenMin, hit.ScreenMax, props.Trunks, depth, branch,
                 scale, theme);
 
-        // ---- the disclosure -----------------------------------------------
-        // A root's chevron sits in its own 16px slot; a nested one is centred
-        // on the trunk it cuts.
+        // Root disclosures use their slot; nested ones center on the trunk.
         if (discloses)
         {
             float chevronLeft = depth == 0
@@ -320,11 +242,7 @@ public static partial class Crystarium
             bool chevronHovered = false;
             if (chevronReserves)
             {
-                // The chevron is a REAL reserved item over its own drawn box,
-                // submitted AFTER the row so a press takes the active id from
-                // it. The row's own hover was resolved above, while the chevron
-                // did not yet exist — the CSS result exactly, since the arrow
-                // is a child and pointing at it keeps .row:hover on.
+                // The later reserve gives the chevron ownership of its box.
                 var cursorAfterRow = ImGui.GetCursorScreenPos();
                 ImGui.SetCursorScreenPos(chevronMin);
                 ImGui.PushID(id);
@@ -344,13 +262,7 @@ public static partial class Crystarium
                 props.ExpanderDisabled, chevronHovered, scale, theme);
         }
 
-        // ---- mark, label, badge -------------------------------------------
-        // The zone spans everything left of the label: the root's expander
-        // slot, or a nested row's trunk plus its label offset. A bare list
-        // row — no disclosure, no mark — has nothing for the zone to hold,
-        // so its label sits a snug pad off the pill instead of an empty
-        // expander slot away from it (user 2026-08-15: "the distance between
-        // the highlight and the left edge of the text is too far").
+        // The label begins after its disclosure, connector, and optional mark.
         float zoneWidth = depth == 0
             ? props.Expander == SidebarExpander.None && props.HideIcon
                 ? TreeBareLabelPad
@@ -363,9 +275,7 @@ public static partial class Crystarium
         if (!props.HideIcon && hasMark)
         {
             float side = TreeIconSide * scale;
-            // A NESTED row's mark centres on its children's trunk — the
-            // guide line those children will hang from — instead of sitting
-            // a label-offset past its own (user 2026-08-11).
+            // Nested marks center on their children's trunk.
             if (depth > 0)
                 x = hit.ScreenMin.X
                     + (TreeTrunkX(depth + 1) - TreeIconSide * 0.5f) * scale;
@@ -423,26 +333,18 @@ public static partial class Crystarium
             contentRight - actionsTrail - actionsWidth - badgeTrail - badgeWidth;
         if (labelRight > x)
         {
-            var labelStyle = new TextStyle
-            {
-                Size = props.LabelSize ?? theme.Typography.BodySize,
-                Color = theme.Text,
-            };
+            var labelStyle = SidebarTreeLabelStyle(theme, props.LabelSize);
             float span = labelRight - x;
             var labelMin = new Vector2(x, hit.ScreenMin.Y);
             var labelBand = new Vector2(span, height);
-            // Truncate constrains ONLY on overflow: the clip's snapped edge
-            // would otherwise shave a fitting run's descender. The label is
-            // judged against the ICON's ink, not the band centre — the
-            // accepted seat.
+            // Only overflowing labels use a clip rectangle.
             if (MeasureText(label, labelStyle).X <= span)
                 TextInBand(
                     labelMin, labelBand, label, labelStyle,
                     props.CenterLabel ? TextAlign.Center : TextAlign.Start,
                     besideIcon: true);
             else
-                // An overflowing label truncates from the start either way:
-                // centring a cut run hides both of its ends.
+                // Truncated labels stay start-aligned.
                 TextInBand(
                     labelMin, labelBand, label, labelStyle,
                     TextConstraint.Truncate(span), TextAlign.Start,
@@ -460,11 +362,7 @@ public static partial class Crystarium
         return action;
     }
 
-    /// <summary>
-    /// The connector ink. Segments are FILLED rectangles, not stroked lines:
-    /// anti-aliased caps stack alpha where two rows meet, and a shared endpoint
-    /// would then read as a bright dot on every band boundary.
-    /// </summary>
+    /// <summary>Draws connector segments without overlapping endpoints.</summary>
     private static void DrawTreeGuides(
         ImDrawListPtr draw,
         Vector2 min,
@@ -478,14 +376,13 @@ public static partial class Crystarium
         float half = MathF.Max(1f, scale) * 0.5f;
         uint color = ImGui.ColorConvertFloat4ToU32(
             ColorEx.ApplyAlpha(theme.TextMuted));
-        // The arm's line, and the cutout's gap, are both measured from the
-        // band's own midline rather than from the row height as a literal.
+        // Arms and disclosure gaps share the row's midline.
         float mid = (min.Y + max.Y) * 0.5f;
         float gap = 4f * scale;
         float top = min.Y + TreeGuideDrop;
         float bottom = max.Y + TreeGuideDrop;
 
-        // Ancestor trunks: one column per level whose sibling line continues.
+        // Draw each continuing ancestor trunk.
         for (int level = 1; level < depth && level < 32; level++)
         {
             if ((trunks & (1u << level)) == 0)
@@ -510,9 +407,7 @@ public static partial class Crystarium
                     draw, x + 4.5f * scale, x + 8.5f * scale, mid, half, color);
                 break;
             case TreeBranch.Elbow:
-                // A crisp hard L: the vertical leg owns the square corner and
-                // the horizontal leg begins at its right edge, so translucent
-                // geometry touches without overlapping.
+                // The vertical leg owns the elbow corner.
                 draw.AddRectFilled(
                     new Vector2(x - half, top),
                     new Vector2(x + half, mid + half),
@@ -540,11 +435,7 @@ public static partial class Crystarium
         draw.AddRectFilled(
             new Vector2(x0, y - half), new Vector2(x1, y + half), color);
 
-    /// <summary>
-    /// The one disclosure affordance: the compact filled triangle, visible in
-    /// both states, hover-emphasized over its OWN box, faded while the row's
-    /// children are temporarily unavailable.
-    /// </summary>
+    /// <summary>Draws the disclosure triangle.</summary>
     private static void DrawDisclosureChevron(
         ImDrawListPtr draw,
         Vector2 min,
