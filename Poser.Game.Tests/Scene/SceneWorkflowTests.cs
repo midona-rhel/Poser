@@ -489,7 +489,7 @@ public sealed class SceneWorkflowTests
             WriteResult = SceneWriteOutcome.Failed(
                 SceneStoreFailure.Create(
                     SceneStoreFailureKind.Replace, "The replace failed."),
-                new[] { @"C:\scenes\shot.poserscene.tmp" }),
+                new[] { @"C:\synthetic\poser\scenes\missing.poserscene" }),
         };
         using var workflow = new SceneWorkflow(runtime);
 
@@ -499,7 +499,7 @@ public sealed class SceneWorkflowTests
         Assert.Equal(OperationReceiptState.Failed, workflow.Receipt!.State);
         var evidence = Assert.Single(
             workflow.Progress!.Outcome!.RecoveryEvidencePaths);
-        Assert.Equal(@"C:\scenes\shot.poserscene.tmp", evidence);
+        Assert.Equal(@"C:\synthetic\poser\scenes\missing.poserscene", evidence);
     }
 
     [Fact]
@@ -802,7 +802,7 @@ public sealed class SceneWorkflowTests
         lead.CompanionId = 4;
         lead.Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\files\friend.mcdf",
+            Path = @"C:\synthetic\poser\characters\friend.mcdf",
             FileName = "friend.mcdf",
         };
 
@@ -838,7 +838,7 @@ public sealed class SceneWorkflowTests
         var lead = Actor("Lead", out _);
         lead.Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\files\gone.mcdf",
+            Path = @"C:\synthetic\poser\characters\gone.mcdf",
             FileName = "gone.mcdf",
         };
 
@@ -846,7 +846,7 @@ public sealed class SceneWorkflowTests
         {
             ReadResult = SceneWith(lead),
             McdfImport = _ => SceneMcdfOutcome.Refused(
-                "The character file 'gone.mcdf' is no longer at C:\\files\\gone.mcdf."),
+                @"The character file 'gone.mcdf' is no longer at C:\synthetic\poser\characters\gone.mcdf"),
         };
         using var workflow = new SceneWorkflow(runtime);
 
@@ -872,7 +872,7 @@ public sealed class SceneWorkflowTests
         var lead = Actor("Lead", out _);
         lead.Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\files\friend.mcdf",
+            Path = @"C:\synthetic\poser\characters\friend.mcdf",
             FileName = "friend.mcdf",
             ContentHash = new string('A', 64),
         };

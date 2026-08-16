@@ -467,7 +467,7 @@ public sealed class SceneFileStoreTests
         var scene = ValidScene();
         scene.Actors[0].Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\Users\Someone\Documents\Mare\friend.mcdf",
+            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
             FileName = "friend.mcdf",
             ContentHash = new string('A', 64),
         };
@@ -477,7 +477,7 @@ public sealed class SceneFileStoreTests
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
         var mcdf = Assert.Single(read.Scene!.Actors).Mcdf!;
-        Assert.Equal(@"C:\Users\Someone\Documents\Mare\friend.mcdf", mcdf.Path);
+        Assert.Equal(@"C:\synthetic\poser\mcdf\friend.mcdf", mcdf.Path);
         Assert.Equal("friend.mcdf", mcdf.FileName);
         Assert.Equal(new string('A', 64), mcdf.ContentHash);
     }
@@ -491,7 +491,7 @@ public sealed class SceneFileStoreTests
         var scene = ValidScene();
         scene.Actors[0].Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\files\friend.mcdf",
+            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
             FileName = "friend.mcdf",
         };
 
@@ -519,7 +519,7 @@ public sealed class SceneFileStoreTests
         var scene = ValidScene();
         scene.Actors[0].Mcdf = new SceneActorMcdf
         {
-            Path = @"C:\files\friend.mcdf",
+            Path = @"C:\synthetic\poser\mcdf\friend.mcdf",
             FileName = "friend.mcdf",
             ContentHash = "ABCDEF",
         };

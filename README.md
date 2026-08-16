@@ -19,6 +19,12 @@ posing actors and building scenes in FINAL FANTASY XIV's group pose mode.
 See the [release notes](docs/release/CHANGELOG.md) and the
 [documentation](docs/).
 
+## Distribution status
+
+No verified repository distribution is published yet. A release archive, its
+checksums, SBOM, dependency audit, and package scan are approved together from
+the final release commit; a source-tree build alone is not a published release.
+
 ## Attribution
 
 Poser acknowledges Anamnesis, Ktisis, and Brio.

@@ -78,9 +78,8 @@ compatible with GPLv3 (not GPLv2), and Poser is v3.
 
 ImageSharp 3.x ships under the **Six Labors Split License, Version 1.0**, which
 grants either Apache-2.0 or a paid commercial license depending on how the
-consumer qualifies. The license file bundled in the package
-(`~/.nuget/packages/sixlabors.imagesharp/3.1.12/LICENSE`) grants Apache-2.0 when,
-among other criteria:
+consumer qualifies. The license file bundled with ImageSharp 3.1.12 grants
+Apache-2.0 when, among other criteria:
 
 - "You are consuming the Work in for use in software licensed under an Open Source or Source Available license."
 - "You are consuming the Work as a Transitive Package Dependency."
@@ -122,3 +121,53 @@ Nothing in this file is blocked. One judgement call is recorded rather than made
   in each source file. Poser has none. The root `LICENSE`, this file and the
   README attribution satisfy the license's actual conveyance requirements; adding
   ~500 file headers is a separate mechanical change if the owner wants it.
+
+---
+
+## 5. Notices carried with the final release
+
+### MIT notices
+
+The following copyright notices use the MIT text below:
+
+- Tabler Icons — Copyright (c) 2020-2025 Paweł Kuna. Poser embeds Tabler icon
+  source in `Poser.UI/Icons`; source: https://github.com/tabler/tabler-icons.
+- K4os.Compression.LZ4 and K4os.Compression.LZ4.Legacy — Copyright (c) 2017
+  Milosz Krajewski.
+- KamiToolKit — Copyright (c) 2024 MidoriKami.
+- Microsoft.Extensions.DependencyInjection and
+  Microsoft.Extensions.DependencyInjection.Abstractions — Copyright (c) .NET
+  Foundation and Contributors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+### Required staged notices
+
+The final staged release must place these files beside the verified archive and
+record each SHA-256 in the release manifest:
+
+| Staged file | Required source and coverage |
+|---|---|
+| `THIRD-PARTY-LICENSES.md` | This attribution file, including the MIT notices above. |
+| `LICENSE-APACHE-2.0.txt` | The complete Apache License 2.0 text from the authoritative Apache source; identifies SixLabors.ImageSharp 3.1.12. |
+| `THIRD-PARTY-NOTICES.txt` | One byte-identical copy from Microsoft.Extensions.DependencyInjection 10.0.10 or Microsoft.Extensions.DependencyInjection.Abstractions 10.0.10; the manifest names both package IDs and versions. |
+
+These staged files, their hashes, the online vulnerability audit, the SBOM,
+the canonical tree/history scan, and the final ZIP scan are release-time gates.
+They are not claimed to be present in an unpublished archive.
