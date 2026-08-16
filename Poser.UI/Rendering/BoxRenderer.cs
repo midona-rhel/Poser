@@ -117,6 +117,21 @@ internal static class BoxRenderer
         float blur = sh.Blur * scale;
         float radius = (baseRadius + sh.Spread) * scale;
 
+        if (blur > 0f
+            && BoxShadowTextureCache.TryDraw(
+                new BoxShadowTextureCache.ImGuiShadowDrawSink(drawList),
+                min,
+                max,
+                sh,
+                baseRadius,
+                scale,
+                ImGui.GetStyle().Alpha))
+        {
+            // A warm hit still emits eight image quads. The cache removes
+            // CPU ring tessellation and uploads; it does not erase draw work.
+            return;
+        }
+
         var sMin = min + offset - new Vector2(spread, spread);
         var sMax = max + offset + new Vector2(spread, spread);
 

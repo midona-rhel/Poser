@@ -39,6 +39,7 @@
     <ProjectReference Include="..\Poser\Poser.csproj">
       <Aliases>ProductionPoser</Aliases>
     </ProjectReference>
+    <ProjectReference Include="..\Poser.UI\Poser.UI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
