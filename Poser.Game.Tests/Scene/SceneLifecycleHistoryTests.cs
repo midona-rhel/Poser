@@ -183,17 +183,11 @@ public sealed class SceneLifecycleHistoryTests
     private static readonly Transform UserPut = new(
         new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
 
-
-    private static readonly Transform UserPut = new(
-        new Vector3(40f, 6f, 80f), Quaternion.Identity, new Vector3(2f, 2f, 2f));
-
     private static IDictionary Slots(
         SceneLifecycleHistory lifecycle, string field) =>
         (IDictionary)typeof(SceneLifecycleHistory)
             .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(lifecycle)!;
-
-    [Fact]
 
     // ── harness ──────────────────────────────────────────────────────────
 

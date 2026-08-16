@@ -7,7 +7,7 @@ using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
 using NSubstitute;
 using Poser.Application.Animation;
-using ProductionPoser::Poser.Config;
+using Poser.Config;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using ProductionPoser::Poser.UI;
