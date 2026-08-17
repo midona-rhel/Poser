@@ -203,6 +203,12 @@ public static partial class Crystarium
         /// <summary>Caller content that spans the body and bottom band.</summary>
         public FileSidePanel? PersistentRightPanel;
 
+        /// <summary>Caller actions placed before Cancel in the footer.</summary>
+        public Action<Crystarium.ActionBarScope>? FooterBeforeCancel;
+
+        /// <summary>Caller work completed before the frame is measured.</summary>
+        public Action<string?>? BeforeFrame;
+
         /// <summary>
         /// The caller's own panel UNDER the quick-access list, filling the rest
         /// of the navigation rail. Its <see cref="FileSidePanel.Width"/> is a
@@ -230,6 +236,12 @@ public static partial class Crystarium
         /// dialog.
         /// </summary>
         public float ExtraHeight;
+
+        /// <summary>Caller-specific width adjustment for this dialog.</summary>
+        public float WidthAdjustment;
+
+        /// <summary>Caller-specific height adjustment for this dialog.</summary>
+        public float HeightAdjustment;
 
         public bool IsOpen => _open;
 
@@ -276,14 +288,17 @@ public static partial class Crystarium
         public void Draw()
         {
             if (_open)
+            {
+                BeforeFrame?.Invoke(SelectedFile);
                 FloatingSurface.Window(
                     SurfaceId,
                     ref _open,
                     Crystarium.ActiveTheme.FileDialog.Width
-                        + PanelWidth() + RailExtra(),
+                        + PanelWidth() + RailExtra() + WidthAdjustment,
                     Crystarium.ActiveTheme.FileDialog.Height
-                        + ExtraHeight + BottomExtra(),
+                        + ExtraHeight + BottomExtra() + HeightAdjustment,
                     DrawFrame);
+            }
 
             if (!_open && _pendingSelect is { } chosen)
             {
@@ -346,9 +361,13 @@ public static partial class Crystarium
                     RailWidth = RailWidth(),
                     BandHeight = theme.Floating.ModalBarHeight,
                     BottomBandHeight = BottomExtra(),
+                    BottomBandRightInset = PersistentRightPanel is { } panel
+                        ? panel.Width + 1f
+                        : 0f,
                     HostPaintsChrome = hostPaintsChrome,
                     FooterRight = right =>
                     {
+                        FooterBeforeCancel?.Invoke(right);
                         right.Button(
                             "Cancel",
                             Close,
