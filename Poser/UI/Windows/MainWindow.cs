@@ -84,6 +84,7 @@ public class MainWindow : Window
     private IReadOnlyList<BoneId>? _ctxBoneOverlayBones;
     private bool _boneCtxOpenRequested;
     private IReadOnlyList<BoneId>? _ctxOverlayBones;
+    private string? _ctxOverlayMemoryKey;
     private bool _overlayCtxOpenRequested;
     private bool _renameOpen;
     private string _renameValue = "";
@@ -767,21 +768,11 @@ public class MainWindow : Window
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
-            // Disclosure is a structural change: the sidebar's row set is
-            // rebuilt on the next frame because of this bump.
+            if (row.ExpandKey is not { } expandKey)
+                return;
             _expandVersion++;
-            // A merged category/bone row (e.g. the Root bone standing in for
-            // the Root category) carries a selection Tag plus an ExpandKey.
-            if (row.ExpandKey is { } expandKey && !_collapsedNodes.Add(expandKey))
+            if (!_collapsedNodes.Add(expandKey))
                 _collapsedNodes.Remove(expandKey);
-            else if (row.ExpandKey == null && row.Tag is string key && !_collapsedNodes.Add(key))
-                _collapsedNodes.Remove(key);
-            else if (row.ExpandKey == null &&
-                row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } rowActor })
-            {
-                var akey = "actor:" + rowActor.LogicalId;
-                if (!_collapsedNodes.Add(akey)) _collapsedNodes.Remove(akey);
-            }
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnRowContextMenu = row =>
@@ -823,6 +814,7 @@ public class MainWindow : Window
             else if (row.OverlayBones != null)
             {
                 _ctxOverlayBones = row.OverlayBones;
+                _ctxOverlayMemoryKey = row.OverlayMemoryKey;
                 _overlayCtxOpenRequested = true;
             }
         };
@@ -972,8 +964,11 @@ public class MainWindow : Window
         {
             if (row.OverlayBones is not { } bones)
                 return;
-            _overlayPresentation.SetVisible(
-                bones, !_overlayPresentation.AreVisible(bones));
+            if (row.OverlayMemoryKey is { } key)
+                _overlayPresentation.ToggleVisibleWithMemory(key, bones);
+            else
+                _overlayPresentation.SetVisible(
+                    bones, !_overlayPresentation.AreVisible(bones));
         };
         _vm.OverlayVisibilityOf =
             bones => (int)_overlayPresentation.Resolve(bones);
@@ -2060,6 +2055,7 @@ public class MainWindow : Window
             IsLastChild = isLast,
             TreeLines = lines,
             Tag = actorSelectionId,
+            ExpandKey = actorKey,
             ActorActions = true,
         };
         section.Rows.Add(actorRow);
@@ -2194,6 +2190,7 @@ public class MainWindow : Window
                 bool skeletonExpanded =
                     filtering || !_collapsedNodes.Contains(skeletonKey);
                 bool skeletonLast = !auxFollows;
+                var abdomen = ResolveCharacterRootBone(skeleton!.Bones);
                 var allBoneIds = new BoneId[byName.Count];
                 int i = 0;
                 foreach (var (bone, _) in byName.Values)
@@ -2209,7 +2206,14 @@ public class MainWindow : Window
                     Expanded = skeletonExpanded,
                     IsLastChild = skeletonLast,
                     TreeLines = childLines,
-                    Tag = skeletonKey,
+                    Active = abdomen != null
+                        && _selection.IsSelected(
+                            SelectionId.ForBone(abdomen.Id)),
+                    Tag = abdomen is { } rootBone
+                        ? SelectionId.ForBone(rootBone.Id)
+                        : null,
+                    ExpandKey = skeletonKey,
+                    OverlayMemoryKey = skeletonKey,
                     OverlayBones = allBoneIds,
                 });
                 if (skeletonExpanded)
@@ -2300,8 +2304,10 @@ public class MainWindow : Window
         if (children.Count == 0
             && (filtering ? visible.Count == 0 : all.Count == 0))
             return null;
-        return new BuiltCategory(
+        var built = new BuiltCategory(
             category.Id, category.Label, visible, all, children);
+        RehomeWrist(built);
+        return built;
     }
 
     /// <summary>All bone ids under a built category, for the row's overlay
@@ -2315,9 +2321,116 @@ public class MainWindow : Window
             CollectCategoryBones(child, into);
     }
 
-    /// <summary>Strips the redundant "IVCS " lead from a bone label shown
-    /// under an IVCS category — the ancestry already says it (user
-    /// 2026-08-11).</summary>
+    /// <summary>Returns the root bone name for a category.</summary>
+    private static string? CategoryRootBone(string categoryId) => categoryId switch
+    {
+        "Head" => "j_kao",
+        "Spine" => "j_kosi",
+        "LeftArm" => "j_ude_a_l",
+        "RightArm" => "j_ude_a_r",
+        "LeftHand" => "j_te_l",
+        "RightHand" => "j_te_r",
+        "LeftLeg" => "j_asi_a_l",
+        "RightLeg" => "j_asi_a_r",
+        "Tail" => "n_sippo_a",
+        "Hair" => "j_kami_a",
+        "LeftEye" => "j_f_eye_l",
+        "RightEye" => "j_f_eye_r",
+        "Mouth" => "j_ago",
+        _ => null,
+    };
+
+    internal static BoneDescriptor? ResolveCategoryBone(
+        string categoryId,
+        IReadOnlyList<BoneDescriptor> bones)
+    {
+        var rootName = CategoryRootBone(categoryId);
+        return rootName == null
+            ? null
+            : bones.FirstOrDefault(
+                bone => string.Equals(
+                    bone.Id.CanonicalName, rootName,
+                    StringComparison.Ordinal));
+    }
+
+    internal static BoneDescriptor? ResolveCharacterRootBone(
+        IReadOnlyList<BoneDescriptor> bones) =>
+        bones.FirstOrDefault(
+            bone => string.Equals(
+                bone.Id.CanonicalName, "n_hara",
+                StringComparison.Ordinal));
+
+    internal static BoneId[] NonOverlappingBoneTargets(
+        IReadOnlyList<BoneDescriptor> candidates)
+    {
+        var parents = candidates.ToDictionary(
+            bone => bone.Id, bone => bone.Parent);
+        var selected = candidates.Select(bone => bone.Id).ToHashSet();
+        return candidates
+            .Where(bone =>
+            {
+                var parent = bone.Parent;
+                while (parent is { } ancestor)
+                {
+                    if (selected.Contains(ancestor))
+                        return false;
+                    if (!parents.TryGetValue(ancestor, out parent))
+                        break;
+                }
+                return true;
+            })
+            .Select(bone => bone.Id)
+            .Distinct()
+            .ToArray();
+    }
+
+    private static void RehomeWrist(BuiltCategory category)
+    {
+        var wristName = category.Id switch
+        {
+            "LeftArm" => "n_hte_l",
+            "RightArm" => "n_hte_r",
+            _ => null,
+        };
+        if (wristName == null)
+            return;
+
+        var hand = category.Children.Find(child =>
+            child.Id is "LeftHand" or "RightHand");
+        if (hand == null)
+            return;
+
+        MoveWrist(hand.AllBones, category.AllBones, wristName);
+        MoveWrist(hand.VisibleBones, category.VisibleBones, wristName);
+    }
+
+    private static void MoveWrist(
+        List<BoneDescriptor> from,
+        List<BoneDescriptor> to,
+        string wristName)
+    {
+        var wrist = from.Find(bone => string.Equals(
+            bone.Id.CanonicalName, wristName, StringComparison.Ordinal));
+        if (wrist == null)
+            return;
+        from.Remove(wrist);
+        to.Add(wrist);
+    }
+
+    private static BoneId[] ResolveGroupSelectionBones(BuiltCategory category)
+    {
+        var candidates = new List<BoneDescriptor>();
+        void Collect(BuiltCategory current)
+        {
+            candidates.AddRange(current.AllBones);
+            foreach (var child in current.Children)
+                Collect(child);
+        }
+        Collect(category);
+        return NonOverlappingBoneTargets(candidates);
+    }
+
+    /// <summary>Removes the redundant prefix from an IVCS bone label.</summary>
     private static string PruneIvcsLead(string label) =>
         label.StartsWith("IVCS ", StringComparison.Ordinal)
             ? label["IVCS ".Length..]
@@ -2349,12 +2462,11 @@ public class MainWindow : Window
         var overlayBones = new List<BoneId>();
         CollectCategoryBones(category, overlayBones);
 
-        // When a category contains a bone whose display name IS the category
-        // name (Head → j_head "Head"), the two rows are redundant: the bone
-        // becomes the category row. Its body selects the bone (Tag) while
-        // its chevron toggles the category (ExpandKey).
-        var mergedBone = category.AllBones.Find(
-            bone => bone.DisplayName == category.Label);
+        var mergedBone = ResolveCategoryBone(
+            category.Id, category.AllBones);
+        var selectionIds = mergedBone == null
+            ? ResolveGroupSelectionBones(category)
+            : [];
         section.Rows.Add(new ShellSidebarRow
         {
             Label = categoryLabel,
@@ -2365,11 +2477,20 @@ public class MainWindow : Window
             IsLastChild = isLast,
             TreeLines = lines,
             Active = mergedBone != null
-                && _selection.IsSelected(SelectionId.ForBone(mergedBone.Id)),
+                ? _selection.IsSelected(SelectionId.ForBone(mergedBone.Id))
+                : selectionIds.Any(id =>
+                    _selection.IsSelected(SelectionId.ForBone(id))),
             Tag = mergedBone != null
                 ? SelectionId.ForBone(mergedBone.Id)
-                : catKey,
-            ExpandKey = mergedBone != null ? catKey : null,
+                : selectionIds.Length > 0
+                    ? SelectionId.ForBoneGroup(
+                        selectionIds[0].Skeleton.Actor, category.Id)
+                    : catKey,
+            ExpandKey = catKey,
+            OverlayMemoryKey = catKey,
+            SelectionBones = mergedBone == null && selectionIds.Length > 0
+                ? selectionIds
+                : null,
             OverlayBones = overlayBones.ToArray(),
         });
         if (!expanded)
@@ -2507,7 +2628,8 @@ public class MainWindow : Window
                 Expanded = slotExpanded,
                 IsLastChild = groupLast,
                 TreeLines = lines,
-                Tag = slotKey,
+                ExpandKey = slotKey,
+                OverlayMemoryKey = slotKey,
                 OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
             if (!slotExpanded)
@@ -2590,6 +2712,7 @@ public class MainWindow : Window
             Active = _selection.IsSelected(selectionId),
             Tag = selectionId,
             ExpandKey = expandKey,
+            OverlayMemoryKey = "bone:" + bone.Id,
             OverlayBones = new[] { bone.Id },
         };
     }
@@ -2998,16 +3121,26 @@ public class MainWindow : Window
         // click leaves through the selection itself; a bare category
         // disclosure selects nothing, so the tree still states it here.
         _workspace.Leave();
-        if (row.Tag is string catKey2)
-        {
-            if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
-            _expandVersion++;
-            return;
-        }
-
         if (row.Tag is not SelectionId id) return;
 
         var io = ImGui.GetIO();
+        if (row.SelectionBones is { Count: > 0 }
+            && id.Kind == SceneEntityKind.Bone
+            && id.Bone is null)
+        {
+            if (io.KeyCtrl)
+            {
+                foreach (var bone in row.SelectionBones)
+                    _selection.Toggle(SelectionId.ForBone(bone));
+            }
+            else
+            {
+                _selection.Select(SelectionId.ForBone(row.SelectionBones[0]));
+                for (int i = 1; i < row.SelectionBones.Count; i++)
+                    _selection.Add(SelectionId.ForBone(row.SelectionBones[i]));
+            }
+            return;
+        }
         if (io.KeyShift && _selection.Anchor is { } anchor)
         {
             // Range order follows the rows currently visible to the user;
@@ -3794,27 +3927,23 @@ public class MainWindow : Window
         if (owner == null)
         {
             _ctxOverlayBones = null;
+            _ctxOverlayMemoryKey = null;
             Crystarium.FloatingMenu.Dismiss("##overlay-ctx");
             return;
         }
-        // Tri-state, like the row's own eye: a partly shown group's verb is
-        // "show the rest", never "hide" — Brio's mixed checkbox clicks into
-        // ALL for the same reason.
         var state = _overlayPresentation.Resolve(bones);
-        bool visible = state == OverlayVisibility.All;
         var items = new[]
         {
             new ContextMenuItem(
                 state switch
                 {
-                    OverlayVisibility.All => "Hide category from overlay",
-                    OverlayVisibility.Partial => "Show the rest of this category",
-                    _ => "Show category in overlay",
+                    OverlayVisibility.None => "Show category in overlay",
+                    _ => "Hide the currently shown bones",
                 },
-                visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+                state == OverlayVisibility.None
+                    ? TablerIcon.Eye
+                    : TablerIcon.EyeOff),
             new ContextMenuItem("Show only this category", TablerIcon.Crosshair),
-            // The actor-scope pair Brio's filter popup puts above its
-            // categories as Select All / Select None.
             new ContextMenuItem("Show all of this actor", TablerIcon.Eye),
             new ContextMenuItem("Hide all of this actor", TablerIcon.EyeOff),
         };
@@ -3836,7 +3965,12 @@ public class MainWindow : Window
         switch (clicked)
         {
             case 0:
-                _overlayPresentation.SetVisible(bones, !visible);
+                if (_ctxOverlayMemoryKey is { } memoryKey)
+                    _overlayPresentation.ToggleVisibleWithMemory(
+                        memoryKey, bones);
+                else
+                    _overlayPresentation.SetVisible(
+                        bones, state == OverlayVisibility.None);
                 break;
             case 1:
                 _overlayPresentation.SetVisible(ownerBones, false);
@@ -3849,6 +3983,8 @@ public class MainWindow : Window
                 _overlayPresentation.SetVisible(ownerBones, false);
                 break;
         }
+        _ctxOverlayBones = null;
+        _ctxOverlayMemoryKey = null;
     }
 
     // ── light / camera / prop context menus ─────────────────────────────

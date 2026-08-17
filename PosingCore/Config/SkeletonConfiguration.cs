@@ -66,6 +66,10 @@ public class SkeletonConfiguration
     /// default rule.</summary>
     public bool ShowSelectedBonesOnly { get; set; } = false;
 
+    /// <summary>Hides the skeleton for actor-only selection; bones, gaze
+    /// targets, and lights remain visible.</summary>
+    public bool HideSkeletonOnActorSelection { get; set; } = true;
+
     /// <summary>Named bone-visibility sets, shared by every actor and applied
     /// per actor. Kept sorted by name so the persisted file is stable.</summary>
     public List<BoneVisibilityPreset> BoneVisibilityPresets { get; set; } = new();

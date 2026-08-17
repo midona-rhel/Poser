@@ -680,7 +680,9 @@ public sealed class ShellSidebar
             bool changed = state == 1
                 ? Crystarium.SidebarMixedVisibilityToggle(
                     style: square,
-                    help: help,
+                    help: state == 1
+                        ? "Hide the currently shown bones"
+                        : help,
                     id: "##overlay")
                 : Crystarium.TemporaryIconToggle(
                     TablerIcon.Eye,
