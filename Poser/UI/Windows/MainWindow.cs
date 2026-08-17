@@ -768,21 +768,11 @@ public class MainWindow : Window
         _vm.OnRowClicked = OnRowClicked;
         _vm.OnRowExpandToggled = row =>
         {
-            // Disclosure is a structural change: the sidebar's row set is
-            // rebuilt on the next frame because of this bump.
+            if (row.ExpandKey is not { } expandKey)
+                return;
             _expandVersion++;
-            // A merged category/bone row (e.g. the Root bone standing in for
-            // the Root category) carries a selection Tag plus an ExpandKey.
-            if (row.ExpandKey is { } expandKey && !_collapsedNodes.Add(expandKey))
+            if (!_collapsedNodes.Add(expandKey))
                 _collapsedNodes.Remove(expandKey);
-            else if (row.ExpandKey == null && row.Tag is string key && !_collapsedNodes.Add(key))
-                _collapsedNodes.Remove(key);
-            else if (row.ExpandKey == null &&
-                row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } rowActor })
-            {
-                var akey = "actor:" + rowActor.LogicalId;
-                if (!_collapsedNodes.Add(akey)) _collapsedNodes.Remove(akey);
-            }
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnRowContextMenu = row =>
@@ -2065,6 +2055,7 @@ public class MainWindow : Window
             IsLastChild = isLast,
             TreeLines = lines,
             Tag = actorSelectionId,
+            ExpandKey = actorKey,
             ActorActions = true,
         };
         section.Rows.Add(actorRow);
@@ -2313,8 +2304,10 @@ public class MainWindow : Window
         if (children.Count == 0
             && (filtering ? visible.Count == 0 : all.Count == 0))
             return null;
-        return new BuiltCategory(
+        var built = new BuiltCategory(
             category.Id, category.Label, visible, all, children);
+        RehomeWrist(built);
+        return built;
     }
 
     /// <summary>All bone ids under a built category, for the row's overlay
@@ -2335,6 +2328,8 @@ public class MainWindow : Window
         "Spine" => "j_kosi",
         "LeftArm" => "j_ude_a_l",
         "RightArm" => "j_ude_a_r",
+        "LeftHand" => "j_te_l",
+        "RightHand" => "j_te_r",
         "LeftLeg" => "j_asi_a_l",
         "RightLeg" => "j_asi_a_r",
         "Tail" => "n_sippo_a",
@@ -2347,16 +2342,8 @@ public class MainWindow : Window
 
     internal static BoneDescriptor? ResolveCategoryBone(
         string categoryId,
-        string categoryLabel,
         IReadOnlyList<BoneDescriptor> bones)
     {
-        var displayMatch = bones.FirstOrDefault(
-            bone => string.Equals(
-                bone.DisplayName, categoryLabel,
-                StringComparison.Ordinal));
-        if (displayMatch != null)
-            return displayMatch;
-
         var rootName = CategoryRootBone(categoryId);
         return rootName == null
             ? null
@@ -2397,42 +2384,50 @@ public class MainWindow : Window
             .ToArray();
     }
 
-    private static void CollectCategorySelectionBones(
-        BuiltCategory category, List<BoneDescriptor> into)
+    private static void RehomeWrist(BuiltCategory category)
     {
-        var rootName = CategoryRootBone(category.Id);
-        var root = rootName == null
-            ? null
-            : category.AllBones.Find(
-                bone => string.Equals(
-                    bone.Id.CanonicalName, rootName,
-                    StringComparison.Ordinal));
-        if (root is { } realBone)
+        var wristName = category.Id switch
         {
-            into.Add(realBone);
+            "LeftArm" => "n_hte_l",
+            "RightArm" => "n_hte_r",
+            _ => null,
+        };
+        if (wristName == null)
             return;
-        }
 
-        foreach (var bone in category.AllBones)
-            into.Add(bone);
-        foreach (var child in category.Children)
-            CollectCategorySelectionBones(child, into);
+        var hand = category.Children.Find(child =>
+            child.Id is "LeftHand" or "RightHand");
+        if (hand == null)
+            return;
+
+        MoveWrist(hand.AllBones, category.AllBones, wristName);
+        MoveWrist(hand.VisibleBones, category.VisibleBones, wristName);
     }
 
-    private static void RemoveSelectedDescendants(
-        BuiltCategory category, List<BoneDescriptor> targets)
+    private static void MoveWrist(
+        List<BoneDescriptor> from,
+        List<BoneDescriptor> to,
+        string wristName)
+    {
+        var wrist = from.Find(bone => string.Equals(
+            bone.Id.CanonicalName, wristName, StringComparison.Ordinal));
+        if (wrist == null)
+            return;
+        from.Remove(wrist);
+        to.Add(wrist);
+    }
+
+    private static BoneId[] ResolveGroupSelectionBones(BuiltCategory category)
     {
         var candidates = new List<BoneDescriptor>();
-        void Index(BuiltCategory current)
+        void Collect(BuiltCategory current)
         {
             candidates.AddRange(current.AllBones);
             foreach (var child in current.Children)
-                Index(child);
+                Collect(child);
         }
-        Index(category);
-        var allowed = NonOverlappingBoneTargets(candidates)
-            .ToHashSet();
-        targets.RemoveAll(bone => !allowed.Contains(bone.Id));
+        Collect(category);
+        return NonOverlappingBoneTargets(candidates);
     }
 
     /// <summary>Removes the redundant prefix from an IVCS bone label.</summary>
@@ -2467,19 +2462,11 @@ public class MainWindow : Window
         var overlayBones = new List<BoneId>();
         CollectCategoryBones(category, overlayBones);
 
-        // A category root uses the real bone row; other categories use a group row.
         var mergedBone = ResolveCategoryBone(
-            category.Id, category.Label, category.AllBones);
-        var selectionBones = new List<BoneDescriptor>();
-        if (mergedBone == null)
-        {
-            CollectCategorySelectionBones(category, selectionBones);
-            RemoveSelectedDescendants(category, selectionBones);
-        }
-        var selectionIds = selectionBones
-            .Select(bone => bone.Id)
-            .Distinct()
-            .ToArray();
+            category.Id, category.AllBones);
+        var selectionIds = mergedBone == null
+            ? ResolveGroupSelectionBones(category)
+            : [];
         section.Rows.Add(new ShellSidebarRow
         {
             Label = categoryLabel,
@@ -2641,7 +2628,7 @@ public class MainWindow : Window
                 Expanded = slotExpanded,
                 IsLastChild = groupLast,
                 TreeLines = lines,
-                Tag = slotKey,
+                ExpandKey = slotKey,
                 OverlayMemoryKey = slotKey,
                 OverlayBones = visible.Select(bone => bone.Id).ToArray(),
             });
@@ -3134,13 +3121,6 @@ public class MainWindow : Window
         // click leaves through the selection itself; a bare category
         // disclosure selects nothing, so the tree still states it here.
         _workspace.Leave();
-        if (row.Tag is string catKey2)
-        {
-            if (!_collapsedNodes.Add(catKey2)) _collapsedNodes.Remove(catKey2);
-            _expandVersion++;
-            return;
-        }
-
         if (row.Tag is not SelectionId id) return;
 
         var io = ImGui.GetIO();
