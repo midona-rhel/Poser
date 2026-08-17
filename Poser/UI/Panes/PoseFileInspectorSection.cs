@@ -930,29 +930,17 @@ public sealed class PoseFileInspectorSection
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    new Crystarium.CheckItem(
-                        "Smart", _smartImport, next => _smartImport = next,
-                        "Route face-only files as expression imports automatically"));
+                    scope[3]);
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    new Crystarium.CheckItem(
-                        "Apply on select", _applyOnSelect,
-                        next =>
-                        {
-                            _applyOnSelect = next;
-                            _appliedOnSelectPath = next
-                                ? _lastHighlighted
-                                : null;
-                        },
-                        "Import a file the moment it is highlighted, "
-                            + "instead of waiting for Load"));
+                    scope[4]);
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    scope[0]);
+                    scope[2]);
             },
             divider: false,
             dense: true,
@@ -1055,22 +1043,34 @@ public sealed class PoseFileInspectorSection
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    scope[4]);
+                    new Crystarium.CheckItem(
+                        "Smart", _smartImport, next => _smartImport = next,
+                        "Route face-only files as expression imports automatically"));
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    scope[0]);
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    new Crystarium.CheckItem(
+                        "Apply on select", _applyOnSelect,
+                        next =>
+                        {
+                            _applyOnSelect = next;
+                            _appliedOnSelectPath = next
+                                ? _lastHighlighted
+                                : null;
+                        },
+                        "Import a file the moment it is highlighted, "
+                            + "instead of waiting for Load"));
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
                     scope[1]);
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
-                    scope[3]);
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
-                    scope[2]);
             },
             divider: false,
             dense: true,
