@@ -107,8 +107,7 @@ public sealed class PoseFileInspectorSection
         _lastPath = config.Config.Library.EnsurePoseRootExists();
 
         _importBrowser.ExtraHeight = ImportDialogExtraHeight;
-        _importBrowser.BottomPanel =
-            new FileSidePanel(_importBandHeight, DrawImportOptionsBand);
+        ConfigureImportBand();
         _importBrowser.SidePanels.Add(
             new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel));
     }
@@ -402,15 +401,11 @@ public sealed class PoseFileInspectorSection
 
     private const float ImportPreviewColumnWidth = 236f;
 
-    private const float ImportBandMaxHeight = 200f;
-
-    private float _importBandHeight = 104f;
+    private float _importBandHeight;
 
     private const string ImportPreviewIdleText = "Pick a pose file to preview.";
 
     private const string ImportPreviewRebaseText = "Reading the actor's pose…";
-
-    private const string ImportOptionsBandId = "##import-dialog-options";
 
     // Target actor and skeleton are captured when the dialog opens.
     private IActor? _importTarget;
@@ -426,17 +421,26 @@ public sealed class PoseFileInspectorSection
     private void DrawImportPreviewPanel(
         Vector2 origin, Vector2 size, string? highlighted)
     {
-        float inset =
-            Crystarium.ActiveTheme.Page.Inset
-            * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         SyncImportPreview(highlighted);
         DrawPreviewBlock(
-            origin + new Vector2(inset),
-            size - new Vector2(inset * 2f),
+            origin,
+            size,
             _importPreview.IsWaitingForBaseline
                 ? ImportPreviewRebaseText
                 : ImportPreviewIdleText,
             showRender: _importPreviewPosed);
+    }
+
+    private void ConfigureImportBand()
+    {
+        var theme = Crystarium.ActiveTheme;
+        var grid = PoseImportOptionsGrid.Create(
+            width: 0f,
+            theme.Page.Inset,
+            theme.Controls.ListRowHeight);
+        _importBandHeight = grid.Height;
+        _importBrowser.BottomPanel =
+            new FileSidePanel(_importBandHeight, DrawImportOptionsBand);
     }
 
     private void DrawImportOptionsBand(
@@ -448,50 +452,29 @@ public sealed class PoseFileInspectorSection
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Page.Inset;
-        float logicalWidth = MathF.Max(0f, size.X / scale);
-        float logicalHeight = MathF.Max(1f, size.Y / scale);
-        float innerWidth = MathF.Max(1f, logicalWidth - inset * 2f);
-        float regionWidth = MathF.Max(1f, innerWidth / 3f);
-        float regionHeight = MathF.Max(1f, logicalHeight - inset * 2f);
-        float tallest = 0f;
+        var grid = PoseImportOptionsGrid.Create(
+            size.X / scale,
+            inset,
+            theme.Controls.ListRowHeight);
         for (int column = 0; column < 3; column++)
         {
             int mount = column;
             ImGui.SetCursorScreenPos(new Vector2(
-                origin.X + (inset + regionWidth * column) * scale,
-                origin.Y + inset * scale));
-            Crystarium.ScrollRegion(
-                $"{ImportOptionsBandId}-{column}",
-                regionWidth,
-                regionHeight,
-                region =>
-                {
-                    var top = ImGui.GetCursorScreenPos();
-                    float width = region.ContentWidth * scale;
-                    float height = mount switch
-                    {
-                        0 => DrawImportTypeSection(
-                            top, width, divider: false, dense: true,
-                            selective: true),
-                        1 => DrawTransformSection(
-                            top, width, divider: false, dense: true),
-                        _ => DrawScopeSection(
-                            top, width, divider: false, dense: true,
-                            selective: true),
-                    };
-                    ImGui.SetCursorScreenPos(new Vector2(top.X, top.Y + height));
-                    ImGui.Dummy(new Vector2(1f, 1f));
-                    tallest = MathF.Max(tallest, height / scale);
-                });
-        }
-
-        // Re-measure after wrapping so the next frame fits the tallest column.
-        float fitted = MathF.Min(ImportBandMaxHeight, tallest + inset * 2f);
-        if (MathF.Abs(fitted - _importBandHeight) > 0.5f)
-        {
-            _importBandHeight = fitted;
-            _importBrowser.BottomPanel =
-                new FileSidePanel(fitted, DrawImportOptionsBand);
+                origin.X + grid.ColumnX(column) * scale,
+                origin.Y + grid.RowY(0) * scale));
+            var top = ImGui.GetCursorScreenPos();
+            float width = grid.ColumnWidth * scale;
+            _ = mount switch
+            {
+                0 => DrawImportTypeSection(
+                    top, width, divider: false, dense: true,
+                    selective: true),
+                1 => DrawTransformSection(
+                    top, width, divider: false, dense: true),
+                _ => DrawScopeSection(
+                    top, width, divider: false, dense: true,
+                    selective: true),
+            };
         }
         DrawNestedBoneFilter();
 
@@ -1103,15 +1086,18 @@ public sealed class PoseFileInspectorSection
         var theme = Crystarium.ActiveTheme;
         int rows = PreviewCameraRows(size.X, scale, theme);
         float camera = PreviewCameraHeight(rows, theme) * scale;
-        var box = PreviewBox(size.X, MathF.Max(0f, size.Y - camera));
-        if (!(box.X > 0f) || !(box.Y > 0f))
+        var layout = PoseImportPreviewLayout.Create(
+            size.X, size.Y, camera);
+        if (!(layout.Width > 0f) || !(layout.ImageHeight > 0f))
             return;
 
         DrawPreviewImage(
-            origin, new Vector2(size.X, box.Y), box.X, scale, theme,
+            origin, new Vector2(layout.Width, layout.ImageHeight), layout.Width,
+            scale, theme,
             ref _dialogFadeRamp, emptyText, showRender);
         DrawPreviewCamera(
-            origin + new Vector2(0f, box.Y + theme.Spacing.Three * scale),
+            origin + new Vector2(
+                0f, layout.ImageHeight + theme.Spacing.Three * scale),
             size.X, scale, theme, rows);
     }
 
@@ -1532,6 +1518,7 @@ public sealed class PoseFileInspectorSection
         string initialPath,
         bool rememberPath)
     {
+        ConfigureImportBand();
         _importTarget = skeleton.Actor;
         _importSkeleton = skeleton;
         _importPreviewPosed = false;
