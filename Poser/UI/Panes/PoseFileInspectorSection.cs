@@ -1050,11 +1050,6 @@ public sealed class PoseFileInspectorSection
                     string.Empty,
                     disabled: false,
                     fullWidth: true,
-                    scope[0]);
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
                     new Crystarium.CheckItem(
                         "Apply on select", _applyOnSelect,
                         next =>
@@ -1066,6 +1061,11 @@ public sealed class PoseFileInspectorSection
                         },
                         "Import a file the moment it is highlighted, "
                             + "instead of waiting for Load"));
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    scope[0]);
                 form.Checkboxes(
                     string.Empty,
                     disabled: false,
