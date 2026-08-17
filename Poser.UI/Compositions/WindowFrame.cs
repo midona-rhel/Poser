@@ -87,6 +87,9 @@ public readonly record struct WindowFrameProps
     /// fills the rect.</summary>
     public float BottomBandHeight { get; init; }
 
+    /// <summary>Logical width excluded from the bottom-band separator.</summary>
+    public float BottomBandRightInset { get; init; }
+
     /// <summary>The host window already painted the glass — which
     /// <see cref="Crystarium.FloatingSurface.Window"/> does for every
     /// window it hosts — so the frame must not paint a second shadow over the
@@ -209,7 +212,8 @@ public static partial class Crystarium
             ControlPaint.Separator(
                 drawList,
                 new Vector2(min.X, bodyBottom),
-                max.X,
+                MathF.Max(min.X,
+                    max.X - props.BottomBandRightInset * scale),
                 scale,
                 theme.FormSeparator);
 
