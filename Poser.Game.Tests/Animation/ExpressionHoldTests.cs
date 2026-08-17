@@ -82,9 +82,7 @@ private class FakePort : DispatchProxy
                         {
                             new AnimationSlotReading(
                                 AnimationSlot.Facial, LiveFacialTimeline, 1f),
-                        },
-                        Array.Empty<ScrubControlReading>(),
-                        1UL);
+                        });
                 case "TimelineSlot":
                 {
                     // Idle uses the base slot.
