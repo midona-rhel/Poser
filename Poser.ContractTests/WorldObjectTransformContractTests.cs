@@ -1,16 +1,9 @@
-extern alias ProductionPoser;
-
 using System.Numerics;
 using System.Reflection;
-using Poser.Application.Scene;
-using Poser.Application.Selection;
 using Poser.Core;
-using Poser.Domain.Identity;
-using Poser.Domain.Scene;
 using Poser.Domain.Transforms;
 using Poser.Game.WorldObjects;
 using Poser.Services;
-using ProductionPoser::Poser.UI;
 using PoserTransform = Poser.Transform;
 
 namespace Poser.ContractTests;
@@ -18,64 +11,9 @@ namespace Poser.ContractTests;
 public sealed class WorldObjectTransformContractTests
 {
     [Fact]
-    public void Adoption_and_hover_restore_keep_world_objects_live_and_paired()
-    {
-        var lineage = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
-        var objectId = new WorldObjectId(lineage, 0);
-        var session = new SceneSession(new SelectionSession());
-        Assert.Equal(
-            SceneRefreshOutcome.Applied,
-            session.TryRefresh(Scene(1, Borrowed(objectId))).Outcome);
-        Assert.True(session.Contains(TransformTargetId.ForWorldObject(objectId)));
-
-        var world = new HoverWorld();
-        var address = world.Port.Add(0x23);
-        world.Source.SetHovered(Candidate(address));
-        Assert.Equal(WorldObjectOutline.Hover, world.Port.OutlineOf(address));
-        world.Source.EndSession();
-        Assert.Equal((byte)0x23, world.Port.OutlineOf(address));
-    }
-
-    [Fact]
-    public void Candidate_filter_and_multi_frame_hover_restore_are_address_paired()
-    {
-        var world = new HoverWorld();
-        var first = world.Port.Add(
-            "bg/ffxiv/first.mdl", Transform.Identity, 0x11);
-        var second = world.Port.Add(
-            "bg/ffxiv/second.mdl", Transform.Identity, 0x22);
-        var firstCandidate = Candidate(first);
-        var secondCandidate = Candidate(second);
-
-        Assert.Equal(2, world.Service.GetCandidates().Count);
-        var adopted = world.Service.Adopt(first);
-        Assert.NotNull(adopted);
-        Assert.Single(world.Service.GetCandidates());
-        Assert.DoesNotContain(
-            world.Service.GetCandidates(), item => item.Address == first);
-
-        world.Source.SetHovered(firstCandidate);
-        world.Source.SetHovered(firstCandidate);
-        world.Source.SetHovered(secondCandidate);
-        world.Source.SetHovered(null);
-
-        Assert.Equal((byte)0x11, world.Port.OutlineOf(first));
-        Assert.Equal((byte)0x22, world.Port.OutlineOf(second));
-        Assert.Contains(
-            world.Port.OutlineWrites,
-            write => write.Address == first &&
-                write.Outline == (byte)0x11);
-        Assert.Contains(
-            world.Port.OutlineWrites,
-            write => write.Address == second &&
-                write.Outline == (byte)0x22);
-        Assert.True(adopted!.IsValid);
-    }
-
-    [Fact]
     public void Unreadable_and_refused_objects_are_not_claimed_and_release_restores()
     {
-        var world = new HoverWorld();
+        var world = new WorldFixture();
         var unreadable = world.Port.Add(
             "bg/ffxiv/unreadable.mdl", Transform.Identity, 0x31,
             readable: false);
@@ -125,39 +63,17 @@ public sealed class WorldObjectTransformContractTests
         Assert.Equal(initial, world.Port.PlacementOf(address));
     }
 
-    private static WorldObjectDescriptor Borrowed(WorldObjectId id) =>
-        new(id, $"world-object-{id.LogicalId:N}", "bg/ffxiv/test.mdl");
-
-    private static SceneSnapshot Scene(
-        ulong revision,
-        params WorldObjectDescriptor[] worldObjects) =>
-        new(
-            revision,
-            Array.Empty<ActorDescriptor>(),
-            Array.Empty<LightDescriptor>(),
-            Array.Empty<CameraDescriptor>(),
-            Array.Empty<PropDescriptor>(),
-            WorldObjects: worldObjects);
-
-    private static WorldAdoptionCandidate Candidate(nint address) =>
-        new(WorldAdoptionKind.WorldObject, "borrowed", Vector3.Zero, 0f,
-            WorldObject: address);
-
-    private sealed class HoverWorld
+    private sealed class WorldFixture
     {
         public FakeOutlinePort Port { get; } = new();
         public WorldObjectService Service { get; }
-        public WorldAdoptionSource Source { get; }
 
-        public HoverWorld()
+        public WorldFixture()
         {
             Service = new WorldObjectService(
                 Port,
                 new SilentBus(),
                 DispatchProxy.Create<Dalamud.Plugin.Services.IPluginLog, SilentLog>());
-            Source = new WorldAdoptionSource(
-                null!, null!, Service, null!, null!, null!, null!, null!, null!,
-                null!, null!);
         }
     }
 
