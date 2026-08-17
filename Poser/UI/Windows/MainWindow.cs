@@ -2085,7 +2085,9 @@ public class MainWindow : Window
         bool[] lines,
         bool isLast)
     {
-        var actorKey = "actor:" + actor.Id.LogicalId;
+        // Generation is part of the disclosure identity: a replacement actor
+        // must not inherit the old generation's expanded/collapsed state.
+        var actorKey = "actor:" + actor.Id;
         // The snapshot's raw name is fixed until the next revision, so the
         // object-index strip runs here and the warm-frame label refresh is
         // a pair of dictionary lookups.

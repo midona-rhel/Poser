@@ -349,6 +349,12 @@ public sealed class CameraPane
     {
         if (!_cameras.IsAvailable)
             form.Status("Cameras are unavailable: game signatures not found.");
+
+        // Draw Lock first so an interaction updates the effective gate for
+        // every following control in this same frame.
+        form.Switch("Lock", camera.IsLocked,
+            value => camera.IsLocked = value,
+            help: "Protect this camera's framing and consume camera input");
         bool locked = camera.IsLocked;
         if (locked)
             form.Status(
@@ -365,11 +371,6 @@ public sealed class CameraPane
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
                     _ => camera.TogglePortraitMode(), disabled: locked),
                 help: "Roll the view a quarter turn for portrait framing");
-            cells.Cell(
-                "Lock",
-                cell => cell.Switch("##camera-lock", camera.IsLocked,
-                    value => camera.IsLocked = value),
-                help: "Protect this camera's framing and consume camera input");
         });
         form.Cells(cells =>
         {
@@ -459,18 +460,18 @@ public sealed class CameraPane
     private void TargetRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        bool following = camera.TargetOffset != Vector3.Zero ||
-            camera.TargetActorName.Length > 0;
         var choices = new List<(ActorId Id, string Name)>();
         var labels = new List<string> { "None" };
         int selected = 0;
+        var followedId = camera.TargetActor is { } followed
+            ? _bindings.GetActorId(followed)
+            : null;
         foreach (var actor in _scene.Snapshot.Actors)
         {
             string name = ActorName(actor);
             choices.Add((actor.Id, name));
             labels.Add(name);
-            if (following && string.Equals(name, camera.TargetActorName,
-                    StringComparison.Ordinal))
+            if (followedId is { } exact && actor.Id == exact)
                 selected = labels.Count - 1;
         }
         form.Dropdown(
@@ -754,6 +755,29 @@ public sealed class CameraPane
 
     private void Recenter(IVirtualCamera camera)
     {
+        if (camera.TargetActor is { } followed)
+        {
+            if (_bindings.GetActorId(followed) is not { } exactId)
+            {
+                _notices.Refused("Center: the followed actor is no longer available.");
+                return;
+            }
+            var resolved = _bindings.Resolve(exactId);
+            if (!resolved.Success || resolved.Value is not { } liveFollowed ||
+                _bindings.GetActorId(liveFollowed) != exactId)
+            {
+                _notices.Refused("Center: the followed actor is no longer available.");
+                return;
+            }
+            if (!_spawnService.IsVisible(liveFollowed))
+            {
+                _notices.Refused("Center: the followed actor is not visible.");
+                return;
+            }
+            ReportCenter(_cameras.CenterOnActor(liveFollowed));
+            return;
+        }
+
         if (_scene.Selection.Primary is { Kind: SceneEntityKind.Bone,
                 Bone: { } selectedBoneId })
         {
@@ -815,6 +839,11 @@ public sealed class CameraPane
         if (!resolved.Success || resolved.Value is not { } actor)
         {
             _notices.Failed($"Follow: {resolved.Detail}");
+            return;
+        }
+        if (_bindings.GetActorId(actor) != actorId)
+        {
+            _notices.Refused("Follow: that actor is no longer available.");
             return;
         }
         if (!_cameras.SetTargetActor(camera, actor, displayName))

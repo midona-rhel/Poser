@@ -69,6 +69,10 @@ public interface IVirtualCamera
     /// <summary>Display name for the followed actor; empty when none.</summary>
     string TargetActorName { get; set; }
 
+    /// <summary>The exact actor generation followed by this camera. The name
+    /// is presentation only and must never recover this identity.</summary>
+    IActor? TargetActor { get; }
+
     /// <summary>The camera's real world position this frame — the native
     /// position while live, the retained free-cam position otherwise.</summary>
     Vector3 WorldPosition { get; }

@@ -292,6 +292,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             PositionOffset = original.PositionOffset,
             TargetOffset = original.TargetOffset,
             TargetActorName = original.TargetActorName,
+            TargetActor = original.TargetActor,
             DisableCollision = original.DisableCollision,
             Position = original.Position,
             SpawnPosition = original.SpawnPosition,
