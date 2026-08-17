@@ -108,8 +108,8 @@ public sealed class PoseFileInspectorSection
 
         _importBrowser.ExtraHeight = ImportDialogExtraHeight;
         ConfigureImportBand();
-        _importBrowser.SidePanels.Add(
-            new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel));
+        _importBrowser.PersistentRightPanel =
+            new FileSidePanel(ImportPreviewColumnWidth, DrawImportPreviewPanel);
     }
 
     private Action<OperationReceipt> TrackImport(ActorId expectedActor)
@@ -437,7 +437,9 @@ public sealed class PoseFileInspectorSection
         var grid = PoseImportOptionsGrid.Create(
             width: 0f,
             theme.Page.Inset,
-            theme.Controls.ListRowHeight);
+            theme.Controls.ListRowHeight,
+            theme.Page.SectionHeaderHeight,
+            theme.Page.StatusLineHeight);
         _importBandHeight = grid.Height;
         _importBrowser.BottomPanel =
             new FileSidePanel(_importBandHeight, DrawImportOptionsBand);
@@ -455,7 +457,9 @@ public sealed class PoseFileInspectorSection
         var grid = PoseImportOptionsGrid.Create(
             size.X / scale,
             inset,
-            theme.Controls.ListRowHeight);
+            theme.Controls.ListRowHeight,
+            theme.Page.SectionHeaderHeight,
+            theme.Page.StatusLineHeight);
         for (int column = 0; column < 3; column++)
         {
             int mount = column;
@@ -464,17 +468,18 @@ public sealed class PoseFileInspectorSection
                 origin.Y + grid.RowY(0) * scale));
             var top = ImGui.GetCursorScreenPos();
             float width = grid.ColumnWidth * scale;
-            _ = mount switch
+            switch (mount)
             {
-                0 => DrawImportTypeSection(
-                    top, width, divider: false, dense: true,
-                    selective: true),
-                1 => DrawTransformSection(
-                    top, width, divider: false, dense: true),
-                _ => DrawScopeSection(
-                    top, width, divider: false, dense: true,
-                    selective: true),
-            };
+                case 0:
+                    DrawImportOptionCards(top, width);
+                    break;
+                case 1:
+                    DrawImportApplyCard(top, width);
+                    break;
+                default:
+                    DrawImportScopeCard(top, width);
+                    break;
+            }
         }
         DrawNestedBoneFilter();
 
@@ -757,10 +762,11 @@ public sealed class PoseFileInspectorSection
         Action<Crystarium.FormScope> rows,
         bool divider = true,
         bool dense = false,
-        float? labelColumnWidth = null) =>
+        float? labelColumnWidth = null,
+        bool showTitle = false) =>
         Crystarium.Section(
             id,
-            dense ? string.Empty : title,
+            dense && !showTitle ? string.Empty : title,
             origin,
             width,
             true,
@@ -868,6 +874,206 @@ public sealed class PoseFileInspectorSection
 
         return y;
     }
+
+    private void DrawImportOptionCards(Vector2 origin, float width)
+    {
+        float y = origin.Y;
+        y += DrawImportOptionsCard(new Vector2(origin.X, y), width);
+        _ = DrawImportTypeCard(new Vector2(origin.X, y), width);
+    }
+
+    private float DrawImportOptionsCard(Vector2 origin, float width) =>
+        MenuSection(
+            "##import-dialog-options-card", "Options",
+            origin, width,
+            form =>
+            {
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    CheckColumnPitch,
+                    new Crystarium.CheckItem("Freeze", _freeze, next =>
+                    {
+                        _freeze = next;
+                        _config.Config.FreezeActorOnPoseImport = next;
+                        _config.Save();
+                    }, "Keep the actor paused after the import"),
+                    new Crystarium.CheckItem(
+                        "Smart", _smartImport, next => _smartImport = next,
+                        "Route face-only files as expression imports automatically"));
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    new Crystarium.CheckItem(
+                        "Apply on select", _applyOnSelect,
+                        next =>
+                        {
+                            _applyOnSelect = next;
+                            _appliedOnSelectPath = next
+                                ? _lastHighlighted
+                                : null;
+                        },
+                        "Import a file the moment it is highlighted, "
+                            + "instead of waiting for Load"));
+            },
+            divider: false,
+            dense: true,
+            labelColumnWidth: 0f,
+            showTitle: true);
+
+    private float DrawImportTypeCard(Vector2 origin, float width) =>
+        MenuSection(
+            "##import-dialog-type-card", "Type",
+            origin, width,
+            form =>
+            {
+                bool typeLocked = _selectiveImport && !_selectiveDescendants;
+                const string typeLockedWhy =
+                    "Selected bones import directly — the type gates only "
+                    + "descendants (turn on Include descendants to use it)";
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: typeLocked,
+                    fullWidth: true,
+                    CheckColumnPitch,
+                    new Crystarium.CheckItem(
+                        "Body", _typeBody,
+                        next => _typeBody = next,
+                        typeLocked
+                            ? typeLockedWhy
+                            : "Import the body. With Expression too, everything "
+                                + "imports with every component"),
+                    new Crystarium.CheckItem(
+                        "Expression", _typeExpression,
+                        next => _typeExpression = next,
+                        typeLocked
+                            ? typeLockedWhy
+                            : "Import the face as an expression — always every "
+                                + "component"));
+                if (_faceWarning is { } faceWarning)
+                    form.Status(faceWarning);
+                if (IsAnyIkArmed?.Invoke() == true)
+                    form.Status(
+                        "Live IK is on. It will keep solving after the "
+                        + "import and override the limbs the pose places.");
+            },
+            divider: false,
+            dense: true,
+            labelColumnWidth: 0f,
+            showTitle: true);
+
+    private float DrawImportApplyCard(Vector2 origin, float width) =>
+        MenuSection(
+            "##import-dialog-apply-card", "Apply",
+            origin, width,
+            form =>
+            {
+                bool locked = _cmpHighlighted || _typeExpression || _smartImport;
+                string? why = _cmpHighlighted
+                    ? "CMTool poses carry rotations only — there is no "
+                        + "position or scale in the file to apply"
+                    : locked
+                        ? "Expression imports always apply every component"
+                        : null;
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    new Crystarium.CheckItem(
+                        "Position", _position, next => _position = next, why,
+                        Disabled: locked),
+                    new Crystarium.CheckItem(
+                        "Rotation", _rotation, next => _rotation = next, why,
+                        Disabled: locked));
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    new Crystarium.CheckItem(
+                        "Scale", _scale, next => _scale = next, why,
+                        Disabled: locked),
+                    new Crystarium.CheckItem(
+                        "Model", _modelTransform,
+                        next => _modelTransform = next,
+                        "Also move the actor to the file's placement "
+                            + "(model transform)",
+                        Disabled: _smartImport));
+            },
+            divider: false,
+            dense: true,
+            labelColumnWidth: 0f,
+            showTitle: true);
+
+    private float DrawImportScopeCard(Vector2 origin, float width) =>
+        MenuSection(
+            "##import-dialog-scope-card", "Scope",
+            origin, width,
+            form =>
+            {
+                var scope = new List<Crystarium.CheckItem>(5);
+                bool hasSelection = HasSelectedBonesForImportTarget();
+                bool anchorable = SelectiveImportAppliesPosition();
+                scope.Add(new Crystarium.CheckItem(
+                    "Selected bones", _selectiveImport,
+                    next => _selectiveImport = next,
+                    hasSelection || _selectiveImport
+                        ? "Apply the pose only to the bones currently "
+                            + "selected on this actor"
+                        : "Select bones on the target actor first",
+                    Disabled: !hasSelection && !_selectiveImport));
+                scope.Add(new Crystarium.CheckItem(
+                    "Include descendants", _selectiveDescendants,
+                    next => _selectiveDescendants = next,
+                    "Extend the selected-bones scope to every "
+                        + "descendant of the selected bones",
+                    Disabled: !_selectiveImport));
+                scope.Add(new Crystarium.CheckItem(
+                    "Anchor positions", _selectiveAnchor,
+                    next => _selectiveAnchor = next,
+                    anchorable || !_selectiveImport
+                        ? "Keep the selected bones (and descendants) "
+                            + "where they stand — the file's rotations "
+                            + "and scales apply, its positions do not"
+                        : _smartImport
+                            ? "This import applies no position — Smart "
+                                + "Import's preset decides the components, "
+                                + "and there is nothing to anchor"
+                            : "Turn on the Position component first — "
+                                + "without it there is nothing to anchor",
+                    Disabled: !_selectiveImport || !anchorable));
+                scope.Add(new Crystarium.CheckItem(
+                    "Reset first", _reset, next => _reset = next,
+                    "Clear every bone in scope before importing, "
+                        + "including ones the file does not contain"));
+                scope.Add(new Crystarium.CheckItem(
+                    "Exclude ear bones", _excludeEars,
+                    next => _excludeEars = next,
+                    "Leave ears where they are — the six standard ear "
+                        + "bones and the Viera ear chains"));
+                foreach (var item in scope)
+                    form.Checkboxes(
+                        string.Empty,
+                        disabled: false,
+                        fullWidth: true,
+                        item);
+                bool typed = _typeBody || _typeExpression;
+                form.Actions(
+                    string.Empty,
+                    actions => actions.Button(
+                        "Bone filter", RequestBoneFilterMenu,
+                        disabled: typed,
+                        help: typed
+                            ? "The bone filter shapes the default import; "
+                                + "uncheck Body and Expression to edit it"
+                            : "Choose which bone categories imports may touch"),
+                    fullWidth: true);
+            },
+            divider: false,
+            dense: true,
+            labelColumnWidth: 0f,
+            showTitle: true);
 
     private float DrawImportTypeSection(
         Vector2 origin, float width, bool divider, bool dense = false,

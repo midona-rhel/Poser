@@ -5,20 +5,31 @@ namespace Poser.ContractTests;
 public sealed class PoseImportLayoutContractTests
 {
     [Fact]
-    public void Rejected_capture_uses_one_even_three_column_grid()
+    public void Rejected_capture_uses_a_right_rail_and_three_group_columns()
     {
-        var grid = PoseImportOptionsGrid.Create(
-            width: 928f, inset: 12f, rowHeight: 24f);
+        var dialog = PoseImportDialogLayout.Create(
+            width: 912f,
+            contentTop: 94f,
+            footerTop: 681f,
+            railWidth: 236f,
+            ruleWidth: 1f,
+            inset: 12f,
+            rowHeight: 24f,
+            headerHeight: 20f,
+            statusHeight: 16f);
+        var grid = dialog.Options;
 
         Assert.Equal(3, PoseImportOptionsGrid.ColumnCount);
         Assert.Equal(6, PoseImportOptionsGrid.RequiredRows);
-        Assert.Equal((928f - 24f) / 3f, grid.ColumnWidth);
+        Assert.Equal(676f, dialog.RailLeft);
+        Assert.Equal(587f, dialog.RailHeight);
+        Assert.Equal((675f - 24f) / 3f, grid.ColumnWidth);
         Assert.Equal(12f, grid.ColumnX(0));
         Assert.Equal(12f + grid.ColumnWidth, grid.ColumnX(1));
         Assert.Equal(12f + grid.ColumnWidth * 2f, grid.ColumnX(2));
-        Assert.Equal(12f, grid.RowY(0));
-        Assert.Equal(12f + 24f, grid.RowY(1));
-        Assert.Equal(168f, grid.Height);
+        Assert.True(grid.FirstControlY > grid.RowY(0));
+        Assert.True(grid.TypeControlY > grid.TypeHeaderY);
+        Assert.Equal(188f, grid.Height);
     }
 
     [Fact]
