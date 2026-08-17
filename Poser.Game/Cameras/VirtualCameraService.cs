@@ -463,6 +463,63 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return CameraCenterResult.Centered();
     }
 
+    /// <summary>Centers on the selected bone's live model-space transform.
+    /// The skeleton cache and object-table draw checks happen before either
+    /// camera setter so a replaced or undrawn identity cannot move the shot.
+    /// </summary>
+    public CameraCenterResult CenterOnBone(IBone bone)
+    {
+        if (!IsAvailable)
+            return CameraCenterResult.Refused("Center: the camera is unavailable.");
+        if (bone.Skeleton is not Skeleton skeleton || !skeleton.IsValid)
+            return CameraCenterResult.Refused("Center: that bone is no longer available.");
+
+        var actor = skeleton.Actor;
+        if (actor.Address == nint.Zero ||
+            _objectTable?.CreateObjectReference(actor.Address) is not { } resolved ||
+            !resolved.IsValid())
+            return CameraCenterResult.Refused("Center: that actor is no longer available.");
+        var gameObject = (GameObject*)resolved.Address;
+        var drawObject = gameObject->DrawObject;
+        if (!gameObject->IsReadyToDraw() || drawObject == null ||
+            !drawObject->IsVisible)
+            return CameraCenterResult.Refused("Center: that bone is not drawn yet.");
+
+        var native = Native;
+        if (!_gPose.IsGPosing || native == null ||
+            _live is not { IsLive: true } camera)
+            return CameraCenterResult.Refused("Center: the game camera is not ready.");
+        if (camera.Kind == CameraKind.Free)
+            return CameraCenterResult.Refused("Center: switch from the free camera first.");
+        if (camera.IsLocked)
+            return CameraCenterResult.Refused("Center: unlock the camera first.");
+        if (camera.FixedPosition != null)
+            return CameraCenterResult.Refused("Center: clear the camera position pin first.");
+
+        skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
+        var world = Poser.Transform.FromMatrix(
+            bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
+        float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
+        float actorHeight = reportedHeight is >= 0.5f and <= 5f
+            ? reportedHeight
+            : 1.7f;
+        // A bone is a point rather than a body; a quarter body height gives a
+        // useful Ktisis-like close framing without changing the view angles.
+        float framingHeight = Math.Clamp(actorHeight * 0.25f, 0.5f, 1.5f);
+        var pivot = world.Position;
+        var scene = &native->Camera.CameraBase.SceneCamera;
+        Vector3 baseLookAt = scene->LookAtVector;
+        Vector2 zoomLimits = camera.ZoomLimits;
+        if (!IsFinite(pivot) || !IsFinite(baseLookAt) ||
+            !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
+            zoomLimits.X > zoomLimits.Y)
+            return CameraCenterResult.Refused("Center: no usable bone or camera pivot.");
+
+        camera.PositionOffset += pivot - baseLookAt;
+        camera.Zoom = Math.Clamp(framingHeight * 2f, zoomLimits.X, zoomLimits.Y);
+        return CameraCenterResult.Centered();
+    }
+
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) &&
         float.IsFinite(value.Z);

@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Config;
@@ -29,13 +29,6 @@ public sealed class CameraPane
     private const float Rad2Deg = 180f / MathF.PI;
     private const float Deg2Rad = MathF.PI / 180f;
 
-    /// <summary>What the per-slider reset arrows go back to. The same two
-    /// numbers <c>IVirtualCamera.ResetProperties</c> writes — stated here
-    /// because a row's arrow and the whole-camera Reset must not disagree
-    /// about what "default" is.</summary>
-    private const float DefaultZoom = 2.5f;
-    private const float DefaultOrthographicZoom = 10f;
-
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly IVirtualCameraService _cameras;
@@ -63,28 +56,11 @@ public sealed class CameraPane
     private bool _openFile = true;
     private bool _openActions = true;
 
-    /// <summary>The actor the pivot should sit on — one pick over the scene's
-    /// actors, resolved through the bindings at pick time.</summary>
-    private readonly Crystarium.SearchPicker<ActorChoice> _actorPicker =
-        new("camera-target");
-
-    /// <summary>Every bone of every actor, flat and searchable, multi-select:
-    /// tracking averages over however many bones are ticked (Ktisis).</summary>
-    private readonly Crystarium.SearchPicker<BoneChoice> _bonePicker =
-        new("camera-track");
-
-    private readonly List<ActorChoice> _actorChoices = new();
-    private readonly List<BoneChoice> _boneChoices = new();
-
-    /// <summary>The multi picker's live selection, held by reference: rebuilt
-    /// at open from the camera's tracked bones, mutated in place per toggle.
+    /// <summary>MainWindow supplies the existing actor/category/bone read
+    /// model and TreeRow presenter. Keeping that seam outside this pane means
+    /// disclosure state and stable identities remain shared with the sidebar.
     /// </summary>
-    private readonly HashSet<string> _trackedKeys = new(StringComparer.Ordinal);
-
-    private sealed record ActorChoice(ActorId Id, string Name);
-
-    private sealed record BoneChoice(
-        BoneId Id, string BoneName, string ActorName);
+    public Action<Crystarium.FormScope, IVirtualCamera>? DrawTrackingHierarchy;
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Camera", new[] { ".posercam" }, isSaveMode: true);
@@ -127,8 +103,6 @@ public sealed class CameraPane
     {
         _saveBrowser.Draw();
         _loadBrowser.Draw();
-        DrawPickers();
-
         if (_pendingSelect is { } created &&
             _bindings.GetCameraId(created) is { } cameraId)
         {
@@ -321,12 +295,12 @@ public sealed class CameraPane
         }
 
         var world = camera.WorldPosition;
-        form.ReadOnlyWithActions(
-            "World position",
-            world.X.ToString("0.00", CultureInfo.InvariantCulture) + ", "
-                + world.Y.ToString("0.00", CultureInfo.InvariantCulture) + ", "
-                + world.Z.ToString("0.00", CultureInfo.InvariantCulture),
-            actions =>
+        form.AxisVector(
+            "World position", world, _ => { }, onCommit: null,
+            perPixel: perPixel, format: "0.00",
+            help: "Where this camera is in the world right now",
+            disabled: true,
+            actions: actions =>
             {
                 actions.IconButton(TablerIcon.Lock,
                     () => camera.FixedPosition = world,
@@ -334,8 +308,7 @@ public sealed class CameraPane
                     help: "Pin the camera here so it stops drifting with the "
                         + "subject",
                     id: "##camera-fixed-pin");
-            },
-            help: "Where this camera is in the world right now");
+            });
     }
 
     /// <summary>The rail's TRACKING section, whole: Ktisis's bone tracking —
@@ -370,17 +343,6 @@ public sealed class CameraPane
         });
     }
 
-    /// <summary>The two retained pickers, pumped at window level: a popup
-    /// opened by a row has to outlive the row's own draw call.</summary>
-    private void DrawPickers()
-    {
-        if (_actorPicker.Draw() is { } picked)
-            FollowActor(picked.Item);
-        // The bone picker is multi-select: toggles report through the OpenMulti
-        // callback, so its Draw is a pure pump.
-        _bonePicker.Draw();
-    }
-
     // ── sections ─────────────────────────────────────────────────────────
 
     private void GeneralRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -390,7 +352,7 @@ public sealed class CameraPane
         bool locked = camera.IsLocked;
         if (locked)
             form.Status(
-                "Locked — unlock from the sidebar row to edit this camera.");
+                "Locked — unlock the Lock switch to edit this camera.");
         form.Cells(cells =>
         {
             cells.Cell(
@@ -403,6 +365,11 @@ public sealed class CameraPane
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
                     _ => camera.TogglePortraitMode(), disabled: locked),
                 help: "Roll the view a quarter turn for portrait framing");
+            cells.Cell(
+                "Lock",
+                cell => cell.Switch("##camera-lock", camera.IsLocked,
+                    value => camera.IsLocked = value),
+                help: "Protect this camera's framing and consume camera input");
         });
         form.Cells(cells =>
         {
@@ -422,6 +389,13 @@ public sealed class CameraPane
                 help: "Fixed at creation: a game camera orbits, a free "
                     + "camera flies");
         });
+        form.Actions("Framing", actions =>
+        {
+            actions.Button("Recenter", () => Recenter(camera),
+                disabled: locked,
+                help: "Center the current tracked bone or selected actor "
+                    + "without changing view orientation; free cameras refuse");
+        });
     }
 
     private void OrbitRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -435,10 +409,7 @@ public sealed class CameraPane
             value => camera.Zoom = value,
             disabled: locked,
             scale: SliderScale.Log,
-            help: "How far the camera orbits from its pivot",
-            actions: actions => ResetArrow(
-                actions, "zoom", DefaultZoom, camera.Zoom,
-                value => camera.Zoom = value, locked));
+            help: "How far the camera orbits from its pivot");
         FovRollRow(form, camera, locked);
 
         // Angle and pan are wrap-around headings, not bounded travels — a
@@ -490,22 +461,27 @@ public sealed class CameraPane
         bool locked = camera.IsLocked;
         bool following = camera.TargetOffset != Vector3.Zero ||
             camera.TargetActorName.Length > 0;
-        form.Picker(
-            "Follow actor",
-            following && camera.TargetActorName.Length > 0
-                ? camera.TargetActorName
-                : "None",
-            () => OpenActorPicker(camera),
-            actions =>
+        var choices = new List<(ActorId Id, string Name)>();
+        var labels = new List<string> { "None" };
+        int selected = 0;
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            string name = ActorName(actor);
+            choices.Add((actor.Id, name));
+            labels.Add(name);
+            if (following && string.Equals(name, camera.TargetActorName,
+                    StringComparison.Ordinal))
+                selected = labels.Count - 1;
+        }
+        form.Dropdown(
+            "Follow actor", labels.ToArray(), selected,
+            index =>
             {
-                actions.Button(
-                    "Clear",
-                    () =>
-                    {
-                        _cameras.ClearTargetActor(camera);
-                    },
-                    disabled: locked || !following,
-                    help: "Put the pivot back on the game's own target");
+                if (index == 0)
+                    _cameras.ClearTargetActor(camera);
+                else if (index - 1 < choices.Count)
+                    FollowActor(choices[index - 1].Id, choices[index - 1].Name,
+                        camera);
             },
             disabled: locked,
             help: "Seat the orbit pivot on an actor's drawn body");
@@ -533,30 +509,18 @@ public sealed class CameraPane
         // The slider ends ARE the wheel's clamp: the row and the notch read
         // the same two numbers, so a scrolled speed can never sit off the end
         // of the control that shows it.
-        // The two rows the settings page seeds, so their reset arrows go back
-        // to the CONFIGURED default rather than to a constant — "default"
-        // means what a new camera would have started with.
-        var defaults = ConfigurationService.Instance.Config.Camera;
         form.Slider("Speed", camera.MovementSpeed,
             FreeCameraSpeed.Minimum, FreeCameraSpeed.Maximum,
             value => camera.MovementSpeed = value,
             format: "0.000",
             disabled: locked,
             help: "How fast the camera flies; the mouse wheel steps it while "
-                + "flying, Ctrl speeds up, Alt slows down",
-            actions: actions => ResetArrow(
-                actions, "speed", defaults.DefaultMovementSpeed,
-                camera.MovementSpeed,
-                value => camera.MovementSpeed = value, locked));
+                + "flying, Ctrl speeds up, Alt slows down");
         form.Slider("Sensitivity", camera.MouseSensitivity, 0.001f, 0.2f,
             value => camera.MouseSensitivity = value,
             format: "0.000",
             disabled: locked,
-            help: "How far a right-drag turns the view",
-            actions: actions => ResetArrow(
-                actions, "sensitivity", defaults.DefaultMouseSensitivity,
-                camera.MouseSensitivity,
-                value => camera.MouseSensitivity = value, locked));
+            help: "How far a right-drag turns the view");
         form.Switch("Delimit angle", camera.DelimitAngle,
             value => camera.DelimitAngle = value,
             disabled: locked,
@@ -570,10 +534,8 @@ public sealed class CameraPane
     {
         form.Cells(cells =>
         {
-            // FoV and roll keep the shared cells row rather than growing reset
-            // arrows: a cell is half a row wide, and an arrow taken out of
-            // that track would leave the slider unusable. The whole-camera
-            // Reset in ACTIONS is what puts these two back.
+            // FoV and roll share the compact cells row; the shared whole-camera
+            // Reset action in ACTIONS restores both values.
             cells.Cell(
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
@@ -656,34 +618,8 @@ public sealed class CameraPane
                     camera.Orthographic = true;
             },
             disabled: locked || !camera.Orthographic,
-            help: "How much of the world the flat projection spans",
-            actions: actions => ResetArrow(
-                actions, "ortho-zoom", DefaultOrthographicZoom,
-                camera.OrthographicZoom,
-                value =>
-                {
-                    camera.OrthographicZoom = value;
-                    if (camera.Orthographic)
-                        camera.Orthographic = true;
-                },
-                locked || !camera.Orthographic));
+            help: "How much of the world the flat projection spans");
     }
-
-    /// <summary>Brio's per-slider Undo button: one arrow, disabled while the
-    /// value already IS the default, so the row states whether it has been
-    /// touched as well as offering to untouch it.</summary>
-    private static void ResetArrow(
-        Crystarium.ActionScope actions,
-        string id,
-        float defaultValue,
-        float current,
-        Action<float> apply,
-        bool disabled) =>
-        actions.IconButton(TablerIcon.ArrowBackUp,
-            () => apply(defaultValue),
-            disabled: disabled || current == defaultValue,
-            help: "Back to the default",
-            id: $"##camera-{id}-reset");
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
@@ -803,29 +739,9 @@ public sealed class CameraPane
     private void BoneRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        var tracked = camera.TrackedBones;
-        form.Picker(
-            "Tracked bones",
-            tracked.Count switch
-            {
-                0 => "None",
-                1 => BoneLabel(tracked[0]),
-                _ => $"{tracked.Count} bones",
-            },
-            () => OpenBonePicker(camera),
-            actions =>
-            {
-                actions.Button(
-                    "Clear",
-                    () =>
-                    {
-                        tracked.Clear();
-                    },
-                    disabled: locked || tracked.Count == 0,
-                    help: "Stop tracking every bone");
-            },
-            disabled: locked,
-            help: "The bones whose averaged position the pivot follows");
+        // The hierarchy is the same actor/category/bone read model as the
+        // sidebar; its disclosure is independent from tracking selection.
+        DrawTrackingHierarchy?.Invoke(form, camera);
         form.Actions("Selection", actions =>
         {
             actions.Button("Track selected bones",
@@ -834,119 +750,75 @@ public sealed class CameraPane
                 help: "Replace the tracked set with the bones selected in "
                     + "the sidebar");
         });
+    }
 
-        for (int i = 0; i < tracked.Count; i++)
+    private void Recenter(IVirtualCamera camera)
+    {
+        if (_scene.Selection.Primary is { Kind: SceneEntityKind.Bone,
+                Bone: { } selectedBoneId })
         {
-            var bone = tracked[i];
-            int index = i;
-            form.ReadOnlyWithActions(
-                i == 0 ? "Bones" : string.Empty,
-                BoneLabel(bone),
-                actions =>
-                {
-                    actions.IconButton(TablerIcon.X,
-                        () => camera.TrackedBones.RemoveAt(index),
-                        disabled: locked,
-                        help: "Stop tracking this bone",
-                        id: $"##camera-track-remove-{index}");
-                });
-        }
-    }
-
-    // ── pickers ──────────────────────────────────────────────────────────
-
-    private void OpenActorPicker(IVirtualCamera camera)
-    {
-        _actorChoices.Clear();
-        foreach (var actor in _scene.Snapshot.Actors)
-            _actorChoices.Add(new ActorChoice(actor.Id, ActorName(actor)));
-
-        _actorPicker.Open(
-            "camera-target",
-            _actorChoices,
-            static choice => choice.Name,
-            static choice => choice.Id.ToString());
-    }
-
-    private void FollowActor(ActorChoice choice)
-    {
-        var (_, camera) = TargetCamera();
-        if (camera == null)
+            var resolved = _bindings.Resolve(selectedBoneId);
+            if (!resolved.Success || resolved.Value is not { } selectedBone ||
+                _bindings.GetBoneId(selectedBone) != selectedBoneId)
+            {
+                _notices.Refused("Center: that bone is no longer available.");
+                return;
+            }
+            ReportCenter(_cameras.CenterOnBone(selectedBone));
             return;
-        var resolved = _bindings.Resolve(choice.Id);
+        }
+
+        if (_scene.Selection.Primary is { Kind: SceneEntityKind.Actor,
+                Actor: { } selectedActorId })
+        {
+            var resolved = _bindings.Resolve(selectedActorId);
+            if (!resolved.Success || resolved.Value is not { } selectedActor ||
+                _bindings.GetActorId(selectedActor) != selectedActorId)
+            {
+                _notices.Refused("Center: that actor is no longer available.");
+                return;
+            }
+            if (!_spawnService.IsVisible(selectedActor))
+            {
+                _notices.Refused("Center: that actor is not visible.");
+                return;
+            }
+            ReportCenter(_cameras.CenterOnActor(selectedActor));
+            return;
+        }
+
+        foreach (var tracked in camera.TrackedBones)
+        {
+            if (_bindings.GetBoneId(tracked) is not { } trackedId)
+                continue;
+            var resolved = _bindings.Resolve(trackedId);
+            if (!resolved.Success || resolved.Value is not { } liveBone ||
+                _bindings.GetBoneId(liveBone) != trackedId)
+                continue;
+            ReportCenter(_cameras.CenterOnBone(liveBone));
+            return;
+        }
+
+        _notices.Refused("Center: select or track an actor or bone first.");
+    }
+
+    private void ReportCenter(CameraCenterResult result)
+    {
+        if (!result.Success)
+            _notices.Refused(result.Detail ?? "Center: the camera could not move.");
+    }
+
+    private void FollowActor(ActorId actorId, string displayName,
+        IVirtualCamera camera)
+    {
+        var resolved = _bindings.Resolve(actorId);
         if (!resolved.Success || resolved.Value is not { } actor)
         {
             _notices.Failed($"Follow: {resolved.Detail}");
             return;
         }
-        if (!_cameras.SetTargetActor(camera, actor, choice.Name))
+        if (!_cameras.SetTargetActor(camera, actor, displayName))
             _notices.Failed("Follow: the actor is not drawn yet.");
-    }
-
-    private void OpenBonePicker(IVirtualCamera camera)
-    {
-        _boneChoices.Clear();
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            string actorName = ActorName(actor);
-            foreach (var skeleton in actor.Skeletons)
-            {
-                foreach (var descriptor in skeleton.Bones)
-                    _boneChoices.Add(new BoneChoice(
-                        descriptor.Id, descriptor.DisplayName, actorName));
-            }
-        }
-
-        _trackedKeys.Clear();
-        foreach (var bone in camera.TrackedBones)
-        {
-            if (_bindings.GetBoneId(bone) is { } trackedId)
-                _trackedKeys.Add(trackedId.ToString());
-        }
-
-        _bonePicker.OpenMulti(
-            "camera-track",
-            "Tracked bones",
-            _boneChoices,
-            static choice => choice.BoneName,
-            static choice => choice.Id.ToString(),
-            _trackedKeys,
-            (choice, selected) => ToggleTrackedBone(choice, selected),
-            options: new PickerOptions<BoneChoice>
-            {
-                Badge = static choice => choice.ActorName,
-                Width = Crystarium.ActiveTheme.Picker.WideWidth,
-            });
-    }
-
-    private void ToggleTrackedBone(BoneChoice choice, bool selected)
-    {
-        var (_, camera) = TargetCamera();
-        if (camera == null)
-            return;
-        string key = choice.Id.ToString();
-        if (selected)
-        {
-            var resolved = _bindings.Resolve(choice.Id);
-            if (!resolved.Success || resolved.Value is not { } bone)
-            {
-                _notices.Failed($"Track: {resolved.Detail}");
-                return;
-            }
-            if (!camera.TrackedBones.Contains(bone))
-                camera.TrackedBones.Add(bone);
-            _trackedKeys.Add(key);
-        }
-        else
-        {
-            for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
-            {
-                if (_bindings.GetBoneId(camera.TrackedBones[i]) is { } id &&
-                    id.ToString() == key)
-                    camera.TrackedBones.RemoveAt(i);
-            }
-            _trackedKeys.Remove(key);
-        }
     }
 
     /// <summary>Ktisis's "track selection" button: the tracked set becomes
@@ -972,24 +844,60 @@ public sealed class CameraPane
             camera.TrackedBones.Add(bone);
     }
 
-    private string BoneLabel(IBone bone)
+    /// <summary>Shared hierarchy gesture: resolve the stable id at gesture
+    /// time and reject a replaced generation before changing the tracked set.
+    /// </summary>
+    public void ToggleTrackedBone(IVirtualCamera camera, BoneId boneId)
     {
-        if (_bindings.GetBoneId(bone) is not { } boneId)
-            return bone.BoneName;
-        foreach (var actor in _scene.Snapshot.Actors)
+        var resolved = _bindings.Resolve(boneId);
+        if (!resolved.Success || resolved.Value is not { } bone ||
+            _bindings.GetBoneId(bone) != boneId)
         {
-            if (actor.Id.LogicalId != boneId.Skeleton.Actor.LogicalId)
-                continue;
-            foreach (var skeleton in actor.Skeletons)
+            _notices.Refused("Track: that bone is no longer available.");
+            return;
+        }
+        for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
+        {
+            if (_bindings.GetBoneId(camera.TrackedBones[i]) == boneId)
             {
-                foreach (var descriptor in skeleton.Bones)
-                {
-                    if (descriptor.Id.Equals(boneId))
-                        return $"{ActorName(actor)} · {descriptor.DisplayName}";
-                }
+                camera.TrackedBones.RemoveAt(i);
+                return;
             }
         }
-        return bone.BoneName;
+        camera.TrackedBones.Add(bone);
+    }
+
+    /// <summary>Tracks a group from the shared hierarchy, preserving each
+    /// exact bone identity rather than copying display labels.</summary>
+    public void ToggleTrackedBones(
+        IVirtualCamera camera, IReadOnlyList<BoneId> boneIds)
+    {
+        var bones = new List<IBone>();
+        foreach (var boneId in boneIds)
+        {
+            var resolved = _bindings.Resolve(boneId);
+            if (!resolved.Success || resolved.Value is not { } bone ||
+                _bindings.GetBoneId(bone) != boneId)
+            {
+                _notices.Refused("Track: that bone is no longer available.");
+                return;
+            }
+            bones.Add(bone);
+        }
+        bool remove = bones.Count > 0 && bones.All(bone =>
+            camera.TrackedBones.Any(tracked =>
+                _bindings.GetBoneId(tracked) == _bindings.GetBoneId(bone)));
+        foreach (var bone in bones)
+        {
+            var id = _bindings.GetBoneId(bone);
+            if (id == null)
+                continue;
+            for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
+                if (_bindings.GetBoneId(camera.TrackedBones[i]) == id)
+                    camera.TrackedBones.RemoveAt(i);
+            if (!remove)
+                camera.TrackedBones.Add(bone);
+        }
     }
 
     /// <summary>Nickname / anonymous-mask aware, like every other surface.

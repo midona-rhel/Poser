@@ -71,4 +71,9 @@ public interface IVirtualCameraService : IDisposable
     /// camera. This moves the existing orbit framing only; it never changes
     /// follow, target, link, parent, or ownership state.</summary>
     CameraCenterResult CenterOnActor(IActor actor);
+
+    /// <summary>Frames an exact, currently drawn bone through the live Game
+    /// camera using its current world transform. Like actor centering, this
+    /// changes framing only and never rewrites tracking ownership.</summary>
+    CameraCenterResult CenterOnBone(IBone bone);
 }

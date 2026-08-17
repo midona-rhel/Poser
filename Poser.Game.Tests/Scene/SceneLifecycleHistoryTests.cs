@@ -347,6 +347,8 @@ public sealed class SceneLifecycleHistoryTests
         // Camera framing is outside lifecycle-history coverage.
         public CameraCenterResult CenterOnActor(IActor actor) =>
             CameraCenterResult.Refused("not available in lifecycle fake");
+        public CameraCenterResult CenterOnBone(IBone bone) =>
+            CameraCenterResult.Refused("not available in lifecycle fake");
     }
 
     private sealed class FakeCamera(CameraKind kind) : IVirtualCamera

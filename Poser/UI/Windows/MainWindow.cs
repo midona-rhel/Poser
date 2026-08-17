@@ -601,6 +601,10 @@ public class MainWindow : Window
         _lightPane = lightPane;
         _lightingService = lightingService;
         _cameraPane = cameraPane;
+        // Camera tracking consumes this window's already-built actor/category
+        // hierarchy; the shared row model keeps disclosure and identities in
+        // lockstep with the sidebar instead of minting a second flat tree.
+        _cameraPane.DrawTrackingHierarchy = DrawCameraTrackingHierarchy;
         _cameraService = cameraService;
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
@@ -1960,6 +1964,110 @@ public class MainWindow : Window
         Array.Copy(lines, descended, lines.Length);
         descended[lines.Length] = !isLast;
         return descended;
+    }
+
+    /// <summary>Draws camera tracking from the same retained sidebar rows.
+    /// The row model already carries Ktisis category nesting, exact stable
+    /// tags, and independent disclosure keys; this view only changes the
+    /// selected gesture from scene selection to the camera's tracked set.</summary>
+    private void DrawCameraTrackingHierarchy(
+        Crystarium.FormScope form, IVirtualCamera camera)
+    {
+        var rows = _actorsSection.Rows
+            .Where(IsCameraTrackingRow)
+            .ToArray();
+        if (rows.Length == 0)
+        {
+            form.Status("No actor hierarchy is available to track.");
+            return;
+        }
+
+        float rowHeight = Crystarium.ActiveTheme.Controls.ListRowHeight;
+        form.Custom(string.Empty, rowHeight * rows.Length, scope =>
+        {
+            float width = scope.Width / scope.Scale;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var row = rows[i];
+                string id = "camera-track-tree/"
+                    + (row.Tag?.ToString() ?? row.ExpandKey ?? row.Label);
+                var props = new TreeRowProps
+                {
+                    Icon = row.IconName == null ? row.Icon : null,
+                    IconName = row.IconName,
+                    HideIcon = row.Depth > 0 && !row.ForceIcon,
+                    Badge = string.IsNullOrEmpty(row.Count) ? null : row.Count,
+                    Depth = row.Depth,
+                    Trunks = CameraTreeTrunks(row.TreeLines),
+                    IsLastChild = row.IsLastChild,
+                    Expander = row.HasChildren
+                        ? row.Expanded
+                            ? SidebarExpander.Open
+                            : SidebarExpander.Collapsed
+                        : SidebarExpander.None,
+                    ExpanderDisabled = row.ExpanderDisabled,
+                    Selected = CameraRowIsTracked(row, camera),
+                };
+                ImGui.SetCursorScreenPos(scope.Origin +
+                    new Vector2(0f, i * rowHeight * scope.Scale));
+                var action = Crystarium.TreeRow(
+                    id, row.Label, in props,
+                    new ControlStyle { Width = UiWidth.Fixed(width) });
+                if (action == TreeRowAction.Expander)
+                    _vm.OnRowExpandToggled?.Invoke(row);
+                else if (action == TreeRowAction.Selected && !camera.IsLocked)
+                    CameraRowSelected(row, camera);
+            }
+        }, help: "The same actor, skeleton, category, and bone hierarchy "
+            + "used by the sidebar");
+    }
+
+    private static bool IsCameraTrackingRow(ShellSidebarRow row)
+    {
+        if (row.Tag is SelectionId selection)
+            return selection.Kind is SceneEntityKind.Actor or SceneEntityKind.Bone;
+        return row.ExpandKey != null;
+    }
+
+    private bool CameraRowIsTracked(ShellSidebarRow row, IVirtualCamera camera)
+    {
+        if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone,
+                Bone: { } boneId })
+            return camera.TrackedBones.Any(tracked =>
+                _bindings.GetBoneId(tracked) == boneId);
+        if (row.SelectionBones is { Count: > 0 } group)
+            return group.All(id => camera.TrackedBones.Any(tracked =>
+                _bindings.GetBoneId(tracked) == id));
+        return row.Active;
+    }
+
+    private void CameraRowSelected(ShellSidebarRow row, IVirtualCamera camera)
+    {
+        if (row.Tag is SelectionId { Kind: SceneEntityKind.Bone,
+                Bone: { } boneId })
+        {
+            _cameraPane.ToggleTrackedBone(camera, boneId);
+            return;
+        }
+        if (row.SelectionBones is { Count: > 0 } group)
+        {
+            _cameraPane.ToggleTrackedBones(camera, group);
+            return;
+        }
+        if (row.Tag is SelectionId selection &&
+            selection.Kind == SceneEntityKind.Actor)
+            _selection.Select(selection);
+    }
+
+    private static uint CameraTreeTrunks(bool[]? lines)
+    {
+        if (lines == null)
+            return 0u;
+        uint mask = 0u;
+        for (int level = 1; level < Math.Min(lines.Length, 32); level++)
+            if (lines[level])
+                mask |= 1u << level;
+        return mask;
     }
 
     /// <summary>
