@@ -18,7 +18,7 @@ public readonly record struct PoseImportOptionsGrid(
     public const float CheckboxColumnPitch = 96f;
 
     public float Height => VerticalInset * 2f + MathF.Max(
-        HeaderHeight + RowHeight * 5f,
+        HeaderHeight + RowHeight * 4f,
         HeaderHeight * 2f + RowHeight * 3f + StatusHeight * StatusRows);
 
     public static PoseImportOptionsGrid Create(

@@ -953,11 +953,6 @@ public sealed class PoseFileInspectorSection
                     disabled: false,
                     fullWidth: true,
                     scope[0]);
-                form.Checkboxes(
-                    string.Empty,
-                    disabled: false,
-                    fullWidth: true,
-                    scope[2]);
             },
             divider: false,
             dense: true,
@@ -1071,6 +1066,11 @@ public sealed class PoseFileInspectorSection
                     disabled: false,
                     fullWidth: true,
                     scope[3]);
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
+                    scope[2]);
             },
             divider: false,
             dense: true,
