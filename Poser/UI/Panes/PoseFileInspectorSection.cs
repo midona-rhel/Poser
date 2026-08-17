@@ -925,7 +925,11 @@ public sealed class PoseFileInspectorSection
                         _freeze = next;
                         _config.Config.FreezeActorOnPoseImport = next;
                         _config.Save();
-                    }, "Keep the actor paused after the import"),
+                    }, "Keep the actor paused after the import"));
+                form.Checkboxes(
+                    string.Empty,
+                    disabled: false,
+                    fullWidth: true,
                     new Crystarium.CheckItem(
                         "Smart", _smartImport, next => _smartImport = next,
                         "Route face-only files as expression imports automatically"));
