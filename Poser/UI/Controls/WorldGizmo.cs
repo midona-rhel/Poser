@@ -5,82 +5,47 @@ using Poser.Services;
 
 namespace Poser.UI.Controls;
 
-/// <summary>Every interactive element of the in-world gizmo. One engaged
-/// handle owns the complete drag; hover priority between overlapping
-/// kinds is deterministic (see <see cref="WorldGizmo.HitTest"/>).</summary>
+/// <summary>Interactive in-world gizmo handle kinds.</summary>
 public enum WorldHandleKind
 {
     TranslateAxis,
     TranslatePlane,
+    TranslateCenter,
     RotateRing,
     Roll,
     ScaleAxis,
     ScaleUniform,
 }
 
-/// <summary>One handle identity: kind plus axis index (0..2; ignored for
-/// Roll and ScaleUniform).</summary>
+/// <summary>Handle kind and axis index.</summary>
 public readonly record struct WorldHandle(WorldHandleKind Kind, int Axis);
 
-/// <summary>A hover/press resolution: the handle, its screen distance, and
-/// the underlying ring segment when the handle is a ring.</summary>
+/// <summary>Resolved handle and optional ring segment.</summary>
 public readonly record struct WorldHandleHit(WorldHandle Handle, float Distance, RingHit? Ring);
 
-/// <summary>
-/// Perspective-correct projection for the IN-WORLD gizmo, distinct from
-/// the inspector's direction-only basis by design — Brio splits them the
-/// same way: ImBrio.Gizmo for the widget, real view/projection matrices for
-/// the overlay. All geometry is built in world space at the pivot, sized so it
-/// keeps a stable perceived pixel size at the pivot's depth, and projected
-/// through the active camera's real view and projection matrices — so
-/// placement and orientation stay perspective-correct anywhere on screen
-/// without the fixed-metre-radius deformation this replaces.
-/// </summary>
+/// <summary>Perspective projection and drag-plane helpers for the world gizmo.
+/// Geometry uses the active camera matrices and a stable pivot size.</summary>
 public sealed class WorldGizmoProjection
 {
     public Matrix4x4 ViewProj;
     public Matrix4x4 InvViewProj;
-    /// <summary>The eye the view matrix in <see cref="ViewProj"/> projects
-    /// from, inverted out of that very matrix rather than asked for
-    /// separately. Everything below — the view direction, the measured
-    /// world scale, the drag-plane ray origin — is geometry ABOUT that
-    /// projection, so a camera position sourced anywhere else can disagree
-    /// with the picture on screen and make the handles resize or the drags
-    /// land off-target while nothing visibly moves.</summary>
+    /// <summary>Camera eye derived from <see cref="ViewProj"/>.</summary>
     public Vector3 CameraPosition;
     public Vector2 DisplayCenter;
     /// <summary>The gizmo pivot in world space.</summary>
     public Vector3 Pivot;
     /// <summary>The projected pivot in screen pixels.</summary>
     public Vector2 Center;
-    /// <summary>World units per gizmo unit: the world length that projects
-    /// to the requested pixel size at the pivot's depth. All handle
-    /// geometry is expressed as multiples of this, which is exactly how a
-    /// stable perceived handle size falls out of a perspective path.</summary>
+    /// <summary>World length corresponding to the requested handle size.</summary>
     public float WorldScale;
-    /// <summary>Unit direction from the camera through the pivot. Used for
-    /// front/rear classification and drag-plane normals — both genuinely
-    /// about this pivot. It is NOT the roll axis; roll uses the shared
-    /// camera view axis so the two surfaces agree (see
-    /// <see cref="RotationGizmoRings.CameraViewAxis"/>).</summary>
+    /// <summary>Unit direction from camera to pivot.</summary>
     public Vector3 ViewDirection;
     /// <summary>The camera's rotation, for the shared roll convention.</summary>
     public Quaternion ViewRotation = Quaternion.Identity;
-    /// <summary>The world-space gradient of clip w — the camera-forward
-    /// direction, normalized. This is the exact quantity the axis-flip
-    /// test measures: a projected handle scales by 1/w, and w grows along
-    /// camera FORWARD, not along the camera→pivot ray — the two agree at
-    /// screen centre and diverge toward the edges, up to the half-FOV.
-    /// Zero under a degenerate/orthographic projection, where clip w is
-    /// constant and nothing ever flips (stock ImGuizmo's equal-length
-    /// tie).</summary>
+    /// <summary>Normalized clip-w gradient used for axis-facing signs.</summary>
     public Vector3 ViewForward;
 
-    /// <summary>
-    /// Builds the projection for one frame, or null when the camera is
-    /// unavailable or the pivot is behind / unprojectable — a
-    /// non-projectable target draws nothing and accepts no input.
-    /// </summary>
+    /// <summary>Builds one projection, or null when it is unusable.</summary>
     public static WorldGizmoProjection? Create(
         ICameraService camera,
         Vector2 displaySize,
@@ -115,17 +80,13 @@ public sealed class WorldGizmoProjection
             return null;
         result.ViewDirection = Vector3.Normalize(toPivot);
 
-        // Read straight off the matrix Project() consumes (w's fourth
-        // column), so the flip criterion needs no view-convention
-        // assumption at all.
+        // Read the clip-w gradient used by Project.
         var wGradient = new Vector3(viewProj.M14, viewProj.M24, viewProj.M34);
         result.ViewForward = wGradient.LengthSquared() > 1e-12f
             ? Vector3.Normalize(wGradient)
             : Vector3.Zero;
 
-        // WorldScale is measured, not derived from matrix cells: project a
-        // unit offset perpendicular to the view direction at the pivot and
-        // read off pixels-per-world-unit. This stays convention-free.
+        // Measure world scale from a projected perpendicular unit offset.
         var reference = MathF.Abs(Vector3.Dot(result.ViewDirection, Vector3.UnitY)) > 0.99f
             ? Vector3.UnitX
             : Vector3.UnitY;
@@ -140,11 +101,7 @@ public sealed class WorldGizmoProjection
         return result;
     }
 
-    /// <summary>
-    /// World point to screen pixels through the real view/projection — the
-    /// same row-vector math as CameraService.WorldToScreen, false when the
-    /// point is behind the camera.
-    /// </summary>
+    /// <summary>Projects a world point to screen pixels.</summary>
     public bool Project(Vector3 world, out Vector2 screen)
     {
         var m = ViewProj;
@@ -189,24 +146,10 @@ public sealed class WorldGizmoProjection
     }
 }
 
-/// <summary>
-/// The in-world gizmo geometry built on <see cref="WorldGizmoProjection"/>.
-/// It fills the same screen-space <see cref="ProjectedRings"/> container
-/// the inspector uses, so ring DRAWING, segment hit-testing, the camera
-/// view axis, and the roll tangent are common code. The projection filling
-/// it is not: this class is perspective, <see cref="
-/// RotationGizmoRings.Project"/> is direction-only, and that split is the
-/// deliberate Brio behaviour rather than duplication to be merged away.
-/// </summary>
+/// <summary>World-space gizmo layout, hit testing, and drawing.</summary>
 public static class WorldGizmo
 {
-    /// <summary>
-    /// Perspective-projected rotation rings: points on a world circle of
-    /// <paramref name="ringWorldRadius"/> about the pivot, one per axis of
-    /// <paramref name="frame"/>, projected through the real matrices. Front
-    /// segments are on the camera side of the pivot. The roll ring stays a
-    /// true screen circle just outside the projected ring extent.
-    /// </summary>
+    /// <summary>Projects the three world rotation rings and roll ring.</summary>
     public static ProjectedRings ProjectRings(
         WorldGizmoProjection projection,
         Quaternion frame,
@@ -217,11 +160,7 @@ public static class WorldGizmo
         {
             Frame = frame,
             Center = projection.Center,
-            // Roll takes the SHARED camera view axis and the shared view
-            // rotation, identical to the inspector's, so the same drag
-            // rolls the same way on both surfaces. The X/Y/Z ring points
-            // below are still perspective-projected; only roll — a screen
-            // circle on both surfaces — shares its convention.
+            // Roll uses the camera view axis; other rings use perspective axes.
             ViewRotation = projection.ViewRotation,
             RollAxisWorld = RotationGizmoRings.CameraViewAxis(
                 projection.ViewRotation),
@@ -240,7 +179,7 @@ public static class WorldGizmo
                 if (!projection.Project(world, out var screen))
                     return rings; // behind camera — invalid, draw nothing
                 rings.Points[a][i] = screen;
-                // Front = nearer the camera than the pivot's view plane.
+                // Front segments are nearer than the pivot plane.
                 rings.Front[a][i] = Vector3.Dot(
                     world - projection.Pivot, projection.ViewDirection) < 0f;
                 maxRadius = MathF.Max(
@@ -253,12 +192,7 @@ public static class WorldGizmo
         return rings;
     }
 
-    /// <summary>
-    /// The screen direction of POSITIVE rotation at the grab point for the
-    /// perspective rings: epsilon-rotate the world grab point about the
-    /// ring's world axis and project both through the same real matrices,
-    /// so drag direction matches the applied rotation by construction.
-    /// </summary>
+    /// <summary>Returns the projected positive rotation tangent.</summary>
     public static Vector2 PositiveTangentPerspective(
         WorldGizmoProjection projection,
         ProjectedRings rings,
@@ -266,9 +200,7 @@ public static class WorldGizmo
         Vector2 mouse,
         float ringWorldRadius)
     {
-        // Roll is a screen-space circle here exactly as in the inspector,
-        // so it uses the shared screen-space derivation rather than a
-        // second, perspective one that could disagree in sign.
+        // Roll uses the shared screen-space tangent.
         if (hit.Axis == RotationGizmoRings.RollAxis)
             return RotationGizmoRings.RollTangent(rings, mouse, hit.Tangent);
 
@@ -288,9 +220,7 @@ public static class WorldGizmo
             : Vector2.Normalize(tangent);
     }
 
-    // Handle geometry in gizmo units (multiples of WorldScale). Universal
-    // pushes the scale knobs beyond the translate arrowheads and the rings
-    // outside both, so every handle keeps its own uncluttered grab band.
+    // Handle geometry uses multiples of WorldScale.
     private const float ShaftInner = 0.2f;
     private const float ShaftOuter = 1.0f;
     private const float PlaneInner = 0.35f;
@@ -298,13 +228,7 @@ public static class WorldGizmo
     private const float UniversalKnobDistance = 1.18f;
     private const float UniversalRingRadius = 1.35f;
 
-    /// <summary>
-    /// The complete per-frame world-gizmo geometry for one tool: which
-    /// handle families are active and their projected screen shapes. Frames
-    /// are world-space axis bases — translate uses the orientation mode's
-    /// axes, scale always the target's own local axes (stock-gizmo parity),
-    /// rings the rotate frame (radial under a Parent pivot).
-    /// </summary>
+    /// <summary>Projected handle geometry for one tool frame.</summary>
     public sealed class Layout
     {
         public required WorldGizmoProjection Projection;
@@ -314,12 +238,7 @@ public static class WorldGizmo
         public float RingWorldRadius;
         public float UiScale;
 
-        /// <summary>Per-axis camera-facing signs (stock ImGuizmo
-        /// AllowAxisFlip parity — Ktisis ships it default-ON). The drag
-        /// mapping MUST take its axis from <see cref="SignedTranslateAxis"/>
-        /// / <see cref="SignedScaleAxis"/> rather than re-deriving
-        /// <see cref="FrameAxis"/>, so the arrow drawn and the axis dragged
-        /// are one vector. Rotation rings take no sign, also as stock.</summary>
+        /// <summary>Latched camera-facing signs for linear handles.</summary>
         public float[] TranslateSign = [1f, 1f, 1f];
         public float[] ScaleSign = [1f, 1f, 1f];
 
@@ -330,6 +249,7 @@ public static class WorldGizmo
             FrameAxis(ScaleFrame, axis) * ScaleSign[axis];
 
         public bool TranslateActive;
+        public bool TranslateCenterActive;
         public Vector2[] ShaftStart = new Vector2[3];
         public Vector2[] ShaftEnd = new Vector2[3];
         public bool[] ShaftVisible = new bool[3];
@@ -344,16 +264,8 @@ public static class WorldGizmo
         public bool UniformActive;
     }
 
-    /// <summary>Builds the layout for the given tool. Handles whose
-    /// projection degenerates (behind camera, edge-on plane, shaft shorter
-    /// than a few pixels) are marked invisible: not drawn, not hittable.
-    /// Translate and scale handles extend along whichever of ±axis faces
-    /// the camera (<see cref="AxisFlipSign"/>); an engaged gesture passes
-    /// its latched signs back through <paramref name="heldTranslateSigns"/>
-    /// / <paramref name="heldScaleSigns"/> so a mid-drag pivot or camera
-    /// move never flips the drawn handle away from the frozen drag mapping
-    /// — the same latch stock ImGuizmo keeps in mAxisFactor while
-    /// mbUsing.</summary>
+    /// <summary>Builds visible and hittable geometry for the selected tool.
+    /// Degenerate projections are marked invisible.</summary>
     public static Layout Build(
         WorldGizmoProjection projection,
         TransformTool tool,
@@ -373,6 +285,9 @@ public static class WorldGizmo
         if (tool is TransformTool.Move || universal)
         {
             layout.TranslateActive = true;
+            // Move exposes the centre as a camera-plane handle; Universal
+            // keeps its centre reserved for uniform scale.
+            layout.TranslateCenterActive = tool == TransformTool.Move;
             for (int a = 0; a < 3; a++)
                 layout.TranslateSign[a] = heldTranslateSigns?[a] ?? AxisFlipSign(
                     FrameAxis(translateFrame, a), projection.ViewForward);
@@ -388,10 +303,7 @@ public static class WorldGizmo
                 layout.ShaftVisible[a] = ok &&
                     Vector2.Distance(start, end) > 6f * uiScale;
 
-                // Plane handle a lies between the OTHER two axes; its world
-                // normal is axis a. Edge-on planes disappear. The pair takes
-                // each member's own flip sign (ImGuizmo's mulAxisX/mulAxisY),
-                // so the quad always opens toward the camera.
+                // Plane a uses the other two signed axes and hides edge-on.
                 var u = layout.SignedTranslateAxis((a + 1) % 3);
                 var v = layout.SignedTranslateAxis((a + 2) % 3);
                 bool facing = MathF.Abs(Vector3.Dot(
@@ -441,24 +353,10 @@ public static class WorldGizmo
         return layout;
     }
 
-    /// <summary>Inside this dot-product band of exactly edge-on, the sign
-    /// stays +1 — the analytic twin of ImGuizmo's FLT_EPSILON tie test, so
-    /// a camera resting on an axis plane can never flap the sign frame to
-    /// frame.</summary>
+    /// <summary>Inside this dot-product band, edge-on axes keep sign +1.</summary>
     private const float AxisFlipEpsilon = 1e-6f;
 
-    /// <summary>
-    /// Stock ImGuizmo AllowAxisFlip semantics (upstream
-    /// ComputeTripodAxisAndVisibility): a linear handle is drawn along
-    /// whichever of ±axis projects LONGER on screen
-    /// (`mulAxis = lenDir &lt; lenDirMinus ? -1 : 1`, tie-broken by
-    /// FLT_EPSILON toward +1). Projected length scales by 1/clip-w, so
-    /// the comparison reduces to the sign of the axis's clip-w
-    /// (camera-forward) component: flip when it exceeds the epsilon band.
-    /// NOT the camera→pivot direction — that agrees only at screen centre
-    /// and would draw the wrong arrow toward the screen edges. Rotation
-    /// rings never take a sign, also as stock.
-    /// </summary>
+    /// <summary>Returns the camera-facing sign for a linear axis.</summary>
     public static float AxisFlipSign(Vector3 axisWorld, Vector3 viewForward) =>
         Vector3.Dot(axisWorld, viewForward) > AxisFlipEpsilon ? -1f : 1f;
 
@@ -472,13 +370,30 @@ public static class WorldGizmo
             },
             frame));
 
-    /// <summary>
-    /// Resolves the hovered handle. Priority between overlapping kinds is
-    /// deterministic and documented: plane quads, then the uniform-scale
-    /// centre, then scale knobs, then translate shafts, then ring
-    /// segments and the roll circle (which order X → Y → Z → Roll among
-    /// themselves). Within a tier the nearest candidate wins.
-    /// </summary>
+    /// <summary>Applies one scale factor to every starting component. Keeping
+    /// this operation component-wise preserves the starting ratios.</summary>
+    internal static Vector3 ApplyUniformScale(Vector3 start, float factor) =>
+        start * factor;
+
+    /// <summary>Returns one translated world step for a frozen handle hit.
+    /// Centre and plane handles use the full plane delta; axis handles keep
+    /// only their signed axis component.</summary>
+    internal static Vector3 TranslationStep(
+        WorldHandleKind kind, Vector3 hit, Vector3 previousHit,
+        Vector3 signedAxis) =>
+        kind == WorldHandleKind.TranslateAxis
+            ? signedAxis * Vector3.Dot(hit - previousHit, signedAxis)
+            : hit - previousHit;
+
+    /// <summary>Converts a frozen camera-plane hit to local translation for
+    /// the centre's ray-snap path.</summary>
+    internal static Vector3 TranslationFromFrozenPlane(
+        Vector3 startPosition, Vector3 hit, Vector3 pivotWorld,
+        Matrix4x4 inverseModel) =>
+        startPosition + Vector3.TransformNormal(
+            hit - pivotWorld, inverseModel);
+
+    /// <summary>Resolves one hovered handle using fixed priority tiers.</summary>
     public static WorldHandleHit? HitTest(Layout layout, Vector2 mouse, float tolerance)
     {
         if (layout.TranslateActive)
@@ -486,6 +401,11 @@ public static class WorldGizmo
                 if (layout.PlaneVisible[a] && PointInQuad(mouse, layout.PlaneQuad[a]))
                     return new WorldHandleHit(
                         new WorldHandle(WorldHandleKind.TranslatePlane, a), 0f, null);
+
+        if (layout.TranslateCenterActive &&
+            Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
+            return new WorldHandleHit(
+                new WorldHandle(WorldHandleKind.TranslateCenter, 0), 0f, null);
 
         if (layout.UniformActive &&
             Vector2.Distance(mouse, layout.Projection.Center) <= 9f * layout.UiScale)
@@ -550,11 +470,7 @@ public static class WorldGizmo
         return null;
     }
 
-    /// <summary>
-    /// Draws every active handle with the approved pastel grammar: axis
-    /// palette, hover/active emphasis, no plate, no rear arcs, no cursor
-    /// decoration — the world counterpart of the inspector styling.
-    /// </summary>
+    /// <summary>Draws active handles with axis and hover emphasis.</summary>
     public static void Draw(
         ImDrawListPtr dl,
         Layout layout,
@@ -574,6 +490,22 @@ public static class WorldGizmo
 
         if (layout.TranslateActive)
         {
+            bool centerHot = IsHot(
+                hover, active, WorldHandleKind.TranslateCenter, 0);
+            if (layout.TranslateCenterActive)
+            {
+                var centerColor = new Vector4(1f, 1f, 1f,
+                    centerHot ? 0.95f : 0.55f);
+                dl.AddCircleFilled(
+                    layout.Projection.Center, 4f * uiScale,
+                    ImGui.ColorConvertFloat4ToU32(
+                        ColorEx.ApplyAlpha(centerColor with
+                        { W = centerHot ? 0.5f : 0.25f })));
+                dl.AddCircle(
+                    layout.Projection.Center, 7f * uiScale,
+                    ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(centerColor)),
+                    0, (centerHot ? 2.5f : 1.5f) * uiScale);
+            }
             for (int a = 0; a < 3; a++)
             {
                 if (!layout.PlaneVisible[a])
