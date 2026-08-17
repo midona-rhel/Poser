@@ -3498,6 +3498,7 @@ public class MainWindow : Window
         var items = new List<ContextMenuItem>
         {
             new("Set game target", TablerIcon.Crosshair),
+            new("Center camera", TablerIcon.Crosshair),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the VERB the row performs: resume wears play,
             // pause wears pause (user 2026-08-11).
@@ -3522,6 +3523,7 @@ public class MainWindow : Window
         var actions = new List<Action?>
         {
             () => _actorManager.SetGPoseTarget(actor),
+            () => _cameraPane.CenterOnActor(actorId),
             () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
             () =>
             {

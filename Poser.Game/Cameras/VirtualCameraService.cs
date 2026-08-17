@@ -407,6 +407,66 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetActor = null;
     }
 
+    /// <summary>Centers the current live orbit camera on the actor's drawn
+    /// mid-body pivot while retaining its orientation. Validation completes
+    /// before the first camera setter: stale, hidden, or undrawn actors leave
+    /// the shot untouched.</summary>
+    public CameraCenterResult CenterOnActor(IActor actor)
+    {
+        if (!IsAvailable)
+            return CameraCenterResult.Refused("Center: the camera is unavailable.");
+        if (actor.Address == nint.Zero ||
+            _objectTable?.CreateObjectReference(actor.Address) is not { } resolved ||
+            !resolved.IsValid())
+            return CameraCenterResult.Refused("Center: that actor is no longer available.");
+
+        var gameObject = (GameObject*)resolved.Address;
+        var drawObject = gameObject->DrawObject;
+        if (!gameObject->IsReadyToDraw() ||
+            drawObject == null || !drawObject->IsVisible)
+            return CameraCenterResult.Refused("Center: that actor is not drawn yet.");
+
+        var native = Native;
+        if (!_gPose.IsGPosing || native == null ||
+            _live is not { IsLive: true } camera)
+            return CameraCenterResult.Refused("Center: the game camera is not ready.");
+        if (camera.Kind == CameraKind.Free)
+            return CameraCenterResult.Refused("Center: switch from the free camera first.");
+        if (camera.IsLocked)
+            return CameraCenterResult.Refused("Center: unlock the camera first.");
+        if (camera.FixedPosition != null)
+            return CameraCenterResult.Refused("Center: clear the camera position pin first.");
+
+        Vector3 drawOrigin = drawObject->Object.Position;
+        float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
+        // CameraOffset is the client's character-aware framing measure. Some
+        // non-character draw objects report zero, so use a conservative human
+        // height rather than aiming at their feet or producing zero zoom.
+        float height = reportedHeight is >= 0.5f and <= 5f
+            ? reportedHeight
+            : 1.7f;
+        Vector3 pivot = drawOrigin + Vector3.UnitY * (height * 0.5f);
+        var scene = &native->Camera.CameraBase.SceneCamera;
+        Vector3 baseLookAt = scene->LookAtVector;
+        Vector2 zoomLimits = camera.ZoomLimits;
+        if (!IsFinite(pivot) || !IsFinite(baseLookAt) ||
+            !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
+            zoomLimits.X > zoomLimits.Y)
+            return CameraCenterResult.Refused("Center: no usable actor or camera pivot.");
+
+        // The UI runs after the camera-update detour, so LookAtVector already
+        // includes the current position/target offsets. Add only the delta
+        // from that effective pivot; TargetOffset stays untouched and the
+        // existing follow relationship remains exactly as it was.
+        camera.PositionOffset += pivot - baseLookAt;
+        camera.Zoom = Math.Clamp(height * 2f, zoomLimits.X, zoomLimits.Y);
+        return CameraCenterResult.Centered();
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
+        float.IsFinite(value.Z);
+
     /// <summary>The spawned camera's default name. Bare number, no "#": every
     /// other numbered entity in the scene (lights, props) is named
     /// "{stem} {n}", and one family wearing a hash read as a different sort of

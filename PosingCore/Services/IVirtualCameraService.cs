@@ -5,6 +5,17 @@ using Poser.Entities;
 
 namespace Poser.Services;
 
+/// <summary>The outcome of framing one actor through the current live camera.
+/// Refusals are side-effect free so callers can report the reason without
+/// guessing whether native camera state changed.</summary>
+public readonly record struct CameraCenterResult(bool Success, string? Detail = null)
+{
+    public static CameraCenterResult Centered() => new(true);
+
+    public static CameraCenterResult Refused(string detail) =>
+        new(false, detail);
+}
+
 /// <summary>
 /// Owns the virtual cameras over the game's one orbit camera (Brio's overlay
 /// model). GPose-scoped: entering GPose mints the default camera, leaving
@@ -55,4 +66,9 @@ public interface IVirtualCameraService : IDisposable
     bool SetTargetActor(IVirtualCamera camera, IActor actor, string displayName);
 
     void ClearTargetActor(IVirtualCamera camera);
+
+    /// <summary>Frames an exact, currently drawn actor through the live Game
+    /// camera. This moves the existing orbit framing only; it never changes
+    /// follow, target, link, parent, or ownership state.</summary>
+    CameraCenterResult CenterOnActor(IActor actor);
 }

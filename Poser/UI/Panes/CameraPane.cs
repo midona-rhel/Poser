@@ -39,6 +39,7 @@ public sealed class CameraPane
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
     private readonly IVirtualCameraService _cameras;
+    private readonly IActorSpawnService _spawnService;
 
     /// <summary>Adding and removing a camera goes through the lifecycle seam,
     /// so both land in the shell's undo history.</summary>
@@ -103,6 +104,7 @@ public sealed class CameraPane
         SceneSession scene,
         StableBindingRegistry bindings,
         IVirtualCameraService cameras,
+        IActorSpawnService spawnService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ICameraFileService cameraFiles,
         UserNotices notices)
@@ -110,6 +112,7 @@ public sealed class CameraPane
         _scene = scene;
         _bindings = bindings;
         _cameras = cameras;
+        _spawnService = spawnService;
         _lifecycle = lifecycle;
         _cameraFiles = cameraFiles;
         _notices = notices;
@@ -159,6 +162,30 @@ public sealed class CameraPane
     /// it — the header menu and the pane's own clone both route here.</summary>
     public void SelectWhenBound(IVirtualCamera camera) =>
         _pendingSelect = camera;
+
+    /// <summary>Frames one exact actor through the live orbit camera. The
+    /// binding is resolved at invocation so a stale or despawned menu entry
+    /// cannot reach a native camera setter.</summary>
+    public void CenterOnActor(ActorId actorId)
+    {
+        var resolved = _bindings.Resolve(actorId);
+        if (!resolved.Success || resolved.Value is not { } actor ||
+            _bindings.GetActorId(actor) != actorId)
+        {
+            _notices.Refused("Center: that actor is no longer available.");
+            return;
+        }
+        if (!_spawnService.IsVisible(actor))
+        {
+            _notices.Refused("Center: that actor is not visible.");
+            return;
+        }
+
+        var result = _cameras.CenterOnActor(actor);
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ?? "Center: the camera could not move.");
+    }
 
     /// <summary>
     /// The Camera tab: what the camera IS and what is done with it as a whole
