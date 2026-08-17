@@ -255,13 +255,15 @@ public class SkeletonOverlayWindow : Window
     {
         foreach (var id in _selection.Selected)
             if (id.Kind is SceneEntityKind.Bone
-                or SceneEntityKind.Actor
                 // A gaze point belongs to an actor: keep that actor's skeleton
                 // anchored so aiming the gaze never blanks the dots under it.
                 or SceneEntityKind.GazeTarget
                 // A selected light anchors the overlay for the same reason an
                 // actor does: its handle is the edit's on-screen anchor.
                 or SceneEntityKind.Light)
+                return true;
+            else if (id.Kind == SceneEntityKind.Actor
+                && !Config.HideSkeletonOnActorSelection)
                 return true;
         return false;
     }
