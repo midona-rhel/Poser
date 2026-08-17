@@ -27,5 +27,6 @@
 Release-inside activation and drag-out cancellation, keyboard activation and
 focus-visible modality, transition midpoint and hover reconciliation, clip
 behavior, popup ownership, and occlusion are durable product contracts.
-Ordinary contract tests are a future follow-up; the current visual gate remains
-manual in-game acceptance.
+Validation follows the normative testing guidance in
+`docs/process/testing.md`; the current visual gate remains manual in-game
+acceptance.

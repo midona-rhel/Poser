@@ -1,103 +1,17 @@
-extern alias ProductionPoser;
-
 using System.Numerics;
 using Poser.Application.Transforms;
 using Poser.ContractTests.Fixtures;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
-using ProductionPoser::Poser.UI;
 
 namespace Poser.ContractTests;
 
 /// <summary>
-/// The arithmetic behind the overlay and gizmo parity sweep, pinned where it is
-/// pure: the hover-list wheel order, the tri-state a group of bones resolves
-/// to, the snap grid, the connector shortening, and the centroid a group of
-/// targets pivots on. Everything here is a rule transcribed from Brio or
-/// Ktisis, so a change to any of these numbers is a change to what the
-/// reference does.
+/// Pure transform arithmetic and application gesture semantics are
+/// contract-tested here.
 /// </summary>
-public sealed class OverlayGizmoContractTests
+public sealed class TransformSemanticsContractTests
 {
-    // ── hover-list wheel (Ktisis SelectableGui.DrawSelectList) ───────────
-
-    [Fact]
-    public void Wheel_forward_walks_toward_the_front_of_the_hover_list()
-    {
-        // Ktisis SUBTRACTS the notch, so a positive wheel lowers the index.
-        Assert.Equal(1, SkeletonOverlayWindow.CycleHoverIndex(2, 4, 1f));
-        Assert.Equal(3, SkeletonOverlayWindow.CycleHoverIndex(2, 4, -1f));
-    }
-
-    [Fact]
-    public void Wheel_wraps_at_both_ends()
-    {
-        Assert.Equal(3, SkeletonOverlayWindow.CycleHoverIndex(0, 4, 1f));
-        Assert.Equal(0, SkeletonOverlayWindow.CycleHoverIndex(3, 4, -1f));
-    }
-
-    [Fact]
-    public void A_cluster_of_two_alternates_in_both_directions()
-    {
-        int index = 0;
-        index = SkeletonOverlayWindow.CycleHoverIndex(index, 2, -1f);
-        Assert.Equal(1, index);
-        index = SkeletonOverlayWindow.CycleHoverIndex(index, 2, -1f);
-        Assert.Equal(0, index);
-        index = SkeletonOverlayWindow.CycleHoverIndex(index, 2, 1f);
-        Assert.Equal(1, index);
-    }
-
-    [Fact]
-    public void An_overshooting_burst_lands_on_the_far_end_not_modulo()
-    {
-        // Ktisis' wrap is one test per side, so overshoot clamps to the
-        // opposite end rather than walking round. Reproduced deliberately.
-        Assert.Equal(3, SkeletonOverlayWindow.CycleHoverIndex(1, 4, 5f));
-        Assert.Equal(0, SkeletonOverlayWindow.CycleHoverIndex(1, 4, -5f));
-    }
-
-    [Fact]
-    public void An_empty_hover_list_has_no_index_to_step()
-    {
-        Assert.Equal(0, SkeletonOverlayWindow.CycleHoverIndex(3, 0, 1f));
-    }
-
-    // ── tri-state group visibility (Brio ImBrio.TristateCheckbox) ────────
-
-    [Fact]
-    public void A_group_resolves_to_none_partial_or_all()
-    {
-        var presentation = new SkeletonOverlayPresentation();
-        var bones = new[] { Bone("a", 1), Bone("b", 2), Bone("c", 3) };
-
-        Assert.Equal(OverlayVisibility.None, presentation.Resolve(bones));
-
-        presentation.SetVisible(new[] { bones[0] }, true);
-        Assert.Equal(OverlayVisibility.Partial, presentation.Resolve(bones));
-        Assert.False(presentation.AreVisible(bones));
-
-        presentation.SetVisible(bones, true);
-        Assert.Equal(OverlayVisibility.All, presentation.Resolve(bones));
-        Assert.True(presentation.AreVisible(bones));
-    }
-
-    [Fact]
-    public void An_empty_group_is_none_and_never_all()
-    {
-        var presentation = new SkeletonOverlayPresentation();
-        Assert.Equal(
-            OverlayVisibility.None,
-            presentation.Resolve(System.Array.Empty<BoneId>()));
-        Assert.False(presentation.AreVisible(System.Array.Empty<BoneId>()));
-    }
-
-    private static BoneId Bone(string name, int index) => new(
-        new SkeletonId(TestIds.Actor(), PoseSlot.Character, 0),
-        PartialId: 0,
-        BoneIndex: index,
-        CanonicalName: name);
-
     // ── hold-snap arithmetic (Ktisis Gizmo.Manipulate) ───────────────────
 
     [Fact]
@@ -160,33 +74,6 @@ public sealed class OverlayGizmoContractTests
             sevenDegrees,
             GizmoSnap.SnapRadiansToDegrees(sevenDegrees, 0.5f),
             4);
-    }
-
-    // ── connector shortening (Brio SkeletonLineToCircle) ─────────────────
-
-    [Fact]
-    public void A_connector_pulls_back_by_the_inset_at_both_ends()
-    {
-        var (from, to) = SkeletonOverlayWindow.ShrinkToCircles(
-            new Vector2(0f, 0f), new Vector2(10f, 0f), 2f);
-        Assert.Equal(2f, from.X, 4);
-        Assert.Equal(8f, to.X, 4);
-        Assert.Equal(0f, from.Y, 4);
-        Assert.Equal(0f, to.Y, 4);
-    }
-
-    [Fact]
-    public void A_degenerate_or_insetless_connector_is_left_alone()
-    {
-        var point = new Vector2(4f, 4f);
-        var (from, to) = SkeletonOverlayWindow.ShrinkToCircles(point, point, 2f);
-        Assert.Equal(point, from);
-        Assert.Equal(point, to);
-
-        var (a, b) = SkeletonOverlayWindow.ShrinkToCircles(
-            Vector2.Zero, new Vector2(10f, 0f), 0f);
-        Assert.Equal(Vector2.Zero, a);
-        Assert.Equal(new Vector2(10f, 0f), b);
     }
 
     // ── centroid pivot (Brio's multi-entity group pivot) ─────────────────

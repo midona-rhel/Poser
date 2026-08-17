@@ -39,12 +39,10 @@ public sealed class SceneFileStoreTests
         using var fixture = new SceneFixture();
         var scene = ValidScene();
         scene.World = null;
-        scene.Overlays = null;
         scene.WorldObjects = null;
 
         var json = JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
         Assert.DoesNotContain("World\"", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("Overlays", json, StringComparison.Ordinal);
         Assert.DoesNotContain("WorldObjects", json, StringComparison.Ordinal);
 
         var withUnknown = json.TrimEnd();
@@ -54,7 +52,6 @@ public sealed class SceneFileStoreTests
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Null(read.Scene!.World);
-        Assert.Null(read.Scene.Overlays);
         Assert.Null(read.Scene.WorldObjects);
     }
 

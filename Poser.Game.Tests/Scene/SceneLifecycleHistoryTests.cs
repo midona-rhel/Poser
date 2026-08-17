@@ -6,7 +6,6 @@ using Poser.Core;
 using Poser.Domain.Companions;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
-using Poser.Game.Overlays;
 using Poser.Game.WorldObjects;
 using Poser.Entities;
 using Poser.Game.Scene;
@@ -55,12 +54,10 @@ public sealed class SceneLifecycleHistoryTests
         {
             Lighting = { RefuseSpawn = true },
             Props = { RefuseSpawn = true },
-            Overlays = { RefuseCreate = true },
         };
 
         Assert.Null(world.Lifecycle.SpawnLight(LightKind.Spot));
         Assert.Null(world.Lifecycle.SpawnProp(Apple));
-        Assert.Null(world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk));
         Assert.False(world.History.CanUndo);
 
         var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
@@ -77,17 +74,15 @@ public sealed class SceneLifecycleHistoryTests
         var world = new World();
         var light = world.Lifecycle.SpawnLight(LightKind.Spot)!;
         var prop = world.Lifecycle.SpawnProp(Apple)!;
-        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
         var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
 
-        Assert.Equal(4, world.Lifecycle.DestroySelection(
+        Assert.Equal(3, world.Lifecycle.DestroySelection(
             props: new[] { prop }, lights: new[] { light },
-            cameras: new[] { camera }, overlays: new[] { overlay }));
-        Assert.Equal("Remove 4 entities", world.History.UndoDescription);
+            cameras: new[] { camera }));
+        Assert.Equal("Remove 3 entities", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Single(world.Lighting.Live);
         Assert.Single(world.Props.Live);
-        Assert.Single(world.Overlays.Live);
         Assert.Single(world.Cameras.Live);
 
         var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
@@ -142,15 +137,12 @@ public sealed class SceneLifecycleHistoryTests
     }
 
     [Fact]
-    public void Add_remove_undo_redo_covers_actor_camera_and_overlay_identity()
+    public void Add_remove_undo_redo_covers_actor_and_camera_identity()
     {
         var world = new World();
         var actor = world.Lifecycle.SpawnActor("Add actor", () => world.Actors.Spawn("Lead"))!;
         var camera = world.Lifecycle.CreateCamera(CameraKind.Free)!;
-        var overlay = world.Lifecycle.SpawnOverlay(OverlayNodeKind.Talk)!;
 
-        Assert.True(world.Undo());
-        Assert.Empty(world.Overlays.Live);
         Assert.True(world.Undo());
         Assert.Empty(world.Cameras.Live);
         Assert.True(world.Undo());
@@ -158,13 +150,10 @@ public sealed class SceneLifecycleHistoryTests
 
         Assert.True(world.Redo());
         Assert.True(world.Redo());
-        Assert.True(world.Redo());
         Assert.Single(world.Actors.Live);
         Assert.Single(world.Cameras.Live);
-        Assert.Single(world.Overlays.Live);
         Assert.NotSame(actor, world.Actors.Live[0]);
         Assert.NotSame(camera, world.Cameras.Live[0]);
-        Assert.NotSame(overlay, world.Overlays.Live[0]);
     }
 
     private static ActorState Posed(Vector3 position, bool visible)
@@ -521,29 +510,16 @@ public sealed class SceneLifecycleHistoryTests
         public PropState State { get; set; }
     }
 
-    /// <summary>The overlay half at its port: a token per staged node holding
-    /// the one document that IS its identity.</summary>
     private sealed class FakeOverlays : IOverlayLifecycle
     {
         private readonly List<object> _overlays = new();
 
-        public bool RefuseCreate { get; set; }
         public IReadOnlyList<object> Live => _overlays;
         public IReadOnlyList<object> Overlays => _overlays.ToList();
 
         public object? Create(OverlayNodeState state)
         {
-            if (RefuseCreate)
-                return null;
-            var overlay = new FakeOverlay
-            {
-                // The service names an unnamed document; the port fake says so
-                // too, because the history's entry descriptions read the name
-                // back out of the created node.
-                State = state.Name.Length == 0
-                    ? state with { Name = KindName(state.Kind) }
-                    : state,
-            };
+            var overlay = new FakeOverlay { State = state };
             _overlays.Add(overlay);
             return overlay;
         }
@@ -556,8 +532,6 @@ public sealed class SceneLifecycleHistoryTests
             ((FakeOverlay)overlay).IsValid = false;
         }
 
-        /// <summary>The node leaves without this seam's knowledge — a scene
-        /// import, or the game taking its UI down.</summary>
         public void VanishWithoutNotice(object overlay) => Destroy(overlay);
 
         public OverlayNodeState Read(object overlay) =>
@@ -566,12 +540,6 @@ public sealed class SceneLifecycleHistoryTests
         public void Write(object overlay, Func<OverlayNodeState, OverlayNodeState> edit) =>
             ((FakeOverlay)overlay).State = edit(((FakeOverlay)overlay).State);
 
-        private static string KindName(OverlayNodeKind kind) => kind switch
-        {
-            OverlayNodeKind.Balloon => "Balloon",
-            OverlayNodeKind.Status => "Status",
-            _ => "Dialog",
-        };
     }
 
     private sealed class FakeOverlay

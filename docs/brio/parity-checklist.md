@@ -47,7 +47,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 | 8 Gaze fixed-position | **Source-verified; acceptance pending** (ships as "Point" mode, exceeds spec) |
 | 9 IK bake | **Implemented, on safety hold** — the convergence brief's standing exclusion governs; not accepted, no live card |
 | 10 Overlay filter wiring | **DONE (source-verified 2026-08-15); acceptance pending** — every one of the seven sub-items is live: `ShowSelectedBonesOnly` is written (keybind `UIManager.cs:184`, Settings) and filters (`SkeletonOverlayWindow.cs:568`), `SkeletonViewMode` is written (cycle keybind `UIManager.cs:186`, Settings) and switched on (`:586`), `ShowSkeletonLines` (`:591`), `IkChainColor` (`:1328`) and `MirroredBoneColor` (`:1330`) all have readers, `ShowNsfwBones` filters the matrix, the maps, the inspector and the overlay (`BoneMatrixBuilder.cs:47`, `GraphicalBonePane.cs:265,613`, `PoseInspectorPane.cs:1375`, `MainWindow.cs:2522`, `SkeletonOverlayWindow.cs:470`), and the dead `BoneDisplayMode`/`DebugMode` state is gone |
-| 11 Bone visibility presets | **DONE (source-verified 2026-08-15); acceptance pending** — `Poser/UI/BoneVisibilityPresetService.cs` with the preset store in `SkeletonConfiguration`, registered in `ServiceRegistration.cs`, applied from `MainWindow`, covered by `Poser.ContractTests/BoneVisibilityPresetContractTests.cs` |
+| 11 Bone visibility presets | **DONE (source-verified 2026-08-15); acceptance pending** — `Poser/UI/BoneVisibilityPresetService.cs` with the preset store in `SkeletonConfiguration`, registered in `ServiceRegistration.cs`, applied from `MainWindow` |
 | 12 Overworld actor | **Source-verified; acceptance pending** — implemented and reviewed (`d7603ca` backend, `44cb748` World tab, `42d41bd` refresh fix); the tab was removed 2026-08-15 and the adoption is the viewport's own handles, marked by the sidebar footer's class glyphs (`58892b3`) |
 | 13A Companion attach UI | **Source-verified; acceptance pending** — gated attach picker + detach live in the actor context menu (user decision 2026-08-14 supersedes the 2026-08-11 "do not re-add") |
 | 13B Actor-to-bone attach | not started |
@@ -383,7 +383,7 @@ set, and no one-click "face only" workflow.
 lives in `SkeletonConfiguration`, the service that names, saves, applies and seeds the
 built-ins is `Poser/UI/BoneVisibilityPresetService.cs` (registered in
 `Poser/Composition/ServiceRegistration.cs`), and the presets are reachable from
-`MainWindow`. Contract coverage: `Poser.ContractTests/BoneVisibilityPresetContractTests.cs`.
+`MainWindow`.
 
 **Task:** Add a preset store to config (`name → bone-name set`), a "Presets…" submenu on the
 actor context menu listing presets with checked state + "Save current as…", and application
@@ -623,7 +623,7 @@ history-entry contract. Config toggle mirroring `AllowRaySnap`.
 | Undo depth setting | Brio `UndoStackSize` (Settings, default 50) | **fixed** — `UndoDepth` in config, wired at registration (`ServiceRegistration.cs`) and exposed in Settings; recovery-tested (`PosingCore.Tests/Core/ConfigurationRecoveryTests.cs`) |
 | "Open with GPose / Close with GPose" settings do nothing | (Poser's own settings) | **fixed** — both read now (`UIManager.cs:104,107`, `UiWindowSet.cs:89`) |
 | Sidebar/inspector dock + tree-guide settings do nothing | (Poser's own settings) | **resolved** — `ShowTreeGuides` read (`ShellSidebar.cs:192`); dock settings removed |
-| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | **fixed** — reference pictures are floating, aspect-locked, opacity-dimmed windows that join the Overlays group and persist across leaving GPose (`Poser/UI/Windows/ReferenceImageWindow.cs`, `ReferenceImageSession.cs`, `ReferenceImageGeometry.cs`, `PosingCore/Config/ReferenceImageConfiguration.cs`), covered by `Poser.ContractTests/ReferenceImageContractTests.cs` |
+| Reference images overlay | Ktisis `ReferenceImage` entity + `Editor.ReferenceImages` | **fixed** — reference pictures are floating, aspect-locked, opacity-dimmed windows that join the Overlays group and persist across leaving GPose (`Poser/UI/Windows/ReferenceImageWindow.cs`, `ReferenceImageSession.cs`, `ReferenceImageGeometry.cs`, `PosingCore/Config/ReferenceImageConfiguration.cs`) |
 | Custom 2D pose-view images per view | Ktisis `PoseViewConfig` + Settings → Pose View | absent (embedded maps only) — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Per-race overlay bone-dot offsets | Ktisis `OffsetConfig` + offset editor | absent — **Scheduled** (user 2026-08-14, small-parity queue) |
 | Spawn-frozen option | Brio `SpawnEx(spawnFrozen)` IPC + prop spawn | **fixed** — `PoserConfiguration.SpawnFrozen` applies to every actor Poser adds, the spawn browser's own rows and world adoption alike (`WorldAdoptionSource.cs:369-377`) |
