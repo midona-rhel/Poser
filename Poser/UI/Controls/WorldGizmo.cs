@@ -393,11 +393,6 @@ public static class WorldGizmo
         startPosition + Vector3.TransformNormal(
             hit - pivotWorld, inverseModel);
 
-    /// <summary>Maps a Scale-axis drag to its engaged axis or to the uniform
-    /// path while the Alt modifier is held.</summary>
-    internal static int ScaleAxisForModifier(int axis, bool altHeld) =>
-        altHeld ? -1 : axis;
-
     /// <summary>Resolves one hovered handle using fixed priority tiers.</summary>
     public static WorldHandleHit? HitTest(Layout layout, Vector2 mouse, float tolerance)
     {

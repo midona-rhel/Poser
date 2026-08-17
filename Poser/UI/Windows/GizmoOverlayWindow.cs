@@ -1274,12 +1274,8 @@ public class GizmoOverlayWindow : Window
                     (MathF.Log(MathF.Abs(t)) - MathF.Log(MathF.Abs(_dragPrevAxisT))) *
                     multiplier;
                 _dragPrevAxisT = t;
-                // Alt switches an engaged axis drag to uniform scale. The
-                // factor remains relative to the frozen starting components.
-                ApplyScale(
-                    gesture,
-                    WorldGizmo.ScaleAxisForModifier(
-                        gesture.Handle.Axis, io.KeyAlt), linearStep);
+                // An engaged axis remains axis-only even while Alt is held.
+                ApplyScale(gesture, gesture.Handle.Axis, linearStep);
                 return;
             }
             case WorldHandleKind.ScaleUniform:

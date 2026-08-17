@@ -84,6 +84,10 @@ public class PoseInspectorPane
     private TransformGestureId? _cleanGesture;
     // Parent pivot is fixed when the gesture begins.
 
+    // Numeric scale wells keep their edited axis fixed across Alt toggles.
+    private int _scaleGestureAxis = -1;
+    private bool _scaleGestureAltApplied;
+
     // A cancelled drag cannot restart until release.
     private bool _gestureRestartSuppressed;
 
@@ -1256,6 +1260,9 @@ public class PoseInspectorPane
         {
             if (!canEdit || _gestureRestartSuppressed)
                 return;
+            int changedScaleAxis = operation == DomainOperation.Scale
+                ? ChangedAxis(scale, next)
+                : -1;
             BeginTransformSession(transform, operation);
             if (operation == DomainOperation.Translate)
                 pos = next;
@@ -1265,7 +1272,31 @@ public class PoseInspectorPane
                 _dragEuler = next;
             }
             else
+            {
+                if (_scaleGestureAxis < 0 && _cleanGesture != null)
+                    _scaleGestureAxis = changedScaleAxis;
                 scale = next;
+                bool altHeld = ImGui.GetIO().KeyAlt;
+                if (altHeld && _scaleGestureAxis >= 0 &&
+                    _dragStart is { } frozenStart)
+                {
+                    scale = ScaleFromAxis(
+                        frozenStart.Scale,
+                        scale,
+                        _scaleGestureAxis);
+                    _scaleGestureAltApplied = true;
+                }
+                else if (!altHeld && _scaleGestureAltApplied &&
+                    _scaleGestureAxis >= 0 &&
+                    _dragStart is { } releasedStart)
+                {
+                    scale = ScaleAxisOnlyFromStart(
+                        releasedStart.Scale,
+                        scale,
+                        _scaleGestureAxis);
+                    _scaleGestureAltApplied = false;
+                }
+            }
             ApplyTransformSession(new Transform
             {
                 Position = pos,
@@ -1278,6 +1309,21 @@ public class PoseInspectorPane
 
         void Commit()
         {
+            if (canEdit && _cleanGesture != null &&
+                _scaleGestureAltApplied && !ImGui.GetIO().KeyAlt &&
+                _scaleGestureAxis >= 0 &&
+                _dragStart is { } releasedStart &&
+                _cleanDisplayedCurrent is { } displayedCurrent)
+            {
+                var resetScale = ScaleAxisOnlyFromStart(
+                    releasedStart.Scale,
+                    displayedCurrent.Scale,
+                    _scaleGestureAxis);
+                if (resetScale != displayedCurrent.Scale)
+                    ApplyTransformSession(
+                        displayedCurrent with { Scale = resetScale });
+                _scaleGestureAltApplied = false;
+            }
             if (canEdit)
                 CommitTransformSession();
             ClearTransformSession();
@@ -1318,6 +1364,23 @@ public class PoseInspectorPane
             dragSpeed,
             "0.000",
             disabled: !canEdit);
+
+        // If Alt is released between well callbacks, return immediately to
+        // the active axis from the same frozen scale baseline.
+        if (_cleanGesture != null && _scaleGestureAltApplied &&
+            !ImGui.GetIO().KeyAlt && _scaleGestureAxis >= 0 &&
+            _dragStart is { } releasedStart &&
+            _cleanDisplayedCurrent is { } displayedCurrent)
+        {
+            var resetScale = ScaleAxisOnlyFromStart(
+                releasedStart.Scale,
+                displayedCurrent.Scale,
+                _scaleGestureAxis);
+            if (resetScale != displayedCurrent.Scale)
+                ApplyTransformSession(
+                    displayedCurrent with { Scale = resetScale });
+            _scaleGestureAltApplied = false;
+        }
 
         DrawTransformClipboard(form, transform, canEdit);
 
@@ -2506,6 +2569,61 @@ public class PoseInspectorPane
         _cleanGesture = null;
         _cleanModelStart = null;
         _cleanDisplayedCurrent = null;
+        _scaleGestureAxis = -1;
+        _scaleGestureAltApplied = false;
+    }
+
+    private static int ChangedAxis(Vector3 before, Vector3 after)
+    {
+        if (before.X != after.X)
+            return 0;
+        if (before.Y != after.Y)
+            return 1;
+        if (before.Z != after.Z)
+            return 2;
+        return -1;
+    }
+
+    // Alt derives one factor from the frozen active component, never from a
+    // previously uniform result, so modifier toggles preserve start ratios.
+    private static Vector3 ScaleFromAxis(
+        Vector3 frozenStart, Vector3 changed, int axis)
+    {
+        float start = axis switch
+        {
+            0 => frozenStart.X,
+            1 => frozenStart.Y,
+            _ => frozenStart.Z,
+        };
+        float current = axis switch
+        {
+            0 => changed.X,
+            1 => changed.Y,
+            _ => changed.Z,
+        };
+        float factor = MathF.Abs(start) < 0.00001f
+            ? 1f
+            : current / start;
+        return frozenStart * factor;
+    }
+
+    private static Vector3 ScaleAxisOnlyFromStart(
+        Vector3 frozenStart, Vector3 changed, int axis)
+    {
+        var result = frozenStart;
+        switch (axis)
+        {
+            case 0:
+                result.X = changed.X;
+                break;
+            case 1:
+                result.Y = changed.Y;
+                break;
+            default:
+                result.Z = changed.Z;
+                break;
+        }
+        return result;
     }
 
     private static Vector3 DivideComponents(
