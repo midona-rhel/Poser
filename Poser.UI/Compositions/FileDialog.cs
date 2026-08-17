@@ -203,9 +203,6 @@ public static partial class Crystarium
         /// <summary>Caller content that spans the body and bottom band.</summary>
         public FileSidePanel? PersistentRightPanel;
 
-        /// <summary>Caller actions placed before Cancel in the footer.</summary>
-        public Action<Crystarium.ActionBarScope>? FooterBeforeCancel;
-
         /// <summary>
         /// The caller's own panel UNDER the quick-access list, filling the rest
         /// of the navigation rail. Its <see cref="FileSidePanel.Width"/> is a
@@ -352,7 +349,6 @@ public static partial class Crystarium
                     HostPaintsChrome = hostPaintsChrome,
                     FooterRight = right =>
                     {
-                        FooterBeforeCancel?.Invoke(right);
                         right.Button(
                             "Cancel",
                             Close,
