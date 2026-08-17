@@ -1,66 +1,95 @@
 using System;
+using System.Numerics;
 
 namespace Poser.UI;
 
 /// <summary>Shared geometry for the pose-import options band.</summary>
 public readonly record struct PoseImportOptionsGrid(
     float Width,
-    float HorizontalInset,
-    float VerticalInset,
-    float ColumnGap,
+    float Inset,
     float RowHeight,
     float HeaderHeight,
     float StatusHeight,
     float ColumnWidth)
 {
-    public const int ColumnCount = 2;
-    public const float CheckboxColumnPitch = 96f;
-    public const int ScopeRows = 3;
+    public const int ColumnCount = 3;
+    public const int RequiredRows = 6;
 
-    public float Height => VerticalInset * 2f + MathF.Max(
-        HeaderHeight * 3f + RowHeight * (3f + ScopeRows)
-            + StatusHeight * 2f,
-        HeaderHeight + RowHeight * 2f);
+    public float Height => Inset * 2f + MathF.Max(
+        HeaderHeight * 2f + RowHeight * 3f + StatusHeight * 2f,
+        MathF.Max(
+            HeaderHeight + RowHeight * 2f,
+            HeaderHeight + RowHeight * RequiredRows));
 
     public static PoseImportOptionsGrid Create(
         float width,
-        float horizontalInset,
-        float verticalInset,
-        float columnGap,
+        float inset,
         float rowHeight,
         float headerHeight,
         float statusHeight)
     {
-        float gap = MathF.Max(0f, columnGap);
-        float content = MathF.Max(0f,
-            width - horizontalInset * 2f - gap * (ColumnCount - 1));
+        float content = MathF.Max(0f, width - inset * 2f);
         return new PoseImportOptionsGrid(
             MathF.Max(0f, width),
-            MathF.Max(0f, horizontalInset),
-            MathF.Max(0f, verticalInset),
-            gap,
+            MathF.Max(0f, inset),
             MathF.Max(1f, rowHeight),
             MathF.Max(1f, headerHeight),
             MathF.Max(1f, statusHeight),
             content / ColumnCount);
     }
 
-    public float ColumnX(int column) => HorizontalInset
-        + (ColumnWidth + ColumnGap) * column;
+    public float ColumnX(int column) => Inset + ColumnWidth * column;
 
-    public float RowY(int row) => VerticalInset + RowHeight * row;
+    public float RowY(int row) => Inset + RowHeight * row;
 
-    public float FirstControlY => VerticalInset + HeaderHeight;
+    public float FirstControlY => Inset + HeaderHeight;
 
     public float TypeHeaderY => FirstControlY + RowHeight * 2f;
 
     public float TypeControlY => TypeHeaderY + HeaderHeight;
+}
 
-    public float LeftX => ColumnX(0);
+/// <summary>Geometry for the import dialog's main region and preview rail.</summary>
+public readonly record struct PoseImportDialogLayout(
+    float Width,
+    float ContentTop,
+    float FooterTop,
+    float RailLeft,
+    float RailWidth,
+    PoseImportOptionsGrid Options)
+{
+    public float RailHeight => MathF.Max(0f, FooterTop - ContentTop);
 
-    public float ApplyX => ColumnX(1);
+    public static PoseImportDialogLayout Create(
+        float width,
+        float contentTop,
+        float footerTop,
+        float railWidth,
+        float ruleWidth,
+        float inset,
+        float rowHeight,
+        float headerHeight,
+        float statusHeight)
+    {
+        float mainWidth = MathF.Max(0f, width - railWidth - ruleWidth);
+        return new PoseImportDialogLayout(
+            MathF.Max(0f, width),
+            contentTop,
+            footerTop,
+            mainWidth + ruleWidth,
+            MathF.Max(0f, railWidth),
+            PoseImportOptionsGrid.Create(
+                mainWidth, inset, rowHeight, headerHeight, statusHeight));
+    }
+}
 
-    public float ScopeX => LeftX;
-
-    public float ScopeWidth => ColumnWidth;
+/// <summary>Geometry for the dialog preview and its camera controls.</summary>
+public readonly record struct PoseImportPreviewLayout(
+    float Width, float ImageHeight, float CameraHeight)
+{
+    public static PoseImportPreviewLayout Create(
+        float width, float height, float cameraHeight) => new(
+        MathF.Max(0f, width),
+        MathF.Max(0f, height - cameraHeight),
+        MathF.Max(0f, cameraHeight));
 }
