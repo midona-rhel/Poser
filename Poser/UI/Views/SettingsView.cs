@@ -67,6 +67,7 @@ public sealed class SettingsViewModel
     public float BoneLineOpacityWhileUsing = 0.15f;
     public bool SkeletonLineToCircle;
     public bool HideSkeletonWhileDragging;
+    public bool HideSkeletonOnActorSelection = true;
 
     public bool DimInactiveActors;
     public float InactiveActorOpacity = 0.5f;
@@ -671,6 +672,12 @@ public static class SettingsView
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Take the dots and lines away for the length of a gizmo drag");
+            form.Switch(
+                "Hide skeleton when only an actor is selected",
+                vm.HideSkeletonOnActorSelection,
+                next => vm.HideSkeletonOnActorSelection = next,
+                "Keep actor selection from opening the whole armature; "
+                    + "select a bone to show its anchor");
         });
         page.Section("INACTIVE ACTORS", form =>
         {
