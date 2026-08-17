@@ -19,10 +19,8 @@ public sealed record BeginTransformGesture(
     Vector3? CustomPivot = null,
     string Description = "Transform",
     IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>? TargetModes = null,
-    /// <summary>Ktisis' RelativeBones: every SECONDARY target rotates about
-    /// the primary's frame, keeping the angle it held to the primary, instead
-    /// of receiving the primary's raw delta. Off is Brio's behaviour and
-    /// Poser's own to date.</summary>
+    /// <summary>When enabled, secondary bones rotate in the primary's frame
+    /// instead of receiving the primary's raw delta.</summary>
     bool RelativeSecondaryBones = false);
 
 public readonly record struct GestureResult(
@@ -163,12 +161,9 @@ public sealed class TransformGestureService : IDisposable
     }
 
     /// <summary>
-    /// The arithmetic mean of the captured positions — Brio's group pivot. The
-    /// sum is taken in double precision because a scene's coordinates run to
-    /// four figures and a float sum of a dozen of them loses the low bits the
-    /// pivot is made of; a single target still returns its own position
-    /// exactly, so <see cref="PivotMode.Centroid"/> degrades into
-    /// <see cref="PivotMode.Primary"/> rather than drifting off it.
+    /// The arithmetic mean of the captured positions. The sum uses double
+    /// precision to preserve low bits for large scenes; a single target
+    /// returns its position exactly.
     /// </summary>
     private static Vector3 Centroid(IReadOnlyList<TransformTargetState> captured)
     {
@@ -246,12 +241,9 @@ public sealed class TransformGestureService : IDisposable
                     _ => delta,
                 };
             }
-            // Relative-frame secondaries, applied AFTER any symmetry transform
-            // and to secondaries only — Ktisis stacks them in this order too
-            // (TransformTarget.cs:130-163, its mirror branch feeds deltaRot
-            // straight into the RelativeBones formula). A LOCAL-space delta
-            // already acts in each target's own frame, so it is relative
-            // already and rebasing it a second time would be a double turn.
+            // Apply relative secondary rotation after symmetry and only to
+            // secondary bones. Local-space deltas already use each target's
+            // own frame, so rebasing them again would rotate twice.
             if (active.Command.RelativeSecondaryBones &&
                 index != 0 &&
                 active.Command.Space != TransformSpace.Local &&
@@ -384,13 +376,9 @@ public sealed class TransformGestureService : IDisposable
     }
 
     /// <summary>
-    /// Reconciles the active gesture against a completed structural scene
-    /// refresh. When every gesture target remains current at its exact
-    /// generation, the gesture SURVIVES and accepts the new revision — an
-    /// unrelated actor or slot appearing, vanishing, or changing does not
-    /// end a drag. When any target is stale it cancels once: every
-    /// frozen baseline is attempted in order, incomplete recovery is retained
-    /// as a mutation barrier, and no history entry is created.
+    /// Reconciles the active gesture with a completed scene refresh. The
+    /// gesture survives when all targets remain current; otherwise it is
+    /// cancelled and incomplete recovery remains a mutation barrier.
     /// </summary>
     public void ReconcileScene(Func<TransformTargetId, bool> isCurrent)
     {
@@ -434,11 +422,8 @@ public sealed class TransformGestureService : IDisposable
     }
 
     /// <summary>
-    /// Runs one direction of a lifecycle entry. The entry moves stacks ONLY
-    /// when the act it names actually landed — the same rule the transform
-    /// path applies to its restore receipt: a spawn the game refused leaves
-    /// the entry exactly where it was, still undoable, rather than quietly
-    /// consuming a step of the user's history.
+    /// Runs one direction of a lifecycle entry and commits it only when the
+    /// action reports success. A refused action remains available to retry.
     /// </summary>
     private static GestureResult RunLifecycle(
         Func<bool> act, string failure, Action commit)

@@ -14,6 +14,7 @@ public record struct ContextMenuItem
     public bool Danger;
     public bool Disabled;
     public bool IsSeparator;
+    public ContextMenuItem[]? SubmenuItems;
 
     /// <summary>Explanatory hover help for the row — the same card every
     /// control's <c>help</c> shows. The one row shape that NEEDS it is a
@@ -27,7 +28,8 @@ public record struct ContextMenuItem
         string? shortcut = null,
         bool danger = false,
         bool disabled = false,
-        string? help = null)
+        string? help = null,
+        ContextMenuItem[]? submenuItems = null)
     {
         Label = label;
         Icon = icon;
@@ -35,6 +37,7 @@ public record struct ContextMenuItem
         Danger = danger;
         Disabled = disabled;
         Help = help;
+        SubmenuItems = submenuItems;
         IsSeparator = false;
     }
 
@@ -82,6 +85,11 @@ public static partial class Crystarium
         private static Vector2 _min;
         private static Vector2 _size;
         private static Vector2 _pivot;
+        private static ContextMenuItem[]? _submenuItems;
+        private static Vector2 _submenuMin;
+        private static Vector2 _submenuSize;
+        private static int _submenuParent = -1;
+        private static int _submenuClicked = -1;
         private static double _phaseStart;
         private static int _lastOwnerFrame = -1;
         private static int _openedFrame = -1;
@@ -110,6 +118,9 @@ public static partial class Crystarium
             float s = ImGuiHelpers.GlobalScale;
             _id = id;
             _items = items;
+            _submenuItems = null;
+            _submenuParent = -1;
+            _submenuClicked = -1;
             _size = new Vector2(
                 (width ?? Crystarium.ActiveTheme.Floating.MenuWidth) * s,
                 HeightFor(items, s));
@@ -129,6 +140,9 @@ public static partial class Crystarium
             if (_phase != Phase.Hidden)
                 Interactive.ReleaseExclusive(ExclusiveKey(_id));
             _phase = Phase.Hidden;
+            _submenuItems = null;
+            _submenuParent = -1;
+            _submenuClicked = -1;
         }
 
         public static void EndFrame()
@@ -139,6 +153,12 @@ public static partial class Crystarium
         }
 
         public static bool IsOpen(string id) => _phase != Phase.Hidden && _id == id;
+
+        /// <summary>Returns and clears a submenu click.</summary>
+        public static int ConsumeSubmenuClick()
+        {
+            return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
+        }
 
         /// <summary>Instantly hides the menu (stale target).</summary>
         public static void Dismiss(string id)
@@ -217,6 +237,46 @@ public static partial class Crystarium
         /// <see cref="MeasureWidth"/>.</summary>
         private const float ShortcutGap = 28f;
 
+        internal static Vector2 PlaceSubmenu(
+            Vector2 parentMin,
+            Vector2 parentSize,
+            Vector2 triggerRowMin,
+            Vector2 childSize,
+            Vector2 displaySize,
+            float scale,
+            float menuPadding)
+        {
+            // Uses screen pixels, so the gap stays one pixel.
+            const float gap = 1f;
+            float rightX = parentMin.X + parentSize.X + gap;
+            if (rightX + childSize.X > displaySize.X)
+                rightX = parentMin.X - gap - childSize.X;
+            return new Vector2(
+                rightX,
+                triggerRowMin.Y - menuPadding * scale);
+        }
+
+        /// <summary>Includes the submenu in the menu window bounds.</summary>
+        internal static (Vector2 Min, Vector2 Size) HostBounds(
+            Vector2 parentMin,
+            Vector2 parentSize,
+            bool hasSubmenu,
+            Vector2 submenuMin,
+            Vector2 submenuSize,
+            float hostMargin)
+        {
+            var unionMin = parentMin;
+            var unionMax = parentMin + parentSize;
+            if (hasSubmenu)
+            {
+                unionMin = Vector2.Min(unionMin, submenuMin);
+                unionMax = Vector2.Max(unionMax, submenuMin + submenuSize);
+            }
+
+            var margin = new Vector2(hostMargin, hostMargin);
+            return (unionMin - margin, unionMax - unionMin + margin * 2f);
+        }
+
         private static float HeightFor(ContextMenuItem[] items, float s)
         {
             float height = Crystarium.ActiveTheme.Floating.MenuPadding * 2f * s;
@@ -249,17 +309,16 @@ public static partial class Crystarium
             }
 
             var pointer = ImGui.GetMousePos();
-            bool pointerOverMenu =
-                pointer.X >= _min.X
-                && pointer.X < _min.X + _size.X
-                && pointer.Y >= _min.Y
-                && pointer.Y < _min.Y + _size.Y;
+            bool pointerOverMenu = IsMenuOrSubmenuPointerWithin(
+                pointer, _min, _size, _submenuItems, _submenuMin, _submenuSize);
             bool outsidePressed =
                 ImGui.IsMouseClicked(ImGuiMouseButton.Left)
                 || ImGui.IsMouseClicked(ImGuiMouseButton.Right);
             if (ImGui.GetFrameCount() != _openedFrame
-                && ((outsidePressed && !pointerOverMenu)
-                    || ImGui.IsKeyPressed(ImGuiKey.Escape)))
+                && ShouldDismiss(
+                    outsidePressed,
+                    pointerOverMenu,
+                    ImGui.IsKeyPressed(ImGuiKey.Escape)))
             {
                 DismissAll();
                 return -1;
@@ -343,13 +402,35 @@ public static partial class Crystarium
             }
 
             float host = Crystarium.ActiveTheme.Floating.HostMargin * s;
-            ImGui.SetNextWindowPos(_min - new Vector2(host, host));
-            ImGui.SetNextWindowSize(_size + new Vector2(host, host) * 2f);
+            // Includes a newly hovered submenu in the first frame.
+            bool hasPredictedSubmenu = TryGetSubmenuBounds(
+                pointer, s, io.DisplaySize,
+                out var predictedSubmenuMin, out var predictedSubmenuSize);
+            bool hasSubmenu = _submenuItems is not null || hasPredictedSubmenu;
+            Vector2 hostSubmenuMin = hasPredictedSubmenu
+                ? predictedSubmenuMin
+                : _submenuMin;
+            Vector2 hostSubmenuSize = hasPredictedSubmenu
+                ? predictedSubmenuSize
+                : _submenuSize;
+            var hostBounds = HostBounds(
+                _min, _size, hasSubmenu,
+                hostSubmenuMin, hostSubmenuSize, host);
+            ImGui.SetNextWindowPos(hostBounds.Min);
+            ImGui.SetNextWindowSize(hostBounds.Size);
             ImGui.SetNextWindowFocus();
             ImGui.Begin("##floating-menu", hostFlags);
             var dl = ImGui.GetWindowDrawList();
             int vtxStart = dl.VtxBuffer.Size;
-            int clicked = DrawSurfaceAndRows(dl, s, interactive);
+            int clicked = DrawSurfaceAndRows(
+                dl, s, interactive, _items, _min, _size, "##fm-row");
+            if (_submenuItems is { } submenu)
+            {
+                int childClicked = DrawSurfaceAndRows(
+                    dl, s, interactive, submenu, _submenuMin, _submenuSize,
+                    "##fm-submenu-row");
+                _submenuClicked = AcceptSubmenuClick(childClicked, submenu);
+            }
             int vtxEnd = dl.VtxBuffer.Size;
             // The whole surface — shadow, ring, chrome, rows — pops as one
             // composited unit about the flip-aware transform origin.
@@ -357,18 +438,72 @@ public static partial class Crystarium
             ImGui.End();
             Interactive.EndOwner(menuOwner);
 
-            if (clicked >= 0)
+            if (clicked >= 0 || _submenuClicked >= 0)
                 StartClose();
             return clicked;
+        }
+
+        private static bool TryGetSubmenuBounds(
+            Vector2 pointer,
+            float scale,
+            Vector2 displaySize,
+            out Vector2 submenuMin,
+            out Vector2 submenuSize)
+        {
+            submenuMin = default;
+            submenuSize = default;
+            float y = _min.Y + Crystarium.ActiveTheme.Floating.MenuPadding * scale;
+            float left = _min.X + Crystarium.ActiveTheme.Floating.MenuPadding * scale;
+            float right = _min.X + _size.X
+                - Crystarium.ActiveTheme.Floating.MenuPadding * scale;
+            for (int i = 0; i < _items.Length; i++)
+            {
+                if (i > 0)
+                    y += Crystarium.ActiveTheme.Floating.MenuRowGap * scale;
+                var item = _items[i];
+                if (item.IsSeparator)
+                {
+                    y += Crystarium.ActiveTheme.Floating.MenuSeparatorBlock * scale;
+                    continue;
+                }
+
+                var rowMin = new Vector2(left, y);
+                var rowMax = new Vector2(
+                    right,
+                    y + Crystarium.ActiveTheme.Controls.ListRowHeight * scale);
+                if (!item.Disabled
+                    && item.SubmenuItems is { Length: > 0 } child
+                    && InRect(pointer, rowMin, rowMax))
+                {
+                    submenuSize = new Vector2(
+                        MeasureWidth(child) * scale,
+                        HeightFor(child, scale));
+                    submenuMin = PlaceSubmenu(
+                        _min, _size, rowMin, submenuSize,
+                        displaySize, scale,
+                        Crystarium.ActiveTheme.Floating.MenuPadding);
+                    return true;
+                }
+
+                y += Crystarium.ActiveTheme.Controls.ListRowHeight * scale;
+            }
+
+            return false;
         }
 
         private static string ExclusiveKey(string id) =>
             $"floating-menu:{id}";
 
-        private static int DrawSurfaceAndRows(ImDrawListPtr dl, float s, bool interactive)
+        private static int DrawSurfaceAndRows(
+            ImDrawListPtr dl,
+            float s,
+            bool interactive,
+            ContextMenuItem[] items,
+            Vector2 min,
+            Vector2 size,
+            string rowIdPrefix)
         {
-            var min = _min;
-            var max = _min + _size;
+            var max = min + size;
             FloatingSurface.DrawChrome(
                 dl,
                 min,
@@ -380,11 +515,16 @@ public static partial class Crystarium
             float y = min.Y + Crystarium.ActiveTheme.Floating.MenuPadding * s;
             float left = min.X + Crystarium.ActiveTheme.Floating.MenuPadding * s;
             float right = max.X - Crystarium.ActiveTheme.Floating.MenuPadding * s;
-            for (int i = 0; i < _items.Length; i++)
+            var previousSubmenu = _submenuItems;
+            int previousParent = _submenuParent;
+            bool openedSubmenu = false;
+            if (ReferenceEquals(items, _items))
+                _submenuItems = null;
+            for (int i = 0; i < items.Length; i++)
             {
                 if (i > 0)
                     y += Crystarium.ActiveTheme.Floating.MenuRowGap * s;
-                var item = _items[i];
+                var item = items[i];
                 if (item.IsSeparator)
                 {
                     // CSS .separator: 1px --color-border-secondary with
@@ -411,12 +551,37 @@ public static partial class Crystarium
                 {
                     ImGui.SetCursorScreenPos(rowMin);
                     var hit = Interactive.Reserve(
-                        $"##fm-row{i}",
+                        $"{rowIdPrefix}{i}",
                         rowMax - rowMin,
                         disabled: false);
-                    if (hit.Clicked)
+                    if (hit.Clicked && item.SubmenuItems is not { Length: > 0 })
                         clicked = i;
                     hovered = hit.Hovered;
+                }
+
+                if (ReferenceEquals(items, _items)
+                    && item.SubmenuItems is { Length: > 0 } child
+                    && (hovered || (previousSubmenu is not null
+                        && previousParent == i
+                        && KeepSubmenuOpen(
+                            ImGui.GetMousePos(), rowMin, rowMax,
+                            _submenuMin, _submenuSize, min, size)))
+                )
+                {
+                    _submenuParent = i;
+                    _submenuItems = child;
+                    openedSubmenu = true;
+                    float childWidth = MeasureWidth(child) * s;
+                    float childHeight = HeightFor(child, s);
+                    _submenuMin = PlaceSubmenu(
+                        min,
+                        size,
+                        rowMin,
+                        new Vector2(childWidth, childHeight),
+                        ImGui.GetIO().DisplaySize,
+                        s,
+                        Crystarium.ActiveTheme.Floating.MenuPadding);
+                    _submenuSize = new Vector2(childWidth, childHeight);
                 }
 
                 // Row help through the ONE hover-help renderer. Geometric
@@ -455,6 +620,16 @@ public static partial class Crystarium
                     Crystarium.ActiveTheme.Controls.ListRowHeight * s;
                 float labelRight = rowMax.X
                     - Crystarium.ActiveTheme.Floating.MenuRowPadding * s;
+                if (item.SubmenuItems is { Length: > 0 })
+                {
+                    float arrowSize = Crystarium.ActiveTheme.Controls.IconSize * 0.8f;
+                    labelRight -= (arrowSize + Crystarium.ActiveTheme.Floating.MenuIconGap) * s;
+                    ImGui.SetCursorScreenPos(new Vector2(
+                        labelRight,
+                        rowMin.Y + (Crystarium.ActiveTheme.Controls.ListRowHeight
+                            - arrowSize) * 0.5f * s));
+                    Icon(TablerIcon.ChevronRight, arrowSize, iconTint);
+                }
                 if (item.Shortcut is { Length: > 0 } shortcut)
                 {
                     var shortcutStyle = new TextStyle
@@ -505,7 +680,97 @@ public static partial class Crystarium
                 y += Crystarium.ActiveTheme.Controls.ListRowHeight * s;
             }
 
+            if (ReferenceEquals(items, _items) && !openedSubmenu)
+            {
+                _submenuItems = null;
+                _submenuParent = -1;
+            }
+
             return clicked;
+        }
+
+        internal static bool IsMenuOrSubmenuPointerWithin(
+            Vector2 point,
+            Vector2 menuMin,
+            Vector2 menuSize,
+            ContextMenuItem[]? submenu,
+            Vector2 submenuMin,
+            Vector2 submenuSize) =>
+            InRect(point, menuMin, menuSize)
+            || (submenu is not null
+                && (InRect(point, submenuMin, submenuSize)
+                    || InSubmenuBridge(
+                        point,
+                        new Vector2(menuMin.X, submenuMin.Y),
+                        new Vector2(menuMin.X + menuSize.X, submenuMin.Y + submenuSize.Y),
+                        menuMin,
+                        menuSize,
+                        submenuMin,
+                        submenuSize)));
+
+        internal static bool KeepSubmenuOpen(
+            Vector2 pointer,
+            Vector2 parentRowMin,
+            Vector2 parentRowMax,
+            Vector2 submenuMin,
+            Vector2 submenuSize,
+            Vector2 parentMenuMin,
+            Vector2 parentMenuSize) =>
+            InRect(pointer, submenuMin, submenuSize)
+            || InSubmenuBridge(
+                pointer,
+                parentRowMin,
+                parentRowMax,
+                parentMenuMin,
+                parentMenuSize,
+                submenuMin,
+                submenuSize);
+
+        internal static int AcceptSubmenuClick(
+            int clicked,
+            ContextMenuItem[] items) =>
+            clicked >= 0 && clicked < items.Length && !items[clicked].Disabled
+                ? clicked
+                : -1;
+
+        internal static int ConsumeSubmenuClick(
+            ref int clicked,
+            ContextMenuItem[]? items)
+        {
+            int result = items is null ? -1 : AcceptSubmenuClick(clicked, items);
+            clicked = -1;
+            return result;
+        }
+
+        internal static bool ShouldDismiss(
+            bool outsidePressed,
+            bool pointerWithinMenu,
+            bool escapePressed) =>
+            (outsidePressed && !pointerWithinMenu) || escapePressed;
+
+        private static bool InRect(Vector2 point, Vector2 min, Vector2 size) =>
+            point.X >= min.X && point.X < min.X + size.X
+            && point.Y >= min.Y && point.Y < min.Y + size.Y;
+
+        private static bool InSubmenuBridge(
+            Vector2 point,
+            Vector2 parentRowMin,
+            Vector2 parentRowMax,
+            Vector2 parentMenuMin,
+            Vector2 parentMenuSize,
+            Vector2 submenuMin,
+            Vector2 submenuSize)
+        {
+            float parentRight = parentMenuMin.X + parentMenuSize.X;
+            float childLeft = submenuMin.X;
+            float left = MathF.Min(parentRight, childLeft);
+            float right = MathF.Max(parentRight, childLeft);
+            float top = MathF.Min(parentRowMin.Y, submenuMin.Y);
+            float bottom = MathF.Max(
+                parentRowMax.Y,
+                submenuMin.Y + submenuSize.Y);
+            return point.X >= left && point.X <= right
+                && point.Y >= top && point.Y < bottom;
         }
     }
 }

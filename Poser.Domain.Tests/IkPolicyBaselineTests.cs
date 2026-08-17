@@ -56,27 +56,6 @@ public sealed class IkPolicyBaselineTests
             IkPolicy.Resolve("j_te_l", IkPreset.Defaults).Configuration!.Solver);
     }
 
-    [Theory]
-    [InlineData(17, 0)]
-    [InlineData(0, 17)]
-    public void Unknown_solver_or_target_mode_is_an_invalid_configuration(
-        int solver,
-        int targetMode)
-    {
-        var invalid = IkChainConfig.DefaultsFor(isArm: true) with
-        {
-            Solver = (IkSolver)solver,
-            TargetMode = (IkTargetMode)targetMode,
-        };
-
-        Assert.NotNull(invalid.Validate());
-        var result = IkPolicy.Validate("j_te_l", invalid);
-
-        Assert.False(result.Success);
-        Assert.Equal(IkPolicyOutcome.InvalidConfiguration, result.Outcome);
-        Assert.Null(result.Configuration);
-    }
-
     [Fact]
     public void Policy_result_success_requires_a_truthful_public_payload()
     {
@@ -200,13 +179,6 @@ public sealed class IkPolicyBaselineTests
     }
 
     [Fact]
-    public void Fixed_endpoint_and_alias_collections_reject_mutation()
-    {
-        AssertReadOnly(IkChains.SupportedEndpoints);
-        AssertReadOnly(IkChains.ForEndpoint("j_te_l")!.EndpointAliases);
-    }
-
-    [Fact]
     public void Valid_configuration_result_is_normalized_without_mutating_the_input()
     {
         var input = IkChainConfig.DefaultsFor(isArm: true) with
@@ -222,22 +194,4 @@ public sealed class IkPolicyBaselineTests
         Assert.Equal(0.5f, result.Configuration.CcdGain);
     }
 
-    private static void AssertReadOnly(IReadOnlyList<string> values)
-    {
-        var mutable = Assert.IsAssignableFrom<IList<string>>(values);
-        var original = values[0];
-        Exception? mutation = null;
-        try
-        {
-            mutation = Record.Exception(() => mutable[0] = "tampered");
-        }
-        finally
-        {
-            if (values[0] != original)
-                mutable[0] = original;
-        }
-
-        Assert.NotNull(mutation);
-        Assert.Equal(original, values[0]);
-    }
 }

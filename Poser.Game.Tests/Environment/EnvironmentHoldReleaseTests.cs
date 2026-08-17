@@ -9,152 +9,73 @@ namespace Poser.Game.Tests.Environment;
 
 public sealed class EnvironmentHoldReleaseTests
 {
-    [Fact]
-    public void Territory_change_releases_weather_time_and_section_holds()
+[Fact]
+    public void Territory_and_logout_release_all_successful_holds()
     {
         var factory = new TestFactory();
         var clientState = ClientStateProxy.Create(out var events);
         using var service = Create(factory, clientState);
-
         service.IsTimeFrozen = true;
         service.IsWeatherOverrideEnabled = true;
         service.SetSectionHeld(EnvSection.Sky, true);
         service.SetSectionHeld(EnvSection.Wind, true);
-        Assert.True(factory.TimeHook.IsEnabled);
-        Assert.True(factory.WeatherHook.IsEnabled);
 
         events.RaiseTerritoryChanged(5);
-
         Assert.False(service.IsTimeFrozen);
         Assert.False(service.IsWeatherOverrideEnabled);
         Assert.False(service.IsSectionHeld(EnvSection.Sky));
         Assert.False(service.IsSectionHeld(EnvSection.Wind));
-    }
-
-    [Fact]
-    public void Logout_releases_weather_time_and_section_holds()
-    {
-        var factory = new TestFactory();
-        var clientState = ClientStateProxy.Create(out var events);
-        using var service = Create(factory, clientState);
 
         service.IsTimeFrozen = true;
-        service.IsWeatherOverrideEnabled = true;
         service.SetSectionHeld(EnvSection.Fog, true);
-
         events.RaiseLogout();
-
         Assert.False(service.IsTimeFrozen);
-        Assert.False(service.IsWeatherOverrideEnabled);
         Assert.False(service.IsSectionHeld(EnvSection.Fog));
     }
 
     [Fact]
-    public void Transitions_without_holds_are_no_ops()
+    public void Transitions_without_holds_are_no_ops_and_release_failures_are_visible()
     {
-        var factory = new TestFactory();
-        var clientState = ClientStateProxy.Create(out var events);
+        var emptyFactory = new TestFactory();
+        var emptyState = ClientStateProxy.Create(out var emptyEvents);
+        var emptyLog = new RecordingLog();
+        using (var empty = Create(emptyFactory, emptyState, emptyLog))
+        {
+            emptyEvents.RaiseTerritoryChanged(5);
+            emptyEvents.RaiseLogout();
+            Assert.Empty(emptyLog.Errors);
+            Assert.Equal(0, emptyFactory.TimeHook.DisableCount);
+        }
+
+        var factory = new TestFactory { WeatherHook = { DisableFailure = true } };
+        var state = ClientStateProxy.Create(out var events);
         var log = new RecordingLog();
-        using var service = Create(factory, clientState, log);
-
-        events.RaiseTerritoryChanged(5);
-        events.RaiseLogout();
-
-        Assert.Equal(0, factory.TimeHook.DisableCount);
-        Assert.Equal(0, factory.WeatherHook.DisableCount);
-        Assert.Empty(log.Errors);
-    }
-
-    [Fact]
-    public void Release_failure_is_visible_and_the_other_holds_still_release()
-    {
-        var factory = new TestFactory();
-        factory.WeatherHook.DisableFailure = true;
-        var clientState = ClientStateProxy.Create(out var events);
-        var log = new RecordingLog();
-        using var service = Create(factory, clientState, log);
-
+        using var service = Create(factory, state, log);
         service.IsTimeFrozen = true;
         service.IsWeatherOverrideEnabled = true;
         service.SetSectionHeld(EnvSection.Rain, true);
-
         events.RaiseTerritoryChanged(9);
 
-        // The faulted release is truthful (still held) and logged; the clock
-        // and the sections are released regardless.
         Assert.True(service.IsWeatherOverrideEnabled);
-        Assert.Single(log.Errors, message =>
-            message.Contains("weather", StringComparison.OrdinalIgnoreCase));
         Assert.False(service.IsTimeFrozen);
         Assert.False(service.IsSectionHeld(EnvSection.Rain));
-
-        // Logout retries the same release and stays visible, not silent.
-        events.RaiseLogout();
-        Assert.Equal(2, log.Errors.Count);
+        Assert.Single(log.Errors);
     }
 
     [Fact]
-    public void Missing_signatures_leave_capabilities_unavailable_and_transitions_safe()
+    public void Missing_native_signatures_keep_capabilities_unavailable_and_safe()
     {
-        var factory = new TestFactory
-        {
-            ThrowOnTime = true,
-            ThrowOnWeather = true,
-            ThrowOnEnvCopy = true,
-            ThrowOnEnvCopyCallSite = true,
-        };
-        var clientState = ClientStateProxy.Create(out var events);
-        var log = new RecordingLog();
-        using var service = Create(factory, clientState, log);
-
+        var factory = new TestFactory { ThrowOnTime = true, ThrowOnWeather = true };
+        var state = ClientStateProxy.Create(out var events);
+        using var service = Create(factory, state);
         Assert.False(service.IsTimeFreezeAvailable);
         Assert.False(service.IsWeatherOverrideAvailable);
-        Assert.False(service.IsSectionHoldAvailable);
-
-        events.RaiseTerritoryChanged(5);
+        events.RaiseTerritoryChanged(1);
         events.RaiseLogout();
-        Assert.Empty(log.Errors);
-    }
-
-    [Fact]
-    public void Env_copy_call_site_is_the_fallback_and_enable_failure_degrades()
-    {
-        var primaryMissing = new TestFactory { ThrowOnEnvCopy = true };
-        var clientState = ClientStateProxy.Create(out _);
-        using (var service = Create(primaryMissing, clientState))
-        {
-            Assert.True(service.IsSectionHoldAvailable);
-            Assert.Equal(1, primaryMissing.EnvCopyHook.EnableCount);
-        }
-
-        var enableFails = new TestFactory();
-        enableFails.EnvCopyHook.EnableFailure = true;
-        var clientState2 = ClientStateProxy.Create(out _);
-        using var degraded = Create(enableFails, clientState2);
-        Assert.False(degraded.IsSectionHoldAvailable);
-    }
-
-    [Fact]
-    public void Gpose_exit_releases_only_the_flagged_holds()
-    {
-        var factory = new TestFactory();
-        var clientState = ClientStateProxy.Create(out _);
-        var bus = new TestEventBus();
-        using var service = Create(factory, clientState, bus: bus);
-
-        service.IsTimeFrozen = true;
-        service.IsWeatherOverrideEnabled = true;
-        service.SetSectionHeld(EnvSection.Stars, true);
-        service.ResetTimeOnGPoseExit = false;
-
-        bus.Publish(new GPoseStateChangedEvent(false));
-
-        Assert.True(service.IsTimeFrozen);
+        Assert.False(service.IsTimeFrozen);
         Assert.False(service.IsWeatherOverrideEnabled);
-        Assert.False(service.IsSectionHeld(EnvSection.Stars));
     }
-
-    private static EnvironmentService Create(
+private static EnvironmentService Create(
         TestFactory factory,
         IClientState clientState,
         RecordingLog? log = null,

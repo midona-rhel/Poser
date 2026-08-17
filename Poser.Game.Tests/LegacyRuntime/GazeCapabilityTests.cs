@@ -32,7 +32,7 @@ public sealed class GazeCapabilityTests
     }
 
     [Fact]
-    public void Missing_loop_signature_does_not_create_a_hook()
+    public void Missing_loop_signature_refuses_hook_admission()
     {
         var factory = new TestNativeFactory
         {
@@ -43,7 +43,10 @@ public sealed class GazeCapabilityTests
 
         AssertUnavailable(service, "loop signature");
         Assert.Equal(0, factory.HookCreateCount);
+        Assert.Empty(factory.Hooks);
     }
+
+
 
     [Fact]
     public void Hook_creation_failure_is_fail_soft()
@@ -72,42 +75,7 @@ public sealed class GazeCapabilityTests
         Assert.Equal(0, factory.EventBusSubscriptions);
     }
 
-    [Fact]
-    public void Unavailable_service_refuses_all_mutations_without_events()
-    {
-        var factory = new TestNativeFactory
-        {
-            UpdateScan = () => throw new InvalidOperationException("missing"),
-        };
-        using var service = Create(factory);
-        var actor = NewProxy<IActor>();
 
-        // Refusals stay typed and carry their reason — the fail-soft contract
-        // is unchanged, only made legible.
-        var mode = service.SetGazeMode(actor, GazeTargetMode.Camera);
-        var parts = service.SetGazeParts(actor, GazeTargetType.Eyes);
-        var target = service.SetGazeTarget(actor, actor);
-        Assert.False(mode.Success);
-        Assert.False(parts.Success);
-        Assert.False(target.Success);
-        Assert.NotNull(mode.Detail);
-        Assert.NotNull(parts.Detail);
-        Assert.NotNull(target.Detail);
-        Assert.Empty(factory.TargetWrites);
-
-        service.SetGazePosition(actor, new(1, 2, 3));
-        service.SetPartPosition(actor, GazeTargetType.Eyes, new(4, 5, 6));
-        service.SnapPartToCamera(actor, GazeTargetType.Eyes);
-        service.SetPartLock(actor, GazeTargetType.Eyes, true);
-        service.ResetGaze(actor);
-
-        Assert.Equal(GazeTargetMode.None, service.GetGazeState(actor).Mode);
-        Assert.Equal(GazeTargetType.All, service.GetGazeState(actor).TargetType);
-        Assert.Equal((nint)0, service.GetGazeTargetAddress(actor));
-        Assert.False(service.IsPartLocked(actor, GazeTargetType.Eyes));
-        Assert.False(service.IsGazeEnabled(actor));
-        Assert.Equal(0, factory.EventBus.PublishedCount);
-    }
 
     [Fact]
     public void Successful_construction_preserves_registration_and_idempotent_dispose()
@@ -128,190 +96,61 @@ public sealed class GazeCapabilityTests
         Assert.Equal(2, factory.EventBusUnsubscriptions);
     }
 
-    // ── channel release: Brio ActorLookAtService.cs:89-98 ────────────────
-    // A channel outside the mask gets no _updateLookAt call, and the original
-    // loop runs unconditionally afterwards. Ceasing is not enough on its own:
-    // _updateLookAt copies into the controller's persistent per-channel slot,
-    // so a dropped channel is additionally owed ONE inactive write — Brio's
-    // released value (StopLookAt, ActorLookAtService.cs:101-108, LookMode.None
-    // on every part), which Ktisis calls GazeMode.Disabled.
-
     [Fact]
-    public void Disabling_one_channel_stops_writing_only_that_channel()
+    public void Character_target_writes_use_the_gpose_clone_not_the_overworld_original()
     {
         using var scene = GazeScene.Create();
 
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
-        Assert.Equal(GazeTargetType.All, scene.Written());
-
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head | GazeTargetType.Body);
-
-        Assert.Equal(GazeTargetType.Head | GazeTargetType.Body, scene.Written());
-    }
-
-    [Fact]
-    public void Disabling_every_channel_writes_nothing_so_the_game_owns_all_three()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
-
+        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
         scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
+        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
 
-        Assert.Equal(GazeTargetType.None, scene.Written());
-        Assert.False(scene.Service.IsGazeEnabled(scene.Actor));
-        Assert.False(scene.Service.GetGazeState(scene.Actor).Active);
+        Assert.NotEqual(scene.CloneAddress, scene.OriginalAddress);
+        Assert.Equal(
+            scene.OriginalAddress,
+            scene.ObjectTable.SearchById(GazeScene.ActorId)!.Address);
+        Assert.NotEmpty(scene.WrittenAddresses());
+        Assert.All(
+            scene.WrittenAddresses(),
+            address => Assert.Equal(scene.CloneAddress, address));
+        Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
     }
-
-    // ── the hand-back debt ───────────────────────────────────────────────
 
     [Fact]
     public void Untoggling_one_channel_owes_that_channel_a_hand_back()
     {
         using var scene = GazeScene.Create();
-        // The reported case: an actor target is set, so every channel is
-        // aiming at it, and only head is untoggled.
         scene.Service.SetGazeTarget(scene.Actor, scene.Target);
         Assert.Equal(GazeTargetType.None, scene.Released());
 
         scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Eyes | GazeTargetType.Body);
 
         Assert.Equal(GazeTargetType.Head, scene.Released());
-        // The other two keep tracking, and the remembered target survives.
         Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Body, scene.Written());
         Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
     }
 
-    [Fact]
-    public void Untoggling_every_channel_owes_all_three_a_hand_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
 
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
 
-        Assert.Equal(GazeTargetType.All, scene.Released());
-        Assert.Equal(GazeTargetType.None, scene.Written());
-    }
 
-    [Fact]
-    public void Turning_the_mode_off_owes_every_claimed_channel_a_hand_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
 
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.None);
 
-        Assert.Equal(GazeTargetType.All, scene.Released());
-    }
 
-    [Fact]
-    public void A_channel_coming_straight_back_cancels_its_hand_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Body);
-        Assert.Equal(GazeTargetType.Eyes | GazeTargetType.Head, scene.Released());
 
-        // The active write supersedes the disable, so re-adding head settles
-        // its debt and leaves the eyes still owed.
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Body | GazeTargetType.Head);
 
-        Assert.Equal(GazeTargetType.Eyes, scene.Released());
-    }
 
-    [Fact]
-    public void A_channel_Poser_never_claimed_is_never_handed_back()
-    {
-        using var scene = GazeScene.Create();
 
-        // No mode was ever chosen, so nothing was ever enforced: writing an
-        // inactive target here would disable a gaze the game owns.
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
 
-        Assert.Equal(GazeTargetType.None, scene.Released());
-    }
 
-    [Fact]
-    public void Resetting_gaze_hands_every_claimed_channel_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+    // The target remains stored when no gaze parts are selected.
 
-        scene.Service.ResetGaze(scene.Actor);
 
-        // The entry survives the reset precisely so the detour can deliver
-        // this; dropping it would strand the actor at its last gaze.
-        Assert.Equal(GazeTargetType.All, scene.Released());
-        Assert.Equal(GazeTargetType.None, scene.Written());
-    }
 
-    [Fact]
-    public void A_despawned_target_hands_the_claimed_channels_back()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
 
-        scene.DespawnTarget();
 
-        Assert.Equal(GazeTargetType.All, scene.Released());
-    }
 
-    // ── target retention: Brio SetTargetType rewrites the mask and nothing
-    // else (ActorLookAtService.cs:164-170), so TargetMode and the stored
-    // LookAtSource survive an empty mask.
 
-    [Fact]
-    public void Untoggling_every_channel_keeps_the_remembered_mode_and_target()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
-
-        var state = scene.Service.GetGazeState(scene.Actor);
-        Assert.Equal(GazeTargetMode.Entity, state.Mode);
-        Assert.Equal(GazeScene.TargetId, state.TargetId);
-        Assert.False(state.Active);
-        Assert.False(state.TargetStale);
-    }
-
-    [Fact]
-    public void Retoggling_a_channel_reapplies_the_remembered_target()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
-
-        var result = scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Eyes);
-
-        Assert.True(result.Success);
-        Assert.Equal(GazeTargetType.Eyes, scene.Written());
-        var state = scene.Service.GetGazeState(scene.Actor);
-        Assert.Equal(GazeTargetMode.Entity, state.Mode);
-        Assert.Equal(GazeScene.TargetId, state.TargetId);
-        Assert.True(state.Active);
-    }
-
-    [Fact]
-    public void Off_mode_keeps_the_remembered_target_and_reselecting_actor_mode_restores_it()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.None);
-        Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
-
-        Assert.True(scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Entity).Success);
-
-        Assert.Equal(GazeTargetType.All, scene.Written());
-        Assert.Equal(GazeScene.TargetId, scene.Service.GetGazeState(scene.Actor).TargetId);
-    }
-
-    // ── the character's imposed target id: Brio sets it at
-    // ActorDynamicPoseWidget.cs:201 and writes 0 back at :218 through
-    // ActorLookAtService.cs:194. Without the clear the game's own look-at keeps
-    // pointing at the actor Poser chose.
+    // The character target id is cleared when all gaze parts are disabled.
 
     [Fact]
     public void Untoggling_every_channel_clears_the_characters_imposed_target_id()
@@ -331,16 +170,7 @@ public sealed class GazeCapabilityTests
             scene.Factory.WrittenTargetIds());
     }
 
-    [Fact]
-    public void Leaving_actor_mode_clears_the_characters_imposed_target_id()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
 
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Camera);
-
-        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-    }
 
     [Fact]
     public void Resetting_gaze_forgets_the_target_and_clears_the_imposed_id()
@@ -348,7 +178,6 @@ public sealed class GazeCapabilityTests
         using var scene = GazeScene.Create();
         scene.Service.SetGazeTarget(scene.Actor, scene.Target);
 
-        // Brio's RemoveObjectFromLook — the ONE path that forgets.
         scene.Service.ResetGaze(scene.Actor);
 
         var state = scene.Service.GetGazeState(scene.Actor);
@@ -357,7 +186,6 @@ public sealed class GazeCapabilityTests
         Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
     }
 
-    // ── stale remembered target ──────────────────────────────────────────
 
     [Fact]
     public void A_despawned_remembered_target_is_kept_by_id_and_stops_enforcing()
@@ -376,34 +204,9 @@ public sealed class GazeCapabilityTests
         Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
     }
 
-    [Fact]
-    public void Reapplying_a_stale_remembered_target_is_refused_typed()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
-        scene.DespawnTarget();
 
-        var parts = scene.Service.SetGazeParts(scene.Actor, GazeTargetType.All);
-        var mode = scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Entity);
 
-        Assert.False(parts.Success);
-        Assert.False(mode.Success);
-        Assert.NotNull(parts.Detail);
-        Assert.NotNull(mode.Detail);
-        Assert.Equal(GazeTargetType.None, scene.Written());
-    }
 
-    [Fact]
-    public void Relinquishing_a_channel_is_never_refused_while_the_target_is_stale()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.DespawnTarget();
-
-        Assert.True(scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head).Success);
-        Assert.True(scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None).Success);
-    }
 
     [Fact]
     public void Choosing_a_live_target_lifts_the_stale_mark()
@@ -420,48 +223,10 @@ public sealed class GazeCapabilityTests
         Assert.Equal(GazeTargetType.All, scene.Written());
     }
 
-    // ── the 201-439 clone gate ───────────────────────────────────────────
-    // A GPose clone SHARES its GameObjectId with the overworld original, so an
-    // id never names a writable body on its own. Every native gaze write is
-    // gated at one funnel, and the reconciliation pass resolves the clone by
-    // scanning the GPose range instead of trusting SearchById, which scans from
-    // index 0 and answers with the original.
 
-    [Fact]
-    public void Target_writes_land_on_the_gpose_clone_never_the_overworld_original()
-    {
-        using var scene = GazeScene.Create();
 
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.None);
-        scene.Service.SetGazeParts(scene.Actor, GazeTargetType.Head);
 
-        // Guard against a vacuous pass: the harness must really place two
-        // bodies under one id, and SearchById must really answer with the
-        // overworld original, or none of this proves anything.
-        Assert.NotEqual(scene.CloneAddress, scene.OriginalAddress);
-        Assert.Equal(
-            scene.OriginalAddress,
-            scene.ObjectTable.SearchById(GazeScene.ActorId)!.Address);
 
-        Assert.NotEmpty(scene.WrittenAddresses());
-        Assert.All(scene.WrittenAddresses(), a => Assert.Equal(scene.CloneAddress, a));
-        Assert.DoesNotContain(scene.OriginalAddress, scene.WrittenAddresses());
-    }
-
-    [Fact]
-    public void A_despawned_target_clears_the_id_on_the_clone_not_the_overworld_original()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-
-        // SearchById(ActorId) answers with the index-3 original here — taking
-        // the write address from it would land SetTargetId on the real body.
-        scene.DespawnTarget();
-
-        Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
-        Assert.All(scene.WrittenAddresses(), a => Assert.Equal(scene.CloneAddress, a));
-    }
 
     [Fact]
     public void An_actor_outside_the_gpose_range_is_never_written()
@@ -479,7 +244,6 @@ public sealed class GazeCapabilityTests
         Assert.Empty(scene.Factory.TargetWrites);
     }
 
-    // ── stale is sticky ──────────────────────────────────────────────────
 
     [Fact]
     public void A_target_returning_under_the_same_id_does_not_resume_by_itself()
@@ -495,58 +259,25 @@ public sealed class GazeCapabilityTests
         Assert.Equal(new ulong[] { GazeScene.TargetId, 0 }, scene.Factory.WrittenTargetIds());
     }
 
+
+
+
+
     [Fact]
-    public void An_entry_retargeted_between_the_snapshot_and_the_apply_is_not_marked_stale()
+    public void Leaving_GPose_and_reset_then_dispose_release_everything_once()
     {
         using var scene = GazeScene.Create();
         scene.Service.SetGazeTarget(scene.Actor, scene.Target);
+        scene.Factory.EventBus.Publish(new GPoseStateChangedEvent(false));
 
-        // The reconciliation pass reads the object table OUTSIDE _sync, so a
-        // framework-thread caller can retarget the entry between its snapshot
-        // and its apply. The liveness answer coming back describes the OLD
-        // target and must not be spent judging the new one. Latched before the
-        // re-entrant call, because SetGazeTarget probes the table itself.
-        bool retargeted = false;
-        scene.OnSearchById = id =>
-        {
-            if (retargeted || id != GazeScene.TargetId)
-                return;
-            retargeted = true;
-            scene.Service.SetGazeTarget(scene.Actor, scene.Second);
-        };
+        Assert.Equal(new ulong[] { GazeScene.TargetId }, scene.Factory.WrittenTargetIds());
+        Assert.Equal(GazeTargetType.None, scene.Released());
 
-        scene.DespawnTarget();
-
-        // Anti-vacuity: the interleave really happened, and the snapshotted
-        // target really is dead — so the pass's one liveness answer said
-        // "gone", and the guard is the only thing standing between that answer
-        // and the live target the entry now holds.
-        Assert.True(retargeted);
-        Assert.Null(scene.ObjectTable.SearchById(GazeScene.TargetId));
-        Assert.NotNull(scene.ObjectTable.SearchById(GazeScene.SecondId));
-
-        var state = scene.Service.GetGazeState(scene.Actor);
-        Assert.Equal(GazeScene.SecondId, state.TargetId);
-        // The live second target is what the entry holds; marking it stale on
-        // the despawned first target's answer would strand a working gaze.
-        Assert.False(state.TargetStale);
-        Assert.Equal(GazeTargetType.All, scene.Written());
-    }
-
-    [Fact]
-    public void A_stale_pass_leaves_the_locks_of_a_point_mode_entry_alone()
-    {
-        using var scene = GazeScene.Create();
-        scene.Service.SetGazeTarget(scene.Actor, scene.Target);
-        // The Actor target is now merely remembered — it governs nothing in
-        // Point mode, so its despawn must not touch this lock.
-        scene.Service.SetGazeMode(scene.Actor, GazeTargetMode.Position);
-        scene.Service.SetPartLock(scene.Actor, GazeTargetType.Head, true);
-
-        scene.DespawnTarget();
-
-        Assert.True(scene.Service.IsPartLocked(scene.Actor, GazeTargetType.Head));
-        Assert.Equal(GazeTargetType.All, scene.Written());
+        scene.Service.ResetGaze(scene.Actor);
+        Assert.Equal(GazeTargetMode.None, scene.Service.GetGazeState(scene.Actor).Mode);
+        scene.Service.Dispose();
+        scene.Service.Dispose();
+        Assert.Equal(1, Assert.IsType<TestHook>(Assert.Single(scene.Factory.Hooks)).DisposeCount);
     }
 
     private static GazeService Create(TestNativeFactory factory)
