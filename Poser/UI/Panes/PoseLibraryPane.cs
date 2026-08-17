@@ -264,7 +264,6 @@ public sealed class PoseLibraryPane
     // a successful mutation requests a rescan, never edits the snapshot.
 
     private const string TileMenuId = "##pose-library-tile-menu";
-    private const string MoveMenuId = "##pose-library-move-menu";
 
     /// <summary>What each context-menu row DOES; separators carry
     /// <see cref="TileMenuAction.None"/> so the row indices stay aligned with
@@ -516,7 +515,6 @@ public sealed class PoseLibraryPane
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
         DrawApplyMenu();
         DrawTileMenu();
-        DrawMoveMenu();
         DrawRenameModal();
         DrawMetadataModal();
         _metaImageBrowser.Draw();
@@ -587,6 +585,13 @@ public sealed class PoseLibraryPane
         }
 
         int clicked = Crystarium.FloatingMenu.Draw(TileMenuId);
+        int moveClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick();
+        if (moveClicked >= 0 && moveClicked < _moveDestinations.Count
+            && _movePath is { } movePath)
+        {
+            MoveToFolder(movePath, _moveDestinations[moveClicked]);
+            return;
+        }
         if (clicked < 0 || clicked >= _menuActionRows.Count
             || _vm.MenuTile < 0 || _vm.MenuTile >= _vm.Tiles.Count)
             return;
@@ -647,7 +652,8 @@ public sealed class PoseLibraryPane
             Row(TileMenuAction.Rename, new ContextMenuItem(
                 "Rename…", TablerIcon.Edit));
             Row(TileMenuAction.MoveTo, new ContextMenuItem(
-                "Move to folder…", TablerIcon.Folder));
+                "Move to folder…", TablerIcon.Folder,
+                submenuItems: BuildMoveSubmenu(tile.ThumbKey)));
         }
 
         Separator();
@@ -770,9 +776,6 @@ public sealed class PoseLibraryPane
                 _renameTaken = false;
                 _renameOpen = true;
                 break;
-            case TileMenuAction.MoveTo:
-                OpenMoveMenu(path);
-                break;
             case TileMenuAction.Reveal:
                 RevealFile(path);
                 break;
@@ -824,14 +827,10 @@ public sealed class PoseLibraryPane
         _library.RequestScan();
     }
 
-    /// <summary>The move-to submenu: every scanned folder except the file's
-    /// own, labeled root-first so two same-named subfolders stay apart.
-    /// Destinations are frozen at open, resolved from the CURRENT config by
-    /// the snapshot's source index — a source deleted since the scan simply
-    /// contributes no row.</summary>
-    private void OpenMoveMenu(string path)
+    private ContextMenuItem[] BuildMoveSubmenu(string path)
     {
         _moveDestinations.Clear();
+        _movePath = path;
         var items = new List<ContextMenuItem>();
         string current = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
         var sources = _config.Config.Library.Sources;
@@ -846,8 +845,7 @@ public sealed class PoseLibraryPane
             var directory = relative.Length == 0
                 ? sources[source].Path
                 : System.IO.Path.Combine(sources[source].Path, relative);
-            if (string.Equals(
-                    directory, current, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(directory, current, StringComparison.OrdinalIgnoreCase))
                 continue;
             string root = string.IsNullOrWhiteSpace(sources[source].Name)
                 ? $"Source {source + 1}"
@@ -857,26 +855,16 @@ public sealed class PoseLibraryPane
                 relative.Length == 0 ? root : root + "\\" + relative,
                 TablerIcon.Folder));
         }
-
         if (items.Count == 0)
-        {
-            _notices.Refused("No other folder to move to.");
-            return;
-        }
-        _movePath = path;
-        Crystarium.FloatingMenu.Open(
-            MoveMenuId, ImGui.GetMousePos(), items.ToArray());
+            items.Add(new ContextMenuItem(
+                "No other folder", TablerIcon.Folder, disabled: true));
+        return items.ToArray();
     }
 
-    private void DrawMoveMenu()
+    private void MoveToFolder(string path, string destination)
     {
-        int clicked = Crystarium.FloatingMenu.Draw(MoveMenuId);
-        if (clicked < 0 || clicked >= _moveDestinations.Count
-            || _movePath is not { } path)
-            return;
         _movePath = null;
-        var result = PoseLibraryFileActions.Default.Move(
-            path, _moveDestinations[clicked]);
+        var result = PoseLibraryFileActions.Default.Move(path, destination);
         if (result.Succeeded)
         {
             FavoritePathChanged(path, result.ResultPath);

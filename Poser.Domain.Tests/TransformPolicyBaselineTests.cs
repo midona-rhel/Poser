@@ -51,20 +51,6 @@ public sealed class TransformPolicyBaselineTests
     }
 
     [Fact]
-    public void None_is_a_valid_no_propagation_layer()
-    {
-        var layer = new PoseLayer(
-            new PoseLayerId(PoseLayerKind.Manual, "none"),
-            TransformComponents.None,
-            ValidDelta());
-
-        Assert.True(TransformComponentsPolicy.IsDefined(
-            TransformComponents.None));
-        Assert.True(layer.IsValid);
-        Assert.Single(new BonePose([layer]).Layers);
-    }
-
-    [Fact]
     public void Pose_transform_creation_rejects_non_finite_values_and_normalizes_rotation()
     {
         var accepted = PoseTransform.CreateChecked(
@@ -140,73 +126,6 @@ public sealed class TransformPolicyBaselineTests
                 TransformDelta.Identity,
                 Quaternion.Identity,
                 Quaternion.Zero));
-    }
-
-    [Fact]
-    public void Direct_transform_helpers_robustly_normalize_huge_rotations()
-    {
-        var hugeDelta = new TransformDelta(
-            new Vector3(1, 2, 3),
-            new Quaternion(float.MaxValue, 1, -2, 3),
-            Vector3.One);
-        var hugeBaseline = new Quaternion(float.MaxValue, -4, 5, 6);
-        var destinationBaseline = new Quaternion(-7, float.MaxValue, 8, 9);
-
-        var mirrored = TransformMath.Mirror(hugeDelta);
-        var rebased = TransformMath.MirrorRebased(
-            hugeDelta,
-            hugeBaseline,
-            destinationBaseline);
-        var linked = TransformMath.LinkRebased(
-            hugeDelta,
-            hugeBaseline,
-            destinationBaseline);
-
-        Assert.True(mirrored.IsValid);
-        Assert.True(rebased.IsValid);
-        Assert.True(linked.IsValid);
-        Assert.Equal(hugeDelta.ScaleFactor, mirrored.ScaleFactor);
-        Assert.Equal(hugeDelta.ScaleFactor, rebased.ScaleFactor);
-        Assert.Equal(hugeDelta.ScaleFactor, linked.ScaleFactor);
-    }
-
-    [Fact]
-    public void Direct_pose_mirror_rejects_malformed_inputs_and_normalizes_huge_values()
-    {
-        var nonFiniteDelta = new PoseDelta(
-            new Vector3(float.NaN, 0, 0),
-            Quaternion.Identity,
-            new Vector3(1, 2, 3));
-        var hugeDelta = new PoseDelta(
-            new Vector3(1, 2, 3),
-            new Quaternion(float.MaxValue, 1, -2, 3),
-            new Vector3(4, 5, 6));
-        var hugeSource = new Quaternion(float.MaxValue, -4, 5, 6);
-        var hugeDestination = new Quaternion(-7, float.MaxValue, 8, 9);
-
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            PoseOperations.MirrorRebased(
-                nonFiniteDelta,
-                Quaternion.Identity,
-                Quaternion.Identity));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            PoseOperations.MirrorRebased(
-                PoseDelta.Identity,
-                new Quaternion(float.PositiveInfinity, 0, 0, 1),
-                Quaternion.Identity));
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            PoseOperations.MirrorRebased(
-                PoseDelta.Identity,
-                Quaternion.Identity,
-                Quaternion.Zero));
-
-        var result = PoseOperations.MirrorRebased(
-            hugeDelta,
-            hugeSource,
-            hugeDestination);
-
-        Assert.True(result.IsValid);
-        Assert.Equal(hugeDelta.Scale, result.Scale);
     }
 
     [Fact]

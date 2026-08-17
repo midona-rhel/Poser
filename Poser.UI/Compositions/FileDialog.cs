@@ -200,6 +200,15 @@ public static partial class Crystarium
         /// </summary>
         public readonly List<FileSidePanel> SidePanels = new();
 
+        /// <summary>Caller content that spans the body and bottom band.</summary>
+        public FileSidePanel? PersistentRightPanel;
+
+        /// <summary>Caller actions placed before Cancel in the footer.</summary>
+        public Action<Crystarium.ActionBarScope>? FooterBeforeCancel;
+
+        /// <summary>Caller work completed before the frame is measured.</summary>
+        public Action<string?>? BeforeFrame;
+
         /// <summary>
         /// The caller's own panel UNDER the quick-access list, filling the rest
         /// of the navigation rail. Its <see cref="FileSidePanel.Width"/> is a
@@ -228,6 +237,12 @@ public static partial class Crystarium
         /// </summary>
         public float ExtraHeight;
 
+        /// <summary>Caller-specific width adjustment for this dialog.</summary>
+        public float WidthAdjustment;
+
+        /// <summary>Caller-specific height adjustment for this dialog.</summary>
+        public float HeightAdjustment;
+
         public bool IsOpen => _open;
 
         /// <summary>What the panels add to the dialog's width: the columns and
@@ -237,6 +252,8 @@ public static partial class Crystarium
             float total = 0f;
             for (int i = 0; i < SidePanels.Count; i++)
                 total += SidePanels[i].Width + 1f;
+            if (PersistentRightPanel is { } persistent)
+                total += persistent.Width + 1f;
             return total;
         }
 
@@ -271,14 +288,17 @@ public static partial class Crystarium
         public void Draw()
         {
             if (_open)
+            {
+                BeforeFrame?.Invoke(SelectedFile);
                 FloatingSurface.Window(
                     SurfaceId,
                     ref _open,
                     Crystarium.ActiveTheme.FileDialog.Width
-                        + PanelWidth() + RailExtra(),
+                        + PanelWidth() + RailExtra() + WidthAdjustment,
                     Crystarium.ActiveTheme.FileDialog.Height
-                        + ExtraHeight + BottomExtra(),
+                        + ExtraHeight + BottomExtra() + HeightAdjustment,
                     DrawFrame);
+            }
 
             if (!_open && _pendingSelect is { } chosen)
             {
@@ -341,9 +361,13 @@ public static partial class Crystarium
                     RailWidth = RailWidth(),
                     BandHeight = theme.Floating.ModalBarHeight,
                     BottomBandHeight = BottomExtra(),
+                    BottomBandRightInset = PersistentRightPanel is { } panel
+                        ? panel.Width + 1f
+                        : 0f,
                     HostPaintsChrome = hostPaintsChrome,
                     FooterRight = right =>
                     {
+                        FooterBeforeCancel?.Invoke(right);
                         right.Button(
                             "Cancel",
                             Close,
@@ -361,6 +385,7 @@ public static partial class Crystarium
             DrawQuick(rects.Rail, scale);
             DrawBody(rects.Body, scale);
             DrawBottomBand(rects.BottomBand, scale);
+            DrawPersistentRightPanel(rects.Body, rects.BottomBand, scale);
             DrawFooterFill(rects.Footer, confirmLabel, scale);
         }
 
@@ -529,14 +554,12 @@ public static partial class Crystarium
                 rail.Min, new Vector2(rail.Max.X, top - rule));
         }
 
-        /// <summary>The body slot: the explorer, the caller's own columns, and
-        /// the preview column that exists only while the provider answered.
-        /// </summary>
+        /// <summary>Draws the body left of any persistent right rail.</summary>
         private void DrawBody(WindowFrameRect body, float scale)
         {
             Theme theme = Crystarium.ActiveTheme;
             float rule = MathF.Max(1f, scale);
-            float right = body.Max.X;
+            float right = ContentRight(body.Max.X, scale);
 
             if (_preview is { } preview)
             {
@@ -569,17 +592,41 @@ public static partial class Crystarium
                 scale);
         }
 
-        /// <summary>The bottom band's content: the frame owns the band and its
-        /// opening rule, the consumer's panel owns everything inside it.
-        /// </summary>
+        /// <summary>Draws the bottom band left of any persistent right rail.</summary>
         private void DrawBottomBand(WindowFrameRect band, float scale)
         {
             if (BottomPanel is not { } panel || !(band.Size.Y > 0f))
                 return;
             float rule = MathF.Max(1f, scale);
+            float right = ContentRight(band.Max.X, scale);
             panel.Draw(
                 new Vector2(band.Min.X, band.Min.Y + rule),
-                new Vector2(band.Size.X, band.Size.Y - rule),
+                new Vector2(right - band.Min.X, band.Size.Y - rule),
+                SelectedFile);
+        }
+
+        private float ContentRight(float right, float scale) =>
+            PersistentRightPanel is { } panel
+                ? right - panel.Width * scale - MathF.Max(1f, scale)
+                : right;
+
+        private void DrawPersistentRightPanel(
+            WindowFrameRect body, WindowFrameRect bottom, float scale)
+        {
+            if (PersistentRightPanel is not { } panel)
+                return;
+
+            float rule = MathF.Max(1f, scale);
+            float left = ContentRight(body.Max.X, scale);
+            float top = body.Min.Y;
+            float bottomY = MathF.Max(body.Max.Y, bottom.Max.Y);
+            ImGui.GetWindowDrawList().AddRectFilled(
+                new Vector2(left, top),
+                new Vector2(left + rule, bottomY),
+                ImGui.ColorConvertFloat4ToU32(FormSeparatorColor));
+            panel.Draw(
+                new Vector2(left + rule, top),
+                new Vector2(body.Max.X - left - rule, bottomY - top),
                 SelectedFile);
         }
 

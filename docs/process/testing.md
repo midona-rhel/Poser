@@ -21,6 +21,9 @@
   with the real rewritten plugin using a small screenshot/video/action card;
   synthetic component catalogs and standalone capture labs are not product
   evidence.
+- Never contract-test UI visual, layout, rendering, presentation, or wiring
+  contracts; validate UI with Release compilation plus explicit live visual
+  test cards.
 - Non-deployment validation uses Release only:
   `dotnet build Poser.slnx -c Release --no-restore --nologo` and
   `dotnet test Poser.slnx -c Release --no-restore --nologo`.

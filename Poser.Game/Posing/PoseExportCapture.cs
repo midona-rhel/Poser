@@ -8,47 +8,14 @@ using Poser.Services;
 namespace Poser.Game.Posing;
 
 /// <summary>
-/// Refreshes the raw transform caches an export reads BEFORE writing the file,
-/// on the same transitive-action lifecycle as <see cref="PoseImportCapture"/>
-/// and <see cref="IkBakeCapture"/>.
-///
-/// The bug this exists for: <c>PoseFileService.CreatePoseFile</c>
-/// (PoseFileService.cs:74) snapshots <c>bone.LastRawTransform</c>, but the
-/// update-phase apply pass that refreshes that cache
-/// (BonePosingService.ApplyAllBoneTransforms) only visits skeletons the
-/// per-frame rebuild qualified — ones holding stacks, armed IK chains, or a
-/// registered batch. A never-posed actor qualifies for none of those, so its
-/// raw cache still holds the ONE value written at skeleton build time
-/// (Skeleton.cs:352 UpdateBoneTransforms) and the exported file is that
-/// build-time snapshot rather than the pose on screen. Brio has no such gate:
-/// it refreshes every capability-bearing skeleton's caches every frame from
-/// the update pass (Brio SkeletonService.cs:206-243), so its export is always
-/// current. This restores that parity per export instead of per frame.
-///
-/// The mechanism is a registration, not a write. Registering a NO-OP
-/// transitive action materializes the pose store, re-qualifies the skeleton on
-/// the next rebuild, and — because the pass's <c>actions == null</c> per-bone
-/// skip is disabled for a skeleton holding a batch — forces the next pass to
-/// visit EVERY bone and refresh both caches from the update phase. The update
-/// phase is the only phase allowed to write the raw cache: the draw-phase
-/// refresh (FinalizeSkeletonsDetour → UpdateSkeletonCache) deliberately writes
-/// <c>LastTransform</c> alone, because by draw time render-phase plugins
-/// (Customize+) have multiplied their own changes into the model pose
-/// (invariant established in df111c8). Waiting for that pass is therefore the
-/// only way to hand <c>CreatePoseFile</c> a current absolute.
-///
-/// Unlike the import, a refresh that never happens is not a failure. The pass
-/// can legitimately never run — gpose ended between the click and the tick,
-/// the actor was despawned — and in that case the export writes the caches as
-/// they stand, which is exactly today's behaviour. The file always lands; the
-/// wait only ever makes its contents fresher.
+/// Requests a transitive-action pass to refresh raw transform caches before an
+/// export writes them. The refresh is best effort: if no pass runs before the
+/// timeout, the export still writes the current caches. File and clipboard
+/// exports use the same lifecycle.
 /// </summary>
 public sealed class PoseExportCapture : IDisposable
 {
-    /// <summary>Framework ticks a registered batch is given to reach a pass
-    /// before the export writes anyway — same guard as
-    /// <see cref="PoseImportCapture"/>: a skeleton that stops updating must
-    /// not leave the export pending forever.</summary>
+    /// <summary>Maximum ticks to wait before writing current caches.</summary>
     private const int CompletionTimeoutTicks = 60;
 
     private readonly IFramework _framework;
@@ -56,8 +23,7 @@ public sealed class PoseExportCapture : IDisposable
     private readonly IPoseFileService _poseFiles;
     private readonly IPluginLog _log;
 
-    /// <summary>One slot skeleton's share of an export: nothing to write, only
-    /// the batch outcome that says whether a pass actually refreshed it.</summary>
+    /// <summary>Tracks whether one slot's refresh batch completed.</summary>
     private sealed class SlotExport
     {
         public required ISkeleton Skeleton;
@@ -68,20 +34,12 @@ public sealed class PoseExportCapture : IDisposable
     private sealed class Export
     {
         public required long Generation;
-        /// <summary>What the refreshed skeletons are turned into once the pass
-        /// has run — the file write, or a caller's own sink (the clipboard
-        /// copy). Returns whether it succeeded, which is what
-        /// <see cref="OnFinished"/> carries.</summary>
+        /// <summary>Writes the refreshed skeletons and returns success.</summary>
         public required Func<IReadOnlyList<ISkeleton>, bool> Write;
-        /// <summary>The slots handed to <c>ExportPose</c> verbatim — the
-        /// export's scope is whatever the caller resolved, the refresh just
-        /// covers all of it.</summary>
+        /// <summary>The skeletons included in this export.</summary>
         public required IReadOnlyList<ISkeleton> Skeletons;
         public required List<SlotExport> Slots;
-        /// <summary>Fires exactly once, when an export that <see cref="Begin"/>
-        /// returned Ok for finishes, with the file write's own result. A Begin
-        /// that returned Fail never fires it; a pending export dropped by
-        /// Dispose does not either.</summary>
+        /// <summary>Receives the write result when the export completes.</summary>
         public Action<bool>? OnFinished;
         public bool Completing;
     }
@@ -102,29 +60,17 @@ public sealed class PoseExportCapture : IDisposable
         _posing.TransitiveActionsEnded += OnTransitiveActionsEnded;
     }
 
-    /// <summary>Whether an export is armed and has not finished: true from
-    /// registration until the file write has been attempted.</summary>
+    /// <summary>Whether an export is waiting to complete.</summary>
     public bool IsPending => _pending != null;
 
-    /// <summary>
-    /// Arms one export: register the refresh batch on every slot now, write
-    /// the file once the pass that consumed it has ended. Ok means the export
-    /// is armed — the file lands a few ticks later and
-    /// <paramref name="onFinished"/> carries the actual write result.
-    /// </summary>
+    /// <summary>Arms a file export and reports its eventual write result.</summary>
     public GestureResult Begin(
         IReadOnlyList<ISkeleton> slots,
         string path,
         Action<bool>? onFinished = null) =>
         Begin(slots, skeletons => _poseFiles.ExportPose(skeletons, path), onFinished);
 
-    /// <summary>
-    /// The same arming for a destination that is not a file: the refresh runs
-    /// exactly as it does for a file export — a never-posed actor's raw caches
-    /// are stale until the update pass visits them, and a clipboard copy reads
-    /// the very same caches — and <paramref name="write"/> runs once the pass
-    /// has ended.
-    /// </summary>
+    /// <summary>Arms an export using the supplied write callback.</summary>
     public GestureResult Begin(
         IReadOnlyList<ISkeleton> slots,
         Func<IReadOnlyList<ISkeleton>, bool> write,
@@ -151,13 +97,7 @@ public sealed class PoseExportCapture : IDisposable
         _pending = export;
         foreach (var slot in export.Slots)
         {
-            // The action body is deliberately empty: the REGISTRATION is the
-            // work. It puts the skeleton back into the update-phase pass and
-            // disables that pass's per-bone skip, so every bone's
-            // LastRawTransform is refreshed from the only phase allowed to
-            // write it — which is precisely the value CreatePoseFile
-            // snapshots. See the class remarks for the df111c8 invariant and
-            // the Brio no-gate parity (SkeletonService.cs:206-243).
+            // Registration requests the pass; the action itself has no work.
             _posing.RegisterTransitiveAction(slot.Skeleton, static (_, _) => { });
         }
 
@@ -167,9 +107,7 @@ public sealed class PoseExportCapture : IDisposable
         return GestureResult.Ok();
     }
 
-    /// <summary>Raised from the native hooks when the interval that owned a
-    /// batch ends. Records only — the write itself needs the framework
-    /// thread.</summary>
+    /// <summary>Records a completed refresh batch; completion runs on the framework thread.</summary>
     private void OnTransitiveActionsEnded(TransitiveActionOutcome outcome)
     {
         if (_pending is not { } export)
@@ -193,10 +131,7 @@ public sealed class PoseExportCapture : IDisposable
         _framework.RunOnTick(() => Complete(export.Generation));
     }
 
-    /// <summary>The refresh never reached a pass within the window. Unlike the
-    /// import's timeout this is not a failure — the export proceeds against
-    /// the caches as they are, which is exactly the pre-refresh behaviour.
-    /// </summary>
+    /// <summary>Completes the export when the refresh window expires.</summary>
     private void OnTimeout(long generation)
     {
         if (_pending is not { } export || export.Generation != generation)
@@ -240,9 +175,7 @@ public sealed class PoseExportCapture : IDisposable
         }
     }
 
-    /// <summary>A pending export never outlives the session: its registered
-    /// batch dies with the posing interval and the write it was waiting for is
-    /// dropped along with it.</summary>
+    /// <summary>Stops listening for refresh completion and drops pending work.</summary>
     public void Dispose()
     {
         _posing.TransitiveActionsEnded -= OnTransitiveActionsEnded;
