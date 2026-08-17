@@ -70,41 +70,19 @@ public sealed class AnimationSession
 
     // ── Base and blend ────────────────────────────────────────────────
 
-    /// <summary>Plays and persistently loops the actor's main timeline.</summary>
+    /// <summary>Plays and persistently loops the idle timeline.</summary>
     public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked)
             return blocked;
+        if (timeline != AnimationTimelines.Idle)
+            return Blend(actor, timeline);
         if (!_port.SupportsForceLoop)
             return AnimationResult.Fail("Persistent animation looping is unavailable.");
 
-        var current = OverridesFor(actor);
-        var capture = current.BaseCapture ?? _port.CaptureBase(actor);
-        if (capture is not { } taken)
-            return AnimationResult.Fail("The actor is no longer available.");
-
-        // A main replacement leaves explicit layer loops unchanged.
-        _port.ClearSlotLoop(actor, AnimationSlot.Base);
-        Mutate(actor, o =>
-        {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            loops.Remove(AnimationSlot.Base);
-            return o with
-            {
-                LoopedSlots = loops,
-                BaseCapture = o.BaseCapture ?? taken,
-            };
-        });
-
-        // Keep the capture when playback or the loop write fails.
-        var cleared = _port.SetForceLoop(actor, 0);
-        if (!cleared.Success)
-            return AnimationResult.Fail(
-                cleared.Detail ?? "The previous animation could not be released.");
-
-        var result = _port.Blend(actor, timeline, taken, out _);
+        var result = Blend(actor, timeline);
         if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Animation failed.");
+            return result;
 
         var forced = _port.SetForceLoop(actor, timeline);
         if (!forced.Success)
@@ -180,7 +158,7 @@ public sealed class AnimationSession
         var result = _port.RestoreBase(actor, capture);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Base restore failed.");
-        // Keep the capture when restore fails so Reset can retry.
+        // Clear the restored capture.
         Mutate(actor, o => o with { BaseTimeline = null, BaseCapture = null });
         return AnimationResult.Ok();
     }
@@ -190,7 +168,7 @@ public sealed class AnimationSession
         ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
     {
         var timeline = (ushort)entry.TimelineId;
-        if (asBase)
+        if (asBase && timeline == AnimationTimelines.Idle)
             return PlayBase(actor, timeline);
         if (playFromStart && entry.CanPlayFromStart)
         {
@@ -233,6 +211,8 @@ public sealed class AnimationSession
     /// <summary>Writes the persistent main-animation loop value.</summary>
     public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
     {
+        if (timeline != AnimationTimelines.Idle)
+            return AnimationResult.Fail("Only the standard idle can persist.");
         var result = _port.SetForceLoop(actor, timeline);
         return result.Success
             ? AnimationResult.Ok()

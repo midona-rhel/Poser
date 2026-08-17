@@ -54,7 +54,7 @@ public interface IAnimationRuntimePort
     /// <summary>True when stance-transition functions are available.</summary>
     bool SupportsStance { get; }
 
-    /// <summary>Sets the persistent timeline id; zero clears it.</summary>
+    /// <summary>Sets the persistent standard idle timeline.</summary>
     AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);
 
     // ── Speed ─────────────────────────────────────────────────────────

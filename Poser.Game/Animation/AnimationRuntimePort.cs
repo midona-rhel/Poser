@@ -449,6 +449,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// <summary>Applies the timeline mode and starts the selected timeline.</summary>
     private bool PlayWithMode(Character* character, ushort timeline)
     {
+        WriteForcedTimeline(&character->Timeline, 0);
         bool pause = _timelineSheet?.GetRowOrDefault(timeline)?.Pause ?? false;
         if (pause)
         {
@@ -515,6 +516,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// <summary>Writes the persistent timeline.</summary>
     public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
     {
+        if (timeline != AnimationTimelines.Idle)
+            return AnimationPortResult.Fail("Only the standard idle can persist.");
         if (_setTimelineId == null)
             return AnimationPortResult.Fail("Persistent animation looping is unavailable.");
         var character = Resolve(actor, out var detail);
@@ -531,6 +534,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// <summary>Plays an emote through the emote entry point.</summary>
     private bool PlayEmoteNative(Character* character, uint emoteId)
     {
+        WriteForcedTimeline(&character->Timeline, 0);
         if (_playEmote == null)
         {
             PlayTimelineNative(character, AnimationTimelines.Idle);

@@ -48,6 +48,72 @@ public sealed class AnimationOwnershipTests
         Assert.Equal(.5f, playing.OverridesFor(ActorA).OverallSpeed);
         Assert.DoesNotContain("ClearOverallSpeed", playingPort.Calls);
     }
+
+    [Fact]
+    public void Idle_pick_keeps_replacing_the_main_timeline()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        var idle = new TimelineEntry(
+            AnimationTimelines.Idle, "Idle", AnimationKind.RawTimeline, AnimationSlot.Base);
+
+        Assert.True(session.PlayEntry(ActorA, idle, asBase: true, playFromStart: true).Success);
+        Assert.Equal(AnimationTimelines.Idle, port.CurrentTimeline);
+        Assert.Equal(AnimationTimelines.Idle, port.ForcedTimeline);
+        port.SetCurrentTimeline(42);
+        port.AdvanceFrame();
+        Assert.Equal(AnimationTimelines.Idle, port.CurrentTimeline);
+        Assert.Contains($"SetForceLoop:{AnimationTimelines.Idle}", port.Calls);
+    }
+
+    [Fact]
+    public void Non_idle_main_pick_returns_after_one_playback()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        var entry = new TimelineEntry(
+            42, "One shot", AnimationKind.RawTimeline, AnimationSlot.Base);
+
+        Assert.True(session.PlayEntry(ActorA, entry, asBase: true, playFromStart: true).Success);
+        Assert.Equal((ushort)42, port.CurrentTimeline);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
+        port.AdvanceFrame();
+        Assert.Equal(AnimationTimelines.Idle, port.CurrentTimeline);
+    }
+
+    [Fact]
+    public void Main_pick_refuses_when_persistent_looping_is_unavailable()
+    {
+        var port = FakePort.Create();
+        port.SupportsForceLoop = false;
+        var session = new AnimationSession(port.Port);
+
+        var result = session.PlayBase(ActorA, AnimationTimelines.Idle);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain("CaptureBase", port.Calls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop:"));
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend:"));
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("ClearSlotLoop:"));
+        Assert.Empty(port.Calls);
+        Assert.False(session.OverridesFor(ActorA).HasAny);
+        Assert.Empty(session.OwnedActors);
+    }
+
+    [Fact]
+    public void Persistent_loop_rejects_a_non_idle_timeline()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        var result = session.SetForceLoop(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.Empty(port.Calls);
+        Assert.False(session.OverridesFor(ActorA).HasAny);
+        Assert.Empty(session.OwnedActors);
+    }
+
 private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
@@ -64,6 +130,16 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
         public bool Frozen { get; private set; }
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
+        public ushort ForcedTimeline { get; private set; } = 77;
+        public ushort CurrentTimeline { get; private set; } = 77;
+        public bool SupportsForceLoop { get; set; } = true;
+
+        public void AdvanceFrame() =>
+            CurrentTimeline = ForcedTimeline == 0
+                ? AnimationTimelines.Idle
+                : ForcedTimeline;
+
+        public void SetCurrentTimeline(ushort timeline) => CurrentTimeline = timeline;
 
         public static FakePort Create()
         {
@@ -90,6 +166,8 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                 }
                 case "IsSupported":
                     return true;
+                case "get_SupportsForceLoop":
+                    return SupportsForceLoop;
                 case "ClearOverallSpeed":
                     Calls.Add("ClearOverallSpeed");
                     return FailClearSpeed
@@ -97,7 +175,21 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                         : AnimationPortResult.Ok();
                 case "Blend":
                     Calls.Add($"Blend:{args![1]}");
-                    args[3] = null;
+                    args[3] ??= new BaseAnimationCapture(
+                        1, 2, 3, CurrentTimeline, ForcedTimeline);
+                    ForcedTimeline = 0;
+                    CurrentTimeline = (ushort)args[1]!;
+                    return AnimationPortResult.Ok();
+                case "CaptureBase":
+                    Calls.Add("CaptureBase");
+                    return new BaseAnimationCapture(
+                        1, 2, 3, CurrentTimeline, ForcedTimeline);
+                case "SetForceLoop":
+                    ForcedTimeline = (ushort)args![1]!;
+                    Calls.Add($"SetForceLoop:{ForcedTimeline}");
+                    return AnimationPortResult.Ok();
+                case "ClearSlotLoop":
+                    Calls.Add($"ClearSlotLoop:{args![1]}");
                     return AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
