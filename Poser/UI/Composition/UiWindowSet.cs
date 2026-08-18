@@ -6,11 +6,6 @@ using System.Collections.Generic;
 
 namespace Poser.UI.Composition;
 
-/// <summary>
-/// Owns draw order for the focused posing workspace, settings, the spawn
-/// browser, the split-shell part windows, and the two viewport interaction
-/// canvases.
-/// </summary>
 public sealed class UiWindowSet : IDisposable
 {
     public WindowSystem System { get; } = new(PluginConstants.PluginName);
@@ -25,18 +20,16 @@ public sealed class UiWindowSet : IDisposable
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
     private readonly IServiceProvider _services;
+    // Requested state can wait for bounded icon warming.
+    private bool _primaryOpenRequested;
 
-    /// <summary>The living pop-outs, plus the ones dismissed mid-draw that
-    /// still await removal — a window cannot leave the window system while
-    /// the system is iterating it.</summary>
+    public bool IsPrimaryOpen => _primaryOpenRequested;
+
     private readonly List<PopOutWindow> _popOuts = new();
     private readonly List<PopOutWindow> _dismissedPopOuts = new();
 
     private readonly ReferenceImageSession _referenceImages;
 
-    /// <summary>One window per reference picture, plus the ones closed
-    /// mid-draw that still await removal — the same deferral the pop-outs
-    /// need, for the same reason.</summary>
     private readonly List<ReferenceImageWindow> _referenceWindows = new();
     private readonly List<ReferenceImageWindow> _dismissedReference = new();
 
@@ -60,7 +53,6 @@ public sealed class UiWindowSet : IDisposable
         _worldAdoption = worldAdoption;
         _configService = configService;
         _services = services;
-        // Draw order is intentional: overlays first, normal windows after them.
         SkeletonOverlay = skeletonOverlay;
         System.AddWindow(SkeletonOverlay);
 
@@ -70,8 +62,6 @@ public sealed class UiWindowSet : IDisposable
         Main = main;
         System.AddWindow(Main);
 
-        // The split parts draw MainWindow's per-frame view model, so they are
-        // registered — and therefore drawn — after it.
         SidebarPart = new SidebarPartWindow(main);
         System.AddWindow(SidebarPart);
         ToolbarPart = new ToolbarPartWindow(main);
@@ -79,7 +69,6 @@ public sealed class UiWindowSet : IDisposable
         SidebarPart.OnReattach += ToggleDetached;
         ToolbarPart.OnReattach += ToggleDetached;
         Main.OnDetachToggleRequested += ToggleDetached;
-        // The strip's window roster: Scene closes and reopens from there.
         Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
         Main.OnSceneWindowToggleRequested += ToggleSceneWindow;
 
@@ -91,23 +80,32 @@ public sealed class UiWindowSet : IDisposable
 
         Main.OnPopOutRequested += CreatePopOut;
 
-        // Split flags change through ApplyChange (the burger menu, the
-        // settings page), and this is the one sync point that turns them
-        // into open part windows.
         _configService.OnConfigurationChanged += SyncSplitWindows;
 
-        // Loading mid-GPose obeys the same rule as entering it: the workspace
-        // only appears when the user asked for it to.
         SetPrimaryOpen(
             gPoseService.IsGPosing && configService.Config.OpenOnGPoseEnter);
     }
 
     public void SetPrimaryOpen(bool isOpen)
     {
-        // The stored roster is rebuilt the first time the workspace is up —
-        // Ktisis rebuilds its own at scene setup. Restoring here rather than
-        // at construction keeps a refusal for a picture whose file has gone
-        // from firing before there is a session to see it in.
+        _primaryOpenRequested = isOpen;
+        if (isOpen)
+            return;
+        ApplyPrimaryOpen(isOpen);
+    }
+
+    public void AdvancePrimaryOpen(bool previewBackingReady)
+    {
+        if (_primaryOpenRequested
+            && !Main.IsOpen
+            && Crystarium.StartupIconsReady
+            && previewBackingReady)
+            ApplyPrimaryOpen(true);
+    }
+
+    // Standalone windows remain independent of primary readiness.
+    private void ApplyPrimaryOpen(bool isOpen)
+    {
         if (isOpen)
             _referenceImages.Restore();
         foreach (var window in _referenceWindows)
@@ -115,28 +113,16 @@ public sealed class UiWindowSet : IDisposable
                 isOpen && !ReferenceImageSession.IsHidden(window.Image);
         Main.IsOpen = isOpen;
         GizmoOverlay.IsOpen = isOpen;
-        // The window itself follows the session like the gizmo overlay, and a
-        // bone selection forces the armature visible regardless of the toggle.
         SkeletonOverlay.IsOpen = isOpen;
-        // The master switch starts ON for each session — Ktisis ships
-        // Overlay.Visible = true — so the sidebar's eyes drive the armature
-        // exactly as they always have and the switch is the way to take the
-        // whole thing away. Session end puts it back where it started.
         SkeletonOverlay.UserVisible = isOpen;
         if (!isOpen)
         {
             _overlayPresentation.Clear();
-            // The adoption layer is session state for the same reason the
-            // Armature toggle is: the next session starts with the world
-            // unmarked.
             _worldAdoption.EndSession();
         }
         SyncSplitWindows();
     }
 
-    /// <summary>A part window is open exactly while detached mode is on and
-    /// the workspace itself is up — parts are pieces of the main window, not
-    /// windows of their own standing.</summary>
     private void SyncSplitWindows()
     {
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
@@ -146,15 +132,9 @@ public sealed class UiWindowSet : IDisposable
             Main.ContentHidden = false;
     }
 
-    /// <summary>Public for the keybind: the strip's roster button and the
-    /// chord are the same act, so they go through the same call.</summary>
     public void ToggleSceneWindow() =>
         SidebarPart.IsOpen = !SidebarPart.IsOpen;
 
-    /// <summary>THE layout toggle. Detaching seats the sidebar window where
-    /// the sidebar column stood and the toolbar strip above the old
-    /// titlebar; the main window sheds the column in the same frame, so the
-    /// content and the inspector never move. Merging reverses it.</summary>
     private void ToggleDetached()
     {
         var ui = _configService.Config.UI;
@@ -182,21 +162,14 @@ public sealed class UiWindowSet : IDisposable
         _configService.ApplyChange();
     }
 
-    /// <summary>Every surface down, settings included. Only the
-    /// Close-with-GPose path wants this; manual toggles do not.</summary>
     public void CloseAll()
     {
         SetPrimaryOpen(false);
         Settings.IsOpen = false;
-        // Closing dismisses them (their OnClose), and the removal itself
-        // waits out the draw pass.
         foreach (var popOut in _popOuts.ToArray())
             popOut.IsOpen = false;
     }
 
-    /// <summary>Mints the frozen content window for one actor. Windows the
-    /// user dismissed earlier leave the system here, outside its draw pass.
-    /// </summary>
     private void CreatePopOut(Domain.Identity.ActorId actor)
     {
         FlushDismissed();
@@ -216,20 +189,9 @@ public sealed class UiWindowSet : IDisposable
         _dismissedPopOuts.Clear();
     }
 
-    /// <summary>
-    /// One frame of reference-image housekeeping, run AFTER the window system
-    /// has drawn: a picture closed from its own title bar leaves the system
-    /// here, outside the draw pass, and the add dialog is pumped from the UI
-    /// root rather than from a window — the surface that opens it (the spawn
-    /// browser) closes on focus loss, and a dialog pumped from a closed window
-    /// is a dead dialog.
-    /// </summary>
     public void PumpReferenceImages()
     {
         FlushDismissedReference();
-        // The session owns "set aside", so the windows follow it here rather
-        // than the sidebar reaching across to a window it does not own. One
-        // read per picture per frame, against a bool the row already restates.
         if (Main.IsOpen)
             foreach (var window in _referenceWindows)
                 window.IsOpen = !ReferenceImageSession.IsHidden(window.Image);
@@ -242,9 +204,6 @@ public sealed class UiWindowSet : IDisposable
         FlushDismissedReference();
         var window = new ReferenceImageWindow(_referenceImages, image)
         {
-            // A picture added while the workspace is up appears at once; one
-            // restored before it opens waits for SetPrimaryOpen. A picture the
-            // sidebar eye had set aside stays aside through both.
             IsOpen = Main.IsOpen && !ReferenceImageSession.IsHidden(image),
         };
         _referenceWindows.Add(window);

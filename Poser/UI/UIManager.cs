@@ -16,10 +16,6 @@ using System.Linq;
 
 namespace Poser.UI;
 
-/// <summary>
-/// Coordinates the lifetime of Poser's presentation surfaces. Window
-/// construction and ownership belong to <see cref="UiWindowSet"/>.
-/// </summary>
 public sealed class UIManager : IUIManager
 {
     private readonly IDalamudPluginInterface _pluginInterface;
@@ -64,12 +60,6 @@ public sealed class UIManager : IUIManager
         _scene = scene;
         _sceneActions = sceneActions;
 
-        // Bound ONCE, in registry order: the delegates and their parsed
-        // chords are the whole per-frame keybind state, so a frame that fires
-        // nothing allocates nothing. Every registered action is bound here —
-        // the registry is the list, and an id it names with no handler is a
-        // build-time hole, which is why the lookup throws rather than
-        // skipping.
         _keybinds = BuildKeybinds();
 
         _windows.Main.OnSettingsRequested += ToggleSettingsWindow;
@@ -94,8 +84,6 @@ public sealed class UIManager : IUIManager
         }
         else if (config.CloseWithGPose)
         {
-            // The setting promises "hide ALL Poser windows", and settings is
-            // the one surface SetPrimaryOpen does not own.
             _windows.CloseAll();
         }
     }
@@ -105,26 +93,20 @@ public sealed class UIManager : IUIManager
         if (!Crystarium.AdvanceTheme())
             return;
 
+        // Cache warming runs before primary windows can draw.
+        Crystarium.PumpStartupIcons(_configService.Config.Library.IconSize);
+        bool previewBackingReady = !_windows.IsPrimaryOpen
+            || _poseFileSection.PrewarmPreviewBacking();
+        _windows.AdvancePrimaryOpen(previewBackingReady);
         Interactive.BeginFrame();
         _windows.System.Draw();
-        // Outside the window system's draw pass: a reference picture closed
-        // from its own bar leaves the system here, and the dialog that adds
-        // one belongs to no window.
         _windows.PumpReferenceImages();
         Crystarium.FloatingMenu.EndFrame();
-        // The one hover-help card renders after every window has drawn,
-        // so registrations from any pane are complete and the card sits
-        // on the foreground list above all of them.
         Crystarium.HoverHelp.Render();
         Interactive.EndFrame();
         HandleKeybinds();
     }
 
-    /// <summary>
-    /// The delegate behind every registered action. Each one is a call the UI
-    /// already makes from a button, a menu row or a strip — a chord binds an
-    /// existing command, it never becomes the only way to reach one.
-    /// </summary>
     private Keybind[] BuildKeybinds()
     {
         var handlers = new Dictionary<string, Action>(StringComparer.Ordinal)
@@ -139,10 +121,6 @@ public sealed class UIManager : IUIManager
                 if (_cleanTransforms.CanRedo)
                     _cleanTransforms.Redo();
             },
-            // What Escape means now that the workspace no longer closes on it:
-            // both references answer Escape with a deselect (Brio's Posing_Esc,
-            // Ktisis's Select_None), and a clear on an empty selection is a
-            // no-op, so the chord needs no gate of its own.
             ["Deselect"] = () => _scene.Selection.Clear(),
             ["Translate mode"] =
                 () => _editorState.TransformTool = TransformTool.Move,
@@ -212,9 +190,6 @@ public sealed class UIManager : IUIManager
         return binds;
     }
 
-    /// <summary>Steps the live camera, wrapping. The list is default-first
-    /// then creation order, so stepping it is stepping the camera rail the
-    /// user already reads.</summary>
     private void CycleCamera(int delta)
     {
         var cameras = _cameras.Cameras;
@@ -235,15 +210,8 @@ public sealed class UIManager : IUIManager
         _cameras.SetLive(cameras[next]);
     }
 
-    /// <summary>
-    /// Settings-configured keybinds. They are edge-triggered, GPose-only, and
-    /// suppressed while an ImGui text field owns the keyboard.
-    /// </summary>
     private void HandleKeybinds()
     {
-        // The acceptance gate blocks every ImGui path into the workspace;
-        // chords are the one workspace input that does not travel through
-        // ImGui, so they are gated here rather than by the modal.
         if (Views.FirstRunNoticeView.Pending
             || !_gPoseService.IsGPosing
             || ImGui.GetIO().WantTextInput)
@@ -255,10 +223,6 @@ public sealed class UIManager : IUIManager
 
         foreach (var bind in _keybinds)
         {
-            // The SAME resolver the hover badges display, so a shown chord
-            // always matches one that fires. The resolver hands back the
-            // stored strings, so unchanged bindings compare equal and neither
-            // chord is re-parsed.
             var slots = PoserKeybinds.Slots(bind.Name);
             bind.Sync(slots);
 
@@ -288,15 +252,6 @@ public sealed class UIManager : IUIManager
         return _keyState[chord.Key];
     }
 
-    /// <summary>
-    /// One configured keybind: the action id the resolver and the hover
-    /// badges key on, the delegate it runs, and its TWO chords parsed —
-    /// string work happens only when the configured text actually changes.
-    ///
-    /// <para>The edge is the action's, not the slot's: both chords are the
-    /// same command, so holding one while tapping the other must not fire
-    /// twice.</para>
-    /// </summary>
     private sealed class Keybind(string name, Action run)
     {
         public string Name { get; } = name;
@@ -307,7 +262,6 @@ public sealed class UIManager : IUIManager
         private string _primaryText = string.Empty;
         private string _secondaryText = string.Empty;
 
-        /// <summary>Edge state: the action was down on the previous frame.</summary>
         public bool Down { get; set; }
 
         public void Sync(KeybindSlots slots)
@@ -340,39 +294,18 @@ public sealed class UIManager : IUIManager
         _hiddenWindows = null;
     }
 
-    /// <summary>
-    /// The workspace and everything that belongs to a session go up and down
-    /// TOGETHER, which is what <see cref="UiWindowSet.SetPrimaryOpen"/> is
-    /// for. Flipping <c>Main.IsOpen</c> here directly opened the shell and
-    /// nothing else: the skeleton overlay's flag is written in exactly one
-    /// place, so a workspace opened from the command, the launcher entry or
-    /// the chord came up with no bone dots, no gizmo and no world-adoption
-    /// handles at all — the sidebar could mark a world class and nothing in
-    /// the viewport could answer, because the window that draws the answers
-    /// was never opened (user 2026-08-15).
-    /// </summary>
     public void ToggleMainWindow()
-        => _windows.SetPrimaryOpen(!_windows.Main.IsOpen);
+        => _windows.SetPrimaryOpen(!_windows.IsPrimaryOpen);
 
     private void ToggleSettingsWindow()
         => _windows.Settings.IsOpen = !_windows.Settings.IsOpen;
 
-    // Open-or-move, never toggle: the unpinned browser already closes on
-    // focus loss, so a plus click while it is open MOVES it to that plus
-    // (and its tab) instead of silently swallowing the click.
     private void OpenSpawnBrowserAt(
         System.Numerics.Vector2 anchor, Views.SpawnBrowserTab tab)
         => _windows.SpawnBrowser.OpenAt(anchor, tab);
 
-    // Open, not toggle: "Library…" and a redirected "Import…" are openers, so
-    // a second press must not close a library the user is already looking at.
-    // The library is workspace content, so the shell has to be showing for it
-    // to be reachable at all.
     private void OpenPoseLibrary()
     {
-        // Through the same seat as every other opener, for the same reason:
-        // the library is workspace content, and a workspace raised without
-        // its session windows is a shell with a dead viewport.
         _windows.SetPrimaryOpen(true);
         _windows.Main.ShowLibrary();
     }
@@ -385,15 +318,6 @@ public sealed class UIManager : IUIManager
         ApplyUiHidePolicy();
     }
 
-    /// <summary>
-    /// The four Dalamud hide flags Poser gets a say in, restated from config
-    /// whenever it changes. Dalamud states them as DISABLE-the-hide, so each
-    /// one is the negation of the setting the user reads: "Show in GPose" ON
-    /// means the GPose hide is disabled. The automatic hide (cutscene, duty)
-    /// and the user's own Scroll Lock hide are one decision here — a
-    /// photographer hiding the HUD wants the same answer either way, and
-    /// splitting them would be two rows nobody could tell apart.
-    /// </summary>
     private void ApplyUiHidePolicy()
     {
         var ui = _configService.Config.UI;
