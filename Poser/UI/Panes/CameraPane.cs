@@ -463,9 +463,7 @@ public sealed class CameraPane
         var choices = new List<(ActorId Id, string Name)>();
         var labels = new List<string> { "None" };
         int selected = 0;
-        var followedId = camera.TargetActor is { } followed
-            ? _bindings.GetActorId(followed)
-            : null;
+        var followedId = camera.TargetActorId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
             string name = ActorName(actor);
@@ -755,16 +753,11 @@ public sealed class CameraPane
 
     private void Recenter(IVirtualCamera camera)
     {
-        if (camera.TargetActor is { } followed)
+        if (camera.TargetActorId is { } followedId)
         {
-            if (_bindings.GetActorId(followed) is not { } exactId)
-            {
-                _notices.Refused("Center: the followed actor is no longer available.");
-                return;
-            }
-            var resolved = _bindings.Resolve(exactId);
+            var resolved = _bindings.Resolve(followedId);
             if (!resolved.Success || resolved.Value is not { } liveFollowed ||
-                _bindings.GetActorId(liveFollowed) != exactId)
+                _bindings.GetActorId(liveFollowed) != followedId)
             {
                 _notices.Refused("Center: the followed actor is no longer available.");
                 return;
@@ -847,7 +840,11 @@ public sealed class CameraPane
             return;
         }
         if (!_cameras.SetTargetActor(camera, actor, displayName))
+        {
             _notices.Failed("Follow: the actor is not drawn yet.");
+            return;
+        }
+        camera.TargetActorId = actorId;
     }
 
     /// <summary>Ktisis's "track selection" button: the tracked set becomes

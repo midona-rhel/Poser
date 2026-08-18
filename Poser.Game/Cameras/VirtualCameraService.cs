@@ -293,6 +293,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             TargetOffset = original.TargetOffset,
             TargetActorName = original.TargetActorName,
             TargetActor = original.TargetActor,
+            TargetActorId = original.TargetActorId,
             DisableCollision = original.DisableCollision,
             Position = original.Position,
             SpawnPosition = original.SpawnPosition,
@@ -396,6 +397,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetOffset = drawPosition - objectPosition;
         target.TargetActorName = displayName;
         target.TargetActor = actor;
+        // The UI supplies the exact stable ActorId immediately after this
+        // native validation; this pointer alone is not safe identity.
+        target.TargetActorId = null;
         return true;
     }
 
@@ -406,6 +410,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetOffset = Vector3.Zero;
         target.TargetActorName = string.Empty;
         target.TargetActor = null;
+        target.TargetActorId = null;
     }
 
     /// <summary>Centers the current live orbit camera on the actor's drawn

@@ -4,6 +4,8 @@ using System.Reflection;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
+using Poser.Domain.Identity;
+using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.WorldObjects;
@@ -370,6 +372,7 @@ public sealed class SceneLifecycleHistoryTests
         public Vector3 TargetOffset { get; set; }
         public string TargetActorName { get; set; } = string.Empty;
         public IActor? TargetActor { get; set; }
+        public ActorId? TargetActorId { get; set; }
         public Vector3 WorldPosition => Vector3.Zero;
         public bool DisableCollision { get; set; }
         public bool DelimitCamera { get; set; }

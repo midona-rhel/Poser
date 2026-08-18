@@ -696,9 +696,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         var target = camera as IVirtualCamera ?? DefaultCamera;
         if (target is null)
             return "The session has no default camera.";
-        return _cameras.SetTargetActor(target, (IActor)targetActor, displayName)
-            ? null
-            : "The target actor has no draw object.";
+        if (!_cameras.SetTargetActor(target, (IActor)targetActor, displayName))
+            return "The target actor has no draw object.";
+        target.TargetActorId = _bindings.GetActorId((IActor)targetActor);
+        return null;
     }
 
     public string? SetLiveCamera(object? camera)

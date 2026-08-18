@@ -155,10 +155,11 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public string TargetActorName { get; set; } = string.Empty;
 
-    /// <summary>The exact actor the last target select followed; cleared with
-    /// the target. Entity reference like the light attach — scene capture
-    /// revalidates it against the live actor list before persisting.</summary>
+    /// <summary>The native reference retained for per-frame follow updates.
+    /// Recenter uses <see cref="TargetActorId"/>, never this pointer.</summary>
     public IActor? TargetActor { get; internal set; }
+
+    public ActorId? TargetActorId { get; set; }
 
     public Vector3 WorldPosition
     {
@@ -325,6 +326,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         TargetOffset = Vector3.Zero;
         TargetActorName = string.Empty;
         TargetActor = null;
+        TargetActorId = null;
         DisableCollision = false;
         DelimitCamera = false;
         IsPortraitMode = false;

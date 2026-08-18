@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
 namespace Poser.Entities;
@@ -71,7 +72,7 @@ public interface IVirtualCamera
 
     /// <summary>The exact actor generation followed by this camera. The name
     /// is presentation only and must never recover this identity.</summary>
-    IActor? TargetActor { get; }
+    ActorId? TargetActorId { get; set; }
 
     /// <summary>The camera's real world position this frame — the native
     /// position while live, the retained free-cam position otherwise.</summary>
