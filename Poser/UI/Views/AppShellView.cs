@@ -162,13 +162,13 @@ public sealed class AppShellViewModel
     public bool ContentUsesPage;
 
     /// <summary>
-    /// The content ScrollRegion's identity, keyed by the ACTIVE STRIP and
-    /// TAB: ImGui persists scroll offset and extent per child id, so one
+    /// The content ScrollRegion's identity, keyed by the active strip and
+    /// tab: ImGui persists scroll offset and extent per child id, so one
     /// shared id would carry tab A's offset into tab B's first frame and
     /// clamp-jump on the next — and strips reuse labels ("Light" is a light's
     /// whole editor AND the environment's lighting tab), so the tab key alone
     /// would still share scroll memory across strips. Minted by the active
-    /// tab's owner ON STRIP/TAB SWITCH, never per frame.
+    /// tab's owner on strip/tab switch, never per frame.
     /// </summary>
     public string ContentScrollId = ContentScrollIdFor("actor", "Pose");
 
@@ -280,21 +280,11 @@ public sealed class AppShellViewModel
 /// toolbar, the content viewport and the inspector rail.
 ///
 /// <para>The sidebar's search field and tree are owned by <see
-/// cref="ShellSidebar"/> owns them behind its own cache. The shell seats it and
+/// cref="ShellSidebar"/> behind its own cache. The shell seats it and
 /// keeps everything around it: chassis, rules, status bar, resize strip.</para>
 ///
-/// <para>Chrome uses one shell-level
-/// blur, one ground coat per pixel, one edge.</b> The chrome pass prepends the
-/// blur and the elevation shadows and nothing else; each COLUMN then lays a
-/// single translucent ground over it — the panels' (sidebar, rail) and the
-/// workspace's, which is the same glass over the darker app ground — and the
-/// asymmetric glass edge is drawn last, once, so no column fill can hide
-/// it.</para>
-///
-/// <para>Nothing may repaint a ground and nothing may repaint the edge.
-/// Translucency laid on itself stops being glass — it goes flat, it brightens
-/// the white edge tokens and darkens the black one, and it is the single defect
-/// behind every "the glass looks wrong" report this chassis has had.</para>
+/// <para>Chrome draws one shell blur, one ground coat per pixel, and one edge.
+/// Columns add their translucent grounds and the final edge is drawn last.</para>
 /// </summary>
 public static class AppShellView
 {
@@ -325,7 +315,7 @@ public static class AppShellView
     /// frame cost the visible band instead of the whole tree.</summary>
     private static readonly ShellSidebar Sidebar = new();
 
-    /// <summary>The tab strip reads ALL of the array, so the buffer is exactly
+    /// <summary>The tab strip reads all of the array, so the buffer is exactly
     /// the tab count and is reallocated only when that count changes.</summary>
     private static string[] _tabLabels = [];
     private static int _tabActive;
@@ -355,12 +345,12 @@ public static class AppShellView
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
 
-    /// <summary>The WORKSPACE's ground. The same glass — same alpha, same blur
+    /// <summary>The workspace ground. The same glass — same alpha, same blur
     /// behind it — mixed over the app ground instead of over the panels' raised
     /// surface, because the content sits BELOW the panels in the ladder.
     /// <see cref="Theme.Surface"/> is picto --color-bg-app, the rung under
     /// SurfaceRaised. SurfaceSunken is reserved for input wells: picto's surface-2 is
-    /// BRIGHTER than surface-1 — an input well, not a ground.</summary>
+    /// brighter than surface-1 — an input well, not a ground.</summary>
     private static Vector4 WellGlass =>
         Crystarium.ActiveTheme.Surface with { W = Glass.W };
     private static Vector4 BorderPrimary =>
@@ -406,7 +396,7 @@ public static class AppShellView
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
-            // ABSENT, not greyed, on an entity with no animation: a switch
+            // Omit the switch on an entity with no animation: a switch
             // that can never be thrown is chrome pretending to be a control.
             // Physics has no such gate — one global patch, always live — so
             // it holds the bar's trailing slot alone whenever animation
@@ -714,11 +704,8 @@ public static class AppShellView
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
-        // The command menu hangs off its own button, not off the pointer, so
-        // the seat hands its bottom-left corner to the opener. The click
-        // callback captures NOTHING — a warm titlebar frame must not mint a
-        // closure — so the press is reported through a static flag the seat
-        // reads back one line later, while the anchor is still a local.
+        // The command menu is anchored to its button. The static callback
+        // records the press without allocating a frame closure.
         IconAt(
             new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
             "##shell-burger",
@@ -872,10 +859,8 @@ public static class AppShellView
                 "##shell-popout",
                 help: "Pop the selected actor's content into its own window");
         }
-        // The armature toggle is not part of this bar and came back
-        // in the OVERLAY CLUSTER beside the gizmo segments, which is where
-        // both references keep theirs. Nothing overlay-shaped belongs here:
-        // this cluster is the WINDOW's own chrome.
+        // Armature visibility is controlled by the sidebar and settings, not
+        // by this titlebar cluster.
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────

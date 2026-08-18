@@ -212,7 +212,7 @@ public class MainWindow : Window
     };
 
     /// <summary>
-    /// The objects section, retained like ACTORS: flat rows, one per object
+    /// The objects section, retained like actors: flat rows, one per object
     /// the scene holds, rebuilt behind the same gate (the scene revision
     /// carries an object's spawn, destroy and visibility) and flag-refreshed
     /// on warm frames.
@@ -241,7 +241,7 @@ public class MainWindow : Window
         ShowPlus = true,
     };
 
-    /// <summary>The lights section, retained like ACTORS. Lights are flat — a
+    /// <summary>The lights section, retained like actors. Lights are flat — a
     /// spawned light owns nothing beneath it — so its rows are one per light,
     /// rebuilt behind the same gate (the scene revision carries a light's
     /// spawn, rename, kind and on-state) and flag-refreshed on warm frames.
@@ -1057,7 +1057,7 @@ public class MainWindow : Window
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
 
-    /// <summary>The width floor for what is attached THIS frame: the shared
+    /// <summary>The width floor for what is attached this frame: the shared
     /// 1110px covers sidebar + content + rail; detached mode hands the
     /// sidebar's column back and keeps the rail.</summary>
     private float EffectiveMinimumWidth()
@@ -1229,7 +1229,7 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// The one mode has been left — by an opener, or by ANY surface selecting
+    /// The one mode has been left — by an opener, or by any surface selecting
     /// an entity. Restates nothing beyond the outgoing pane's own hidden
     /// notice: leaving is never the last thing a caller does, and a resync
     /// here would resolve the strip against the selection mid-change — the
@@ -1310,7 +1310,7 @@ public class MainWindow : Window
         // a zero speed override on the selected actor.
         _vm.AnimationOn = toolbarActor is not { } animActor
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
-        // The freeze is one PROCESS-GLOBAL code patch held by the scene, so
+        // The freeze is one process-global code patch held by the scene, so
         // the switch shows the global state and is live under EVERY selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
@@ -1437,7 +1437,7 @@ public class MainWindow : Window
     /// ORDER: the published scene revision (the structural signature — actor
     /// set and generations, slot presence, bone counts), the search filter, and
     /// the disclosure version. Selection, actor visibility, pause state and
-    /// library mode are per-row FLAGS: they are refreshed in place, so they
+    /// library mode are per-row flags: they are refreshed in place, so they
     /// still land on the frame they change. A display name is a flag too,
     /// except while filtering, where it can change what matches — that case
     /// re-arms the gate.</para>
@@ -3262,7 +3262,7 @@ public class MainWindow : Window
 
     private void ApplyTabLayout(string tab)
     {
-        // Scroll identity is per STRIP and TAB (audit R1): one shared id
+        // Scroll identity is per strip and tab: one shared id
         // would carry the previous tab's scroll offset and extent into the
         // next tab's first frame, and strips reuse labels ("Light" on the
         // light strip vs the environment strip), so the label alone would
