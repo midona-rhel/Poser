@@ -24,18 +24,8 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Right-aligned mono readout.</summary>
     public Func<T, string?>? Badge;
 
-    /// <summary>Optional hierarchy hooks. Structural rows use disclosure;
-    /// selectable rows can keep a checkbox beside it.</summary>
-    public Func<T, bool>? IsExpandable;
-    /// <summary>Whether a row owns a selectable mark in multi-select mode;
-    /// structural hierarchy rows reserve only their disclosure seat.</summary>
+    /// <summary>Whether a row owns a selectable mark in multi-select mode.</summary>
     public Func<T, bool>? IsSelectable;
-    public Func<T, bool>? IsExpanded;
-    public Action<T>? OnExpand;
-    public Func<T, int>? Depth;
-    /// <summary>Optional ancestor trunk flags for compact tree connectors.</summary>
-    public Func<T, bool[]?>? TreeLines;
-    public Func<T, bool>? IsLastChild;
 
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
@@ -186,16 +176,15 @@ public static partial class Crystarium
                 _options = options;
         }
 
-        /// <summary>Replaces the structural rows of an open picker while a
-        /// disclosure gesture is being handled. Selection remains owned by
-        /// the caller, so refreshing the hierarchy cannot change it.</summary>
+        /// <summary>Replaces the rows of an open picker. Selection remains
+        /// owned by the caller.</summary>
         public void UpdateItems(IReadOnlyList<T> items)
         {
             _items = items;
         }
 
-        /// <summary>Restates the caller-owned leaf selection while the popup
-        /// remains open, dropping checks for bones removed by reconciliation.</summary>
+        /// <summary>Restates the caller-owned selection while the popup
+        /// remains open.</summary>
         public void UpdateSelection(IReadOnlySet<string> selectedKeys)
         {
             if (_selectedKeys is not null)
@@ -242,7 +231,8 @@ public static partial class Crystarium
                 + _listHeight;
 
             _picked = null;
-            // The picker paints its own opaque panel.
+            // The shared floating surface supplies the same translucent glass
+            // treatment used by the rest of the picker family.
             FloatingSurface.Popup(
                 _popupId,
                 new FloatingSurfaceProps
@@ -252,7 +242,7 @@ public static partial class Crystarium
                     Padding = 0f,
                     AnchorMin = _anchorMin,
                     AnchorMax = _anchorMax,
-                    Treatment = FloatingSurfaceTreatment.Unframed,
+                    Treatment = FloatingSurfaceTreatment.Glass,
                 },
                 _body);
             _visible = Array.Empty<T>();
@@ -310,8 +300,6 @@ public static partial class Crystarium
             float scale = ImGuiHelpers.GlobalScale;
             var theme = ActiveTheme;
             var draw = ImGui.GetWindowDrawList();
-            var min = ImGui.GetWindowPos();
-            PaintPanel(draw, min, min + ImGui.GetWindowSize(), theme);
 
             var origin = ImGui.GetCursorScreenPos();
             // The fixed gutter keeps content aligned when the scrollbar appears.
@@ -475,14 +463,10 @@ public static partial class Crystarium
             float baseX = pillMin.X + PickerRowPadding * scale;
             float x = baseX;
 
-            // Structural rows reserve a disclosure seat; selectable rows keep
-            // their check first, so a bone can both toggle and disclose.
+            // Multi-select rows reserve one selection seat.
             float slot = PickerCheckSlot * scale;
             var slotMin = new Vector2(x, centerY - slot * 0.5f);
-            bool expandable = _options.IsExpandable?.Invoke(item) == true;
             bool selectable = _options.IsSelectable?.Invoke(item) ?? true;
-            bool disclosureClicked = false;
-            int seatCount = multi ? 2 : 1;
             if (multi && selectable)
             {
                 PaintCheckBox(
@@ -503,62 +487,6 @@ public static partial class Crystarium
             }
             if (multi)
                 x += slot + gap;
-            slotMin = new Vector2(x, centerY - slot * 0.5f);
-            if (expandable)
-            {
-                ImGui.SetItemAllowOverlap();
-                ImGui.SetCursorScreenPos(new Vector2(
-                    slotMin.X, pillMin.Y));
-                var disclosure = Interactive.Reserve(
-                    $"{_popupId}-{key}-disclosure",
-                    new Vector2(slot, pillSize.Y), disabled: false);
-                if (disclosure.Clicked)
-                {
-                    disclosureClicked = true;
-                    _options.OnExpand?.Invoke(item);
-                }
-                IconIn(
-                    slotMin,
-                    slotMin + new Vector2(slot),
-                    _options.IsExpanded?.Invoke(item) == true
-                        ? TablerIcon.ChevronDown
-                        : TablerIcon.ChevronRight,
-                    theme.TextMuted);
-            }
-            x += slot + gap;
-            float gutterX = baseX + seatCount * (slot + gap);
-            if (_options.TreeLines?.Invoke(item) is { } lines)
-            {
-                for (int level = 0; level < lines.Length; level++)
-                {
-                    if (!lines[level])
-                        continue;
-                    float trunkX = gutterX + level * 16f * scale;
-                    draw.AddLine(
-                        new Vector2(trunkX, pillMin.Y),
-                        new Vector2(
-                            trunkX,
-                            pillMin.Y + pillSize.Y
-                                * (_options.IsLastChild?.Invoke(item) == true
-                                    && level == lines.Length - 1
-                                    ? 0.5f : 1f)),
-                        ImGui.ColorConvertFloat4ToU32(theme.Border),
-                        scale);
-                }
-                if (lines.Length > 0)
-                {
-                    float parentX = gutterX
-                        + (lines.Length - 1) * 16f * scale;
-                    float childX = gutterX + lines.Length * 16f * scale;
-                    draw.AddLine(
-                        new Vector2(parentX, centerY),
-                        new Vector2(childX, centerY),
-                        ImGui.ColorConvertFloat4ToU32(theme.Border),
-                        scale);
-                }
-            }
-            if (_options.Depth is { } depth)
-                x = gutterX + Math.Max(0, depth(item)) * 16f * scale;
 
             // A glyph is the fallback when no texture is available.
             nint texture = _options.Texture is { } toTexture ? toTexture(item) : 0;
@@ -619,7 +547,7 @@ public static partial class Crystarium
                     besideIcon: true);
 
             // Single-select closes; multi-select remains open.
-            if (!hit.Clicked || disclosureClicked)
+            if (!hit.Clicked)
                 return;
             if (_onToggle is { } toggle)
             {
@@ -654,33 +582,6 @@ public static partial class Crystarium
                     Color = FormHintColor,
                 });
             ImGui.Dummy(new Vector2(0f, PickerRowPitch * scale));
-        }
-    }
-
-    /// <summary>Paints the picker panel and its border.</summary>
-    private static void PaintPanel(
-        ImDrawListPtr draw, Vector2 min, Vector2 max, Theme theme)
-    {
-        // Panel shadows extend beyond the popup clip.
-        draw.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
-        try
-        {
-            BoxRenderer.Draw(draw, min, max, new BoxStyle
-            {
-                BackgroundColor = ColorEx.FlattenOver(
-                    FloatingSurface.FillColor, theme.Surface),
-                BorderWidth = 1f,
-                BorderRadius = theme.Radii.Surface,
-                BorderTopColor = theme.Border,
-                BorderRightColor = theme.Border,
-                BorderBottomColor = theme.Border,
-                BorderLeftColor = theme.Border,
-                BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
-            });
-        }
-        finally
-        {
-            draw.PopClipRect();
         }
     }
 

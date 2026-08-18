@@ -53,11 +53,9 @@ public sealed class CameraPane
     private bool _openFile = true;
     private bool _openActions = true;
 
-    /// <summary>MainWindow supplies the existing actor/category/bone read
-    /// model and TreeRow presenter. Keeping that seam outside this pane means
-    /// disclosure state and stable identities remain shared with the sidebar.
-    /// </summary>
-    public Action<Crystarium.FormScope, IVirtualCamera>? DrawTrackingHierarchy;
+    /// <summary>MainWindow supplies the actor and bone picker state because it
+    /// already owns the scene's exact descriptor snapshot.</summary>
+    public Action<Crystarium.FormScope, IVirtualCamera>? DrawTrackingActors;
 
     /// <summary>MainWindow supplies the live GPose target read without
     /// making this pane own native target state.</summary>
@@ -73,9 +71,6 @@ public sealed class CameraPane
     // An imported or cloned camera is only selectable once the scene refresh
     // has bound it, exactly like a spawned light.
     private IVirtualCamera? _pendingSelect;
-
-    private static readonly string[] TrackingModeOptions =
-        ["Follow", "Pan", "Follow and pan", "None"];
 
     public CameraPane(
         SceneSession scene,
@@ -167,6 +162,12 @@ public sealed class CameraPane
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
             return;
+        ResetCameraTransform(cameraId);
+    }
+
+    /// <summary>Resets only the translation of one exact camera.</summary>
+    public void ResetCameraTransform(CameraId cameraId)
+    {
         if (!_cameras.IsAvailable)
         {
             _notices.Refused("Reset: camera controls are unavailable.");
@@ -380,11 +381,6 @@ public sealed class CameraPane
                 help: "Fixed at creation: a game camera orbits, a free "
                     + "camera flies");
         });
-        form.Switch(
-            "Lock camera", camera.IsLocked,
-            value => camera.IsLocked = value,
-            disabled: !_cameras.IsAvailable,
-            help: "Protect this camera's framing from edits");
     }
 
     private void OrbitRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -450,8 +446,8 @@ public sealed class CameraPane
         ReconcileTargetActor(camera, notify: true);
         bool locked = camera.IsLocked;
         var choices = new List<(ActorId Id, string Name)>();
-        var labels = new List<string> { "None" };
-        int selected = 0;
+        var labels = new List<string>();
+        int selected = -1;
         var followedId = camera.TargetActorId;
         var nativeTarget = GetNativeTarget?.Invoke();
         var nativeTargetId = nativeTarget is { } native
@@ -466,7 +462,7 @@ public sealed class CameraPane
             if (displayedId is { } exact && actor.Id == exact)
                 selected = labels.Count - 1;
         }
-        if (selected == 0 && displayedId is { } missingId &&
+        if (selected < 0 && displayedId is { } missingId &&
             nativeTarget is { } missingTarget && nativeTargetId == missingId)
         {
             // Keep the native game target truthful even during a snapshot
@@ -476,27 +472,65 @@ public sealed class CameraPane
             labels.Add(nativeName);
             selected = labels.Count - 1;
         }
-        form.Pair(
+        form.Custom(
             "Follow actor",
-            cell => cell.Dropdown("##camera-follow", labels.ToArray(), selected,
-                index =>
-                {
-                    if (index == 0)
-                        _cameras.ClearTargetActor(camera);
-                    else if (index - 1 < choices.Count)
-                        FollowActor(choices[index - 1].Id,
-                            choices[index - 1].Name, camera);
-                },
-                disabled: locked,
-                help: "Seat the orbit pivot on an actor's drawn body"),
-            "",
-            cell =>
+            Crystarium.ActiveTheme.Controls.FormRowHeight,
+            row =>
             {
-                cell.Button("##camera-recenter", "Recenter",
+                float gap = Crystarium.ActiveTheme.Page.ActionGap * row.Scale;
+                var buttonStyle = ControlStyle.Workspace with
+                    { Width = UiWidth.Content };
+                float buttonWidth = Crystarium.MeasureButton(
+                    "Recenter", buttonStyle).X;
+                float dropdownWidth = MathF.Max(
+                    1f, row.ControlWidth - buttonWidth - gap);
+                float controlHeight = Crystarium.ActiveTheme.Controls
+                    .WorkspaceHeight;
+                ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
+                if (labels.Count > 0)
+                {
+                    Crystarium.Dropdown(
+                        "##camera-follow",
+                        labels.ToArray(),
+                        selected,
+                        index =>
+                        {
+                            if ((uint)index < (uint)choices.Count)
+                                FollowActor(
+                                    choices[index].Id,
+                                    choices[index].Name,
+                                    camera);
+                        },
+                        ControlStyle.Workspace with
+                        {
+                            Width = UiWidth.Fixed(dropdownWidth / row.Scale),
+                        },
+                        disabled: locked,
+                        help: "Seat the orbit pivot on an actor's drawn body");
+                }
+                else
+                {
+                    Crystarium.Button(
+                        "No actors available",
+                        style: ControlStyle.Workspace with
+                        {
+                            Width = UiWidth.Fixed(dropdownWidth / row.Scale),
+                        },
+                        disabled: true,
+                        id: "##camera-follow-empty");
+                }
+
+                ImGui.SetCursorScreenPos(new Vector2(
+                    row.ControlOrigin.X + dropdownWidth + gap,
+                    row.CenterControl(controlHeight).Y));
+                Crystarium.Button(
+                    "Recenter",
                     () => Recenter(camera),
+                    style: buttonStyle,
                     disabled: locked,
                     help: "Center the exact followed actor without changing "
-                        + "view orientation; free cameras refuse");
+                        + "view orientation; free cameras refuse",
+                    id: "##camera-recenter");
                 if (ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                     ToggleNativeTargetOverlay(camera, nativeTarget);
@@ -728,25 +762,12 @@ public sealed class CameraPane
 
     private void TrackingRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
-        bool locked = camera.IsLocked;
-        form.Switch("Tracking", camera.IsTracking,
-            value => camera.IsTracking = value,
-            disabled: locked,
-            help: "Steer the orbit pivot at the tracked bones every frame");
-        form.Dropdown("Mode", TrackingModeOptions,
-            (int)camera.TrackingMode,
-            selected => camera.TrackingMode = (CameraTrackingMode)selected,
-            disabled: locked,
-            help: "Follow moves the camera with the bones, Pan swings the "
-                + "view onto them, Follow and pan blends both");
+        DrawTrackingActors?.Invoke(form, camera);
     }
 
     private void BoneRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        // The picker uses exact actor/skeleton/bone descriptors; disclosure
-        // remains independent from tracking selection.
-        DrawTrackingHierarchy?.Invoke(form, camera);
         form.Actions("Selection", actions =>
         {
             actions.Button("Track selected bones",
@@ -942,9 +963,8 @@ public sealed class CameraPane
             camera.TrackedBones.Add(bone);
     }
 
-    /// <summary>Shared hierarchy gesture: resolve the stable id at gesture
-    /// time and reject a replaced generation before changing the tracked set.
-    /// </summary>
+    /// <summary>Resolves one exact bone at gesture time before changing the
+    /// tracked set.</summary>
     public void ToggleTrackedBone(IVirtualCamera camera, BoneId boneId)
     {
         var resolved = _bindings.Resolve(boneId);
@@ -963,39 +983,6 @@ public sealed class CameraPane
             }
         }
         camera.TrackedBones.Add(bone);
-    }
-
-    /// <summary>Tracks a group from the shared hierarchy, preserving each
-    /// exact bone identity rather than copying display labels.</summary>
-    public void ToggleTrackedBones(
-        IVirtualCamera camera, IReadOnlyList<BoneId> boneIds)
-    {
-        var bones = new List<IBone>();
-        foreach (var boneId in boneIds)
-        {
-            var resolved = _bindings.Resolve(boneId);
-            if (!resolved.Success || resolved.Value is not { } bone ||
-                _bindings.GetBoneId(bone) != boneId)
-            {
-                _notices.Refused("Track: that bone is no longer available.");
-                return;
-            }
-            bones.Add(bone);
-        }
-        bool remove = bones.Count > 0 && bones.All(bone =>
-            camera.TrackedBones.Any(tracked =>
-                _bindings.GetBoneId(tracked) == _bindings.GetBoneId(bone)));
-        foreach (var bone in bones)
-        {
-            var id = _bindings.GetBoneId(bone);
-            if (id == null)
-                continue;
-            for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
-                if (_bindings.GetBoneId(camera.TrackedBones[i]) == id)
-                    camera.TrackedBones.RemoveAt(i);
-            if (!remove)
-                camera.TrackedBones.Add(bone);
-        }
     }
 
     /// <summary>Nickname / anonymous-mask aware, like every other surface.

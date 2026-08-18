@@ -45,8 +45,8 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
-    /// <summary>A camera row's action slot marks the active camera; lock is
-    /// edited in the selected camera inspector.</summary>
+    /// <summary>A camera row's action slot marks the active camera. The
+    /// selected camera lock is edited in the top action cluster.</summary>
     public bool CameraActions;
     public bool CameraLive;
 
@@ -130,6 +130,10 @@ public sealed class AppShellViewModel
     /// process-global patch, so its switch is live under every selection and
     /// under none.</summary>
     public bool PhysicsOn;
+
+    /// <summary>The selected camera's edit lock, shown beside Physics.</summary>
+    public bool CameraLockAvailable;
+    public bool CameraLocked;
 
     public bool CanUndo = true;
     public bool CanRedo;
@@ -222,6 +226,7 @@ public sealed class AppShellViewModel
     public Action<int>? OnSymmetry;
     public Action<bool>? OnAnimation;
     public Action<bool>? OnPhysics;
+    public Action<bool>? OnCameraLock;
     public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
     /// <summary>
     /// Button-opened surfaces use the button seat; context menus use the
@@ -270,6 +275,7 @@ public sealed class AppShellViewModel
     internal Action<int>? SymmetryChosen;
     internal Action<bool>? AnimationToggled;
     internal Action<bool>? PhysicsToggled;
+    internal Action<bool>? CameraLockToggled;
     internal Action? CollapseToggled;
     internal Action<Crystarium.ActionBarScope>? WorkspaceRightActions;
 }
@@ -393,6 +399,7 @@ public static class AppShellView
         vm.SymmetryChosen ??= index => vm.OnSymmetry?.Invoke(index);
         vm.AnimationToggled ??= next => vm.OnAnimation?.Invoke(next);
         vm.PhysicsToggled ??= next => vm.OnPhysics?.Invoke(next);
+        vm.CameraLockToggled ??= next => vm.OnCameraLock?.Invoke(next);
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
@@ -416,6 +423,14 @@ public static class AppShellView
                 vm.PhysicsOn
                     ? "Switch off to freeze physics for the whole scene"
                     : "Switch on to resume physics for the whole scene");
+            if (vm.CameraLockAvailable)
+                right.Switch(
+                    "Lock camera",
+                    vm.CameraLocked,
+                    vm.CameraLockToggled!,
+                    vm.CameraLocked
+                        ? "Switch off to allow camera framing edits"
+                        : "Switch on to protect this camera's framing");
             // World adoption belongs to the scene tree, not this toolbar.
         };
     }
