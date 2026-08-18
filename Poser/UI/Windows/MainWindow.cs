@@ -2000,6 +2000,7 @@ public class MainWindow : Window
             Query = CameraTrackingSearch,
             Depth = row => row.Depth,
             TreeLines = row => row.TreeLines,
+            IsLastChild = row => row.IsLastChild,
             IsExpandable = row => row.HasChildren,
             IsSelectable = row => row.Tag is SelectionId
                 { Kind: SceneEntityKind.Bone, Bone: { } },
@@ -2149,10 +2150,20 @@ public class MainWindow : Window
                 int end = ancestor + 1;
                 while (end < rows.Count && rows[end].Depth > level)
                     end++;
-                lines[level] = Enumerable.Range(ancestor + 1, end - ancestor - 1)
+                lines[level] = Enumerable.Range(index + 1, end - index - 1)
                     .Any(candidate => rows[candidate].Depth == level + 1);
             }
             row.TreeLines = lines;
+            int parent = index - 1;
+            while (parent >= 0 && rows[parent].Depth != row.Depth - 1)
+                parent--;
+            int parentEnd = parent + 1;
+            while (parent >= 0 && parentEnd < rows.Count &&
+                rows[parentEnd].Depth > row.Depth - 1)
+                parentEnd++;
+            row.IsLastChild = !Enumerable.Range(index + 1,
+                Math.Max(0, parentEnd - index - 1))
+                .Any(candidate => rows[candidate].Depth == row.Depth);
         }
     }
 

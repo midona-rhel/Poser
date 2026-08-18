@@ -795,9 +795,14 @@ public sealed class CameraPane
         }
 
         if (camera.TargetActorId is null &&
-            ResolveNativeTarget() is { } nativeTarget &&
-            _bindings.GetActorId(nativeTarget) is { } nativeTargetId)
+            ResolveNativeTarget() is { } nativeTarget)
         {
+            if (_bindings.GetActorId(nativeTarget) is not { } nativeTargetId)
+            {
+                _notices.Refused(
+                    "Center: the game target is no longer available.");
+                return;
+            }
             var resolved = _bindings.Resolve(nativeTargetId);
             if (resolved.Success && resolved.Value is { } liveNative &&
                 _bindings.GetActorId(liveNative) == nativeTargetId &&

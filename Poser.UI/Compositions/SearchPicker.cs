@@ -35,6 +35,7 @@ public record struct PickerOptions<T> where T : class
     public Func<T, int>? Depth;
     /// <summary>Optional ancestor trunk flags for compact tree connectors.</summary>
     public Func<T, bool[]?>? TreeLines;
+    public Func<T, bool>? IsLastChild;
 
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
@@ -469,6 +470,7 @@ public static partial class Crystarium
                     BorderRadius = theme.Radii.Control,
                 });
 
+            float centerY = pillMin.Y + pillSize.Y * 0.5f;
             if (_options.TreeLines?.Invoke(item) is { } lines)
             {
                 for (int level = 0; level < lines.Length; level++)
@@ -479,7 +481,25 @@ public static partial class Crystarium
                         + (PickerRowPadding + level * 16f) * scale;
                     draw.AddLine(
                         new Vector2(trunkX, pillMin.Y),
-                        new Vector2(trunkX, pillMin.Y + pillSize.Y),
+                        new Vector2(
+                            trunkX,
+                            pillMin.Y + pillSize.Y
+                                * (_options.IsLastChild?.Invoke(item) == true
+                                    && level == lines.Length - 1
+                                    ? 0.5f : 1f)),
+                        ImGui.ColorConvertFloat4ToU32(theme.Border),
+                        scale);
+                }
+                if (lines.Length > 0)
+                {
+                    float parentX = pillMin.X
+                        + (PickerRowPadding + (lines.Length - 1) * 16f)
+                        * scale;
+                    float childX = pillMin.X
+                        + (PickerRowPadding + lines.Length * 16f) * scale;
+                    draw.AddLine(
+                        new Vector2(parentX, centerY),
+                        new Vector2(childX, centerY),
                         ImGui.ColorConvertFloat4ToU32(theme.Border),
                         scale);
                 }
@@ -487,7 +507,6 @@ public static partial class Crystarium
 
             float gap = theme.Spacing.Three * scale;
             float x = pillMin.X + PickerRowPadding * scale;
-            float centerY = pillMin.Y + pillSize.Y * 0.5f;
 
             // Structural rows reserve a disclosure seat; selectable rows keep
             // their check first, so a bone can both toggle and disclose.
@@ -602,8 +621,12 @@ public static partial class Crystarium
             // Single-select closes; multi-select remains open.
             if (!hit.Clicked || disclosureClicked)
                 return;
-            if (_onToggle is { } toggle && (!multi || selectable))
-                toggle(item, !active);
+            if (_onToggle is { } toggle)
+            {
+                if (selectable)
+                    toggle(item, !active);
+                return;
+            }
             else
                 _picked = item;
         }
