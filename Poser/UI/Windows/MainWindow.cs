@@ -1998,6 +1998,11 @@ public class MainWindow : Window
             () => OpenCameraTrackingPicker(rows, camera),
             help: "Choose bones from the actor hierarchy to track",
             disabled: camera.IsLocked);
+        // The sidebar read model can refresh while this popup remains open;
+        // replace its rows every frame so disclosure never leaves stale data.
+        _cameraTrackingPicker.UpdateItems(_actorsSection.Rows
+            .Where(IsCameraTrackingRow)
+            .ToArray());
         _cameraTrackingPicker.UpdateSelection(rows
             .Where(row => CameraRowIsTracked(row, camera))
             .Select(CameraTrackingKey)
@@ -2022,13 +2027,11 @@ public class MainWindow : Window
             OnExpand = row =>
             {
                 _vm.OnRowExpandToggled?.Invoke(row);
-                _cameraTrackingPicker.UpdateItems(
-                    _actorsSection.Rows.Where(IsCameraTrackingRow).ToArray());
             },
         };
         _cameraTrackingPicker.OpenMulti(
             "camera-tracking",
-            "Tracked bones",
+            null,
             rows,
             row => row.Label,
             CameraTrackingKey,
@@ -2040,8 +2043,6 @@ public class MainWindow : Window
                 if (expandable)
                 {
                     _vm.OnRowExpandToggled?.Invoke(row);
-                    _cameraTrackingPicker.UpdateItems(
-                        _actorsSection.Rows.Where(IsCameraTrackingRow).ToArray());
                 }
                 else if (!camera.IsLocked)
                 {

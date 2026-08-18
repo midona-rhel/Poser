@@ -156,7 +156,7 @@ public static partial class Crystarium
         /// </summary>
         public void OpenMulti(
             string owner,
-            string caption,
+            string? caption,
             IReadOnlyList<T> items,
             Func<T, string> label,
             Func<T, string> key,
