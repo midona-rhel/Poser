@@ -46,12 +46,9 @@ public sealed class ShellSidebarRow
     public bool LightActions;
     public bool LightOn = true;
     /// <summary>A camera row's action slot: the video mark making this the
-    /// LIVE camera. Lock is a separate labeled row beneath it.</summary>
+    /// LIVE camera; lock is edited in the selected camera inspector.</summary>
     public bool CameraActions;
     public bool CameraLive;
-    public bool CameraLocked;
-    /// <summary>A labeled camera row using the shared stateful switch.</summary>
-    public bool CameraLockSwitch;
 
     public IReadOnlyList<Domain.Identity.BoneId>? OverlayBones;
 
@@ -259,7 +256,6 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
     public Action<ShellSidebarRow>? OnCameraLive;
-    public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;
     /// <summary>A footer world-class glyph was clicked, told its index into
     /// <see cref="WorldClasses"/>.</summary>

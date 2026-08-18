@@ -227,7 +227,6 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraLockSwitch ? 1
                         : row.CameraActions ? 1
                         : row.LightActions ? 2
                         : row.OverlayBones != null ? 1 : 0,
@@ -345,7 +344,7 @@ public sealed class ShellSidebar
     private static string RowId(ShellSidebarRow row)
     {
         string key = row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
-        return row.CameraLockSwitch ? "camera-lock:" + key : key;
+        return key;
     }
 
     private static string HeaderId(int index) => index switch
@@ -638,9 +637,8 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows use the shared switch for lock state and retain the
-            // live-view action beside it; lock is a real stateful control, not
-            // a temporary icon whose meaning changes with the frame.
+            // Camera rows retain the live-view action; lock is edited in the
+            // selected camera inspector rather than as a sidebar icon.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
@@ -654,24 +652,6 @@ public sealed class ShellSidebar
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
-                return;
-            }
-
-            if (row.CameraLockSwitch)
-            {
-                ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.Switch(
-                        "##camera-lock-row", row.CameraLocked,
-                        _ => { },
-                        new ControlStyle
-                        {
-                            Width = UiWidth.Fixed(
-                                Crystarium.ActiveTheme.Controls.SwitchWidth),
-                            Height = UiHeight.Fixed(
-                                Crystarium.ActiveTheme.Controls.SwitchHeight),
-                        },
-                        help: "Lock camera"))
-                    _vm.OnCameraLock?.Invoke(row);
                 return;
             }
 

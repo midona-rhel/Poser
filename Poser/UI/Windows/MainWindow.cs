@@ -603,6 +603,7 @@ public class MainWindow : Window
         _lightPane = lightPane;
         _lightingService = lightingService;
         _cameraPane = cameraPane;
+        _cameraPane.GetNativeTarget = _actorManager.GetGPoseTarget;
         // Camera tracking consumes this window's already-built actor/category
         // hierarchy; the shared row model keeps disclosure and identities in
         // lockstep with the sidebar instead of minting a second flat tree.
@@ -951,20 +952,6 @@ public class MainWindow : Window
                 }
             }
             row.CameraLive = camera.IsLive;
-        };
-        // The lock's inline seat, the live toggle's neighbour: protect or
-        // release the camera without selecting it first.
-        _vm.OnCameraLock = row =>
-        {
-            if (row.Tag is not SelectionId
-                { Kind: SceneEntityKind.Camera, Camera: { } lockCameraId })
-                return;
-            var resolved = _bindings.Resolve(lockCameraId);
-            if (!resolved.Success ||
-                resolved.Value is not { IsValid: true } camera)
-                return;
-            camera.IsLocked = !camera.IsLocked;
-            row.CameraLocked = camera.IsLocked;
         };
         _vm.OnOverlayVisibility = row =>
         {
@@ -1673,8 +1660,8 @@ public class MainWindow : Window
         // instance itself, which is what every verb below dispatches on.
         AppendReferenceImageRows(filter, filtering);
 
-        // Cameras are flat like lights: one row per camera, the header's plus
-        // makes another, and a labeled lock row sits beneath each camera.
+        // Cameras are flat like lights: one row per camera; the selected
+        // camera's general inspector owns its labeled lock switch.
         foreach (var camera in _scene.Snapshot.Cameras)
         {
             if (filtering && !MatchesSidebarFilter(filter, camera.Name))
@@ -1690,14 +1677,6 @@ public class MainWindow : Window
                 Tag = cameraSelectionId,
                 CameraActions = true,
                 CameraLive = camera.IsLive,
-            });
-            _camerasSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = "Lock camera",
-                Count = "",
-                Tag = cameraSelectionId,
-                CameraLockSwitch = true,
-                CameraLocked = camera.IsLocked,
             });
         }
     }
@@ -1826,7 +1805,7 @@ public class MainWindow : Window
             if (cameraRow.Tag is not SelectionId cameraSelection)
                 continue;
             cameraRow.Active = _selection.IsSelected(cameraSelection);
-            // The live and lock marks read the LIVE camera, not the
+            // The live mark reads the LIVE camera, not the
             // descriptor: the switch moves the scene signature, and waiting
             // for the republish would leave the glyphs behind the click. The
             // BADGE is the same fact, so it is restated from the same read —
@@ -1837,7 +1816,6 @@ public class MainWindow : Window
                     { Success: true, Value: { } liveCamera })
             {
                 cameraRow.CameraLive = liveCamera.IsLive;
-                cameraRow.CameraLocked = liveCamera.IsLocked;
                 cameraRow.Count =
                     CameraBadge(liveCamera.IsLive, liveCamera.IsDefault);
             }
@@ -1982,9 +1960,7 @@ public class MainWindow : Window
     private void DrawCameraTrackingHierarchy(
         Crystarium.FormScope form, IVirtualCamera camera)
     {
-        var rows = _actorsSection.Rows
-            .Where(IsCameraTrackingRow)
-            .ToArray();
+        var rows = BuildCameraTrackingRows();
         if (rows.Length == 0)
         {
             form.Status("No actor hierarchy is available to track.");
@@ -2000,9 +1976,7 @@ public class MainWindow : Window
             disabled: camera.IsLocked);
         // The sidebar read model can refresh while this popup remains open;
         // replace its rows every frame so disclosure never leaves stale data.
-        _cameraTrackingPicker.UpdateItems(_actorsSection.Rows
-            .Where(IsCameraTrackingRow)
-            .ToArray());
+        _cameraTrackingPicker.UpdateItems(BuildCameraTrackingRows());
         _cameraTrackingPicker.UpdateSelection(rows
             .Where(row => CameraRowIsTracked(row, camera))
             .Select(CameraTrackingKey)
@@ -2020,9 +1994,10 @@ public class MainWindow : Window
         var options = new PickerOptions<ShellSidebarRow>
         {
             Depth = row => row.Depth,
-            IsExpandable = row => row.HasChildren
-                && row.Tag is not SelectionId
-                    { Kind: SceneEntityKind.Bone, Bone: { } },
+            TreeLines = row => row.TreeLines,
+            IsExpandable = row => row.HasChildren,
+            IsSelectable = row => row.Tag is SelectionId
+                { Kind: SceneEntityKind.Bone, Bone: { } },
             IsExpanded = row => row.Expanded,
             OnExpand = row =>
             {
@@ -2038,9 +2013,10 @@ public class MainWindow : Window
             selected,
             (row, next) =>
             {
-                bool expandable = row.HasChildren && row.Tag is not SelectionId
+                bool expandable = row.HasChildren && row.Tag is not SelectionId;
+                bool selectable = row.Tag is SelectionId
                     { Kind: SceneEntityKind.Bone, Bone: { } };
-                if (expandable)
+                if (expandable && !selectable)
                 {
                     _vm.OnRowExpandToggled?.Invoke(row);
                 }
@@ -2058,17 +2034,120 @@ public class MainWindow : Window
     }
 
     private static string CameraTrackingKey(ShellSidebarRow row) =>
-        row.HasChildren && row.ExpandKey is { } disclosure
-            ? disclosure
-            : row.Tag is SelectionId selection
-                ? selection.ToString()
-                : row.ExpandKey ?? row.Label;
+        row.Tag is SelectionId { Kind: SceneEntityKind.Bone } selection
+            ? selection.ToString()
+            : row.ExpandKey ?? row.Label;
 
-    private static bool IsCameraTrackingRow(ShellSidebarRow row)
+    /// <summary>Builds the compact picker tree from descriptor parent links,
+    /// not the sidebar's semantic category/group rows. Exact generation IDs
+    /// are used for every actor and bone key, so replacement rows cannot
+    /// inherit selection. A visited set makes malformed parent cycles finite;
+    /// roots include orphaned parents deterministically after real roots.</summary>
+    private IReadOnlyList<ShellSidebarRow> BuildCameraTrackingRows()
     {
-        if (row.Tag is SelectionId selection)
-            return selection.Kind is SceneEntityKind.Actor or SceneEntityKind.Bone;
-        return row.ExpandKey != null;
+        var result = new List<ShellSidebarRow>();
+        foreach (var actor in _scene.Snapshot.Actors)
+        {
+            string actorKey = $"camera-track/actor:{actor.Id}";
+            bool actorExpanded = !_collapsedNodes.Contains(actorKey);
+            result.Add(new ShellSidebarRow
+            {
+                Label = ActorName(actor),
+                Depth = 0,
+                HasChildren = actor.Skeletons.Count > 0,
+                Expanded = actorExpanded,
+                ExpandKey = actorKey,
+                Tag = SelectionId.ForActor(actor.Id),
+                TreeLines = null,
+            });
+            if (!actorExpanded)
+                continue;
+
+            foreach (var skeleton in actor.Skeletons
+                .OrderBy(value => value.Id.Slot.ToString(), StringComparer.Ordinal))
+            {
+                string skeletonKey = $"{actorKey}/skeleton:{skeleton.Id}";
+                bool skeletonExpanded = !_collapsedNodes.Contains(skeletonKey);
+                result.Add(new ShellSidebarRow
+                {
+                    Label = skeleton.Slot.ToString(),
+                    Depth = 1,
+                    HasChildren = skeleton.Bones.Count > 0,
+                    Expanded = skeletonExpanded,
+                    ExpandKey = skeletonKey,
+                    Tag = skeletonKey,
+                    TreeLines = [true],
+                });
+                if (!skeletonExpanded)
+                    continue;
+
+                var byParent = skeleton.Bones
+                    .Where(bone => bone.Parent is { })
+                    .GroupBy(bone => bone.Parent!.Value)
+                    .ToDictionary(group => group.Key, group => group
+                        .OrderBy(bone => bone.DisplayName,
+                            StringComparer.Ordinal)
+                        .ThenBy(bone => bone.Id.CanonicalName,
+                            StringComparer.Ordinal)
+                        .ToArray());
+                var byId = skeleton.Bones.ToDictionary(bone => bone.Id);
+                var visited = new HashSet<BoneId>();
+                var roots = skeleton.Bones
+                    .Where(bone => bone.Parent is null ||
+                        !byId.ContainsKey(bone.Parent.Value))
+                    .OrderBy(bone => bone.DisplayName,
+                        StringComparer.Ordinal)
+                    .ThenBy(bone => bone.Id.CanonicalName,
+                        StringComparer.Ordinal)
+                    .ToArray();
+                foreach (var root in roots)
+                    AddCameraBoneRows(
+                        result, root, byParent, visited, skeletonKey, 2);
+                foreach (var orphan in skeleton.Bones
+                    .OrderBy(bone => bone.DisplayName,
+                        StringComparer.Ordinal)
+                    .ThenBy(bone => bone.Id.CanonicalName,
+                        StringComparer.Ordinal))
+                {
+                    if (!visited.Contains(orphan.Id))
+                        AddCameraBoneRows(
+                            result, orphan, byParent, visited,
+                            skeletonKey, 2);
+                }
+            }
+        }
+        return result;
+    }
+
+    private void AddCameraBoneRows(
+        List<ShellSidebarRow> rows,
+        BoneDescriptor bone,
+        IReadOnlyDictionary<BoneId, BoneDescriptor[]> byParent,
+        HashSet<BoneId> visited,
+        string parentKey,
+        int depth)
+    {
+        if (!visited.Add(bone.Id))
+            return;
+        string key = $"{parentKey}/bone:{bone.Id}";
+        bool expanded = !_collapsedNodes.Contains(key);
+        bool hasChildren = byParent.TryGetValue(bone.Id, out var children)
+            && children.Length > 0;
+        rows.Add(new ShellSidebarRow
+        {
+            Label = bone.DisplayName,
+            Depth = depth,
+            HasChildren = hasChildren,
+            Expanded = expanded,
+            ExpandKey = key,
+            Tag = SelectionId.ForBone(bone.Id),
+            Active = _selection.IsSelected(SelectionId.ForBone(bone.Id)),
+            TreeLines = Enumerable.Repeat(true, depth).ToArray(),
+        });
+        if (!expanded || !hasChildren)
+            return;
+        foreach (var child in children!)
+            AddCameraBoneRows(rows, child, byParent, visited, key, depth + 1);
     }
 
     private bool CameraRowIsTracked(ShellSidebarRow row, IVirtualCamera camera)

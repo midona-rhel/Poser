@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Poser.Application.Scene;
 using Poser.Config;
 using Poser.Core;
@@ -61,6 +62,10 @@ public sealed class CameraPane
     /// disclosure state and stable identities remain shared with the sidebar.
     /// </summary>
     public Action<Crystarium.FormScope, IVirtualCamera>? DrawTrackingHierarchy;
+
+    /// <summary>MainWindow supplies the live GPose target read without
+    /// making this pane own native target state.</summary>
+    public Func<IActor?>? GetNativeTarget;
 
     private readonly Crystarium.FileDialog _saveBrowser =
         new("Save Camera", new[] { ".posercam" }, isSaveMode: true);
@@ -186,7 +191,10 @@ public sealed class CameraPane
             _notices.Refused("Reset: unlock the camera first.");
             return;
         }
-        camera.ResetProperties();
+        if (camera.Kind == CameraKind.Free)
+            camera.Position = camera.SpawnPosition;
+        else
+            camera.PositionOffset = Vector3.Zero;
     }
 
     /// <summary>
@@ -256,16 +264,7 @@ public sealed class CameraPane
                 perPixel: perPixel,
                 format: "0.00",
                 help: "The camera's world position",
-                disabled: locked,
-                actions: actions =>
-                {
-                    actions.IconButton(TablerIcon.ArrowBackUp,
-                        () => camera.Position = camera.SpawnPosition,
-                        disabled: locked ||
-                            camera.Position == camera.SpawnPosition,
-                        help: "Return to where this camera was created",
-                        id: "##camera-position-reset");
-                });
+                disabled: locked);
             return;
         }
 
@@ -275,16 +274,7 @@ public sealed class CameraPane
             perPixel: perPixel,
             format: "0.00",
             help: "World-space offset added to the camera every frame",
-            disabled: locked,
-            actions: actions =>
-            {
-                actions.IconButton(TablerIcon.ArrowBackUp,
-                    () => camera.PositionOffset = Vector3.Zero,
-                    disabled: locked ||
-                        camera.PositionOffset == Vector3.Zero,
-                    help: "Clear the offset",
-                    id: "##camera-offset-reset");
-            });
+            disabled: locked);
         WorldPositionRow(form, camera, locked, perPixel);
     }
 
@@ -295,7 +285,7 @@ public sealed class CameraPane
     /// row answers "where am I" and "stay there" instead of two rows
     /// disagreeing about which is the truth.
     /// </summary>
-    private static void WorldPositionRow(
+    private void WorldPositionRow(
         Crystarium.FormScope form,
         IVirtualCamera camera,
         bool locked,
@@ -310,15 +300,7 @@ public sealed class CameraPane
                 format: "0.00",
                 help: "The world point this camera is pinned to; it stays "
                     + "here however the subject moves",
-                disabled: locked,
-                actions: actions =>
-                {
-                    actions.IconButton(TablerIcon.LockOpen,
-                        () => camera.FixedPosition = null,
-                        disabled: locked,
-                        help: "Unpin — let the camera follow the game again",
-                        id: "##camera-fixed-unpin");
-                });
+                disabled: locked);
             return;
         }
 
@@ -327,16 +309,17 @@ public sealed class CameraPane
             "World position", world, _ => { }, onCommit: null,
             perPixel: perPixel, format: "0.00",
             help: "Where this camera is in the world right now",
-            disabled: true,
-            actions: actions =>
+            disabled: true);
+        form.Switch(
+            "Pin position", camera.FixedPosition is not null,
+            value =>
             {
-                actions.IconButton(TablerIcon.Lock,
-                    () => camera.FixedPosition = world,
-                    disabled: locked,
-                    help: "Pin the camera here so it stops drifting with the "
-                        + "subject",
-                    id: "##camera-fixed-pin");
-            });
+                if (locked || !_cameras.IsAvailable)
+                    return;
+                camera.FixedPosition = value ? camera.WorldPosition : null;
+            },
+            disabled: locked || !_cameras.IsAvailable,
+            help: "Keep this camera at its current world position");
     }
 
     /// <summary>The rail's TRACKING section, whole: Ktisis's bone tracking —
@@ -410,6 +393,11 @@ public sealed class CameraPane
                 help: "Fixed at creation: a game camera orbits, a free "
                     + "camera flies");
         });
+        form.Switch(
+            "Lock camera", camera.IsLocked,
+            value => camera.IsLocked = value,
+            disabled: !_cameras.IsAvailable,
+            help: "Protect this camera's framing from edits");
     }
 
     private void OrbitRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -478,13 +466,28 @@ public sealed class CameraPane
         var labels = new List<string> { "None" };
         int selected = 0;
         var followedId = camera.TargetActorId;
+        var nativeTarget = GetNativeTarget?.Invoke();
+        var nativeTargetId = nativeTarget is { } native
+            ? _bindings.GetActorId(native)
+            : null;
+        var displayedId = followedId ?? nativeTargetId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
             string name = ActorName(actor);
             choices.Add((actor.Id, name));
             labels.Add(name);
-            if (followedId is { } exact && actor.Id == exact)
+            if (displayedId is { } exact && actor.Id == exact)
                 selected = labels.Count - 1;
+        }
+        if (selected == 0 && displayedId is { } missingId &&
+            nativeTarget is { } missingTarget && nativeTargetId == missingId)
+        {
+            // Keep the native game target truthful even during a snapshot
+            // handoff; the next refresh will place it among normal actors.
+            string nativeName = ActorNameFrom(missingTarget);
+            choices.Add((missingId, nativeName));
+            labels.Add(nativeName);
+            selected = labels.Count - 1;
         }
         form.Pair(
             "Follow actor",
@@ -499,12 +502,18 @@ public sealed class CameraPane
                 },
                 disabled: locked,
                 help: "Seat the orbit pivot on an actor's drawn body"),
-            "Recenter",
-            cell => cell.Button("##camera-recenter", "Recenter",
-                () => Recenter(camera),
-                disabled: locked,
-                help: "Center the exact followed actor without changing "
-                    + "view orientation; free cameras refuse"));
+            "",
+            cell =>
+            {
+                cell.Button("##camera-recenter", "Recenter",
+                    () => Recenter(camera),
+                    disabled: locked,
+                    help: "Center the exact followed actor without changing "
+                        + "view orientation; free cameras refuse");
+                if (ImGui.IsItemHovered() &&
+                    ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                    ToggleNativeTargetOverlay(camera, nativeTarget);
+            });
     }
 
     private void MovementRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -784,6 +793,22 @@ public sealed class CameraPane
             return;
         }
 
+        if (camera.TargetActorId is null &&
+            ResolveNativeTarget() is { } nativeTarget &&
+            _bindings.GetActorId(nativeTarget) is { } nativeTargetId)
+        {
+            var resolved = _bindings.Resolve(nativeTargetId);
+            if (resolved.Success && resolved.Value is { } liveNative &&
+                _bindings.GetActorId(liveNative) == nativeTargetId &&
+                _spawnService.IsVisible(liveNative))
+            {
+                ReportCenter(_cameras.CenterOnActor(liveNative));
+                return;
+            }
+            _notices.Refused("Center: the game target is no longer available.");
+            return;
+        }
+
         if (_scene.Selection.Primary is { Kind: SceneEntityKind.Bone,
                 Bone: { } selectedBoneId })
         {
@@ -831,6 +856,34 @@ public sealed class CameraPane
 
         _notices.Refused("Center: select or track an actor or bone first.");
     }
+
+    private IActor? ResolveNativeTarget() => GetNativeTarget?.Invoke();
+
+    private void ToggleNativeTargetOverlay(
+        IVirtualCamera camera, IActor? nativeTarget)
+    {
+        if (camera.IsLocked || !_cameras.IsAvailable || nativeTarget is null)
+            return;
+        if (_bindings.GetActorId(nativeTarget) is not { } targetId)
+        {
+            _notices.Refused("Follow: the game target is no longer available.");
+            return;
+        }
+        var resolved = _bindings.Resolve(targetId);
+        if (!resolved.Success || resolved.Value is not { } exact ||
+            _bindings.GetActorId(exact) != targetId)
+        {
+            _notices.Refused("Follow: the game target is no longer available.");
+            return;
+        }
+        if (camera.TargetActorId == targetId)
+            _cameras.ClearTargetActor(camera);
+        else
+            _cameras.SetTargetActor(
+                camera, exact, targetId, ActorNameFrom(exact));
+    }
+
+    private static string ActorNameFrom(IActor actor) => actor.Name;
 
     /// <summary>Runs on the framework/UI thread before target presentation or
     /// recentering. A stale exact id clears the complete follow relationship;

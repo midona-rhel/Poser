@@ -27,9 +27,14 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Optional hierarchy hooks. Expandable rows get a disclosure
     /// affordance instead of a selection checkbox.</summary>
     public Func<T, bool>? IsExpandable;
+    /// <summary>Whether a row owns a selectable mark in multi-select mode;
+    /// structural hierarchy rows reserve only their disclosure seat.</summary>
+    public Func<T, bool>? IsSelectable;
     public Func<T, bool>? IsExpanded;
     public Action<T>? OnExpand;
     public Func<T, int>? Depth;
+    /// <summary>Optional ancestor trunk flags for compact tree connectors.</summary>
+    public Func<T, bool[]?>? TreeLines;
 
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
@@ -464,15 +469,40 @@ public static partial class Crystarium
                     BorderRadius = theme.Radii.Control,
                 });
 
+            if (_options.TreeLines?.Invoke(item) is { } lines)
+            {
+                for (int level = 0; level < lines.Length; level++)
+                {
+                    if (!lines[level])
+                        continue;
+                    float trunkX = pillMin.X
+                        + (PickerRowPadding + level * 16f) * scale;
+                    draw.AddLine(
+                        new Vector2(trunkX, pillMin.Y),
+                        new Vector2(trunkX, pillMin.Y + pillSize.Y),
+                        ImGui.ColorConvertFloat4ToU32(theme.Border),
+                        scale);
+                }
+            }
+
             float gap = theme.Spacing.Three * scale;
             float x = pillMin.X + PickerRowPadding * scale;
             float centerY = pillMin.Y + pillSize.Y * 0.5f;
 
-            // Both modes reserve the same mark slot to align labels.
+            // Structural rows reserve a disclosure seat; selectable rows keep
+            // their check first, so a bone can both toggle and disclose.
             float slot = PickerCheckSlot * scale;
             var slotMin = new Vector2(x, centerY - slot * 0.5f);
             bool expandable = _options.IsExpandable?.Invoke(item) == true;
+            bool selectable = _options.IsSelectable?.Invoke(item) ?? true;
             bool disclosureClicked = false;
+            if (multi && selectable)
+            {
+                PaintCheckBox(
+                    draw, slotMin, slotMin + new Vector2(slot), active, theme);
+                x += slot + gap;
+                slotMin = new Vector2(x, centerY - slot * 0.5f);
+            }
             if (expandable)
             {
                 ImGui.SetItemAllowOverlap();
@@ -494,10 +524,7 @@ public static partial class Crystarium
                         : TablerIcon.ChevronRight,
                     theme.TextMuted);
             }
-            else if (multi)
-                PaintCheckBox(
-                    draw, slotMin, slotMin + new Vector2(slot), active, theme);
-            if (!expandable && active)
+            if (!expandable && selectable && active)
             {
                 float tick = PickerCheckGlyph * scale;
                 var tickMin = new Vector2(
