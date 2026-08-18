@@ -45,8 +45,8 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
-    /// <summary>A camera row's action slot: the video mark making this the
-    /// LIVE camera; lock is edited in the selected camera inspector.</summary>
+    /// <summary>A camera row's action slot marks the active camera; lock is
+    /// edited in the selected camera inspector.</summary>
     public bool CameraActions;
     public bool CameraLive;
 
@@ -204,7 +204,7 @@ public sealed class AppShellViewModel
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
-    /// <summary>ONE toggle: detached mode floats the toolbar strip and the
+    /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
     /// inspector. Off is the compact single-window UI.</summary>
     public bool Detached;
@@ -279,11 +279,11 @@ public sealed class AppShellViewModel
 /// its control clusters, the sidebar chassis and status bar, the workspace
 /// toolbar, the content viewport and the inspector rail.
 ///
-/// <para>The sidebar's search field and tree are NOT here — <see
+/// <para>The sidebar's search field and tree are owned by <see
 /// cref="ShellSidebar"/> owns them behind its own cache. The shell seats it and
 /// keeps everything around it: chassis, rules, status bar, resize strip.</para>
 ///
-/// <para>Chrome, and the ONE normative statement of it: <b>one shell-level
+/// <para>Chrome uses one shell-level
 /// blur, one ground coat per pixel, one edge.</b> The chrome pass prepends the
 /// blur and the elevation shadows and nothing else; each COLUMN then lays a
 /// single translucent ground over it — the panels' (sidebar, rail) and the
@@ -359,7 +359,7 @@ public static class AppShellView
     /// behind it — mixed over the app ground instead of over the panels' raised
     /// surface, because the content sits BELOW the panels in the ladder.
     /// <see cref="Theme.Surface"/> is picto --color-bg-app, the rung under
-    /// SurfaceRaised. Deliberately NOT SurfaceSunken: picto's surface-2 is
+    /// SurfaceRaised. SurfaceSunken is reserved for input wells: picto's surface-2 is
     /// BRIGHTER than surface-1 — an input well, not a ground.</summary>
     private static Vector4 WellGlass =>
         Crystarium.ActiveTheme.Surface with { W = Glass.W };
@@ -447,37 +447,15 @@ public static class AppShellView
         {
             float radius = Crystarium.ActiveTheme.Radii.Window;
 
-            // ONE BLUR, then ONE ground coat per pixel, then ONE edge.
-            //
-            // The chrome keeps its blur and its elevation pass and gives up
-            // the other two: the WINDOW-WIDE glass fill, because every column
-            // below lays its own ground and a fill underneath them is a second
-            // coat; and the glass EDGE, because this method draws the edge
-            // itself at the end, after the columns, so their fills cannot hide
-            // it. Both used to be drawn here as well, and both were therefore
-            // painted twice — the sidebar wore two coats of glass, and the
-            // asymmetric edge wore two of itself: white 0.25 composites to
-            // 0.4375 along the TOP and 0.12 to 0.2256 down the SIDES, while
-            // the bottom's BLACK 0.2 only goes darker. That is exactly the
-            // shape reported against the MERGED window — uncollapsed "the
-            // top", collapsed "the top AND the sides", never the bottom (user
-            // 2026-08-14: "the merged window glass effect is still wrong, it
-            // has the same bug the separated window had").
+            // Draw the shared blur and elevation once; each column supplies
+            // its own translucent ground and the final edge.
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, radius, fill: false, border: false);
 
-            // THE WELL — the one ground that is NOT the panels'. The workspace
-            // is the app's ground and the ground is DARKER than the panels
-            // The workspace uses a darker glass ground than the panels.
-            // It keeps the glass: same coat, same alpha, same blur behind it —
-            // only the colour under it changes ("the BG COLOR, not the glass
-            // effect"), so the merged and separated content columns are the
-            // same translucent surface as each other and as the panels.
+            // The workspace ground uses the same glass treatment over the
+            // darker app surface, separate from raised sidebar and rail cells.
             //
-            // Collapsed, the bar IS the workspace band — the sidebar and rail
-            // cells only exist while the window is open — so the coat takes
-            // the whole strip and the "one continuous titlebar" of collapse
-            // stays one continuous thing.
+            // In collapsed mode the titlebar is the complete workspace band.
             if (vm.Collapsed)
             {
                 dl.AddRectFilled(min, max, U32(WellGlass), radius * s);
@@ -560,17 +538,13 @@ public static class AppShellView
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        // A COLUMN'S CELL, not a band across the bar. Each of these lays the
+        // Each column lays the panel ground over the blur once and stops at
         // panel ground over the blur exactly once, and stops at its own
         // column's edge — the band between them is the workspace's, and Draw
         // has already coated it with the well's ground. That is what makes a
         // column one material from this bar down to the window's bottom, and
         // what keeps any pixel from wearing two coats: the bar used to lay a
-        // full-width fill over the window-wide one whenever the sidebar cell
-        // was absent, which read flat instead of glass and scalloped its own
-        // rounded BOTTOM corners out of the window's left edge (user
-        // 2026-08-14: the detached chrome "too bright", the detached library
-        // "didn't have correct glass chrome on left").
+        // its column edge, leaving the workspace ground between columns.
         if (!vm.Collapsed && !vm.Detached)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
@@ -859,14 +833,8 @@ public static class AppShellView
                 1 => "Also apply the same edit to the opposite-side bone",
                 _ => "Also apply a mirrored edit to the opposite-side bone",
             });
-        // NOTHING overlay-shaped follows the gizmo segments. The cluster that
-        // briefly stood here (master switch, view-mode picker,
-        // selected-bones-only) left on the user's call, 2026-08-14: the two
-        // display options are standing preferences and now read as ordinary
-        // rows under Settings ▸ Skeleton, and the master switch is not a UI
-        // control at all — bone visibility is decided PER ACTOR, by the
-        // sidebar's eyes and the bone presets. Its chord survives in the
-        // keybind registry, which writes the overlay window's own flag.
+        // Overlay visibility is configured in Settings and per-actor sidebar
+        // controls; no extra controls follow the gizmo segments.
     }
 
     /// <summary>Rightmost is the collapse chevron, then the close X.
@@ -895,8 +863,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        // The pop-out lives on the TITLE bar, not the workspace bar
-        // The control remains available from the current toolbar.
+        // The pop-out remains available from the titlebar toolbar.
         if (vm.ShowPopOut)
         {
             x -= step;
@@ -1078,7 +1045,7 @@ public static class AppShellView
         SyncTabs(vm);
         if (_tabLabels.Length > 0)
         {
-            // The tab strip is the SAME segmented pill every other mode
+            // The tab strip uses the shared segmented pill every other mode
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
             // lands the first tab's LABEL on the content inset, because the
             // pill's dark chrome is decoration and not padding.
@@ -1094,7 +1061,7 @@ public static class AppShellView
                 alignFirstTabToCursor: true);
         }
 
-        // Actor physics occupies ONE stable right-aligned slot on every
+        // Actor physics occupies one stable right-aligned slot on every
         // workspace tab: a tab change never replaces it with selection text and
         // never moves it.
         Crystarium.ActionBar(
@@ -1117,29 +1084,17 @@ public static class AppShellView
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
         float toolbarBottom = min.Y + ToolbarHeight * s;
-        // The viewport is an ImGui CHILD, and a child renders after the window
-        // that hosts it: whatever the child fills, it fills OVER the outer
-        // glass edge the shell repaints last. The child therefore stops a
-        // border pixel short of every side that IS the window's own edge.
-        // Attached, the sidebar owns the left side and only the right and the
-        // bottom are shell edges; DETACHED the sidebar is a window of its own
-        // and the workspace's left edge is the window's, so the left border
-        // needs the same pixel — without it a full-bleed pane (the library
-        // paints its own bands wall to wall) erases the left glass chrome
-        // at the shell edge.
+        // The child stops one border pixel short of shell-owned edges. In
+        // detached mode its left edge is also shell-owned.
         float leftEdge = vm.Detached ? 1f * s : 0f;
-        // Toolbar and content share one 12px horizontal inset. The viewport
-        // still reaches the outer-right glass edge, and content width always
-        // excludes the 12px scrollbar gutter so overflow cannot cause reflow.
-        // ONE content origin for every tab: panes own their breathing room,
-        // the shell owns the origin.
+        // Toolbar and content share the horizontal inset; the shell owns the
+        // origin while panes own their internal spacing.
         var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
         var childSize = new Vector2(
             max.X - min.X - 1f * s - leftEdge,
             max.Y - toolbarBottom - 1f * s);
-        // The inset is measured from the CHILD, not the panel: the child is 1px
-        // narrower than the panel (the glass border pixel), and the scrollbar
-        // hugs the child's right edge.
+        // Measure the inset from the child so the border and scrollbar remain
+        // outside the pane's content box.
         ImGui.SetCursorScreenPos(childOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         if (ImGui.BeginChild(
@@ -1407,7 +1362,7 @@ public static class AppShellView
     }
 
     /// <summary>
-    /// The tooltip for one history button. The generic line is the FALLBACK,
+    /// The tooltip for one history button. The generic line is the fallback,
     /// not the answer: when the stack knows what its top entry is, the button
     /// says so, because "the last move, rotation or scale" is simply untrue of
     /// a pose import or a spawn.
@@ -1441,7 +1396,7 @@ public static class AppShellView
     }
 
     // ── the split shell's standalone parts ───────────────────────────────
-    // Each part draws with the SAME retained state and ids it has inside the
+    // Each part draws with the same retained state and ids it has inside the
     // shell — the sidebar cache, the segment motion channels, the keybind
     // help — so splitting a part moves it without resetting it. Exactly one
     // host draws a part per frame; the split flags are that gate.

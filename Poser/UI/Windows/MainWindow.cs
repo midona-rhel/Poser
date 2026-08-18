@@ -51,7 +51,7 @@ public class MainWindow : Window
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
 
-    /// <summary>The reference-picture roster. The sidebar LISTS it and never
+    /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
     /// signature, joins no journal, and is laid OVER the game rather than into
     /// the scene — so its rows restate the session's state and every verb goes
@@ -149,11 +149,7 @@ public class MainWindow : Window
     /// Library mode leaves it untouched, exactly as it leaves the tab.</summary>
     private string _activeStrip = "actor";
 
-    /// <summary>
-    /// The shell's ONE selection: the workspace modes and the entity selection
-    /// are the same track, so LIBRARY, SCENE, the environment header and an
-    /// entity row can never light together.
-    /// </summary>
+    /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>
     private readonly ShellWorkspaceSelection _workspace;
 
     /// <summary>The workspace is showing the pose library instead of the
@@ -161,7 +157,7 @@ public class MainWindow : Window
     /// library never shows through a selected entity's chrome.</summary>
     private bool _libraryMode => _workspace.IsLibrary;
 
-    /// <summary>The workspace is showing the WHOLE SCENE — save, load, progress
+    /// <summary>The workspace is showing the complete scene view — save, load, progress
     /// and recovery — instead of the selection's tabs. A mode exactly like the
     /// library's, and its alternative: a scene is not a property of whatever
     /// happens to be selected.</summary>
@@ -188,7 +184,7 @@ public class MainWindow : Window
     };
 
     /// <summary>The scene's environment, seated above the actors. It is the one
-    /// scene entity that is always there and there is only ever ONE of it, so
+    /// scene entity that is always there and there is only ever one of it, so
     /// the header IS the affordance — exactly like the library's — rather than a
     /// header naming a lone row beneath it. Nothing creates or destroys it, so
     /// the section shows no plus and carries no rows.</summary>
@@ -221,11 +217,11 @@ public class MainWindow : Window
     /// carries an object's spawn, destroy and visibility) and flag-refreshed
     /// on warm frames.
     ///
-    /// <para>It holds BOTH kinds the word covers — the ones the scene spawned
+    /// <para>It holds both kinds the word covers — the ones the scene spawned
     /// and the ones it borrowed from the map. They were two sections and are
-    /// one, because "which service made it" is not a fact the user sorts by:
+    /// one, because their source does not change their row behavior:
     /// a table is a table whether Poser stood it there or the map did. What
-    /// separates them is stated PER ROW instead, the way a light's ownership
+    /// separates them is stated per row, the way a light's ownership
     /// is — a borrowed row wears its own mark and its verb is release, not
     /// destroy.</para>
     /// </summary>
@@ -669,7 +665,7 @@ public class MainWindow : Window
             }
         };
         // The switch's polarity is "physics simulating"; the service's is
-        // "freeze requested". The request is booked against the SCENE, not
+        // "freeze requested". The request is booked against the scene, not
         // The freeze is process-global and independent of selection.
         _vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
         // The footer's class glyphs are minted once and restated in place; the
@@ -699,13 +695,8 @@ public class MainWindow : Window
             if (SelectedActorId() is { } popOut)
                 OnPopOutRequested?.Invoke(popOut);
         };
-        // The sidebar's add affordance. Every section plus opens the ONE
-        // spawn browser, UNDER THAT PLUS, on that section's own tab — the
-        // The browser replaces per-section mini choosers:
-        // "it should spawn where the user click, either the plus at the top
-        // or the plus next to actors camera or lights"). The anchor is the
-        // button's own bottom-left, not the pointer, so the surface stands in
-        // each plus uses the matching browser tab.
+        // Each section plus opens the shared spawn browser on that section's
+        // tab, anchored to the button that opened it.
         _vm.OnSectionPlus = (index, anchor) =>
         {
             if (index == PropsSectionIndex)
@@ -720,7 +711,7 @@ public class MainWindow : Window
                 OnSpawnBrowserRequested?.Invoke(
                     anchor, SpawnBrowserTab.Overlays);
         };
-        // The LIBRARY, SCENE and ENVIRONMENT headers are the selectable ones,
+        // The library, scene and environment headers are the selectable ones,
         // so no other index can arrive. The library and the scene workspace are
         // MODES over an untouched selection, and their openers already restate
         // the layout, so those two branches do nothing else here. The
@@ -739,9 +730,7 @@ public class MainWindow : Window
                 // There is exactly one environment, so range and toggle mean
                 // nothing here: the header is a plain Select, never a modified
                 // one. Selecting IS leaving whichever mode was showing — one
-                // selection — and the leave restates nothing, so the resync
-                // below stands for both, which is the only order that keeps
-                // the tab the user was on.
+                // selection; the resync below handles the layout transition.
                 _selection.Select(EnvironmentSelection);
                 // Same frame, same reason as a row click: the environment's
                 // strip is not the strip this frame was laid out for.
@@ -877,9 +866,8 @@ public class MainWindow : Window
                 return;
             }
             // A borrowed map object wears the same eye seat as a prop's: its
-            // toggle is whether the map draws it. It is written straight
-            // through to the object, and the release puts the captured state
-            // back whatever the user left it at.
+            // toggle is whether the map draws it. The release restores the
+            // captured state.
             if (row.Tag is SelectionId
                 { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldObjectId })
             {
@@ -950,10 +938,7 @@ public class MainWindow : Window
     {
         base.PreDraw();
 
-        // ONE width for the whole shell: every tab keeps the inspector
-        // rail, so navigating can never move the frame. Only collapse and
-        // restore write Size. Split parts release their width: the floor
-        // follows what is actually attached this frame.
+        // Keep one shell width across tabs; detached parts release their width.
         float minimumWidth = EffectiveMinimumWidth();
         SizeConstraints = _collapsed
             ? new WindowSizeConstraints
@@ -1101,7 +1086,7 @@ public class MainWindow : Window
     private bool _shiftApplied;
     private Vector2 _lastPosition;
 
-    /// <summary>Detached mode only: the Inspector window closed FROM THE
+    /// <summary>Detached mode only: the Inspector window closed from the
     /// TOOLBAR (or its own X). The window object stays open — it still
     /// builds the frame's view model and pumps the menus and dialogs the
     /// whole shell shares — but it shrinks to an inputless pixel and draws
@@ -1200,7 +1185,7 @@ public class MainWindow : Window
         DrawEntityRenameModal();
         DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
-        // tab or a context menu survives whatever the user does to that
+        // tab or a context menu survives subsequent selection changes.
         // surface next.
         _appearancePane.DrawBrowsers();
         _lightPane.DrawBrowsers();
@@ -1215,12 +1200,12 @@ public class MainWindow : Window
         // its actor frames later, and leaving library mode must not strand it.
         _libraryPane.Tick();
         // Last, and over everything: until the notice is accepted the shell
-        // has drawn a workspace the user may read and may not touch.
+        // has drawn a workspace that is visible but not interactive.
         _firstRunNotice.Draw();
     }
 
     /// <summary>Puts the workspace into library mode. Openers only — a second
-    /// request must not toggle a library the user is already looking at. The
+    /// request must not toggle a library that is already active. The
     /// selection releases, because a mode and an entity are one selection
     /// (see <see cref="ShellWorkspaceSelection"/>).</summary>
     public void ShowLibrary()
@@ -1292,7 +1277,7 @@ public class MainWindow : Window
         // Animation is a document and uses the shell's scroll.
         // Appearance has no pose rail; its content takes the released
         // width. The outer window size is untouched by tab changes.
-        // Library mode's rail hosts the import options (user placement);
+        // Library mode's rail hosts the import options;
         // every other mode keeps the selection-typed rail.
         //
         // The delegate is stated even while collapsed: the shell's own
@@ -1310,7 +1295,7 @@ public class MainWindow : Window
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.
         // Both facts come from the shared resolver, which builds a dictionary
-        // of the selected actor's WHOLE bone set — so they are re-derived only
+        // of the selected actor's complete bone set — so they are re-derived only
         // when the resolver's own two inputs move. The tool is not part of that
         // key: it decides whether the facts are SHOWN, not what they are.
         RefreshPivotFacts();
@@ -1345,7 +1330,7 @@ public class MainWindow : Window
         _vm.ShowPopOut = toolbarActor != null && !_libraryMode && !_sceneMode;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
-        // the SAME surface, the spawn browser — the LIGHTS and CAMERAS pluses
+        // the same surface, the spawn browser — the lights and cameras pluses
         // once made their own kind from a menu of their own, and no longer do.
         // References stay absent (not disabled) in the browser until their
         // runtime entity type exists.
@@ -1502,7 +1487,7 @@ public class MainWindow : Window
         // The library is a place in the sidebar, not a window: its header IS
         // the affordance, and it stands above the scene it poses.
         _vm.Sections.Add(_librarySection);
-        // The whole scene stands above everything it contains — the user reads
+        // The whole scene stands above everything it contains — it reads
         // the tree top down as scene, then environment, then the entities.
         _vm.Sections.Add(_sceneSection);
         // The environment stands above the actors: it is the one scene entity
@@ -1656,7 +1641,7 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// The camera row's badge. Exactly one camera is LIVE — the one the shot
+    /// The camera row's badge. Exactly one camera is active — the one the shot
     /// is actually framed through — and the row said so only by an undimmed
     /// glyph in its action strip, which reads as an available verb rather than
     /// as a state: the scene lists cameras but not
@@ -1696,7 +1681,7 @@ public class MainWindow : Window
     /// deduped: the roster mints identity per add precisely so the same sheet
     /// can be placed twice, and two rows reading "sketch" would be two rows
     /// naming nothing. The second and later occurrences carry an ordinal, so
-    /// the first one keeps the plain name a user recognises.
+    /// the first one keeps the plain name.
     /// </summary>
     private void AppendReferenceImageRows(string filter, bool filtering)
     {
@@ -1713,7 +1698,7 @@ public class MainWindow : Window
             string label = seen == 0
                 ? stem
                 : $"{stem} ({(seen + 1).ToString(CultureInfo.InvariantCulture)})";
-            // The filter reads the LABEL, which is what the user can see.
+            // The filter reads the displayed label.
             if (filtering && !MatchesSidebarFilter(filter, label))
                 continue;
             _overlaysSection.Rows.Add(new ShellSidebarRow
@@ -1766,7 +1751,7 @@ public class MainWindow : Window
         // cameras only exist inside a GPose session.
         _camerasSection.ShowPlus =
             _cameraService.IsAvailable && _gPoseService.IsGPosing;
-        // The class glyphs read the adoption source LIVE, for the same reason
+        // The class glyphs read the current adoption source for the same reason
         // every other action glyph does: waiting for a republish would leave
         // the glyph behind the click that flipped it.
         foreach (var (kind, entry) in _worldClasses)
@@ -1779,7 +1764,7 @@ public class MainWindow : Window
             if (cameraRow.Tag is not SelectionId cameraSelection)
                 continue;
             cameraRow.Active = _selection.IsSelected(cameraSelection);
-            // The live mark reads the LIVE camera, not the
+            // The live mark reads the active camera, not the
             // descriptor: the switch moves the scene signature, and waiting
             // for the republish would leave the glyphs behind the click. The
             // BADGE is the same fact, so it is restated from the same read —
@@ -1816,7 +1801,7 @@ public class MainWindow : Window
             if (overlayRow.Tag is not SelectionId overlaySelection)
                 continue;
             overlayRow.Active = _selection.IsSelected(overlaySelection);
-            // The eye reads the LIVE node, not the descriptor: visibility
+            // The eye reads the active node, not the descriptor: visibility
             // moves the scene signature, and waiting for the republish would
             // leave the glyph behind the click that flipped it.
             if (overlaySelection.Overlay is { } overlayId &&
@@ -1832,7 +1817,7 @@ public class MainWindow : Window
             if (propRow.Tag is not SelectionId propSelection)
                 continue;
             propRow.Active = _selection.IsSelected(propSelection);
-            // The eye reads the LIVE handle: visibility moves the scene
+        // The eye reads the active handle: visibility moves the scene
             // signature, and waiting for the republish would leave the glyph
             // behind the click that flipped it. The section holds both kinds
             // of object, so both are read here — a borrowed row that was never
@@ -1853,7 +1838,7 @@ public class MainWindow : Window
             if (lightRow.Tag is not SelectionId lightSelection)
                 continue;
             lightRow.Active = _selection.IsSelected(lightSelection);
-            // The eye reads the LIVE light, not the descriptor: IsOn moves the
+        // The eye reads the active light, not the descriptor: IsOn moves the
             // scene signature, and waiting for that republish would leave the
             // glyph a frame or more behind the click that flipped it.
             if (lightSelection.Light is { } lightId &&
@@ -2332,20 +2317,14 @@ public class MainWindow : Window
         bool auxFollows = auxSkeletons.Count > 0 && (!filtering || hasMatchingAux);
         var childLines = Descend(lines, isLast);
 
-        // The gaze anchor is a child of the ACTOR, not of any skeleton: it
-        // exists exactly while the gaze is a fixed world point, and it
-        // stands above everything else because it is the one child the
-        // world gizmo can grab. An actor that no longer resolves has no
-        // live gaze to read, so it contributes no row.
+        // A fixed-position gaze anchor is an actor child and is shown only
+        // while its actor binding resolves.
         if (_bindings.Resolve(actor.Id) is { Success: true, Value: { } gazeActor } &&
             _gazeService.GetGazeState(gazeActor).Mode == GazeTargetMode.Position)
         {
             bool gazeLast = !companionsFollow && !categoriesFollow && !auxFollows;
-            // Unlike actors and categories, this key is NOT seeded into
-            // _collapsedNodes when it is first seen: a key the set does not
-            // hold is an EXPANDED key, so the three aim points stand open
-            // the moment the gaze becomes a world point. Only an explicit
-            // chevron click puts the key in, and it survives from there.
+            // Gaze rows start expanded; explicit disclosure clicks persist in
+            // the same collapsed-node set as other hierarchy rows.
             var gazeKey = actorKey + "/gaze";
             bool gazeExpanded = filtering || !_collapsedNodes.Contains(gazeKey);
             section.Rows.Add(new ShellSidebarRow
@@ -2513,7 +2492,7 @@ public class MainWindow : Window
         return false;
     }
 
-    /// <summary>One Ktisis category, pruned to what THIS skeleton carries and
+    /// <summary>One category, pruned to what the skeleton carries and
     /// what the filter keeps: its own present bones (all of them when the
     /// category label matched, the matching ones otherwise) and its surviving
     /// children. Null when nothing below survives.</summary>
@@ -3049,12 +3028,12 @@ public class MainWindow : Window
     private void BuildTabs(SelectionId? primary)
     {
         // Tabs are rebuilt each frame; the active one is preserved so a
-        // selection change cannot silently throw the user back to Pose.
+        // selection change cannot silently return to Pose.
         _vm.Tabs.Clear();
         if (_libraryMode)
         {
             // The library types are the tabs; _activeTab is left untouched,
-            // so leaving the library returns the tab the user was on.
+            // so leaving the library returns the prior tab.
             _activeStrip = LibraryStrip;
             int type = _libraryPane.SelectedType;
             for (int i = 0; i < _libraryTabs.Length; i++)
@@ -3067,7 +3046,7 @@ public class MainWindow : Window
         if (_sceneMode)
         {
             // One tab: the scene workspace is a single page, and the strip is
-            // what states the mode the user is in.
+            // what states the active mode.
             _activeStrip = SceneStrip;
             _sceneTabs[0].Active = true;
             _vm.Tabs.Add(_sceneTabs[0]);
@@ -3091,7 +3070,7 @@ public class MainWindow : Window
     /// </summary>
     private ShellTab[] SyncStripAndTab(SelectionId? primary)
     {
-        // The strip is a function of the SELECTION TYPE: the environment's
+        // The strip is a function of the selection type: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
         var (tabs, strip) = primary switch
@@ -3112,7 +3091,7 @@ public class MainWindow : Window
         // strip key joins the scroll identity in ApplyTabLayout.
         _activeStrip = strip;
         // The active tab is preserved WITHIN a strip, so a selection change
-        // inside the actor set cannot silently throw the user back to Pose; a
+        // inside the actor set cannot silently return to Pose; a
         // strip that does not carry it falls to that strip's first tab.
         bool carried = false;
         for (int i = 0; i < tabs.Length; i++)
@@ -3123,31 +3102,12 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// Rebuilds the tab strip AND restates the viewport contract from the
-    /// LIVE selection, mid-frame.
-    ///
-    /// <para>The shell decides the content viewport ONCE per frame, before it
-    /// draws: whether the pane owns the viewport, hosts a page, or runs
-    /// wall-to-wall, and under which scroll identity. A sidebar row or a
-    /// section header changes the selection while that same frame is being
-    /// drawn, and the tab strip a selection answers for is a function of the
-    /// selection's TYPE — so an actor→environment→library move rendered the
-    /// incoming pane through the OUTGOING strip's contract for the rest of
-    /// the frame, and only <see cref="BuildTabs"/> on the next frame put the
-    /// insets right. That one frame is the padding that "arrives late" (user
-    /// 2026-08-14). Running the frame's own build again here — from the
-    /// selection as it now stands, never from the tab the previous strip
-    /// remembered — is what closes it, and it must be the WHOLE build: the
-    /// strip is drawn after the sidebar, so a resync that moved only the
-    /// contract left the tab LABELS a frame behind the pane they name.</para>
+    /// Rebuilds the tab and viewport layout after a mid-frame selection change.
+    /// The second build keeps the active selection and tab contract coherent.
     /// </summary>
     private void ResyncTabLayout()
     {
-        // The SAME pair the frame's own build runs, in the same order: the
-        // strip a selection answers for decides both the viewport contract
-        // and the ROWS OF THE STRIP, and the strip is drawn after the sidebar
-        // that changed the selection. Restating only the contract left the
-        // tab labels a frame behind the pane they name.
+        // Rebuild the tab rows and viewport contract together.
         BuildTabs(_selection.Primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
@@ -3245,7 +3205,7 @@ public class MainWindow : Window
 
     /// <summary>
     /// Steps the tab strip by <paramref name="delta"/>, wrapping. It goes
-    /// through the CLICK path rather than moving <see cref="_activeTab"/>
+    /// through the click path rather than moving <see cref="_activeTab"/>
     /// itself: the click is what also settles the viewport contract, and a
     /// keyboard step that skipped it would render one tab through another
     /// tab's layout for a frame. Whatever the strip currently holds is what
@@ -3337,21 +3297,21 @@ public class MainWindow : Window
     }
 
     /// <summary>
-    /// One row click, then ONE layout resync — after every change the click
+    /// One row click, then one layout resync — after every change the click
     /// makes, never between them. The strip a frame draws is a function of
     /// the selection, so the mode exits below must not restate the layout on
     /// their way out: they would resolve it against the outgoing selection
     /// (the library clears it entirely) and settle the active tab onto that
-    /// strip's first tab, losing the tab the user was on before entering the
+    /// strip's first tab, losing the prior tab before entering the
     /// mode — the promise <see cref="BuildTabs"/> makes for the library.
     /// </summary>
     private void OnRowClicked(ShellSidebarRow row)
     {
         ApplyRowClick(row);
         // The row was clicked while the shell is already drawing, and the tab
-        // strip is a function of the selection's TYPE: without this the rest
+        // strip is a function of the selection's type: without this the rest
         // of the frame renders the incoming pane through the outgoing strip's
-        // viewport contract, and draws the outgoing strip's LABELS with it.
+        // viewport contract, and draws the outgoing strip's labels with it.
         ResyncTabLayout();
     }
 
@@ -3360,7 +3320,7 @@ public class MainWindow : Window
         // A reference picture is not in the scene, so there is nothing to
         // select: the row's body RAISES its window instead, and shows it first
         // if the eye had set it aside — a click that focuses something the
-        // user cannot see would read as a click that did nothing.
+        // hidden window would read as a no-op.
         if (row.Tag is ReferenceImageInstance clickedImage)
         {
             _referenceImages.SetHidden(clickedImage, false);
@@ -3397,7 +3357,7 @@ public class MainWindow : Window
         }
         if (io.KeyShift && _selection.Anchor is { } anchor)
         {
-            // Range order follows the rows currently visible to the user;
+        // Range order follows the rows currently visible;
             // collapsed and filtered-out entries are deliberately excluded.
             var displayOrder = new List<SelectionId>();
             foreach (var section in _vm.Sections)
@@ -3478,8 +3438,8 @@ public class MainWindow : Window
             return;
         }
 
-        // Both kinds of object name the same tab, because the user has one
-        // word for them. WHICH pane it opens is the SELECTION's answer, never
+        // Both kinds of object name the same tab, because they share one
+        // word for them. Which pane it opens is the selection's answer, never
         // the label's — the same rule "Light" already lives under.
         if (_activeTab == "Object")
         {
@@ -3490,7 +3450,7 @@ public class MainWindow : Window
             return;
         }
 
-        // The environment is answered by the SELECTION, not by the label: it
+        // The environment is answered by the selection, not by the label: it
         // and a light both name a "Light" tab, and only the selected entity
         // says which pane that tab belongs to. Its strip is its own five tabs,
         // so every one of them lands here.
@@ -3530,7 +3490,7 @@ public class MainWindow : Window
     /// <summary>The environment strip's label as the pane's page identity.
     /// Positional against <see cref="_environmentTabs"/>; an unrecognised label
     /// falls to the strip's first tab, which is where BuildTabs would have put
-    /// the user anyway.</summary>
+    /// the active tab.</summary>
     private static EnvironmentTab EnvironmentTabFor(string tab) => tab switch
     {
         "Sky" => EnvironmentTab.Sky,
@@ -3848,7 +3808,7 @@ public class MainWindow : Window
             actions.Add(() =>
             {
                 // Through the seam, exactly as Clone is: spawning an actor
-                // was a step of the user's history and despawning it was not.
+                // is a history step, while despawning is not.
                 _lifecycle.DespawnActor(actor);
                 _selection.Clear();
             });
@@ -3944,9 +3904,8 @@ public class MainWindow : Window
     }
 
     /// <summary>The preset STORE, which is shared by every actor: create one
-    /// from what the menu's actor currently shows, or delete one. Kept out of
-    /// Settings because that window is a draft the user can cancel, and these
-    /// two acts land immediately.</summary>
+    /// from what the menu's actor currently shows, or delete one. These
+    /// operations apply immediately and remain outside Settings.</summary>
     private void DrawBonePresetManager()
     {
         if (!_presetManagerOpen)
@@ -4335,8 +4294,7 @@ public class MainWindow : Window
     /// <para>There is no "Save to file…" row because a prop has no document
     /// of its own — its whole identity is the model triple, which the scene
     /// file carries. Every lifetime verb goes through the history seam, so a
-    /// clone and a destroy are steps of the user's history exactly as the
-    /// light's are.</para>
+    /// clone and destroy use the same history seam as light actions.</para>
     /// </summary>
     private void DrawPropContextMenu()
     {
