@@ -548,16 +548,43 @@ public sealed class StableBindingRegistry
         {
             if (camera.TargetActorId is { } targetId)
             {
-                if (_actorBindings.ContainsKey(targetId))
+                if (IsCurrentCameraTarget(
+                        targetId, camera.TargetActor, _actorBindings))
                     continue;
                 _cameras.ClearTargetActor(camera);
                 continue;
             }
 
-            if (camera.TargetActorName.Length > 0 ||
-                camera.TargetOffset != Vector3.Zero)
+            if (HasCameraTargetResidual(
+                    camera.TargetActor, camera.TargetActorName,
+                    camera.TargetOffset))
                 _cameras.ClearTargetActor(camera);
         }
+    }
+
+    /// <summary>Binding admission retains follow state only when its native
+    /// actor reference is the exact object for the same generation. A
+    /// same-id replacement is stale and is never rebound.</summary>
+    internal static bool IsCurrentCameraTarget(
+        ActorId targetId,
+        IActor? retainedTarget,
+        IReadOnlyDictionary<ActorId, IActor> actorBindings)
+    {
+        return retainedTarget is not null &&
+            actorBindings.TryGetValue(targetId, out var currentTarget) &&
+            ReferenceEquals(retainedTarget, currentTarget);
+    }
+
+    /// <summary>Any retained follow component is residual state when the
+    /// exact target id is absent, including a native pointer with an empty
+    /// name and zero offset.</summary>
+    internal static bool HasCameraTargetResidual(
+        IActor? retainedTarget,
+        string targetName,
+        Vector3 targetOffset)
+    {
+        return retainedTarget is not null || targetName.Length > 0 ||
+            targetOffset != Vector3.Zero;
     }
 
     /// <summary>

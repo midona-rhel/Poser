@@ -74,6 +74,11 @@ public interface IVirtualCamera
     /// is presentation only and must never recover this identity.</summary>
     ActorId? TargetActorId { get; set; }
 
+    /// <summary>The native actor reference retained by the follow state. It
+    /// must be the exact object admitted for <see cref="TargetActorId"/>;
+    /// this is intentionally separate from the display name.</summary>
+    IActor? TargetActor { get; }
+
     /// <summary>The camera's real world position this frame — the native
     /// position while live, the retained free-cam position otherwise.</summary>
     Vector3 WorldPosition { get; }
