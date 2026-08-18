@@ -264,25 +264,7 @@ public class MainWindow : Window
         Title = "CAMERAS",
     };
 
-    /// <summary>
-    /// The world-adoption classes as the FOOTER states them: one lit-or-faded
-    /// glyph each, retained with their kind because they carry no per-scene
-    /// data at all — a warm frame restates the lit flag and never rebuilds
-    /// them.
-    ///
-    /// <para>These were rows under a WORLD section, and the section held
-    /// nothing else (user 2026-08-15: "you have actors and world as options
-    /// under World — put that at the footer instead"). A class is not a scene
-    /// entity: nothing selects it, nothing expands under it, and a tree row
-    /// promises both. The footer is where the shell says what is true right
-    /// now, and which classes are marking the world is exactly that.</para>
-    ///
-    /// <para>World props are ABSENT rather than faded-forever: nothing
-    /// upstream can adopt one yet, and a glyph that cannot change anything is
-    /// chrome pretending to be a control (user 2026-08-14). The set comes from
-    /// <see cref="WorldAdoptionClasses.All"/>, so the lane arrives here the
-    /// day its discovery does.</para>
-    /// </summary>
+    /// <summary>Footer toggles for world-object adoption classes.</summary>
     private readonly (WorldAdoptionKind Kind, ShellWorldClass Entry)[]
         _worldClasses = BuildWorldClasses();
 
@@ -493,11 +475,8 @@ public class MainWindow : Window
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
 
-    // The shell has no overlay controls at all any more (user 2026-08-14):
-    // the armature's shape and the selected-bones-only filter are settings
-    // rows, and the master switch is not a control — bone visibility is
-    // per-actor, and the chord in the keybind registry writes the overlay
-    // window's own flag without passing through here.
+    // Overlay settings live in their own rows; the keybind registry owns the
+    // overlay window flag.
 
     public event Action? OnSettingsRequested;
 
@@ -571,7 +550,7 @@ public class MainWindow : Window
         // Escape is the deselect chord, not the dismiss-the-workspace one —
         // the split parts and the pop-outs already said so, and losing the
         // whole shell mid-shoot to a stray Escape is the footgun the
-        // references close the same way (Brio's main window).
+        // references close through the same window route.
         RespectCloseHotkey = false;
         // Construction predates the configuration read; PreDraw restates the
         // effective floor every frame anyway.
@@ -691,10 +670,7 @@ public class MainWindow : Window
         };
         // The switch's polarity is "physics simulating"; the service's is
         // "freeze requested". The request is booked against the SCENE, not
-        // against whatever happens to be selected: the freeze is one
-        // process-global patch, and a shell switch that only worked while an
-        // animating actor was selected made a scene-wide control hostage to
-        // the selection (user 2026-08-14).
+        // The freeze is process-global and independent of selection.
         _vm.OnPhysics = on => _animation.SetScenePhysicsFrozen(!on);
         // The footer's class glyphs are minted once and restated in place; the
         // list never changes shape, so the shell never rebuilds it.
@@ -725,11 +701,11 @@ public class MainWindow : Window
         };
         // The sidebar's add affordance. Every section plus opens the ONE
         // spawn browser, UNDER THAT PLUS, on that section's own tab — the
-        // browser replaced the per-section mini choosers (user 2026-08-11:
+        // The browser replaces per-section mini choosers:
         // "it should spawn where the user click, either the plus at the top
         // or the plus next to actors camera or lights"). The anchor is the
         // button's own bottom-left, not the pointer, so the surface stands in
-        // one place per plus (user 2026-08-14).
+        // each plus uses the matching browser tab.
         _vm.OnSectionPlus = (index, anchor) =>
         {
             if (index == PropsSectionIndex)
@@ -1596,11 +1572,7 @@ public class MainWindow : Window
             {
                 Label = worldObject.Name,
                 Count = "",
-                // The square is the handle this row arrived through: Ktisis
-                // draws a BG object's node as a 4-gon and an actor's as a
-                // 5-gon (SceneDraw.cs:207, :251), and Poser's overlay follows.
-                // A row whose mark is the shape the user clicked is a row they
-                // can find without reading it.
+                // World objects use the square row mark.
                 Icon = TablerIcon.Square,
                 Tag = SelectionId.ForWorldObject(worldObject.Id),
                 LightActions = true,
@@ -1657,7 +1629,7 @@ public class MainWindow : Window
 
         // A reference picture is an overlay by the same test the nodes are —
         // it is laid OVER the game rather than into the scene — so it lists
-        // here beside them (user 2026-08-14). It is NOT a scene entity: it
+        // here beside them. It is not a scene entity: it
         // carries no SelectionId, joins no journal, and its Tag is the session
         // instance itself, which is what every verb below dispatches on.
         AppendReferenceImageRows(filter, filtering);
@@ -1687,7 +1659,7 @@ public class MainWindow : Window
     /// The camera row's badge. Exactly one camera is LIVE — the one the shot
     /// is actually framed through — and the row said so only by an undimmed
     /// glyph in its action strip, which reads as an available verb rather than
-    /// as a state (user, in-game round 4: the scene lists cameras but not
+    /// as a state: the scene lists cameras but not
     /// which is active). Live takes the one badge slot when it applies: which
     /// camera you are looking through is the more urgent fact, and the default
     /// camera's own mark — that it cannot be destroyed — is still told by its
@@ -1900,7 +1872,7 @@ public class MainWindow : Window
 
         // The GAME's target, once per frame: its row's crosshair stands at
         // full opacity while every other actor's fades — the live camera's
-        // treatment (user 2026-08-11).
+        // treatment.
         Guid? targetLineage =
             _actorManager.GetGPoseTarget() is { } gposeTarget
                 && _bindings.GetActorId(gposeTarget) is { } gposeTargetId
@@ -2305,8 +2277,7 @@ public class MainWindow : Window
             .ToList();
 
         bool actorMatches = MatchesSidebarFilter(filter, actorLabel, actor.Name);
-        // Category names are the Ktisis tree's — the same labels the rows
-        // below will wear.
+        // Category labels match the rows emitted below.
         bool hasMatchingBone = groups.Exists(group =>
             group.Bones.Exists(bone => MatchesSidebarFilter(filter, bone.DisplayName, bone.Id.CanonicalName)))
             || (groups.Count > 0 && KtisisCategoryLabelMatches(filter));
@@ -2433,15 +2404,11 @@ public class MainWindow : Window
                         && !categoriesFollow && !auxFollows);
         }
 
-        // The actor folds DIRECTLY into bone categories (no skeleton
-        // node). The category set and its NESTING are Ktisis' own tree,
-        // verbatim (user 2026-08-11); bones the tree does not claim close
-        // the list under Other.
+        // The actor expands into nested bone categories; unclaimed bones use
+        // the Other group.
         if (categoriesFollow)
         {
-            // Ordinals record the skeleton's own enumeration order: bones
-            // list flat inside their category in THAT order, as Ktisis'
-            // BindBones sorts by bone index.
+            // Preserve the skeleton enumeration order within each category.
             var byName = new Dictionary<string, (BoneDescriptor Bone, int Ordinal)>(
                 StringComparer.Ordinal);
             int ordinal = 0;
@@ -2458,7 +2425,7 @@ public class MainWindow : Window
                     built.Add(presentRoot);
 
             // Whatever the tree left unclaimed — modded bones outside the
-            // Ktisis schema — keeps a home.
+            // Unclaimed schema bones keep a home.
             var leftovers = new List<BoneDescriptor>();
             foreach (var (bone, _) in byName.Values)
                 if (!claimed.Contains(bone.Id.CanonicalName)
@@ -2469,10 +2436,7 @@ public class MainWindow : Window
                 built.Add(new BuiltCategory(
                     "Other", "Other", leftovers, leftovers, []));
 
-            // Ktisis' shape: ONE Skeleton node under the actor hosts the
-            // categories, and its eye shows or hides the whole skeleton in
-            // the overlay (user 2026-08-11) — the armature toggle's
-            // replacement, per actor.
+            // One skeleton row hosts the categories and their overlay state.
             if (built.Count > 0)
             {
                 var skeletonKey = actorKey + "/skeleton";
@@ -2524,7 +2488,7 @@ public class MainWindow : Window
                 depth + 1, childLines);
     }
 
-    /// <summary>Every Ktisis category label, flattened once, for the filter
+    /// <summary>Every category label, flattened once, for the filter
     /// oracle: a query naming any category keeps the actor visible.</summary>
     private static string[]? _ktisisLabels;
 
@@ -2792,7 +2756,7 @@ public class MainWindow : Window
             : category.VisibleBones.FindAll(
                 bone => !bone.Id.Equals(mergedBone.Id));
 
-        // Ktisis' own ordering, read from PoseBuilder: GROUPS sort before
+        // Preserve category ordering from the pose builder.
         // bones (SkeletonNode.OrderByPriority), and bones bind FLAT in
         // skeleton index order (BindBones: SortPriority = base + BoneIndex).
         for (int c = 0; c < category.Children.Count; c++)
@@ -3791,7 +3755,7 @@ public class MainWindow : Window
             new("Center camera on actor", TablerIcon.Crosshair),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the VERB the row performs: resume wears play,
-            // pause wears pause (user 2026-08-11).
+            // pause wears pause.
             new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
                 _animation.IsPaused(actorId)
                     ? TablerIcon.PlayerPlay
