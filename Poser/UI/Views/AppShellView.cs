@@ -528,13 +528,8 @@ public static class AppShellView
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        // Each column lays the panel ground over the blur once and stops at
-        // panel ground over the blur exactly once, and stops at its own
-        // column's edge — the band between them is the workspace's, and Draw
-        // has already coated it with the well's ground. That is what makes a
-        // column one material from this bar down to the window's bottom, and
-        // what keeps any pixel from wearing two coats: the bar used to lay a
-        // its column edge, leaving the workspace ground between columns.
+        // Each column lays its panel ground once and stops at its own edge;
+        // the workspace ground remains visible between columns.
         if (!vm.Collapsed && !vm.Detached)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
