@@ -5,7 +5,6 @@ using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
 using Poser.Domain.Identity;
-using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.WorldObjects;
