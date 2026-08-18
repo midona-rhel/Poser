@@ -24,8 +24,8 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Right-aligned mono readout.</summary>
     public Func<T, string?>? Badge;
 
-    /// <summary>Optional hierarchy hooks. Expandable rows get a disclosure
-    /// affordance instead of a selection checkbox.</summary>
+    /// <summary>Optional hierarchy hooks. Structural rows use disclosure;
+    /// selectable rows can keep a checkbox beside it.</summary>
     public Func<T, bool>? IsExpandable;
     /// <summary>Whether a row owns a selectable mark in multi-select mode;
     /// structural hierarchy rows reserve only their disclosure seat.</summary>
@@ -500,6 +500,19 @@ public static partial class Crystarium
             {
                 PaintCheckBox(
                     draw, slotMin, slotMin + new Vector2(slot), active, theme);
+                if (active)
+                {
+                    float tick = PickerCheckGlyph * scale;
+                    var tickMin = new Vector2(
+                        slotMin.X + (slot - tick) * 0.5f,
+                        centerY - tick * 0.5f);
+                    IconIn(
+                        tickMin,
+                        tickMin + new Vector2(tick),
+                        TablerIcon.Check,
+                        theme.Chrome.Checkmark,
+                        strokeWidth: PickerCheckStroke);
+                }
                 x += slot + gap;
                 slotMin = new Vector2(x, centerY - slot * 0.5f);
             }
@@ -523,18 +536,6 @@ public static partial class Crystarium
                         ? TablerIcon.ChevronDown
                         : TablerIcon.ChevronRight,
                     theme.TextMuted);
-            }
-            if (!expandable && selectable && active)
-            {
-                float tick = PickerCheckGlyph * scale;
-                var tickMin = new Vector2(
-                    slotMin.X + (slot - tick) * 0.5f, centerY - tick * 0.5f);
-                IconIn(
-                    tickMin,
-                    tickMin + new Vector2(tick),
-                    TablerIcon.Check,
-                    multi ? theme.Chrome.Checkmark : theme.Text,
-                    strokeWidth: PickerCheckStroke);
             }
             x += slot + gap;
             if (_options.Depth is { } depth)
@@ -601,7 +602,7 @@ public static partial class Crystarium
             // Single-select closes; multi-select remains open.
             if (!hit.Clicked || disclosureClicked)
                 return;
-            if (_onToggle is { } toggle)
+            if (_onToggle is { } toggle && (!multi || selectable))
                 toggle(item, !active);
             else
                 _picked = item;

@@ -264,7 +264,7 @@ public sealed class CameraPane
                 perPixel: perPixel,
                 format: "0.00",
                 help: "The camera's world position",
-                disabled: locked);
+                disabled: locked || !_cameras.IsAvailable);
             return;
         }
 
@@ -300,16 +300,17 @@ public sealed class CameraPane
                 format: "0.00",
                 help: "The world point this camera is pinned to; it stays "
                     + "here however the subject moves",
-                disabled: locked);
-            return;
+                disabled: locked || !_cameras.IsAvailable);
         }
-
-        var world = camera.WorldPosition;
-        form.AxisVector(
-            "World position", world, _ => { }, onCommit: null,
-            perPixel: perPixel, format: "0.00",
-            help: "Where this camera is in the world right now",
-            disabled: true);
+        else
+        {
+            var world = camera.WorldPosition;
+            form.AxisVector(
+                "World position", world, _ => { }, onCommit: null,
+                perPixel: perPixel, format: "0.00",
+                help: "Where this camera is in the world right now",
+                disabled: true);
+        }
         form.Switch(
             "Pin position", camera.FixedPosition is not null,
             value =>
@@ -758,8 +759,8 @@ public sealed class CameraPane
     private void BoneRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
         bool locked = camera.IsLocked;
-        // The hierarchy is the same actor/category/bone read model as the
-        // sidebar; its disclosure is independent from tracking selection.
+        // The picker uses exact actor/skeleton/bone descriptors; disclosure
+        // remains independent from tracking selection.
         DrawTrackingHierarchy?.Invoke(form, camera);
         form.Actions("Selection", actions =>
         {
