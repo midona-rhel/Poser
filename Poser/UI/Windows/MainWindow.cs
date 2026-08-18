@@ -2245,15 +2245,11 @@ public class MainWindow : Window
         var contexts = new string[ancestors.Length + 1];
         Array.Copy(ancestors, contexts, ancestors.Length);
         contexts[^1] = key;
-        var exact = ResolveCategoryBone(category.Id, category.AllBones);
         rows.Add(new CameraBoneChoice(
-            exact?.Id.ToString() ?? key,
+            key,
             category.Label,
-            exact == null
-                ? $"{category.Label} {category.Id}"
-                : $"{category.Label} {category.Id} "
-                    + exact.Id.CanonicalName,
-            exact?.Id,
+            $"{category.Label} {category.Id}",
+            null,
             null,
             contexts,
             true));
@@ -2261,8 +2257,6 @@ public class MainWindow : Window
             AddCameraCategoryChoices(rows, actorId, child, contexts);
         foreach (var bone in category.VisibleBones)
         {
-            if (exact != null && bone.Id == exact.Id)
-                continue;
             rows.Add(new CameraBoneChoice(
                 bone.Id.ToString(),
                 bone.DisplayName,
