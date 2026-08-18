@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 
