@@ -9,6 +9,7 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using Poser.Core;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Services;
