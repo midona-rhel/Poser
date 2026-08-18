@@ -647,10 +647,17 @@ public sealed class StableBindingRegistry
         }
     }
 
-    public ActorId? GetActorId(IActor actor) =>
-        _legacyActorIds.TryGetValue(actor.Id.Unique, out var id)
-            ? id
-            : null;
+    /// <summary>Returns an actor id only for the exact currently bound
+    /// instance. A released pointer can share the native unique key with its
+    /// replacement, but must never resolve to that replacement.</summary>
+    public ActorId? GetActorId(IActor actor)
+    {
+        if (!_legacyActorIds.TryGetValue(actor.Id.Unique, out var id) ||
+            !_actorBindings.TryGetValue(id, out var bound) ||
+            !ReferenceEquals(bound, actor))
+            return null;
+        return id;
+    }
 
     public BoneId? GetBoneId(IBone bone) =>
         GetBoneId(bone, _legacyBoneIds, _boneBindings);

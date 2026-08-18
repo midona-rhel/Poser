@@ -459,6 +459,7 @@ public sealed class CameraPane
 
     private void TargetRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
+        ReconcileTargetActor(camera, notify: true);
         bool locked = camera.IsLocked;
         var choices = new List<(ActorId Id, string Name)>();
         var labels = new List<string> { "None" };
@@ -753,6 +754,8 @@ public sealed class CameraPane
 
     private void Recenter(IVirtualCamera camera)
     {
+        if (!ReconcileTargetActor(camera, notify: true))
+            return;
         if (camera.TargetActorId is { } followedId)
         {
             var resolved = _bindings.Resolve(followedId);
@@ -817,6 +820,23 @@ public sealed class CameraPane
         }
 
         _notices.Refused("Center: select or track an actor or bone first.");
+    }
+
+    /// <summary>Runs on the framework/UI thread before target presentation or
+    /// recentering. A stale exact id clears the complete follow relationship;
+    /// it never resolves or writes the replacement actor.</summary>
+    private bool ReconcileTargetActor(IVirtualCamera camera, bool notify)
+    {
+        if (camera.TargetActorId is not { } targetId)
+            return true;
+        var resolved = _bindings.Resolve(targetId);
+        if (resolved.Success && resolved.Value is { } actor &&
+            _bindings.GetActorId(actor) == targetId)
+            return true;
+        _cameras.ClearTargetActor(camera);
+        if (notify)
+            _notices.Refused("Follow: the target actor is no longer available.");
+        return false;
     }
 
     private void ReportCenter(CameraCenterResult result)
