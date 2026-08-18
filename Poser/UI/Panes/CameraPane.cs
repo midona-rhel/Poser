@@ -169,6 +169,11 @@ public sealed class CameraPane
         if (_scene.Selection.Primary is not
             { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
             return;
+        if (!_cameras.IsAvailable)
+        {
+            _notices.Refused("Reset: camera controls are unavailable.");
+            return;
+        }
         var resolved = _bindings.Resolve(cameraId);
         if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
             _bindings.GetCameraId(camera) != cameraId)

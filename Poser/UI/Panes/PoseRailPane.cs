@@ -123,7 +123,8 @@ public class PoseRailPane
             // resets address anything it has, and its own actions live on
             // the Light tab. A gaze point takes none either — its buttons
             // would act on the owning actor while claiming to act on it.
-            // A camera's actions live on the Camera tab the same way.
+            // Camera framing lives on the Camera tab; its reset transform
+            // deliberately stays here beside the actor and bone resets.
             // An overlay node stands down for the same reason a light does:
             // it has no bones to reset and no actor override to clear, and its
             // own actions live on the Overlay tab.
