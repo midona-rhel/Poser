@@ -2016,7 +2016,7 @@ public class MainWindow : Window
                 !_collapsedNodes.Contains(actorKey);
             result.Add(new ShellSidebarRow
             {
-                Label = ActorName(actor),
+                Label = ActorDisplayName(actor),
                 Depth = 0,
                 HasChildren = actor.Skeletons.Count > 0,
                 Expanded = actorExpanded,
