@@ -112,7 +112,7 @@ public sealed class CameraPane
         }
     }
 
-    /// <summary>Opens the load dialog from outside the pane — the CAMERAS
+    /// <summary>Opens the load dialog from outside the pane — the cameras
     /// header's "New camera from file…".</summary>
     public void OpenLoad()
     {
@@ -230,12 +230,12 @@ public sealed class CameraPane
     /// rail's gate for the two camera sections.</summary>
     public bool HasRailCamera => TargetCamera().Camera != null;
 
-    /// <summary>Whether the rail should also declare TRACKING: only an orbit
+    /// <summary>Whether the rail should also declare tracking: only an orbit
     /// camera has a pivot to steer.</summary>
     public bool RailHasTracking =>
         TargetCamera().Camera is { Kind: not CameraKind.Free };
 
-    /// <summary>The rail's TRANSLATION for a camera: the value it edits IS
+    /// <summary>The rail's translation for a camera: the value it edits is
     /// the offset; free cameras edit their absolute position.</summary>
     public void DrawRailTranslation(Crystarium.FormScope form)
     {

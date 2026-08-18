@@ -1311,11 +1311,11 @@ public class MainWindow : Window
         _vm.AnimationOn = toolbarActor is not { } animActor
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
         // The freeze is one process-global code patch held by the scene, so
-        // the switch shows the global state and is live under EVERY selection
+        // the switch shows the global state and is live under every selection
         // and under none: nothing about the patch is per-actor.
         _vm.PhysicsOn = !_animation.IsPhysicsFrozen;
         // The sibling-link mode's second half. Co-selection reaches every
-        // _l/_r pair; the same-delta CATALOG (both eyes, the Viera ear-variant
+        // _l/_r pair; the same-delta catalog (both eyes, the Viera ear-variant
         // chains) pairs bones that are not _l/_r counterparts and cannot be
         // reached that way, so the one switch arms both. Read here rather than
         // wired once, so a Settings change takes effect on the next frame.
@@ -3148,7 +3148,7 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
             _ => null,
         };
-        // The bone total moves only with the scene's structure or with WHICH
+        // The bone total moves only with the scene's structure or with which
         // actor is selected — never with the frame.
         if (!_statusPrimed ||
             _statusRevision != _scene.Revision ||
@@ -3283,7 +3283,7 @@ public class MainWindow : Window
         // Every environment tab is a PageForm, as the one it replaced was.
         // "Light" is deliberately shared: it is a light's whole editor and the
         // environment's lighting tab, and both are pages, so the layout answer
-        // is the same either way. WHICH pane draws it is decided by the
+        // is the same either way. Which pane draws it is decided by the
         // selection in DrawTabContent, never by this label.
         // The scene workspace is a Page like the rest of them; it was the one
         // page missing from this list, so the shell was insetting it a second
@@ -3714,7 +3714,7 @@ public class MainWindow : Window
             new("Set game target", TablerIcon.Crosshair),
             new("Center camera on actor", TablerIcon.Crosshair),
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
-            // The icon carries the VERB the row performs: resume wears play,
+            // The icon carries the verb the row performs: resume wears play,
             // pause wears pause.
             new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
                 _animation.IsPaused(actorId)
@@ -3749,7 +3749,7 @@ public class MainWindow : Window
             () =>
             {
                 _renameTarget = actorId;
-                // Seeds what the UI SHOWS — nickname, else the mask while
+                // Seeds what the UI shows — nickname, else the mask while
                 // anonymous mode is on. Prefilling the raw name would leak it.
                 _renameValue = Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name));
@@ -4222,7 +4222,7 @@ public class MainWindow : Window
 
     /// <summary>Right-click light menu: the lifetime verbs the actor menu
     /// gives its rows, spoken in the light's vocabulary — the eye, the file,
-    /// and the ownership-aware destroy/release the ACTIONS section makes.
+    /// and the ownership-aware destroy/release the actions section makes.
     /// </summary>
     private void DrawLightContextMenu()
     {

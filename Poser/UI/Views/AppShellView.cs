@@ -184,7 +184,7 @@ public sealed class AppShellViewModel
     public bool ContentOwnsViewport;
 
     /// <summary>
-    /// The pane takes the viewport WALL TO WALL: no shell horizontal inset and
+    /// The pane takes the viewport wall to wall: no shell horizontal inset and
     /// no reserved scrollbar column, because the pane paints its own bands,
     /// rules and gutters against the workspace edges. The library uses this —
     /// its footer rule has to meet the same edges every other shell rule does.
