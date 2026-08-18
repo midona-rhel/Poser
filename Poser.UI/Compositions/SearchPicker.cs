@@ -471,42 +471,9 @@ public static partial class Crystarium
                 });
 
             float centerY = pillMin.Y + pillSize.Y * 0.5f;
-            if (_options.TreeLines?.Invoke(item) is { } lines)
-            {
-                for (int level = 0; level < lines.Length; level++)
-                {
-                    if (!lines[level])
-                        continue;
-                    float trunkX = pillMin.X
-                        + (PickerRowPadding + level * 16f) * scale;
-                    draw.AddLine(
-                        new Vector2(trunkX, pillMin.Y),
-                        new Vector2(
-                            trunkX,
-                            pillMin.Y + pillSize.Y
-                                * (_options.IsLastChild?.Invoke(item) == true
-                                    && level == lines.Length - 1
-                                    ? 0.5f : 1f)),
-                        ImGui.ColorConvertFloat4ToU32(theme.Border),
-                        scale);
-                }
-                if (lines.Length > 0)
-                {
-                    float parentX = pillMin.X
-                        + (PickerRowPadding + (lines.Length - 1) * 16f)
-                        * scale;
-                    float childX = pillMin.X
-                        + (PickerRowPadding + lines.Length * 16f) * scale;
-                    draw.AddLine(
-                        new Vector2(parentX, centerY),
-                        new Vector2(childX, centerY),
-                        ImGui.ColorConvertFloat4ToU32(theme.Border),
-                        scale);
-                }
-            }
-
             float gap = theme.Spacing.Three * scale;
-            float x = pillMin.X + PickerRowPadding * scale;
+            float baseX = pillMin.X + PickerRowPadding * scale;
+            float x = baseX;
 
             // Structural rows reserve a disclosure seat; selectable rows keep
             // their check first, so a bone can both toggle and disclose.
@@ -515,6 +482,7 @@ public static partial class Crystarium
             bool expandable = _options.IsExpandable?.Invoke(item) == true;
             bool selectable = _options.IsSelectable?.Invoke(item) ?? true;
             bool disclosureClicked = false;
+            int seatCount = multi ? 2 : 1;
             if (multi && selectable)
             {
                 PaintCheckBox(
@@ -532,9 +500,10 @@ public static partial class Crystarium
                         theme.Chrome.Checkmark,
                         strokeWidth: PickerCheckStroke);
                 }
-                x += slot + gap;
-                slotMin = new Vector2(x, centerY - slot * 0.5f);
             }
+            if (multi)
+                x += slot + gap;
+            slotMin = new Vector2(x, centerY - slot * 0.5f);
             if (expandable)
             {
                 ImGui.SetItemAllowOverlap();
@@ -557,8 +526,39 @@ public static partial class Crystarium
                     theme.TextMuted);
             }
             x += slot + gap;
+            float gutterX = baseX + seatCount * (slot + gap);
+            if (_options.TreeLines?.Invoke(item) is { } lines)
+            {
+                for (int level = 0; level < lines.Length; level++)
+                {
+                    if (!lines[level])
+                        continue;
+                    float trunkX = gutterX + level * 16f * scale;
+                    draw.AddLine(
+                        new Vector2(trunkX, pillMin.Y),
+                        new Vector2(
+                            trunkX,
+                            pillMin.Y + pillSize.Y
+                                * (_options.IsLastChild?.Invoke(item) == true
+                                    && level == lines.Length - 1
+                                    ? 0.5f : 1f)),
+                        ImGui.ColorConvertFloat4ToU32(theme.Border),
+                        scale);
+                }
+                if (lines.Length > 0)
+                {
+                    float parentX = gutterX
+                        + (lines.Length - 1) * 16f * scale;
+                    float childX = gutterX + lines.Length * 16f * scale;
+                    draw.AddLine(
+                        new Vector2(parentX, centerY),
+                        new Vector2(childX, centerY),
+                        ImGui.ColorConvertFloat4ToU32(theme.Border),
+                        scale);
+                }
+            }
             if (_options.Depth is { } depth)
-                x += Math.Max(0, depth(item)) * 16f * scale;
+                x = gutterX + Math.Max(0, depth(item)) * 16f * scale;
 
             // A glyph is the fallback when no texture is available.
             nint texture = _options.Texture is { } toTexture ? toTexture(item) : 0;

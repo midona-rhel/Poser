@@ -78,12 +78,7 @@ public sealed class ShellSidebarSection
 /// states it: a glyph that is lit while that class marks the world with
 /// clickable handles and faded while it does not.
 ///
-/// <para>The classes were rows under a WORLD section once. They are not scene
-/// entities — nothing selects, nothing expands — so a tree row was the wrong
-/// shape for them, and the section existed only to hold them (user 2026-08-15:
-/// "you have actors and world as options under World — put that at the footer
-/// instead"). The footer is where the shell states what is TRUE right now, and
-/// which classes are marked is exactly that.</para>
+/// <para>The classes are footer toggles rather than scene entities.</para>
 /// </summary>
 public sealed class ShellWorldClass
 {

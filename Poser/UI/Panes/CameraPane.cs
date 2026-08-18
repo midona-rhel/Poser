@@ -15,9 +15,8 @@ using Poser.Services;
 namespace Poser.UI;
 
 /// <summary>
-/// Camera-scoped editor: the Brio game/free camera controls and the Ktisis
-/// tracking graft, composed the way the light editor is — the pane owns state
-/// and callbacks; Crystarium owns every row and placement.
+/// Camera-scoped editor. The pane owns camera state and callbacks; Crystarium
+/// owns row rendering and placement.
 ///
 /// <para>Every property row writes the live <see cref="IVirtualCamera"/>
 /// directly — a live camera routes each write to the native camera, a parked
@@ -35,8 +34,7 @@ public sealed class CameraPane
     private readonly IVirtualCameraService _cameras;
     private readonly IActorSpawnService _spawnService;
 
-    /// <summary>Adding and removing a camera goes through the lifecycle seam,
-    /// so both land in the shell's undo history.</summary>
+    /// <summary>Camera creation and removal use the lifecycle history.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
 
@@ -44,9 +42,7 @@ public sealed class CameraPane
     /// standing facts only.</summary>
     private readonly UserNotices _notices;
 
-    /// <summary>The destroy-all's first press. Held on the pane rather than
-    /// on a camera: it is a statement about the scene, so which camera
-    /// happens to be selected does not change what it means.</summary>
+    /// <summary>Whether destroy-all confirmation is armed.</summary>
     private bool _destroyAllArmed;
 
     private bool _openGeneral = true;
@@ -123,8 +119,7 @@ public sealed class CameraPane
         _loadBrowser.Open(_lastPath, path =>
         {
             _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
-            // The file service owns the creation, so the add is RECORDED
-            // rather than issued here — the light pane's own rule.
+            // Import creation is recorded through the lifecycle service.
             var imported = _lifecycle.RecordSpawnedCamera(
                 $"Add camera from {System.IO.Path.GetFileNameWithoutExtension(path)}",
                 _cameraFiles.ImportCamera(path));
@@ -166,9 +161,7 @@ public sealed class CameraPane
                 result.Detail ?? "Center: the camera could not move.");
     }
 
-    /// <summary>Resets the exact selected camera from the inspector rail.
-    /// The rail owns the button's seat and styling; this pane owns camera
-    /// identity, lock refusal, and the state reset.</summary>
+    /// <summary>Resets the exact selected camera from the inspector rail.</summary>
     public void ResetSelectedCameraTransform()
     {
         if (_scene.Selection.Primary is not
@@ -200,8 +193,7 @@ public sealed class CameraPane
     /// <summary>
     /// The Camera tab: what the camera IS and what is done with it as a whole
     /// — the view it frames, its limits, its file, and the lifetime actions.
-    /// The camera's translation (its OFFSET) and its bone tracking live on
-    /// the inspector rail, the same split the lights make.
+    /// Translation and bone tracking live on the inspector rail.
     /// </summary>
     public void DrawCamera(Vector2 origin, Vector2 size) =>
         DrawTab("camera", origin, size, (page, _, camera) =>
@@ -244,8 +236,7 @@ public sealed class CameraPane
         TargetCamera().Camera is { Kind: not CameraKind.Free };
 
     /// <summary>The rail's TRANSLATION for a camera: the value it edits IS
-    /// the offset — an orbit camera has no absolute position of its own, and
-    /// a free camera's position is the one thing it has.</summary>
+    /// the offset; free cameras edit their absolute position.</summary>
     public void DrawRailTranslation(Crystarium.FormScope form)
     {
         var (_, camera) = TargetCamera();
@@ -279,11 +270,7 @@ public sealed class CameraPane
     }
 
     /// <summary>
-    /// Where the orbit camera actually is, and Ktisis's pin over the same
-    /// number. Unpinned it is a readout (Brio shows the same value disabled);
-    /// pinned it becomes the editable world point the camera holds, so one
-    /// row answers "where am I" and "stay there" instead of two rows
-    /// disagreeing about which is the truth.
+    /// Shows the current orbit position and its optional fixed world point.
     /// </summary>
     private void WorldPositionRow(
         Crystarium.FormScope form,
@@ -323,8 +310,7 @@ public sealed class CameraPane
             help: "Keep this camera at its current world position");
     }
 
-    /// <summary>The rail's TRACKING section, whole: Ktisis's bone tracking —
-    /// mode, the tracked set, and its per-bone rows.</summary>
+    /// <summary>Draws camera tracking controls on the inspector rail.</summary>
     public void DrawRailTracking(Crystarium.FormScope form)
     {
         var (_, camera) = TargetCamera();
@@ -689,8 +675,7 @@ public sealed class CameraPane
                     variant: ButtonVariant.Danger);
         });
 
-        // Brio's "Destroy All… → Cameras → Confirm", armed rather than held:
-        // the first press states what is about to go, the second does it.
+        // The first press arms confirmation; the second performs the sweep.
         int spare = SpareCameraCount();
         form.Actions("All cameras", actions =>
         {
@@ -935,8 +920,7 @@ public sealed class CameraPane
         }
     }
 
-    /// <summary>Ktisis's "track selection" button: the tracked set becomes
-    /// exactly the bones currently selected in the sidebar.</summary>
+    /// <summary>Replaces tracking with the currently selected bones.</summary>
     private void TrackSelection(IVirtualCamera camera)
     {
         var bones = new List<IBone>();

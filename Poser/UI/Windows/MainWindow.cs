@@ -1956,8 +1956,7 @@ public class MainWindow : Window
         return descended;
     }
 
-    /// <summary>Draws the compact tracking picker from exact scene
-    /// descriptors. The shared picker owns popup chrome and filtering.</summary>
+    /// <summary>Draws the descriptor-backed tracking picker.</summary>
     private void DrawCameraTrackingHierarchy(
         Crystarium.FormScope form, IVirtualCamera camera)
     {

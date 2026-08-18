@@ -637,8 +637,8 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows retain the live-view action; lock is edited in the
-            // selected camera inspector rather than as a sidebar icon.
+            // Camera rows expose only the live-view action; lock is in the
+            // selected camera inspector.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
