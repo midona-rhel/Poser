@@ -704,9 +704,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                 { Success: true, Value: { } resolved } ||
             !ReferenceEquals(resolved, exactActor))
             return "The target actor is no longer available.";
-        if (!_cameras.SetTargetActor(target, exactActor, displayName))
+        if (!_cameras.SetTargetActor(target, exactActor, targetId, displayName))
             return "The target actor has no draw object.";
-        target.TargetActorId = targetId;
         return null;
     }
 

@@ -859,12 +859,11 @@ public sealed class CameraPane
             _notices.Refused("Follow: that actor is no longer available.");
             return;
         }
-        if (!_cameras.SetTargetActor(camera, actor, displayName))
+        if (!_cameras.SetTargetActor(camera, actor, actorId, displayName))
         {
             _notices.Failed("Follow: the actor is not drawn yet.");
             return;
         }
-        camera.TargetActorId = actorId;
     }
 
     /// <summary>Ktisis's "track selection" button: the tracked set becomes

@@ -379,7 +379,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     }
 
     public bool SetTargetActor(
-        IVirtualCamera camera, IActor actor, string displayName)
+        IVirtualCamera camera, IActor actor, ActorId actorId,
+        string displayName)
     {
         if (camera is not VirtualCamera target || actor.Address == nint.Zero)
             return false;
@@ -397,9 +398,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetOffset = drawPosition - objectPosition;
         target.TargetActorName = displayName;
         target.TargetActor = actor;
-        // The UI supplies the exact stable ActorId immediately after this
-        // native validation; this pointer alone is not safe identity.
-        target.TargetActorId = null;
+        target.TargetActorId = actorId;
         return true;
     }
 

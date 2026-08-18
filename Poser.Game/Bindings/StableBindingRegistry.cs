@@ -1,3 +1,4 @@
+using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -527,6 +528,7 @@ public sealed class StableBindingRegistry
         _lightBindings = candidate.LightBindings;
         _cameraIds = candidate.CameraIds;
         _cameraBindings = candidate.CameraBindings;
+        ReconcileCameraTargets();
         _propIds = candidate.PropIds;
         _propBindings = candidate.PropBindings;
         _overlayIds = candidate.OverlayIds;
@@ -535,6 +537,27 @@ public sealed class StableBindingRegistry
         _worldObjectBindings = candidate.WorldObjectBindings;
         _auxiliaryBindings = candidate.AuxiliaryBindings;
         _stagedCandidate = null;
+    }
+
+    /// <summary>Binding admission is the authority for actor generations.
+    /// Clear camera follow state here, including while its pane is hidden, so
+    /// a stale target cannot keep applying an old offset or name.</summary>
+    private void ReconcileCameraTargets()
+    {
+        foreach (var camera in _cameraBindings.Values)
+        {
+            if (camera.TargetActorId is { } targetId)
+            {
+                if (_actorBindings.ContainsKey(targetId))
+                    continue;
+                _cameras.ClearTargetActor(camera);
+                continue;
+            }
+
+            if (camera.TargetActorName.Length > 0 ||
+                camera.TargetOffset != Vector3.Zero)
+                _cameras.ClearTargetActor(camera);
+        }
     }
 
     /// <summary>

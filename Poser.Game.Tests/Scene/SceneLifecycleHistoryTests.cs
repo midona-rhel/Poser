@@ -343,7 +343,8 @@ public sealed class SceneLifecycleHistoryTests
         public void DestroyAllCameras() => _cameras.Clear();
         public void SetLive(IVirtualCamera camera) { }
         public bool SetTargetActor(
-            IVirtualCamera camera, IActor actor, string displayName) => false;
+            IVirtualCamera camera, IActor actor, ActorId actorId,
+            string displayName) => false;
         public void ClearTargetActor(IVirtualCamera camera) { }
         // Camera framing is outside lifecycle-history coverage.
         public CameraCenterResult CenterOnActor(IActor actor) =>

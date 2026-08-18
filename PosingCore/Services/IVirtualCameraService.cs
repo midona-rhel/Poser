@@ -63,7 +63,9 @@ public interface IVirtualCameraService : IDisposable
     /// <summary>Brio's target select: the camera's target offset becomes the
     /// actor's draw-object offset so the orbit pivot sits on the drawn body.
     /// Framework thread only; false when the actor has no draw object.</summary>
-    bool SetTargetActor(IVirtualCamera camera, IActor actor, string displayName);
+    bool SetTargetActor(
+        IVirtualCamera camera, IActor actor, ActorId actorId,
+        string displayName);
 
     void ClearTargetActor(IVirtualCamera camera);
 
