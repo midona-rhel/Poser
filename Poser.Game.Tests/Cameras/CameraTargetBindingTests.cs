@@ -44,7 +44,7 @@ public sealed class CameraTargetBindingTests
     private static IActor ActorProxy() =>
         DispatchProxy.Create<IActor, EmptyActorProxy>();
 
-    private sealed class EmptyActorProxy : DispatchProxy
+    private class EmptyActorProxy : DispatchProxy
     {
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
