@@ -128,10 +128,18 @@ public class PoseRailPane
             // it has no bones to reset and no actor override to clear, and its
             // own actions live on the Overlay tab.
             if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
+                !_inspector.IsOverlaySelection)
             {
                 ImGui.SetCursorScreenPos(cursor);
-                if (_inspector.IsActorSelection)
+                if (_inspector.IsCameraSelection)
+                {
+                    if (Crystarium.Button("Reset transform",
+                            id: "rail-camera-reset",
+                            help: "Restore the selected camera's framing",
+                            style: ControlStyle.Workspace))
+                        _inspector.ResetCameraTransform();
+                }
+                else if (_inspector.IsActorSelection)
                 {
                     // Always clickable: clearing overrides is a safe no-op when
                     // none exist.

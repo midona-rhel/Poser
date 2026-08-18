@@ -227,7 +227,8 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraActions ? 2
+                        : row.CameraLockSwitch ? 1
+                        : row.CameraActions ? 1
                         : row.LightActions ? 2
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
@@ -341,8 +342,11 @@ public sealed class ShellSidebar
     }
 
     /// <summary>Returns a stable row identity.</summary>
-    private static string RowId(ShellSidebarRow row) =>
-        row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
+    private static string RowId(ShellSidebarRow row)
+    {
+        string key = row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
+        return row.CameraLockSwitch ? "camera-lock:" + key : key;
+    }
 
     private static string HeaderId(int index) => index switch
     {
@@ -634,25 +638,12 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows expose lock and live-view actions.
+            // Camera rows use the shared switch for lock state and retain the
+            // live-view action beside it; lock is a real stateful control, not
+            // a temporary icon whose meaning changes with the frame.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
-                        row.CameraLocked
-                            ? TablerIcon.Lock
-                            : TablerIcon.LockOpen,
-                        selected: false,
-                        style: square,
-                        help: row.CameraLocked
-                            ? "Unlock this camera"
-                            : "Lock this camera: keep it exactly as "
-                                + "framed",
-                        id: "##camera-lock",
-                        dimmed: !row.CameraLocked))
-                    _vm.OnCameraLock?.Invoke(row);
-
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
                         selected: false,
@@ -663,6 +654,24 @@ public sealed class ShellSidebar
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
+                return;
+            }
+
+            if (row.CameraLockSwitch)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.Switch(
+                        "##camera-lock-row", row.CameraLocked,
+                        _ => { },
+                        new ControlStyle
+                        {
+                            Width = UiWidth.Fixed(
+                                Crystarium.ActiveTheme.Controls.SwitchWidth),
+                            Height = UiHeight.Fixed(
+                                Crystarium.ActiveTheme.Controls.SwitchHeight),
+                        },
+                        help: "Lock camera"))
+                    _vm.OnCameraLock?.Invoke(row);
                 return;
             }
 

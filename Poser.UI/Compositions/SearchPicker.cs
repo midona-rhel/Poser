@@ -24,6 +24,13 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Right-aligned mono readout.</summary>
     public Func<T, string?>? Badge;
 
+    /// <summary>Optional hierarchy hooks. Expandable rows get a disclosure
+    /// affordance instead of a selection checkbox.</summary>
+    public Func<T, bool>? IsExpandable;
+    public Func<T, bool>? IsExpanded;
+    public Action<T>? OnExpand;
+    public Func<T, int>? Depth;
+
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
 
@@ -171,6 +178,22 @@ public static partial class Crystarium
         {
             if (ImGui.IsPopupOpen(_popupId))
                 _options = options;
+        }
+
+        /// <summary>Replaces the structural rows of an open picker while a
+        /// disclosure gesture is being handled. Selection remains owned by
+        /// the caller, so refreshing the hierarchy cannot change it.</summary>
+        public void UpdateItems(IReadOnlyList<T> items)
+        {
+            _items = items;
+        }
+
+        /// <summary>Restates the caller-owned leaf selection while the popup
+        /// remains open, dropping checks for bones removed by reconciliation.</summary>
+        public void UpdateSelection(IReadOnlySet<string> selectedKeys)
+        {
+            if (_selectedKeys is not null)
+                _selectedKeys = selectedKeys;
         }
 
         /// <summary>Updates the visible loading or failure status.</summary>
@@ -448,10 +471,33 @@ public static partial class Crystarium
             // Both modes reserve the same mark slot to align labels.
             float slot = PickerCheckSlot * scale;
             var slotMin = new Vector2(x, centerY - slot * 0.5f);
-            if (multi)
+            bool expandable = _options.IsExpandable?.Invoke(item) == true;
+            bool disclosureClicked = false;
+            if (expandable)
+            {
+                ImGui.SetItemAllowOverlap();
+                ImGui.SetCursorScreenPos(new Vector2(
+                    slotMin.X, pillMin.Y));
+                var disclosure = Interactive.Reserve(
+                    $"{_popupId}-{key}-disclosure",
+                    new Vector2(slot, pillSize.Y), disabled: false);
+                if (disclosure.Clicked)
+                {
+                    disclosureClicked = true;
+                    _options.OnExpand?.Invoke(item);
+                }
+                IconIn(
+                    slotMin,
+                    slotMin + new Vector2(slot),
+                    _options.IsExpanded?.Invoke(item) == true
+                        ? TablerIcon.ChevronDown
+                        : TablerIcon.ChevronRight,
+                    theme.TextMuted);
+            }
+            else if (multi)
                 PaintCheckBox(
                     draw, slotMin, slotMin + new Vector2(slot), active, theme);
-            if (active)
+            if (!expandable && active)
             {
                 float tick = PickerCheckGlyph * scale;
                 var tickMin = new Vector2(
@@ -464,6 +510,8 @@ public static partial class Crystarium
                     strokeWidth: PickerCheckStroke);
             }
             x += slot + gap;
+            if (_options.Depth is { } depth)
+                x += Math.Max(0, depth(item)) * 16f * scale;
 
             // A glyph is the fallback when no texture is available.
             nint texture = _options.Texture is { } toTexture ? toTexture(item) : 0;
@@ -524,7 +572,7 @@ public static partial class Crystarium
                     besideIcon: true);
 
             // Single-select closes; multi-select remains open.
-            if (!hit.Clicked)
+            if (!hit.Clicked || disclosureClicked)
                 return;
             if (_onToggle is { } toggle)
                 toggle(item, !active);

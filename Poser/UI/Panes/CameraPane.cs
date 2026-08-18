@@ -161,6 +161,29 @@ public sealed class CameraPane
                 result.Detail ?? "Center: the camera could not move.");
     }
 
+    /// <summary>Resets the exact selected camera from the inspector rail.
+    /// The rail owns the button's seat and styling; this pane owns camera
+    /// identity, lock refusal, and the state reset.</summary>
+    public void ResetSelectedCameraTransform()
+    {
+        if (_scene.Selection.Primary is not
+            { Kind: SceneEntityKind.Camera, Camera: { } cameraId })
+            return;
+        var resolved = _bindings.Resolve(cameraId);
+        if (!resolved.Success || resolved.Value is not { IsValid: true } camera ||
+            _bindings.GetCameraId(camera) != cameraId)
+        {
+            _notices.Refused("Reset: the camera is no longer available.");
+            return;
+        }
+        if (camera.IsLocked)
+        {
+            _notices.Refused("Reset: unlock the camera first.");
+            return;
+        }
+        camera.ResetProperties();
+    }
+
     /// <summary>
     /// The Camera tab: what the camera IS and what is done with it as a whole
     /// — the view it frames, its limits, its file, and the lifetime actions.
@@ -350,15 +373,7 @@ public sealed class CameraPane
         if (!_cameras.IsAvailable)
             form.Status("Cameras are unavailable: game signatures not found.");
 
-        // Draw Lock first so an interaction updates the effective gate for
-        // every following control in this same frame.
-        form.Switch("Lock", camera.IsLocked,
-            value => camera.IsLocked = value,
-            help: "Protect this camera's framing and consume camera input");
         bool locked = camera.IsLocked;
-        if (locked)
-            form.Status(
-                "Locked — unlock the Lock switch to edit this camera.");
         form.Cells(cells =>
         {
             cells.Cell(
@@ -389,13 +404,6 @@ public sealed class CameraPane
                             : "Game camera"),
                 help: "Fixed at creation: a game camera orbits, a free "
                     + "camera flies");
-        });
-        form.Actions("Framing", actions =>
-        {
-            actions.Button("Recenter", () => Recenter(camera),
-                disabled: locked,
-                help: "Center the current tracked bone or selected actor "
-                    + "without changing view orientation; free cameras refuse");
         });
     }
 
@@ -473,18 +481,25 @@ public sealed class CameraPane
             if (followedId is { } exact && actor.Id == exact)
                 selected = labels.Count - 1;
         }
-        form.Dropdown(
-            "Follow actor", labels.ToArray(), selected,
-            index =>
-            {
-                if (index == 0)
-                    _cameras.ClearTargetActor(camera);
-                else if (index - 1 < choices.Count)
-                    FollowActor(choices[index - 1].Id, choices[index - 1].Name,
-                        camera);
-            },
-            disabled: locked,
-            help: "Seat the orbit pivot on an actor's drawn body");
+        form.Pair(
+            "Follow actor",
+            cell => cell.Dropdown("##camera-follow", labels.ToArray(), selected,
+                index =>
+                {
+                    if (index == 0)
+                        _cameras.ClearTargetActor(camera);
+                    else if (index - 1 < choices.Count)
+                        FollowActor(choices[index - 1].Id,
+                            choices[index - 1].Name, camera);
+                },
+                disabled: locked,
+                help: "Seat the orbit pivot on an actor's drawn body"),
+            "Recenter",
+            cell => cell.Button("##camera-recenter", "Recenter",
+                () => Recenter(camera),
+                disabled: locked,
+                help: "Center the exact followed actor without changing "
+                    + "view orientation; free cameras refuse"));
     }
 
     private void MovementRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -534,8 +549,8 @@ public sealed class CameraPane
     {
         form.Cells(cells =>
         {
-            // FoV and roll share the compact cells row; the shared whole-camera
-            // Reset action in ACTIONS restores both values.
+            // FoV and roll share the compact cells row; their values remain
+            // independently editable while the camera lock is off.
             cells.Cell(
                 "FoV",
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
@@ -634,16 +649,6 @@ public sealed class CameraPane
 
     private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)
     {
-        form.Actions("Properties", actions =>
-        {
-            actions.Button("Reset",
-                () =>
-                {
-                    camera.ResetProperties();
-                },
-                disabled: camera.IsLocked,
-                help: "Put every camera property back to its default");
-        });
         form.Actions("Camera", actions =>
         {
             actions.Button("Clone",
