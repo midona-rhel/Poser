@@ -15,7 +15,7 @@ public sealed class ShellSidebarRow
     public string? IconName;
     /// <summary>Nested rows normally draw no mark, because their guide column
     /// already spans the same distance the root's icon cell does. A nested row
-    /// that IS a thing rather than a grouping (the gaze anchor under an actor)
+    /// that is a thing rather than a grouping (the gaze anchor under an actor)
     /// opts the mark back in.</summary>
     public bool ForceIcon;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
@@ -36,7 +36,7 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
-    /// <summary>The GAME's current target: its crosshair stands at full
+    /// <summary>The game's current target: its crosshair stands at full
     /// opacity, every other actor's fades — the live camera's treatment.
     /// </summary>
     public bool ActorTargeted;
@@ -166,7 +166,7 @@ public sealed class AppShellViewModel
     /// tab: ImGui persists scroll offset and extent per child id, so one
     /// shared id would carry tab A's offset into tab B's first frame and
     /// clamp-jump on the next — and strips reuse labels ("Light" is a light's
-    /// whole editor AND the environment's lighting tab), so the tab key alone
+    /// whole editor and the environment's lighting tab), so the tab key alone
     /// would still share scroll memory across strips. Minted by the active
     /// tab's owner on strip/tab switch, never per frame.
     /// </summary>
@@ -347,7 +347,7 @@ public static class AppShellView
 
     /// <summary>The workspace ground. The same glass — same alpha, same blur
     /// behind it — mixed over the app ground instead of over the panels' raised
-    /// surface, because the content sits BELOW the panels in the ladder.
+    /// surface, because the content sits below the panels in the ladder.
     /// <see cref="Theme.Surface"/> is picto --color-bg-app, the rung under
     /// SurfaceRaised. SurfaceSunken is reserved for input wells: picto's surface-2 is
     /// brighter than surface-1 — an input well, not a ground.</summary>
@@ -454,7 +454,7 @@ public static class AppShellView
             {
                 float wellLeft = vm.Detached ? 0f : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
-                // Only the window's OWN corners round; an edge that meets a
+                // Only the window's own corners round; an edge that meets a
                 // panel is square. The radius is dropped along with them, so
                 // the flags cannot fall through to ImGui's round-everything
                 // default.
@@ -564,12 +564,12 @@ public static class AppShellView
 
         if (vm.Detached)
         {
-            // The detached main window IS the inspector's window: it names
+            // The detached main window is the inspector's window: it names
             // itself so the selected entity remains readable.
             string title = vm.TitleEntity == "Poser"
                 ? "Inspector"
                 : $"Inspector – {vm.TitleEntity}";
-            // The title stands on the CONTENT column's own inset, so the
+            // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
             // strips and content.
             Crystarium.TextInBand(
@@ -603,7 +603,7 @@ public static class AppShellView
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
-    /// <summary>The sidebar's title cell OWNS the brand and its GPose pill
+    /// <summary>The sidebar's title cell owns the brand and its GPose pill
     /// while attached; detached mode takes them to the floating toolbar
     /// </summary>
     private static void DrawBrand(
@@ -1032,7 +1032,7 @@ public static class AppShellView
         {
             // The tab strip uses the shared segmented pill every other mode
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
-            // lands the first tab's LABEL on the content inset, because the
+            // lands the first tab's label on the content inset, because the
             // pill's dark chrome is decoration and not padding.
             var size = Crystarium.MeasureSegmentedControl(_tabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
@@ -1062,7 +1062,7 @@ public static class AppShellView
 
     /// <summary>
     /// The hosting seam: the viewport child and the page scroll own the gutter
-    /// and the extent bookkeeping, and the active pane's OWN root renders inside
+    /// and the extent bookkeeping, and the active pane's own root renders inside
     /// them — exactly as the Settings page is hosted.
     /// </summary>
     private static void DrawContentViewport(

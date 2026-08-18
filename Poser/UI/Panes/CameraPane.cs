@@ -191,7 +191,7 @@ public sealed class CameraPane
     }
 
     /// <summary>
-    /// The Camera tab: what the camera IS and what is done with it as a whole
+    /// The Camera tab: what the camera is and what is done with it as a whole
     /// — the view it frames, its limits, its file, and the lifetime actions.
     /// Translation and bone tracking live on the inspector rail.
     /// </summary>
@@ -522,7 +522,7 @@ public sealed class CameraPane
                 help: "Keep movement in the horizontal plane instead of "
                     + "along the view");
         });
-        // The slider ends ARE the wheel's clamp: the row and the notch read
+        // The slider ends are the wheel's clamp: the row and the notch read
         // the same two numbers, so a scrolled speed can never sit off the end
         // of the control that shows it.
         form.Slider("Speed", camera.MovementSpeed,
@@ -1013,7 +1013,7 @@ public sealed class CameraPane
             _cameras.SetLive(camera);
             return;
         }
-        // Switching the live camera OFF means going back to the game's own —
+        // Switching the live camera off means going back to the game's own —
         // the default camera; the default itself has nowhere to fall.
         if (camera.IsDefault)
             return;

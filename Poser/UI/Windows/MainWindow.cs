@@ -53,7 +53,7 @@ public class MainWindow : Window
 
     /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
-    /// signature, joins no journal, and is laid OVER the game rather than into
+    /// signature, joins no journal, and is laid over the game rather than into
     /// the scene — so its rows restate the session's state and every verb goes
     /// back through the session.</summary>
     private readonly ReferenceImageSession _referenceImages;
@@ -174,7 +174,7 @@ public class MainWindow : Window
 
     /// <summary>The scene as a whole, seated at the very top of the tree: the
     /// thing everything below it belongs to. Like the library's and the
-    /// environment's, its HEADER is the affordance — there is one scene and
+    /// environment's, its header is the affordance — there is one scene and
     /// nothing creates or destroys it — and it carries no rows.</summary>
     private readonly ShellSidebarSection _sceneSection = new()
     {
@@ -185,7 +185,7 @@ public class MainWindow : Window
 
     /// <summary>The scene's environment, seated above the actors. It is the one
     /// scene entity that is always there and there is only ever one of it, so
-    /// the header IS the affordance — exactly like the library's — rather than a
+    /// the header is the affordance — exactly like the library's — rather than a
     /// header naming a lone row beneath it. Nothing creates or destroys it, so
     /// the section shows no plus and carries no rows.</summary>
     private readonly ShellSidebarSection _environmentSection = new()
@@ -338,11 +338,11 @@ public class MainWindow : Window
 
     /// <summary>Bumped by every disclosure toggle. The gate cannot observe
     /// <see cref="_collapsedNodes"/> directly — a set carries no version — and
-    /// disclosure is the one non-scene input that changes the row COUNT.
+    /// disclosure is the one non-scene input that changes the row count.
     /// </summary>
     private int _expandVersion;
 
-    /// <summary>Library mode's tab strip: the library TYPES are the tabs —
+    /// <summary>Library mode's tab strip: the library types are the tabs —
     /// a lone "Library" tab controlled nothing. Positional against the
     /// pane's type indices.</summary>
     private readonly ShellTab[] _libraryTabs =
@@ -354,7 +354,7 @@ public class MainWindow : Window
     ];
 
     /// <summary>The scene workspace's one tab, retained like every other
-    /// strip. Whole-scene save/load is a MODE, not a property of a selection,
+    /// strip. Whole-scene save/load is a mode, not a property of a selection,
     /// so it has its own strip rather than a tab on someone else's.</summary>
     private readonly ShellTab[] _sceneTabs =
     [
@@ -375,7 +375,7 @@ public class MainWindow : Window
     ];
 
     /// <summary>A spawned object's strip, the camera strip's sibling: while
-    /// one is selected the single tab IS its editor. It shares the label with
+    /// one is selected the single tab is its editor. It shares the label with
     /// the borrowed object's strip below — one word for one thing — and the
     /// selection decides which pane the label opens.</summary>
     private readonly ShellTab[] _propTabs =
@@ -399,9 +399,9 @@ public class MainWindow : Window
 
     /// <summary>A light's whole tab strip, the environment strip's sibling:
     /// a light has no pose, animation or appearance, so while one is selected
-    /// the tab set IS the light editor, split the way the editor's own three
+    /// the tab set is the light editor, split the way the editor's own three
     /// concerns split — what it emits, what it casts, and where it is. Its
-    /// "Light" label is SHARED with the environment's lighting tab — two
+    /// "Light" label is shared with the environment's lighting tab — two
     /// strips, never both live — so DrawTabContent settles the two by
     /// selection, not by label.</summary>
     private readonly ShellTab[] _lightTabs =
@@ -411,7 +411,7 @@ public class MainWindow : Window
     ];
 
     /// <summary>An overlay's tab strip, the prop strip's sibling: while a
-    /// staged game-UI node is selected the one tab IS its editor. An overlay
+    /// staged game-UI node is selected the one tab is its editor. An overlay
     /// has no world transform for the inspector rail to own, so its screen
     /// placement lives on the tab with everything else about it.</summary>
     private readonly ShellTab[] _overlayTabs =
@@ -420,7 +420,7 @@ public class MainWindow : Window
     ];
 
     /// <summary>A borrowed map object's strip, the prop strip's sibling: while
-    /// one is selected the single tab IS its editor, and its transform lives on
+    /// one is selected the single tab is its editor, and its transform lives on
     /// the inspector rail exactly as a prop's does.</summary>
     private readonly ShellTab[] _worldObjectTabs =
     [
@@ -428,7 +428,7 @@ public class MainWindow : Window
     ];
 
     /// <summary>A camera's tab strip, the light strip's sibling: while a
-    /// camera is selected the one tab IS the camera editor — the camera's
+    /// camera is selected the one tab is the camera editor — the camera's
     /// offset and its bone tracking live on the inspector rail instead.
     /// </summary>
     private readonly ShellTab[] _cameraTabs =
@@ -467,7 +467,7 @@ public class MainWindow : Window
     private const int CamerasSectionIndex = 6;
 
     /// <summary>Overlays close the scene's own list. They are the one entity
-    /// that lives on the SCREEN rather than in the scene, so they sit outside
+    /// that lives on the screen rather than in the scene, so they sit outside
     /// everything the camera can see.</summary>
     private const int OverlaysSectionIndex = 7;
 
@@ -478,7 +478,7 @@ public class MainWindow : Window
 
     /// <summary>Raised by every creation affordance — the titlebar plus, the
     /// section header plusses, and the shell menu — with the pointer position
-    /// the browser opens AT and the tab that affordance answers for.</summary>
+    /// the browser opens at and the tab that affordance answers for.</summary>
     public event Action<Vector2, SpawnBrowserTab>? OnSpawnBrowserRequested;
 
     /// <summary>Pop out the main content, frozen to this actor. The window
@@ -610,7 +610,7 @@ public class MainWindow : Window
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _lifecycle = lifecycle;
-        // A gaze mode flip changes the sidebar's row SET (the gaze anchor row
+        // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
         // and does nothing else: the publisher is not the draw thread.
@@ -713,7 +713,7 @@ public class MainWindow : Window
         };
         // The library, scene and environment headers are the selectable ones,
         // so no other index can arrive. The library and the scene workspace are
-        // MODES over an untouched selection, and their openers already restate
+        // modes over an untouched selection, and their openers already restate
         // the layout, so those two branches do nothing else here. The
         // environment is a scene entity, so its header selects exactly as a row
         // does — leaving both modes first, because they are alternatives in one
@@ -729,7 +729,7 @@ public class MainWindow : Window
             {
                 // There is exactly one environment, so range and toggle mean
                 // nothing here: the header is a plain Select, never a modified
-                // one. Selecting IS leaving whichever mode was showing — one
+                // one. Selecting is leaving whichever mode was showing — one
                 // selection; the resync below handles the layout transition.
                 _selection.Select(EnvironmentSelection);
                 // Same frame, same reason as a row click: the environment's
@@ -975,7 +975,7 @@ public class MainWindow : Window
         }
 
         // The detach toggle's one-frame reseat: width sheds or regains the
-        // sidebar column while the LEFT edge moves the same amount, so the
+        // sidebar column while the left edge moves the same amount, so the
         // content and the inspector hold their screen position.
         if (_detachShift != 0 && !_collapsed)
         {
@@ -1039,7 +1039,7 @@ public class MainWindow : Window
         ImGui.PushStyleColor(ImGuiCol.HeaderHovered, Crystarium.ActiveTheme.AccentHover);
         ImGui.PushStyleColor(ImGuiCol.HeaderActive, Crystarium.ActiveTheme.AccentActive);
 
-        // The shell IS the window chrome — the ImGui window must contribute
+        // The shell is the window chrome — the ImGui window must contribute
         // nothing; the retained shell owns its padding and borders.
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
@@ -1078,7 +1078,7 @@ public class MainWindow : Window
 
     /// <summary>+1 detaching (shrink right past the departing sidebar), -1
     /// merging (grow back left). Applied for one frame by PreDraw so the
-    /// CONTENT and the inspector hold their screen position through the
+    /// content and the inspector hold their screen position through the
     /// toggle.</summary>
     internal void ApplyDetachShift(int direction) => _detachShift = direction;
 
@@ -1087,7 +1087,7 @@ public class MainWindow : Window
     private Vector2 _lastPosition;
 
     /// <summary>Detached mode only: the Inspector window closed from the
-    /// TOOLBAR (or its own X). The window object stays open — it still
+    /// toolbar (or its own X). The window object stays open — it still
     /// builds the frame's view model and pumps the menus and dialogs the
     /// whole shell shares — but it shrinks to an inputless pixel and draws
     /// no chassis until the strip reopens it.</summary>
@@ -1170,7 +1170,7 @@ public class MainWindow : Window
         // Window-level: the attach picker outlives the context menu that
         // opened it.
         _companions.DrawPicker();
-        // The expression row is drawn on the FACE surface (the pose rail and
+        // The expression row is drawn on the face surface (the pose rail and
         // the Expression workspace tab), which exists on every tab; its picker
         // is therefore pumped at the shell. A no-op on the frames the
         // animation pane already drew the surface for its own rows.
@@ -1267,7 +1267,7 @@ public class MainWindow : Window
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
         _vm.SceneRevision = _scene.Revision;
-        // The inspector rail stays on BOTH tabs: bone selection and posing
+        // The inspector rail stays on both tabs: bone selection and posing
         // remain available while animation plays, so the right column is
         // never reclaimed and the window width never depends on the tab.
         //
@@ -1281,7 +1281,7 @@ public class MainWindow : Window
         // every other mode keeps the selection-typed rail.
         //
         // The delegate is stated even while collapsed: the shell's own
-        // titlebar guard ignores it then, but a SPLIT inspector window keeps
+        // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
         _vm.DrawRail = _libraryMode
             ? _poseFileSection.DrawOptionsRail
@@ -1297,7 +1297,7 @@ public class MainWindow : Window
         // Both facts come from the shared resolver, which builds a dictionary
         // of the selected actor's complete bone set — so they are re-derived only
         // when the resolver's own two inputs move. The tool is not part of that
-        // key: it decides whether the facts are SHOWN, not what they are.
+        // key: it decides whether the facts are shown, not what they are.
         RefreshPivotFacts();
         bool boneRotate = _editorState.TransformTool == TransformTool.Rotate &&
             _pivotPrimaryIsBone;
@@ -1306,7 +1306,7 @@ public class MainWindow : Window
         var toolbarActor = SelectedActorId();
         _vm.AnimationAvailable = toolbarActor is { } animActorId
             && _animation.IsSupported(animActorId);
-        // The switch's polarity is "animation playing": ON unless Poser holds
+        // The switch's polarity is "animation playing": on unless Poser holds
         // a zero speed override on the selected actor.
         _vm.AnimationOn = toolbarActor is not { } animActor
             || _animation.OverridesFor(animActor).OverallSpeed is not 0f;
@@ -1358,7 +1358,7 @@ public class MainWindow : Window
     /// transform selection. The resolver reads exactly two things — the ordered
     /// selection and the scene snapshot — so those two are the whole key, and a
     /// frame that changes neither does no work. A redraw or a slot rebind moves
-    /// BOTH (the generations in the ids and the published revision), so the
+    /// both (the generations in the ids and the published revision), so the
     /// facts are current on the first frame drawn after one.
     /// </summary>
     private void RefreshPivotFacts()
@@ -1400,7 +1400,7 @@ public class MainWindow : Window
     }
 
     /// <summary>Ordered element-wise compare against the retained key. The
-    /// resolution depends on selection ORDER (the first entry is the primary),
+    /// resolution depends on selection order (the first entry is the primary),
     /// so a count or set comparison would not be sound.</summary>
     private static bool SameSelection(
         List<SelectionId> cached,
@@ -1429,12 +1429,12 @@ public class MainWindow : Window
     private static readonly bool[] RootTreeLines = Array.Empty<bool>();
 
     /// <summary>
-    /// Restates the sidebar. The row TREE is assembled only when the gate below
+    /// Restates the sidebar. The row tree is assembled only when the gate below
     /// flips; every other frame walks the retained rows and refreshes the flags
     /// that read live state, allocating nothing.
     ///
-    /// <para>The gate is exactly the inputs that can change the row COUNT or
-    /// ORDER: the published scene revision (the structural signature — actor
+    /// <para>The gate is exactly the inputs that can change the row count or
+    /// order: the published scene revision (the structural signature — actor
     /// set and generations, slot presence, bone counts), the search filter, and
     /// the disclosure version. Selection, actor visibility, pause state and
     /// library mode are per-row flags: they are refreshed in place, so they
@@ -1454,7 +1454,7 @@ public class MainWindow : Window
             !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
         {
             _sidebarBuilt = true;
-            // Cleared BEFORE the walk, so a transition that lands mid-rebuild
+            // Cleared before the walk, so a transition that lands mid-rebuild
             // re-arms rather than being swallowed by the rebuild it raced.
             _gazeDirty = false;
             _sidebarRevision = _scene.Revision;
@@ -1484,14 +1484,14 @@ public class MainWindow : Window
     private void RebuildSidebar(string filter)
     {
         _vm.Sections.Clear();
-        // The library is a place in the sidebar, not a window: its header IS
+        // The library is a place in the sidebar, not a window: its header is
         // the affordance, and it stands above the scene it poses.
         _vm.Sections.Add(_librarySection);
         // The whole scene stands above everything it contains — it reads
         // the tree top down as scene, then environment, then the entities.
         _vm.Sections.Add(_sceneSection);
         // The environment stands above the actors: it is the one scene entity
-        // that is always there, and — being a singleton — its HEADER is the
+        // that is always there, and — being a singleton — its header is the
         // affordance, so the section carries no rows at all.
         _vm.Sections.Add(_environmentSection);
         _vm.Sections.Add(_actorsSection);
@@ -1528,7 +1528,7 @@ public class MainWindow : Window
 
         // Objects are flat like lights: one row per object, the header's plus
         // makes another, and the eye seat toggles draw visibility. The scene's
-        // OWN objects list first — the plus above the section makes those, so
+        // own objects list first — the plus above the section makes those, so
         // what it makes is what the section opens with.
         foreach (var prop in _scene.Snapshot.Props)
         {
@@ -1545,7 +1545,7 @@ public class MainWindow : Window
             });
         }
 
-        // The BORROWED objects follow them in the same section. They wear a
+        // The borrowed objects follow them in the same section. They wear a
         // different mark for the same reason a borrowed light does: the row
         // has to say the object belongs to the map — and that its verb is
         // release, not destroy — before it is ever selected.
@@ -1595,7 +1595,7 @@ public class MainWindow : Window
 
         // Overlays are flat like props: one row per staged node, the header's
         // plus makes another, and the eye seat toggles whether it is drawn.
-        // The mark states the KIND, which is the one thing about a node that
+        // The mark states the kind, which is the one thing about a node that
         // can never change.
         foreach (var overlay in _scene.Snapshot.Overlays)
         {
@@ -1613,7 +1613,7 @@ public class MainWindow : Window
         }
 
         // A reference picture is an overlay by the same test the nodes are —
-        // it is laid OVER the game rather than into the scene — so it lists
+        // it is laid over the game rather than into the scene — so it lists
         // here beside them. It is not a scene entity: it
         // carries no SelectionId, joins no journal, and its Tag is the session
         // instance itself, which is what every verb below dispatches on.
@@ -1653,7 +1653,7 @@ public class MainWindow : Window
     private static string CameraBadge(bool live, bool isDefault) =>
         live ? "Live" : isDefault ? "Default" : "";
 
-    /// <summary>The mark for one overlay KIND. A dialogue panel, a bubble and
+    /// <summary>The mark for one overlay kind. A dialogue panel, a bubble and
     /// a status line are three different things on screen, so they are three
     /// different marks in the tree.</summary>
     private static TablerIcon OverlayIcon(
@@ -1665,8 +1665,8 @@ public class MainWindow : Window
         _ => TablerIcon.Message,
     };
 
-    /// <summary>The mark for one light KIND, shared by the sidebar rows and
-    /// the LIGHTS header's type chooser: a kind means the same thing wherever
+    /// <summary>The mark for one light kind, shared by the sidebar rows and
+    /// the lights header's type chooser: a kind means the same thing wherever
     /// it is shown, so it is drawn from one place.</summary>
     private static TablerIcon KindIcon(LightKind kind) => kind switch
     {
@@ -1677,7 +1677,7 @@ public class MainWindow : Window
     };
 
     /// <summary>
-    /// The reference pictures, as OVERLAYS rows. The label is the file STEM,
+    /// The reference pictures, as overlays rows. The label is the file stem,
     /// deduped: the roster mints identity per add precisely so the same sheet
     /// can be placed twice, and two rows reading "sketch" would be two rows
     /// naming nothing. The second and later occurrences carry an ordinal, so
@@ -1767,7 +1767,7 @@ public class MainWindow : Window
             // The live mark reads the active camera, not the
             // descriptor: the switch moves the scene signature, and waiting
             // for the republish would leave the glyphs behind the click. The
-            // BADGE is the same fact, so it is restated from the same read —
+            // Badge is the same fact, so it is restated from the same read —
             // the mark for which camera the shot is framed through must not
             // lag the click that moved it.
             if (cameraSelection.Camera is { } rowCameraId &&
@@ -1790,7 +1790,7 @@ public class MainWindow : Window
         {
             var overlayRow = overlayRows[i];
             // A reference row carries the session instance, not a selection —
-            // so it is answered BEFORE the selection guard below, which would
+            // so it is answered before the selection guard below, which would
             // otherwise skip it. Its eye restates the session's own answer,
             // live, for the same reason every other action glyph does.
             if (overlayRow.Tag is ReferenceImageInstance rowImage)
@@ -1855,7 +1855,7 @@ public class MainWindow : Window
                 row.Active = _selection.IsSelected(id);
         }
 
-        // The GAME's target, once per frame: its row's crosshair stands at
+        // The game's target, once per frame: its row's crosshair stands at
         // full opacity while every other actor's fades — the live camera's
         // treatment.
         Guid? targetLineage =
@@ -1879,8 +1879,8 @@ public class MainWindow : Window
             if (string.Equals(label, row.Label, StringComparison.Ordinal))
                 continue;
             row.Label = label;
-            // A rename can change what the filter matches, so the row SET has
-            // to be derived again; unfiltered, the new label IS the whole
+            // A rename can change what the filter matches, so the row set has
+            // to be derived again; unfiltered, the new label is the whole
             // change and the row already carries it.
             if (_sidebarFilter.Length > 0)
                 _sidebarBuilt = false;
@@ -2736,7 +2736,7 @@ public class MainWindow : Window
                 bone => !bone.Id.Equals(mergedBone.Id));
 
         // Preserve category ordering from the pose builder.
-        // bones (SkeletonNode.OrderByPriority), and bones bind FLAT in
+        // bones (SkeletonNode.OrderByPriority), and bones bind flat in
         // skeleton index order (BindBones: SortPriority = base + BoneIndex).
         for (int c = 0; c < category.Children.Count; c++)
             EmitKtisisCategory(
@@ -2813,7 +2813,7 @@ public class MainWindow : Window
 
     /// <summary>
     /// One collapsed group per present auxiliary slot showing that slot's
-    /// REAL parent/child bone hierarchy. Group rows are navigation-only;
+    /// real parent/child bone hierarchy. Group rows are navigation-only;
     /// bone rows carry exact slot-qualified stable ids, and a filtered view
     /// lists matching bones flat without persisting disclosure.
     /// </summary>
@@ -2903,7 +2903,7 @@ public class MainWindow : Window
             {
                 bool hasKids = children.ContainsKey(bone.Id);
                 var boneKey = slotKey + "/bone:" + bone.Id.PartialId + ":" + bone.Id.BoneIndex;
-                // Every disclosure seeds COLLAPSED, hierarchy nodes included.
+                // Every disclosure seeds collapsed, hierarchy nodes included.
                 if (hasKids && _knownCategoryNodes.Add(boneKey))
                     _collapsedNodes.Add(boneKey);
                 bool boneExpanded = !_collapsedNodes.Contains(boneKey);
@@ -2959,7 +2959,7 @@ public class MainWindow : Window
         return false;
     }
 
-    /// <summary>Extended/IVCS bones are DISPLAY-suppressed while
+    /// <summary>Extended/IVCS bones are display-suppressed while
     /// Display.ShowNsfwBones is off. Read live per build: the snapshot's own
     /// IsHidden and every selection path are untouched.</summary>
     private static bool IsBoneSuppressed(BoneDescriptor bone)
@@ -2969,7 +2969,7 @@ public class MainWindow : Window
     /// <summary>
     /// The <c>_l</c>/<c>_r</c> counterpart the sibling-link mode co-selects,
     /// or null when the mode is off or the bone has none. Resolution never
-    /// leaves the bone's OWN skeleton or partial: a name alone matches across
+    /// leaves the bone's own skeleton or partial: a name alone matches across
     /// slots, and pairing a character hand with a weapon bone of the same
     /// name would be a different bone entirely.
     /// </summary>
@@ -3064,7 +3064,7 @@ public class MainWindow : Window
     /// Resolves the strip a selection answers for and settles
     /// <see cref="_activeStrip"/> and <see cref="_activeTab"/> onto it,
     /// returning that strip's tabs. Separated from <see cref="BuildTabs"/>
-    /// because a selection can also change MID-FRAME, from a sidebar row the
+    /// because a selection can also change mid-frame, from a sidebar row the
     /// shell is already drawing, and the viewport contract has to move with
     /// it (see <see cref="ResyncTabLayout"/>).
     /// </summary>
@@ -3087,10 +3087,10 @@ public class MainWindow : Window
             // humanoid-only sections itself.
             _ => (_selectionTabs, "actor"),
         };
-        // Same-labeled tabs on DIFFERENT strips are different places: the
+        // Same-labeled tabs on different strips are different places: the
         // strip key joins the scroll identity in ApplyTabLayout.
         _activeStrip = strip;
-        // The active tab is preserved WITHIN a strip, so a selection change
+        // The active tab is preserved within a strip, so a selection change
         // inside the actor set cannot silently return to Pose; a
         // strip that does not carry it falls to that strip's first tab.
         bool carried = false;
@@ -3115,7 +3115,7 @@ public class MainWindow : Window
             : _activeTab);
     }
 
-    /// <summary>The two MODE strips. A mode is a strip like an entity type is
+    /// <summary>The two mode strips. A mode is a strip like an entity type is
     /// — it has its own tabs — so it owns its own scroll identity: entering
     /// the library from an actor and from a light must land on one library,
     /// not on two with separate scroll memories.</summary>
@@ -3318,7 +3318,7 @@ public class MainWindow : Window
     private void ApplyRowClick(ShellSidebarRow row)
     {
         // A reference picture is not in the scene, so there is nothing to
-        // select: the row's body RAISES its window instead, and shows it first
+        // select: the row's body raises its window instead, and shows it first
         // if the eye had set it aside — a click that focuses something the
         // hidden window would read as a no-op.
         if (row.Tag is ReferenceImageInstance clickedImage)
@@ -3903,7 +3903,7 @@ public class MainWindow : Window
         return _bonePresetItems.ToArray();
     }
 
-    /// <summary>The preset STORE, which is shared by every actor: create one
+    /// <summary>The preset store, which is shared by every actor: create one
     /// from what the menu's actor currently shows, or delete one. These
     /// operations apply immediately and remain outside Settings.</summary>
     private void DrawBonePresetManager()
@@ -4212,7 +4212,7 @@ public class MainWindow : Window
     private bool _propCtxOpenRequested;
 
     /// <summary>The entity rename modal's state: lights, cameras and props
-    /// carry their name ON the entity, so one modal writes whichever apply
+    /// carry their name on the entity, so one modal writes whichever apply
     /// hook the opening menu handed it — unlike the actor modal, which writes
     /// a nickname beside a name the game owns.</summary>
     private bool _entityRenameOpen;
