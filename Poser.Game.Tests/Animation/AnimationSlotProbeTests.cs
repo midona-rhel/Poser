@@ -201,6 +201,26 @@ public sealed class AnimationSlotProbeTests
     }
 
     [Fact]
+    public void Probe_logs_loop_arm_and_disarm_intent()
+    {
+        var lines = new List<string>();
+        var probe = new AnimationSlotProbe(lines.Add);
+        var snapshot = Snapshot("base=42", "0.0", "a");
+        Assert.True(probe.Start(ActorA, "actor-a", snapshot).Success);
+
+        foreach (bool enabled in new[] { true, false })
+        {
+            var command = new AnimationProbeCommand(
+                "slot-loop", AnimationSlot.Base, 42, enabled);
+            probe.Begin(ActorA, "actor-a", command, snapshot);
+            probe.Complete(ActorA, "actor-a", command, true, snapshot);
+        }
+
+        Assert.Contains(lines, line => line.Contains("command=slot-loop") && line.Contains("intent=on"));
+        Assert.Contains(lines, line => line.Contains("command=slot-loop") && line.Contains("intent=off"));
+    }
+
+    [Fact]
     public void Probe_ends_at_the_conservative_timeout()
     {
         var lines = new List<string>();

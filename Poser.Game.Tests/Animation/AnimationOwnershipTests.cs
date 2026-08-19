@@ -79,6 +79,20 @@ public sealed class AnimationOwnershipTests
             ["ProbeBegin", "SetSlotLoop", "ProbeComplete:True"],
             port.Calls);
     }
+
+    [Fact]
+    public void Probe_records_loop_arm_and_disarm_intent()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, false).Success);
+
+        Assert.Equal(new bool?[] { true, false }, port.ProbeCommands
+            .Where(command => command.Name == "slot-loop")
+            .Select(command => command.Enabled));
+    }
 private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
@@ -93,6 +107,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
+        public List<AnimationProbeCommand> ProbeCommands { get; } = new();
         public bool Frozen { get; private set; }
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
@@ -133,6 +148,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     return AnimationPortResult.Ok();
                 case "BeginSlotProbeCommand":
                     Calls.Add("ProbeBegin");
+                    ProbeCommands.Add((AnimationProbeCommand)args![1]!);
                     return null;
                 case "CompleteSlotProbeCommand":
                     Calls.Add($"ProbeComplete:{args![2]}");

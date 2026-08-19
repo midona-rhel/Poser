@@ -14,7 +14,8 @@ public readonly record struct AnimationPortResult(bool Success, string? Detail =
 public readonly record struct AnimationProbeCommand(
     string Name,
     AnimationSlot? Slot = null,
-    ushort Timeline = 0);
+    ushort Timeline = 0,
+    bool? Enabled = null);
 
 /// <summary>
 /// The ONE stable-id native boundary for animation. Every member takes an

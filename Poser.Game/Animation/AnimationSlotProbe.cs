@@ -241,7 +241,9 @@ internal sealed class AnimationSlotProbe
     }
 
     private static string Describe(AnimationProbeCommand command) =>
-        $"command={command.Name} slot={command.Slot?.ToString() ?? "none"} timeline={command.Timeline}";
+        $"command={command.Name} slot={command.Slot?.ToString() ?? "none"} " +
+        $"timeline={command.Timeline}" +
+        (command.Enabled is { } enabled ? $" intent={(enabled ? "on" : "off")}" : string.Empty);
 
     private static bool ControlsEqual(
         IReadOnlyList<SlotProbeControl> left,

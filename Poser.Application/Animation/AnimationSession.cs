@@ -315,7 +315,7 @@ public sealed class AnimationSession
     {
         return ObserveProbe(
             actor,
-            new AnimationProbeCommand("slot-loop", slot, timeline),
+            new AnimationProbeCommand("slot-loop", slot, timeline, on),
             () => SetSlotLoopCore(actor, slot, timeline, on));
     }
 
