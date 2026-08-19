@@ -167,15 +167,45 @@ public sealed class AnimationSession
         ActorId actor, ushort timeline, AnimationOverrides before, bool loopWanted)
     {
         if (Suspended() is { } blocked) return blocked;
+        bool armRepeat = loopWanted && !HasLayerSelection(before);
+        // A retarget needs the immediate native state, not the session's
+        // original restore point, if repeat arming has to be rolled back.
+        var rollbackCapture = armRepeat && before.BaseCapture != null
+            ? _port.CaptureBase(actor)
+            : null;
         var result = _port.PlayBase(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Base playback failed.");
-        bool armRepeat = loopWanted && !HasLayerSelection(before);
         if (armRepeat)
         {
             var armed = _port.SetForceLoop(actor, timeline);
             if (!armed.Success)
-                return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
+            {
+                var baseline = rollbackCapture ?? captured ?? before.BaseCapture;
+                var rolledBack = baseline is { } restore
+                    ? _port.RestoreBase(actor, restore)
+                    : AnimationPortResult.Fail("The base restore point is unavailable.");
+                if (rolledBack.Success)
+                    return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
+
+                // The play landed but rollback did not. Keep the original
+                // restore point so Reset can retry instead of abandoning it.
+                var ownedCapture = before.BaseCapture ?? captured ?? rollbackCapture;
+                Mutate(actor, o =>
+                {
+                    var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+                    loops.Remove(AnimationSlot.Base);
+                    return o with
+                    {
+                        BaseCapture = o.BaseCapture ?? ownedCapture,
+                        BaseTimeline = timeline,
+                        LoopedSlots = loops,
+                    };
+                });
+                return AnimationResult.Fail(
+                    $"{armed.Detail ?? "Repeat arm failed."} " +
+                    $"Rollback failed: {rolledBack.Detail ?? "base restore failed."}");
+            }
         }
         if (captured is { } taken)
             Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
@@ -358,9 +388,9 @@ public sealed class AnimationSession
         if (!on)
             return AnimationResult.Ok();
 
-        ushort target = timeline != 0
-            ? timeline
-            : current.BaseTimeline ?? _port.Read(actor)?.TimelineFor(AnimationSlot.Base) ?? 0;
+        // Zero means sticky intent. Only a Poser selection or an explicit
+        // timeline may establish native base ownership.
+        ushort target = timeline != 0 ? timeline : current.BaseTimeline ?? 0;
         if (target == 0)
             return AnimationResult.Ok();
         var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;

@@ -8,17 +8,13 @@ using Poser.Game.Animation;
 
 namespace Poser.Game.Tests.Animation;
 
-/// <summary>
-/// Ownership-truth contracts for <see cref="AnimationSession"/>: the scene's
-/// hold on the global physics patch is recorded only once the patch landed and
-/// released only once the unpatch did, no actor can retire it, and Replay is a
-/// resuming act that never retains a zero-speed owner.
-/// </summary>
+/// <summary>Runtime ownership and retry contracts for animation changes.</summary>
 public sealed class AnimationOwnershipTests
 {
     private static readonly ActorId ActorA =
         new(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), 1);
-[Fact]
+
+    [Fact]
     public void Scene_physics_hold_is_owned_once_and_failed_unpatch_is_retryable()
     {
         var port = FakePort.Create();
@@ -86,12 +82,65 @@ public sealed class AnimationOwnershipTests
     public void Base_repeat_is_sticky_but_never_arms_without_a_selection()
     {
         var port = FakePort.Create();
+        port.ReadValue = ReadingWithBase(AnimationTimelines.Idle);
         var session = new AnimationSession(port.Port);
 
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
 
         Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.Equal(0, port.CaptureBaseCalls);
+        Assert.Null(session.OverridesFor(ActorA).BaseCapture);
+        Assert.Null(session.OverridesFor(ActorA).BaseTimeline);
+        Assert.DoesNotContain("Read", port.Calls);
         Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.Equal(port.BaseCapture, session.OverridesFor(ActorA).BaseCapture);
+        Assert.Equal((ushort)42, session.OverridesFor(ActorA).BaseTimeline);
+        Assert.Contains("SetForceLoop:42", port.Calls);
+    }
+
+    [Fact]
+    public void Failed_repeat_arm_rolls_base_back_without_claiming_the_failed_play()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        port.FailForceLoop = true;
+
+        var result = session.PlayBase(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
+        var owned = session.OverridesFor(ActorA);
+        Assert.True(owned.LoopWantedSlots.Contains(AnimationSlot.Base));
+        Assert.Null(owned.BaseCapture);
+        Assert.Null(owned.BaseTimeline);
+        Assert.False(owned.LoopedSlots.ContainsKey(AnimationSlot.Base));
+    }
+
+    [Fact]
+    public void Failed_repeat_arm_and_rollback_keep_base_owned_for_reset_retry()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        port.FailForceLoop = true;
+        port.FailRestoreBase = true;
+
+        var result = session.PlayBase(ActorA, 42);
+
+        Assert.False(result.Success);
+        Assert.Contains("Rollback failed", result.Detail);
+        var owned = session.OverridesFor(ActorA);
+        Assert.Equal(port.BaseCapture, owned.BaseCapture);
+        Assert.Equal((ushort)42, owned.BaseTimeline);
+        Assert.False(owned.LoopedSlots.ContainsKey(AnimationSlot.Base));
+
+        port.FailRestoreBase = false;
+        Assert.True(session.ResetActor(ActorA).Success);
+        Assert.Equal(2, port.RestoreBaseCalls);
+        Assert.False(session.OverridesFor(ActorA).HasAny);
     }
 
     [Fact]
@@ -352,7 +401,13 @@ public sealed class AnimationOwnershipTests
             .Where(command => command.Name == "slot-loop")
             .Select(command => command.Enabled));
     }
-private static SceneSnapshot EmptyScene(ulong revision) =>
+    private static ActorAnimationReading ReadingWithBase(ushort timeline) =>
+        ActorAnimationReading.Empty with
+        {
+            Slots = [new AnimationSlotReading(AnimationSlot.Base, timeline, 1f)],
+        };
+
+    private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
             Array.Empty<ActorDescriptor>(),
@@ -360,8 +415,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
             Array.Empty<CameraDescriptor>(),
             Array.Empty<PropDescriptor>());
 
-    /// <summary>Recording animation-port fake: physics patch state, one
-    /// switchable unfreeze/clear failure, everything else succeeds.</summary>
+    /// <summary>Recording port with switchable ownership failures.</summary>
     private class FakePort : DispatchProxy
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;
@@ -371,6 +425,11 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
         public bool SupportsForceLoop { get; set; } = true;
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
+        public bool FailForceLoop { get; set; }
+        public bool FailRestoreBase { get; set; }
+        public int CaptureBaseCalls { get; private set; }
+        public int RestoreBaseCalls { get; private set; }
+        public ActorAnimationReading? ReadValue { get; set; }
 
         public static FakePort Create()
         {
@@ -403,7 +462,11 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     return (ushort)args![0]! is 43 or 44
                         ? AnimationSlot.UpperBody
                         : AnimationSlot.Base;
+                case "Read":
+                    Calls.Add("Read");
+                    return ReadValue;
                 case "CaptureBase":
+                    CaptureBaseCalls++;
                     return BaseCapture;
                 case "ClearOverallSpeed":
                     Calls.Add("ClearOverallSpeed");
@@ -422,9 +485,12 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                         args[3] = null;
                     return AnimationPortResult.Ok();
                 case "RestoreBase":
+                    RestoreBaseCalls++;
                     RestoredBaseCapture = (BaseAnimationCapture)args![1]!;
                     Calls.Add("RestoreBase");
-                    return AnimationPortResult.Ok();
+                    return FailRestoreBase
+                        ? AnimationPortResult.Fail("base restore failed")
+                        : AnimationPortResult.Ok();
                 case "BeginSlotProbeCommand":
                     Calls.Add("ProbeBegin");
                     ProbeCommands.Add((AnimationProbeCommand)args![1]!);
@@ -434,7 +500,9 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     return null;
                 case "SetForceLoop":
                     Calls.Add($"SetForceLoop:{args![1]}");
-                    return AnimationPortResult.Ok();
+                    return FailForceLoop
+                        ? AnimationPortResult.Fail("repeat arm failed")
+                        : AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {
