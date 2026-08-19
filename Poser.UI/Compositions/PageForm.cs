@@ -1839,11 +1839,11 @@ public static partial class Crystarium
             var style = Workspace(action.Style);
             if (action.SwitchValue is { } switchValue)
             {
-                float width = ActiveTheme.Controls.SwitchWidth * scale;
-                float height = ActiveTheme.Controls.SwitchHeight;
+                float switchWidth = ActiveTheme.Controls.SwitchWidth * scale;
+                float switchHeight = ActiveTheme.Controls.SwitchHeight;
                 ImGui.SetCursorScreenPos(new(
                     x,
-                    top + (band - height) * 0.5f * scale));
+                    top + (band - switchHeight) * 0.5f * scale));
                 Crystarium.Switch(
                     Ids.Join(id, "-", action.Id ?? action.Label),
                     switchValue,
@@ -1851,11 +1851,11 @@ public static partial class Crystarium
                     ControlStyle.Workspace with
                     {
                         Width = UiWidth.Fixed(ActiveTheme.Controls.SwitchWidth),
-                        Height = UiHeight.Fixed(height),
+                        Height = UiHeight.Fixed(switchHeight),
                     },
                     action.Disabled,
                     action.Help);
-                x += width + gap;
+                x += switchWidth + gap;
                 continue;
             }
             float height = ControlSizing.Height(
