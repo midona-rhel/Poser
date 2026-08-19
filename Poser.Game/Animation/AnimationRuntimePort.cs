@@ -98,11 +98,14 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     // TimelineContainer-relative; the sequencer field is +0x10.
     private const int ForcedTimelineOffset = 0x2E0;
     private const int SequencerForcedTimelineOffset = 0x2D0;
+    private const int ForcedTimelineSize = sizeof(ushort);
     private static readonly int ModeParamOffset = (int)Marshal.OffsetOf<Character>(
         nameof(Character.ModeParam));
+    private static readonly int TimelineSequencerOffset = (int)Marshal.OffsetOf<TimelineContainer>(
+        nameof(TimelineContainer.TimelineSequencer));
+    private static readonly int TimelineContainerSize = sizeof(TimelineContainer);
     private static readonly bool HasForcedTimelineLayout =
-        (int)Marshal.OffsetOf<TimelineContainer>(nameof(TimelineContainer.TimelineSequencer)) == 0x10 &&
-        ForcedTimelineOffset == 0x10 + SequencerForcedTimelineOffset;
+        HasForcedTimelineLayoutFor(TimelineSequencerOffset, TimelineContainerSize);
 
     // The physics freeze is a process-global code patch, not a per-actor
     // enforcement; the patcher owns its site, capability state and restore.
@@ -598,8 +601,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (existing == null)
             captured = CaptureBase(character);
 
-        if (SupportsForceLoop)
-            SetForcedTimeline(&character->Timeline, 0);
+        TrySetForcedTimeline(&character->Timeline, 0);
         PlayWithMode(character, timeline);
         return AnimationPortResult.Ok();
     }
@@ -648,7 +650,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         ReadModeParam(character),
         character->Timeline.BaseOverride,
         character->Timeline.TimelineSequencer.TimelineIds[0],
-        HasForcedTimelineLayout ? ForcedTimeline(&character->Timeline) : (ushort)0);
+        TryReadForcedTimeline(&character->Timeline, out var forced) ? forced : (ushort)0);
 
     // ModeParam is a four-byte native field.
     private static uint ReadModeParam(Character* character) =>
@@ -701,8 +703,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
         WriteModeParam(character, capture.ModeParam);
-        if (SupportsForceLoop)
-            SetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
+        TrySetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return AnimationPortResult.Ok();
     }
 
@@ -803,17 +804,50 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
-        SetForcedTimeline(&character->Timeline, timeline);
+        TrySetForcedTimeline(&character->Timeline, timeline);
         return AnimationPortResult.Ok();
     }
 
     public bool SupportsForceLoop => HasForcedTimelineLayout;
 
-    private static ushort ForcedTimeline(TimelineContainer* container) =>
-        *(ushort*)((byte*)container + ForcedTimelineOffset);
+    private static bool HasForcedTimelineLayoutFor(
+        int timelineSequencerOffset, int timelineContainerSize) =>
+        timelineSequencerOffset == 0x10 &&
+        ForcedTimelineOffset == timelineSequencerOffset + SequencerForcedTimelineOffset &&
+        timelineContainerSize >= timelineSequencerOffset +
+            SequencerForcedTimelineOffset + ForcedTimelineSize;
 
-    private static void SetForcedTimeline(TimelineContainer* container, ushort timeline) =>
+    private static bool TryReadForcedTimeline(TimelineContainer* container, out ushort timeline)
+    {
+        if (!HasForcedTimelineLayout)
+        {
+            timeline = 0;
+            return false;
+        }
+        timeline = *(ushort*)((byte*)container + ForcedTimelineOffset);
+        return true;
+    }
+
+    private static bool TrySetForcedTimeline(TimelineContainer* container, ushort timeline)
+    {
+        return TrySetForcedTimelineForLayout(
+            (nint)container,
+            timeline,
+            TimelineSequencerOffset,
+            TimelineContainerSize);
+    }
+
+    private static bool TrySetForcedTimelineForLayout(
+        nint container,
+        ushort timeline,
+        int timelineSequencerOffset,
+        int timelineContainerSize)
+    {
+        if (!HasForcedTimelineLayoutFor(timelineSequencerOffset, timelineContainerSize))
+            return false;
         *(ushort*)((byte*)container + ForcedTimelineOffset) = timeline;
+        return true;
+    }
 
     public bool SupportsStance => _setEmoteMode != null && _cancelTimeline != null;
 

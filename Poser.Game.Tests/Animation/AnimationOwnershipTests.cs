@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.InteropServices;
 using Poser.Application.Animation;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
@@ -210,6 +211,38 @@ public sealed class AnimationOwnershipTests
 
         Assert.NotNull(field);
         Assert.True((bool)field.GetValue(null)!);
+
+        var invariant = typeof(AnimationRuntimePort).GetMethod(
+            "HasForcedTimelineLayoutFor",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(invariant);
+        Assert.True((bool)invariant.Invoke(null, [0x10, 0x2E2])!);
+        Assert.False((bool)invariant.Invoke(null, [0x10, 0x2E1])!);
+    }
+
+    [Fact]
+    public void Forced_timeline_write_refuses_an_out_of_bounds_layout()
+    {
+        var write = typeof(AnimationRuntimePort).GetMethod(
+            "TrySetForcedTimelineForLayout",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(write);
+        nint memory = Marshal.AllocHGlobal(0x2E2);
+        try
+        {
+            Marshal.WriteInt16(memory, 0x2E0, 0x4A4B);
+
+            bool wrote = (bool)write.Invoke(
+                null,
+                [memory, (ushort)0x1234, 0x10, 0x2E1])!;
+
+            Assert.False(wrote);
+            Assert.Equal(0x4A4B, Marshal.ReadInt16(memory, 0x2E0));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(memory);
+        }
     }
 
     [Fact]
