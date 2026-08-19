@@ -18,9 +18,13 @@ base field transactionally. Selecting another layer suspends that force while
 preserving repeat intent, so the two controls do not fight.
 
 Animation > Facial and Pose > Expression share one Facial selection and restore
-point. Preview pauses that shared layer. A later Facial selection resumes the
-remembered speed and becomes the single authority. Expression action-unit sliders
-remain a separate pose layer and can compose with facial animation.
+point. Preview lets the timeline advance; Bake replays it before the delayed face
+capture, so expressions whose first frame is neutral remain visible. A later
+Facial selection becomes the single authority. Expression action-unit sliders
+remain a separate pose layer and can compose with facial animation. The delayed
+capture matches Ktisis's two-tick face synchronization after timeline playback
+(`Ktisis/Editor/Animation/Handlers/AnimationEditor.cs:126-129`,
+`Ktisis/Editor/Posing/PosingManager.cs:131-145`).
 
 Poser intentionally omits raw Havok scrubbing: the indexes shown by Brio and
 Ktisis are useful diagnostics but are not a stable logical-layer mapping

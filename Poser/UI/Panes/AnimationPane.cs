@@ -335,10 +335,18 @@ public sealed class AnimationPane
             help: $"The {lower} animation Poser will replay until Reset");
 
         if (slot == AnimationSlot.Base && owned.BaseRepeatSuspended)
-            form.Status("Full-body repeat is paused for layer playback.");
+            form.Status("Full-body loop is suspended for layer playback.");
         if (slot == AnimationSlot.Base && selected != 0 &&
             _catalog.Find(selected) is { IsLoop: true })
             form.Status("This selection loops natively; Poser does not force it.");
+        if (slot == AnimationSlot.Base)
+            form.Switch(
+                "Full body loop",
+                _animation.LoopWantedFor(actor, slot),
+                next => Report(
+                    _animation.SetSlotLoop(actor, slot, 0, next),
+                    "Full body loop"),
+                help: "Keep loop intent for explicit Full Body selections");
 
         float speed = owned.SlotSpeeds.TryGetValue(slot, out var overrideSpeed)
             ? overrideSpeed
@@ -368,14 +376,6 @@ public sealed class AnimationPane
                     help: play
                         ? "Resume the remembered nonzero speed and replay Selected if it ended"
                         : "Pause this layer and remember its current nonzero speed");
-                if (slot == AnimationSlot.Base)
-                    actions.Switch(
-                        "Repeat",
-                        _animation.LoopWantedFor(actor, slot),
-                        next => Report(
-                            _animation.SetSlotLoop(actor, slot, 0, next),
-                            "Full body repeat"),
-                        help: "Keep repeat intent for explicit Full Body selections");
             });
     }
 
@@ -414,8 +414,7 @@ public sealed class AnimationPane
                         _animation.HoldExpression(actor, selected),
                         "Expression"),
                     disabled: selected == 0,
-                    help: "Play this expression on the face again — a look "
-                        + "held by the animation, which Release takes back");
+                    help: "Replay this expression and let its facial timeline advance");
                 actions.Button(
                     "Release",
                     () => ReportExpression(
@@ -432,16 +431,20 @@ public sealed class AnimationPane
                             _notices.Refused(
                                 "Bake expression: actor is no longer in "
                                 + "the scene.");
+                        else if (_animation.HoldExpression(actor, selected)
+                            is { Success: false } previewFailed)
+                            _notices.Failed(
+                                $"Bake expression: {previewFailed.Detail}");
                         else if (_facialCapture.Begin(actor, descriptor)
                             is { Success: false } failed)
                             _notices.Failed(
                                 $"Bake expression: {failed.Detail}");
                     },
-                    disabled: _facialCapture.IsPending,
-                    help: "Write the previewed face into the POSE as one "
-                        + "undoable edit — it stays after the preview ends");
+                    disabled: selected == 0 || _facialCapture.IsPending,
+                    help: "Replay and write the previewed face into the POSE "
+                        + "as one undoable edit — it stays after the preview ends");
             },
-            help: "Choose an expression to hold on this actor's face");
+            help: "Choose a facial expression to preview on this actor");
     }
 
 

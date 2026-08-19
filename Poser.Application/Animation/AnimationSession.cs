@@ -988,18 +988,17 @@ public sealed class AnimationSession
         _scrub = null;
     }
 
-    // ── Expression hold ──────────────────────────────────────────────────
+    // ── Expression preview ───────────────────────────────────────────────
 
-    /// <summary>Holds a facial expression.</summary>
+    /// <summary>Plays a facial preview without freezing its first frame.</summary>
     public AnimationResult HoldExpression(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
         var played = SelectSlot(actor, AnimationSlot.Facial, timeline);
         if (!played.Success)
             return played;
-        var pinned = PauseSlot(actor, AnimationSlot.Facial);
-        if (!pinned.Success)
-            return pinned;
+        // Facial expressions often begin from a neutral frame. Let the game
+        // advance the selected timeline; an explicit bake captures it later.
         Mutate(actor, o => o with { HeldExpression = timeline });
         return AnimationResult.Ok();
     }

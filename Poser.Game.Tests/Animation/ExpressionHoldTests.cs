@@ -6,13 +6,8 @@ using Poser.Domain.Identity;
 namespace Poser.Game.Tests.Animation;
 
 /// <summary>
-/// The one-click expression contract at the session/port boundary — the
-/// flow the FACE & LIPS Expression picker drives on a single row click.
-/// Brio's mechanism, verbatim: a pick blends the timeline through the
-/// sequencer and pins the facial layer at speed 0; a pick while a hold is
-/// active switches the expression over the pinned slot without disturbing
-/// the one pre-hold restore point; release and reset hand back per the
-/// Train 6 ownership rules (release only what landed, keep what failed).
+/// Facial preview ownership at the session/runtime boundary. A preview advances
+/// normally, keeps its first restore point, and remains retryable on release.
 /// </summary>
 public sealed class ExpressionHoldTests
 {
@@ -25,8 +20,8 @@ public sealed class ExpressionHoldTests
 
     private const ushort Smile = 9001;
     private const ushort Frown = 9002;
-[Fact]
-    public void Expression_pick_captures_before_pinning_and_switches_without_overwriting_restore()
+    [Fact]
+    public void Neutral_first_frame_expression_advances_and_keeps_the_first_restore_point()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
@@ -36,29 +31,31 @@ public sealed class ExpressionHoldTests
 
         Assert.Equal(Frown, session.HeldExpressionFor(Actor));
         Assert.Equal(Incoming, session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
-        Assert.Equal(0f, session.OverridesFor(Actor).SlotSpeeds[AnimationSlot.Facial]);
-        Assert.True(port.Calls.IndexOf($"Blend:{Frown}") < port.Calls.LastIndexOf("SetSlotSpeed:Facial:0"));
+        Assert.DoesNotContain(AnimationSlot.Facial,
+            session.OverridesFor(Actor).SlotSpeeds.Keys);
+        Assert.DoesNotContain(port.Calls,
+            call => call.StartsWith("SetSlotSpeed:Facial"));
     }
 
     [Fact]
-    public void Expression_release_and_bake_retry_truthfully_preserve_landed_capture()
+    public void Expression_release_failure_preserves_retryable_ownership()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.HoldExpression(Actor, Smile).Success);
-        port.FailClearSlotSpeed = true;
+        port.BlendFailure = "facial restore unavailable";
         Assert.False(session.ReleaseExpression(Actor).Success);
         Assert.Equal(Smile, session.HeldExpressionFor(Actor));
         Assert.Equal(Incoming, session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
 
-        port.FailClearSlotSpeed = false;
+        port.BlendFailure = null;
         Assert.True(session.RestoreFacialLayer(Actor).Success);
         Assert.Null(session.HeldExpressionFor(Actor));
         Assert.DoesNotContain(
             AnimationSlot.Facial,
             session.OverridesFor(Actor).SlotCaptures.Keys);
     }
-private class FakePort : DispatchProxy
+    private class FakePort : DispatchProxy
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
@@ -67,9 +64,6 @@ private class FakePort : DispatchProxy
         public ushort LiveFacialTimeline { get; set; } = Incoming;
 
         public string? BlendFailure { get; set; }
-        public bool FailSetSlotSpeed { get; set; }
-        public bool FailClearSlotSpeed { get; set; }
-
         public static FakePort Create()
         {
             var port = DispatchProxy.Create<IAnimationRuntimePort, FakePort>();
@@ -113,14 +107,10 @@ private class FakePort : DispatchProxy
                 case "SetSlotSpeed":
                     Calls.Add(
                         $"SetSlotSpeed:{(AnimationSlot)args![1]!}:{(float)args[2]!}");
-                    return FailSetSlotSpeed
-                        ? AnimationPortResult.Fail("slot speed unavailable")
-                        : AnimationPortResult.Ok();
+                    return AnimationPortResult.Ok();
                 case "ClearSlotSpeed":
                     Calls.Add($"ClearSlotSpeed:{(AnimationSlot)args![1]!}");
-                    return FailClearSlotSpeed
-                        ? AnimationPortResult.Fail("unpin failed")
-                        : AnimationPortResult.Ok();
+                    return AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {
