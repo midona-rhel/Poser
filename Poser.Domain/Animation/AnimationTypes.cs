@@ -28,11 +28,8 @@ public enum AnimationKind
 }
 
 /// <summary>
-/// Pose families. Values ARE the game's pose-mode byte. Only the four
-/// selectable families appear in the stance picker; the rest exist so a
-/// read-back can report the TRUE state (a weapon-drawn actor is "Battle",
-/// not a lie of "Idle") — they are reached through weapon or gear state,
-/// never selected directly.
+/// Native pose-mode values. The stance picker exposes its four selectable
+/// families; the remaining values preserve exact live read-back.
 /// </summary>
 public enum AnimationStance
 {
@@ -56,10 +53,14 @@ public static class AnimationSlots
         AnimationSlot.Parts4, AnimationSlot.Overlay,
     };
 
-    /// <summary>Slots with supported scrub controls.</summary>
-    public static IReadOnlyList<AnimationSlot> Scrubbable { get; } = new[]
+    /// <summary>Layers with verified selection and speed routes.</summary>
+    public static IReadOnlyList<AnimationSlot> Selectable { get; } = new[]
     {
-        AnimationSlot.Base, AnimationSlot.UpperBody,
+        AnimationSlot.Base,
+        AnimationSlot.UpperBody,
+        AnimationSlot.Facial,
+        AnimationSlot.Additive,
+        AnimationSlot.Lips,
     };
 
     public static bool IsKnown(int slot) => slot is 0 or 1 or 2 or 3 or 7 or 8 or 9 or 10 or 11 or 12;
@@ -220,6 +221,10 @@ public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
 public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
+    public bool BaseUsesNativeLoop { get; init; }
+    /// <summary>Explicit non-base timeline selections.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> SelectedSlots { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
     public float? OverallSpeed { get; init; }
     /// <summary>Slots with active Poser repeat arms.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
@@ -231,6 +236,12 @@ public sealed record AnimationOverrides
     public IReadOnlyDictionary<AnimationSlot, ushort> SlotCaptures { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
+        new Dictionary<AnimationSlot, float>();
+    /// <summary>Native speed before Poser's first override per slot.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotSpeedCaptures { get; init; } =
+        new Dictionary<AnimationSlot, float>();
+    /// <summary>Last nonzero speed restored by the layer Play action.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotResumeSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
     public ushort? Lips { get; init; }
     public bool PositionLock { get; init; }
@@ -254,6 +265,7 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
+        SelectedSlots.Count > 0 || SlotSpeedCaptures.Count > 0 ||
         LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || BaseRepeatSuspended ||
         SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;

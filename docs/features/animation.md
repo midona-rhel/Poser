@@ -1,30 +1,33 @@
 # Animation
 
-Poser keeps animation state for the current actor. Playback follows the game's
-sequencer and slot routing. Poser does not create a second base-animation or
-blend system. Multiple animations can layer per slot, and a held slot keeps its
-speed override.
+Poser exposes Full Body, Upper Body, Facial, Additive, and Lips as independent
+layers. Each layer shows the current native timeline and a session-only Selected
+timeline. Choosing Selected plays immediately. Reset restores the state captured
+before Poser's first write, and clears Selected only after restoration succeeds.
 
-The expression picker acts immediately: one choice plays and pins the facial
-layer. Changing a held expression does not recapture the restore point.
-Releasing it restores the captured facial timeline. Baking turns the previewed
-face into one ordinary pose-history patch and leaves body animation alone.
+Each layer has an exact logical-slot speed override. Pause writes zero and
+remembers the previous nonzero native or user speed; Play restores that speed.
+Selected remains after a one-shot stops. Poser does not infer a completion event:
+when Current differs from Selected, Play replays Selected through the same native
+selection route.
 
-Looping runs on framework ticks. When a timeline ends, Poser replays an armed
-slot. It does not use the unsupported forced-timeline field. Loop state belongs
-to the session and the slot.
+Repeat belongs only to Full Body. It can be armed before selection without
+capturing or writing native state. A selected animation that loops natively needs
+no forced timeline. For a non-looping selection, Poser owns the verified forced
+base field transactionally. Selecting another layer suspends that force while
+preserving repeat intent, so the two controls do not fight.
 
-Before Poser changes an animation aspect, it captures that aspect once.
-Restore gives control back only after native restore succeeds; a failure stays
-owned and retryable. GPose exit, disposal, and actor reconciliation use this
-same restore path. Stance restoration releases base state and loops first.
+Animation > Facial and Pose > Expression share one Facial selection and restore
+point. Preview pauses that shared layer. A later Facial selection resumes the
+remembered speed and becomes the single authority. Expression action-unit sliders
+remain a separate pose layer and can compose with facial animation.
 
-Speed uses the supported hooks and range and is cleared only when Poser owns
-it. Replay releases a Poser-owned pause before playing again. Physics freeze
-is one change that rolls back on partial failure. The UI shows the shared
-physics state.
-
-Stance changes use the supported native transition. Scrubbing freezes at the
-start of the gesture, clamps to the captured duration, and cancels if the
-skeleton changes. A pending facial bake or transform recovery blocks another
-mutation. Controls show only state that the session owns.
+Poser intentionally omits raw Havok scrubbing: the indexes shown by Brio and
+Ktisis are useful diagnostics but are not a stable logical-layer mapping
+(`Brio/Brio/UI/Controls/Editors/ActionTimelineEditor.cs:468-517`,
+`Ktisis/Interface/Components/Chara/AnimationEditorTab.cs:267-307`). It also omits
+global repeat and selection for Parts/Overlay slots. Lips is included because its
+native override and logical-slot speed route are exact; Additive uses the same
+sheet-routed selection and logical-slot speed contract as Upper and Facial
+(`Brio/Brio/Capabilities/Actor/ActionTimelineCapability.cs:57-92`,
+`Ktisis/Editor/Animation/AnimationManager.cs:88-112`).

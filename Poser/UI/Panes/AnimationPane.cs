@@ -20,7 +20,6 @@ public sealed class AnimationPane
 
     // The expression workspace may open before another catalog row.
     private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
-    private readonly AnimationSceneActions _sceneActions;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
     private readonly SceneSession _scene;
 
@@ -28,29 +27,11 @@ public sealed class AnimationPane
     private readonly Crystarium.SearchPicker<TimelineEntry> _picker =
         new("animation");
 
-    private bool _openGeneral = true;
     private bool _openStance = true;
     private bool _openLayers = true;
-    private bool _openFace = true;
-    private bool _openAdvancedSlots;
-    private bool _openAdvancedControls;
-
-    private (ActorId Actor, ScrubControlId Control)? _scrub;
-    private IReadOnlyList<ScrubControlReading>? _scrubFrozenControls;
-    private readonly Dictionary<(ActorId, AnimationSlot), ushort> _layerPicks =
-        new();
     // Commands report through the shared notification sink.
     private readonly UserNotices _notices;
     private int _pickerFrame = -1;
-    private int _expressionReadingFrame = -1;
-    private ActorId? _expressionReadingActor;
-    private ActorAnimationReading _expressionReading =
-        ActorAnimationReading.Empty;
-    private bool _sceneMenuRequested;
-
-    // The batch menu stays anchored to its trigger.
-    private System.Numerics.Vector2 _sceneMenuAnchor;
-
     // A picker keeps its actor and feed until it closes.
     private ActorId? _pickActor;
     private TimelineFeed? _openFeed;
@@ -95,18 +76,11 @@ public sealed class AnimationPane
 
     private static readonly AnimationSlot[] PrimaryLayers =
     [
+        AnimationSlot.Base,
         AnimationSlot.UpperBody,
         AnimationSlot.Facial,
         AnimationSlot.Additive,
-    ];
-
-    private static readonly AnimationSlot[] AdvancedLayers =
-    [
-        AnimationSlot.Parts1,
-        AnimationSlot.Parts2,
-        AnimationSlot.Parts3,
-        AnimationSlot.Parts4,
-        AnimationSlot.Overlay,
+        AnimationSlot.Lips,
     ];
 
     private static readonly string[] StanceLabels =
@@ -120,7 +94,6 @@ public sealed class AnimationPane
         AnimationStance.Sleeping,
     ];
 
-    private static readonly float[] SpeedMarks = [0f, 1f];
     private static readonly float[] UnitMarks = [1f];
 
     private static readonly string[] KindLabels =
@@ -138,7 +111,6 @@ public sealed class AnimationPane
         AnimationSession animation,
         AnimationCatalog catalog,
         Game.Animation.AnimationCatalogLoader catalogLoader,
-        AnimationSceneActions sceneActions,
         Game.Animation.FacialPoseCapture facialCapture,
         ITextureProvider textures,
         SceneSession scene,
@@ -148,7 +120,6 @@ public sealed class AnimationPane
         _animation = animation;
         _catalog = catalog;
         _catalogLoader = catalogLoader;
-        _sceneActions = sceneActions;
         _facialCapture = facialCapture;
         _icons = new GameIconResolver(textures);
         _scene = scene;
@@ -183,18 +154,9 @@ public sealed class AnimationPane
                     "This actor does not support animation control.");
                 return;
             }
-            if (_scrub is { } active && !active.Actor.Equals(actor))
-                EndScrub();
-
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
-            page.Section(
-                "GENERAL",
-                _openGeneral,
-                next => _openGeneral = next,
-                form => DrawPlayback(form, actor, reading, owned),
-                divider: false);
             page.Section(
                 "STANCE",
                 _openStance,
@@ -206,151 +168,16 @@ public sealed class AnimationPane
                 next => _openLayers = next,
                 form =>
                 {
-                    DrawLayer(
-                        form, actor, reading, owned,
-                        AnimationSlot.Base, "Full body", alwaysShow: true);
                     foreach (var slot in PrimaryLayers)
                         DrawLayer(
                             form, actor, reading, owned, slot,
-                            AnimationSlots.DisplayName(slot),
-                            alwaysShow: false);
+                            AnimationSlots.DisplayName(slot));
                 });
-            page.Section(
-                "LIPS",
-                _openFace,
-                next => _openFace = next,
-                form => DrawLips(form, actor, reading));
-            page.Section(
-                "ADVANCED SLOTS",
-                _openAdvancedSlots,
-                next => _openAdvancedSlots = next,
-                form =>
-                {
-                    foreach (var slot in AdvancedLayers)
-                        DrawLayer(
-                            form, actor, reading, owned, slot,
-                            AnimationSlots.DisplayName(slot),
-                            alwaysShow: true);
-                });
-            page.Section(
-                "ADVANCED CONTROLS",
-                _openAdvancedControls,
-                next => _openAdvancedControls = next,
-                form => DrawAdvancedControls(form, actor, reading));
         });
 
         DrawPicker();
-        DrawSceneMenu();
     }
 
-
-    private void DrawPlayback(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading,
-        AnimationOverrides owned)
-    {
-        ushort current = reading.BaseTimeline != 0
-            ? reading.BaseTimeline
-            : reading.TimelineFor(AnimationSlot.Base);
-        bool paused = _animation.IsPaused(actor);
-        form.Picker(
-            "Animation",
-            NameFor(current, "Choose"),
-            () => OpenPicker(_baseFeed, actor, current),
-            actions =>
-            {
-                actions.Button(
-                    paused ? "Play" : "Pause",
-                    () => Report(
-                        paused
-                            ? _animation.Resume(actor)
-                            : _animation.Pause(actor),
-                        "Playback"),
-                    help: paused
-                        ? "Resume this actor from the frame it stopped on"
-                        : "Freeze this actor on the current frame");
-                actions.Button(
-                    "Replay",
-                    () =>
-                    {
-                        var result = _animation.Replay(
-                            actor, current, out bool resumed);
-                        Report(result, "Replay");
-                        if (result.Success && resumed)
-                            _notices.Done("Replay resumed paused playback.");
-                    },
-                    disabled: current == 0,
-                    help: "Play this actor's animation again from the "
-                        + "start; a paused actor resumes playing");
-                actions.Button(
-                    "Restore",
-                    () => Report(
-                        _animation.ResetActor(actor), "Restore"),
-                    help: "Undo every animation change Poser made to "
-                        + "this actor");
-            },
-            help: "Choose the animation this actor plays");
-
-        if (_catalog.Find(current) is { IsLoop: true })
-            form.Status("Native loop.");
-
-        float speed = owned.OverallSpeed ?? reading.OverallSpeed;
-        form.NumericSlider(
-            "Speed",
-            speed,
-            -5f,
-            10f,
-            next => Report(_animation.SetSpeed(actor, next), "Speed"),
-            perPixel: 0.01f,
-            marks: SpeedMarks,
-            help: "Set how fast every animation on this actor plays; "
-                + "0 freezes it");
-        form.Actions("Playback", actions =>
-        {
-            actions.Button(
-                "Reset speed",
-                () => Report(_animation.ClearSpeed(actor), "Speed"),
-                help: "Give this actor's playback speed back to the game");
-            actions.Button(
-                "All actors",
-                () =>
-                {
-                    _sceneMenuAnchor = Crystarium.ButtonSeat;
-                    _sceneMenuRequested = true;
-                },
-                help: "Freeze, resume, replay or restore every actor in "
-                    + "the scene");
-            actions.Button(
-                "Start slot probe",
-                () => StartSlotProbe(actor),
-                help: "Record bounded slot observations in dalamud.log");
-            actions.Button(
-                "Stop slot probe",
-                () => StopSlotProbe(actor),
-                help: "End the active slot probe");
-        });
-    }
-
-    private void StartSlotProbe(ActorId actor)
-    {
-        var result = _animation.StartSlotProbe(actor);
-        if (!result.Success)
-        {
-            Report(result, "Slot probe");
-            return;
-        }
-        _notices.Done($"Slot probe {result.Detail} started. See dalamud.log.");
-    }
-
-    private void StopSlotProbe(ActorId actor)
-    {
-        var result = _animation.StopSlotProbe(actor);
-        if (result.Success)
-            _notices.Done("Slot probe ended. See dalamud.log.");
-        else
-            Report(result, "Slot probe");
-    }
 
     private void DrawStance(
         Crystarium.FormScope form,
@@ -481,175 +308,75 @@ public sealed class AnimationPane
         ActorAnimationReading reading,
         AnimationOverrides owned,
         AnimationSlot slot,
-        string label,
-        bool alwaysShow)
+        string label)
     {
         ushort live = reading.TimelineFor(slot);
-        ushort timeline = live != 0
-            ? live
-            : _layerPicks.TryGetValue(
-                (actor, slot), out var remembered)
-                ? remembered
-                : (ushort)0;
-        bool active = timeline != 0;
-        bool hasOwnedSpeed = owned.SlotSpeeds.ContainsKey(slot);
-        bool compactEmpty = !active && !alwaysShow && !hasOwnedSpeed;
-        var captured = slot;
-        bool paused = owned.SlotSpeeds.TryGetValue(
-            slot, out var ownedSpeed) && ownedSpeed == 0f;
+        ushort selected = _animation.SelectedFor(actor, slot) ?? 0;
+        bool paused = owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
+            ownedSpeed == 0f;
+        bool needsReplay = selected != 0 && live != selected;
         string lower = label.ToLowerInvariant();
 
-        form.Picker(
-            label,
-            active ? NameFor(timeline, "Choose") : "Add layer",
-            () => OpenPicker(SlotFeed(captured), actor, timeline),
-            compactEmpty
-                ? null
-                : actions =>
-                {
-                    if (live == 0)
-                    {
-                        actions.Button(
-                            "Replay",
-                            () => Report(
-                                _animation.Blend(actor, timeline), label),
-                            disabled: timeline == 0,
-                            help: "Play this layer's animation again from "
-                                + "the start");
-                    }
-                    else
-                    {
-                        actions.Button(
-                            paused ? "Play" : "Pause",
-                            () => Report(
-                                paused
-                                    ? _animation.ClearSlotSpeed(
-                                        actor, captured)
-                                    : _animation.SetSlotSpeed(
-                                        actor, captured, 0f),
-                                "Layer playback"),
-                            help: "Freeze just this layer, or let it play "
-                                + "again");
-                    }
-                    actions.Button(
-                        "Reset",
-                        () => Report(
-                            _animation.ClearSlotSpeed(actor, captured),
-                            "Layer speed"),
-                        disabled: !hasOwnedSpeed,
-                        help: "Give this layer's speed back to the game");
-                    if (slot == AnimationSlot.Base)
-                        actions.Switch(
-                            "Full body repeat",
-                            _animation.LoopWantedFor(actor, AnimationSlot.Base),
-                            next => Report(
-                                _animation.SetSlotLoop(
-                                    actor, AnimationSlot.Base, 0, next),
-                                "Full body repeat"),
-                            disabled: !_animation.SupportsForceLoop,
-                            help: "Repeat the selected full-body animation");
-                },
-            help: $"Choose an animation for the {lower} layer");
+        form.ReadOnly($"{label} current", NameFor(live, "None"),
+            help: $"The timeline currently reported by the native {lower} slot");
+        var feed = slot switch
+        {
+            AnimationSlot.Base => _baseFeed,
+            AnimationSlot.Lips => _lipsFeed,
+            _ => SlotFeed(slot),
+        };
+        form.Selector(
+            $"{label} selected",
+            NameFor(selected, "Choose"),
+            () => OpenPicker(feed, actor, selected),
+            () => Report(_animation.ResetSlot(actor, slot), $"{label} reset"),
+            available: true,
+            owned: _animation.OwnsSlot(actor, slot),
+            help: $"The {lower} animation Poser will replay until Reset");
 
         if (slot == AnimationSlot.Base && owned.BaseRepeatSuspended)
             form.Status("Full-body repeat is paused for layer playback.");
+        if (slot == AnimationSlot.Base && selected != 0 &&
+            _catalog.Find(selected) is { IsLoop: true })
+            form.Status("This selection loops natively; Poser does not force it.");
 
-        if (!compactEmpty)
-        {
-            float speed = owned.SlotSpeeds.TryGetValue(
-                slot, out var overrideSpeed)
-                ? overrideSpeed
-                : reading.SpeedFor(slot);
-            form.NumericSlider(
-                $"{label} speed",
-                speed,
-                0f,
-                2f,
-                next => Report(
-                    _animation.SetSlotSpeed(actor, captured, next),
-                    "Layer speed"),
-                perPixel: 0.005f,
-                marks: UnitMarks,
-                help: $"Set how fast the {lower} layer plays");
-        }
-
-        if (slot is AnimationSlot.UpperBody or AnimationSlot.Facial or AnimationSlot.Additive)
-            form.Status("Repeat is unavailable until this layer has a verified replay route.");
-    }
-
-    private void DrawAdvancedControls(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading)
-    {
-        var controls = AdvancedControls(reading);
-        if (controls.Count == 0)
-        {
-            form.Status("No animation controls.");
-            return;
-        }
-        foreach (var control in controls)
-            DrawScrub(
-                form,
-                actor,
-                reading,
-                control.Id.ToString(),
-                control);
-    }
-
-    private void DrawScrub(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading,
-        string label,
-        ScrubControlReading control)
-    {
-        bool scrubbable = control.Duration > 0f;
-        float duration = MathF.Max(control.Duration, 0.0001f);
-
-        void EnsureScrub()
-        {
-            if (_scrub is { } held
-                && held.Actor.Equals(actor)
-                && held.Control.Equals(control.Id))
-                return;
-            Report(
-                _animation.BeginScrub(actor, control.Id), "Scrub");
-            _scrub = (actor, control.Id);
-            _scrubFrozenControls = reading.Controls;
-        }
-
-        void Commit()
-        {
-            if (_scrub is { } held
-                && held.Actor.Equals(actor)
-                && held.Control.Equals(control.Id))
-                EndScrub();
-        }
-
-        form.NumericSlider(
-            label,
-            control.Time,
+        float speed = owned.SlotSpeeds.TryGetValue(slot, out var overrideSpeed)
+            ? overrideSpeed
+            : reading.SpeedFor(slot);
+        form.Slider(
+            $"{label} speed",
+            speed,
             0f,
-            duration,
-            next =>
+            2f,
+            next => Report(
+                _animation.SetSlotSpeed(actor, slot, next),
+                $"{label} speed"),
+            format: "0.00",
+            marks: UnitMarks,
+            help: $"Set how fast the {lower} layer plays",
+            actions: actions =>
             {
-                EnsureScrub();
-                Report(
-                    _animation.UpdateScrub(
-                        actor,
-                        Math.Clamp(next, 0f, duration)),
-                    "Scrub");
-            },
-            perPixel: 0.01f,
-            disabled: !scrubbable,
-            help: scrubbable
-                ? "Drag to move through the animation, "
-                    + $"{control.Duration:0.00}s long; this pauses the actor"
-                : "No animation is playing here",
-            onBegin: EnsureScrub,
-            onCommit: Commit);
-
+                bool play = paused || needsReplay;
+                actions.Button(
+                    play ? "Play" : "Pause",
+                    () => Report(
+                        play
+                            ? _animation.PlaySelectedSlot(actor, slot)
+                            : _animation.PauseSlot(actor, slot),
+                        $"{label} playback"),
+                    disabled: play && !paused && selected == 0,
+                    help: play
+                        ? "Resume the remembered nonzero speed and replay Selected if it ended"
+                        : "Pause this layer and remember its current nonzero speed");
+                if (slot == AnimationSlot.Base)
+                    actions.Switch(
+                        "Repeat",
+                        _animation.LoopWantedFor(actor, slot),
+                        next => Report(
+                            _animation.SetSlotLoop(actor, slot, 0, next),
+                            "Full body repeat"),
+                        help: "Keep repeat intent for explicit Full Body selections");
+            });
     }
 
     /// <summary>Draws the expression controls for the face workspace.</summary>
@@ -661,73 +388,39 @@ public sealed class AnimationPane
             return;
         }
         _catalogLoader.EnsureLoaded();
-        DrawExpression(form, actor, ExpressionReading(actor));
-    }
-
-    // The workspace may redraw within one frame.
-    private ActorAnimationReading ExpressionReading(ActorId actor)
-    {
-        int frame = ImGui.GetFrameCount();
-        if (_expressionReadingFrame == frame && _expressionReadingActor == actor)
-            return _expressionReading;
-        _expressionReadingFrame = frame;
-        _expressionReadingActor = actor;
-        return _expressionReading =
-            _animation.Read(actor) ?? ActorAnimationReading.Empty;
+        DrawExpression(form, actor);
     }
 
     /// <summary>Draws this pane's open picker.</summary>
     public void DrawExpressionPicker() => DrawPicker();
 
-    private void DrawLips(
-        Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading)
-    {
-        form.Picker(
-            "Lips",
-            NameFor(reading.LipsOverride, "Choose speech"),
-            () => OpenPicker(_lipsFeed, actor, reading.LipsOverride),
-            actions => actions.Button(
-                "None",
-                () => Report(_animation.SetLips(actor, 0), "Lips"),
-                disabled: reading.LipsOverride == 0,
-                help: "Put back the lip animation the actor had before"),
-            help: "Choose the speech animation this actor's lips play");
-    }
-
     private void DrawExpression(
         Crystarium.FormScope form,
-        ActorId actor,
-        ActorAnimationReading reading)
+        ActorId actor)
     {
         if (_facialCapture.ReceiptFor(actor) is { } receipt)
             form.Label($"Bake: {FacialReceiptText(receipt)}");
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
-        ushort facial = held != 0
-            ? held
-            : reading.TimelineFor(AnimationSlot.Facial);
+        ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
         form.Picker(
             "Expression",
-            NameFor(facial, "Choose expression"),
-            () => OpenPicker(_expressionFeed, actor, facial),
+            NameFor(selected, "Choose expression"),
+            () => OpenPicker(_expressionFeed, actor, selected),
             actions =>
             {
                 actions.Button(
                     "Preview",
                     () => ReportExpression(
-                        held != 0
-                            ? _animation.HoldExpression(actor, held)
-                            : _animation.Blend(actor, facial),
+                        _animation.HoldExpression(actor, selected),
                         "Expression"),
-                    disabled: facial == 0,
+                    disabled: selected == 0,
                     help: "Play this expression on the face again — a look "
                         + "held by the animation, which Release takes back");
                 actions.Button(
                     "Release",
                     () => ReportExpression(
                         _animation.ReleaseExpression(actor), "Expression"),
-                    disabled: held == 0,
+                    disabled: held == 0 && selected == 0,
                     help: "Drop the previewed expression so the face follows "
                         + "the animation again");
                 actions.Button(
@@ -1005,71 +698,6 @@ public sealed class AnimationPane
         AnimationSlot Slot);
 
 
-    private IReadOnlyList<ScrubControlReading> AdvancedControls(
-        ActorAnimationReading reading)
-    {
-        if (_scrub == null || _scrubFrozenControls == null)
-            return reading.Controls;
-        var merged = new List<ScrubControlReading>(
-            _scrubFrozenControls.Count);
-        foreach (var frozen in _scrubFrozenControls)
-        {
-            var current = frozen;
-            foreach (var live in reading.Controls)
-                if (live.Id.Equals(frozen.Id))
-                    current = live;
-            merged.Add(current);
-        }
-        return merged;
-    }
-
-    private void DrawSceneMenu()
-    {
-        if (_sceneMenuRequested)
-        {
-            _sceneMenuRequested = false;
-            Crystarium.FloatingMenu.Open(
-                "##anim-scene-menu",
-                _sceneMenuAnchor,
-                [
-                    new ContextMenuItem(
-                        "Freeze all",
-                        TablerIcon.PlayerPause),
-                    new ContextMenuItem(
-                        "Resume all",
-                        TablerIcon.PlayerPlay),
-                    new ContextMenuItem(
-                        "Replay all",
-                        TablerIcon.Refresh),
-                    new ContextMenuItem(
-                        "Restore all",
-                        TablerIcon.ArrowBackUp),
-                ]);
-        }
-        switch (Crystarium.FloatingMenu.Draw("##anim-scene-menu"))
-        {
-            case 0:
-                Report(_sceneActions.FreezeAll(), "Freeze all");
-                break;
-            case 1:
-                Report(_sceneActions.ResumeAll(), "Resume all");
-                break;
-            case 2:
-            {
-                var replay = _sceneActions.ReplayAll(out int resumed);
-                Report(replay, "Replay all");
-                if (replay.Success && resumed > 0)
-                    _notices.Done(
-                        $"Replay resumed {resumed} paused "
-                        + $"actor{(resumed == 1 ? "" : "s")}.");
-                break;
-            }
-            case 3:
-                Report(_sceneActions.StopAll(), "Restore all");
-                break;
-        }
-    }
-
     private ActorId? TargetActor() => _scene.Selection.Primary switch
     {
         { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
@@ -1140,33 +768,16 @@ public sealed class AnimationPane
         switch (pick.Target)
         {
             case AnimationPickTarget.Base:
-            {
-                var played = _animation.PlayEntry(
-                    actor, pick.Entry, asBase: true, playFromStart: true);
-                if (!played.Success)
-                {
-                    Report(played, pick.Entry.Name);
-                    break;
-                }
-                _layerPicks[(actor, AnimationSlot.Base)] = timeline;
+                Report(
+                    _animation.SelectSlot(
+                        actor, AnimationSlot.Base, timeline, pick.Entry.IsLoop),
+                    pick.Entry.Name);
                 break;
-            }
             case AnimationPickTarget.Slot:
-            {
-                var played = pick.Slot == AnimationSlot.Base
-                    ? _animation.PlayEntry(actor, pick.Entry, asBase: true, playFromStart: true)
-                    : _animation.Blend(actor, timeline);
-                if (!played.Success)
-                {
-                    Report(
-                        played,
-                        AnimationSlots.DisplayName(pick.Slot));
-                    break;
-                }
-                // Apply to the slot requested by the opening row.
-                _layerPicks[(actor, pick.Slot)] = timeline;
+                Report(
+                    _animation.SelectSlot(actor, pick.Slot, timeline),
+                    AnimationSlots.DisplayName(pick.Slot));
                 break;
-            }
             case AnimationPickTarget.Expression:
                 Report(
                     _animation.HoldExpression(actor, timeline),
@@ -1174,17 +785,10 @@ public sealed class AnimationPane
                 break;
             case AnimationPickTarget.Lips:
                 Report(
-                    _animation.SetLips(actor, timeline),
+                    _animation.SelectSlot(actor, AnimationSlot.Lips, timeline),
                     "Lips");
                 break;
         }
-    }
-
-    private void EndScrub()
-    {
-        _animation.EndScrub();
-        _scrub = null;
-        _scrubFrozenControls = null;
     }
 
     private void ReportExpression(AnimationResult result, string what) =>
@@ -1194,14 +798,6 @@ public sealed class AnimationPane
     {
         if (!result.Success)
             _notices.Failed($"{what}: {result.Detail}");
-    }
-
-    private void Report(
-        AnimationSceneActions.SceneActionReport report,
-        string verb)
-    {
-        if (!report.Success || report.Skipped.Count > 0)
-            _notices.Failed(report.Summary(verb));
     }
 
     private static string FacialReceiptText(

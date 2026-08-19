@@ -10,26 +10,11 @@ public readonly record struct AnimationPortResult(bool Success, string? Detail =
     public static AnimationPortResult Fail(string detail) => new(false, detail);
 }
 
-/// <summary>One observed animation command.</summary>
-public readonly record struct AnimationProbeCommand(
-    string Name,
-    AnimationSlot? Slot = null,
-    ushort Timeline = 0,
-    bool? Enabled = null);
-
 /// <summary>
-/// The ONE stable-id native boundary for animation. Every member takes an
-/// exact-generation <see cref="ActorId"/>; the runtime re-resolves it
-/// immediately before touching memory, so a replaced or removed actor
-/// fails explicitly instead of writing through a stale pointer. No
-/// address, pointer, or retained legacy entity crosses this interface —
-/// that is what keeps animation ownership stable across redraws.
-///
-/// Speed overrides are ENFORCED, not merely written: the implementation
-/// registers them so the game's own per-frame recalculation is overridden
-/// again each time it runs (Brio's model). Clearing an override therefore
-/// hands authority back to the game rather than writing a remembered
-/// value.
+/// Native animation boundary keyed by exact actor generation. The runtime
+/// resolves the actor immediately before each memory operation. Speed
+/// overrides are enforced per frame; clearing one restores its captured
+/// value before releasing enforcement.
 /// </summary>
 public interface IAnimationRuntimePort
 {
@@ -39,13 +24,6 @@ public interface IAnimationRuntimePort
 
     /// <summary>One frame's live native read, or null when unresolvable.</summary>
     ActorAnimationReading? Read(ActorId actor);
-
-    // ── Slot probe ───────────────────────────────────────────────────
-    AnimationPortResult StartSlotProbe(ActorId actor);
-    AnimationPortResult StopSlotProbe(ActorId actor);
-    void BeginSlotProbeCommand(ActorId actor, AnimationProbeCommand command);
-    void CompleteSlotProbeCommand(
-        ActorId actor, AnimationProbeCommand command, bool success);
 
     // ── Base and blend ────────────────────────────────────────────────
     /// <summary>Plays a timeline and captures the first base state.</summary>
@@ -108,20 +86,14 @@ public interface IAnimationRuntimePort
     AnimationPortResult ClearOverallSpeed(ActorId actor);
 
     /// <summary>
-    /// Rewinds every PAUSED Havok animation control of the actor to
-    /// LocalTime 0, across all partials — the face partial's blink/lip/
-    /// expression timeline controls included. Brio's settle rewind
-    /// (ActionTimelineCapability.StopSpeedAndResetTimeline,
-    /// Brio\Brio\Capabilities\Actor\ActionTimelineCapability.cs:120-165):
-    /// run a few ticks AFTER pausing, it snaps every held timeline to its
-    /// frame-0 neutral so a pose import diffs against that frame instead
-    /// of whatever mid-blink frame the pause happened to catch. Controls
-    /// still playing (PlaybackSpeed != 0) are untouched, exactly Brio's
-    /// condition. Owns no state; there is nothing to restore.
+    /// Rewinds every paused Havok control to local time zero. Playing
+    /// controls are unchanged, and the operation owns no persistent state.
     /// </summary>
     AnimationPortResult RewindPausedControls(ActorId actor);
     AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
-    AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot);
+    /// <summary>Releases enforcement after restoring the captured speed.</summary>
+    AnimationPortResult ClearSlotSpeed(
+        ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
 
     // ── Lips, stance, weapon, position ────────────────────────────────
     AnimationPortResult SetLips(ActorId actor, ushort timeline);

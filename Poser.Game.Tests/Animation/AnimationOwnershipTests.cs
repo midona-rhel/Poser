@@ -53,32 +53,6 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Probe_boundaries_preserve_the_existing_blend_write()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-
-        Assert.True(session.Blend(ActorA, 42).Success);
-
-        Assert.Equal(
-            ["ProbeBegin", "Blend:42", "ProbeComplete:True"],
-            port.Calls);
-    }
-
-    [Fact]
-    public void Probe_boundaries_preserve_the_repeat_arm_write()
-    {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-
-        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
-
-        Assert.Equal(
-            ["ProbeBegin", "SetForceLoop:42", "ProbeComplete:True"],
-            port.Calls);
-    }
-
-    [Fact]
     public void Base_repeat_is_sticky_but_never_arms_without_a_selection()
     {
         var port = FakePort.Create();
@@ -168,6 +142,35 @@ public sealed class AnimationOwnershipTests
         Assert.True(session.PlayBase(ActorA, 42).Success);
 
         Assert.Contains("PlayBase:42", port.Calls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Native_loop_base_respects_sticky_repeat_without_forcing()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+
+        Assert.True(session.SelectSlot(
+            ActorA, AnimationSlot.Base, 42, nativeLoop: true).Success);
+
+        Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.True(session.OverridesFor(ActorA).BaseUsesNativeLoop);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Repeat_intent_can_be_armed_before_selection_without_force_layout()
+    {
+        var port = FakePort.Create();
+        port.SupportsForceLoop = false;
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+
+        Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.Equal(0, port.CaptureBaseCalls);
         Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
     }
 
@@ -384,27 +387,98 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(session.SetSlotSpeed(ActorA, AnimationSlot.UpperBody, .08f).Success);
 
-        Assert.Contains("SetSlotSpeed", port.Calls);
+        Assert.Contains(port.Calls, call => call.StartsWith("SetSlotSpeed:"));
         Assert.DoesNotContain("SetOverallSpeed", port.Calls);
     }
 
     [Fact]
-    public void Probe_records_loop_arm_and_disarm_intent()
+    public void Selected_layer_survives_native_end_and_play_replays_it()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, .8f);
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SelectSlot(ActorA, AnimationSlot.UpperBody, 43).Success);
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 0, .8f);
+
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.UpperBody).Success);
+
+        Assert.Equal((ushort)43, session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+        Assert.Equal(2, port.Calls.Count(call => call == "Blend:43"));
+    }
+
+    [Fact]
+    public void Layer_pause_and_play_restore_the_previous_nonzero_native_speed()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 43, .35f);
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.PauseSlot(ActorA, AnimationSlot.UpperBody).Success);
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.UpperBody).Success);
+
+        Assert.Contains("SetSlotSpeed:UpperBody:0", port.Calls);
+        Assert.Contains(port.Calls, call =>
+            call.StartsWith("SetSlotSpeed:UpperBody:") && call != "SetSlotSpeed:UpperBody:0");
+        Assert.Equal(.35f, session.OverridesFor(ActorA).SlotSpeeds[AnimationSlot.UpperBody]);
+    }
+
+    [Fact]
+    public void Layer_reset_restores_capture_and_clears_selected()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SelectSlot(ActorA, AnimationSlot.UpperBody, 43).Success);
+
+        Assert.True(session.ResetSlot(ActorA, AnimationSlot.UpperBody).Success);
+
+        Assert.Contains("Blend:77", port.Calls);
+        Assert.Null(session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+        Assert.DoesNotContain(
+            AnimationSlot.UpperBody,
+            session.OverridesFor(ActorA).SlotCaptures.Keys);
+    }
+
+    [Fact]
+    public void Animation_facial_selection_hands_off_a_pose_expression_hold()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.Facial, 77, .6f);
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(ActorA, 45).Success);
+
+        Assert.True(session.SelectSlot(ActorA, AnimationSlot.Facial, 46).Success);
+
+        Assert.Null(session.HeldExpressionFor(ActorA));
+        Assert.Equal((ushort)46, session.SelectedFor(ActorA, AnimationSlot.Facial));
+        Assert.Equal(.6f, session.OverridesFor(ActorA).SlotSpeeds[AnimationSlot.Facial]);
+        Assert.Contains(port.Calls, call =>
+            call.StartsWith("SetSlotSpeed:Facial:") && call != "SetSlotSpeed:Facial:0");
+    }
+
+    [Fact]
+    public void Selection_refuses_a_timeline_routed_to_another_layer()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
 
-        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
-        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, false).Success);
+        var result = session.SelectSlot(ActorA, AnimationSlot.UpperBody, 45);
 
-        Assert.Equal(new bool?[] { true, false }, port.ProbeCommands
-            .Where(command => command.Name == "slot-loop")
-            .Select(command => command.Enabled));
+        Assert.False(result.Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend"));
     }
+
     private static ActorAnimationReading ReadingWithBase(ushort timeline) =>
         ActorAnimationReading.Empty with
         {
             Slots = [new AnimationSlotReading(AnimationSlot.Base, timeline, 1f)],
+        };
+
+    private static ActorAnimationReading ReadingWithSlot(
+        AnimationSlot slot, ushort timeline, float speed) =>
+        ActorAnimationReading.Empty with
+        {
+            Slots = [new AnimationSlotReading(slot, timeline, speed)],
         };
 
     private static SceneSnapshot EmptyScene(ulong revision) =>
@@ -420,7 +494,6 @@ public sealed class AnimationOwnershipTests
     {
         public IAnimationRuntimePort Port { get; private set; } = null!;
         public List<string> Calls { get; } = new();
-        public List<AnimationProbeCommand> ProbeCommands { get; } = new();
         public bool Frozen { get; private set; }
         public bool SupportsForceLoop { get; set; } = true;
         public bool FailUnfreeze { get; set; }
@@ -459,9 +532,13 @@ public sealed class AnimationOwnershipTests
                 case "get_SupportsForceLoop":
                     return SupportsForceLoop;
                 case "TimelineSlot":
-                    return (ushort)args![0]! is 43 or 44
-                        ? AnimationSlot.UpperBody
-                        : AnimationSlot.Base;
+                    return (ushort)args![0]! switch
+                    {
+                        43 or 44 => AnimationSlot.UpperBody,
+                        45 or 46 => AnimationSlot.Facial,
+                        47 => AnimationSlot.Additive,
+                        _ => AnimationSlot.Base,
+                    };
                 case "Read":
                     Calls.Add("Read");
                     return ReadValue;
@@ -491,18 +568,17 @@ public sealed class AnimationOwnershipTests
                     return FailRestoreBase
                         ? AnimationPortResult.Fail("base restore failed")
                         : AnimationPortResult.Ok();
-                case "BeginSlotProbeCommand":
-                    Calls.Add("ProbeBegin");
-                    ProbeCommands.Add((AnimationProbeCommand)args![1]!);
-                    return null;
-                case "CompleteSlotProbeCommand":
-                    Calls.Add($"ProbeComplete:{args![2]}");
-                    return null;
                 case "SetForceLoop":
                     Calls.Add($"SetForceLoop:{args![1]}");
                     return FailForceLoop
                         ? AnimationPortResult.Fail("repeat arm failed")
                         : AnimationPortResult.Ok();
+                case "SetSlotSpeed":
+                    Calls.Add($"SetSlotSpeed:{args![1]}:{args[2]}");
+                    return AnimationPortResult.Ok();
+                case "ClearSlotSpeed":
+                    Calls.Add($"ClearSlotSpeed:{args![1]}:{args[2]}");
+                    return AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {
