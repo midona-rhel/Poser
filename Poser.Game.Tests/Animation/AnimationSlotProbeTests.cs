@@ -98,12 +98,13 @@ public sealed class AnimationSlotProbeTests
         var before = Snapshot("base=3", "0.0", "a");
         var after = Snapshot("base=42", "0.1", "b");
         Assert.True(probe.Start(ActorA, "actor-a", before).Success);
-        var command = new AnimationProbeCommand("selection", AnimationSlot.Base, 42);
+        var first = new AnimationProbeCommand("selection", AnimationSlot.Base, 42);
+        var second = new AnimationProbeCommand("selection", AnimationSlot.Base, 43);
 
-        probe.Begin(ActorA, "actor-a", command, before);
-        probe.Complete(ActorA, "actor-a", command, true, after);
-        probe.Begin(ActorA, "actor-a", command, before);
-        probe.Complete(ActorA, "actor-a", command, true, after);
+        probe.Begin(ActorA, "actor-a", first, before);
+        probe.Complete(ActorA, "actor-a", first, true, after);
+        probe.Begin(ActorA, "actor-a", second, before);
+        probe.Complete(ActorA, "actor-a", second, true, after);
         Assert.DoesNotContain(lines, line => line.Contains("CANDIDATE"));
         Assert.True(probe.Stop(ActorA, "actor-a", after).Success);
 
@@ -121,15 +122,51 @@ public sealed class AnimationSlotProbeTests
 
         foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody })
         {
-            var command = new AnimationProbeCommand("selection", slot, 42);
-            probe.Begin(ActorA, "actor-a", command, before);
-            probe.Complete(ActorA, "actor-a", command, true, after);
-            probe.Begin(ActorA, "actor-a", command, before);
-            probe.Complete(ActorA, "actor-a", command, true, after);
+            foreach (var timeline in new ushort[] { 42, 43 })
+            {
+                var command = new AnimationProbeCommand("selection", slot, timeline);
+                probe.Begin(ActorA, "actor-a", command, before);
+                probe.Complete(ActorA, "actor-a", command, true, after);
+            }
         }
         Assert.True(probe.Stop(ActorA, "actor-a", after).Success);
 
         Assert.DoesNotContain(lines, line => line.Contains("CANDIDATE"));
+    }
+
+    [Fact]
+    public void Probe_rejects_repeated_single_timeline_evidence()
+    {
+        var lines = new List<string>();
+        var probe = new AnimationSlotProbe(lines.Add);
+        var before = Snapshot("base=3", "0.0", "a");
+        var after = Snapshot("base=42", "0.1", "b");
+        Assert.True(probe.Start(ActorA, "actor-a", before).Success);
+        var command = new AnimationProbeCommand("selection", AnimationSlot.Base, 42);
+
+        probe.Begin(ActorA, "actor-a", command, before);
+        probe.Complete(ActorA, "actor-a", command, true, after);
+        probe.Begin(ActorA, "actor-a", command, before);
+        probe.Complete(ActorA, "actor-a", command, true, after);
+        Assert.True(probe.Stop(ActorA, "actor-a", after).Success);
+
+        Assert.DoesNotContain(lines, line => line.Contains("CANDIDATE"));
+    }
+
+    [Fact]
+    public void Probe_dispose_ends_once_and_ignores_later_ticks()
+    {
+        var lines = new List<string>();
+        var probe = new AnimationSlotProbe(lines.Add);
+        var snapshot = Snapshot("base=3", "0.0", "a");
+        Assert.True(probe.Start(ActorA, "actor-a", snapshot).Success);
+
+        probe.Dispose();
+        int count = lines.Count;
+        probe.Tick("actor-a", snapshot, true);
+
+        Assert.Contains(lines, line => line.Contains("END") && line.Contains("dispose"));
+        Assert.Equal(count, lines.Count);
     }
 
     private static SlotProbeSnapshot Snapshot(string state, string controlState, string fingerprint) =>

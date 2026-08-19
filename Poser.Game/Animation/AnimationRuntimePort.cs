@@ -1264,7 +1264,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public void Dispose()
     {
-        _framework.Update -= EnforceLoops;
+        _framework.Update -= OnFrameworkUpdate;
+        _slotProbe.Dispose();
         _loops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();

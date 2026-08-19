@@ -38,7 +38,7 @@ internal sealed class AnimationSlotProbe
         public int Records { get; set; }
         public SlotProbeSnapshot LastSample { get; set; } = initial;
         public List<int> DueFrames { get; } = [];
-        public Dictionary<(AnimationSlot Slot, string Set), int> Matches { get; } = new();
+        public Dictionary<(AnimationSlot Slot, string Set), HashSet<ushort>> Timelines { get; } = new();
         public Dictionary<string, HashSet<AnimationSlot>> SetSlots { get; } = new();
     }
 
@@ -129,7 +129,7 @@ internal sealed class AnimationSlotProbe
         _pending = null;
         Write("RESULT", snapshot, $"{Describe(command)} success={success}");
         if (success && command.Name == "selection" && command.Slot is { } slot)
-            RecordCandidate(slot, pending.Before, snapshot);
+            RecordCandidate(slot, command.Timeline, pending.Before, snapshot);
         foreach (var offset in new[] { 1, 2, 5 })
             _session!.DueFrames.Add(_session.Frame + offset);
     }
@@ -178,7 +178,10 @@ internal sealed class AnimationSlotProbe
     }
 
     private void RecordCandidate(
-        AnimationSlot slot, SlotProbeSnapshot before, SlotProbeSnapshot after)
+        AnimationSlot slot,
+        ushort timeline,
+        SlotProbeSnapshot before,
+        SlotProbeSnapshot after)
     {
         var beforeControls = before.Controls.ToDictionary(control => control.Id);
         var changed = after.Controls
@@ -196,7 +199,9 @@ internal sealed class AnimationSlotProbe
             _session.SetSlots[set] = slots = [];
         slots.Add(slot);
         var key = (slot, set);
-        _session.Matches[key] = _session.Matches.GetValueOrDefault(key) + 1;
+        if (!_session.Timelines.TryGetValue(key, out var timelines))
+            _session.Timelines[key] = timelines = [];
+        timelines.Add(timeline);
     }
 
     private bool SameActor(string fingerprint) =>
@@ -207,9 +212,9 @@ internal sealed class AnimationSlotProbe
         if (_session == null)
             return;
         _pending = null;
-        foreach (var ((slot, set), matches) in _session.Matches)
+        foreach (var ((slot, set), timelines) in _session.Timelines)
         {
-            if (matches < 2 || !_session.SetSlots.TryGetValue(set, out var slots) ||
+            if (timelines.Count < 2 || !_session.SetSlots.TryGetValue(set, out var slots) ||
                 slots.Count != 1 || _session.Records >= MaximumRecords - 1)
                 continue;
             _session.Records++;
