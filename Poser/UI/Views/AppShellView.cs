@@ -416,13 +416,6 @@ public static class AppShellView
                     vm.AnimationOn
                         ? "Switch off to pause this actor's animation"
                         : "Switch on to resume this actor's animation");
-            right.Switch(
-                "Physics",
-                vm.PhysicsOn,
-                vm.PhysicsToggled!,
-                vm.PhysicsOn
-                    ? "Switch off to freeze physics for the whole scene"
-                    : "Switch on to resume physics for the whole scene");
             if (vm.CameraLockAvailable)
                 right.Switch(
                     "Lock camera",
@@ -431,6 +424,13 @@ public static class AppShellView
                     vm.CameraLocked
                         ? "Switch off to allow camera framing edits"
                         : "Switch on to protect this camera's framing");
+            right.Switch(
+                "Physics",
+                vm.PhysicsOn,
+                vm.PhysicsToggled!,
+                vm.PhysicsOn
+                    ? "Switch off to freeze physics for the whole scene"
+                    : "Switch on to resume physics for the whole scene");
             // World adoption belongs to the scene tree, not this toolbar.
         };
     }

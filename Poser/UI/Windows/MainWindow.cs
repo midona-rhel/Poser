@@ -113,8 +113,6 @@ public class MainWindow : Window
         _cameraTrackingActorPicker = new("camera-tracking-actor");
     private readonly Crystarium.SearchPicker<CameraBoneChoice>
         _cameraTrackingBonePicker = new("camera-tracking-bones");
-    private readonly Dictionary<CameraId, List<ActorId>>
-        _cameraTrackingActors = new();
     private IReadOnlyList<CameraBoneChoice> _cameraBoneChoices =
         Array.Empty<CameraBoneChoice>();
     private CameraId? _cameraActorPickerCamera;
@@ -1942,16 +1940,13 @@ public class MainWindow : Window
     private static readonly string[] CameraTrackingModeOptions =
         ["Follow", "Pan", "Follow and pan", "None"];
 
-    /// <summary>A flat bone-picker row. Context rows may carry one exact root
-    /// bone; synthetic category rows never carry a bone id.</summary>
+    /// <summary>One exact bone in the flat tracking picker.</summary>
     private sealed record CameraBoneChoice(
         string Key,
         string Label,
         string SearchText,
-        BoneId? BoneId,
-        string? Badge,
-        string[] ContextKeys,
-        bool IsContext);
+        BoneId BoneId,
+        string? Badge);
 
     /// <summary>Draws tracking as an actor roster. Adding an actor opens one
     /// flat, category-labelled bone list rather than an expanded tree.</summary>
@@ -1964,20 +1959,30 @@ public class MainWindow : Window
             return;
         }
 
-        var actorIds = ReconcileCameraTrackingActors(cameraId, camera);
+        var actor = ReconcileCameraTrackingActor(cameraId, camera);
         bool locked = camera.IsLocked;
-        form.SwitchActions(
-            "Tracking",
-            camera.IsTracking,
-            value => camera.IsTracking = value,
-            actions => actions.IconButton(
-                TablerIcon.Plus,
-                () => OpenCameraTrackingActorPicker(cameraId, actorIds),
-                disabled: locked,
-                help: "Add an actor whose bones this camera can track",
-                id: "camera-track-add"),
-            help: "Steer the orbit pivot at the tracked bones every frame",
-            disabled: locked);
+        bool actorLocked = camera.TargetActorId is { } targetId &&
+            actor?.Id == targetId;
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Tracking",
+                cell => cell.Switch(
+                    "##camera-tracking", camera.IsTracking,
+                    value => camera.IsTracking = value,
+                    disabled: locked),
+                "Steer the orbit pivot at the tracked bones every frame");
+            cells.Cell(
+                "Lock actor",
+                cell => cell.Switch(
+                    "##camera-track-lock", actorLocked,
+                    value => SetCameraTrackingActorLock(
+                        cameraId, camera, value),
+                    disabled: locked),
+                actorLocked
+                    ? "Keep tracking this exact actor"
+                    : "Use the game's current target actor");
+        });
         form.Dropdown(
             "Mode",
             CameraTrackingModeOptions,
@@ -1987,76 +1992,148 @@ public class MainWindow : Window
             help: "Follow moves the camera with the bones, Pan swings the "
                 + "view onto them, Follow and pan blends both");
 
-        foreach (var actorId in actorIds.ToArray())
-        {
-            var actor = _scene.Snapshot.Actors.FirstOrDefault(
-                candidate => candidate.Id == actorId);
-            if (actor == null)
-                continue;
-            string actorName = ActorDisplayName(actor);
-            form.Actions(
-                string.Empty,
-                actions =>
+        form.Actions(
+            "Actor",
+            actions =>
+            {
+                if (actor != null)
                 {
+                    string actorName = ActorDisplayName(actor);
                     actions.Button(
                         actorName,
-                        () => OpenCameraBonePicker(cameraId, actorId, camera),
+                        () => OpenCameraBonePicker(
+                            cameraId, actor.Id, camera),
                         style: ControlStyle.Workspace with
                             { Width = UiWidth.Fill },
                         disabled: locked,
                         help: $"Choose exact bones on {actorName}",
-                        id: $"camera-track-actor-{actorId}");
+                        id: $"camera-track-actor-{actor.Id}");
+                }
+                actions.IconButton(
+                    TablerIcon.Plus,
+                    () => OpenCameraTrackingActorPicker(cameraId, actor?.Id),
+                    disabled: locked,
+                    help: "Choose the actor whose bones this camera tracks",
+                    id: "camera-track-add");
+                if (actor != null)
                     actions.IconButton(
                         TablerIcon.X,
-                        () => RemoveCameraTrackingActor(
-                            cameraId, actorId, camera),
+                        () => ClearCameraTrackingActor(cameraId, camera),
                         disabled: locked,
-                        help: $"Remove {actorName} from tracking",
-                        id: $"camera-track-remove-{actorId}");
-                });
-        }
+                        help: $"Clear tracking for {ActorDisplayName(actor)}",
+                        id: $"camera-track-clear-{actor.Id}");
+            });
 
-        PumpCameraTrackingPickers(cameraId, camera, actorIds);
+        PumpCameraTrackingPickers(cameraId, camera, actor);
     }
 
-    private List<ActorId> ReconcileCameraTrackingActors(
+    /// <summary>Prunes stale and mixed tracking state, then resolves the one
+    /// exact actor that currently owns tracking.</summary>
+    private ActorDescriptor? ReconcileCameraTrackingActor(
         CameraId cameraId, IVirtualCamera camera)
     {
-        if (!_cameraTrackingActors.TryGetValue(cameraId, out var actorIds))
-        {
-            actorIds = [];
-            _cameraTrackingActors[cameraId] = actorIds;
-        }
+        if (!ResolveExactCamera(cameraId, camera))
+            return null;
 
+        ActorId? trackedOwner = null;
         for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
         {
             var tracked = camera.TrackedBones[i];
-            if (_bindings.GetBoneId(tracked) is not { } boneId)
-            {
-                camera.TrackedBones.RemoveAt(i);
-                continue;
-            }
-            var resolved = _bindings.Resolve(boneId);
-            if (!resolved.Success || resolved.Value is not { } current ||
+            if (_bindings.GetBoneId(tracked) is not { } boneId ||
+                _bindings.Resolve(boneId) is not
+                    { Success: true, Value: { } current } ||
                 !ReferenceEquals(current, tracked))
             {
                 camera.TrackedBones.RemoveAt(i);
                 continue;
             }
-            if (!actorIds.Contains(boneId.Skeleton.Actor))
-                actorIds.Add(boneId.Skeleton.Actor);
+            trackedOwner ??= boneId.Skeleton.Actor;
+            if (trackedOwner != boneId.Skeleton.Actor)
+                camera.TrackedBones.RemoveAt(i);
         }
 
-        actorIds.RemoveAll(actorId => ResolveActorDescriptor(actorId) == null);
-        return actorIds;
+        if (camera.TargetActorId is { } lockedId)
+        {
+            if (!TryResolveExactActor(lockedId, out var lockedActor) ||
+                !ReferenceEquals(camera.TargetActor, lockedActor) ||
+                ResolveActorDescriptor(lockedId) is not { } lockedDescriptor)
+            {
+                _cameraService.ClearTargetActor(camera);
+            }
+            else
+            {
+                if (trackedOwner is { } owner && owner != lockedId)
+                    camera.TrackedBones.Clear();
+                return lockedDescriptor;
+            }
+        }
+
+        if (_actorManager.GetGPoseTarget() is not { } native ||
+            _bindings.GetActorId(native) is not { } nativeId ||
+            !TryResolveExactActor(nativeId, out var exactNative) ||
+            !ReferenceEquals(native, exactNative) ||
+            ResolveActorDescriptor(nativeId) is not { } nativeDescriptor)
+        {
+            camera.TrackedBones.Clear();
+            return null;
+        }
+        if (trackedOwner is { } trackedId && trackedId != nativeId)
+            camera.TrackedBones.Clear();
+        return nativeDescriptor;
+    }
+
+    private void SetCameraTrackingActorLock(
+        CameraId cameraId, IVirtualCamera camera, bool enabled)
+    {
+        if (camera.IsLocked || !ResolveExactCamera(cameraId, camera))
+            return;
+        if (!enabled)
+        {
+            _cameraService.ClearTargetActor(camera);
+            ReconcileCameraTrackingActor(cameraId, camera);
+            return;
+        }
+
+        var actor = ResolveCameraTrackedActor(camera)
+            ?? ReconcileCameraTrackingActor(cameraId, camera);
+        _cameraPane.SetTrackingActor(
+            camera, actor?.Id, actor == null ? string.Empty :
+                ActorDisplayName(actor));
+    }
+
+    /// <summary>Resolves the locked actor or the single exact owner of every
+    /// tracked bone. Mixed or stale sets have no authority.</summary>
+    private ActorDescriptor? ResolveCameraTrackedActor(IVirtualCamera camera)
+    {
+        if (camera.TargetActorId is { } targetId)
+        {
+            if (TryResolveExactActor(targetId, out var target) &&
+                ReferenceEquals(camera.TargetActor, target))
+                return ResolveActorDescriptor(targetId);
+            return null;
+        }
+
+        ActorId? owner = null;
+        foreach (var tracked in camera.TrackedBones)
+        {
+            if (_bindings.GetBoneId(tracked) is not { } boneId ||
+                _bindings.Resolve(boneId) is not
+                    { Success: true, Value: { } exact } ||
+                !ReferenceEquals(exact, tracked))
+                return null;
+            owner ??= boneId.Skeleton.Actor;
+            if (owner != boneId.Skeleton.Actor)
+                return null;
+        }
+        return owner is { } actorId ? ResolveActorDescriptor(actorId) : null;
     }
 
     private void OpenCameraTrackingActorPicker(
-        CameraId cameraId, IReadOnlyCollection<ActorId> actorIds)
+        CameraId cameraId, ActorId? currentActor)
     {
         var choices = _scene.Snapshot.Actors
-            .Where(actor => actor.Skeletons.Count > 0
-                && !actorIds.Contains(actor.Id))
+            .Where(actor => actor.Skeletons.Count > 0 &&
+                actor.Id != currentActor)
             .ToArray();
         _cameraActorPickerCamera = cameraId;
         _cameraTrackingActorPicker.Open(
@@ -2069,21 +2146,23 @@ public class MainWindow : Window
     private void PumpCameraTrackingPickers(
         CameraId cameraId,
         IVirtualCamera camera,
-        List<ActorId> actorIds)
+        ActorDescriptor? currentActor)
     {
         if (_cameraTrackingActorPicker.IsOpen)
             _cameraTrackingActorPicker.UpdateItems(_scene.Snapshot.Actors
-                .Where(actor => actor.Skeletons.Count > 0
-                    && !actorIds.Contains(actor.Id))
+                .Where(actor => actor.Skeletons.Count > 0 &&
+                    actor.Id != currentActor?.Id)
                 .ToArray());
         if (_cameraTrackingActorPicker.Draw() is { Item: var pickedActor } &&
-            _cameraActorPickerCamera == cameraId && !camera.IsLocked &&
-            ResolveExactCamera(cameraId, camera) &&
-            ResolveExactActor(pickedActor.Id))
-            actorIds.Add(pickedActor.Id);
+            _cameraActorPickerCamera == cameraId)
+        {
+            SelectCameraTrackingActor(cameraId, camera, pickedActor.Id);
+            currentActor = ReconcileCameraTrackingActor(cameraId, camera);
+        }
 
         if (_cameraBonePickerCamera == cameraId &&
             _cameraBonePickerActor is { } actorId &&
+            currentActor?.Id == actorId &&
             ResolveActorDescriptor(actorId) is { } actor)
         {
             _cameraBoneChoices = BuildCameraBoneChoices(actor);
@@ -2091,13 +2170,41 @@ public class MainWindow : Window
             _cameraTrackingBonePicker.UpdateSelection(
                 TrackedBoneKeys(camera, actorId));
         }
+        else if (_cameraTrackingBonePicker.IsOpen)
+        {
+            _cameraTrackingBonePicker.UpdateItems(
+                Array.Empty<CameraBoneChoice>());
+            _cameraTrackingBonePicker.UpdateSelection(
+                new HashSet<string>(StringComparer.Ordinal));
+        }
         _cameraTrackingBonePicker.Draw();
+    }
+
+    private void SelectCameraTrackingActor(
+        CameraId cameraId, IVirtualCamera camera, ActorId actorId)
+    {
+        if (camera.IsLocked ||
+            _selection.Primary is not
+                { Kind: SceneEntityKind.Camera, Camera: { } selectedCamera } ||
+            selectedCamera != cameraId ||
+            !ResolveExactCamera(cameraId, camera) ||
+            ResolveActorDescriptor(actorId) is not { } actor ||
+            !ResolveExactActor(actorId))
+            return;
+
+        var previous = ReconcileCameraTrackingActor(cameraId, camera)?.Id;
+        if (!_cameraPane.SetTrackingActor(
+                camera, actorId, ActorDisplayName(actor)))
+            return;
+        if (previous != actorId)
+            camera.TrackedBones.Clear();
     }
 
     private void OpenCameraBonePicker(
         CameraId cameraId, ActorId actorId, IVirtualCamera camera)
     {
         if (!ResolveExactCamera(cameraId, camera) || camera.IsLocked ||
+            ReconcileCameraTrackingActor(cameraId, camera)?.Id != actorId ||
             ResolveActorDescriptor(actorId) is not { } actor)
             return;
         _cameraBonePickerCamera = cameraId;
@@ -2106,7 +2213,6 @@ public class MainWindow : Window
         var options = new PickerOptions<CameraBoneChoice>
         {
             Query = CameraBoneSearch,
-            IsSelectable = choice => choice.BoneId != null,
             Badge = choice => choice.Badge,
         };
         _cameraTrackingBonePicker.OpenMulti(
@@ -2127,28 +2233,25 @@ public class MainWindow : Window
         CameraBoneChoice choice,
         IVirtualCamera camera)
     {
-        if (choice.BoneId is not { } boneId ||
-            boneId.Skeleton.Actor != actorId || camera.IsLocked ||
+        var boneId = choice.BoneId;
+        if (boneId.Skeleton.Actor != actorId || camera.IsLocked ||
             _selection.Primary is not
                 { Kind: SceneEntityKind.Camera, Camera: { } selectedCamera }
             || selectedCamera != cameraId ||
             !ResolveExactCamera(cameraId, camera) ||
-            !ResolveExactActor(actorId))
+            ReconcileCameraTrackingActor(cameraId, camera)?.Id != actorId)
             return;
         _cameraPane.ToggleTrackedBone(camera, boneId);
     }
 
-    private void RemoveCameraTrackingActor(
-        CameraId cameraId, ActorId actorId, IVirtualCamera camera)
+    private void ClearCameraTrackingActor(
+        CameraId cameraId, IVirtualCamera camera)
     {
         if (camera.IsLocked || !ResolveExactCamera(cameraId, camera))
             return;
-        for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
-            if (_bindings.GetBoneId(camera.TrackedBones[i]) is { } boneId &&
-                boneId.Skeleton.Actor == actorId)
-                camera.TrackedBones.RemoveAt(i);
-        if (_cameraTrackingActors.TryGetValue(cameraId, out var actors))
-            actors.Remove(actorId);
+        camera.TrackedBones.Clear();
+        if (camera.TargetActorId != null)
+            _cameraService.ClearTargetActor(camera);
     }
 
     private bool ResolveExactCamera(CameraId cameraId, IVirtualCamera camera)
@@ -2158,12 +2261,21 @@ public class MainWindow : Window
             && _bindings.GetCameraId(camera) == cameraId;
     }
 
-    private bool ResolveExactActor(ActorId actorId)
+    private bool TryResolveExactActor(ActorId actorId, out IActor actor)
     {
         var resolved = _bindings.Resolve(actorId);
-        return resolved.Success && resolved.Value is { } actor
-            && _bindings.GetActorId(actor) == actorId;
+        if (resolved.Success && resolved.Value is { } exact &&
+            _bindings.GetActorId(exact) == actorId)
+        {
+            actor = exact;
+            return true;
+        }
+        actor = null!;
+        return false;
     }
+
+    private bool ResolveExactActor(ActorId actorId) =>
+        TryResolveExactActor(actorId, out _);
 
     private ActorDescriptor? ResolveActorDescriptor(ActorId actorId) =>
         ResolveExactActor(actorId)
@@ -2208,16 +2320,13 @@ public class MainWindow : Window
                 categories.Add(new BuiltCategory(
                     "Other", "Other", leftovers, leftovers, []));
             foreach (var category in categories)
-                AddCameraCategoryChoices(rows, actor.Id, category, []);
+                AddCameraCategoryBones(rows, category, []);
         }
 
         foreach (var auxiliary in actor.Skeletons.Where(value =>
             value.Id.Slot != PoseSlot.Character))
         {
-            string contextKey = $"camera-bones:{actor.Id}:slot:{auxiliary.Id}";
             string label = SlotLabel(auxiliary.Id.Slot);
-            rows.Add(new CameraBoneChoice(
-                contextKey, label, label, null, null, [contextKey], true));
             foreach (var bone in auxiliary.Bones)
             {
                 if (bone.IsHidden || IsBoneSuppressed(bone))
@@ -2227,71 +2336,38 @@ public class MainWindow : Window
                     bone.DisplayName,
                     $"{label} {bone.DisplayName} {bone.Id.CanonicalName}",
                     bone.Id,
-                    label,
-                    [contextKey],
-                    false));
+                    label));
             }
         }
         return rows;
     }
 
-    private static void AddCameraCategoryChoices(
+    private static void AddCameraCategoryBones(
         List<CameraBoneChoice> rows,
-        ActorId actorId,
         BuiltCategory category,
         string[] ancestors)
     {
-        string key = $"camera-bones:{actorId}:category:{category.Id}";
         var contexts = new string[ancestors.Length + 1];
         Array.Copy(ancestors, contexts, ancestors.Length);
-        contexts[^1] = key;
-        rows.Add(new CameraBoneChoice(
-            key,
-            category.Label,
-            $"{category.Label} {category.Id}",
-            null,
-            null,
-            contexts,
-            true));
+        contexts[^1] = category.Label;
         foreach (var child in category.Children)
-            AddCameraCategoryChoices(rows, actorId, child, contexts);
+            AddCameraCategoryBones(rows, child, contexts);
+        string searchContext = string.Join(' ', contexts);
         foreach (var bone in category.VisibleBones)
-        {
             rows.Add(new CameraBoneChoice(
                 bone.Id.ToString(),
                 bone.DisplayName,
-                $"{category.Label} {bone.DisplayName} "
+                $"{searchContext} {bone.DisplayName} "
                     + bone.Id.CanonicalName,
                 bone.Id,
-                category.Label,
-                contexts,
-                false));
-        }
+                category.Label));
     }
 
-    private IReadOnlyList<CameraBoneChoice> CameraBoneSearch(string query)
-    {
-        if (query.Length == 0)
-            return _cameraBoneChoices;
-        var matchingContexts = _cameraBoneChoices
-            .Where(choice => choice.IsContext && choice.SearchText.Contains(
-                query, StringComparison.OrdinalIgnoreCase))
-            .Select(choice => choice.ContextKeys[^1])
-            .ToHashSet(StringComparer.Ordinal);
-        var matchingRows = _cameraBoneChoices.Where(choice =>
-                choice.BoneId != null &&
-                (choice.SearchText.Contains(
-                    query, StringComparison.OrdinalIgnoreCase)
-                || choice.ContextKeys.Any(matchingContexts.Contains)))
-            .ToHashSet();
-        var requiredContexts = matchingRows
-            .SelectMany(choice => choice.ContextKeys)
-            .ToHashSet(StringComparer.Ordinal);
-        return _cameraBoneChoices.Where(choice =>
-            matchingRows.Contains(choice)
-            || choice.IsContext && requiredContexts.Contains(
-                choice.ContextKeys[^1])).ToArray();
-    }
+    private IReadOnlyList<CameraBoneChoice> CameraBoneSearch(string query) =>
+        query.Length == 0
+            ? _cameraBoneChoices
+            : _cameraBoneChoices.Where(choice => choice.SearchText.Contains(
+                query, StringComparison.OrdinalIgnoreCase)).ToArray();
 
     /// <summary>
     /// One actor's subtree: owned companions first, then bone categories, then
@@ -4442,13 +4518,21 @@ public class MainWindow : Window
             return;
         var resolved = _bindings.Resolve(cameraId);
         if (!resolved.Success ||
-            resolved.Value is not { IsValid: true } camera)
+            resolved.Value is not { IsValid: true } camera ||
+            _bindings.GetCameraId(camera) != cameraId)
         {
             _ctxCameraId = null;
             Crystarium.FloatingMenu.Dismiss("##camera-ctx");
             return;
         }
 
+        var trackedActor = ResolveCameraTrackedActor(camera);
+        bool trackedActorVisible = trackedActor != null &&
+            TryResolveExactActor(trackedActor.Id, out var trackedExact) &&
+            _spawnService.IsVisible(trackedExact);
+        bool canRecenterTracked = trackedActorVisible &&
+            _cameraService.IsAvailable && !camera.IsLocked && camera.IsLive &&
+            camera.Kind != CameraKind.Free && camera.FixedPosition == null;
         var items = new List<ContextMenuItem>
         {
             new(camera.IsLive
@@ -4457,6 +4541,8 @@ public class MainWindow : Window
                 disabled: camera.IsLive && camera.IsDefault),
             new(camera.IsLocked ? "Unlock" : "Lock",
                 camera.IsLocked ? TablerIcon.LockOpen : TablerIcon.Lock),
+            new("Recenter on tracked actor", TablerIcon.Crosshair,
+                disabled: !canRecenterTracked),
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
@@ -4484,6 +4570,7 @@ public class MainWindow : Window
                 }
             },
             () => camera.IsLocked = !camera.IsLocked,
+            () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => camera.Name = next),
             () =>
@@ -4517,6 +4604,26 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+    }
+
+    private void RecenterCameraOnTrackedActor(CameraId cameraId)
+    {
+        var resolved = _bindings.Resolve(cameraId);
+        if (!resolved.Success ||
+            resolved.Value is not { IsValid: true } camera ||
+            _bindings.GetCameraId(camera) != cameraId ||
+            !_cameraService.IsAvailable || camera.IsLocked || !camera.IsLive ||
+            camera.Kind == CameraKind.Free || camera.FixedPosition != null)
+        {
+            return;
+        }
+        var actor = ResolveCameraTrackedActor(camera);
+        if (actor == null || !TryResolveExactActor(actor.Id, out var exact) ||
+            !_spawnService.IsVisible(exact))
+        {
+            return;
+        }
+        _cameraPane.CenterOnActor(actor.Id);
     }
 
     private void OpenEntityRename(

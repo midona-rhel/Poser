@@ -505,7 +505,7 @@ public sealed class CameraPane
                         {
                             Width = UiWidth.Fixed(dropdownWidth / row.Scale),
                         },
-                        disabled: locked,
+                        disabled: locked || camera.IsTracking,
                         help: "Seat the orbit pivot on an actor's drawn body");
                 }
                 else
@@ -531,7 +531,7 @@ public sealed class CameraPane
                     help: "Center the exact followed actor without changing "
                         + "view orientation; free cameras refuse",
                     id: "##camera-recenter");
-                if (ImGui.IsItemHovered() &&
+                if (!camera.IsTracking && ImGui.IsItemHovered() &&
                     ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                     ToggleNativeTargetOverlay(camera, nativeTarget);
             });
@@ -874,7 +874,8 @@ public sealed class CameraPane
     private void ToggleNativeTargetOverlay(
         IVirtualCamera camera, IActor? nativeTarget)
     {
-        if (camera.IsLocked || !_cameras.IsAvailable || nativeTarget is null)
+        if (camera.IsLocked || camera.IsTracking ||
+            !_cameras.IsAvailable || nativeTarget is null)
             return;
         if (_bindings.GetActorId(nativeTarget) is not { } targetId)
         {
@@ -923,6 +924,11 @@ public sealed class CameraPane
     private void FollowActor(ActorId actorId, string displayName,
         IVirtualCamera camera)
     {
+        if (camera.IsTracking)
+        {
+            _notices.Refused("Follow: turn off bone tracking first.");
+            return;
+        }
         var resolved = _bindings.Resolve(actorId);
         if (!resolved.Success || resolved.Value is not { } actor)
         {
@@ -944,18 +950,42 @@ public sealed class CameraPane
     /// <summary>Replaces tracking with the currently selected bones.</summary>
     private void TrackSelection(IVirtualCamera camera)
     {
+        if (camera.IsLocked)
+        {
+            _notices.Refused("Track: unlock the camera first.");
+            return;
+        }
         var bones = new List<IBone>();
+        ActorId? ownerId = null;
         foreach (var id in _scene.Selection.Selected)
         {
             if (id is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
                 continue;
             var resolved = _bindings.Resolve(boneId);
-            if (resolved.Success && resolved.Value is { } bone)
-                bones.Add(bone);
+            if (!resolved.Success || resolved.Value is not { } bone ||
+                _bindings.GetBoneId(bone) != boneId)
+                continue;
+            if (ownerId is { } owner && owner != boneId.Skeleton.Actor)
+            {
+                _notices.Refused(
+                    "Track: selected bones must belong to one actor.");
+                return;
+            }
+            ownerId = boneId.Skeleton.Actor;
+            bones.Add(bone);
         }
-        if (bones.Count == 0)
+        if (bones.Count == 0 || ownerId is not { } exactOwner)
         {
             _notices.Refused("Track: select one or more bones first.");
+            return;
+        }
+        var actor = _bindings.Resolve(exactOwner);
+        if (!actor.Success || actor.Value is not { } exactActor ||
+            _bindings.GetActorId(exactActor) != exactOwner ||
+            !_cameras.SetTargetActor(
+                camera, exactActor, exactOwner, ActorNameFrom(exactActor)))
+        {
+            _notices.Refused("Track: that actor is no longer available.");
             return;
         }
         camera.TrackedBones.Clear();
@@ -967,6 +997,14 @@ public sealed class CameraPane
     /// tracked set.</summary>
     public void ToggleTrackedBone(IVirtualCamera camera, BoneId boneId)
     {
+        ActorId? authority = camera.TargetActorId;
+        if (authority is null && ResolveNativeTarget() is { } native)
+            authority = _bindings.GetActorId(native);
+        if (authority != boneId.Skeleton.Actor)
+        {
+            _notices.Refused("Track: choose that actor first.");
+            return;
+        }
         var resolved = _bindings.Resolve(boneId);
         if (!resolved.Success || resolved.Value is not { } bone ||
             _bindings.GetBoneId(bone) != boneId)
@@ -981,8 +1019,40 @@ public sealed class CameraPane
                 camera.TrackedBones.RemoveAt(i);
                 return;
             }
+            if (_bindings.GetBoneId(camera.TrackedBones[i]) is { } otherId &&
+                otherId.Skeleton.Actor != boneId.Skeleton.Actor)
+            {
+                _notices.Refused("Track: tracked bones must use one actor.");
+                return;
+            }
         }
         camera.TrackedBones.Add(bone);
+    }
+
+    /// <summary>Locks tracking to one exact current actor.</summary>
+    public bool SetTrackingActor(
+        IVirtualCamera camera, ActorId? actorId, string displayName)
+    {
+        if (camera.IsLocked)
+        {
+            _notices.Refused("Track: unlock the camera first.");
+            return false;
+        }
+        if (actorId is not { } exactId)
+        {
+            _notices.Refused("Track: no current actor can be locked.");
+            return false;
+        }
+        var resolved = _bindings.Resolve(exactId);
+        if (!resolved.Success || resolved.Value is not { } actor ||
+            _bindings.GetActorId(actor) != exactId ||
+            !_cameras.SetTargetActor(
+                camera, actor, exactId, displayName))
+        {
+            _notices.Refused("Track: that actor is no longer available.");
+            return false;
+        }
+        return true;
     }
 
     /// <summary>Nickname / anonymous-mask aware, like every other surface.
