@@ -298,6 +298,17 @@ public static partial class Crystarium
             _section = section;
         }
 
+        /// <summary>Places a shared primitive or read-model view in one form
+        /// row. The caller owns only the content; page spacing and help remain
+        /// identical to every other form control.</summary>
+        public void Custom(string label, float logicalHeight,
+            Action<FormRowScope> draw, string? help = null)
+        {
+            var row = _page.BeginRow(label);
+            draw(row);
+            _page.EndRow(row, Id(label), help, logicalHeight);
+        }
+
         /// <param name="scale">Slider travel mapping.</param>
         /// <param name="readout">Optional value formatter.</param>
         /// <param name="actions">Optional trailing actions.</param>

@@ -315,7 +315,8 @@ public sealed class SceneWorkflowTests
         }
 
         public string? SetCameraTarget(
-            object? camera, object targetActor, string displayName)
+            object? camera, object targetActor, string displayName,
+            bool targetLocked)
         {
             Record("SetCameraTarget");
             return null;

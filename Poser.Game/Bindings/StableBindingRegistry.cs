@@ -1,3 +1,4 @@
+using System.Numerics;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
@@ -527,6 +528,7 @@ public sealed class StableBindingRegistry
         _lightBindings = candidate.LightBindings;
         _cameraIds = candidate.CameraIds;
         _cameraBindings = candidate.CameraBindings;
+        ReconcileCameraTargets();
         _propIds = candidate.PropIds;
         _propBindings = candidate.PropBindings;
         _overlayIds = candidate.OverlayIds;
@@ -535,6 +537,54 @@ public sealed class StableBindingRegistry
         _worldObjectBindings = candidate.WorldObjectBindings;
         _auxiliaryBindings = candidate.AuxiliaryBindings;
         _stagedCandidate = null;
+    }
+
+    /// <summary>Binding admission is the authority for actor generations.
+    /// Clear camera follow state here, including while its pane is hidden, so
+    /// a stale target cannot keep applying an old offset or name.</summary>
+    private void ReconcileCameraTargets()
+    {
+        foreach (var camera in _cameraBindings.Values)
+        {
+            if (camera.TargetActorId is { } targetId)
+            {
+                if (IsCurrentCameraTarget(
+                        targetId, camera.TargetActor, _actorBindings))
+                    continue;
+                _cameras.ClearTargetActor(camera);
+                continue;
+            }
+
+            if (HasCameraTargetResidual(
+                    camera.TargetActor, camera.TargetActorName,
+                    camera.TargetOffset, camera.IsTargetLocked))
+                _cameras.ClearTargetActor(camera);
+        }
+    }
+
+    /// <summary>Binding admission retains follow state only when its native
+    /// actor reference is the exact object for the same generation. A
+    /// same-id replacement is stale and is never rebound.</summary>
+    internal static bool IsCurrentCameraTarget(
+        ActorId targetId,
+        IActor? retainedTarget,
+        IReadOnlyDictionary<ActorId, IActor> actorBindings)
+    {
+        return retainedTarget is not null &&
+            actorBindings.TryGetValue(targetId, out var currentTarget) &&
+            ReferenceEquals(retainedTarget, currentTarget);
+    }
+
+    /// <summary>Any retained follow component or lock is residual state when
+    /// the exact target id is absent.</summary>
+    internal static bool HasCameraTargetResidual(
+        IActor? retainedTarget,
+        string targetName,
+        Vector3 targetOffset,
+        bool targetLocked = false)
+    {
+        return retainedTarget is not null || targetName.Length > 0 ||
+            targetOffset != Vector3.Zero || targetLocked;
     }
 
     /// <summary>
@@ -647,10 +697,17 @@ public sealed class StableBindingRegistry
         }
     }
 
-    public ActorId? GetActorId(IActor actor) =>
-        _legacyActorIds.TryGetValue(actor.Id.Unique, out var id)
-            ? id
-            : null;
+    /// <summary>Returns an actor id only for the exact currently bound
+    /// instance. A released pointer can share the native unique key with its
+    /// replacement, but must never resolve to that replacement.</summary>
+    public ActorId? GetActorId(IActor actor)
+    {
+        if (!_legacyActorIds.TryGetValue(actor.Id.Unique, out var id) ||
+            !_actorBindings.TryGetValue(id, out var bound) ||
+            !ReferenceEquals(bound, actor))
+            return null;
+        return id;
+    }
 
     public BoneId? GetBoneId(IBone bone) =>
         GetBoneId(bone, _legacyBoneIds, _boneBindings);

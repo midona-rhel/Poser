@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
 
@@ -155,10 +156,13 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
 
     public string TargetActorName { get; set; } = string.Empty;
 
-    /// <summary>The exact actor the last target select followed; cleared with
-    /// the target. Entity reference like the light attach — scene capture
-    /// revalidates it against the live actor list before persisting.</summary>
-    internal IActor? TargetActor { get; set; }
+    /// <summary>The native reference retained for per-frame follow updates.
+    /// Exact target operations require this reference and its id to agree.</summary>
+    public IActor? TargetActor { get; internal set; }
+
+    public ActorId? TargetActorId { get; set; }
+
+    public bool IsTargetLocked { get; set; }
 
     public Vector3 WorldPosition
     {
@@ -324,6 +328,9 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         FixedPosition = null;
         TargetOffset = Vector3.Zero;
         TargetActorName = string.Empty;
+        TargetActor = null;
+        TargetActorId = null;
+        IsTargetLocked = false;
         DisableCollision = false;
         DelimitCamera = false;
         IsPortraitMode = false;

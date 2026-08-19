@@ -341,8 +341,11 @@ public sealed class ShellSidebar
     }
 
     /// <summary>Returns a stable row identity.</summary>
-    private static string RowId(ShellSidebarRow row) =>
-        row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
+    private static string RowId(ShellSidebarRow row)
+    {
+        string key = row.Tag as string ?? row.Tag?.ToString() ?? row.Label;
+        return key;
+    }
 
     private static string HeaderId(int index) => index switch
     {
@@ -634,25 +637,10 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows expose lock and live-view actions.
+            // Camera rows keep live view and edit lock beside each other.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
-                if (Crystarium.TemporaryIconToggle(
-                        row.CameraLocked
-                            ? TablerIcon.Lock
-                            : TablerIcon.LockOpen,
-                        selected: false,
-                        style: square,
-                        help: row.CameraLocked
-                            ? "Unlock this camera"
-                            : "Lock this camera: keep it exactly as "
-                                + "framed",
-                        id: "##camera-lock",
-                        dimmed: !row.CameraLocked))
-                    _vm.OnCameraLock?.Invoke(row);
-
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
                         selected: false,
@@ -663,6 +651,20 @@ public sealed class ShellSidebar
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.CameraLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLocked
+                            ? "Unlock camera"
+                            : "Lock camera",
+                        id: "##camera-lock",
+                        dimmed: !row.CameraLocked))
+                    _vm.OnCameraLock?.Invoke(row);
                 return;
             }
 

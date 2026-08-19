@@ -30,6 +30,8 @@ public sealed class SceneFileStoreTests
         Assert.Equal(1, read.Scene.Cameras.Count);
         Assert.Equal(original.Lights[0].Attachment!.ActorKey, read.Scene.Lights[0].Attachment!.ActorKey);
         Assert.Equal(original.Cameras[0].TargetActorKey, read.Scene.Cameras[0].TargetActorKey);
+        Assert.Equal(original.Cameras[0].IsTargetLocked,
+            read.Scene.Cameras[0].IsTargetLocked);
         Assert.Equal(720, read.Scene.Environment!.MinuteOfDay);
     }
 
@@ -179,6 +181,7 @@ public sealed class SceneFileStoreTests
                     TargetActorKey = actorKey,
                     TargetActorName = "Lead",
                     TargetOffset = new Vector3(0, 0.5f, 0),
+                    IsTargetLocked = true,
                 },
             },
             Environment = new SceneEnvironment
