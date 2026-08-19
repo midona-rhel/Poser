@@ -472,69 +472,87 @@ public sealed class CameraPane
             labels.Add(nativeName);
             selected = labels.Count - 1;
         }
-        form.Custom(
-            "Follow actor",
-            Crystarium.ActiveTheme.Controls.FormRowHeight,
-            row =>
-            {
-                float gap = Crystarium.ActiveTheme.Page.ActionGap * row.Scale;
-                var buttonStyle = ControlStyle.Workspace with
-                    { Width = UiWidth.Content };
-                float buttonWidth = Crystarium.MeasureButton(
-                    "Recenter", buttonStyle).X;
-                float dropdownWidth = MathF.Max(
-                    1f, row.ControlWidth - buttonWidth - gap);
-                float controlHeight = Crystarium.ActiveTheme.Controls
-                    .WorkspaceHeight;
-                ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));
-                if (labels.Count > 0)
+        form.Cells(cells =>
+        {
+            cells.Cell(
+                "Follow actor",
+                cell =>
                 {
-                    Crystarium.Dropdown(
-                        "##camera-follow",
-                        labels.ToArray(),
-                        selected,
-                        index =>
-                        {
-                            if ((uint)index < (uint)choices.Count)
-                                FollowActor(
-                                    choices[index].Id,
-                                    choices[index].Name,
-                                    camera);
-                        },
-                        ControlStyle.Workspace with
-                        {
-                            Width = UiWidth.Fixed(dropdownWidth / row.Scale),
-                        },
-                        disabled: locked || camera.IsTracking,
-                        help: "Seat the orbit pivot on an actor's drawn body");
-                }
-                else
-                {
-                    Crystarium.Button(
-                        "No actors available",
-                        style: ControlStyle.Workspace with
-                        {
-                            Width = UiWidth.Fixed(dropdownWidth / row.Scale),
-                        },
-                        disabled: true,
-                        id: "##camera-follow-empty");
-                }
+                    float gap = Crystarium.ActiveTheme.Page.ActionGap
+                        * cell.Scale;
+                    var buttonStyle = ControlStyle.Workspace with
+                        { Width = UiWidth.Content };
+                    float buttonWidth = Crystarium.MeasureButton(
+                        "Recenter", buttonStyle).X;
+                    float dropdownWidth = MathF.Max(
+                        1f, cell.Width - buttonWidth - gap);
+                    float controlHeight = Crystarium.ActiveTheme.Controls
+                        .WorkspaceHeight;
+                    ImGui.SetCursorScreenPos(cell.Center(controlHeight));
+                    if (labels.Count > 0)
+                    {
+                        Crystarium.Dropdown(
+                            "##camera-follow",
+                            labels.ToArray(),
+                            selected,
+                            index =>
+                            {
+                                if ((uint)index < (uint)choices.Count)
+                                    FollowActor(
+                                        choices[index].Id,
+                                        choices[index].Name,
+                                        camera);
+                            },
+                            cell.Constrain(ControlStyle.Workspace with
+                            {
+                                Width = UiWidth.Fixed(
+                                    dropdownWidth / cell.Scale),
+                            }),
+                            disabled: locked || camera.IsTracking,
+                            help: "Seat the orbit pivot on an actor's drawn body");
+                    }
+                    else
+                    {
+                        Crystarium.Button(
+                            "No actors available",
+                            style: cell.Constrain(
+                                ControlStyle.Workspace with
+                                {
+                                    Width = UiWidth.Fixed(
+                                        dropdownWidth / cell.Scale),
+                                }),
+                            disabled: true,
+                            id: "##camera-follow-empty");
+                    }
 
-                ImGui.SetCursorScreenPos(new Vector2(
-                    row.ControlOrigin.X + dropdownWidth + gap,
-                    row.CenterControl(controlHeight).Y));
-                Crystarium.Button(
-                    "Recenter",
-                    () => Recenter(camera),
-                    style: buttonStyle,
-                    disabled: locked,
-                    help: "Center the exact followed actor without changing "
-                        + "view orientation; free cameras refuse",
-                    id: "##camera-recenter");
-                if (!camera.IsTracking && ImGui.IsItemHovered() &&
-                    ImGui.IsMouseClicked(ImGuiMouseButton.Right))
-                    ToggleNativeTargetOverlay(camera, nativeTarget);
-            });
+                    ImGui.SetCursorScreenPos(new Vector2(
+                        cell.Origin.X + dropdownWidth + gap,
+                        cell.Center(controlHeight).Y));
+                    Crystarium.Button(
+                        "Recenter",
+                        () => Recenter(camera),
+                        style: buttonStyle,
+                        disabled: locked,
+                        help: "Center the exact followed actor without changing "
+                            + "view orientation; free cameras refuse",
+                        id: "##camera-recenter");
+                    if (!camera.IsTracking && ImGui.IsItemHovered() &&
+                        ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                        ToggleNativeTargetOverlay(camera, nativeTarget);
+                },
+                help: "Choose an actor or center the current target");
+            cells.Cell(
+                "Lock tracking",
+                cell => cell.Switch(
+                    "##camera-track-lock",
+                    camera.TargetActorId != null,
+                    enabled => ToggleTrackingLock(
+                        camera, nativeTarget, enabled),
+                    disabled: locked),
+                help: camera.TargetActorId != null
+                    ? "Keep tracking this exact actor"
+                    : "Use the game's current target actor");
+        });
     }
 
     private void MovementRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -870,6 +888,67 @@ public sealed class CameraPane
     }
 
     private IActor? ResolveNativeTarget() => GetNativeTarget?.Invoke();
+
+    /// <summary>Locks tracking to the exact owner of its bones, or to the
+    /// exact current game target when no bone owns it yet.</summary>
+    private void ToggleTrackingLock(
+        IVirtualCamera camera, IActor? nativeTarget, bool enabled)
+    {
+        if (camera.IsLocked || !_cameras.IsAvailable)
+            return;
+        if (!enabled)
+        {
+            _cameras.ClearTargetActor(camera);
+            return;
+        }
+
+        ActorId? ownerId = null;
+        foreach (var tracked in camera.TrackedBones)
+        {
+            if (_bindings.GetBoneId(tracked) is not { } boneId ||
+                _bindings.Resolve(boneId) is not
+                    { Success: true, Value: { } current } ||
+                !ReferenceEquals(current, tracked))
+            {
+                _notices.Refused(
+                    "Track: a tracked bone is no longer available.");
+                return;
+            }
+            ownerId ??= boneId.Skeleton.Actor;
+            if (ownerId != boneId.Skeleton.Actor)
+            {
+                _notices.Refused(
+                    "Track: tracked bones must use one actor.");
+                return;
+            }
+        }
+
+        IActor? actor = null;
+        if (ownerId is { } exactOwner)
+        {
+            var resolved = _bindings.Resolve(exactOwner);
+            if (resolved.Success && resolved.Value is { } owner &&
+                _bindings.GetActorId(owner) == exactOwner)
+                actor = owner;
+        }
+        else if (nativeTarget is { } native &&
+            _bindings.GetActorId(native) is { } nativeId)
+        {
+            var resolved = _bindings.Resolve(nativeId);
+            if (resolved.Success &&
+                ReferenceEquals(resolved.Value, native) &&
+                _bindings.GetActorId(native) == nativeId)
+            {
+                ownerId = nativeId;
+                actor = native;
+            }
+        }
+
+        SetTrackingActor(
+            camera,
+            actor == null ? null : ownerId,
+            actor == null ? string.Empty : ActorNameFrom(actor));
+    }
 
     private void ToggleNativeTargetOverlay(
         IVirtualCamera camera, IActor? nativeTarget)

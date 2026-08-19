@@ -227,7 +227,7 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraActions ? 1
+                        : row.CameraActions ? 2
                         : row.LightActions ? 2
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
@@ -637,8 +637,7 @@ public sealed class ShellSidebar
                 return;
             }
 
-            // Camera rows expose only the live-view action; lock is in the
-            // selected camera inspector.
+            // Camera rows keep live view and edit lock beside each other.
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
@@ -652,6 +651,20 @@ public sealed class ShellSidebar
                         id: "##camera-live",
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.CameraLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.CameraLocked
+                            ? "Unlock camera"
+                            : "Lock camera",
+                        id: "##camera-lock",
+                        dimmed: !row.CameraLocked))
+                    _vm.OnCameraLock?.Invoke(row);
                 return;
             }
 
