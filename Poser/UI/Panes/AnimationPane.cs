@@ -538,17 +538,18 @@ public sealed class AnimationPane
                             "Layer speed"),
                         disabled: !hasOwnedSpeed,
                         help: "Give this layer's speed back to the game");
+                    if (slot == AnimationSlot.Base)
+                        actions.Switch(
+                            "Full body repeat",
+                            _animation.LoopWantedFor(actor, AnimationSlot.Base),
+                            next => Report(
+                                _animation.SetSlotLoop(
+                                    actor, AnimationSlot.Base, 0, next),
+                                "Full body repeat"),
+                            disabled: !_animation.SupportsForceLoop,
+                            help: "Repeat the selected full-body animation");
                 },
             help: $"Choose an animation for the {lower} layer");
-
-        if (slot == AnimationSlot.Base)
-            form.Switch(
-                "Full body repeat",
-                _animation.LoopWantedFor(actor, AnimationSlot.Base),
-                next => Report(
-                    _animation.SetSlotLoop(actor, AnimationSlot.Base, 0, next),
-                    "Full body repeat"),
-                help: "Repeat the selected full-body animation");
 
         if (!compactEmpty)
         {

@@ -339,6 +339,8 @@ public sealed class AnimationSession
         if (slot != AnimationSlot.Base)
             return AnimationResult.Fail(
                 "Repeat is unavailable for this layer: exact replay is unverified.");
+        if (!SupportsForceLoop)
+            return AnimationResult.Fail("Full-body repeat is unavailable for this client layout.");
         var current = OverridesFor(actor);
         if (!on && current.LoopedSlots.ContainsKey(AnimationSlot.Base))
         {

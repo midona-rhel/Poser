@@ -155,7 +155,7 @@ public sealed record TimelineEntry(
 /// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
     byte Mode,
-    byte ModeParam,
+    uint ModeParam,
     ushort BaseTimeline,
     ushort BaseSlotTimeline = 0,
     ushort ForcedTimeline = 0);

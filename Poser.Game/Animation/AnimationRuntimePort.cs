@@ -97,6 +97,12 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
     // TimelineContainer-relative; the sequencer field is +0x10.
     private const int ForcedTimelineOffset = 0x2E0;
+    private const int SequencerForcedTimelineOffset = 0x2D0;
+    private static readonly int ModeParamOffset = (int)Marshal.OffsetOf<Character>(
+        nameof(Character.ModeParam));
+    private static readonly bool HasForcedTimelineLayout =
+        (int)Marshal.OffsetOf<TimelineContainer>(nameof(TimelineContainer.TimelineSequencer)) == 0x10 &&
+        ForcedTimelineOffset == 0x10 + SequencerForcedTimelineOffset;
 
     // The physics freeze is a process-global code patch, not a per-actor
     // enforcement; the patcher owns its site, capability state and restore.
@@ -439,7 +445,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
         var controls = CaptureSlotProbeControls(character);
         return new SlotProbeSnapshot(
-            $"mode={(byte)character->Mode} modeParam={(uint)character->ModeParam} " +
+            $"mode={(byte)character->Mode} modeParam={ReadModeParam(character)} " +
             $"base={character->Timeline.BaseOverride} lips={character->Timeline.LipsOverride} " +
             $"timeline=[{string.Join(',', primary)}] current=[{string.Join(',', secondary)}] " +
             $"previous=[{string.Join(',', tertiary)}] aux=[{string.Join(',', quaternary)}] " +
@@ -575,17 +581,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
 
         if (existing == null)
-        {
-            captured = new BaseAnimationCapture(
-                (byte)character->Mode,
-                character->ModeParam,
-                character->Timeline.BaseOverride,
-                // The timeline actually PLAYING on the base slot, so a
-                // restore can put back what the actor was doing rather
-                // than a blanket idle.
-                character->Timeline.TimelineSequencer.TimelineIds[0],
-                ForcedTimeline(&character->Timeline));
-        }
+            captured = CaptureBase(character);
 
         PlayWithMode(character, timeline);
         return AnimationPortResult.Ok();
@@ -602,8 +598,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (existing == null)
             captured = CaptureBase(character);
 
-        // The forced field must be clear before the sequencer receives a new pick.
-        SetForcedTimeline(&character->Timeline, 0);
+        if (SupportsForceLoop)
+            SetForcedTimeline(&character->Timeline, 0);
         PlayWithMode(character, timeline);
         return AnimationPortResult.Ok();
     }
@@ -649,10 +645,17 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     private static BaseAnimationCapture CaptureBase(Character* character) => new(
         (byte)character->Mode,
-        character->ModeParam,
+        ReadModeParam(character),
         character->Timeline.BaseOverride,
         character->Timeline.TimelineSequencer.TimelineIds[0],
-        ForcedTimeline(&character->Timeline));
+        HasForcedTimelineLayout ? ForcedTimeline(&character->Timeline) : (ushort)0);
+
+    // ModeParam is a four-byte native field.
+    private static uint ReadModeParam(Character* character) =>
+        *(uint*)((byte*)character + ModeParamOffset);
+
+    private static void WriteModeParam(Character* character, uint value) =>
+        *(uint*)((byte*)character + ModeParamOffset) = value;
 
     /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
     /// reference does them; every member is a named ClientStructs symbol.</summary>
@@ -688,7 +691,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
-        character->ModeParam = capture.ModeParam;
+        WriteModeParam(character, capture.ModeParam);
         // Idle is the fallback for an empty base slot.
         character->Timeline.TimelineSequencer.PlayTimeline(
             capture.BaseSlotTimeline != 0
@@ -697,8 +700,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             null);
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
-        character->ModeParam = capture.ModeParam;
-        SetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
+        WriteModeParam(character, capture.ModeParam);
+        if (SupportsForceLoop)
+            SetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return AnimationPortResult.Ok();
     }
 
@@ -792,6 +796,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
     {
+        if (!SupportsForceLoop)
+            return AnimationPortResult.Fail("Full-body repeat is unavailable for this client layout.");
         if (timeline != 0 && TimelineSlot(timeline) != AnimationSlot.Base)
             return AnimationPortResult.Fail("Only full-body timelines can use repeat.");
         var character = Resolve(actor, out var detail);
@@ -801,7 +807,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    public bool SupportsForceLoop => true;
+    public bool SupportsForceLoop => HasForcedTimelineLayout;
 
     private static ushort ForcedTimeline(TimelineContainer* container) =>
         *(ushort*)((byte*)container + ForcedTimelineOffset);

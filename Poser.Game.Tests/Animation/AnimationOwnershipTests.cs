@@ -3,6 +3,7 @@ using Poser.Application.Animation;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Game.Animation;
 
 namespace Poser.Game.Tests.Animation;
 
@@ -175,6 +176,43 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
+    public void Restore_preserves_the_full_mode_parameter()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.ResetActor(ActorA).Success);
+
+        Assert.Equal(0xA1B2C3D4u, port.RestoredBaseCapture?.ModeParam);
+    }
+
+    [Fact]
+    public void Repeat_refuses_when_the_runtime_layout_is_unavailable()
+    {
+        var port = FakePort.Create();
+        port.SupportsForceLoop = false;
+        var session = new AnimationSession(port.Port);
+
+        var result = session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true);
+
+        Assert.False(result.Success);
+        Assert.Contains("client layout", result.Detail);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Forced_timeline_layout_matches_the_current_generated_container()
+    {
+        var field = typeof(AnimationRuntimePort).GetField(
+            "HasForcedTimelineLayout",
+            BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        Assert.True((bool)field.GetValue(null)!);
+    }
+
+    [Fact]
     public void Repeat_off_clears_only_the_base_repeat_arm()
     {
         var port = FakePort.Create();
@@ -244,6 +282,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
         public List<string> Calls { get; } = new();
         public List<AnimationProbeCommand> ProbeCommands { get; } = new();
         public bool Frozen { get; private set; }
+        public bool SupportsForceLoop { get; set; } = true;
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
 
@@ -272,6 +311,8 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                 }
                 case "IsSupported":
                     return true;
+                case "get_SupportsForceLoop":
+                    return SupportsForceLoop;
                 case "TimelineSlot":
                     return (ushort)args![0]! == 43
                         ? AnimationSlot.UpperBody
@@ -321,7 +362,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
             }
         }
 
-        public BaseAnimationCapture BaseCapture { get; } = new(4, 9, 18, 27, 36);
+        public BaseAnimationCapture BaseCapture { get; } = new(4, 0xA1B2C3D4u, 18, 27, 36);
         public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
     }
 }
