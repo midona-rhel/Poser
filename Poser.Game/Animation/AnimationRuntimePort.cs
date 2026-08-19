@@ -17,17 +17,6 @@ using Poser.Game.Bindings;
 
 namespace Poser.Game.Animation;
 
-/// <summary>
-/// The native side of animation. Resolves every stable id through
-/// <see cref="StableBindingRegistry"/> immediately before touching memory,
-/// so a redraw or removal fails explicitly instead of writing through a
-/// stale pointer.
-///
-/// Addresses exist ONLY inside this class. The speed detours fire on the
-/// game's thread with a raw pointer and must answer without allocating or
-/// re-scanning, so an address index is kept as a DERIVED cache: the
-/// ActorId-keyed enforcement table is authoritative, the index is
-/// rebuilt from it whenever an override changes or the scene refreshes.
 /// <summary>Provides native animation operations.</summary>
 public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
