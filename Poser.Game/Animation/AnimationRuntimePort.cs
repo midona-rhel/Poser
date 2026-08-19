@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Dalamud.Game;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
@@ -35,9 +37,12 @@ namespace Poser.Game.Animation;
 public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
     private readonly IFramework _framework;
+    private readonly IClientState _clientState;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _posing;
+    private readonly AnimationSlotProbe _slotProbe;
+    private readonly byte[] _slotProbeSalt = RandomNumberGenerator.GetBytes(16);
 
     // Authoritative, stable-id keyed.
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
@@ -97,6 +102,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public AnimationRuntimePort(
         IFramework framework,
+        IClientState clientState,
         ISigScanner sigScanner,
         IGameInteropProvider hooking,
         IPluginLog log,
@@ -105,11 +111,13 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         IDataManager data)
     {
         _framework = framework;
+        _clientState = clientState;
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
-        _framework.Update += EnforceLoops;
         _log = log;
+        _slotProbe = new AnimationSlotProbe(message => _log.Information(message));
         _bindings = bindings;
         _posing = posing;
+        _framework.Update += OnFrameworkUpdate;
 
         // A missing stance native degrades that one operation to an explicit
         // failure; it never silently half-applies a transition.
@@ -318,6 +326,165 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             slots,
             controls,
             token);
+    }
+
+    public AnimationPortResult StartSlotProbe(ActorId actor)
+    {
+        if (_slotProbe.HasActive)
+            return AnimationPortResult.Fail("A slot probe is already active.");
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        return _slotProbe.Start(
+            actor,
+            SlotProbeFingerprint((nint)character),
+            CaptureSlotProbeSnapshot(character));
+    }
+
+    public AnimationPortResult StopSlotProbe(ActorId actor)
+    {
+        if (!_slotProbe.IsActiveFor(actor))
+            return AnimationPortResult.Fail("No slot probe is active for this actor.");
+        var character = Resolve(actor, out _);
+        return character == null
+            ? _slotProbe.Stop(actor, string.Empty, null)
+            : _slotProbe.Stop(
+                actor,
+                SlotProbeFingerprint((nint)character),
+                CaptureSlotProbeSnapshot(character));
+    }
+
+    public void BeginSlotProbeCommand(ActorId actor, AnimationProbeCommand command)
+    {
+        if (!_slotProbe.IsActiveFor(actor))
+            return;
+        var character = Resolve(actor, out _);
+        if (character == null)
+        {
+            _slotProbe.Tick(string.Empty, null, _clientState.IsGPosing);
+            return;
+        }
+        _slotProbe.Begin(
+            actor,
+            SlotProbeFingerprint((nint)character),
+            command,
+            CaptureSlotProbeSnapshot(character));
+    }
+
+    public void CompleteSlotProbeCommand(
+        ActorId actor, AnimationProbeCommand command, bool success)
+    {
+        if (!_slotProbe.IsActiveFor(actor))
+            return;
+        var character = Resolve(actor, out _);
+        if (character == null)
+        {
+            _slotProbe.Tick(string.Empty, null, _clientState.IsGPosing);
+            return;
+        }
+        _slotProbe.Complete(
+            actor,
+            SlotProbeFingerprint((nint)character),
+            command,
+            success,
+            CaptureSlotProbeSnapshot(character));
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        EnforceLoops(framework);
+        ObserveSlotProbe();
+    }
+
+    private void ObserveSlotProbe()
+    {
+        if (!_slotProbe.HasActive)
+            return;
+        if (!_clientState.IsGPosing)
+        {
+            _slotProbe.Tick(string.Empty, null, false);
+            return;
+        }
+        var actor = _slotProbe.ActiveActor!.Value;
+        var character = Resolve(actor, out _);
+        if (character == null)
+        {
+            _slotProbe.Tick(string.Empty, null, true);
+            return;
+        }
+        _slotProbe.Tick(
+            SlotProbeFingerprint((nint)character),
+            CaptureSlotProbeSnapshot(character),
+            true);
+    }
+
+    private SlotProbeSnapshot CaptureSlotProbeSnapshot(Character* character)
+    {
+        var sequencer = &character->Timeline.TimelineSequencer;
+        var primary = new string[14];
+        var secondary = new string[14];
+        var tertiary = new string[14];
+        var quaternary = new string[14];
+        var speeds = new string[14];
+        for (int index = 0; index < primary.Length; index++)
+        {
+            primary[index] = sequencer->TimelineIds[index].ToString(CultureInfo.InvariantCulture);
+            secondary[index] = sequencer->TimelineIds2[index].ToString(CultureInfo.InvariantCulture);
+            tertiary[index] = sequencer->TimelineIds3[index].ToString(CultureInfo.InvariantCulture);
+            quaternary[index] = sequencer->TimelineIds4[index].ToString(CultureInfo.InvariantCulture);
+            speeds[index] = sequencer->TimelineSpeeds[index].ToString("0.###", CultureInfo.InvariantCulture);
+        }
+        var controls = CaptureSlotProbeControls(character);
+        return new SlotProbeSnapshot(
+            $"mode={(byte)character->Mode} modeParam={(uint)character->ModeParam} " +
+            $"base={character->Timeline.BaseOverride} lips={character->Timeline.LipsOverride} " +
+            $"timeline=[{string.Join(',', primary)}] current=[{string.Join(',', secondary)}] " +
+            $"previous=[{string.Join(',', tertiary)}] aux=[{string.Join(',', quaternary)}] " +
+            $"speed=[{string.Join(',', speeds)}] controls=[{string.Join(',', controls)}]",
+            controls);
+    }
+
+    private List<SlotProbeControl> CaptureSlotProbeControls(Character* character)
+    {
+        var result = new List<SlotProbeControl>();
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return result;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return result;
+        var skeleton = charaBase->Skeleton;
+        for (int partialIndex = 0; partialIndex < skeleton->PartialSkeletonCount; partialIndex++)
+        {
+            var partial = &skeleton->PartialSkeletons[partialIndex];
+            var animated = partial->GetHavokAnimatedSkeleton(0);
+            if (animated == null)
+                continue;
+            for (int controlIndex = 0; controlIndex < animated->AnimationControls.Length; controlIndex++)
+            {
+                var control = animated->AnimationControls[controlIndex].Value;
+                if (control == null)
+                    continue;
+                var binding = control->hkaAnimationControl.Binding;
+                if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                    continue;
+                result.Add(new SlotProbeControl(
+                    $"{partialIndex}.{controlIndex}",
+                    SlotProbeFingerprint((nint)control),
+                    $"time={control->hkaAnimationControl.LocalTime.ToString("0.###", CultureInfo.InvariantCulture)} " +
+                    $"duration={binding.ptr->Animation.ptr->Duration.ToString("0.###", CultureInfo.InvariantCulture)} " +
+                    $"speed={control->PlaybackSpeed.ToString("0.###", CultureInfo.InvariantCulture)}"));
+            }
+        }
+        return result;
+    }
+
+    private string SlotProbeFingerprint(nint value)
+    {
+        Span<byte> input = stackalloc byte[_slotProbeSalt.Length + sizeof(long)];
+        _slotProbeSalt.CopyTo(input);
+        BitConverter.TryWriteBytes(input[_slotProbeSalt.Length..], (long)value);
+        return Convert.ToHexString(SHA256.HashData(input)[..6]);
     }
 
     /// <summary>

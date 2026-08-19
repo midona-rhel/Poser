@@ -318,7 +318,35 @@ public sealed class AnimationPane
                 },
                 help: "Freeze, resume, replay or restore every actor in "
                     + "the scene");
+            actions.Button(
+                "Start slot probe",
+                () => StartSlotProbe(actor),
+                help: "Record bounded slot observations in dalamud.log");
+            actions.Button(
+                "Stop slot probe",
+                () => StopSlotProbe(actor),
+                help: "End the active slot probe");
         });
+    }
+
+    private void StartSlotProbe(ActorId actor)
+    {
+        var result = _animation.StartSlotProbe(actor);
+        if (!result.Success)
+        {
+            Report(result, "Slot probe");
+            return;
+        }
+        _notices.Done($"Slot probe {result.Detail} started. See dalamud.log.");
+    }
+
+    private void StopSlotProbe(ActorId actor)
+    {
+        var result = _animation.StopSlotProbe(actor);
+        if (result.Success)
+            _notices.Done("Slot probe ended. See dalamud.log.");
+        else
+            Report(result, "Slot probe");
     }
 
     private void DrawStance(

@@ -53,6 +53,7 @@ public sealed class AnimationSession
 {
     private readonly IAnimationRuntimePort _port;
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
+    private int _probeDepth;
 
     /// <summary>
     /// The scene's hold on the global physics patch, and the ONLY hold there
@@ -125,6 +126,43 @@ public sealed class AnimationSession
         return updated;
     }
 
+    public AnimationResult StartSlotProbe(ActorId actor)
+    {
+        var result = _port.StartSlotProbe(actor);
+        return result.Success
+            ? new AnimationResult(true, result.Detail)
+            : AnimationResult.Fail(result.Detail ?? "Slot probe failed.");
+    }
+
+    public AnimationResult StopSlotProbe(ActorId actor)
+    {
+        var result = _port.StopSlotProbe(actor);
+        return result.Success
+            ? AnimationResult.Ok()
+            : AnimationResult.Fail(result.Detail ?? "Slot probe stop failed.");
+    }
+
+    private AnimationResult ObserveProbe(
+        ActorId actor,
+        AnimationProbeCommand command,
+        Func<AnimationResult> action)
+    {
+        if (_probeDepth > 0)
+            return action();
+        _probeDepth++;
+        _port.BeginSlotProbeCommand(actor, command);
+        try
+        {
+            var result = action();
+            _port.CompleteSlotProbeCommand(actor, command, result.Success);
+            return result;
+        }
+        finally
+        {
+            _probeDepth--;
+        }
+    }
+
     // ── Base and blend ────────────────────────────────────────────────
 
     /// <summary>
@@ -149,13 +187,22 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult Blend(ActorId actor, ushort timeline)
     {
+        var landing = _port.TimelineSlot(timeline);
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("selection", landing, timeline),
+            () => BlendCore(actor, timeline, landing));
+    }
+
+    private AnimationResult BlendCore(
+        ActorId actor, ushort timeline, AnimationSlot? landing)
+    {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
 
         // Capture the incoming timeline of the slot this play lands on
         // (the sheet routes it), once per slot, BEFORE it is overwritten.
         // The base slot is the base capture's job; 0 records "was empty".
-        AnimationSlot? landing = _port.TimelineSlot(timeline);
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
             !current.SlotCaptures.ContainsKey(slot);
@@ -186,6 +233,14 @@ public sealed class AnimationSession
     }
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
+    {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("emote", AnimationSlot.Base),
+            () => PlayEmoteCore(actor, emoteId));
+    }
+
+    private AnimationResult PlayEmoteCore(ActorId actor, uint emoteId)
     {
         if (Suspended() is { } blocked) return blocked;
         // The emote entry point drives the base slot too; its restore
@@ -305,6 +360,14 @@ public sealed class AnimationSession
 
     public AnimationResult SetSpeed(ActorId actor, float speed)
     {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("overall-speed"),
+            () => SetSpeedCore(actor, speed));
+    }
+
+    private AnimationResult SetSpeedCore(ActorId actor, float speed)
+    {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.SetOverallSpeed(actor, speed);
         if (!result.Success)
@@ -314,6 +377,14 @@ public sealed class AnimationSession
     }
 
     public AnimationResult ClearSpeed(ActorId actor)
+    {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("overall-speed-clear"),
+            () => ClearSpeedCore(actor));
+    }
+
+    private AnimationResult ClearSpeedCore(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearOverallSpeed(actor);
@@ -325,11 +396,13 @@ public sealed class AnimationSession
 
     public bool IsPaused(ActorId actor) => OverridesFor(actor).IsPaused;
 
-    public AnimationResult Pause(ActorId actor) => SetSpeed(actor, 0f);
+    public AnimationResult Pause(ActorId actor) => ObserveProbe(
+        actor, new AnimationProbeCommand("pause"), () => SetSpeed(actor, 0f));
 
     /// <summary>Resume drops the override rather than writing 1, so an
     /// actor the game is driving at its own speed keeps it.</summary>
-    public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
+    public AnimationResult Resume(ActorId actor) => ObserveProbe(
+        actor, new AnimationProbeCommand("resume"), () => ClearSpeed(actor));
 
     /// <summary>
     /// Replays a timeline from the start. Replay is explicitly a RESUMING
@@ -375,6 +448,15 @@ public sealed class AnimationSession
 
     public AnimationResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed)
     {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("slot-speed", slot),
+            () => SetSlotSpeedCore(actor, slot, speed));
+    }
+
+    private AnimationResult SetSlotSpeedCore(
+        ActorId actor, AnimationSlot slot, float speed)
+    {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.SetSlotSpeed(actor, slot, speed);
         if (!result.Success)
@@ -388,6 +470,14 @@ public sealed class AnimationSession
     }
 
     public AnimationResult ClearSlotSpeed(ActorId actor, AnimationSlot slot)
+    {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("slot-speed-clear", slot),
+            () => ClearSlotSpeedCore(actor, slot));
+    }
+
+    private AnimationResult ClearSlotSpeedCore(ActorId actor, AnimationSlot slot)
     {
         if (Suspended() is { } blocked) return blocked;
         var result = _port.ClearSlotSpeed(actor, slot);
@@ -557,6 +647,14 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult BeginScrub(ActorId actor, ScrubControlId control)
     {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("scrub-start"),
+            () => BeginScrubCore(actor, control));
+    }
+
+    private AnimationResult BeginScrubCore(ActorId actor, ScrubControlId control)
+    {
         var controls = _port.EnumerateControls(actor, out var token);
         ScrubControlReading? target = null;
         foreach (var reading in controls)
@@ -594,6 +692,14 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult UpdateScrub(ActorId actor, float time)
     {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("scrub-update"),
+            () => UpdateScrubCore(actor, time));
+    }
+
+    private AnimationResult UpdateScrubCore(ActorId actor, float time)
+    {
         if (_scrub is not { } gesture)
             return AnimationResult.Fail("No scrub is active.");
         if (!gesture.Actor.Equals(actor))
@@ -617,7 +723,16 @@ public sealed class AnimationSession
     /// continues from exactly there.</summary>
     public void EndScrub()
     {
-        _scrub = null;
+        if (_scrub is not { } gesture)
+            return;
+        ObserveProbe(
+            gesture.Actor,
+            new AnimationProbeCommand("scrub-end"),
+            () =>
+            {
+                _scrub = null;
+                return AnimationResult.Ok();
+            });
     }
 
     // ── Expression hold ──────────────────────────────────────────────────

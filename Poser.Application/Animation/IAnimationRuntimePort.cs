@@ -10,6 +10,12 @@ public readonly record struct AnimationPortResult(bool Success, string? Detail =
     public static AnimationPortResult Fail(string detail) => new(false, detail);
 }
 
+/// <summary>One observed animation command.</summary>
+public readonly record struct AnimationProbeCommand(
+    string Name,
+    AnimationSlot? Slot = null,
+    ushort Timeline = 0);
+
 /// <summary>
 /// The ONE stable-id native boundary for animation. Every member takes an
 /// exact-generation <see cref="ActorId"/>; the runtime re-resolves it
@@ -32,6 +38,13 @@ public interface IAnimationRuntimePort
 
     /// <summary>One frame's live native read, or null when unresolvable.</summary>
     ActorAnimationReading? Read(ActorId actor);
+
+    // ── Slot probe ───────────────────────────────────────────────────
+    AnimationPortResult StartSlotProbe(ActorId actor);
+    AnimationPortResult StopSlotProbe(ActorId actor);
+    void BeginSlotProbeCommand(ActorId actor, AnimationProbeCommand command);
+    void CompleteSlotProbeCommand(
+        ActorId actor, AnimationProbeCommand command, bool success);
 
     // ── Base and blend ────────────────────────────────────────────────
     /// <summary>

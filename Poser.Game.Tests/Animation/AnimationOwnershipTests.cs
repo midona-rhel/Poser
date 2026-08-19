@@ -53,6 +53,19 @@ public sealed class AnimationOwnershipTests
         Assert.Equal(.5f, playing.OverridesFor(ActorA).OverallSpeed);
         Assert.DoesNotContain("ClearOverallSpeed", playingPort.Calls);
     }
+
+    [Fact]
+    public void Probe_boundaries_preserve_the_existing_blend_write()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.Blend(ActorA, 42).Success);
+
+        Assert.Equal(
+            ["ProbeBegin", "Blend:42", "ProbeComplete:True"],
+            port.Calls);
+    }
 private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,
@@ -105,6 +118,12 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
                     return AnimationPortResult.Ok();
+                case "BeginSlotProbeCommand":
+                    Calls.Add("ProbeBegin");
+                    return null;
+                case "CompleteSlotProbeCommand":
+                    Calls.Add($"ProbeComplete:{args![2]}");
+                    return null;
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {
