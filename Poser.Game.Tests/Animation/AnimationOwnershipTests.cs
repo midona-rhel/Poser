@@ -66,6 +66,19 @@ public sealed class AnimationOwnershipTests
             ["ProbeBegin", "Blend:42", "ProbeComplete:True"],
             port.Calls);
     }
+
+    [Fact]
+    public void Probe_boundaries_preserve_the_existing_loop_write()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
+
+        Assert.Equal(
+            ["ProbeBegin", "SetSlotLoop", "ProbeComplete:True"],
+            port.Calls);
+    }
 private static SceneSnapshot EmptyScene(ulong revision) =>
         new(
             revision,

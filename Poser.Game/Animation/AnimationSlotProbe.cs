@@ -16,9 +16,9 @@ internal sealed record SlotProbeSnapshot(
 /// <summary>Records one bounded actor-local probe.</summary>
 internal sealed class AnimationSlotProbe
 {
-    internal const int MaximumScopes = 8;
-    internal const int MaximumRecords = 64;
-    internal const int MaximumFrames = 900;
+    internal const int MaximumScopes = 32;
+    internal const int MaximumRecords = 256;
+    internal const int MaximumFrames = 18_000;
 
     private readonly Action<string> _write;
     private Session? _session;

@@ -169,6 +169,52 @@ public sealed class AnimationSlotProbeTests
         Assert.Equal(count, lines.Count);
     }
 
+    [Fact]
+    public void Probe_keeps_the_full_diagnostic_story_with_post_command_samples()
+    {
+        var lines = new List<string>();
+        var probe = new AnimationSlotProbe(lines.Add);
+        var before = Snapshot("base=3 upper=0", "0.0", "a");
+        var after = Snapshot("base=42 upper=43 speed=0.08", "0.1", "a");
+        Assert.True(probe.Start(ActorA, "actor-a", before).Success);
+
+        foreach (var command in new[]
+        {
+            new AnimationProbeCommand("selection", AnimationSlot.Base, 3),
+            new AnimationProbeCommand("selection", AnimationSlot.Base, 42),
+            new AnimationProbeCommand("selection", AnimationSlot.UpperBody, 43),
+            new AnimationProbeCommand("slot-speed", AnimationSlot.Base),
+            new AnimationProbeCommand("slot-loop", AnimationSlot.Base, 42),
+            new AnimationProbeCommand("slot-loop", AnimationSlot.UpperBody, 43),
+        })
+        {
+            probe.Begin(ActorA, "actor-a", command, before);
+            probe.Complete(ActorA, "actor-a", command, true, after);
+            for (int frame = 0; frame < 5; frame++)
+                probe.Tick("actor-a", after, true);
+        }
+
+        Assert.True(probe.IsActiveFor(ActorA));
+        Assert.Equal(6, lines.Count(line => line.Contains(" CMD ")));
+        Assert.True(lines.Count(line => line.Contains(" SAMPLE ")) >= 1);
+        Assert.True(probe.Stop(ActorA, "actor-a", after).Success);
+    }
+
+    [Fact]
+    public void Probe_ends_at_the_conservative_timeout()
+    {
+        var lines = new List<string>();
+        var probe = new AnimationSlotProbe(lines.Add);
+        var snapshot = Snapshot("base=3", "0.0", "a");
+        Assert.True(probe.Start(ActorA, "actor-a", snapshot).Success);
+
+        for (int frame = 0; frame < AnimationSlotProbe.MaximumFrames; frame++)
+            probe.Tick("actor-a", snapshot, true);
+
+        Assert.Contains(lines, line => line.Contains("END") && line.Contains("timeout"));
+        Assert.False(probe.IsActiveFor(ActorA));
+    }
+
     private static SlotProbeSnapshot Snapshot(string state, string controlState, string fingerprint) =>
         new(state, [new SlotProbeControl("0.0", fingerprint, controlState)]);
 }

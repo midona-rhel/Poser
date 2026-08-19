@@ -313,6 +313,15 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("slot-loop", slot, timeline),
+            () => SetSlotLoopCore(actor, slot, timeline, on));
+    }
+
+    private AnimationResult SetSlotLoopCore(
+        ActorId actor, AnimationSlot slot, ushort timeline, bool on)
+    {
         if (Suspended() is { } blocked) return blocked;
         if (on && timeline == 0)
             return AnimationResult.Fail("Nothing to loop on this layer.");

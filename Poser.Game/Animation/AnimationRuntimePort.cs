@@ -331,7 +331,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     public AnimationPortResult StartSlotProbe(ActorId actor)
     {
         if (_slotProbe.HasActive)
-            return AnimationPortResult.Fail("A slot probe is already active.");
+            return AnimationPortResult.Fail(
+                "A slot probe is active. Stop it before starting another.");
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
