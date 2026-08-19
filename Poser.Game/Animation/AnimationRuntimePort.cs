@@ -95,6 +95,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private const uint EmoteModeSleeping = 3;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
+    // TimelineContainer-relative; the sequencer field is +0x10.
+    private const int ForcedTimelineOffset = 0x2E0;
 
     // The physics freeze is a process-global code patch, not a per-actor
     // enforcement; the patcher owns its site, capability state and restore.
@@ -544,60 +546,11 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
-    /// <summary>
-    /// The control that actually drives a slot, using Ktisis' lookup: the
-    /// control INDEX equals the slot index, and the partials are searched
-    /// for the first one holding a valid control at that index. Labelling
-    /// the first two flattened controls "Full body" and "Upper body" is
-    /// not the same thing and is wrong whenever a partial contributes a
-    /// different number of controls.
-    ///
-    /// Gated on the slot actually playing something, because an empty slot
-    /// has no meaningful time to scrub. Only Base and UpperBody are
-    /// offered: Ktisis notes the index-equals-slot correspondence does not
-    /// hold for the facial, additive, and lip slots, which live on other
-    /// partials.
-    /// </summary>
+    /// <summary>Logical slot scrub bindings are unavailable.</summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
         token = 0;
-        var character = Resolve(actor, out _);
-        if (character == null)
-            return null;
-        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return null;
-        int index = (int)slot;
-        if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
-            return null;
-
-        var drawObject = character->GameObject.DrawObject;
-        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
-            return null;
-        var charaBase = (CharacterBase*)drawObject;
-        if (charaBase->Skeleton == null)
-            return null;
-        var skeleton = charaBase->Skeleton;
-        token = CurrentToken(skeleton);
-
-        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
-        {
-            var partial = &skeleton->PartialSkeletons[p];
-            var animated = partial->GetHavokAnimatedSkeleton(0);
-            if (animated == null || index >= animated->AnimationControls.Length)
-                continue;
-            var control = animated->AnimationControls[index].Value;
-            if (control == null)
-                continue;
-            var binding = control->hkaAnimationControl.Binding;
-            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
-                continue;
-            return new ScrubControlReading(
-                new ScrubControlId(p, index),
-                control->hkaAnimationControl.LocalTime,
-                binding.ptr->Animation.ptr->Duration,
-                control->PlaybackSpeed);
-        }
         return null;
     }
 
@@ -630,9 +583,27 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 // The timeline actually PLAYING on the base slot, so a
                 // restore can put back what the actor was doing rather
                 // than a blanket idle.
-                character->Timeline.TimelineSequencer.TimelineIds[0]);
+                character->Timeline.TimelineSequencer.TimelineIds[0],
+                ForcedTimeline(&character->Timeline));
         }
 
+        PlayWithMode(character, timeline);
+        return AnimationPortResult.Ok();
+    }
+
+    public AnimationPortResult PlayBase(ActorId actor, ushort timeline,
+        BaseAnimationCapture? existing, out BaseAnimationCapture? captured)
+    {
+        captured = null;
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+
+        if (existing == null)
+            captured = CaptureBase(character);
+
+        // The forced field must be clear before the sequencer receives a new pick.
+        SetForcedTimeline(&character->Timeline, 0);
         PlayWithMode(character, timeline);
         return AnimationPortResult.Ok();
     }
@@ -673,12 +644,15 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var character = Resolve(actor, out _);
         if (character == null)
             return null;
-        return new BaseAnimationCapture(
-            (byte)character->Mode,
-            character->ModeParam,
-            character->Timeline.BaseOverride,
-            character->Timeline.TimelineSequencer.TimelineIds[0]);
+        return CaptureBase(character);
     }
+
+    private static BaseAnimationCapture CaptureBase(Character* character) => new(
+        (byte)character->Mode,
+        character->ModeParam,
+        character->Timeline.BaseOverride,
+        character->Timeline.TimelineSequencer.TimelineIds[0],
+        ForcedTimeline(&character->Timeline));
 
     /// <summary>Ktisis' mode dance around a play. Raw field writes, as the
     /// reference does them; every member is a named ClientStructs symbol.</summary>
@@ -715,14 +689,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         character->Timeline.BaseOverride = capture.BaseTimeline;
         character->Mode = (CharacterModes)capture.Mode;
         character->ModeParam = capture.ModeParam;
-        // Play what the base slot HELD when Poser first touched the actor,
-        // so a pre-existing ordinary animation comes back instead of being
-        // flattened to idle. Idle is only the fallback for an empty slot.
+        // Idle is the fallback for an empty base slot.
         character->Timeline.TimelineSequencer.PlayTimeline(
             capture.BaseSlotTimeline != 0
                 ? capture.BaseSlotTimeline
                 : AnimationTimelines.Idle,
             null);
+        character->Timeline.BaseOverride = capture.BaseTimeline;
+        character->Mode = (CharacterModes)capture.Mode;
+        character->ModeParam = capture.ModeParam;
+        SetForcedTimeline(&character->Timeline, capture.ForcedTimeline);
         return AnimationPortResult.Ok();
     }
 
@@ -736,39 +712,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : AnimationPortResult.Fail("The emote entry point is unavailable.");
     }
 
-    /// <summary>
-    /// NOT IMPLEMENTED on this build, deliberately.
-    ///
-    /// Force loop needs the game's persistent forced-timeline field — the
-    /// one Ktisis calls <c>ActionTimelineId</c> and re-writes so the engine
-    /// keeps re-driving a timeline instead of falling back to idle. That
-    /// field could not be proven for the current client:
-    ///
-    ///  · current ClientStructs maps no such member on TimelineContainer or
-    ///    ActionTimelineSequencer, and exposes no accessor for it (its only
-    ///    member functions are height-adjust, lips, speed, and intro/loop);
-    ///  · the only other <c>ActionTimelineId</c> in ClientStructs belongs to
-    ///    EventFramework's queued-callback payload and is unreachable here;
-    ///  · Ktisis' literal 0x2D0 cannot be inherited. Its checkout is a patch
-    ///    behind (Character.EmoteController 0x620 vs 0x630, Mode 0x2354 vs
-    ///    0x2364), and the offset is inconsistent with its own struct: it
-    ///    declares AnimationTimeline as Size 0x1F0 — which matches the
-    ///    sequencer's real extent, since TimelineTransit follows it — yet
-    ///    places the field at 0x2D0, past that end.
-    ///
-    /// The alternatives are all worse than an honest gap: BaseOverride is
-    /// already the Base latch, so routing loop through it would collapse
-    /// Blend into Base; blending Idle on disable yanks the actor off its
-    /// animation instead of merely un-looping; and probing offsets with
-    /// writes risks corrupting a live game process. So this fails
-    /// explicitly and the UI does not offer the control.
-    /// </summary>
-    /// <summary>
-    /// Plays an emote through the game's own entry point. Falls back to
-    /// blending idle when the entry point was not found, because the
-    /// alternative — leaving the pose index written with nothing driving
-    /// it — shows the actor in a state the UI claims it is not in.
-    /// </summary>
+    /// <summary>Plays an emote through the game entry point.</summary>
     private bool PlayEmoteNative(Character* character, uint emoteId)
     {
         if (_playEmote == null)
@@ -820,12 +764,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
     public void ClearLoops(ActorId actor) => _loops.Remove(actor);
 
-    /// <summary>
-    /// The loop tick: an armed slot that no longer plays its timeline
-    /// (the one-shot ended; the game swapped its own idle in) gets the
-    /// timeline played again — the same proven call as a user pick. The
-    /// unproven forced-timeline field is never touched.
-    /// </summary>
+    /// <summary>Replays legacy loop arms.</summary>
     private void EnforceLoops(IFramework framework)
     {
         if (LoopsSuspended || _loops.Count == 0)
@@ -851,12 +790,24 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
-    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline) =>
-        AnimationPortResult.Fail(
-            "Force loop is unavailable: the game's forced-timeline field is not " +
-            "mapped for this client version.");
+    public AnimationPortResult SetForceLoop(ActorId actor, ushort timeline)
+    {
+        if (timeline != 0 && TimelineSlot(timeline) != AnimationSlot.Base)
+            return AnimationPortResult.Fail("Only full-body timelines can use repeat.");
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        SetForcedTimeline(&character->Timeline, timeline);
+        return AnimationPortResult.Ok();
+    }
 
-    public bool SupportsForceLoop => false;
+    public bool SupportsForceLoop => true;
+
+    private static ushort ForcedTimeline(TimelineContainer* container) =>
+        *(ushort*)((byte*)container + ForcedTimelineOffset);
+
+    private static void SetForcedTimeline(TimelineContainer* container, ushort timeline) =>
+        *(ushort*)((byte*)container + ForcedTimelineOffset) = timeline;
 
     public bool SupportsStance => _setEmoteMode != null && _cancelTimeline != null;
 

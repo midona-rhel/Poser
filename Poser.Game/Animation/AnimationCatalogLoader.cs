@@ -111,7 +111,8 @@ public sealed class AnimationCatalogLoader
                     index,
                     // Only emotes know their weapon state; actions and raw
                     // timelines stay null and pass Brio's drawn filter.
-                    emote.DrawsWeapon));
+                    emote.DrawsWeapon,
+                    timelines.GetRowOrDefault(reference.RowId)?.IsLoop ?? false));
             }
         }
     }
@@ -143,7 +144,8 @@ public sealed class AnimationCatalogLoader
                 name,
                 AnimationKind.Action,
                 (AnimationSlot)row.Stance,
-                action.Icon));
+                action.Icon,
+                IsLoop: row.IsLoop));
         }
     }
 
@@ -161,7 +163,8 @@ public sealed class AnimationCatalogLoader
                 timeline.RowId,
                 key,
                 AnimationKind.RawTimeline,
-                (AnimationSlot)timeline.Stance));
+                (AnimationSlot)timeline.Stance,
+                IsLoop: timeline.IsLoop));
         }
     }
 

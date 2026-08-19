@@ -68,7 +68,7 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Probe_boundaries_preserve_the_existing_loop_write()
+    public void Probe_boundaries_preserve_the_repeat_arm_write()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
@@ -76,8 +76,143 @@ public sealed class AnimationOwnershipTests
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
 
         Assert.Equal(
-            ["ProbeBegin", "SetSlotLoop", "ProbeComplete:True"],
+            ["ProbeBegin", "SetForceLoop:42", "ProbeComplete:True"],
             port.Calls);
+    }
+
+    [Fact]
+    public void Base_repeat_is_sticky_but_never_arms_without_a_selection()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+
+        Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Base_selection_arms_only_sticky_repeat_and_retargets_atomically()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.PlayBase(ActorA, 43).Success);
+
+        Assert.Equal(
+            ["PlayBase:42", "SetForceLoop:42", "PlayBase:43", "SetForceLoop:43"],
+            port.Calls.Where(call => call.StartsWith("PlayBase") ||
+                call.StartsWith("SetForceLoop")).ToArray());
+    }
+
+    [Fact]
+    public void Base_selection_without_repeat_never_arms_the_forced_timeline()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+
+        Assert.Contains("PlayBase:42", port.Calls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Layer_selection_refuses_while_full_body_repeat_owns_the_global_route()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        int writes = port.Calls.Count;
+
+        var result = session.Blend(ActorA, 43);
+
+        Assert.False(result.Success);
+        Assert.Contains("Full-body repeat", result.Detail);
+        Assert.Equal(writes + 2, port.Calls.Count);
+        Assert.DoesNotContain("Blend:43", port.Calls);
+    }
+
+    [Fact]
+    public void Upper_one_shot_uses_the_sequencer_when_full_body_repeat_is_off()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.Blend(ActorA, 43).Success);
+
+        Assert.Contains("Blend:43", port.Calls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Global_restore_uses_the_immutable_first_base_capture()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.PlayBase(ActorA, 43).Success);
+        Assert.True(session.ResetActor(ActorA).Success);
+
+        Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
+    }
+
+    [Fact]
+    public void Repeat_arm_captures_the_preexisting_base_for_restore()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, true).Success);
+        Assert.True(session.ResetActor(ActorA).Success);
+
+        Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
+    }
+
+    [Fact]
+    public void Repeat_off_clears_only_the_base_repeat_arm()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        int blends = port.Calls.Count(call => call.StartsWith("Blend"));
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 42, false).Success);
+
+        Assert.False(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.Equal(blends, port.Calls.Count(call => call.StartsWith("Blend")));
+        Assert.Equal("SetForceLoop:0", port.Calls.Last(call => call.StartsWith("SetForceLoop")));
+    }
+
+    [Fact]
+    public void Unverified_layer_repeat_refuses_without_writes()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        var result = session.SetSlotLoop(ActorA, AnimationSlot.UpperBody, 42, true);
+
+        Assert.False(result.Success);
+        Assert.DoesNotContain(port.Calls, call => call == "SetSlotLoop" ||
+            call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Layer_speed_does_not_write_overall_speed()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.SetSlotSpeed(ActorA, AnimationSlot.UpperBody, .08f).Success);
+
+        Assert.Contains("SetSlotSpeed", port.Calls);
+        Assert.DoesNotContain("SetOverallSpeed", port.Calls);
     }
 
     [Fact]
@@ -137,6 +272,12 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                 }
                 case "IsSupported":
                     return true;
+                case "TimelineSlot":
+                    return (ushort)args![0]! == 43
+                        ? AnimationSlot.UpperBody
+                        : AnimationSlot.Base;
+                case "CaptureBase":
+                    return BaseCapture;
                 case "ClearOverallSpeed":
                     Calls.Add("ClearOverallSpeed");
                     return FailClearSpeed
@@ -146,6 +287,17 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
                     return AnimationPortResult.Ok();
+                case "PlayBase":
+                    Calls.Add($"PlayBase:{args![1]}");
+                    if (args![2] == null)
+                        args[3] = BaseCapture;
+                    else
+                        args[3] = null;
+                    return AnimationPortResult.Ok();
+                case "RestoreBase":
+                    RestoredBaseCapture = (BaseAnimationCapture)args![1]!;
+                    Calls.Add("RestoreBase");
+                    return AnimationPortResult.Ok();
                 case "BeginSlotProbeCommand":
                     Calls.Add("ProbeBegin");
                     ProbeCommands.Add((AnimationProbeCommand)args![1]!);
@@ -153,6 +305,9 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                 case "CompleteSlotProbeCommand":
                     Calls.Add($"ProbeComplete:{args![2]}");
                     return null;
+                case "SetForceLoop":
+                    Calls.Add($"SetForceLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))
                     {
@@ -165,5 +320,8 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                     return null;
             }
         }
+
+        public BaseAnimationCapture BaseCapture { get; } = new(4, 9, 18, 27, 36);
+        public BaseAnimationCapture? RestoredBaseCapture { get; private set; }
     }
 }

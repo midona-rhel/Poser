@@ -143,7 +143,8 @@ public sealed record TimelineEntry(
     uint Icon = 0,
     uint EmoteId = 0,
     int EmoteIndex = -1,
-    bool? DrawsWeapon = null)
+    bool? DrawsWeapon = null,
+    bool IsLoop = false)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
     /// start" through its own emote entry point (intro then loop).</summary>
@@ -151,15 +152,13 @@ public sealed record TimelineEntry(
         EmoteIndex == 0 && EmoteId != 0;
 }
 
-/// <summary>
-/// The exact native state Poser captured before its FIRST play, and the
-/// only thing that can put the actor back: character mode, mode parameter,
-/// the base-override field, and the timeline the base slot was actually
-/// playing. Stored as raw values so the domain never references native
-/// enums.
-/// </summary>
+/// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
-    byte Mode, byte ModeParam, ushort BaseTimeline, ushort BaseSlotTimeline = 0);
+    byte Mode,
+    byte ModeParam,
+    ushort BaseTimeline,
+    ushort BaseSlotTimeline = 0,
+    ushort ForcedTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be
@@ -229,12 +228,11 @@ public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
     public float? OverallSpeed { get; init; }
-    /// <summary>Slots Poser keeps re-driving: when the slot leaves the
-    /// armed timeline (the one-shot ended and the game swapped its own
-    /// idle in), the port plays it again. Poser-orchestrated — the game's
-    /// forced-timeline field is unproven for this client.</summary>
+    /// <summary>Slots with active Poser repeat arms.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
+    public IReadOnlySet<AnimationSlot> LoopWantedSlots { get; init; } =
+        new HashSet<AnimationSlot>();
     /// <summary>Incoming timeline per non-base slot, captured once before
     /// Poser's first play landed there; 0 records "was empty". Restore
     /// replays a non-zero capture through the sequencer; an empty slot has
@@ -278,7 +276,7 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        LoopedSlots.Count > 0 || SlotCaptures.Count > 0 ||
+        LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;

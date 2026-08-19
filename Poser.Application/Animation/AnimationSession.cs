@@ -84,6 +84,9 @@ public sealed class AnimationSession
     public AnimationOverrides OverridesFor(ActorId actor) =>
         _overrides.TryGetValue(actor, out var value) ? value : AnimationOverrides.None;
 
+    public bool LoopWantedFor(ActorId actor, AnimationSlot slot) =>
+        OverridesFor(actor).LoopWantedSlots.Contains(slot);
+
     public ActorAnimationReading? Read(ActorId actor) => _port.Read(actor);
 
     /// <summary>
@@ -165,18 +168,41 @@ public sealed class AnimationSession
 
     // ── Base and blend ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Plays a timeline as "the animation" of the actor: the SAME
-    /// sequencer play as everything else — the references have no base
-    /// latch — recorded so the transport can display and replay the pick.
-    /// Continuity is the loop system, armed separately by the caller.
-    /// </summary>
+    /// <summary>Plays the actor's full-body timeline.</summary>
     public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
-        var result = Blend(actor, timeline);
+        var before = OverridesFor(actor);
+        return ObserveProbe(
+            actor,
+            new AnimationProbeCommand("selection", AnimationSlot.Base, timeline),
+            () => PlayBaseCore(
+                actor, timeline, before, before.LoopWantedSlots.Contains(AnimationSlot.Base)));
+    }
+
+    private AnimationResult PlayBaseCore(
+        ActorId actor, ushort timeline, AnimationOverrides before, bool loopWanted)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        var result = _port.PlayBase(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
-            return result;
-        Mutate(actor, o => o with { BaseTimeline = timeline });
+            return AnimationResult.Fail(result.Detail ?? "Base playback failed.");
+        if (loopWanted)
+        {
+            var armed = _port.SetForceLoop(actor, timeline);
+            if (!armed.Success)
+                return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
+        }
+        if (captured is { } taken)
+            Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            if (loopWanted)
+                loops[AnimationSlot.Base] = timeline;
+            else
+                loops.Remove(AnimationSlot.Base);
+            return o with { BaseTimeline = timeline, LoopedSlots = loops };
+        });
         return AnimationResult.Ok();
     }
 
@@ -199,6 +225,10 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
+        if (landing is { } target && target != AnimationSlot.Base &&
+            current.LoopedSlots.ContainsKey(AnimationSlot.Base))
+            return AnimationResult.Fail(
+                "Full-body repeat owns the global playback route. Turn it off before selecting another layer.");
 
         // Capture the incoming timeline of the slot this play lands on
         // (the sheet routes it), once per slot, BEFORE it is overwritten.
@@ -277,19 +307,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Plays a catalog entry the way the references do, choosing the
-    /// native route from the entry rather than from a UI flag:
-    ///
-    /// Base latches the timeline so the game re-drives it as the actor's
-    /// idle; Blend hands the timeline to the sequencer, which picks the
-    /// slot and performs the engine's own blend. An emote asked to play
-    /// from the start goes through the game's emote entry point, the only
-    /// route that plays intro-then-loop; anything else, and any emote
-    /// that has no intro, falls back to the sequencer.
-    ///
-    /// Force loop is applied last so it wraps whichever route ran.
-    /// </summary>
+    /// <summary>Plays a catalog entry through its native route.</summary>
     public AnimationResult PlayEntry(
         ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
     {
@@ -305,12 +323,7 @@ public sealed class AnimationSession
         return Blend(actor, timeline);
     }
 
-    /// <summary>
-    /// Arms or disarms Poser-driven looping for one slot: when the slot
-    /// leaves the armed timeline (the one-shot ended), the port plays it
-    /// again through the proven sequencer call. Owned state — reset
-    /// disarms it; no unproven native field is involved.
-    /// </summary>
+    /// <summary>Sets repeat intent for one slot.</summary>
     public AnimationResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         return ObserveProbe(
@@ -323,47 +336,58 @@ public sealed class AnimationSession
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (Suspended() is { } blocked) return blocked;
-        if (on && timeline == 0)
-            return AnimationResult.Fail("Nothing to loop on this layer.");
-        var result = on
-            ? _port.SetSlotLoop(actor, slot, timeline)
-            : _port.ClearSlotLoop(actor, slot);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Loop failed.");
+        if (slot != AnimationSlot.Base)
+            return AnimationResult.Fail(
+                "Repeat is unavailable for this layer: exact replay is unverified.");
+        var current = OverridesFor(actor);
+        if (!on && current.LoopedSlots.ContainsKey(AnimationSlot.Base))
+        {
+            var cleared = _port.SetForceLoop(actor, 0);
+            if (!cleared.Success)
+                return AnimationResult.Fail(cleared.Detail ?? "Repeat clear failed.");
+        }
         Mutate(actor, o =>
         {
             var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
             if (on)
-                loops[slot] = timeline;
+                wanted.Add(slot);
             else
+            {
                 loops.Remove(slot);
-            return o with { LoopedSlots = loops };
+                wanted.Remove(slot);
+            }
+            return o with { LoopedSlots = loops, LoopWantedSlots = wanted };
+        });
+        if (!on)
+            return AnimationResult.Ok();
+
+        ushort target = timeline != 0
+            ? timeline
+            : current.BaseTimeline ?? _port.Read(actor)?.TimelineFor(AnimationSlot.Base) ?? 0;
+        if (target == 0)
+            return AnimationResult.Ok();
+        var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
+        var armed = _port.SetForceLoop(actor, target);
+        if (!armed.Success)
+            return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
+        Mutate(actor, o => o with
+        {
+            BaseCapture = o.BaseCapture ?? captured,
+            LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
+            {
+                [AnimationSlot.Base] = target,
+            },
         });
         return AnimationResult.Ok();
     }
 
-    /// <summary>False when the running client does not expose the game's
-    /// forced-timeline field; surfaces hide the control rather than offer
-    /// one that cannot work.</summary>
+    /// <summary>Whether full-body repeat is available.</summary>
     public bool SupportsForceLoop => _port.SupportsForceLoop;
 
     /// <summary>False when the client's stance-transition functions were
     /// not found; the stance controls render disabled.</summary>
     public bool SupportsStance => _port.SupportsStance;
-
-    /// <summary>
-    /// Forces a timeline to repeat. Owns no state: on every client where
-    /// <see cref="SupportsForceLoop"/> is false this cannot take effect,
-    /// and recording an override for a write that did not happen would put
-    /// a phantom entry into the restoration list.
-    /// </summary>
-    public AnimationResult SetForceLoop(ActorId actor, ushort timeline)
-    {
-        var result = _port.SetForceLoop(actor, timeline);
-        return result.Success
-            ? AnimationResult.Ok()
-            : AnimationResult.Fail(result.Detail ?? "Loop failed.");
-    }
 
     // ── Speed ─────────────────────────────────────────────────────────
 
@@ -540,16 +564,21 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
-        // Choosing a stance IS leaving the animation: armed loops are
-        // disarmed first (or the next tick replays the very animation the
-        // stance just replaced), then any owned base state is released.
+        // A stance change releases full-body repeat first.
         var owned = OverridesFor(actor);
-        if (owned.LoopedSlots.Count > 0)
+        if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
         {
+            if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
+            {
+                var cleared = _port.SetForceLoop(actor, 0);
+                if (!cleared.Success)
+                    return AnimationResult.Fail(cleared.Detail ?? "Repeat clear failed.");
+            }
             _port.ClearLoops(actor);
             Mutate(actor, o => o with
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+                LoopWantedSlots = new HashSet<AnimationSlot>(),
             });
             owned = OverridesFor(actor);
         }
@@ -892,13 +921,19 @@ public sealed class AnimationSession
 
         // Loops first: a still-armed loop would replay the animation the
         // very restore below is removing.
-        if (owned.LoopedSlots.Count > 0)
+        if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
         {
-            _port.ClearLoops(actor);
-            remaining = remaining with
+            bool cleared = !owned.LoopedSlots.ContainsKey(AnimationSlot.Base) ||
+                Try(_port.SetForceLoop(actor, 0));
+            if (cleared)
             {
-                LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
-            };
+                _port.ClearLoops(actor);
+                remaining = remaining with
+                {
+                    LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
+                    LoopWantedSlots = new HashSet<AnimationSlot>(),
+                };
+            }
         }
 
         if (owned.OverallSpeed != null && Try(_port.ClearOverallSpeed(actor)))

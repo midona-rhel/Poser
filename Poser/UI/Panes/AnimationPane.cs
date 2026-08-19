@@ -292,6 +292,9 @@ public sealed class AnimationPane
             },
             help: "Choose the animation this actor plays");
 
+        if (_catalog.Find(current) is { IsLoop: true })
+            form.Status("Native loop.");
+
         float speed = owned.OverallSpeed ?? reading.OverallSpeed;
         form.NumericSlider(
             "Speed",
@@ -538,6 +541,15 @@ public sealed class AnimationPane
                 },
             help: $"Choose an animation for the {lower} layer");
 
+        if (slot == AnimationSlot.Base)
+            form.Switch(
+                "Full body repeat",
+                _animation.LoopWantedFor(actor, AnimationSlot.Base),
+                next => Report(
+                    _animation.SetSlotLoop(actor, AnimationSlot.Base, 0, next),
+                    "Full body repeat"),
+                help: "Repeat the selected full-body animation");
+
         if (!compactEmpty)
         {
             float speed = owned.SlotSpeeds.TryGetValue(
@@ -557,23 +569,8 @@ public sealed class AnimationPane
                 help: $"Set how fast the {lower} layer plays");
         }
 
-        if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
-        {
-            var control = _animation.FindSlotControl(actor, slot)
-                ?? new ScrubControlReading(
-                    new ScrubControlId(-1, (int)slot),
-                    0f,
-                    0f,
-                    0f);
-            DrawScrub(
-                form,
-                actor,
-                reading,
-                label,
-                control,
-                slot,
-                timeline);
-        }
+        if (slot is AnimationSlot.UpperBody or AnimationSlot.Facial or AnimationSlot.Additive)
+            form.Status("Repeat is unavailable until this layer has a verified replay route.");
     }
 
     private void DrawAdvancedControls(
@@ -601,9 +598,7 @@ public sealed class AnimationPane
         ActorId actor,
         ActorAnimationReading reading,
         string label,
-        ScrubControlReading control,
-        AnimationSlot? loopSlot = null,
-        ushort loopTimeline = 0)
+        ScrubControlReading control)
     {
         bool scrubbable = control.Duration > 0f;
         float duration = MathF.Max(control.Duration, 0.0001f);
@@ -651,20 +646,6 @@ public sealed class AnimationPane
             onBegin: EnsureScrub,
             onCommit: Commit);
 
-        if (loopSlot is { } slot)
-        {
-            bool looped = _animation.OverridesFor(actor)
-                .LoopedSlots.ContainsKey(slot);
-            form.Switch(
-                $"{label} loop",
-                looped,
-                next => Report(
-                    _animation.SetSlotLoop(
-                        actor, slot, loopTimeline, next),
-                    "Loop"),
-                help: "Keep repeating this layer's animation when it "
-                    + "reaches the end");
-        }
     }
 
     /// <summary>Draws the expression controls for the face workspace.</summary>
@@ -1163,16 +1144,14 @@ public sealed class AnimationPane
                     Report(played, pick.Entry.Name);
                     break;
                 }
-                _layerPicks[(actor, pick.Entry.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    pick.Entry.Name);
+                _layerPicks[(actor, AnimationSlot.Base)] = timeline;
                 break;
             }
             case AnimationPickTarget.Slot:
             {
-                var played = _animation.Blend(actor, timeline);
+                var played = pick.Slot == AnimationSlot.Base
+                    ? _animation.PlayEntry(actor, pick.Entry, asBase: true, playFromStart: true)
+                    : _animation.Blend(actor, timeline);
                 if (!played.Success)
                 {
                     Report(
@@ -1182,10 +1161,6 @@ public sealed class AnimationPane
                 }
                 // Apply to the slot requested by the opening row.
                 _layerPicks[(actor, pick.Slot)] = timeline;
-                Report(
-                    ArmLoop(
-                        actor, pick.Entry.Slot, timeline, played),
-                    AnimationSlots.DisplayName(pick.Slot));
                 break;
             }
             case AnimationPickTarget.Expression:
@@ -1199,19 +1174,6 @@ public sealed class AnimationPane
                     "Lips");
                 break;
         }
-    }
-
-    private AnimationResult ArmLoop(
-        ActorId actor,
-        AnimationSlot slot,
-        ushort timeline,
-        AnimationResult played)
-    {
-        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
-            return played;
-        var armed = _animation.SetSlotLoop(
-            actor, slot, timeline, true);
-        return armed.Success ? played : armed;
     }
 
     private void EndScrub()
