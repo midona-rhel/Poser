@@ -551,6 +551,9 @@ public sealed class AnimationPane
                 },
             help: $"Choose an animation for the {lower} layer");
 
+        if (slot == AnimationSlot.Base && owned.BaseRepeatSuspended)
+            form.Status("Full-body repeat is paused for layer playback.");
+
         if (!compactEmpty)
         {
             float speed = owned.SlotSpeeds.TryGetValue(

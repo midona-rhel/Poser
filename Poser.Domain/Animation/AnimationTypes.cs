@@ -3,11 +3,7 @@ using System.Collections.Generic;
 
 namespace Poser.Domain.Animation;
 
-/// <summary>
-/// The game's animation slots, as Brio enumerates them. Values ARE the
-/// native slot indices. 4..6 have no known purpose and are deliberately
-/// absent: an absent value cannot be shown or written by mistake.
-/// </summary>
+/// <summary>Native animation slots.</summary>
 public enum AnimationSlot
 {
     Base = 0,
@@ -60,8 +56,7 @@ public static class AnimationSlots
         AnimationSlot.Parts4, AnimationSlot.Overlay,
     };
 
-    /// <summary>Slots whose Havok control is reliably the friendly
-    /// scrub target; everything else scrubs through Advanced.</summary>
+    /// <summary>Slots with supported scrub controls.</summary>
     public static IReadOnlyList<AnimationSlot> Scrubbable { get; } = new[]
     {
         AnimationSlot.Base, AnimationSlot.UpperBody,
@@ -89,11 +84,9 @@ public static class AnimationSlots
 /// </summary>
 public static class AnimationTimelines
 {
-    /// <summary>The idle timeline; blending it is how both references
-    /// visibly leave an overridden animation.</summary>
+    /// <summary>The idle timeline.</summary>
     public const ushort Idle = 3;
-    /// <summary>The "Straight face" timeline Brio plays to clear a held
-    /// expression before returning to idle.</summary>
+    /// <summary>The neutral facial timeline.</summary>
     public const ushort StraightFace = 604;
     public const ushort DrawWeapon = 1;
     public const ushort SheatheWeapon = 2;
@@ -233,11 +226,8 @@ public sealed record AnimationOverrides
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlySet<AnimationSlot> LoopWantedSlots { get; init; } =
         new HashSet<AnimationSlot>();
-    /// <summary>Incoming timeline per non-base slot, captured once before
-    /// Poser's first play landed there; 0 records "was empty". Restore
-    /// replays a non-zero capture through the sequencer; an empty slot has
-    /// nothing to replay and is released without a write. The base slot
-    /// belongs to <see cref="BaseCapture"/>.</summary>
+    public bool BaseRepeatSuspended { get; init; }
+    /// <summary>Original non-base timelines.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> SlotCaptures { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
@@ -245,21 +235,9 @@ public sealed record AnimationOverrides
     public ushort? Lips { get; init; }
     public bool PositionLock { get; init; }
 
-    // ── Captures ──────────────────────────────────────────────────────
-    // Each is taken ONCE, before the first override of its kind, and is
-    // the only thing that can put that aspect back. A capture survives
-    // repeated changes so restore always targets the state Poser found,
-    // not an intermediate one it created.
-
-    /// <summary>Mode, mode parameter, and base-override field before the
-    /// first Poser play. Every play may adjust the character mode (the
-    /// reference's Pause-timeline hold), so the capture belongs to the
-    /// first play of ANY kind, not just a transport pick.</summary>
+    /// <summary>Original base animation state.</summary>
     public BaseAnimationCapture? BaseCapture { get; init; }
-    /// <summary>The expression currently HELD on the face: blended onto
-    /// the facial layer and pinned there by that layer's speed at 0 --
-    /// Brio's mechanism, the only one that exists. Release plays Straight
-    /// face then idle and unpins.</summary>
+    /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
     /// <summary>Lips timeline before the first lips override. Selecting
     /// None restores THIS, rather than writing 0 — 0 is "no speech
@@ -276,7 +254,8 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||
+        LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || BaseRepeatSuspended ||
+        SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;

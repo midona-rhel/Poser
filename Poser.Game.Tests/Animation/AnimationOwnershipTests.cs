@@ -123,32 +123,85 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Layer_selection_refuses_while_full_body_repeat_owns_the_global_route()
+    public void Layer_selection_suspends_forced_full_body_repeat_without_reforcing()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
         Assert.True(session.PlayBase(ActorA, 42).Success);
-        int writes = port.Calls.Count;
 
         var result = session.Blend(ActorA, 43);
 
-        Assert.False(result.Success);
-        Assert.Contains("Full-body repeat", result.Detail);
-        Assert.Equal(writes + 2, port.Calls.Count);
-        Assert.DoesNotContain("Blend:43", port.Calls);
+        Assert.True(result.Success);
+        Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.False(session.OverridesFor(ActorA).LoopedSlots.ContainsKey(AnimationSlot.Base));
+        int upper = port.Calls.LastIndexOf("Blend:43");
+        Assert.True(upper >= 0);
+        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
+            call => call.StartsWith("SetForceLoop"));
     }
 
     [Fact]
-    public void Upper_one_shot_uses_the_sequencer_when_full_body_repeat_is_off()
+    public void Base_retarget_after_layer_selection_keeps_forced_repeat_suspended()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.Blend(ActorA, 43).Success);
+        int upper = port.Calls.LastIndexOf("Blend:43");
+
+        Assert.True(session.PlayBase(ActorA, 44).Success);
+
+        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
+            call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Native_base_and_upper_use_the_sequencer_without_forced_repeat()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.Blend(ActorA, 43).Success);
+
+        Assert.False(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.Contains("Blend:43", port.Calls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Repeated_upper_selection_never_rearms_full_body_repeat()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
 
         Assert.True(session.Blend(ActorA, 43).Success);
+        Assert.True(session.Blend(ActorA, 44).Success);
 
         Assert.Contains("Blend:43", port.Calls);
+        Assert.Contains("Blend:44", port.Calls);
         Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Actor_departure_restores_a_suspended_repeat_baseline_without_reforcing()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.Blend(ActorA, 43).Success);
+        int upper = port.Calls.LastIndexOf("Blend:43");
+
+        session.Reconcile(EmptyScene(1));
+
+        Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
+        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
+            call => call == "SetForceLoop:42");
     }
 
     [Fact]
@@ -347,7 +400,7 @@ private static SceneSnapshot EmptyScene(ulong revision) =>
                 case "get_SupportsForceLoop":
                     return SupportsForceLoop;
                 case "TimelineSlot":
-                    return (ushort)args![0]! == 43
+                    return (ushort)args![0]! is 43 or 44
                         ? AnimationSlot.UpperBody
                         : AnimationSlot.Base;
                 case "CaptureBase":

@@ -55,23 +55,7 @@ public sealed class AnimationSession
     private readonly Dictionary<ActorId, AnimationOverrides> _overrides = new();
     private int _probeDepth;
 
-    /// <summary>
-    /// The scene's hold on the global physics patch, and the ONLY hold there
-    /// is. The freeze is one process-global code patch and nothing about it
-    /// is per-actor, so it has to be requestable when no actor is selected at
-    /// all — a light, a camera or the environment is a perfectly ordinary
-    /// thing to be looking at while wanting the scene's cloth to stop (user
-    /// 2026-08-14). The scene never departs, so only <see cref="ResetAll"/>
-    /// releases it.
-    ///
-    /// <para>This was once one owner among a set keyed by
-    /// <see cref="ActorId"/>, reference-counted against per-actor holds. Once
-    /// the shell's switch became the only surface that asks, the actor
-    /// entry points had no callers left, and a set that can only ever hold
-    /// the scene is a boolean wearing a reference count — worse than one,
-    /// because a future per-actor hold would freeze physics that the shell's
-    /// own switch could not then release.</para>
-    /// </summary>
+    /// <summary>Tracks the scene physics hold.</summary>
     private bool _sceneOwnsPhysics;
 
     public AnimationSession(IAnimationRuntimePort port)
@@ -186,7 +170,8 @@ public sealed class AnimationSession
         var result = _port.PlayBase(actor, timeline, before.BaseCapture, out var captured);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Base playback failed.");
-        if (loopWanted)
+        bool armRepeat = loopWanted && !HasLayerSelection(before);
+        if (armRepeat)
         {
             var armed = _port.SetForceLoop(actor, timeline);
             if (!armed.Success)
@@ -197,20 +182,21 @@ public sealed class AnimationSession
         Mutate(actor, o =>
         {
             var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            if (loopWanted)
+            if (armRepeat)
                 loops[AnimationSlot.Base] = timeline;
             else
                 loops.Remove(AnimationSlot.Base);
-            return o with { BaseTimeline = timeline, LoopedSlots = loops };
+            return o with
+            {
+                BaseTimeline = timeline,
+                LoopedSlots = loops,
+                BaseRepeatSuspended = loopWanted && !armRepeat,
+            };
         });
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Plays through the sequencer with the reference's mode handling.
-    /// The port captures mode state before its first Poser-made change;
-    /// that capture is owned here for restoration.
-    /// </summary>
+    /// <summary>Plays a timeline through its native route.</summary>
     public AnimationResult Blend(ActorId actor, ushort timeline)
     {
         var landing = _port.TimelineSlot(timeline);
@@ -225,14 +211,10 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
-        if (landing is { } target && target != AnimationSlot.Base &&
-            current.LoopedSlots.ContainsKey(AnimationSlot.Base))
-            return AnimationResult.Fail(
-                "Full-body repeat owns the global playback route. Turn it off before selecting another layer.");
+        bool suspendBaseRepeat = landing is { } target && target != AnimationSlot.Base &&
+            current.LoopedSlots.ContainsKey(AnimationSlot.Base);
 
-        // Capture the incoming timeline of the slot this play lands on
-        // (the sheet routes it), once per slot, BEFORE it is overwritten.
-        // The base slot is the base capture's job; 0 records "was empty".
+        // Capture each non-base slot before Poser changes it.
         bool captureSlot = landing is { } slot &&
             slot != AnimationSlot.Base &&
             !current.SlotCaptures.ContainsKey(slot);
@@ -259,8 +241,18 @@ public sealed class AnimationSession
                 return o with { SlotCaptures = slots };
             });
         }
+        if (suspendBaseRepeat)
+            Mutate(actor, o =>
+            {
+                var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+                loops.Remove(AnimationSlot.Base);
+                return o with { LoopedSlots = loops, BaseRepeatSuspended = true };
+            });
         return AnimationResult.Ok();
     }
+
+    private static bool HasLayerSelection(AnimationOverrides overrides) =>
+        overrides.SlotCaptures.Keys.Any(slot => slot != AnimationSlot.Base);
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId)
     {
@@ -285,8 +277,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>Restores the captured base state and clears the selection;
-    /// speed, lips, and the rest are untouched.</summary>
+    /// <summary>Restores the captured base state.</summary>
     public AnimationResult StopBase(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -300,9 +291,7 @@ public sealed class AnimationSession
         var result = _port.RestoreBase(actor, capture);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Base restore failed.");
-        // Ownership is released only AFTER the native restore landed; a
-        // failure keeps the capture so the next attempt retries instead
-        // of silently abandoning the override on a live actor.
+        // Clear ownership after restoration succeeds.
         Mutate(actor, o => o with { BaseTimeline = null, BaseCapture = null });
         return AnimationResult.Ok();
     }
@@ -359,7 +348,12 @@ public sealed class AnimationSession
                 loops.Remove(slot);
                 wanted.Remove(slot);
             }
-            return o with { LoopedSlots = loops, LoopWantedSlots = wanted };
+            return o with
+            {
+                LoopedSlots = loops,
+                LoopWantedSlots = wanted,
+                BaseRepeatSuspended = on ? o.BaseRepeatSuspended : false,
+            };
         });
         if (!on)
             return AnimationResult.Ok();
@@ -370,12 +364,22 @@ public sealed class AnimationSession
         if (target == 0)
             return AnimationResult.Ok();
         var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
+        if (current.BaseRepeatSuspended || HasLayerSelection(current))
+        {
+            Mutate(actor, o => o with
+            {
+                BaseCapture = o.BaseCapture ?? captured,
+                BaseRepeatSuspended = true,
+            });
+            return AnimationResult.Ok();
+        }
         var armed = _port.SetForceLoop(actor, target);
         if (!armed.Success)
             return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
         Mutate(actor, o => o with
         {
             BaseCapture = o.BaseCapture ?? captured,
+            BaseRepeatSuspended = false,
             LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
             {
                 [AnimationSlot.Base] = target,
@@ -464,14 +468,7 @@ public sealed class AnimationSession
         return Blend(actor, timeline);
     }
 
-    /// <summary>
-    /// Rewinds every paused Havok control of the actor to its frame 0 —
-    /// Brio's settle rewind between pausing and importing a pose
-    /// (ActionTimelineCapability.StopSpeedAndResetTimeline, ATC:120-165).
-    /// Owns no state: a rewind is not an override and has nothing to
-    /// restore. Suspended like the other face-moving commands, because it
-    /// snaps the very blink/lip frames a face capture is measuring.
-    /// </summary>
+    /// <summary>Rewinds paused animation controls.</summary>
     public AnimationResult RewindPausedControls(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -581,6 +578,7 @@ public sealed class AnimationSession
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
                 LoopWantedSlots = new HashSet<AnimationSlot>(),
+                BaseRepeatSuspended = false,
             });
             owned = OverridesFor(actor);
         }
@@ -676,7 +674,7 @@ public sealed class AnimationSession
 
     private ScrubGesture? _scrub;
 
-    /// <summary>The control that drives a slot, by the reference lookup.</summary>
+    /// <summary>Gets the control for a slot.</summary>
     public ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot) =>
         _port.FindSlotControl(actor, slot, out _);
 
@@ -777,13 +775,7 @@ public sealed class AnimationSession
 
     // ── Expression hold ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// Puts an expression on the face and KEEPS it there while the body
-    /// animates: play the timeline through the sequencer (it routes onto
-    /// the facial layer by its own tag), then pin that layer's speed at 0
-    /// so the last frame holds. This is Brio's expression mechanism,
-    /// verbatim; there is no other way to make a face persist.
-    /// </summary>
+    /// <summary>Holds a facial expression.</summary>
     public AnimationResult HoldExpression(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -797,12 +789,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Releases a held expression, in Brio's exact order: unpin the
-    /// facial layer, play "Straight face", unpin again (the game may
-    /// have re-registered a speed during the blend), then idle. The face
-    /// returns to whatever the base animation gives it.
-    /// </summary>
+    /// <summary>Releases a held facial expression.</summary>
     public AnimationResult ReleaseExpression(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -823,29 +810,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>
-    /// Returns the FACIAL LAYER ALONE to what Poser found there: unpin the
-    /// layer, then put back the face it was showing before the first hold.
-    /// Deliberately NOT <see cref="ReleaseExpression"/>: Brio's release is the
-    /// user's whole-actor reset button and ends with idle (3) on the BASE
-    /// slot, which puts the body back to idle. A bake owns the face and
-    /// nothing else, so it tears down the face and nothing else.
-    ///
-    /// <para>THE LAYER MUST COME OFF POSER'S OWN TIMELINE EITHER WAY, and that
-    /// is not a nicety — it is what makes a bake mean anything. The bake
-    /// measures its delta against whatever the released layer settles on, so a
-    /// teardown that leaves the expression playing measures the expression
-    /// against itself: the delta comes out identity, the pose owns nothing,
-    /// and undo has nothing to take away while the face goes on grinning under
-    /// the animation nobody took off. An actor that arrived with no facial
-    /// timeline at all therefore gets the neutral face (the same timeline
-    /// <see cref="ReleaseExpression"/> uses to say "no expression") rather than
-    /// being left on the one the bake is about to quote — playing 0 is not a
-    /// way to say "nothing".</para>
-    ///
-    /// The capture is consumed here — it has just been replayed, and a later
-    /// Reset must not replay a stale timeline over the layer.
-    /// </summary>
+    /// <summary>Restores the captured facial layer.</summary>
     public AnimationResult RestoreFacialLayer(ActorId actor)
     {
         if (Suspended() is { } blocked) return blocked;
@@ -934,6 +899,7 @@ public sealed class AnimationSession
                 {
                     LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
                     LoopWantedSlots = new HashSet<AnimationSlot>(),
+                    BaseRepeatSuspended = false,
                 };
             }
         }
@@ -963,18 +929,7 @@ public sealed class AnimationSession
             }
         }
 
-        // Replay each captured incoming slot timeline. An empty capture
-        // (0) means the slot held nothing before Poser played there — if
-        // it is STILL playing, that animation is Poser's and must go.
-        // There is no proven per-slot stop in either reference, so the
-        // game's own container-wide cancellation (the stance transition's
-        // function) clears it once for all such slots — and because it is
-        // container-wide, every OTHER active slot it will take down joins
-        // the capture set with its current timeline FIRST, so the same
-        // replay-and-retry machinery brings unrelated layers back. The
-        // base restore below rebuilds the base layer. A capture is
-        // released only when its slot is actually clear or its replay
-        // landed; anything else stays owned for the next attempt.
+        // Restore captured non-base timelines.
         if (owned.SlotCaptures.Count > 0)
         {
             var liveRead = _port.Read(actor);
