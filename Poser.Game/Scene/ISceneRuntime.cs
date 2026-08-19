@@ -353,9 +353,11 @@ internal interface ISceneRuntime
     /// <summary>Creates one additional camera from its document.</summary>
     object? CreateCamera(SceneCamera data, out string? detail);
 
-    /// <summary>Sets a camera's followed actor (null camera = the default
-    /// camera); null on success.</summary>
-    string? SetCameraTarget(object? camera, object targetActor, string displayName);
+    /// <summary>Sets a camera's followed actor and saved identity-lock state
+    /// (null camera = the default camera); null on success.</summary>
+    string? SetCameraTarget(
+        object? camera, object targetActor, string displayName,
+        bool targetLocked);
 
     /// <summary>Makes a camera live (null = the default camera).</summary>
     string? SetLiveCamera(object? camera);

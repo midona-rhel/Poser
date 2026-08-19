@@ -691,7 +691,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     public string? SetCameraTarget(
-        object? camera, object targetActor, string displayName)
+        object? camera, object targetActor, string displayName,
+        bool targetLocked)
     {
         var target = camera as IVirtualCamera ?? DefaultCamera;
         if (target is null)
@@ -706,6 +707,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             return "The target actor is no longer available.";
         if (!_cameras.SetTargetActor(target, exactActor, targetId, displayName))
             return "The target actor has no draw object.";
+        target.IsTargetLocked = targetLocked;
         return null;
     }
 

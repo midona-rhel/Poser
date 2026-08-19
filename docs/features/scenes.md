@@ -16,6 +16,8 @@ Capture does not change the scene. It refreshes pose data, takes the document
 on the framework thread, then validates and writes it in the background. A
 capture waits while pose import uses the shared refresh slot. Scene autosave
 uses its own root and retention and skips a name while a scene operation runs.
+Camera targets retain their exact saved actor relationship and whether that
+relationship was locked; stale actor generations are never rebound.
 
 ## Centering the live camera
 

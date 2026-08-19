@@ -295,6 +295,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             TargetActorName = original.TargetActorName,
             TargetActor = original.TargetActor,
             TargetActorId = original.TargetActorId,
+            IsTargetLocked = original.IsTargetLocked,
             DisableCollision = original.DisableCollision,
             Position = original.Position,
             SpawnPosition = original.SpawnPosition,
@@ -411,6 +412,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         target.TargetActorName = string.Empty;
         target.TargetActor = null;
         target.TargetActorId = null;
+        target.IsTargetLocked = false;
     }
 
     /// <summary>Centers the current live orbit camera on the actor's drawn

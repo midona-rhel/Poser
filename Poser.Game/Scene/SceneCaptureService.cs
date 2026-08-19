@@ -700,7 +700,7 @@ public sealed class SceneCaptureService
             Guid? targetKey = null;
             var targetName = string.Empty;
             var targetOffset = System.Numerics.Vector3.Zero;
-            if (!string.IsNullOrEmpty(camera.TargetActorName))
+            if (camera.TargetActorId != null)
             {
                 var target = ResolveTarget(camera, actorKeys);
                 if (target is { } resolved)
@@ -725,6 +725,7 @@ public sealed class SceneCaptureService
                 TargetActorKey = targetKey,
                 TargetActorName = targetName,
                 TargetOffset = targetOffset,
+                IsTargetLocked = targetKey != null && camera.IsTargetLocked,
             });
         }
     }
@@ -738,6 +739,7 @@ public sealed class SceneCaptureService
         if (camera.TargetActorId is not { } targetId ||
             _bindings.Resolve(targetId) is not
                 { Success: true, Value: { } exact } ||
+            !ReferenceEquals(exact, camera.TargetActor) ||
             _bindings.GetActorId(exact) != targetId)
             return null;
         return actorKeys.TryGetValue(exact, out var key) ? key : null;

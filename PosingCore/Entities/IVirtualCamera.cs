@@ -74,6 +74,14 @@ public interface IVirtualCamera
     /// is presentation only and must never recover this identity.</summary>
     ActorId? TargetActorId { get; set; }
 
+    /// <summary>Retains the exact target actor until explicitly unlocked.
+    /// The target identity may exist while this is false.</summary>
+    bool IsTargetLocked
+    {
+        get => false;
+        set { }
+    }
+
     /// <summary>The native actor reference retained by the follow state. It
     /// must be the exact object admitted for <see cref="TargetActorId"/>;
     /// this is intentionally separate from the display name.</summary>

@@ -1964,36 +1964,6 @@ public class MainWindow : Window
             help: "Follow moves the camera with the bones, Pan swings the "
                 + "view onto them, Follow and pan blends both");
 
-        var actorChoices = _scene.Snapshot.Actors
-            .Where(candidate => candidate.Skeletons.Count > 0)
-            .ToArray();
-        var actorLabels = actorChoices.Select(ActorDisplayName).ToArray();
-        int selectedActor = Array.FindIndex(
-            actorChoices, candidate => candidate.Id == actor?.Id);
-        if (actorChoices.Length > 0)
-            form.Dropdown(
-                "Actor",
-                actorLabels,
-                selectedActor,
-                selected =>
-                {
-                    if ((uint)selected < (uint)actorChoices.Length)
-                        SelectCameraTrackingActor(
-                            cameraId, camera, actorChoices[selected].Id);
-                },
-                help: "Choose the one exact actor whose bones this camera tracks",
-                disabled: locked);
-        else
-            form.Actions(
-                "Actor",
-                actions => actions.Button(
-                    "No actors available",
-                    static () => { },
-                    style: ControlStyle.Workspace with
-                        { Width = UiWidth.Fill },
-                    disabled: true,
-                    id: "camera-track-no-actors"));
-
         form.Actions(
             string.Empty,
             actions => actions.Button(
@@ -2020,6 +1990,8 @@ public class MainWindow : Window
     {
         if (!ResolveExactCamera(cameraId, camera))
             return null;
+        if (camera.IsTargetLocked && camera.TargetActorId is null)
+            _cameraService.ClearTargetActor(camera);
 
         ActorId? trackedOwner = null;
         for (int i = camera.TrackedBones.Count - 1; i >= 0; i--)
@@ -2038,19 +2010,19 @@ public class MainWindow : Window
                 camera.TrackedBones.RemoveAt(i);
         }
 
-        if (camera.TargetActorId is { } lockedId)
+        if (camera.TargetActorId is { } targetId)
         {
-            if (!TryResolveExactActor(lockedId, out var lockedActor) ||
-                !ReferenceEquals(camera.TargetActor, lockedActor) ||
-                ResolveActorDescriptor(lockedId) is not { } lockedDescriptor)
+            if (!TryResolveExactActor(targetId, out var targetActor) ||
+                !ReferenceEquals(camera.TargetActor, targetActor) ||
+                ResolveActorDescriptor(targetId) is not { } targetDescriptor)
             {
                 _cameraService.ClearTargetActor(camera);
             }
             else
             {
-                if (trackedOwner is { } owner && owner != lockedId)
+                if (trackedOwner is { } owner && owner != targetId)
                     camera.TrackedBones.Clear();
-                return lockedDescriptor;
+                return targetDescriptor;
             }
         }
 
@@ -2068,8 +2040,8 @@ public class MainWindow : Window
         return nativeDescriptor;
     }
 
-    /// <summary>Resolves the locked actor or the single exact owner of every
-    /// tracked bone. Mixed or stale sets have no authority.</summary>
+    /// <summary>Resolves the exact explicit target, then the current native
+    /// game target. Display names never recover identity.</summary>
     private ActorDescriptor? ResolveCameraTrackedActor(IVirtualCamera camera)
     {
         if (camera.TargetActorId is { } targetId)
@@ -2080,19 +2052,12 @@ public class MainWindow : Window
             return null;
         }
 
-        ActorId? owner = null;
-        foreach (var tracked in camera.TrackedBones)
-        {
-            if (_bindings.GetBoneId(tracked) is not { } boneId ||
-                _bindings.Resolve(boneId) is not
-                    { Success: true, Value: { } exact } ||
-                !ReferenceEquals(exact, tracked))
-                return null;
-            owner ??= boneId.Skeleton.Actor;
-            if (owner != boneId.Skeleton.Actor)
-                return null;
-        }
-        return owner is { } actorId ? ResolveActorDescriptor(actorId) : null;
+        if (_actorManager.GetGPoseTarget() is not { } native ||
+            _bindings.GetActorId(native) is not { } nativeId ||
+            !TryResolveExactActor(nativeId, out var exactNative) ||
+            !ReferenceEquals(native, exactNative))
+            return null;
+        return ResolveActorDescriptor(nativeId);
     }
 
     private void PumpCameraBonePicker(
@@ -2118,26 +2083,6 @@ public class MainWindow : Window
                 new HashSet<string>(StringComparer.Ordinal));
         }
         _cameraTrackingBonePicker.Draw();
-    }
-
-    private void SelectCameraTrackingActor(
-        CameraId cameraId, IVirtualCamera camera, ActorId actorId)
-    {
-        if (camera.IsLocked ||
-            _selection.Primary is not
-                { Kind: SceneEntityKind.Camera, Camera: { } selectedCamera } ||
-            selectedCamera != cameraId ||
-            !ResolveExactCamera(cameraId, camera) ||
-            ResolveActorDescriptor(actorId) is not { } actor ||
-            !ResolveExactActor(actorId))
-            return;
-
-        var previous = ReconcileCameraTrackingActor(cameraId, camera)?.Id;
-        if (!_cameraPane.SetTrackingActor(
-                camera, actorId, ActorDisplayName(actor)))
-            return;
-        if (previous != actorId)
-            camera.TrackedBones.Clear();
     }
 
     private void OpenCameraBonePicker(

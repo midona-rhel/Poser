@@ -157,10 +157,12 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
     public string TargetActorName { get; set; } = string.Empty;
 
     /// <summary>The native reference retained for per-frame follow updates.
-    /// Recenter uses <see cref="TargetActorId"/>, never this pointer.</summary>
+    /// Exact target operations require this reference and its id to agree.</summary>
     public IActor? TargetActor { get; internal set; }
 
     public ActorId? TargetActorId { get; set; }
+
+    public bool IsTargetLocked { get; set; }
 
     public Vector3 WorldPosition
     {
@@ -328,6 +330,7 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         TargetActorName = string.Empty;
         TargetActor = null;
         TargetActorId = null;
+        IsTargetLocked = false;
         DisableCollision = false;
         DelimitCamera = false;
         IsPortraitMode = false;

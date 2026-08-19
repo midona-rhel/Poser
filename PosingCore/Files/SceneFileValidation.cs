@@ -605,7 +605,8 @@ public static class SceneFileValidation
                     $"{label} follows missing actor {target:N}.");
         }
         else if (camera.TargetOffset != Vector3.Zero ||
-                 !string.IsNullOrEmpty(camera.TargetActorName))
+                 !string.IsNullOrEmpty(camera.TargetActorName) ||
+                 camera.IsTargetLocked)
         {
             return Fail(SceneFileValidationFailureKind.Relationship,
                 $"{label} carries target state without a target actor.");

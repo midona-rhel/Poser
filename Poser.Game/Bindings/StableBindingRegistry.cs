@@ -557,7 +557,7 @@ public sealed class StableBindingRegistry
 
             if (HasCameraTargetResidual(
                     camera.TargetActor, camera.TargetActorName,
-                    camera.TargetOffset))
+                    camera.TargetOffset, camera.IsTargetLocked))
                 _cameras.ClearTargetActor(camera);
         }
     }
@@ -575,16 +575,16 @@ public sealed class StableBindingRegistry
             ReferenceEquals(retainedTarget, currentTarget);
     }
 
-    /// <summary>Any retained follow component is residual state when the
-    /// exact target id is absent, including a native pointer with an empty
-    /// name and zero offset.</summary>
+    /// <summary>Any retained follow component or lock is residual state when
+    /// the exact target id is absent.</summary>
     internal static bool HasCameraTargetResidual(
         IActor? retainedTarget,
         string targetName,
-        Vector3 targetOffset)
+        Vector3 targetOffset,
+        bool targetLocked = false)
     {
         return retainedTarget is not null || targetName.Length > 0 ||
-            targetOffset != Vector3.Zero;
+            targetOffset != Vector3.Zero || targetLocked;
     }
 
     /// <summary>
