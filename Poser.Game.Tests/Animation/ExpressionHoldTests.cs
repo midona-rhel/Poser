@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Numerics;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
@@ -12,6 +13,7 @@ using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Game.Animation;
 using Poser.Game.Bindings;
+using Poser.Services;
 
 namespace Poser.Game.Tests.Animation;
 
@@ -115,9 +117,12 @@ public sealed class ExpressionHoldTests
         Assert.True(app.Hold.Begin(Actor, Smile).Success);
         app.Framework.FireUpdate();
         Assert.Null(app.Animation.HeldExpressionFor(Actor));
+        app.SetFace(1);
+        app.Framework.FireUpdate();
+        app.Framework.FireUpdate();
         app.Framework.FireUpdate();
         Assert.Equal(Smile, app.Animation.HeldExpressionFor(Actor));
-        Assert.True(app.Animation.ReleaseExpression(Actor).Success);
+        Assert.True(app.Hold.Release(Actor).Success);
 
         Assert.Equal(Incoming, app.Port.LiveFacialTimeline);
         Assert.True(app.Animation.OverridesFor(Actor).IsPaused);
@@ -128,6 +133,13 @@ public sealed class ExpressionHoldTests
             app.Port.Calls.TakeLast(2));
         Assert.Null(app.Animation.HeldExpressionFor(Actor));
         Assert.Null(app.Animation.SelectedFor(Actor, AnimationSlot.Facial));
+
+        Assert.True(app.Hold.Begin(Actor, Smile).Success);
+        Assert.True(app.Hold.IsPendingFor(Actor));
+        Assert.True(app.Hold.Release(Actor).Success);
+        Assert.False(app.Hold.IsPendingFor(Actor));
+        Assert.Equal(Incoming, app.Port.LiveFacialTimeline);
+        Assert.True(app.Animation.OverridesFor(Actor).IsPaused);
     }
 
     [Fact]
@@ -155,18 +167,27 @@ public sealed class ExpressionHoldTests
 
     private sealed class CoordinatorHarness : IDisposable
     {
+        private readonly BoneProxy _bone;
         private ulong _revision = 1;
 
         public CoordinatorHarness()
         {
             var skeleton = new SkeletonId(Actor, PoseSlot.Character, 4);
+            Bone = new BoneId(skeleton, 0, 7, "j_kao");
             Scene = new SceneSession(new SelectionSession());
-            Scene.Refresh(Snapshot(Describe(skeleton), _revision));
+            Scene.Refresh(Snapshot(Describe(skeleton, Bone), _revision));
             Bindings = (StableBindingRegistry)RuntimeHelpers
                 .GetUninitializedObject(typeof(StableBindingRegistry));
             SetField(Bindings, "_actorBindings", new Dictionary<ActorId, IActor>
             {
                 [Actor] = DispatchProxy.Create<IActor, DefaultProxy>(),
+            });
+            var bone = DispatchProxy.Create<IBone, BoneProxy>();
+            _bone = (BoneProxy)(object)bone;
+            _bone.Raw = Raw(0);
+            SetField(Bindings, "_boneBindings", new Dictionary<BoneId, IBone>
+            {
+                [Bone] = bone,
             });
             Framework = FrameworkProxy.Create();
             Port = FakePort.Create();
@@ -181,11 +202,13 @@ public sealed class ExpressionHoldTests
                 Bindings,
                 Scene,
                 Animation,
+                DispatchProxy.Create<IBonePosingService, DefaultProxy>(),
                 Session,
                 DispatchProxy.Create<IPluginLog, DefaultProxy>());
         }
 
         public SceneSession Scene { get; }
+        public BoneId Bone { get; }
         public StableBindingRegistry Bindings { get; }
         public FrameworkProxy Framework { get; }
         public FakePort Port { get; }
@@ -196,18 +219,37 @@ public sealed class ExpressionHoldTests
         public void ReplaceSkeleton()
         {
             var replacement = new SkeletonId(Actor, PoseSlot.Character, 5);
-            Scene.Refresh(Snapshot(Describe(replacement), ++_revision));
+            var replacementBone = new BoneId(replacement, 0, 7, "j_kao");
+            Scene.Refresh(Snapshot(
+                Describe(replacement, replacementBone), ++_revision));
         }
+
+        public void SetFace(float x) => _bone.Raw = Raw(x);
 
         public void Dispose() => Hold.Dispose();
 
-        private static ActorDescriptor Describe(SkeletonId skeleton) =>
+        private static ActorDescriptor Describe(
+            SkeletonId skeleton, BoneId bone) =>
             new(Actor, "Actor",
-                [new SkeletonDescriptor(skeleton, Array.Empty<BoneDescriptor>())]);
+                [new SkeletonDescriptor(skeleton,
+                    [new BoneDescriptor(bone, bone.CanonicalName, null)])]);
 
         private static SceneSnapshot Snapshot(
             ActorDescriptor actor, ulong revision) =>
             new(revision, [actor], [], [], []);
+
+        private static Poser.Transform Raw(float x) =>
+            new(new Vector3(x, 0, 0), Quaternion.Identity, Vector3.One);
+    }
+
+    private class BoneProxy : DispatchProxy
+    {
+        public Poser.Transform Raw { get; set; }
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            method?.Name == "get_LastRawTransform"
+                ? Raw
+                : Default(method?.ReturnType);
     }
 
     private sealed class MutableSessionSource : ISessionGenerationSource

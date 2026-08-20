@@ -225,6 +225,9 @@ public sealed record AnimationOverrides
     /// <summary>Explicit non-base timeline selections.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> SelectedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
+    /// <summary>Last timeline successfully applied to each non-base slot.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> AppliedSlots { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
     public float? OverallSpeed { get; init; }
     /// <summary>Slots with active Poser repeat arms.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
@@ -265,7 +268,7 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        SelectedSlots.Count > 0 || SlotSpeedCaptures.Count > 0 ||
+        SelectedSlots.Count > 0 || AppliedSlots.Count > 0 || SlotSpeedCaptures.Count > 0 ||
         LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || BaseRepeatSuspended ||
         SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;

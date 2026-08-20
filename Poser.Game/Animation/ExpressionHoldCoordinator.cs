@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Lifecycle;
@@ -7,26 +8,39 @@ using Poser.Application.Scene;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
+using Poser.Entities;
 using Poser.Game.Bindings;
+using Poser.Services;
+using LegacyTransform = Poser.Transform;
 
 namespace Poser.Game.Animation;
 
-/// <summary>Lets a facial timeline evaluate for two validated game frames.</summary>
+/// <summary>Holds a facial timeline after its bound face output settles.</summary>
 public sealed class ExpressionHoldCoordinator : IDisposable
 {
-    private const int SettleTicks = 2;
+    private const int StableTicks = 2;
+    private const int SettleTimeoutTicks = 20;
+    private const float StableEpsilon = 1e-5f;
 
-    private sealed record PendingHold(
-        ActorId Actor,
-        SkeletonId Skeleton,
-        SessionGeneration Session,
-        ushort Timeline,
-        int Ticks);
+    private sealed class PendingHold
+    {
+        public required ActorId Actor;
+        public required SkeletonId Skeleton;
+        public required SessionGeneration Session;
+        public required ushort Timeline;
+        public required List<BoneId> Bones;
+        public required List<LegacyTransform> Baseline;
+        public List<LegacyTransform> LastReading = new();
+        public int StableRuns;
+        public int SettleTicks;
+        public bool Changed;
+    }
 
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;
     private readonly SceneSession _scene;
     private readonly AnimationSession _animation;
+    private readonly IBonePosingService _posing;
     private readonly ISessionGenerationSource _sessionGeneration;
     private readonly IPluginLog _log;
     private PendingHold? _pending;
@@ -37,6 +51,7 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         StableBindingRegistry bindings,
         SceneSession scene,
         AnimationSession animation,
+        IBonePosingService posing,
         ISessionGenerationSource sessionGeneration,
         IPluginLog log)
     {
@@ -44,12 +59,25 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         _bindings = bindings;
         _scene = scene;
         _animation = animation;
+        _posing = posing;
         _sessionGeneration = sessionGeneration;
         _log = log;
         _framework.Update += OnFrameworkUpdate;
     }
 
     public bool IsPendingFor(ActorId actor) => _pending?.Actor == actor;
+
+    /// <summary>Cancels this actor's settle drive and restores its facial baseline.</summary>
+    public AnimationResult Release(ActorId actor)
+    {
+        if (_pending is { Actor: var pendingActor } && pendingActor == actor)
+        {
+            _pending = null;
+            _animation.AbandonExpressionHold(
+                actor, discardRestorePoint: false);
+        }
+        return _animation.ReleaseExpression(actor);
+    }
 
     /// <summary>Starts the selected expression and reserves its validated hold.</summary>
     public AnimationResult Begin(ActorId actor, ushort timeline)
@@ -70,11 +98,28 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         if (_bindings.Resolve(actor) is not { Success: true })
             return AnimationResult.Fail("The actor binding is stale.");
 
+        var bones = new List<BoneId>();
+        foreach (var bone in skeleton.Bones)
+            if (IsFaceBone(bone.Id.CanonicalName))
+                bones.Add(bone.Id);
+        if (bones.Count == 0)
+            return AnimationResult.Fail("The actor has no bound face bones.");
+        if (!TryReadFace(bones, out var baseline, out var problem))
+            return AnimationResult.Fail(
+                problem ?? "The actor has no bound face bones.");
+
         var begun = _animation.BeginExpressionHold(actor, timeline);
         if (!begun.Success)
             return begun;
-        _pending = new PendingHold(
-            actor, skeleton.Id, session, timeline, SettleTicks);
+        _pending = new PendingHold
+        {
+            Actor = actor,
+            Skeleton = skeleton.Id,
+            Session = session,
+            Timeline = timeline,
+            Bones = bones,
+            Baseline = baseline,
+        };
         _log.Debug(
             $"Expression preview started actor={actor} timeline={timeline}.");
         return AnimationResult.Ok();
@@ -92,9 +137,22 @@ public sealed class ExpressionHoldCoordinator : IDisposable
             return;
         }
 
-        pending = pending with { Ticks = pending.Ticks - 1 };
-        _pending = pending;
-        if (pending.Ticks > 0)
+        RequestRawRefresh(pending);
+        if (!TryReadFace(pending.Bones, out var reading, out var problem))
+        {
+            CancelStale(pending,
+                $"Expression preview cancelled: {problem}");
+            return;
+        }
+
+        pending.Changed |= !Settled(reading, pending.Baseline);
+        pending.StableRuns = pending.Changed &&
+            Settled(reading, pending.LastReading)
+            ? pending.StableRuns + 1
+            : 0;
+        pending.LastReading = reading;
+        bool timedOut = ++pending.SettleTicks >= SettleTimeoutTicks;
+        if (pending.StableRuns < StableTicks && !timedOut)
             return;
 
         _pending = null;
@@ -110,7 +168,8 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         else
             _log.Debug(
                 $"Expression preview held actor={pending.Actor} " +
-                $"timeline={pending.Timeline}.");
+                $"timeline={pending.Timeline} ticks={pending.SettleTicks}" +
+                (timedOut ? " timeout=true." : "."));
     }
 
     private string? Validate(PendingHold pending)
@@ -128,7 +187,77 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         if (_animation.SelectedFor(pending.Actor, AnimationSlot.Facial) !=
             pending.Timeline)
             return "Expression preview cancelled because its selection changed.";
+        foreach (var bone in pending.Bones)
+            if (_bindings.Resolve(bone) is not { Success: true })
+                return "Expression preview cancelled because a face binding changed.";
         return null;
+    }
+
+    private void CancelStale(PendingHold pending, string detail)
+    {
+        _pending = null;
+        _animation.AbandonExpressionHold(pending.Actor);
+        _log.Warning(detail);
+    }
+
+    private static bool IsFaceBone(string name) =>
+        name.StartsWith("j_f_", StringComparison.Ordinal) ||
+        name.Equals("j_kao", StringComparison.Ordinal) ||
+        name.StartsWith("j_ago", StringComparison.Ordinal);
+
+    private bool TryReadFace(
+        IReadOnlyList<BoneId> bones,
+        out List<LegacyTransform> reading,
+        out string? problem)
+    {
+        reading = new List<LegacyTransform>(bones.Count);
+        problem = null;
+        foreach (var bone in bones)
+        {
+            if (_bindings.Resolve(bone) is not { Success: true, Value: { } live })
+            {
+                problem = $"face bone {bone.CanonicalName} is no longer bound";
+                return false;
+            }
+            reading.Add(live.LastRawTransform);
+        }
+        return true;
+    }
+
+    private static bool Settled(
+        IReadOnlyList<LegacyTransform> current,
+        IReadOnlyList<LegacyTransform> previous)
+    {
+        if (current.Count != previous.Count)
+            return false;
+        for (var index = 0; index < current.Count; index++)
+        {
+            var a = current[index];
+            var b = previous[index];
+            if (Math.Abs(a.Position.X - b.Position.X) > StableEpsilon ||
+                Math.Abs(a.Position.Y - b.Position.Y) > StableEpsilon ||
+                Math.Abs(a.Position.Z - b.Position.Z) > StableEpsilon ||
+                Math.Abs(a.Rotation.X - b.Rotation.X) > StableEpsilon ||
+                Math.Abs(a.Rotation.Y - b.Rotation.Y) > StableEpsilon ||
+                Math.Abs(a.Rotation.Z - b.Rotation.Z) > StableEpsilon ||
+                Math.Abs(a.Rotation.W - b.Rotation.W) > StableEpsilon ||
+                Math.Abs(a.Scale.X - b.Scale.X) > StableEpsilon ||
+                Math.Abs(a.Scale.Y - b.Scale.Y) > StableEpsilon ||
+                Math.Abs(a.Scale.Z - b.Scale.Z) > StableEpsilon)
+                return false;
+        }
+        return true;
+    }
+
+    private void RequestRawRefresh(PendingHold pending)
+    {
+        foreach (var bone in pending.Bones)
+            if (_bindings.Resolve(bone) is
+                { Success: true, Value: { Skeleton: { } skeleton } })
+            {
+                _posing.RequestRawTransformRefresh(skeleton);
+                return;
+            }
     }
 
     private ActorDescriptor? FindActor(ActorId actor)

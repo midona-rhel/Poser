@@ -491,16 +491,38 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Unverified_layer_repeat_refuses_without_writes()
+    public void Upper_repeat_arms_only_after_apply_and_tracks_applied_not_staged_selection()
     {
         var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
         var session = new AnimationSession(port.Port);
 
-        var result = session.SetSlotLoop(ActorA, AnimationSlot.UpperBody, 42, true);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.UpperBody, 0, true).Success);
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.UpperBody, 43).Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetSlotLoop:"));
 
-        Assert.False(result.Success);
-        Assert.DoesNotContain(port.Calls, call => call == "SetSlotLoop" ||
-            call.StartsWith("SetForceLoop"));
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.UpperBody).Success);
+        Assert.Contains("SetSlotLoop:UpperBody:43", port.Calls);
+        Assert.True(port.Calls.LastIndexOf("SetForceLoop:42") <
+            port.Calls.LastIndexOf("SetSlotLoop:UpperBody:43"),
+            string.Join(" | ", port.Calls));
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.UpperBody, 44).Success);
+        Assert.Equal((ushort)43,
+            session.OverridesFor(ActorA).LoopedSlots[AnimationSlot.UpperBody]);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.UpperBody, 0, false).Success);
+        Assert.Contains("ClearSlotLoop:UpperBody", port.Calls);
+        Assert.Equal((ushort)44, session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.UpperBody, 0, true).Success);
+        Assert.Equal("SetSlotLoop:UpperBody:43", port.Calls.Last());
+        var reset = session.ResetSlot(ActorA, AnimationSlot.UpperBody);
+        Assert.True(reset.Success, reset.Detail);
+        Assert.False(session.LoopWantedFor(ActorA, AnimationSlot.UpperBody));
+        Assert.False(session.OverridesFor(ActorA).AppliedSlots.ContainsKey(
+            AnimationSlot.UpperBody));
     }
 
     [Fact]
@@ -755,6 +777,12 @@ public sealed class AnimationOwnershipTests
                         FailForceLoopFor == (ushort)args[1]!
                         ? AnimationPortResult.Fail("repeat arm failed")
                         : AnimationPortResult.Ok();
+                case "SetSlotLoop":
+                    Calls.Add($"SetSlotLoop:{args![1]}:{args[2]}");
+                    return AnimationPortResult.Ok();
+                case "ClearSlotLoop":
+                    Calls.Add($"ClearSlotLoop:{args![1]}");
+                    return AnimationPortResult.Ok();
                 case "SetSlotSpeed":
                     Calls.Add($"SetSlotSpeed:{args![1]}:{args[2]}");
                     return AnimationPortResult.Ok();

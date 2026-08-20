@@ -434,15 +434,15 @@ public sealed class AnimationPane
                 continue;
             }
             DrawLayer(form, actor, reading, owned, slot, label, !advanced);
-            if (slot == AnimationSlot.Base)
+            if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
             {
                 form.Switch(
                     "Loop",
-                    _animation.LoopWantedFor(actor, AnimationSlot.Base),
+                    _animation.LoopWantedFor(actor, slot),
                     next => Report(
                         _animation.SetSlotLoop(
-                            actor, AnimationSlot.Base, 0, next),
-                        "Full body loop"),
+                            actor, slot, 0, next),
+                        $"{label} loop"),
                     disabled: !advanced);
             }
         }
@@ -523,7 +523,6 @@ public sealed class AnimationPane
         ushort live = command is { } staged
             ? reading.TimelineFor(staged.Entry.Slot)
             : (ushort)0;
-        var actionStyle = FixedActionStyle();
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
@@ -543,12 +542,10 @@ public sealed class AnimationPane
                 actions.Button(
                     "Apply",
                     () => ApplyGeneral(actor),
-                    style: actionStyle,
                     disabled: advanced || command == null);
                 actions.Button(
                     "Reset",
                     () => ResetGeneral(actor),
-                    style: actionStyle,
                     disabled: advanced || (command == null &&
                         !_animation.OwnsSlot(actor, AnimationSlot.Base) &&
                         !_animation.LoopWantedFor(actor, AnimationSlot.Base)));
@@ -683,9 +680,9 @@ public sealed class AnimationPane
                 actions.Button(
                     "Reset",
                     () => ReportExpression(
-                        _animation.ReleaseExpression(actor), "Expression"),
+                        _expressionHold.Release(actor), "Expression"),
                     style: poseSurface ? default : actionStyle,
-                    disabled: disabled || pending || (held == 0 && selected == 0),
+                    disabled: disabled || (held == 0 && selected == 0),
                     help: "Restore the facial state captured before Poser's first choice");
                 if (poseSurface)
                 {

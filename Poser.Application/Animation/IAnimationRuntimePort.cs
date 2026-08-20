@@ -54,7 +54,7 @@ public interface IAnimationRuntimePort
     AnimationPortResult CancelActiveTimeline(ActorId actor);
 
     // ── Loops ───────────────────────────────────────────
-    /// <summary>Arms a legacy replay loop.</summary>
+    /// <summary>Arms exact-slot replay for verified Base or Upper ownership.</summary>
     AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
     AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>

@@ -396,13 +396,15 @@ public sealed class AnimationSession
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)
     {
         if (Suspended() is { } blocked) return blocked;
-        if (slot != AnimationSlot.Base)
+        if (slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
             return AnimationResult.Fail(
                 "Repeat is unavailable for this layer: exact replay is unverified.");
         var current = OverridesFor(actor);
-        if (!on && current.LoopedSlots.ContainsKey(AnimationSlot.Base))
+        if (!on && current.LoopedSlots.ContainsKey(slot))
         {
-            var cleared = _port.SetForceLoop(actor, 0);
+            var cleared = slot == AnimationSlot.Base
+                ? _port.SetForceLoop(actor, 0)
+                : _port.ClearSlotLoop(actor, slot);
             if (!cleared.Success)
                 return AnimationResult.Fail(cleared.Detail ?? "Repeat clear failed.");
         }
@@ -426,6 +428,28 @@ public sealed class AnimationSession
         });
         if (!on)
             return AnimationResult.Ok();
+
+        if (slot == AnimationSlot.UpperBody)
+        {
+            // Selection is staged. Repeat owns only a timeline that Apply
+            // has already placed in the native Upper slot.
+            ushort upperTarget = timeline != 0
+                ? timeline
+                : current.AppliedSlots.GetValueOrDefault(slot);
+            if (upperTarget == 0)
+                return AnimationResult.Ok();
+            var armedUpper = _port.SetSlotLoop(actor, slot, upperTarget);
+            if (!armedUpper.Success)
+                return AnimationResult.Fail(armedUpper.Detail ?? "Upper-body loop arm failed.");
+            Mutate(actor, o => o with
+            {
+                LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
+                {
+                    [slot] = upperTarget,
+                },
+            });
+            return AnimationResult.Ok();
+        }
 
         // Zero means sticky intent. Only a Poser selection or an explicit
         // timeline may establish native base ownership.
@@ -648,7 +672,33 @@ public sealed class AnimationSession
             return SetLipsCore(actor, selected);
 
         var result = BlendCore(actor, selected, slot);
-        return result;
+        if (!result.Success)
+            return result;
+
+        Mutate(actor, o =>
+        {
+            var applied = new Dictionary<AnimationSlot, ushort>(o.AppliedSlots)
+            {
+                [slot] = selected,
+            };
+            return o with { AppliedSlots = applied };
+        });
+        if (slot != AnimationSlot.UpperBody ||
+            !OverridesFor(actor).LoopWantedSlots.Contains(slot))
+            return AnimationResult.Ok();
+
+        var armed = _port.SetSlotLoop(actor, slot, selected);
+        if (!armed.Success)
+            return AnimationResult.Fail(armed.Detail ?? "Upper-body loop arm failed.");
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
+            {
+                [slot] = selected,
+            };
+            return o with { LoopedSlots = loops };
+        });
+        return AnimationResult.Ok();
     }
 
     private AnimationResult PlayBaseEmoteCore(
@@ -722,9 +772,14 @@ public sealed class AnimationSession
         if (Suspended() is { } blocked) return blocked;
         if (!AnimationSlots.Selectable.Contains(slot))
             return AnimationResult.Fail("This animation layer cannot be reset.");
-        if (slot == AnimationSlot.Facial &&
-            OverridesFor(actor).HeldExpression != null)
-            return ReleaseExpressionCore(actor);
+        if (slot == AnimationSlot.Facial)
+        {
+            var facial = OverridesFor(actor);
+            if (facial.HeldExpression != null ||
+                facial.SelectedSlots.ContainsKey(AnimationSlot.Facial) ||
+                facial.SlotCaptures.ContainsKey(AnimationSlot.Facial))
+                return ReleaseExpressionCore(actor);
+        }
 
         var failures = new List<string>();
         // Restore speed first. A failed unpin must not clear a selection
@@ -799,6 +854,13 @@ public sealed class AnimationSession
         if (!current.SlotCaptures.TryGetValue(slot, out var incoming))
             return AnimationResult.Fail("The layer restore point is unavailable.");
 
+        if (current.LoopedSlots.ContainsKey(slot))
+        {
+            var loopCleared = _port.ClearSlotLoop(actor, slot);
+            if (!loopCleared.Success)
+                return AnimationResult.Fail(loopCleared.Detail ?? "Layer loop clear failed.");
+        }
+
         bool preserveRepeat = current.LoopedSlots.TryGetValue(
             AnimationSlot.Base, out var repeated);
         if (preserveRepeat)
@@ -844,10 +906,19 @@ public sealed class AnimationSession
             selected.Remove(slot);
             var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
             captures.Remove(slot);
+            var applied = new Dictionary<AnimationSlot, ushort>(o.AppliedSlots);
+            applied.Remove(slot);
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            loops.Remove(slot);
+            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
+            wanted.Remove(slot);
             return o with
             {
                 SelectedSlots = selected,
+                AppliedSlots = applied,
                 SlotCaptures = captures,
+                LoopedSlots = loops,
+                LoopWantedSlots = wanted,
                 HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
                 BaseCapture = o.BaseTimeline == null && selected.Count == 0 && captures.Count == 0
                     ? null
@@ -1290,7 +1361,11 @@ public sealed class AnimationSession
     private AnimationResult ReleaseExpressionCore(ActorId actor)
     {
         var current = OverridesFor(actor);
-        if (current.HeldExpression is not { } held)
+        ushort? active = current.HeldExpression;
+        if (active == null &&
+            current.SelectedSlots.TryGetValue(AnimationSlot.Facial, out var selected))
+            active = selected;
+        if (active is not { } held)
             return ResetSlotWithoutExpressionBridge(actor, AnimationSlot.Facial);
         if (!current.SlotCaptures.ContainsKey(AnimationSlot.Facial))
             return AnimationResult.Fail("The facial restore point is unavailable.");
@@ -1465,13 +1540,18 @@ public sealed class AnimationSession
                 }
             }
             var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
+            var applied = new Dictionary<AnimationSlot, ushort>(remaining.AppliedSlots);
             foreach (var selectedSlot in selected.Keys.ToList())
                 if (!slots.ContainsKey(selectedSlot))
+                {
                     selected.Remove(selectedSlot);
+                    applied.Remove(selectedSlot);
+                }
             remaining = remaining with
             {
                 SlotCaptures = slots,
                 SelectedSlots = selected,
+                AppliedSlots = applied,
                 HeldExpression = slots.ContainsKey(AnimationSlot.Facial)
                     ? remaining.HeldExpression
                     : null,

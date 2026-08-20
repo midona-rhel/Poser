@@ -653,7 +653,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
     }
 
-    /// <summary>Replays session loop arms whose timeline stopped.</summary>
+    /// <summary>Replays an owned slot after its native timeline drifts.</summary>
     private void EnforceLoops(IFramework framework)
     {
         if (LoopsSuspended || _loops.Count == 0)
@@ -672,7 +672,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 }
                 if (character->Timeline.TimelineSequencer.TimelineIds[slot] != arm.Timeline)
                 {
-                    PlayTimeline(character, arm.Timeline);
+                    var replayed = PlayTimeline(character, arm.Timeline);
+                    bool baseRearmed = !_forcedLoops.TryGetValue(actor, out var baseTimeline) ||
+                        TrySetForcedTimeline(&character->Timeline, baseTimeline);
+                    if (!replayed.Success || !baseRearmed)
+                    {
+                        _log.Warning(
+                            $"Animation: slot loop replay failed actor={actor} slot={slot} " +
+                            $"timeline={arm.Timeline}: " +
+                            (replayed.Detail ?? "full-body repeat rearm failed."));
+                    }
                     arm.Cooldown = LoopCooldownTicks;
                 }
             }
