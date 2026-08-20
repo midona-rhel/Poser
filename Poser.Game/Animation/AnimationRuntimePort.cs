@@ -24,6 +24,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly PosingService _posing;
     // Authoritative, stable-id keyed.
     private readonly Dictionary<ActorId, Enforcement> _enforcement = new();
+    // Poser-owned forced timelines are reasserted if a native animation
+    // update clears the field while repeat remains armed.
+    private readonly Dictionary<ActorId, ushort> _forcedLoops = new();
     // Derived index for the detours only; never a source of truth.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
     // Actors whose position lock THIS session created, so releasing it
@@ -314,7 +317,11 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             token);
     }
 
-    private void OnFrameworkUpdate(IFramework framework) => EnforceLoops(framework);
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        EnforceForcedLoops();
+        EnforceLoops(framework);
+    }
 
     /// <summary>Collects live animation controls.</summary>
     private static List<ScrubControlReading> CollectControls(Character* character, out ulong token)
@@ -403,7 +410,10 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (existing == null)
             captured = CaptureBase(character);
 
-        return PlayTimeline(character, timeline);
+        var played = PlayTimeline(character, timeline);
+        if (played.Success)
+            _forcedLoops.Remove(actor);
+        return played;
     }
 
     /// <summary>The slot the sheet's Stance column routes a timeline
@@ -576,7 +586,29 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    public void ClearLoops(ActorId actor) => _loops.Remove(actor);
+    public void ClearLoops(ActorId actor)
+    {
+        _loops.Remove(actor);
+        _forcedLoops.Remove(actor);
+    }
+
+    /// <summary>Keeps Poser's owned forced field authoritative until release.</summary>
+    private void EnforceForcedLoops()
+    {
+        if (LoopsSuspended || _forcedLoops.Count == 0)
+            return;
+        foreach (var (actor, timeline) in _forcedLoops)
+        {
+            var character = Resolve(actor, out _);
+            if (character == null ||
+                !TryReadForcedTimeline(&character->Timeline, out var current) ||
+                current == timeline)
+                continue;
+            if (TrySetForcedTimeline(&character->Timeline, timeline))
+                _log.Debug(
+                    $"Animation: reasserted full-body loop actor={actor} timeline={timeline}.");
+        }
+    }
 
     /// <summary>Replays session loop arms whose timeline stopped.</summary>
     private void EnforceLoops(IFramework framework)
@@ -613,7 +645,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         var character = Resolve(actor, out var detail);
         if (character == null)
             return AnimationPortResult.Fail(detail!);
-        TrySetForcedTimeline(&character->Timeline, timeline);
+        if (!TrySetForcedTimeline(&character->Timeline, timeline) ||
+            !TryReadForcedTimeline(&character->Timeline, out var written) ||
+            written != timeline)
+            return AnimationPortResult.Fail("The full-body repeat field rejected the write.");
+        if (timeline == 0)
+            _forcedLoops.Remove(actor);
+        else
+            _forcedLoops[actor] = timeline;
+        _log.Information(
+            $"Animation: full-body loop actor={actor} timeline={timeline} field={written}.");
         return AnimationPortResult.Ok();
     }
 
@@ -1029,6 +1070,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     {
         _framework.Update -= OnFrameworkUpdate;
         _loops.Clear();
+        _forcedLoops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
         _enforcement.Clear();

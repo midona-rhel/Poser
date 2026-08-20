@@ -14,8 +14,9 @@ selection route.
 Repeat belongs only to Full Body. It can be armed before selection without
 capturing or writing native state. A selected animation that loops natively needs
 no forced timeline. For a non-looping selection, Poser owns the verified forced
-base field transactionally. Selecting another layer suspends that force while
-preserving repeat intent, so the two controls do not fight.
+base field transactionally and reasserts it if a native animation update clears
+it. Selecting another layer releases that force before playback and preserves
+repeat intent, so the two controls do not fight.
 
 Animation > Facial and Pose > Expression share one Facial selection and restore
 point. Preview lets the timeline advance; Bake replays it before the delayed face

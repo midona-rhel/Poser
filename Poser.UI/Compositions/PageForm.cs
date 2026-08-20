@@ -320,6 +320,7 @@ public static partial class Crystarium
         /// <param name="scale">Slider travel mapping.</param>
         /// <param name="readout">Optional value formatter.</param>
         /// <param name="actions">Optional trailing actions.</param>
+        /// <param name="id">Optional identity when visible labels repeat.</param>
         public void Slider(string label, float value, float minimum, float maximum,
             Action<float> onChange, string? format = null, string? help = null,
             bool disabled = false, ControlStyle style = default,
@@ -329,9 +330,10 @@ public static partial class Crystarium
             SliderScale scale = SliderScale.Linear,
             Func<float, string>? readout = null,
             float logCurvature = 99f,
-            Action<ActionScope>? actions = null)
+            Action<ActionScope>? actions = null,
+            string? id = null)
         {
-            string id = Id(label);
+            string controlId = Id(id ?? label);
             var row = _page.BeginRow(label);
             float displayedValue = value;
             ActionScope? actionScope = null;
@@ -354,7 +356,7 @@ public static partial class Crystarium
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
             Crystarium.Slider(
-                id, value, minimum, maximum, next =>
+                controlId, value, minimum, maximum, next =>
                 {
                     displayedValue = next;
                     onChange(next);
@@ -386,7 +388,7 @@ public static partial class Crystarium
                     bandOrigin.X,
                     row.CenterControl(ActiveTheme.Controls.WorkspaceHeight).Y));
                 Crystarium.AxisWell(
-                    Ids.Join(id, "-value"),
+                    Ids.Join(controlId, "-value"),
                     "",
                     displayedValue,
                     next =>
@@ -408,8 +410,8 @@ public static partial class Crystarium
             if (actionScope != null && actionWidth > 0f)
                 DrawActions(actionScope.Items,
                     row.ControlOrigin.X + row.ControlWidth - actionWidth,
-                    actionWidth, row.Origin.Y, true, id, row.RowHeight);
-            _page.EndRow(row, id, help);
+                    actionWidth, row.Origin.Y, true, controlId, row.RowHeight);
+            _page.EndRow(row, controlId, help);
         }
 
         public void Switch(string label, bool value, Action<bool> onChange,
@@ -1059,12 +1061,14 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
-        /// <summary>Draws a read-only value with trailing actions.</summary>
+        /// <summary>Draws plain text with trailing shared actions.</summary>
         public void ReadOnlyWithActions(string label, string value,
             Action<ActionScope> content, string? help = null,
-            bool unavailable = false)
+            bool unavailable = false, string? id = null)
         {
-            string id = string.IsNullOrEmpty(label)
+            string controlId = id is { Length: > 0 }
+                ? Id(id)
+                : string.IsNullOrEmpty(label)
                 ? UnlabelledId("readonly-actions", ref _readOnlyActionRows)
                 : Id(label);
             var row = _page.BeginRow(label);
@@ -1087,8 +1091,8 @@ public static partial class Crystarium
                 });
             DrawActions(actions.Items,
                 row.ControlOrigin.X + row.ControlWidth - actionWidth,
-                actionWidth, row.Origin.Y, true, id, row.RowHeight);
-            _page.EndRow(row, id, help);
+                actionWidth, row.Origin.Y, true, controlId, row.RowHeight);
+            _page.EndRow(row, controlId, help);
         }
 
         /// <param name="warning">Uses the warning colour.</param>

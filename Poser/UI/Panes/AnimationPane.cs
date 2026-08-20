@@ -315,44 +315,58 @@ public sealed class AnimationPane
         bool paused = owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f;
         bool needsReplay = selected != 0 && live != selected;
-        string lower = label.ToLowerInvariant();
-
-        form.ReadOnly($"{label} current", NameFor(live, "None"),
-            help: $"The timeline currently reported by the native {lower} slot");
         var feed = slot switch
         {
             AnimationSlot.Base => _baseFeed,
             AnimationSlot.Lips => _lipsFeed,
             _ => SlotFeed(slot),
         };
-        form.Selector(
-            $"{label} selected",
-            NameFor(selected, "Choose"),
-            () => OpenPicker(feed, actor, selected),
-            () => Report(_animation.ResetSlot(actor, slot), $"{label} reset"),
-            available: true,
-            owned: _animation.OwnsSlot(actor, slot),
-            help: $"The {lower} animation Poser will replay until Reset");
 
-        if (slot == AnimationSlot.Base && owned.BaseRepeatSuspended)
-            form.Status("Full-body loop is suspended for layer playback.");
-        if (slot == AnimationSlot.Base && selected != 0 &&
-            _catalog.Find(selected) is { IsLoop: true })
-            form.Status("This selection loops natively; Poser does not force it.");
-        if (slot == AnimationSlot.Base)
-            form.Switch(
-                "Full body loop",
-                _animation.LoopWantedFor(actor, slot),
-                next => Report(
-                    _animation.SetSlotLoop(actor, slot, 0, next),
-                    "Full body loop"),
-                help: "Keep loop intent for explicit Full Body selections");
+        // Layer headers use the same shared read/action row; only Base has repeat.
+        form.ReadOnlyWithActions(
+            label,
+            slot == AnimationSlot.Base ? "Repeat" : string.Empty,
+            actions =>
+            {
+                if (slot == AnimationSlot.Base)
+                    actions.Switch(
+                        "Repeat",
+                        _animation.LoopWantedFor(actor, slot),
+                        next => Report(
+                            _animation.SetSlotLoop(actor, slot, 0, next),
+                            "Full body loop"));
+            },
+            id: $"anim-{slot}-header");
+
+        // Current is native state; Apply replays Poser's remembered selection.
+        form.ReadOnlyWithActions(
+            "Current",
+            NameFor(live, "None"),
+            actions =>
+            {
+                actions.Button(
+                    "Choose animation",
+                    () => OpenPicker(feed, actor, selected));
+                if (needsReplay)
+                    actions.Button(
+                        "Apply",
+                        () => Report(
+                            _animation.PlaySelectedSlot(actor, slot),
+                            $"{label} playback"));
+                else if (_animation.OwnsSlot(actor, slot))
+                    actions.Button(
+                        "Reset",
+                        () => Report(
+                            _animation.ResetSlot(actor, slot),
+                            $"{label} reset"));
+            },
+            id: $"anim-{slot}-current");
 
         float speed = owned.SlotSpeeds.TryGetValue(slot, out var overrideSpeed)
             ? overrideSpeed
             : reading.SpeedFor(slot);
         form.Slider(
-            $"{label} speed",
+            "Speed",
             speed,
             0f,
             2f,
@@ -361,7 +375,6 @@ public sealed class AnimationPane
                 $"{label} speed"),
             format: "0.00",
             marks: UnitMarks,
-            help: $"Set how fast the {lower} layer plays",
             actions: actions =>
             {
                 bool play = paused || needsReplay;
@@ -372,11 +385,9 @@ public sealed class AnimationPane
                             ? _animation.PlaySelectedSlot(actor, slot)
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
-                    disabled: play && !paused && selected == 0,
-                    help: play
-                        ? "Resume the remembered nonzero speed and replay Selected if it ended"
-                        : "Pause this layer and remember its current nonzero speed");
-            });
+                    disabled: play && !paused && selected == 0);
+            },
+            id: $"anim-{slot}-speed");
     }
 
     /// <summary>Draws the expression controls for the face workspace.</summary>

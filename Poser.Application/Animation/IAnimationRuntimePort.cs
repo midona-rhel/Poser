@@ -75,8 +75,8 @@ public interface IAnimationRuntimePort
     /// disable the stance row rather than offer writes that will fail.</summary>
     bool SupportsStance { get; }
 
-    /// <summary>Writes the forced timeline id the game re-asserts every
-    /// frame; 0 clears the loop.</summary>
+    /// <summary>Owns the forced timeline id until a zero write releases it.
+    /// The runtime reasserts an armed id after native animation updates.</summary>
     AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);
 
     // ── Speed ─────────────────────────────────────────────────────────

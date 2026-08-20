@@ -233,6 +233,19 @@ public sealed class AnimationSession
         var current = OverridesFor(actor);
         bool suspendBaseRepeat = landing is { } target && target != AnimationSlot.Base &&
             current.LoopedSlots.ContainsKey(AnimationSlot.Base);
+        ushort suspendedTimeline = suspendBaseRepeat
+            ? current.LoopedSlots[AnimationSlot.Base]
+            : (ushort)0;
+
+        // A layer play shares the global sequencer route. Release Poser's
+        // force before the play, and put it back if the play does not land.
+        if (suspendBaseRepeat)
+        {
+            var cleared = _port.SetForceLoop(actor, 0);
+            if (!cleared.Success)
+                return AnimationResult.Fail(
+                    cleared.Detail ?? "Full-body repeat suspension failed.");
+        }
 
         // Capture each non-base slot before Poser changes it.
         bool captureSlot = landing is { } slot &&
@@ -244,7 +257,29 @@ public sealed class AnimationSession
 
         var result = _port.Blend(actor, timeline, current.BaseCapture, out var captured);
         if (!result.Success)
+        {
+            if (suspendBaseRepeat)
+            {
+                var restored = _port.SetForceLoop(actor, suspendedTimeline);
+                if (!restored.Success)
+                {
+                    Mutate(actor, o =>
+                    {
+                        var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+                        loops.Remove(AnimationSlot.Base);
+                        return o with
+                        {
+                            LoopedSlots = loops,
+                            BaseRepeatSuspended = true,
+                        };
+                    });
+                    return AnimationResult.Fail(
+                        $"{result.Detail ?? "Blend failed."} Repeat restore failed: " +
+                        (restored.Detail ?? "full-body repeat arm failed."));
+                }
+            }
             return AnimationResult.Fail(result.Detail ?? "Blend failed.");
+        }
         if (captured is { } taken)
             Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
         if (captureSlot)
@@ -1175,6 +1210,8 @@ public sealed class AnimationSession
 
         if (actorGone || !remaining.HasAny)
         {
+            if (actorGone)
+                _port.ClearLoops(actor);
             _overrides.Remove(actor);
         }
         else

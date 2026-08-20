@@ -190,8 +190,50 @@ public sealed class AnimationOwnershipTests
         Assert.False(session.OverridesFor(ActorA).LoopedSlots.ContainsKey(AnimationSlot.Base));
         int upper = port.Calls.LastIndexOf("Blend:43");
         Assert.True(upper >= 0);
+        Assert.True(port.Calls.LastIndexOf("SetForceLoop:0") < upper);
         Assert.DoesNotContain(port.Calls.Skip(upper + 1),
             call => call.StartsWith("SetForceLoop"));
+    }
+
+    [Fact]
+    public void Failed_layer_selection_restores_the_owned_full_body_force()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        port.FailBlend = true;
+
+        var result = session.Blend(ActorA, 43);
+
+        Assert.False(result.Success);
+        int cleared = port.Calls.LastIndexOf("SetForceLoop:0");
+        int blend = port.Calls.LastIndexOf("Blend:43");
+        int restored = port.Calls.LastIndexOf("SetForceLoop:42");
+        Assert.True(cleared < blend && blend < restored);
+        Assert.Equal((ushort)42,
+            session.OverridesFor(ActorA).LoopedSlots[AnimationSlot.Base]);
+        Assert.False(session.OverridesFor(ActorA).BaseRepeatSuspended);
+    }
+
+    [Fact]
+    public void Failed_layer_selection_and_rearm_preserve_sticky_suspended_ownership()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        port.FailBlend = true;
+        port.FailForceLoopFor = 42;
+
+        var result = session.Blend(ActorA, 43);
+
+        Assert.False(result.Success);
+        Assert.Contains("Repeat restore failed", result.Detail);
+        var owned = session.OverridesFor(ActorA);
+        Assert.True(owned.LoopWantedSlots.Contains(AnimationSlot.Base));
+        Assert.False(owned.LoopedSlots.ContainsKey(AnimationSlot.Base));
+        Assert.True(owned.BaseRepeatSuspended);
     }
 
     [Fact]
@@ -351,6 +393,31 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
+    public void Forced_timeline_write_reasserts_an_armed_value_after_native_clear()
+    {
+        var write = typeof(AnimationRuntimePort).GetMethod(
+            "TrySetForcedTimelineForLayout",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(write);
+        nint memory = Marshal.AllocHGlobal(0x2E2);
+        try
+        {
+            Marshal.WriteInt16(memory, 0x2E0, 0);
+
+            bool wrote = (bool)write.Invoke(
+                null,
+                [memory, (ushort)0x1234, 0x10, 0x2E2])!;
+
+            Assert.True(wrote);
+            Assert.Equal(0x1234, Marshal.ReadInt16(memory, 0x2E0));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(memory);
+        }
+    }
+
+    [Fact]
     public void Repeat_off_clears_only_the_base_repeat_arm()
     {
         var port = FakePort.Create();
@@ -500,6 +567,8 @@ public sealed class AnimationOwnershipTests
         public bool FailUnfreeze { get; set; }
         public bool FailClearSpeed { get; set; }
         public bool FailForceLoop { get; set; }
+        public ushort? FailForceLoopFor { get; set; }
+        public bool FailBlend { get; set; }
         public bool FailRestoreBase { get; set; }
         public int CaptureBaseCalls { get; private set; }
         public int RestoreBaseCalls { get; private set; }
@@ -554,7 +623,9 @@ public sealed class AnimationOwnershipTests
                 case "Blend":
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
-                    return AnimationPortResult.Ok();
+                    return FailBlend
+                        ? AnimationPortResult.Fail("blend failed")
+                        : AnimationPortResult.Ok();
                 case "PlayBase":
                     Calls.Add($"PlayBase:{args![1]}");
                     if (args![2] == null)
@@ -571,7 +642,8 @@ public sealed class AnimationOwnershipTests
                         : AnimationPortResult.Ok();
                 case "SetForceLoop":
                     Calls.Add($"SetForceLoop:{args![1]}");
-                    return FailForceLoop
+                    return FailForceLoop ||
+                        FailForceLoopFor == (ushort)args[1]!
                         ? AnimationPortResult.Fail("repeat arm failed")
                         : AnimationPortResult.Ok();
                 case "SetSlotSpeed":
