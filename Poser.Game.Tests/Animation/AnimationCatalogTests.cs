@@ -7,19 +7,19 @@ namespace Poser.Game.Tests.Animation;
 public sealed class AnimationCatalogTests
 {
     [Fact]
-    public void Publish_orders_named_sources_before_raw_rows()
+    public void Publish_orders_by_the_visible_name_not_internal_source()
     {
         var catalog = new AnimationCatalog();
         catalog.Publish(
         [
-            new(30, "z_raw", AnimationKind.RawTimeline, AnimationSlot.Base),
-            new(20, "Action", AnimationKind.Action, AnimationSlot.Base),
-            new(10, "Emote", AnimationKind.Emote, AnimationSlot.Base),
+            new(30, "Alpha raw", AnimationKind.RawTimeline, AnimationSlot.Base),
+            new(20, "Charlie action", AnimationKind.Action, AnimationSlot.Base),
+            new(10, "Bravo emote", AnimationKind.Emote, AnimationSlot.Base),
         ]);
 
         Assert.Equal(
-            [AnimationKind.Emote, AnimationKind.Action, AnimationKind.RawTimeline],
-            catalog.Entries.Select(entry => entry.Kind));
+            ["Alpha raw", "Bravo emote", "Charlie action"],
+            catalog.Entries.Select(entry => entry.Name));
     }
 
     [Fact]

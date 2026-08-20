@@ -56,7 +56,8 @@ public sealed class ExpressionHoldTests
         Assert.DoesNotContain(
             AnimationSlot.Facial,
             session.OverridesFor(Actor).SlotCaptures.Keys);
-        Assert.Contains("ClearSlotSpeed:Facial", port.Calls);
+        Assert.Contains(port.Calls,
+            call => call.StartsWith("ClearSlotSpeed:Facial:"));
     }
 
     [Fact]
@@ -94,6 +95,68 @@ public sealed class ExpressionHoldTests
         Assert.Equal(Incoming, port.LiveFacialTimeline);
         Assert.Equal($"Blend:{Incoming}",
             port.Calls.Last(call => call.StartsWith("Blend:")));
+    }
+
+    [Fact]
+    public void Delayed_release_bridge_restores_exact_timeline_and_speed_in_order()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        port.LiveFacialTimeline = Smile;
+        port.Calls.Clear();
+
+        Assert.True(session.BeginExpressionRelease(Actor).Success);
+        Assert.Equal(
+            ["ClearSlotSpeed:Facial:1", "Blend:604", "SetSlotSpeed:Facial:0"],
+            port.Calls);
+        Assert.Equal(Smile, session.HeldExpressionFor(Actor));
+        Assert.Equal(Smile, session.SelectedFor(Actor, AnimationSlot.Facial));
+
+        Assert.True(session.CompleteExpressionRelease(Actor).Success);
+        Assert.Equal(
+            ["ClearSlotSpeed:Facial:1", "Blend:777"],
+            port.Calls.TakeLast(2));
+        Assert.Null(session.HeldExpressionFor(Actor));
+        Assert.Null(session.SelectedFor(Actor, AnimationSlot.Facial));
+    }
+
+    [Fact]
+    public void Delayed_release_restore_failure_keeps_selection_for_retry()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        Assert.True(session.BeginExpressionRelease(Actor).Success);
+        port.BlendFailure = "facial restore unavailable";
+
+        Assert.False(session.CompleteExpressionRelease(Actor).Success);
+
+        Assert.Equal(Smile, session.HeldExpressionFor(Actor));
+        Assert.Equal(Smile, session.SelectedFor(Actor, AnimationSlot.Facial));
+        Assert.Equal(Incoming,
+            session.OverridesFor(Actor).SlotCaptures[AnimationSlot.Facial]);
+
+        port.BlendFailure = null;
+        Assert.True(session.BeginExpressionRelease(Actor).Success);
+        Assert.True(session.CompleteExpressionRelease(Actor).Success);
+        Assert.Null(session.SelectedFor(Actor, AnimationSlot.Facial));
+    }
+
+    [Fact]
+    public void Delayed_release_refuses_a_paused_actor_without_mutation()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.HoldExpression(Actor, Smile).Success);
+        Assert.True(session.Pause(Actor).Success);
+        port.Calls.Clear();
+
+        Assert.False(session.BeginExpressionRelease(Actor).Success);
+
+        Assert.Empty(port.Calls);
+        Assert.Equal(Smile, session.HeldExpressionFor(Actor));
+        Assert.Equal(Smile, session.SelectedFor(Actor, AnimationSlot.Facial));
     }
 
     private class FakePort : DispatchProxy
@@ -153,7 +216,9 @@ public sealed class ExpressionHoldTests
                         ? AnimationPortResult.Fail(speedRefusal)
                         : AnimationPortResult.Ok();
                 case "ClearSlotSpeed":
-                    Calls.Add($"ClearSlotSpeed:{(AnimationSlot)args![1]!}");
+                    Calls.Add(
+                        $"ClearSlotSpeed:{(AnimationSlot)args![1]!}:" +
+                        $"{(float)args[2]!}");
                     return AnimationPortResult.Ok();
                 default:
                     if (method?.ReturnType == typeof(AnimationPortResult))

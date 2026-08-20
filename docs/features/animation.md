@@ -3,20 +3,19 @@
 Basic mode exposes one General Full Body authority. Its picker lists Base-compatible
 emotes, actions, and raw timelines; Choose stages a value, Apply plays it, and Reset
 restores the immutable incoming Base state. Play emote start selects the native
-emote lifecycle for index-zero emotes. Loop animation is sticky Full Body intent.
+emote lifecycle for index-zero emotes. Loop is sticky Full Body intent.
 
 Advanced mode restores Basic ownership before enabling independent Full Body,
 Upper Body, Additive, and Lips selection and speed. Full Body and Upper Body also
-provide scrub; Full Body alone provides Repeat. The layer controls remain visible
+provide scrub; Full Body alone provides Loop. The layer controls remain visible
 and inert while Advanced is off. Returning to Basic restores every Advanced layer
 before General commands become available.
 
-Every picker filters by compatible native slot by default and can narrow to
-Emotes, Actions, or Raw entries. Search matches display name, native timeline id,
-and sheet key. Results show their source, native slot, and emote category/phase
-when present. Named emotes sort before actions, then raw timelines.
+Every picker filters by compatible native slot. Search matches display name,
+native timeline id, and sheet key. Results show only name, the native layer they
+apply to, and timeline id. Native route metadata remains internal.
 
-Repeat belongs only to Full Body. It can be armed before selection without
+Loop belongs only to Full Body. It can be armed before selection without
 capturing or writing native state. Apply gives every explicit Full Body selection
 the verified forced base timeline, including entries marked as native loops; the
 sheet flag is not a substitute for the sequencer field. Selecting another layer
@@ -29,8 +28,12 @@ before restoring the field instead of treating a field rewrite as playback.
 
 Advanced Facial and Pose > Expression are two views of one held-expression
 authority. Both stage an expression, Apply it, and freeze Facial speed at zero.
-Reset restores the first captured Facial timeline and speed and clears selection.
-Pose alone adds Bake. Action-unit sliders remain a separate named pose layer.
+Reset releases that pin, plays Straight Face, holds the neutral bridge for two
+validated framework ticks, then restores the first captured Facial timeline and
+speed and clears selection. A stale or failed completion retains ownership for
+retry. Straight Face follows Brio's release bridge
+(`Brio/Brio/UI/Widgets/Actor/ActorDynamicPoseWidget.cs:58-70`). Pose alone adds
+Bake. Action-unit sliders remain a separate named pose layer.
 
 Full Body and Upper Body expose scrub through their verified slot-index lookup,
 searched across live skeleton partials and guarded by the captured skeleton

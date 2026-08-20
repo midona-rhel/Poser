@@ -94,11 +94,10 @@ public sealed class AnimationCatalogLoader
                     emote.Icon,
                     emote.RowId,
                     index,
-                    // Only emotes know their weapon state; actions and raw
-                    // timelines stay null and pass Brio's drawn filter.
+                    // Only emotes carry weapon state; null entries remain
+                    // eligible for either current weapon state.
                     emote.DrawsWeapon,
-                    timelines.GetRowOrDefault(reference.RowId)?.IsLoop ?? false,
-                    Category: $"Category {emote.EmoteCategory.RowId}"));
+                    timelines.GetRowOrDefault(reference.RowId)?.IsLoop ?? false));
             }
         }
     }

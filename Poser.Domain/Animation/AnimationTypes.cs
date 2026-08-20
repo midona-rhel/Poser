@@ -18,7 +18,7 @@ public enum AnimationSlot
     Overlay = 12,
 }
 
-/// <summary>What a catalog entry came from; also the catalog's kind filter.</summary>
+/// <summary>Source identity retained for the entry's native play route.</summary>
 public enum AnimationKind
 {
     Action,
@@ -138,8 +138,7 @@ public sealed record TimelineEntry(
     int EmoteIndex = -1,
     bool? DrawsWeapon = null,
     bool IsLoop = false,
-    string? Key = null,
-    string? Category = null)
+    string? Key = null)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
     /// start" through its own emote entry point (intro then loop).</summary>

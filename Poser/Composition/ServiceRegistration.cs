@@ -281,6 +281,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<Game.Animation.FacialPoseCapture>();
+        services.AddSingleton<Game.Animation.ExpressionReleaseCoordinator>();
         services.AddSingleton<Game.Posing.IkBakeCapture>();
         services.AddSingleton<Game.Posing.PoseImportCapture>();
         services.AddSingleton<Func<Game.Posing.IPoseImportLifecycleControl>>(sp =>

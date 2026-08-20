@@ -1207,6 +1207,53 @@ public sealed class AnimationSession
     public AnimationResult ReleaseExpression(ActorId actor)
         => ResetSlot(actor, AnimationSlot.Facial);
 
+    /// <summary>Starts the neutral bridge used by the delayed expression reset.</summary>
+    public AnimationResult BeginExpressionRelease(ActorId actor)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        var current = OverridesFor(actor);
+        if (current.HeldExpression is not { } held ||
+            !current.SelectedSlots.ContainsKey(AnimationSlot.Facial))
+            return AnimationResult.Fail("No held expression is available to reset.");
+        if (!_port.IsSupported(actor) || _port.Read(actor) is not { } reading)
+            return AnimationResult.Fail("The actor is unavailable for expression reset.");
+        if (!float.IsFinite(reading.OverallSpeed) || reading.OverallSpeed <= 0f ||
+            current.IsPaused)
+            return AnimationResult.Fail(
+                "Resume actor animation before resetting the expression.");
+        // Release Facial speed before Straight Face, then hold that neutral
+        // bridge until the generation-safe delayed restore.
+        if (current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial))
+        {
+            var unpinned = ClearSlotSpeedCore(actor, AnimationSlot.Facial);
+            if (!unpinned.Success)
+                return unpinned;
+        }
+        var neutral = BlendCore(
+            actor, AnimationTimelines.StraightFace, AnimationSlot.Facial);
+        if (!neutral.Success)
+        {
+            var repinned = SetSlotSpeedCore(actor, AnimationSlot.Facial, 0f);
+            return repinned.Success
+                ? neutral
+                : AnimationResult.Fail(
+                    $"{neutral.Detail} Hold restore failed: {repinned.Detail}");
+        }
+        var heldNeutral = SetSlotSpeedCore(actor, AnimationSlot.Facial, 0f);
+        if (heldNeutral.Success)
+            return AnimationResult.Ok();
+
+        var rollback = HoldExpression(actor, held);
+        return rollback.Success
+            ? heldNeutral
+            : AnimationResult.Fail(
+                $"{heldNeutral.Detail} Expression restore failed: {rollback.Detail}");
+    }
+
+    /// <summary>Finishes the neutral bridge by restoring the immutable baseline.</summary>
+    public AnimationResult CompleteExpressionRelease(ActorId actor) =>
+        ResetSlot(actor, AnimationSlot.Facial);
+
     /// <summary>Restores the captured facial layer.</summary>
     public AnimationResult RestoreFacialLayer(ActorId actor)
         => ResetSlot(actor, AnimationSlot.Facial);

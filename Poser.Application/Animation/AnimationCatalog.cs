@@ -16,15 +16,9 @@ public sealed class AnimationCatalog
 
     public void Publish(IReadOnlyList<TimelineEntry> entries)
     {
-        // Named sheet rows lead; raw keys remain available as the fallback.
+        // Visible names define result order; source kind remains routing-only.
         _entries = entries
-            .OrderBy(static entry => entry.Kind switch
-            {
-                AnimationKind.Emote or AnimationKind.Expression => 0,
-                AnimationKind.Action => 1,
-                _ => 2,
-            })
-            .ThenBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static entry => entry.EmoteIndex)
             .ThenBy(static entry => entry.TimelineId)
             .ToArray();
@@ -72,22 +66,5 @@ public sealed class AnimationCatalog
                 return entry;
         return null;
     }
-
-    /// <summary>
-    /// Kinds that cannot occur in a selected native slot.
-    /// </summary>
-    public static IReadOnlyList<AnimationKind> ExcludedKinds(AnimationSlot? slot) => slot switch
-    {
-        null => Array.Empty<AnimationKind>(),
-        AnimationSlot.Base or AnimationSlot.UpperBody =>
-            new[] { AnimationKind.Expression },
-        AnimationSlot.Facial =>
-            new[] { AnimationKind.Action, AnimationKind.Emote },
-        AnimationSlot.Additive =>
-            new[] { AnimationKind.Action, AnimationKind.Expression },
-        AnimationSlot.Lips =>
-            new[] { AnimationKind.Action, AnimationKind.Emote, AnimationKind.Expression },
-        _ => Array.Empty<AnimationKind>(),
-    };
 
 }
