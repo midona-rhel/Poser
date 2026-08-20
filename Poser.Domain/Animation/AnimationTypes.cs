@@ -137,7 +137,6 @@ public sealed record TimelineEntry(
     uint EmoteId = 0,
     int EmoteIndex = -1,
     bool? DrawsWeapon = null,
-    bool IsLoop = false,
     string? Key = null)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
@@ -175,8 +174,7 @@ public sealed record AnimationSlotReading(
 
 /// <summary>
 /// One frame's live native read for an actor. Immutable; valid for the
-/// frame it was taken. Poser-owned override state is NOT here — it lives
-/// in the session, so the two never drift into two authorities.
+/// frame it was taken. Poser-owned override state lives in the session.
 /// </summary>
 public sealed record ActorAnimationReading(
     ushort BaseTimeline,
@@ -213,15 +211,14 @@ public sealed record ActorAnimationReading(
 }
 
 /// <summary>
-/// Everything Poser authored for one actor. This is the ONLY record of
-/// what must be undone; anything absent here was never Poser's to restore.
+/// Everything Poser authored for one actor. Anything absent here was never
+/// Poser's to restore.
 /// </summary>
 public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
 
 public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
-    public bool BaseUsesNativeLoop { get; init; }
     /// <summary>Explicit non-base timeline selections.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> SelectedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
@@ -234,7 +231,6 @@ public sealed record AnimationOverrides
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlySet<AnimationSlot> LoopWantedSlots { get; init; } =
         new HashSet<AnimationSlot>();
-    public bool BaseRepeatSuspended { get; init; }
     /// <summary>Original non-base timelines.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> SlotCaptures { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
@@ -253,9 +249,8 @@ public sealed record AnimationOverrides
     public BaseAnimationCapture? BaseCapture { get; init; }
     /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
-    /// <summary>Lips timeline before the first lips override. Selecting
-    /// None restores THIS, rather than writing 0 — 0 is "no speech
-    /// timeline", which is not necessarily what the actor arrived with.</summary>
+    /// <summary>Lips timeline before the first override. Selecting None
+    /// restores this value rather than writing native "no speech" zero.</summary>
     public ushort? LipsCapture { get; init; }
     /// <summary>Stance family and pose index before the first stance change.</summary>
     public StanceCapture? StanceCaptureValue { get; init; }
@@ -268,9 +263,9 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        SelectedSlots.Count > 0 || AppliedSlots.Count > 0 || SlotSpeedCaptures.Count > 0 ||
-        LoopedSlots.Count > 0 || LoopWantedSlots.Count > 0 || BaseRepeatSuspended ||
-        SlotCaptures.Count > 0 ||
+        SelectedSlots.Count > 0 || AppliedSlots.Count > 0 ||
+        SlotSpeedCaptures.Count > 0 || LoopedSlots.Count > 0 ||
+        LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;

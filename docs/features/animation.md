@@ -1,58 +1,32 @@
 # Animation
 
-Basic mode exposes one General Full Body authority. Its picker lists Base-compatible
-emotes, actions, and raw timelines; Choose stages a value, Apply plays it, and Reset
-restores the immutable incoming Base state. Play emote start selects the native
-emote lifecycle for index-zero emotes. Loop is sticky Full Body intent.
+Basic mode owns one General Full Body selection. Choose only stages a catalog
+row; Apply captures the actor's current Base state and then plays that exact
+row. A friendly index-zero emote can use the game's intro/loop lifecycle;
+actions and raw timelines use the audited timeline route. Reset restores the
+first successful Apply's immutable Base state.
 
-Advanced mode restores Basic ownership before enabling independent Full Body,
-Upper Body, Additive, and Lips selection and speed. Full Body and Upper Body also
-provide scrub and Loop. The layer controls remain visible
-and inert while Advanced is off. Returning to Basic restores every Advanced layer
-before General commands become available.
+Advanced mode exposes Full Body, Upper Body, Facial, Additive, and Lips.
+Controls remain visible but inert while Advanced is off. Each layer keeps the
+exact chosen catalog row, applies only its native slot, and restores the state
+captured immediately before its first successful write. Full Body and Upper
+Body provide scrub and independent Loop switches; other layers do not claim a
+stable Havok control mapping.
 
-Every picker filters by compatible native slot. General can further narrow the
-catalog to Emotes, Actions, or Raw entries. Search matches display name, native
-timeline id, and sheet key. Results show only name, the native layer they apply
-to, and timeline id. Native route metadata remains internal.
+Full Body loop uses the verified forced Base field. A non-Base write clears that
+global force, performs the exact slot write, then rearms Base. Upper Body loop
+replays its last successfully applied Upper timeline. Turning Loop off stops
+replay without changing the current frame; Reset releases the loop and restores
+the captured layer.
 
-Loop can be armed before selection without capturing or writing native state.
-Apply gives every explicit Full Body selection
-the verified forced base timeline, including entries marked as native loops; the
-sheet flag is not a substitute for the sequencer field. A non-Base write briefly
-releases that global force, routes through its own native slot, then rearms the
-same Full Body timeline; ordinary layer composition therefore keeps Base looping.
-Catalog emotes use the game emote entry point for their intro and loop lifecycle;
-raw timelines use the audited timeline setter. If the client clears Poser's
-forced field when a Base animation ends, the framework update replays Selected
-before restoring the field instead of treating a field rewrite as playback.
-Upper Loop owns the last successfully applied Upper timeline, not a later staged
-choice. Exact Upper-slot drift is its replay signal; replay uses the slot route
-and immediately restores any active Full Body force. Loop Off stops replay
-without changing the current animation, while Reset restores the captured Upper
-state and releases the arm.
+Pose Expression Preview and Advanced Facial Apply share direct
+`HoldExpression`; their Reset shares `ReleaseExpression`. Release clears Facial
+speed, plays Straight Face (604), clears again, then restores the immutable
+Facial timeline and speed. Apply schedules at most one identical retry 500 ms
+later when the same session, actor generation, binding, and exact selection
+still match. This bounded retry does not observe face output and a paused actor
+may still require a second click. Pose also provides Bake into pose history.
 
-Advanced Facial and Pose > Expression are two views of one held-expression
-authority. Both stage an expression and freeze Facial speed at zero when it is
-applied. Pose calls that action Preview and also provides Bake. Apply drives only
-the Facial slot until its bound face output changes and settles, with the same
-bounded timeout as face capture, so a paused actor can evaluate the chosen face
-without changing overall speed. If the first Facial write produces no output
-during the full bounded settle window while overall pause is owned, the
-coordinator validates identity and replays the same Facial selection once with a
-fresh bounded window; it never retries indefinitely or resumes the body.
-Reset uses a
-Straight Face bridge and immediately restores the first captured Facial timeline
-and speed. Action-unit sliders remain a separate named pose layer.
-
-Full Body and Upper Body expose scrub through their verified slot-index lookup,
-searched across live skeleton partials and guarded by the captured skeleton
-identity. Other layers omit scrub because numeric Havok indexes are not a stable
-logical-layer mapping
-(`Brio/Brio/UI/Controls/Editors/ActionTimelineEditor.cs:468-517`,
-`Ktisis/Interface/Components/Chara/AnimationEditorTab.cs:267-307`). It also omits
-global repeat and selection for Parts/Overlay slots. Lips is included because its
-native override and logical-slot speed route are exact; Additive uses the same
-sheet-routed selection and logical-slot speed contract as Upper and Facial
-(`Brio/Brio/Capabilities/Actor/ActionTimelineCapability.cs:57-92`,
-`Ktisis/Editor/Animation/AnimationManager.cs:88-112`).
+Switching modes restores the outgoing ownership before changing the mode flag.
+That multi-layer restore is intentionally non-atomic: if a later restore fails,
+the prior mode remains selected, while earlier successful restores stay applied.

@@ -29,7 +29,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private readonly Dictionary<ActorId, ushort> _forcedLoops = new();
     // Derived index for the detours only; never a source of truth.
     private readonly Dictionary<nint, Enforcement> _byAddress = new();
-    // Actors whose position lock THIS session created, so releasing it
+    // Actors whose position lock this session created, so releasing it
     // cannot wipe a placement the user made with the gizmo.
     private readonly HashSet<ActorId> _positionLocks = new();
 
@@ -46,9 +46,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private delegate void SetSlotSpeedDelegate(ActionTimelineSequencer* sequencer, uint slot, float speed);
     private readonly Hook<SetSlotSpeedDelegate>? _slotSpeedHook;
 
-    // Non-null is NOT enabled: a hook object can exist while its Enable
-    // (or the other hook's construction) failed. Commands gate on these,
-    // set only after the matching Enable returned.
+    // A hook object can exist after Enable fails. Commands gate on flags set
+    // only after the matching hook is enabled.
     private readonly bool _overallSpeedHookEnabled;
     private readonly bool _slotSpeedHookEnabled;
 
@@ -72,7 +71,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private const uint EmoteModeSleeping = 3;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
-    // TimelineContainer-relative; the sequencer field is +0x10.
+    // Verified client layout: the forced id is container+0x2E0, which is
+    // sequencer+0x2D0. SetTimelineId clears it, so layer writes clear first
+    // and Base replay rearms it only after that native call returns.
     private const int ForcedTimelineOffset = 0x2E0;
     private const int SequencerForcedTimelineOffset = 0x2D0;
     private const int ForcedTimelineSize = sizeof(ushort);
@@ -117,10 +118,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _playEmote = ScanDelegate<PlayEmoteDelegate>(
             sigScanner, "E8 ?? ?? ?? ?? 88 45 68", "PlayEmote");
 
-        // Each hook is constructed AND enabled independently, and only a
-        // completed Enable sets its flag: a failure in either step, or in
-        // the other hook, can never leave a command believing a non-null
-        // but inactive hook is enforcing anything.
+        // Each hook's capability flag is set only after Enable succeeds.
         try
         {
             var speedAddress = sigScanner.ScanText(
@@ -250,7 +248,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _byAddress.TryGetValue(owner, out var enforcement) &&
             enforcement.OverallSpeed is { } speed)
         {
-            // Run AFTER the game's own calculation so the override wins
+            // Run after the game's calculation so the override wins
             // whatever the game just decided.
             container->OverallSpeed = speed;
             return true;
@@ -290,9 +288,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         }
 
         var controls = CollectControls(character, out var token);
-        // The RAW pose family: collapsing WeaponDrawn/Umbrella/Accessory to
-        // Idle made the UI lie about the current state, which in turn made
-        // Idle unreachable (re-selecting what the control already showed).
+        // Preserve the native pose family so each stance stays selectable.
         var poseType = character->EmoteController.CurrentPoseType;
         var stance = poseType switch
         {
@@ -358,7 +354,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             }
         }
 
-        // The token identifies THIS skeleton and control layout. A redraw
+        // The token identifies this skeleton and control layout. A redraw
         // moves the skeleton and changes the count, so a scrub captured
         // under the old token is refused rather than written blind.
         token = unchecked(((ulong)(nint)skeleton * 397) ^ (ulong)result.Count);
@@ -762,9 +758,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail(detail!);
         if (!float.IsFinite(speed))
             return AnimationPortResult.Fail("Speed must be a finite number.");
-        // Without the ENABLED hook the game re-wins every recalculation:
-        // the value would hold for one frame and silently drift back.
-        // Refuse rather than pretend; non-null alone proves nothing.
+        // Without the enabled hook, the game replaces the value next frame.
         if (!_overallSpeedHookEnabled)
             return AnimationPortResult.Fail(
                 "Speed is unavailable: the game's speed hook is not active.");
@@ -781,12 +775,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (character == null)
             return AnimationPortResult.Fail(detail!);
 
-        // Exact ownership is resolved BEFORE enforcement drops, and the
-        // hand-back write happens only for a speed Poser actually
-        // enforced. An unconditional 1 would stomp a speed the game or
-        // another tool is driving on an actor Poser never touched — and
-        // ApplySpeedNow reaches every Havok control, so it would also
-        // unpin playback state that was never Poser's.
+        // Resolve ownership before dropping enforcement. The hand-back write
+        // runs only for a speed Poser enforced.
         if (!_enforcement.TryGetValue(actor, out var enforcement) ||
             enforcement.OverallSpeed == null)
             return AnimationPortResult.Ok();
@@ -904,15 +894,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         return AnimationPortResult.Ok();
     }
 
-    /// <summary>Drops stale enforcement without writing through a rebound actor.</summary>
-    public void AbandonSlotSpeed(ActorId actor, AnimationSlot slot)
-    {
-        if (!_enforcement.TryGetValue(actor, out var enforcement))
-            return;
-        enforcement.SlotSpeeds.Remove((int)slot);
-        PruneEnforcement(actor);
-    }
-
     // ── Lips, stance, weapon, position ────────────────────────────────
 
     public AnimationPortResult SetLips(ActorId actor, ushort timeline)
@@ -951,10 +932,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _ => EmoteModeNormal,
         };
 
-        // The game reports how many poses this family has. For Idle the
-        // wrap must ALSO stay inside the emote table that drives those
-        // poses: wrapping to a count the table cannot serve would step to
-        // a pose index with no emote behind it.
+        // Idle wrapping also stays inside the emote table that drives it.
         int available = EmoteController.GetAvailablePoses(poseType);
         if (available <= 0)
             available = 1;
@@ -1025,11 +1003,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     }
 
     /// <summary>
-    /// Position lock reuses the ONE position authority (the model
-    /// transform override that already suppresses the game's per-frame
-    /// write) rather than adding a second hook. Releasing only clears an
-    /// override this port created, so a placement the user made with the
-    /// gizmo survives unlocking.
+    /// Position lock reuses the model transform override that suppresses the
+    /// game's per-frame write. Releasing clears only an override created here,
+    /// so a placement made with the gizmo survives unlocking.
     /// </summary>
     public AnimationPortResult SetPositionLock(ActorId actor, bool locked)
     {

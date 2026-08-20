@@ -77,9 +77,7 @@ public static partial class Crystarium
         string? Help, bool Disabled,
         ButtonVariant Variant = ButtonVariant.Secondary,
         TablerIcon? Icon = null,
-        string? Id = null,
-        bool? SwitchValue = null,
-        Action<bool>? OnSwitchChanged = null);
+        string? Id = null);
 
     /// <summary>One checkbox item in an inline group.</summary>
     public readonly record struct CheckItem(
@@ -109,12 +107,6 @@ public static partial class Crystarium
             _items.Add(new(
                 id ?? Tabler.NameFor(icon), onClick, default, help,
                 disabled, Icon: icon));
-
-        public void Switch(string label, bool value, Action<bool> onChange,
-            bool disabled = false, string? help = null, string? id = null) =>
-            _items.Add(new(
-                label, static () => { }, default, help, disabled,
-                Id: id, SwitchValue: value, OnSwitchChanged: onChange));
 
         internal IReadOnlyList<ActionItem> Items => _items;
     }
@@ -1816,11 +1808,6 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
-            if (action.SwitchValue != null)
-            {
-                committed += ActiveTheme.Controls.SwitchWidth * scale;
-                continue;
-            }
             // Icon actions are square.
             if (action.Icon != null)
             {
@@ -1872,27 +1859,6 @@ public static partial class Crystarium
         {
             var action = actions[i];
             var style = Workspace(action.Style);
-            if (action.SwitchValue is { } switchValue)
-            {
-                float switchWidth = ActiveTheme.Controls.SwitchWidth * scale;
-                float switchHeight = ActiveTheme.Controls.SwitchHeight;
-                ImGui.SetCursorScreenPos(new(
-                    x,
-                    top + (band - switchHeight) * 0.5f * scale));
-                Crystarium.Switch(
-                    Ids.Join(id, "-", action.Id ?? action.Label),
-                    switchValue,
-                    action.OnSwitchChanged!,
-                    ControlStyle.Workspace with
-                    {
-                        Width = UiWidth.Fixed(ActiveTheme.Controls.SwitchWidth),
-                        Height = UiHeight.Fixed(switchHeight),
-                    },
-                    action.Disabled,
-                    action.Help);
-                x += switchWidth + gap;
-                continue;
-            }
             float height = ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.WorkspaceHeight);
             if (action.Icon is { } glyph)

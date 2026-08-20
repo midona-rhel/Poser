@@ -48,9 +48,8 @@ public interface IAnimationRuntimePort
     /// that go through the emote entry point rather than Blend.</summary>
     BaseAnimationCapture? CaptureBase(ActorId actor);
 
-    /// <summary>The game's own cancellation of the container's running
-    /// timeline (the stance transition's function; container-wide, since
-    /// no per-slot stop is proven in either reference).</summary>
+    /// <summary>Cancels the container's running timeline. The available
+    /// native operation is container-wide rather than slot-specific.</summary>
     AnimationPortResult CancelActiveTimeline(ActorId actor);
 
     // ── Loops ───────────────────────────────────────────
@@ -94,9 +93,6 @@ public interface IAnimationRuntimePort
     /// <summary>Releases enforcement after restoring the captured speed.</summary>
     AnimationPortResult ClearSlotSpeed(
         ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
-    /// <summary>Drops speed enforcement without touching the currently
-    /// resolved actor. Used when a delayed command's identity went stale.</summary>
-    void AbandonSlotSpeed(ActorId actor, AnimationSlot slot);
 
     // ── Lips, stance, weapon, position ────────────────────────────────
     AnimationPortResult SetLips(ActorId actor, ushort timeline);
@@ -111,11 +107,9 @@ public interface IAnimationRuntimePort
     IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
 
     /// <summary>
-    /// The control driving a specific slot, by the reference lookup
-    /// (control index == slot index, searched across partials) rather than
-    /// by position in the flattened list. Null when the slot is empty or
-    /// has no such control. Base and Upper Body use their verified slot
-    /// control indexes; other logical layers have no stable mapping.
+    /// Finds a slot control by its native slot index across skeleton partials.
+    /// Null means the slot is empty or has no matching control. Base and Upper
+    /// Body have verified indexes; other logical layers have no stable mapping.
     /// </summary>
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
 

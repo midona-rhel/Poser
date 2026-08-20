@@ -91,11 +91,9 @@ public sealed class AnimationSession
             : null;
     }
 
-    /// <summary>
-    /// Remembers a selection and its first native restore point without playing it.
-    /// </summary>
+    /// <summary>Stages a selection without reading or writing native state.</summary>
     public AnimationResult ChooseSlot(
-        ActorId actor, AnimationSlot slot, ushort timeline, bool nativeLoop = false)
+        ActorId actor, AnimationSlot slot, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
         if (!AnimationSlots.Selectable.Contains(slot))
@@ -107,62 +105,29 @@ public sealed class AnimationSession
             return AnimationResult.Fail(
                 $"Timeline {timeline} does not route to {AnimationSlots.DisplayName(slot)}.");
 
-        var current = OverridesFor(actor);
-        BaseAnimationCapture? baseCapture = null;
-        ushort? slotCapture = null;
-        ushort? lipsCapture = null;
-        if (slot == AnimationSlot.Base && current.BaseCapture == null)
-            baseCapture = _port.CaptureBase(actor);
-        else if (slot == AnimationSlot.Lips && current.LipsCapture == null)
-            lipsCapture = _port.Read(actor)?.LipsOverride;
-        else if (slot is not AnimationSlot.Base and not AnimationSlot.Lips &&
-            !current.SlotCaptures.ContainsKey(slot))
-            slotCapture = _port.Read(actor)?.TimelineFor(slot) ?? 0;
-
         Mutate(actor, o =>
         {
             var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots)
             {
                 [slot] = timeline,
             };
-            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
-            if (slotCapture is { } incoming && !captures.ContainsKey(slot))
-                captures[slot] = incoming;
-            return o with
-            {
-                SelectedSlots = selected,
-                SlotCaptures = captures,
-                BaseCapture = o.BaseCapture ?? baseCapture,
-                LipsCapture = o.LipsCapture ?? lipsCapture,
-                BaseUsesNativeLoop = slot == AnimationSlot.Base ? nativeLoop : o.BaseUsesNativeLoop,
-            };
+            return o with { SelectedSlots = selected };
         });
         return AnimationResult.Ok();
     }
 
-    /// <summary>Selects and immediately applies a timeline through its verified route.</summary>
-    public AnimationResult SelectSlot(
-        ActorId actor, AnimationSlot slot, ushort timeline, bool nativeLoop = false)
-    {
-        var chosen = ChooseSlot(actor, slot, timeline, nativeLoop);
-        return chosen.Success ? ApplySelectedSlotCore(actor, slot) : chosen;
-    }
-
     /// <summary>Plays the actor's full-body timeline.</summary>
-    public AnimationResult PlayBase(ActorId actor, ushort timeline) =>
-        PlayBase(actor, timeline, nativeLoop: false);
-
-    private AnimationResult PlayBase(ActorId actor, ushort timeline, bool nativeLoop)
+    public AnimationResult PlayBase(ActorId actor, ushort timeline)
     {
-        return SelectSlot(actor, AnimationSlot.Base, timeline, nativeLoop);
+        var chosen = ChooseSlot(actor, AnimationSlot.Base, timeline);
+        return chosen.Success ? ApplySelectedSlotCore(actor, AnimationSlot.Base) : chosen;
     }
 
     private AnimationResult PlayBaseCore(
         ActorId actor,
         ushort timeline,
         AnimationOverrides before,
-        bool loopWanted,
-        bool nativeLoop)
+        bool loopWanted)
     {
         if (Suspended() is { } blocked) return blocked;
         bool armRepeat = loopWanted;
@@ -197,7 +162,6 @@ public sealed class AnimationSession
                     {
                         BaseCapture = o.BaseCapture ?? ownedCapture,
                         BaseTimeline = timeline,
-                        BaseUsesNativeLoop = nativeLoop,
                         LoopedSlots = loops,
                     };
                 });
@@ -218,17 +182,11 @@ public sealed class AnimationSession
             return o with
             {
                 BaseTimeline = timeline,
-                BaseUsesNativeLoop = nativeLoop,
                 LoopedSlots = loops,
-                BaseRepeatSuspended = false,
             };
         });
         return AnimationResult.Ok();
     }
-
-    /// <summary>Plays a timeline through its native route.</summary>
-    public AnimationResult Blend(ActorId actor, ushort timeline) =>
-        BlendCore(actor, timeline, _port.TimelineSlot(timeline));
 
     private AnimationResult BlendCore(
         ActorId actor, ushort timeline, AnimationSlot? landing)
@@ -241,6 +199,19 @@ public sealed class AnimationSession
             ? current.LoopedSlots[AnimationSlot.Base]
             : (ushort)0;
 
+        // Read the immutable slot baseline before any force-clear or play write.
+        bool captureSlot = landing is { } slot &&
+            slot != AnimationSlot.Base &&
+            !current.SlotCaptures.ContainsKey(slot);
+        ushort incoming = 0;
+        if (captureSlot)
+        {
+            var reading = _port.Read(actor);
+            if (reading == null)
+                return AnimationResult.Fail("The layer restore point is unavailable.");
+            incoming = reading.TimelineFor(landing!.Value);
+        }
+
         // SetTimelineId clears the global force while routing by native slot.
         // Release it for the layer write, then restore the same Base force.
         if (suspendBaseRepeat)
@@ -250,14 +221,6 @@ public sealed class AnimationSession
                 return AnimationResult.Fail(
                     cleared.Detail ?? "Full-body repeat suspension failed.");
         }
-
-        // Capture each non-base slot before Poser changes it.
-        bool captureSlot = landing is { } slot &&
-            slot != AnimationSlot.Base &&
-            !current.SlotCaptures.ContainsKey(slot);
-        ushort incoming = 0;
-        if (captureSlot && _port.Read(actor) is { } reading)
-            incoming = reading.TimelineFor(landing!.Value);
 
         var result = _port.Blend(actor, timeline, current.BaseCapture, out var captured);
         if (!result.Success)
@@ -271,11 +234,7 @@ public sealed class AnimationSession
                     {
                         var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
                         loops.Remove(AnimationSlot.Base);
-                        return o with
-                        {
-                            LoopedSlots = loops,
-                            BaseRepeatSuspended = true,
-                        };
+                        return o with { LoopedSlots = loops };
                     });
                     return AnimationResult.Fail(
                         $"{result.Detail ?? "Blend failed."} Repeat restore failed: " +
@@ -311,11 +270,7 @@ public sealed class AnimationSession
                 {
                     var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
                     loops.Remove(AnimationSlot.Base);
-                    return o with
-                    {
-                        LoopedSlots = loops,
-                        BaseRepeatSuspended = true,
-                    };
+                    return o with { LoopedSlots = loops };
                 });
                 return AnimationResult.Fail(
                     "Layer playback landed, but full-body repeat could not be " +
@@ -323,68 +278,6 @@ public sealed class AnimationSession
             }
         }
         return AnimationResult.Ok();
-    }
-
-    public AnimationResult PlayEmote(ActorId actor, uint emoteId) =>
-        PlayEmoteCore(actor, emoteId);
-
-    private AnimationResult PlayEmoteCore(ActorId actor, uint emoteId)
-    {
-        if (Suspended() is { } blocked) return blocked;
-        // The emote entry point drives the base slot too; its restore
-        // point is captured exactly as a direct play's would be.
-        var current = OverridesFor(actor);
-        var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
-        var result = _port.PlayEmote(actor, emoteId);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Emote failed.");
-        if (captured is { } taken)
-            Mutate(actor, o => o with { BaseCapture = o.BaseCapture ?? taken });
-        return AnimationResult.Ok();
-    }
-
-    /// <summary>Restores the captured base state.</summary>
-    public AnimationResult StopBase(ActorId actor)
-    {
-        if (Suspended() is { } blocked) return blocked;
-        var current = OverridesFor(actor);
-        if (current.BaseCapture is not { } capture)
-        {
-            Mutate(actor, o => o with
-            {
-                BaseTimeline = null,
-                BaseUsesNativeLoop = false,
-            });
-            return AnimationResult.Ok();
-        }
-
-        var result = _port.RestoreBase(actor, capture);
-        if (!result.Success)
-            return AnimationResult.Fail(result.Detail ?? "Base restore failed.");
-        // Clear ownership after restoration succeeds.
-        Mutate(actor, o => o with
-        {
-            BaseTimeline = null,
-            BaseUsesNativeLoop = false,
-            BaseCapture = null,
-        });
-        return AnimationResult.Ok();
-    }
-
-    /// <summary>Plays a catalog entry; only Base uses the emote lifecycle.</summary>
-    public AnimationResult PlayEntry(
-        ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
-    {
-        var timeline = (ushort)entry.TimelineId;
-        if (asBase)
-        {
-            var chosen = ChooseSlot(actor, AnimationSlot.Base, timeline, entry.IsLoop);
-            return chosen.Success
-                ? ApplySelectedSlotCore(
-                    actor, AnimationSlot.Base, playFromStart ? entry : null)
-                : chosen;
-        }
-        return Blend(actor, timeline);
     }
 
     /// <summary>Sets repeat intent for one slot.</summary>
@@ -423,7 +316,6 @@ public sealed class AnimationSession
             {
                 LoopedSlots = loops,
                 LoopWantedSlots = wanted,
-                BaseRepeatSuspended = on ? o.BaseRepeatSuspended : false,
             };
         });
         if (!on)
@@ -459,13 +351,14 @@ public sealed class AnimationSession
         if (!SupportsForceLoop)
             return AnimationResult.Fail("Full-body repeat is unavailable for this client layout.");
         var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
+        if (current.BaseCapture == null && captured == null)
+            return AnimationResult.Fail("The base restore point is unavailable.");
         var armed = _port.SetForceLoop(actor, target);
         if (!armed.Success)
             return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
         Mutate(actor, o => o with
         {
             BaseCapture = o.BaseCapture ?? captured,
-            BaseRepeatSuspended = false,
             LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
             {
                 [AnimationSlot.Base] = target,
@@ -517,15 +410,9 @@ public sealed class AnimationSession
     public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
 
     /// <summary>
-    /// Replays a timeline from the start. Replay is explicitly a RESUMING
-    /// act: a Poser-owned pause (zero speed) is released first, because a
-    /// replay that kept the zero-speed owner would freeze the very
-    /// animation it claims to restart and leave Poser owning a pause the
-    /// user asked to play through. A non-zero owned speed survives — the
-    /// user's chosen rate applies to the replayed timeline. A failed
-    /// release keeps the pause owner and plays nothing, so ownership
-    /// stays truthful. <paramref name="resumed"/> reports whether a pause
-    /// was released so surfaces can SAY which semantic ran.
+    /// Replays from the start after releasing a Poser-owned pause. A nonzero
+    /// owned speed remains active. <paramref name="resumed"/> reports whether
+    /// the pause was released.
     /// </summary>
     public AnimationResult Replay(ActorId actor, ushort timeline, out bool resumed)
     {
@@ -538,7 +425,7 @@ public sealed class AnimationSession
                 return released;
             resumed = true;
         }
-        return Blend(actor, timeline);
+        return BlendCore(actor, timeline, _port.TimelineSlot(timeline));
     }
 
     /// <summary>Rewinds paused animation controls.</summary>
@@ -556,13 +443,20 @@ public sealed class AnimationSession
         SetSlotSpeedCore(actor, slot, speed);
 
     private AnimationResult SetSlotSpeedCore(
-        ActorId actor, AnimationSlot slot, float speed)
+        ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
-        float live = current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed)
-            ? ownedSpeed
-            : _port.Read(actor)?.SpeedFor(slot) ?? 1f;
+        float live;
+        if (current.SlotSpeeds.TryGetValue(slot, out var ownedSpeed))
+            live = ownedSpeed;
+        else
+        {
+            var reading = _port.Read(actor);
+            if (reading == null)
+                return AnimationResult.Fail("The layer speed restore point is unavailable.");
+            live = reading.SpeedFor(slot);
+        }
         var result = _port.SetSlotSpeed(actor, slot, speed);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Slot speed failed.");
@@ -571,7 +465,9 @@ public sealed class AnimationSession
             var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds) { [slot] = speed };
             var captures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
             if (!captures.ContainsKey(slot))
-                captures[slot] = float.IsFinite(live) ? live : 1f;
+                captures[slot] = firstCapture is { } original && float.IsFinite(original)
+                    ? original
+                    : float.IsFinite(live) ? live : 1f;
             var resume = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
             if (speed > 0f)
                 resume[slot] = speed;
@@ -621,17 +517,17 @@ public sealed class AnimationSession
     public AnimationResult PauseSlot(ActorId actor, AnimationSlot slot) =>
         SetSlotSpeedCore(actor, slot, 0f);
 
-    public AnimationResult PlaySelectedSlot(ActorId actor, AnimationSlot slot)
-        => PlaySelectedSlot(actor, slot, null);
-
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
     public AnimationResult PlaySelectedSlot(
-        ActorId actor, AnimationSlot slot, TimelineEntry? entry)
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart)
     {
         bool resumedOverall = false;
-        if (SelectedFor(actor, slot) != null)
+        if (SelectedFor(actor, slot) is { } selected)
         {
-            var played = ApplySelectedSlotCore(actor, slot, entry);
+            if (entry == null || entry.TimelineId != selected || entry.Slot != slot)
+                return AnimationResult.Fail("The chosen animation identity changed.");
+            var played = ApplySelectedSlotCore(
+                actor, slot, playFromStart ? entry : null);
             if (!played.Success)
                 return played;
         }
@@ -665,8 +561,7 @@ public sealed class AnimationSession
                 actor,
                 selected,
                 current,
-                current.LoopWantedSlots.Contains(AnimationSlot.Base),
-                current.BaseUsesNativeLoop);
+                current.LoopWantedSlots.Contains(AnimationSlot.Base));
         }
         if (slot == AnimationSlot.Lips)
             return SetLipsCore(actor, selected);
@@ -706,7 +601,12 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
-        var rollbackCapture = before.BaseCapture != null ? _port.CaptureBase(actor) : null;
+        var firstCapture = before.BaseCapture ?? _port.CaptureBase(actor);
+        if (firstCapture == null)
+            return AnimationResult.Fail("The base restore point is unavailable.");
+        var rollbackCapture = before.BaseCapture != null
+            ? _port.CaptureBase(actor)
+            : firstCapture;
         var played = _port.PlayEmote(actor, entry.EmoteId);
         if (!played.Success)
             return AnimationResult.Fail(played.Detail ?? "Emote playback failed.");
@@ -741,8 +641,8 @@ public sealed class AnimationSession
             return o with
             {
                 BaseTimeline = (ushort)entry.TimelineId,
+                BaseCapture = o.BaseCapture ?? firstCapture,
                 LoopedSlots = loops,
-                BaseRepeatSuspended = false,
             };
         });
         return AnimationResult.Ok();
@@ -836,9 +736,7 @@ public sealed class AnimationSession
             {
                 SelectedSlots = selected,
                 BaseTimeline = null,
-                BaseUsesNativeLoop = false,
                 BaseCapture = baseStillNeeded ? o.BaseCapture : null,
-                BaseRepeatSuspended = false,
                 LoopedSlots = loops,
                 LoopWantedSlots = wanted,
             };
@@ -852,7 +750,18 @@ public sealed class AnimationSession
         if (!current.SelectedSlots.ContainsKey(slot))
             return AnimationResult.Ok();
         if (!current.SlotCaptures.TryGetValue(slot, out var incoming))
-            return AnimationResult.Fail("The layer restore point is unavailable.");
+        {
+            // Choose is staging-only, so an unapplied row has nothing native to undo.
+            Mutate(actor, o =>
+            {
+                var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
+                selected.Remove(slot);
+                var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
+                wanted.Remove(slot);
+                return o with { SelectedSlots = selected, LoopWantedSlots = wanted };
+            });
+            return AnimationResult.Ok();
+        }
 
         if (current.LoopedSlots.ContainsKey(slot))
         {
@@ -889,7 +798,12 @@ public sealed class AnimationSession
             repeatRestored = _port.SetForceLoop(actor, repeated);
         if (repeatRestored is { Success: false } repeatFailure)
         {
-            MarkBaseRepeatSuspended(actor);
+            Mutate(actor, o =>
+            {
+                var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+                loops.Remove(AnimationSlot.Base);
+                return o with { LoopedSlots = loops };
+            });
             return AnimationResult.Fail(
                 $"Layer restore could not rearm full-body repeat: " +
                 (repeatFailure.Detail ?? "repeat arm failed."));
@@ -927,18 +841,6 @@ public sealed class AnimationSession
         });
         return AnimationResult.Ok();
     }
-
-    private void MarkBaseRepeatSuspended(ActorId actor) =>
-        Mutate(actor, o =>
-        {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            loops.Remove(AnimationSlot.Base);
-            return o with
-            {
-                LoopedSlots = loops,
-                BaseRepeatSuspended = true,
-            };
-        });
 
     private AnimationPortResult RestoreEmptySlot(
         ActorId actor, AnimationSlot slot, AnimationOverrides current)
@@ -994,10 +896,8 @@ public sealed class AnimationSession
     // ── Lips, stance, weapon, position ────────────────────────────────
 
     /// <summary>
-    /// Sets the lip override. Selecting None (0) RESTORES the captured
-    /// incoming timeline rather than writing 0: 0 means "no speech
-    /// timeline", which is not necessarily what the actor arrived with,
-    /// and writing it would discard the only record of that.
+    /// Sets the lip override. Selecting None restores the captured incoming
+    /// timeline because zero is a native "no speech timeline" value.
     /// </summary>
     public AnimationResult SetLips(ActorId actor, ushort timeline)
     {
@@ -1011,6 +911,14 @@ public sealed class AnimationSession
     {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
+        ushort? captured = null;
+        if (current.LipsCapture == null)
+        {
+            var reading = _port.Read(actor);
+            if (reading == null)
+                return AnimationResult.Fail("The lips restore point is unavailable.");
+            captured = reading.LipsOverride;
+        }
         var result = _port.SetLips(actor, timeline);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Lips failed.");
@@ -1018,6 +926,7 @@ public sealed class AnimationSession
         Mutate(actor, o => o with
         {
             Lips = timeline,
+            LipsCapture = o.LipsCapture ?? captured,
         });
         return AnimationResult.Ok();
     }
@@ -1025,6 +934,16 @@ public sealed class AnimationSession
     private AnimationResult ResetLipsSelection(ActorId actor)
     {
         var current = OverridesFor(actor);
+        if (current.Lips == null && current.LipsCapture == null)
+        {
+            Mutate(actor, o =>
+            {
+                var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
+                selected.Remove(AnimationSlot.Lips);
+                return o with { SelectedSlots = selected };
+            });
+            return AnimationResult.Ok();
+        }
         ushort target = current.LipsCapture ?? 0;
         var result = _port.SetLips(actor, target);
         if (!result.Success)
@@ -1065,13 +984,12 @@ public sealed class AnimationSession
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
                 LoopWantedSlots = new HashSet<AnimationSlot>(),
-                BaseRepeatSuspended = false,
             });
             owned = OverridesFor(actor);
         }
         if (owned.BaseCapture != null || owned.BaseTimeline != null)
         {
-            var released = StopBase(actor);
+            var released = ResetBaseSelection(actor);
             if (!released.Success)
                 return released;
         }
@@ -1109,12 +1027,8 @@ public sealed class AnimationSession
     // ── Physics (one global patch, held by the scene) ─────────────────
 
     /// <summary>
-    /// The scene's request for the global freeze — the shell's physics
-    /// switch, which stands over every selection and over none. The hold is
-    /// recorded ONLY after the patch it implies has actually landed: a
-    /// failed patch that had already recorded the hold would report the
-    /// scene as frozen while it was still running, and the release would
-    /// then try to undo a patch that was never applied.
+    /// Records the scene hold only after the global patch state matches the
+    /// request.
     /// </summary>
     public AnimationResult SetScenePhysicsFrozen(bool frozen)
     {
@@ -1125,9 +1039,7 @@ public sealed class AnimationSession
         {
             var result = _port.SetPhysicsFrozen(frozen);
             if (!result.Success)
-                // The fallback names the DIRECTION that failed: this call
-                // both patches and unpatches, and "freeze failed" on a
-                // release is a report of the opposite of what was attempted.
+                // Name the failed direction when the runtime gives no detail.
                 return AnimationResult.Fail(
                     result.Detail ?? (frozen
                         ? "Physics freeze failed."
@@ -1183,8 +1095,7 @@ public sealed class AnimationSession
         if (target == null)
             return AnimationResult.Fail("That animation control is no longer present.");
 
-        // A scrub in flight for a DIFFERENT actor ends here rather than
-        // being silently retargeted.
+        // A scrub never retargets to a different actor.
         if (_scrub is { } existing && !existing.Actor.Equals(actor))
             EndScrub();
 
@@ -1201,14 +1112,8 @@ public sealed class AnimationSession
     }
 
     /// <summary>
-    /// Writes a frame within the drag, clamped to the duration CAPTURED
-    /// at Begin rather than a freshly read one — a duration that changes
-    /// mid-drag would otherwise stretch or jump the mapping. A skeleton
-    /// token mismatch ends the drag instead of writing through whatever
-    /// now occupies that control position. The update names its actor and
-    /// a mismatch with the gesture's actor is refused inside the session:
-    /// a value from a newly selected actor can never land in the previous
-    /// actor's gesture.
+    /// Writes a frame clamped to the duration captured at Begin. Actor and
+    /// skeleton mismatches end the drag instead of retargeting the write.
     /// </summary>
     public AnimationResult UpdateScrub(ActorId actor, float time) =>
         UpdateScrubCore(actor, time);
@@ -1245,17 +1150,24 @@ public sealed class AnimationSession
 
     // ── Held expression ──────────────────────────────────────────────────
 
-    /// <summary>Starts an expression and drives its facial slot while it settles.</summary>
-    public AnimationResult BeginExpressionHold(ActorId actor, ushort timeline)
+    /// <summary>Applies an expression and immediately pins its facial frame.</summary>
+    public AnimationResult HoldExpression(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
         var chosen = ChooseSlot(actor, AnimationSlot.Facial, timeline);
         if (!chosen.Success)
             return chosen;
 
-        // A previous hold must be released before the new timeline starts;
-        // otherwise the speed detour freezes the replacement at frame zero.
+        // A replacement must run with Facial unpinned before it is held again.
         var current = OverridesFor(actor);
+        float? speedCapture = null;
+        if (!current.SlotSpeedCaptures.ContainsKey(AnimationSlot.Facial))
+        {
+            var reading = _port.Read(actor);
+            if (reading == null)
+                return AnimationResult.Fail("The facial speed restore point is unavailable.");
+            speedCapture = reading.SpeedFor(AnimationSlot.Facial);
+        }
         if (current.SlotSpeeds.ContainsKey(AnimationSlot.Facial))
         {
             float restore = current.SlotSpeedCaptures.TryGetValue(
@@ -1284,71 +1196,19 @@ public sealed class AnimationSession
         if (!played.Success)
             return played;
 
-        // Facial speed 1 is the existing paused-safe drive used by face bake.
-        var driven = SetSlotSpeedCore(actor, AnimationSlot.Facial, 1f);
-        if (!driven.Success)
+        var held = SetSlotSpeedCore(
+            actor, AnimationSlot.Facial, 0f, speedCapture);
+        if (!held.Success)
         {
             var rollback = ResetSlot(actor, AnimationSlot.Facial);
             return rollback.Success
-                ? driven
+                ? held
                 : AnimationResult.Fail(
-                    $"{driven.Detail ?? "Expression drive failed."} " +
+                    $"{held.Detail ?? "Expression hold failed."} " +
                     $"Restore failed: {rollback.Detail}");
         }
-        return AnimationResult.Ok();
-    }
-
-    /// <summary>Freezes a settled expression when its selection is still current.</summary>
-    public AnimationResult CompleteExpressionHold(ActorId actor, ushort timeline)
-    {
-        if (SelectedFor(actor, AnimationSlot.Facial) != timeline)
-            return AnimationResult.Fail("The selected expression changed while applying.");
-        var held = SetSlotSpeedCore(actor, AnimationSlot.Facial, 0f);
-        if (!held.Success)
-            return held;
         Mutate(actor, o => o with { HeldExpression = timeline });
         return AnimationResult.Ok();
-    }
-
-    /// <summary>Drops a delayed facial drive without another native write.
-    /// Stale identities also discard their obsolete restore points.</summary>
-    public void AbandonExpressionHold(
-        ActorId actor, bool discardRestorePoint = true)
-    {
-        _port.AbandonSlotSpeed(actor, AnimationSlot.Facial);
-        Mutate(actor, o =>
-        {
-            var speeds = new Dictionary<AnimationSlot, float>(o.SlotSpeeds);
-            speeds.Remove(AnimationSlot.Facial);
-            var speedCaptures = new Dictionary<AnimationSlot, float>(o.SlotSpeedCaptures);
-            if (discardRestorePoint)
-                speedCaptures.Remove(AnimationSlot.Facial);
-            var resumes = new Dictionary<AnimationSlot, float>(o.SlotResumeSpeeds);
-            resumes.Remove(AnimationSlot.Facial);
-            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
-            if (discardRestorePoint)
-                captures.Remove(AnimationSlot.Facial);
-            bool keepBase = o.BaseTimeline != null ||
-                o.SelectedSlots.Any(pair => pair.Key != AnimationSlot.Facial) ||
-                captures.Count > 0 || o.LoopedSlots.Count > 0 ||
-                o.LoopWantedSlots.Count > 0;
-            return o with
-            {
-                SlotSpeeds = speeds,
-                SlotSpeedCaptures = speedCaptures,
-                SlotResumeSpeeds = resumes,
-                SlotCaptures = captures,
-                HeldExpression = null,
-                BaseCapture = keepBase ? o.BaseCapture : null,
-            };
-        });
-    }
-
-    /// <summary>Applies and immediately holds an expression for non-UI restores.</summary>
-    public AnimationResult HoldExpression(ActorId actor, ushort timeline)
-    {
-        var begun = BeginExpressionHold(actor, timeline);
-        return begun.Success ? CompleteExpressionHold(actor, timeline) : begun;
     }
 
     /// <summary>Releases a held facial expression.</summary>
@@ -1368,7 +1228,7 @@ public sealed class AnimationSession
         if (active is not { } held)
             return ResetSlotWithoutExpressionBridge(actor, AnimationSlot.Facial);
         if (!current.SlotCaptures.ContainsKey(AnimationSlot.Facial))
-            return AnimationResult.Fail("The facial restore point is unavailable.");
+            return ResetBlendSelection(actor, AnimationSlot.Facial);
 
         float restoreSpeed = current.SlotSpeedCaptures.TryGetValue(
             AnimationSlot.Facial, out var capturedSpeed) ? capturedSpeed : 1f;
@@ -1378,9 +1238,8 @@ public sealed class AnimationSession
             return AnimationResult.Fail(
                 unpinned.Detail ?? "Expression speed release failed.");
 
-        // Brio's visible-release bridge is immediate: clear, Straight Face,
-        // clear again. Poser then restores its exact captured facial slot
-        // instead of Brio's body-changing Idle fallback.
+        // Release clears Facial speed, plays Straight Face, clears speed
+        // again, then restores the captured facial slot.
         var straight = BlendCore(
             actor, AnimationTimelines.StraightFace, AnimationSlot.Facial);
         var again = straight.Success
@@ -1464,7 +1323,7 @@ public sealed class AnimationSession
             return AnimationResult.Ok();
         }
 
-        // Each aspect is released ONLY when its restore succeeded. What
+        // Each aspect is released only when its restore succeeded. What
         // fails stays owned, so a later Reset retries it instead of the
         // override being silently abandoned on a still-live actor. If the
         // actor no longer resolves there is nothing left to restore into,
@@ -1495,7 +1354,6 @@ public sealed class AnimationSession
                 {
                     LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
                     LoopWantedSlots = new HashSet<AnimationSlot>(),
-                    BaseRepeatSuspended = false,
                 };
             }
         }
@@ -1523,7 +1381,7 @@ public sealed class AnimationSession
                 cancelled = Try(_port.CancelActiveTimeline(actor));
             }
 
-            // A failed cancellation processes NOTHING: replaying would
+            // A failed cancellation processes no slot: replaying would
             // restart layers over a state the cancel never cleared, and
             // releasing any entry would shrink the plan the retry still
             // needs. The complete plan is preserved unchanged, the base
@@ -1558,10 +1416,10 @@ public sealed class AnimationSession
             };
         }
 
-        // Base restoration runs AFTER the expression release and slot
+        // Base restoration runs after the expression release and slot
         // replays: those go through the mode dance, which would overwrite
         // the just-restored mode and parameter if the base went back
-        // first. The base is restored on EVERY attempt, but its capture is
+        // first. The base is restored on every attempt, but its capture is
         // released only once every mode-mutating dependency — expression
         // release, cancellation, slot replays — has resolved: a retry of
         // any of those alters or cancels the base again, and would
@@ -1576,7 +1434,6 @@ public sealed class AnimationSession
                 SelectedSlots = selected,
                 BaseCapture = null,
                 BaseTimeline = null,
-                BaseUsesNativeLoop = false,
             };
         }
 

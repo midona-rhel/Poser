@@ -186,7 +186,7 @@ internal static class ServiceRegistration
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();
         services.AddSingleton<CleanTransformFacade>();
-        // Entity lifecycle lands in the SAME history the transforms do, so
+        // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
         services.AddSingleton<Game.Viewport.ViewportProjection>();
@@ -198,14 +198,11 @@ internal static class ServiceRegistration
     private static IServiceCollection AddAnimationFeature(
         this IServiceCollection services)
     {
-        // Animation joins the clean core, not the legacy feature block:
-        // the port owns hooks and addresses, the session owns restoration,
-        // and the coordinator validates the bounded facial settle window.
+        // The port owns native hooks; the session owns exact restoration.
         services.AddSingleton<Game.Animation.AnimationRuntimePort>();
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>();
-        services.AddSingleton<Game.Animation.ExpressionHoldCoordinator>();
         return services;
     }
 
@@ -338,11 +335,7 @@ internal static class ServiceRegistration
         services.AddSingleton<Library.IPoseLibraryService>(sp =>
         {
             var config = sp.GetRequiredService<ConfigurationService>();
-            // Every Poser home is a CONFIGURED root, and a root the scan
-            // cannot observe aborts the whole pass — so they have to exist
-            // before the library can be asked anything, not after the first
-            // document is saved into one. Creation follows the CONFIGURED
-            // value, so a repointed home is the folder that gets made.
+            // Create every configured library root before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
             return new Library.PoseLibraryService(config);
         });
@@ -390,12 +383,11 @@ internal static class ServiceRegistration
         services.AddSingleton<IPoseFileService, PoseFileService>();
         services.AddSingleton<ILightFileService, LightFileService>();
         services.AddSingleton<ICameraFileService, CameraFileService>();
-        // The ONE territory -> place resolution, shared by whole-scene capture
+        // One territory-to-place resolution is shared by whole-scene capture
         // and pose auto-save so a recorded place means the same thing in both
         // documents.
         services.AddSingleton<IPlaceService, Game.Environment.PlaceService>();
-        // The lazy final-capture port breaks the eager construction cycle while
-        // the legacy event subscribers remain independent teardown owners.
+        // Lazy resolution breaks the final-capture construction cycle.
         services.AddSingleton<IAutoSaveService>(sp => new AutoSaveService(
             sp.GetRequiredService<IPluginLog>(),
             sp.GetRequiredService<IFramework>(),
@@ -408,10 +400,8 @@ internal static class ServiceRegistration
             sp.GetRequiredService<IPlaceService>(),
             sp.GetRequiredService<IDalamudPluginInterface>()));
 
-        // The whole-scene vertical. The workflow owns the ONE scene
-        // transaction and takes its native/persistence seam as the adapter;
-        // the snapshot service is a separate cadence over the same capture and
-        // store, so it is constructed after the workflow it defers to.
+        // SceneWorkflow owns the scene transaction; autosave reuses its
+        // capture and store through SceneCaptureService.
         services.AddSingleton<SceneCaptureService>();
         services.AddSingleton<SceneWorkflow>();
         services.AddSingleton(sp => new SceneAutoSaveService(
@@ -452,7 +442,7 @@ internal static class ServiceRegistration
         services.AddSingleton<ScenePane>();
         services.AddSingleton<GraphicalBonePane>();
         services.AddSingleton<SkeletonOverlayPresentation>();
-        // The configuration INSTANCE is replaced by ConfigurationService.Reset,
+        // ConfigurationService.Reset replaces the configuration instance,
         // so the preset store is reached through the service on every call.
         services.AddSingleton(sp =>
         {

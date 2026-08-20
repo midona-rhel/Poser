@@ -96,8 +96,7 @@ public sealed class AnimationCatalogLoader
                     index,
                     // Only emotes carry weapon state; null entries remain
                     // eligible for either current weapon state.
-                    emote.DrawsWeapon,
-                    timelines.GetRowOrDefault(reference.RowId)?.IsLoop ?? false));
+                    emote.DrawsWeapon));
             }
         }
     }
@@ -114,7 +113,7 @@ public sealed class AnimationCatalogLoader
             var name = action.Name.ExtractText();
             if (string.IsNullOrWhiteSpace(name))
                 continue;
-            // The playable timeline is the action's END animation; the
+            // The playable timeline is the action's end animation; the
             // start is the wind-up and is the sheet's dedupe key.
             if (!action.AnimationEnd.IsValid || action.AnimationEnd.RowId == 0)
                 continue;
@@ -129,8 +128,7 @@ public sealed class AnimationCatalogLoader
                 name,
                 AnimationKind.Action,
                 (AnimationSlot)row.Stance,
-                action.Icon,
-                IsLoop: row.IsLoop));
+                action.Icon));
         }
     }
 
@@ -149,7 +147,6 @@ public sealed class AnimationCatalogLoader
                 key,
                 AnimationKind.RawTimeline,
                 (AnimationSlot)timeline.Stance,
-                IsLoop: timeline.IsLoop,
                 Key: key));
         }
     }

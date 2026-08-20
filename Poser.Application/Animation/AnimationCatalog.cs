@@ -59,12 +59,23 @@ public sealed class AnimationCatalog
     private static bool MatchesId(TimelineEntry entry, string query) =>
         uint.TryParse(query, out var id) && entry.TimelineId == id;
 
-    public TimelineEntry? Find(uint timelineId)
+    /// <summary>
+    /// Resolves a label only. Playback must retain the exact chosen entry.
+    /// Friendly sheet rows win over raw aliases for the same native id.
+    /// </summary>
+    public TimelineEntry? FindDisplay(uint timelineId, AnimationSlot? slot = null)
     {
+        TimelineEntry? raw = null;
         foreach (var entry in _entries)
-            if (entry.TimelineId == timelineId)
+        {
+            if (entry.TimelineId != timelineId ||
+                slot is { } exactSlot && entry.Slot != exactSlot)
+                continue;
+            if (entry.Kind != AnimationKind.RawTimeline)
                 return entry;
-        return null;
+            raw ??= entry;
+        }
+        return raw;
     }
 
 }
