@@ -362,7 +362,13 @@ public sealed class AnimationSession
     {
         var timeline = (ushort)entry.TimelineId;
         if (asBase)
-            return PlayBase(actor, timeline, entry.IsLoop);
+        {
+            var chosen = ChooseSlot(actor, AnimationSlot.Base, timeline, entry.IsLoop);
+            return chosen.Success
+                ? ApplySelectedSlotCore(
+                    actor, AnimationSlot.Base, playFromStart ? entry : null)
+                : chosen;
+        }
         if (playFromStart && entry.CanPlayFromStart)
         {
             var result = PlayEmote(actor, entry.EmoteId);
@@ -583,11 +589,16 @@ public sealed class AnimationSession
         SetSlotSpeedCore(actor, slot, 0f);
 
     public AnimationResult PlaySelectedSlot(ActorId actor, AnimationSlot slot)
+        => PlaySelectedSlot(actor, slot, null);
+
+    /// <summary>Applies Selected using its catalog-native route when available.</summary>
+    public AnimationResult PlaySelectedSlot(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry)
     {
         bool resumedOverall = false;
         if (SelectedFor(actor, slot) != null)
         {
-            var played = ApplySelectedSlotCore(actor, slot);
+            var played = ApplySelectedSlotCore(actor, slot, entry);
             if (!played.Success)
                 return played;
         }
@@ -605,18 +616,23 @@ public sealed class AnimationSession
             : AnimationResult.Fail("Choose an animation first.");
     }
 
-    private AnimationResult ApplySelectedSlotCore(ActorId actor, AnimationSlot slot)
+    private AnimationResult ApplySelectedSlotCore(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry = null)
     {
         var current = OverridesFor(actor);
         if (!current.SelectedSlots.TryGetValue(slot, out var selected))
             return AnimationResult.Fail("Choose an animation first.");
         if (slot == AnimationSlot.Base)
+        {
+            if (entry is { CanPlayFromStart: true } && entry.TimelineId == selected)
+                return PlayBaseEmoteCore(actor, entry, current);
             return PlayBaseCore(
                 actor,
                 selected,
                 current,
                 current.LoopWantedSlots.Contains(AnimationSlot.Base),
                 current.BaseUsesNativeLoop);
+        }
         if (slot == AnimationSlot.Lips)
             return SetLipsCore(actor, selected);
 
@@ -633,6 +649,53 @@ public sealed class AnimationSession
         if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
             speed == 0f)
             return ResumeSlotSpeedCore(actor, slot);
+        return AnimationResult.Ok();
+    }
+
+    private AnimationResult PlayBaseEmoteCore(
+        ActorId actor, TimelineEntry entry, AnimationOverrides before)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        bool armRepeat = before.LoopWantedSlots.Contains(AnimationSlot.Base);
+        var rollbackCapture = before.BaseCapture != null ? _port.CaptureBase(actor) : null;
+        var played = _port.PlayEmote(actor, entry.EmoteId);
+        if (!played.Success)
+            return AnimationResult.Fail(played.Detail ?? "Emote playback failed.");
+        if (armRepeat)
+        {
+            var armed = _port.SetForceLoop(actor, (ushort)entry.TimelineId);
+            if (!armed.Success)
+            {
+                var baseline = rollbackCapture ?? before.BaseCapture;
+                var rolledBack = baseline is { } restore
+                    ? _port.RestoreBase(actor, restore)
+                    : AnimationPortResult.Fail("The base restore point is unavailable.");
+                if (rolledBack.Success)
+                    return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
+                Mutate(actor, o => o with
+                {
+                    BaseTimeline = (ushort)entry.TimelineId,
+                    BaseCapture = o.BaseCapture ?? baseline,
+                });
+                return AnimationResult.Fail(
+                    $"{armed.Detail ?? "Repeat arm failed."} " +
+                    $"Rollback failed: {rolledBack.Detail ?? "base restore failed."}");
+            }
+        }
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            if (armRepeat)
+                loops[AnimationSlot.Base] = (ushort)entry.TimelineId;
+            else
+                loops.Remove(AnimationSlot.Base);
+            return o with
+            {
+                BaseTimeline = (ushort)entry.TimelineId,
+                LoopedSlots = loops,
+                BaseRepeatSuspended = false,
+            };
+        });
         return AnimationResult.Ok();
     }
 

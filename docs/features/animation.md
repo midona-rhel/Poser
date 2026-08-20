@@ -18,6 +18,10 @@ the verified forced base timeline, including entries marked as native loops; the
 sheet flag is not a substitute for the sequencer field. Selecting another layer
 releases that force before playback and preserves repeat intent. Applying Full
 Body later reclaims it, so the most recent explicit layer action is authoritative.
+Catalog emotes use the game emote entry point for their intro and loop lifecycle;
+raw timelines use the audited timeline setter. If the client clears Poser's
+forced field when a Base animation ends, the framework update replays Selected
+before restoring the field instead of treating a field rewrite as playback.
 
 Animation > Facial and Pose > Expression share one Facial selection and restore
 point. Preview lets the timeline advance; Bake replays it before the delayed face

@@ -165,6 +165,26 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
+    public void Base_emote_selection_uses_emote_lifecycle_before_arming_repeat()
+    {
+        var port = FakePort.Create();
+        var session = new AnimationSession(port.Port);
+        var bombDance = new TimelineEntry(
+            690, "Bomb Dance", AnimationKind.Emote, AnimationSlot.Base,
+            EmoteId: 234, EmoteIndex: 0, IsLoop: true);
+
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.ChooseSlot(
+            ActorA, AnimationSlot.Base, 690, nativeLoop: true).Success);
+        Assert.True(session.PlaySelectedSlot(
+            ActorA, AnimationSlot.Base, bombDance).Success);
+
+        Assert.DoesNotContain("PlayBase:690", port.Calls);
+        Assert.True(port.Calls.IndexOf("PlayEmote") < port.Calls.IndexOf("SetForceLoop:690"));
+        Assert.Equal((ushort)690, session.SelectedFor(ActorA, AnimationSlot.Base));
+    }
+
+    [Fact]
     public void Repeat_intent_can_be_armed_before_selection_without_force_layout()
     {
         var port = FakePort.Create();

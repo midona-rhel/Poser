@@ -623,7 +623,11 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _forcedLoops.Remove(actor);
     }
 
-    /// <summary>Keeps Poser's owned forced field authoritative until release.</summary>
+    /// <summary>
+    /// Replays an owned Base timeline when the native forced field clears.
+    /// The clear is the sequencer's lifecycle signal; rewriting the field
+    /// alone after that point does not restart an animation that has ended.
+    /// </summary>
     private void EnforceForcedLoops()
     {
         if (LoopsSuspended || _forcedLoops.Count == 0)
@@ -635,9 +639,14 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 !TryReadForcedTimeline(&character->Timeline, out var current) ||
                 current == timeline)
                 continue;
-            if (TrySetForcedTimeline(&character->Timeline, timeline))
-                _log.Debug(
-                    $"Animation: reasserted full-body loop actor={actor} timeline={timeline}.");
+            var replayed = PlayTimeline(character, timeline);
+            if (replayed.Success && TrySetForcedTimeline(&character->Timeline, timeline))
+                _log.Information(
+                    $"Animation: replayed full-body loop actor={actor} timeline={timeline} field={timeline}.");
+            else
+                _log.Warning(
+                    $"Animation: full-body loop replay failed actor={actor} timeline={timeline}: " +
+                    (replayed.Detail ?? "forced field write failed."));
         }
     }
 

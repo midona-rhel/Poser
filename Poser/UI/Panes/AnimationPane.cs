@@ -328,8 +328,8 @@ public sealed class AnimationPane
 
         // Headers expose the live native timeline; only Base owns Repeat.
         form.Pair(
-            $"{label}: {NameFor(live, "None")}",
-            _ => { },
+            label,
+            cell => cell.Text(NameFor(live, "None")),
             slot == AnimationSlot.Base ? "Repeat" : string.Empty,
             cell =>
             {
@@ -358,7 +358,7 @@ public sealed class AnimationPane
                 actions.Button(
                     "Apply",
                     () => Report(
-                        _animation.PlaySelectedSlot(actor, slot),
+                        _animation.PlaySelectedSlot(actor, slot, _catalog.Find(selected)),
                         $"{label} playback"),
                     style: actionStyle,
                     disabled: selected == 0);
@@ -392,7 +392,8 @@ public sealed class AnimationPane
                     play ? "Play" : "Pause",
                     () => Report(
                         play
-                            ? _animation.PlaySelectedSlot(actor, slot)
+                            ? _animation.PlaySelectedSlot(
+                                actor, slot, _catalog.Find(selected))
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
                     style: actionStyle,
