@@ -6,6 +6,10 @@ timeline. Choosing remembers Selected without playback; Apply plays it and keeps
 the choice available for replay. The first Choose captures the immutable native
 restore point for that actor and slot. Reset restores that exact incoming state,
 releases the slot's overrides, and clears Selected only after restoration succeeds.
+General provides the same catalog as a command launcher. Its Apply resolves the
+entry's sheet slot and delegates to that layer's Selected and restore point; it
+does not create another Base authority. Play emote start chooses the native emote
+lifecycle for index-zero emotes, while Loop animation controls only Full Body.
 
 Each layer has an exact logical-slot speed override. Pause writes zero and
 remembers the previous nonzero native or user speed; Play restores that speed.
@@ -32,10 +36,10 @@ capture matches Ktisis's two-tick face synchronization after timeline playback
 (`Ktisis/Editor/Animation/Handlers/AnimationEditor.cs:126-129`,
 `Ktisis/Editor/Posing/PosingManager.cs:131-145`).
 
-Full Body alone exposes scrub through the control-zero lookup used by Brio and
-Ktisis, searched across live skeleton partials and guarded by the captured
-skeleton identity. Other layers omit scrub because numeric Havok indexes are not
-a stable logical-layer mapping
+Full Body and Upper Body expose scrub through their verified slot-index lookup,
+searched across live skeleton partials and guarded by the captured skeleton
+identity. Other layers omit scrub because numeric Havok indexes are not a stable
+logical-layer mapping
 (`Brio/Brio/UI/Controls/Editors/ActionTimelineEditor.cs:468-517`,
 `Ktisis/Interface/Components/Chara/AnimationEditorTab.cs:267-307`). It also omits
 global repeat and selection for Parts/Overlay slots. Lips is included because its

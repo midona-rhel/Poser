@@ -374,14 +374,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
-    /// <summary>Resolves only the verified full-body control-zero binding.</summary>
+    /// <summary>Resolves the verified Base and Upper Body slot controls.</summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
         token = 0;
         var character = Resolve(actor, out _);
-        if (character == null || slot != AnimationSlot.Base ||
-            character->Timeline.TimelineSequencer.TimelineIds[0] == 0)
+        if (character == null || slot is not (AnimationSlot.Base or AnimationSlot.UpperBody))
+            return null;
+        int index = (int)slot;
+        if (character->Timeline.TimelineSequencer.TimelineIds[index] == 0)
             return null;
 
         var drawObject = character->GameObject.DrawObject;
@@ -395,9 +397,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
         {
             var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
-            if (animated == null || animated->AnimationControls.Length == 0)
+            if (animated == null || index >= animated->AnimationControls.Length)
                 continue;
-            var control = animated->AnimationControls[0].Value;
+            var control = animated->AnimationControls[index].Value;
             if (control == null)
                 continue;
             var binding = control->hkaAnimationControl.Binding;
@@ -405,7 +407,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
                 binding.ptr->Animation.ptr->Duration <= 0f)
                 continue;
             return new ScrubControlReading(
-                new ScrubControlId(p, 0),
+                new ScrubControlId(p, index),
                 control->hkaAnimationControl.LocalTime,
                 binding.ptr->Animation.ptr->Duration,
                 control->PlaybackSpeed);

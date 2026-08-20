@@ -185,6 +185,32 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
+    public void Routed_upper_emote_shares_slot_selection_and_suspends_base_repeat()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
+        var session = new AnimationSession(port.Port);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+        Assert.True(session.PlayBase(ActorA, 42).Success);
+        var upper = new TimelineEntry(
+            43, "Upper emote", AnimationKind.Emote, AnimationSlot.UpperBody,
+            EmoteId: 300, EmoteIndex: 0);
+
+        Assert.True(session.ChooseSlot(
+            ActorA, upper.Slot, (ushort)upper.TimelineId).Success);
+        Assert.True(session.PlaySelectedSlot(ActorA, upper.Slot, upper).Success);
+
+        Assert.Equal((ushort)43, session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+        Assert.Equal((ushort)77,
+            session.OverridesFor(ActorA).SlotCaptures[AnimationSlot.UpperBody]);
+        Assert.Contains("PlayEmote", port.Calls);
+        Assert.DoesNotContain("Blend:43", port.Calls);
+        Assert.True(port.Calls.LastIndexOf("SetForceLoop:0") <
+            port.Calls.LastIndexOf("PlayEmote"));
+        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
+    }
+
+    [Fact]
     public void Repeat_intent_can_be_armed_before_selection_without_force_layout()
     {
         var port = FakePort.Create();

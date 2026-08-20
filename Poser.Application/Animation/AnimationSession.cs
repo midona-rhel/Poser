@@ -622,10 +622,13 @@ public sealed class AnimationSession
         var current = OverridesFor(actor);
         if (!current.SelectedSlots.TryGetValue(slot, out var selected))
             return AnimationResult.Fail("Choose an animation first.");
+        if (entry is { CanPlayFromStart: true } && entry.TimelineId == selected &&
+            entry.Slot == slot)
+            return slot == AnimationSlot.Base
+                ? PlayBaseEmoteCore(actor, entry, current)
+                : PlayLayerEmoteCore(actor, slot, entry, current);
         if (slot == AnimationSlot.Base)
         {
-            if (entry is { CanPlayFromStart: true } && entry.TimelineId == selected)
-                return PlayBaseEmoteCore(actor, entry, current);
             return PlayBaseCore(
                 actor,
                 selected,
@@ -645,6 +648,63 @@ public sealed class AnimationSession
             // Applying the Animation picker hands Facial authority over
             // from Pose while keeping the durable picker selection.
             HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+        });
+        if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
+            speed == 0f)
+            return ResumeSlotSpeedCore(actor, slot);
+        return AnimationResult.Ok();
+    }
+
+    private AnimationResult PlayLayerEmoteCore(
+        ActorId actor,
+        AnimationSlot slot,
+        TimelineEntry entry,
+        AnimationOverrides before)
+    {
+        if (Suspended() is { } blocked) return blocked;
+        bool suspendBaseRepeat = before.LoopedSlots.ContainsKey(AnimationSlot.Base);
+        ushort suspendedTimeline = suspendBaseRepeat
+            ? before.LoopedSlots[AnimationSlot.Base]
+            : (ushort)0;
+        if (suspendBaseRepeat)
+        {
+            var cleared = _port.SetForceLoop(actor, 0);
+            if (!cleared.Success)
+                return AnimationResult.Fail(
+                    cleared.Detail ?? "Full-body repeat suspension failed.");
+        }
+
+        var capturedBase = before.BaseCapture == null ? _port.CaptureBase(actor) : null;
+        var played = _port.PlayEmote(actor, entry.EmoteId);
+        if (!played.Success)
+        {
+            if (suspendBaseRepeat)
+            {
+                var restored = _port.SetForceLoop(actor, suspendedTimeline);
+                if (!restored.Success)
+                {
+                    Mutate(actor, o => o with { BaseRepeatSuspended = true });
+                    return AnimationResult.Fail(
+                        $"{played.Detail ?? "Emote playback failed."} Repeat restore failed: " +
+                        (restored.Detail ?? "full-body repeat arm failed."));
+                }
+            }
+            return AnimationResult.Fail(played.Detail ?? "Emote playback failed.");
+        }
+
+        bool heldExpression = slot == AnimationSlot.Facial && before.HeldExpression != null;
+        Mutate(actor, o =>
+        {
+            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
+            if (suspendBaseRepeat)
+                loops.Remove(AnimationSlot.Base);
+            return o with
+            {
+                BaseCapture = o.BaseCapture ?? capturedBase,
+                LoopedSlots = loops,
+                BaseRepeatSuspended = suspendBaseRepeat || o.BaseRepeatSuspended,
+                HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+            };
         });
         if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
             speed == 0f)
