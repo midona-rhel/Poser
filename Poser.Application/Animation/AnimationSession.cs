@@ -705,7 +705,8 @@ public sealed class AnimationSession
             : AnimationResult.Fail(string.Join("; ", failures));
     }
 
-    private AnimationResult ResetBaseSelection(ActorId actor)
+    private AnimationResult ResetBaseSelection(
+        ActorId actor, bool preserveLoopIntent = false)
     {
         var current = OverridesFor(actor);
         if (current.BaseTimeline == null &&
@@ -728,7 +729,8 @@ public sealed class AnimationSession
             var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
             loops.Remove(AnimationSlot.Base);
             var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
-            wanted.Remove(AnimationSlot.Base);
+            if (!preserveLoopIntent)
+                wanted.Remove(AnimationSlot.Base);
             var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
             selected.Remove(AnimationSlot.Base);
             bool baseStillNeeded = selected.Count > 0 || o.SlotCaptures.Count > 0;
@@ -969,8 +971,9 @@ public sealed class AnimationSession
         if (capture == null && _port.Read(actor) is { } reading)
             capture = new StanceCapture(reading.Stance, reading.Pose);
 
-        // A stance change releases full-body repeat first.
+        // Stance playback stops repeat arms but keeps General repeat intent.
         var owned = OverridesFor(actor);
+        bool wantsBaseLoop = owned.LoopWantedSlots.Contains(AnimationSlot.Base);
         if (owned.LoopedSlots.Count > 0 || owned.LoopWantedSlots.Count > 0)
         {
             if (owned.LoopedSlots.ContainsKey(AnimationSlot.Base))
@@ -983,13 +986,15 @@ public sealed class AnimationSession
             Mutate(actor, o => o with
             {
                 LoopedSlots = new Dictionary<AnimationSlot, ushort>(),
-                LoopWantedSlots = new HashSet<AnimationSlot>(),
+                LoopWantedSlots = wantsBaseLoop
+                    ? new HashSet<AnimationSlot> { AnimationSlot.Base }
+                    : new HashSet<AnimationSlot>(),
             });
             owned = OverridesFor(actor);
         }
         if (owned.BaseCapture != null || owned.BaseTimeline != null)
         {
-            var released = ResetBaseSelection(actor);
+            var released = ResetBaseSelection(actor, preserveLoopIntent: true);
             if (!released.Success)
                 return released;
         }

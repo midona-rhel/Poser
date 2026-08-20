@@ -932,13 +932,10 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             _ => EmoteModeNormal,
         };
 
-        // Idle wrapping also stays inside the emote table that drives it.
-        int available = EmoteController.GetAvailablePoses(poseType);
-        if (available <= 0)
-            available = 1;
-        if (stance == AnimationStance.Idle)
-            available = Math.Min(available, AnimationTimelines.IdlePoses.Count);
-        int wrapped = ((pose % available) + available) % available;
+        bool weaponDrawn = character->Timeline.IsWeaponDrawn;
+        // The explicit pose table remains available while native GPose pose
+        // counts settle.
+        int wrapped = AnimationTimelines.WrapPose(pose, stance, weaponDrawn);
 
         bool preserveOffsets = stance == AnimationStance.SitChair;
         var drawOffset = preserveOffsets ? character->DrawOffset : default;
@@ -951,6 +948,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
+        // Stance playback clears a native Base latch that may predate this
+        // session.
+        TrySetForcedTimeline(&character->Timeline, 0);
 
         _cancelTimeline(&character->Timeline, nint.Zero, nint.Zero);
         _setEmoteMode(&character->EmoteController, emoteMode);
@@ -970,7 +970,6 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         if (stance != AnimationStance.Idle)
             return AnimationPortResult.Ok();
 
-        bool weaponDrawn = character->Timeline.IsWeaponDrawn;
         if (wrapped == 0)
         {
             character->Timeline.TimelineSequencer.PlayTimeline(
