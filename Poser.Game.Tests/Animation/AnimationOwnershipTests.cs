@@ -225,24 +225,32 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Layer_selection_suspends_forced_full_body_repeat_without_reforcing()
+    public void Upper_apply_rearms_forced_full_body_repeat_and_keeps_selection()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
         Assert.True(session.PlayBase(ActorA, 42).Success);
+        var upper = new TimelineEntry(
+            43, "Eat Pizza", AnimationKind.Emote, AnimationSlot.UpperBody,
+            EmoteId: 300, EmoteIndex: 0);
+        Assert.True(session.ChooseSlot(
+            ActorA, AnimationSlot.UpperBody, 43).Success);
 
-        var result = session.Blend(ActorA, 43);
+        var result = session.PlaySelectedSlot(
+            ActorA, AnimationSlot.UpperBody, upper);
 
         Assert.True(result.Success);
         Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
-        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
-        Assert.False(session.OverridesFor(ActorA).LoopedSlots.ContainsKey(AnimationSlot.Base));
-        int upper = port.Calls.LastIndexOf("Blend:43");
-        Assert.True(upper >= 0);
-        Assert.True(port.Calls.LastIndexOf("SetForceLoop:0") < upper);
-        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
-            call => call.StartsWith("SetForceLoop"));
+        Assert.False(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.Equal((ushort)42,
+            session.OverridesFor(ActorA).LoopedSlots[AnimationSlot.Base]);
+        Assert.Equal((ushort)43,
+            session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+        int layer = port.Calls.LastIndexOf("Blend:43");
+        Assert.True(port.Calls.LastIndexOf("SetForceLoop:0") < layer);
+        Assert.True(layer < port.Calls.LastIndexOf("SetForceLoop:42"));
+        Assert.DoesNotContain("PlayEmote", port.Calls);
     }
 
     [Fact]
@@ -267,23 +275,23 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Failed_layer_selection_and_rearm_preserve_sticky_suspended_ownership()
+    public void Landed_layer_with_failed_rearm_preserves_retryable_ownership()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
         Assert.True(session.PlayBase(ActorA, 42).Success);
-        port.FailBlend = true;
         port.FailForceLoopFor = 42;
 
         var result = session.Blend(ActorA, 43);
 
         Assert.False(result.Success);
-        Assert.Contains("Repeat restore failed", result.Detail);
+        Assert.Contains("could not be restored", result.Detail);
         var owned = session.OverridesFor(ActorA);
         Assert.True(owned.LoopWantedSlots.Contains(AnimationSlot.Base));
         Assert.False(owned.LoopedSlots.ContainsKey(AnimationSlot.Base));
         Assert.True(owned.BaseRepeatSuspended);
+        Assert.True(owned.SlotCaptures.ContainsKey(AnimationSlot.UpperBody));
     }
 
     [Fact]
@@ -331,19 +339,19 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Actor_departure_restores_a_suspended_repeat_baseline_without_reforcing()
+    public void Actor_departure_clears_repeat_before_restoring_its_baseline()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
         Assert.True(session.PlayBase(ActorA, 42).Success);
         Assert.True(session.Blend(ActorA, 43).Success);
-        int upper = port.Calls.LastIndexOf("Blend:43");
+        int beforeDeparture = port.Calls.Count;
 
         session.Reconcile(EmptyScene(1));
 
         Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
-        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
+        Assert.DoesNotContain(port.Calls.Skip(beforeDeparture),
             call => call == "SetForceLoop:42");
     }
 

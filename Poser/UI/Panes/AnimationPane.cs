@@ -22,6 +22,8 @@ public sealed class AnimationPane
     // The expression workspace may open before another catalog row.
     private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
+    // Preview stays in-place while its validated facial settle is pending.
+    private readonly Game.Animation.ExpressionHoldCoordinator _expressionHold;
     private readonly SceneSession _scene;
 
     // All picker rows share one open feed.
@@ -122,6 +124,7 @@ public sealed class AnimationPane
         AnimationCatalog catalog,
         Game.Animation.AnimationCatalogLoader catalogLoader,
         Game.Animation.FacialPoseCapture facialCapture,
+        Game.Animation.ExpressionHoldCoordinator expressionHold,
         ITextureProvider textures,
         SceneSession scene,
         UserNotices notices)
@@ -131,6 +134,7 @@ public sealed class AnimationPane
         _catalog = catalog;
         _catalogLoader = catalogLoader;
         _facialCapture = facialCapture;
+        _expressionHold = expressionHold;
         _icons = new GameIconResolver(textures);
         _scene = scene;
         _timelineKey = RowKey;
@@ -661,6 +665,7 @@ public sealed class AnimationPane
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
         var actionStyle = FixedActionStyle();
+        bool pending = _expressionHold.IsPendingFor(actor);
         form.Picker(
             "Expression",
             NameFor(selected, "Choose expression"),
@@ -670,17 +675,17 @@ public sealed class AnimationPane
                 actions.Button(
                     poseSurface ? "Preview" : "Apply",
                     () => ReportExpression(
-                        _animation.HoldExpression(actor, selected),
+                        _expressionHold.Begin(actor, selected),
                         "Expression"),
-                    style: actionStyle,
-                    disabled: disabled || selected == 0,
+                    style: poseSurface ? default : actionStyle,
+                    disabled: disabled || selected == 0 || pending,
                     help: "Preview the selected expression and hold its facial frame");
                 actions.Button(
                     "Reset",
                     () => ReportExpression(
                         _animation.ReleaseExpression(actor), "Expression"),
-                    style: actionStyle,
-                    disabled: disabled || (held == 0 && selected == 0),
+                    style: poseSurface ? default : actionStyle,
+                    disabled: disabled || pending || (held == 0 && selected == 0),
                     help: "Restore the facial state captured before Poser's first choice");
                 if (poseSurface)
                 {
@@ -702,7 +707,7 @@ public sealed class AnimationPane
                                 _notices.Failed(
                                     $"Bake expression: {failed.Detail}");
                         },
-                        disabled: disabled || selected == 0 ||
+                        disabled: disabled || selected == 0 || pending ||
                             _facialCapture.IsPending,
                         help: "Write the held face into the pose as one undoable edit");
                 }

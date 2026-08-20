@@ -94,6 +94,9 @@ public interface IAnimationRuntimePort
     /// <summary>Releases enforcement after restoring the captured speed.</summary>
     AnimationPortResult ClearSlotSpeed(
         ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
+    /// <summary>Drops speed enforcement without touching the currently
+    /// resolved actor. Used when a delayed command's identity went stale.</summary>
+    void AbandonSlotSpeed(ActorId actor, AnimationSlot slot);
 
     // ── Lips, stance, weapon, position ────────────────────────────────
     AnimationPortResult SetLips(ActorId actor, ushort timeline);

@@ -199,12 +199,13 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         // Animation joins the clean core, not the legacy feature block:
-        // the port owns the hooks and every address, the session owns
-        // stable-id state and restoration.
+        // the port owns hooks and addresses, the session owns restoration,
+        // and the coordinator validates the bounded facial settle window.
         services.AddSingleton<Game.Animation.AnimationRuntimePort>();
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
         services.AddSingleton<AnimationSession>();
+        services.AddSingleton<Game.Animation.ExpressionHoldCoordinator>();
         return services;
     }
 

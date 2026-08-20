@@ -1,7 +1,17 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
+using Poser.Application.Lifecycle;
+using Poser.Application.Operations;
+using Poser.Application.Scene;
+using Poser.Application.Selection;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
+using Poser.Domain.Scene;
+using Poser.Entities;
+using Poser.Game.Animation;
+using Poser.Game.Bindings;
 
 namespace Poser.Game.Tests.Animation;
 
@@ -62,23 +72,20 @@ public sealed class ExpressionHoldTests
     }
 
     [Fact]
-    public void Staged_expression_choice_does_not_play_or_hold_until_apply()
+    public void Stale_expression_apply_keeps_selection_without_replacement_writes()
     {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
+        using var app = new CoordinatorHarness();
+        Assert.True(app.Hold.Begin(Actor, Smile).Success);
+        app.ReplaceSkeleton();
+        int beforeCallback = app.Port.Calls.Count;
 
-        Assert.True(session.ChooseSlot(
-            Actor, AnimationSlot.Facial, Smile).Success);
+        app.Framework.FireUpdate();
 
-        Assert.Equal(Smile, session.SelectedFor(Actor, AnimationSlot.Facial));
-        Assert.Null(session.HeldExpressionFor(Actor));
-        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend:"));
-        Assert.DoesNotContain(port.Calls,
-            call => call.StartsWith("SetSlotSpeed:Facial:"));
-
-        Assert.True(session.HoldExpression(Actor, Smile).Success);
-        Assert.Equal(Smile, session.HeldExpressionFor(Actor));
-        Assert.Contains("SetSlotSpeed:Facial:0", port.Calls);
+        Assert.False(app.Hold.IsPendingFor(Actor));
+        Assert.Equal(Smile,
+            app.Animation.SelectedFor(Actor, AnimationSlot.Facial));
+        Assert.Null(app.Animation.HeldExpressionFor(Actor));
+        Assert.Equal(beforeCallback, app.Port.Calls.Count);
     }
 
     [Fact]
@@ -101,23 +108,26 @@ public sealed class ExpressionHoldTests
     [Fact]
     public void Paused_expression_preview_and_reset_restore_exact_facial_state()
     {
-        var port = FakePort.Create();
-        var session = new AnimationSession(port.Port);
-        Assert.True(session.Pause(Actor).Success);
-        port.Calls.Clear();
+        using var app = new CoordinatorHarness();
+        Assert.True(app.Animation.Pause(Actor).Success);
+        app.Port.Calls.Clear();
 
-        Assert.True(session.HoldExpression(Actor, Smile).Success);
-        port.LiveFacialTimeline = Smile;
-        Assert.True(session.ReleaseExpression(Actor).Success);
+        Assert.True(app.Hold.Begin(Actor, Smile).Success);
+        app.Framework.FireUpdate();
+        Assert.Null(app.Animation.HeldExpressionFor(Actor));
+        app.Framework.FireUpdate();
+        Assert.Equal(Smile, app.Animation.HeldExpressionFor(Actor));
+        Assert.True(app.Animation.ReleaseExpression(Actor).Success);
 
-        Assert.Equal(Incoming, port.LiveFacialTimeline);
-        Assert.True(session.OverridesFor(Actor).IsPaused);
-        Assert.Contains("Blend:9001", port.Calls);
+        Assert.Equal(Incoming, app.Port.LiveFacialTimeline);
+        Assert.True(app.Animation.OverridesFor(Actor).IsPaused);
+        Assert.Contains("SetSlotSpeed:Facial:1", app.Port.Calls);
+        Assert.Contains("Blend:604", app.Port.Calls);
         Assert.Equal(
             ["ClearSlotSpeed:Facial:1", "Blend:777"],
-            port.Calls.TakeLast(2));
-        Assert.Null(session.HeldExpressionFor(Actor));
-        Assert.Null(session.SelectedFor(Actor, AnimationSlot.Facial));
+            app.Port.Calls.TakeLast(2));
+        Assert.Null(app.Animation.HeldExpressionFor(Actor));
+        Assert.Null(app.Animation.SelectedFor(Actor, AnimationSlot.Facial));
     }
 
     [Fact]
@@ -141,6 +151,120 @@ public sealed class ExpressionHoldTests
         Assert.True(session.ReleaseExpression(Actor).Success);
         Assert.Null(session.SelectedFor(Actor, AnimationSlot.Facial));
         Assert.True(session.OverridesFor(Actor).IsPaused);
+    }
+
+    private sealed class CoordinatorHarness : IDisposable
+    {
+        private ulong _revision = 1;
+
+        public CoordinatorHarness()
+        {
+            var skeleton = new SkeletonId(Actor, PoseSlot.Character, 4);
+            Scene = new SceneSession(new SelectionSession());
+            Scene.Refresh(Snapshot(Describe(skeleton), _revision));
+            Bindings = (StableBindingRegistry)RuntimeHelpers
+                .GetUninitializedObject(typeof(StableBindingRegistry));
+            SetField(Bindings, "_actorBindings", new Dictionary<ActorId, IActor>
+            {
+                [Actor] = DispatchProxy.Create<IActor, DefaultProxy>(),
+            });
+            Framework = FrameworkProxy.Create();
+            Port = FakePort.Create();
+            Animation = new AnimationSession(Port.Port);
+            Session = new MutableSessionSource
+            {
+                Active = SessionGeneration.Create(
+                    Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
+            };
+            Hold = new ExpressionHoldCoordinator(
+                Framework.Framework,
+                Bindings,
+                Scene,
+                Animation,
+                Session,
+                DispatchProxy.Create<IPluginLog, DefaultProxy>());
+        }
+
+        public SceneSession Scene { get; }
+        public StableBindingRegistry Bindings { get; }
+        public FrameworkProxy Framework { get; }
+        public FakePort Port { get; }
+        public AnimationSession Animation { get; }
+        public MutableSessionSource Session { get; }
+        public ExpressionHoldCoordinator Hold { get; }
+
+        public void ReplaceSkeleton()
+        {
+            var replacement = new SkeletonId(Actor, PoseSlot.Character, 5);
+            Scene.Refresh(Snapshot(Describe(replacement), ++_revision));
+        }
+
+        public void Dispose() => Hold.Dispose();
+
+        private static ActorDescriptor Describe(SkeletonId skeleton) =>
+            new(Actor, "Actor",
+                [new SkeletonDescriptor(skeleton, Array.Empty<BoneDescriptor>())]);
+
+        private static SceneSnapshot Snapshot(
+            ActorDescriptor actor, ulong revision) =>
+            new(revision, [actor], [], [], []);
+    }
+
+    private sealed class MutableSessionSource : ISessionGenerationSource
+    {
+        public SessionGeneration? Active { get; set; }
+        public SessionGeneration? ActiveSessionGeneration => Active;
+    }
+
+    private class FrameworkProxy : DispatchProxy
+    {
+        private Delegate? _update;
+        public IFramework Framework { get; private set; } = null!;
+
+        public static FrameworkProxy Create()
+        {
+            var framework = DispatchProxy.Create<IFramework, FrameworkProxy>();
+            var proxy = (FrameworkProxy)(object)framework;
+            proxy.Framework = framework;
+            return proxy;
+        }
+
+        public void FireUpdate() => _update?.DynamicInvoke(Framework);
+
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            switch (method?.Name)
+            {
+                case "get_IsInFrameworkUpdateThread":
+                    return true;
+                case "add_Update":
+                    _update = Delegate.Combine(_update, (Delegate)args![0]!);
+                    return null;
+                case "remove_Update":
+                    _update = Delegate.Remove(_update, (Delegate)args![0]!);
+                    return null;
+                default:
+                    return Default(method?.ReturnType);
+            }
+        }
+    }
+
+    private class DefaultProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? method, object?[]? args) =>
+            Default(method?.ReturnType);
+    }
+
+    private static void SetField(object target, string name, object value) =>
+        target.GetType()
+            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(target, value);
+
+    private static object? Default(Type? type)
+    {
+        if (type == null || type == typeof(void))
+            return null;
+        return type.IsValueType ? Activator.CreateInstance(type) : null;
     }
 
     private class FakePort : DispatchProxy

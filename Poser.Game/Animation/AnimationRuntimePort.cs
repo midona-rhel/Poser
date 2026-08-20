@@ -629,6 +629,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     /// Replays an owned Base timeline when the native forced field clears.
     /// The clear is the sequencer's lifecycle signal; rewriting the field
     /// alone after that point does not restart an animation that has ended.
+    /// SetTimelineId routes the Base-tagged row without replacing other slots.
     /// </summary>
     private void EnforceForcedLoops()
     {
@@ -892,6 +893,15 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         PruneEnforcement(actor);
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed);
         return AnimationPortResult.Ok();
+    }
+
+    /// <summary>Drops stale enforcement without writing through a rebound actor.</summary>
+    public void AbandonSlotSpeed(ActorId actor, AnimationSlot slot)
+    {
+        if (!_enforcement.TryGetValue(actor, out var enforcement))
+            return;
+        enforcement.SlotSpeeds.Remove((int)slot);
+        PruneEnforcement(actor);
     }
 
     // ── Lips, stance, weapon, position ────────────────────────────────
