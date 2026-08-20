@@ -126,8 +126,7 @@ public static class AnimationTimelines
 }
 
 /// <summary>
-/// One catalog row: a playable timeline with the identity needed to find
-/// it, display it, and route it to the right slot.
+/// One catalog row with native routing and searchable sheet metadata.
 /// </summary>
 public sealed record TimelineEntry(
     uint TimelineId,
@@ -138,7 +137,9 @@ public sealed record TimelineEntry(
     uint EmoteId = 0,
     int EmoteIndex = -1,
     bool? DrawsWeapon = null,
-    bool IsLoop = false)
+    bool IsLoop = false,
+    string? Key = null,
+    string? Category = null)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
     /// start" through its own emote entry point (intro then loop).</summary>

@@ -28,7 +28,9 @@ public sealed class AnimationPane
         new("animation");
 
     private bool _openGeneral = true;
-    private readonly Dictionary<AnimationSlot, bool> _openLayers = new();
+    private bool _openAnimationLayers = true;
+    // Advanced mode is actor-local; a transition restores outgoing ownership.
+    private readonly HashSet<ActorId> _advancedActors = new();
     private bool _playEmoteStart = true;
     // Commands report through the shared notification sink.
     private readonly UserNotices _notices;
@@ -104,12 +106,12 @@ public sealed class AnimationPane
     private static readonly float[] UnitMarks = [1f];
 
     private static readonly string[] KindLabels =
-        ["All", "Emote", "Action", "Expr", "Raw"];
+        ["Compatible", "Emotes", "Actions", "Raw"];
 
     private static readonly AnimationKind?[] KindValues =
     [
         null, AnimationKind.Emote, AnimationKind.Action,
-        AnimationKind.Expression, AnimationKind.RawTimeline,
+        AnimationKind.RawTimeline,
     ];
 
     private static readonly string[] WeaponLabels = ["All", "Sheathed", "Drawn"];
@@ -138,7 +140,7 @@ public sealed class AnimationPane
             AnimationSlot.Base, seed: null, weaponAware: true, entries: null);
         _generalFeed = new TimelineFeed(
             this, "general-animation", AnimationPickTarget.General,
-            AnimationSlot.Base, slotFilter: null, seed: null,
+            AnimationSlot.Base, AnimationSlot.Base, seed: null,
             weaponAware: true, entries: null);
         _expressionFeed = new TimelineFeed(
             this, "expression", AnimationPickTarget.Expression,
@@ -168,23 +170,19 @@ public sealed class AnimationPane
             var reading =
                 _animation.Read(actor) ?? ActorAnimationReading.Empty;
             var owned = _animation.OverridesFor(actor);
+            bool advanced = _advancedActors.Contains(actor);
             page.Section(
                 "GENERAL",
                 _openGeneral,
                 next => _openGeneral = next,
-                form => DrawGeneral(form, actor, reading),
+                form => DrawGeneral(form, actor, reading, advanced),
                 divider: false);
-            foreach (var slot in PrimaryLayers)
-            {
-                bool open = !_openLayers.TryGetValue(slot, out var stored) || stored;
-                page.Section(
-                    AnimationSlots.DisplayName(slot).ToUpperInvariant(),
-                    open,
-                    next => _openLayers[slot] = next,
-                    form => DrawLayer(
-                        form, actor, reading, owned, slot,
-                        AnimationSlots.DisplayName(slot)));
-            }
+            page.Section(
+                "ANIMATION LAYERS",
+                _openAnimationLayers,
+                next => _openAnimationLayers = next,
+                form => DrawAnimationLayers(
+                    form, actor, reading, owned, advanced));
         });
 
         DrawPicker();
@@ -320,7 +318,8 @@ public sealed class AnimationPane
         ActorAnimationReading reading,
         AnimationOverrides owned,
         AnimationSlot slot,
-        string label)
+        string label,
+        bool disabled)
     {
         ushort live = reading.TimelineFor(slot);
         ushort selected = _animation.SelectedFor(actor, slot) ?? 0;
@@ -344,7 +343,8 @@ public sealed class AnimationPane
             {
                 actions.Button(
                     NameFor(selected, "Choose animation"),
-                    () => OpenPicker(feed, actor, selected));
+                    () => OpenPicker(feed, actor, selected),
+                    disabled: disabled);
                 actions.Button(
                     "Apply",
                     () => Report(
@@ -354,14 +354,14 @@ public sealed class AnimationPane
                             _playEmoteStart ? _catalog.Find(selected) : null),
                         $"{label} playback"),
                     style: actionStyle,
-                    disabled: selected == 0);
+                    disabled: disabled || selected == 0);
                 actions.Button(
                     "Reset",
                     () => Report(
                         _animation.ResetSlot(actor, slot),
                         $"{label} reset"),
                     style: actionStyle,
-                    disabled: !_animation.OwnsSlot(actor, slot));
+                    disabled: disabled || !_animation.OwnsSlot(actor, slot));
             },
             id: $"anim-{slot}-current");
 
@@ -378,6 +378,7 @@ public sealed class AnimationPane
                 $"{label} speed"),
             format: "0.00",
             marks: UnitMarks,
+            disabled: disabled,
             actions: actions =>
             {
                 bool play = paused || needsReplay;
@@ -392,18 +393,101 @@ public sealed class AnimationPane
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
                     style: actionStyle,
-                    disabled: play && !paused && selected == 0);
+                    disabled: disabled || (play && !paused && selected == 0));
             },
             id: $"anim-{slot}-speed");
 
         if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
-            DrawScrub(form, actor, slot, actionStyle);
+            DrawScrub(form, actor, slot, actionStyle, disabled);
+    }
+
+    private void DrawAnimationLayers(
+        Crystarium.FormScope form,
+        ActorId actor,
+        ActorAnimationReading reading,
+        AnimationOverrides owned,
+        bool advanced)
+    {
+        form.Switch(
+            "Advanced animation",
+            advanced,
+            next => SetAdvanced(actor, next));
+
+        // Keep every layer visible while the shared scope makes it inert.
+        ImGui.BeginDisabled(!advanced);
+        foreach (var slot in PrimaryLayers)
+        {
+            string label = AnimationSlots.DisplayName(slot);
+            form.Label(label);
+            if (slot == AnimationSlot.Facial)
+            {
+                DrawHeldExpression(form, actor, bake: false, disabled: !advanced);
+                continue;
+            }
+            DrawLayer(form, actor, reading, owned, slot, label, !advanced);
+            if (slot == AnimationSlot.Base)
+            {
+                form.Switch(
+                    "Repeat",
+                    _animation.LoopWantedFor(actor, AnimationSlot.Base),
+                    next => Report(
+                        _animation.SetSlotLoop(
+                            actor, AnimationSlot.Base, 0, next),
+                        "Full body repeat"),
+                    disabled: !advanced);
+            }
+        }
+        ImGui.EndDisabled();
+    }
+
+    private void SetAdvanced(ActorId actor, bool enabled)
+    {
+        bool current = _advancedActors.Contains(actor);
+        if (enabled == current)
+            return;
+
+        if (enabled)
+        {
+            // Basic owns only Base. Restore it before exposing layer writes.
+            var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
+            if (!reset.Success)
+            {
+                Report(reset, "Advanced animation");
+                return;
+            }
+            if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
+            {
+                var loop = _animation.SetSlotLoop(
+                    actor, AnimationSlot.Base, 0, false);
+                if (!loop.Success)
+                {
+                    Report(loop, "Advanced animation");
+                    return;
+                }
+            }
+            _generalSelections.Remove(actor);
+            _advancedActors.Add(actor);
+            return;
+        }
+
+        // Advanced releases every layer before Basic can issue Base commands.
+        foreach (var slot in PrimaryLayers)
+        {
+            var reset = _animation.ResetSlot(actor, slot);
+            if (!reset.Success)
+            {
+                Report(reset, "Basic animation");
+                return;
+            }
+        }
+        _advancedActors.Remove(actor);
     }
 
     private void DrawGeneral(
         Crystarium.FormScope form,
         ActorId actor,
-        ActorAnimationReading reading)
+        ActorAnimationReading reading,
+        bool advanced)
     {
         form.Pair(
             "Play emote start",
@@ -417,7 +501,8 @@ public sealed class AnimationPane
                 _animation.LoopWantedFor(actor, AnimationSlot.Base),
                 next => Report(
                     _animation.SetSlotLoop(actor, AnimationSlot.Base, 0, next),
-                    "Loop animation")));
+                    "Loop animation"),
+                disabled: advanced));
 
         _generalSelections.TryGetValue(actor, out var command);
         if (command is { Applied: true } &&
@@ -442,17 +527,20 @@ public sealed class AnimationPane
                         actor,
                         command is { } selected
                             ? (ushort)selected.Entry.TimelineId
-                            : (ushort)0));
+                            : (ushort)0),
+                    disabled: advanced);
                 actions.Button(
                     "Apply",
                     () => ApplyGeneral(actor),
                     style: actionStyle,
-                    disabled: command == null);
+                    disabled: advanced || command == null);
                 actions.Button(
                     "Reset",
                     () => ResetGeneral(actor),
                     style: actionStyle,
-                    disabled: command == null);
+                    disabled: advanced || (command == null &&
+                        !_animation.OwnsSlot(actor, AnimationSlot.Base) &&
+                        !_animation.LoopWantedFor(actor, AnimationSlot.Base)));
             },
             id: "anim-general-command");
 
@@ -469,7 +557,8 @@ public sealed class AnimationPane
         Crystarium.FormScope form,
         ActorId actor,
         AnimationSlot slot,
-        ControlStyle actionStyle)
+        ControlStyle actionStyle,
+        bool disabled)
     {
         var control = _animation.FindSlotControl(actor, slot);
         bool available = control is { Duration: > 0f };
@@ -482,12 +571,12 @@ public sealed class AnimationPane
             duration,
             next => ScrubTo(actor, control, next),
             format: "0.00",
-            disabled: !available,
+            disabled: disabled || !available,
             actions: actions => actions.Button(
                 "Reset",
                 () => ScrubTo(actor, control, 0f, finish: true),
                 style: actionStyle,
-                disabled: !available),
+                disabled: disabled || !available),
             id: $"anim-{slot}-scrub");
 
         if (_scrubActor is { } scrubActor && scrubActor.Equals(actor) &&
@@ -544,10 +633,18 @@ public sealed class AnimationPane
         Crystarium.FormScope form,
         ActorId actor)
     {
-        if (_facialCapture.ReceiptFor(actor) is { } receipt)
-            form.Label($"Bake: {FacialReceiptText(receipt)}");
+        DrawHeldExpression(form, actor, bake: true, disabled: false);
+    }
+
+    private void DrawHeldExpression(
+        Crystarium.FormScope form,
+        ActorId actor,
+        bool bake,
+        bool disabled)
+    {
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
+        var actionStyle = FixedActionStyle();
         form.Picker(
             "Expression",
             NameFor(selected, "Choose expression"),
@@ -555,42 +652,46 @@ public sealed class AnimationPane
             actions =>
             {
                 actions.Button(
-                    "Preview",
+                    "Apply",
                     () => ReportExpression(
                         _animation.HoldExpression(actor, selected),
                         "Expression"),
-                    disabled: selected == 0,
-                    help: "Replay this expression and let its facial timeline advance");
+                    style: actionStyle,
+                    disabled: disabled || selected == 0,
+                    help: "Apply the selected expression and hold its facial frame");
                 actions.Button(
-                    "Release",
+                    "Reset",
                     () => ReportExpression(
                         _animation.ReleaseExpression(actor), "Expression"),
-                    disabled: held == 0 && selected == 0,
-                    help: "Drop the previewed expression so the face follows "
-                        + "the animation again");
-                actions.Button(
-                    "Bake expression",
-                    () =>
-                    {
-                        var descriptor = Describe(actor);
-                        if (descriptor == null)
-                            _notices.Refused(
-                                "Bake expression: actor is no longer in "
-                                + "the scene.");
-                        else if (_animation.HoldExpression(actor, selected)
-                            is { Success: false } previewFailed)
-                            _notices.Failed(
-                                $"Bake expression: {previewFailed.Detail}");
-                        else if (_facialCapture.Begin(actor, descriptor)
-                            is { Success: false } failed)
-                            _notices.Failed(
-                                $"Bake expression: {failed.Detail}");
-                    },
-                    disabled: selected == 0 || _facialCapture.IsPending,
-                    help: "Replay and write the previewed face into the POSE "
-                        + "as one undoable edit — it stays after the preview ends");
+                    style: actionStyle,
+                    disabled: disabled || (held == 0 && selected == 0),
+                    help: "Restore the facial state captured before Poser's first choice");
+                if (bake)
+                {
+                    actions.Button(
+                        "Bake expression",
+                        () =>
+                        {
+                            var descriptor = Describe(actor);
+                            if (descriptor == null)
+                                _notices.Refused(
+                                    "Bake expression: actor is no longer in "
+                                    + "the scene.");
+                            else if (_animation.HoldExpression(actor, selected)
+                                is { Success: false } previewFailed)
+                                _notices.Failed(
+                                    $"Bake expression: {previewFailed.Detail}");
+                            else if (_facialCapture.Begin(actor, descriptor)
+                                is { Success: false } failed)
+                                _notices.Failed(
+                                    $"Bake expression: {failed.Detail}");
+                        },
+                        disabled: disabled || selected == 0 || _facialCapture.IsPending,
+                        help: "Write the held face into the pose as one undoable edit");
+                }
             },
-            help: "Choose a facial expression to preview on this actor");
+            disabled: disabled,
+            help: "Choose a facial expression, then Apply to hold it");
     }
 
 
@@ -715,24 +816,32 @@ public sealed class AnimationPane
             _weaponAware = weaponAware;
             _entries = entries;
 
-            var excluded = AnimationCatalog.ExcludedKinds(slotFilter);
-            var kinds = new List<AnimationKind?>();
-            var labels = new List<string>();
-            for (int i = 0; i < KindValues.Length; i++)
+            if (seed == AnimationKind.Expression)
             {
-                bool blocked = false;
-                if (KindValues[i] is { } concrete)
-                    foreach (var kind in excluded)
-                        if (kind == concrete)
-                            blocked = true;
-                if (blocked)
-                    continue;
-                kinds.Add(KindValues[i]);
-                labels.Add(KindLabels[i]);
+                _kinds = [AnimationKind.Expression];
+                _kindLabels = ["Expressions"];
             }
+            else
+            {
+                var excluded = AnimationCatalog.ExcludedKinds(slotFilter);
+                var kinds = new List<AnimationKind?>();
+                var labels = new List<string>();
+                for (int i = 0; i < KindValues.Length; i++)
+                {
+                    bool blocked = false;
+                    if (KindValues[i] is { } concrete)
+                        foreach (var kind in excluded)
+                            if (kind == concrete)
+                                blocked = true;
+                    if (blocked)
+                        continue;
+                    kinds.Add(KindValues[i]);
+                    labels.Add(KindLabels[i]);
+                }
 
-            _kinds = kinds.ToArray();
-            _kindLabels = labels.ToArray();
+                _kinds = kinds.ToArray();
+                _kindLabels = labels.ToArray();
+            }
             Results = Compute;
             Badge = Metadata;
             _setKind = chosen => _kindIndex = chosen;
@@ -757,7 +866,7 @@ public sealed class AnimationPane
 
         internal void Seed()
         {
-            AnimationKind? start = _seed ?? AnimationCatalog.BestKind(_slotFilter);
+            AnimationKind? start = _seed;
             _kindIndex = Array.IndexOf(_kinds, start);
             if (_kindIndex < 0)
                 _kindIndex = 0;
@@ -813,9 +922,18 @@ public sealed class AnimationPane
                 return filtered;
             }
 
+            var kind = _kinds[Math.Clamp(_kindIndex, 0, _kinds.Length - 1)];
             var found = _pane._catalog.Search(
-                search, _kinds[Math.Clamp(_kindIndex, 0, _kinds.Length - 1)],
+                search, kind == AnimationKind.Emote ? null : kind,
                 _slotFilter, limit: 400);
+            if (kind == AnimationKind.Emote)
+            {
+                var emotes = new List<TimelineEntry>(found.Count);
+                foreach (var entry in found)
+                    if (entry.Kind is AnimationKind.Emote or AnimationKind.Expression)
+                        emotes.Add(entry);
+                found = emotes;
+            }
             if (!_weaponAware || weapon == 0)
                 return found;
 
@@ -827,10 +945,23 @@ public sealed class AnimationPane
             return narrowed;
         }
 
-        private string? Metadata(TimelineEntry entry) =>
-            _slotFilter != null
-                ? _pane.IdText(entry.TimelineId)
-                : $"{AnimationSlots.DisplayName(entry.Slot)} · {entry.TimelineId}";
+        private string? Metadata(TimelineEntry entry)
+        {
+            string source = entry.Kind switch
+            {
+                AnimationKind.Emote or AnimationKind.Expression => "Emote",
+                AnimationKind.Action => "Action",
+                _ => "Raw",
+            };
+            string category = entry.Category is { Length: > 0 }
+                ? $" · {entry.Category}"
+                : "";
+            string phase = entry.EmoteIndex >= 0
+                ? $" · Phase {entry.EmoteIndex + 1}"
+                : "";
+            return $"{source} · {AnimationSlots.DisplayName(entry.Slot)} · "
+                + $"{_pane.IdText(entry.TimelineId)}{category}{phase}";
+        }
     }
 
     private enum AnimationPickTarget
@@ -935,7 +1066,8 @@ public sealed class AnimationPane
                 break;
             case AnimationPickTarget.Expression:
                 Report(
-                    _animation.HoldExpression(actor, timeline),
+                    _animation.ChooseSlot(
+                        actor, AnimationSlot.Facial, timeline),
                     "Expression");
                 break;
             case AnimationPickTarget.Lips:
@@ -970,14 +1102,19 @@ public sealed class AnimationPane
 
     private void ResetGeneral(ActorId actor)
     {
-        if (!_generalSelections.TryGetValue(actor, out var command))
-            return;
-        if (command.Applied)
+        var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
+        if (!reset.Success)
         {
-            var reset = _animation.ResetSlot(actor, command.Entry.Slot);
-            if (!reset.Success)
+            Report(reset, "Animation reset");
+            return;
+        }
+        if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
+        {
+            var loop = _animation.SetSlotLoop(
+                actor, AnimationSlot.Base, 0, false);
+            if (!loop.Success)
             {
-                Report(reset, "Animation reset");
+                Report(loop, "Animation reset");
                 return;
             }
         }
@@ -993,14 +1130,4 @@ public sealed class AnimationPane
             _notices.Failed($"{what}: {result.Detail}");
     }
 
-    private static string FacialReceiptText(
-        global::Poser.Application.Operations.OperationReceipt receipt) =>
-        receipt.State switch
-        {
-            global::Poser.Application.Operations.OperationReceiptState.Pending =>
-                "Pending",
-            _ when string.IsNullOrWhiteSpace(receipt.Detail) =>
-                receipt.State.ToString(),
-            _ => $"{receipt.State}: {receipt.Detail}",
-        };
 }

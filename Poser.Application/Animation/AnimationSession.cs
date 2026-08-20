@@ -639,20 +639,8 @@ public sealed class AnimationSession
         if (slot == AnimationSlot.Lips)
             return SetLipsCore(actor, selected);
 
-        bool heldExpression = slot == AnimationSlot.Facial && current.HeldExpression != null;
         var result = BlendCore(actor, selected, slot);
-        if (!result.Success)
-            return result;
-        Mutate(actor, o => o with
-        {
-            // Applying the Animation picker hands Facial authority over
-            // from Pose while keeping the durable picker selection.
-            HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
-        });
-        if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
-            speed == 0f)
-            return ResumeSlotSpeedCore(actor, slot);
-        return AnimationResult.Ok();
+        return result;
     }
 
     private AnimationResult PlayLayerEmoteCore(
@@ -692,7 +680,6 @@ public sealed class AnimationSession
             return AnimationResult.Fail(played.Detail ?? "Emote playback failed.");
         }
 
-        bool heldExpression = slot == AnimationSlot.Facial && before.HeldExpression != null;
         Mutate(actor, o =>
         {
             var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
@@ -703,12 +690,8 @@ public sealed class AnimationSession
                 BaseCapture = o.BaseCapture ?? capturedBase,
                 LoopedSlots = loops,
                 BaseRepeatSuspended = suspendBaseRepeat || o.BaseRepeatSuspended,
-                HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
             };
         });
-        if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
-            speed == 0f)
-            return ResumeSlotSpeedCore(actor, slot);
         return AnimationResult.Ok();
     }
 
@@ -1194,17 +1177,28 @@ public sealed class AnimationSession
         _scrub = null;
     }
 
-    // ── Expression preview ───────────────────────────────────────────────
+    // ── Held expression ──────────────────────────────────────────────────
 
-    /// <summary>Plays a facial preview without freezing its first frame.</summary>
+    /// <summary>Applies the selected expression and holds its facial frame.</summary>
     public AnimationResult HoldExpression(ActorId actor, ushort timeline)
     {
         if (Suspended() is { } blocked) return blocked;
         var played = SelectSlot(actor, AnimationSlot.Facial, timeline);
         if (!played.Success)
             return played;
-        // Facial expressions often begin from a neutral frame. Let the game
-        // advance the selected timeline; an explicit bake captures it later.
+
+        // The pose surface owns a still facial layer. Capture the incoming
+        // speed only after selection lands, then hold the chosen expression.
+        var held = SetSlotSpeedCore(actor, AnimationSlot.Facial, 0f);
+        if (!held.Success)
+        {
+            var rollback = ResetSlot(actor, AnimationSlot.Facial);
+            return rollback.Success
+                ? held
+                : AnimationResult.Fail(
+                    $"{held.Detail ?? "Expression hold failed."} " +
+                    $"Restore failed: {rollback.Detail}");
+        }
         Mutate(actor, o => o with { HeldExpression = timeline });
         return AnimationResult.Ok();
     }

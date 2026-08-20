@@ -1,20 +1,20 @@
 # Animation
 
-Poser exposes Full Body, Upper Body, Facial, Additive, and Lips as independent
-layers. Each layer shows the current native timeline and a session-only Selected
-timeline. Choosing remembers Selected without playback; Apply plays it and keeps
-the choice available for replay. The first Choose captures the immutable native
-restore point for that actor and slot. Reset restores that exact incoming state,
-releases the slot's overrides, and clears Selected only after restoration succeeds.
-General provides the same catalog as a command launcher. Its Apply resolves the
-entry's sheet slot and delegates to that layer's Selected and restore point; it
-does not create another Base authority. Play emote start chooses the native emote
-lifecycle for index-zero emotes, while Loop animation controls only Full Body.
+Basic mode exposes one General Full Body authority. Its picker lists Base-compatible
+emotes, actions, and raw timelines; Choose stages a value, Apply plays it, and Reset
+restores the immutable incoming Base state. Play emote start selects the native
+emote lifecycle for index-zero emotes. Loop animation is sticky Full Body intent.
 
-Each layer has an exact logical-slot speed override. Pause writes zero and
-remembers the previous nonzero native or user speed; Play restores that speed.
-Selected remains after a one-shot stops. Poser does not infer a completion event;
-Apply and Play replay Selected through the same native selection route.
+Advanced mode restores Basic ownership before enabling independent Full Body,
+Upper Body, Additive, and Lips selection and speed. Full Body and Upper Body also
+provide scrub; Full Body alone provides Repeat. The layer controls remain visible
+and inert while Advanced is off. Returning to Basic restores every Advanced layer
+before General commands become available.
+
+Every picker filters by compatible native slot by default and can narrow to
+Emotes, Actions, or Raw entries. Search matches display name, native timeline id,
+and sheet key. Results show their source, native slot, and emote category/phase
+when present. Named emotes sort before actions, then raw timelines.
 
 Repeat belongs only to Full Body. It can be armed before selection without
 capturing or writing native state. Apply gives every explicit Full Body selection
@@ -27,14 +27,10 @@ raw timelines use the audited timeline setter. If the client clears Poser's
 forced field when a Base animation ends, the framework update replays Selected
 before restoring the field instead of treating a field rewrite as playback.
 
-Animation > Facial and Pose > Expression share one Facial selection and restore
-point. Preview lets the timeline advance; Bake replays it before the delayed face
-capture, so expressions whose first frame is neutral remain visible. A later
-Facial selection becomes the single authority. Expression action-unit sliders
-remain a separate pose layer and can compose with facial animation. The delayed
-capture matches Ktisis's two-tick face synchronization after timeline playback
-(`Ktisis/Editor/Animation/Handlers/AnimationEditor.cs:126-129`,
-`Ktisis/Editor/Posing/PosingManager.cs:131-145`).
+Advanced Facial and Pose > Expression are two views of one held-expression
+authority. Both stage an expression, Apply it, and freeze Facial speed at zero.
+Reset restores the first captured Facial timeline and speed and clears selection.
+Pose alone adds Bake. Action-unit sliders remain a separate named pose layer.
 
 Full Body and Upper Body expose scrub through their verified slot-index lookup,
 searched across live skeleton partials and guarded by the captured skeleton

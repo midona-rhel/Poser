@@ -599,21 +599,21 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Animation_facial_selection_hands_off_an_advancing_pose_preview()
+    public void Expression_reselection_keeps_one_held_facial_authority()
     {
         var port = FakePort.Create();
         port.ReadValue = ReadingWithSlot(AnimationSlot.Facial, 77, .6f);
         var session = new AnimationSession(port.Port);
         Assert.True(session.HoldExpression(ActorA, 45).Success);
 
-        Assert.True(session.SelectSlot(ActorA, AnimationSlot.Facial, 46).Success);
+        Assert.True(session.HoldExpression(ActorA, 46).Success);
 
-        Assert.Null(session.HeldExpressionFor(ActorA));
+        Assert.Equal((ushort)46, session.HeldExpressionFor(ActorA));
         Assert.Equal((ushort)46, session.SelectedFor(ActorA, AnimationSlot.Facial));
-        Assert.DoesNotContain(AnimationSlot.Facial,
-            session.OverridesFor(ActorA).SlotSpeeds.Keys);
-        Assert.DoesNotContain(port.Calls,
-            call => call.StartsWith("SetSlotSpeed:Facial:"));
+        Assert.Equal(0f,
+            session.OverridesFor(ActorA).SlotSpeeds[AnimationSlot.Facial]);
+        Assert.Equal(.6f,
+            session.OverridesFor(ActorA).SlotSpeedCaptures[AnimationSlot.Facial]);
     }
 
     [Fact]
