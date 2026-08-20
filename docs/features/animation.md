@@ -1,30 +1,32 @@
 # Animation
 
-Poser keeps animation state for the current actor. Playback follows the game's
-sequencer and slot routing. Poser does not create a second base-animation or
-blend system. Multiple animations can layer per slot, and a held slot keeps its
-speed override.
+Basic mode owns one General Full Body selection. Choose only stages a catalog
+row; Apply captures the actor's current Base state and then plays that exact
+row. A friendly index-zero emote can use the game's intro/loop lifecycle;
+actions and raw timelines use the audited timeline route. Reset restores the
+first successful Apply's immutable Base state.
 
-The expression picker acts immediately: one choice plays and pins the facial
-layer. Changing a held expression does not recapture the restore point.
-Releasing it restores the captured facial timeline. Baking turns the previewed
-face into one ordinary pose-history patch and leaves body animation alone.
+Advanced mode exposes Full Body, Upper Body, Facial, Additive, and Lips.
+Controls remain visible but inert while Advanced is off. Each layer keeps the
+exact chosen catalog row, applies only its native slot, and restores the state
+captured immediately before its first successful write. Full Body and Upper
+Body provide scrub and independent Loop switches; other layers do not claim a
+stable Havok control mapping.
 
-Looping runs on framework ticks. When a timeline ends, Poser replays an armed
-slot. It does not use the unsupported forced-timeline field. Loop state belongs
-to the session and the slot.
+Full Body loop uses the verified forced Base field. A non-Base write clears that
+global force, performs the exact slot write, then rearms Base. Upper Body loop
+replays its last successfully applied Upper timeline. Turning Loop off stops
+replay without changing the current frame; Reset releases the loop and restores
+the captured layer.
 
-Before Poser changes an animation aspect, it captures that aspect once.
-Restore gives control back only after native restore succeeds; a failure stays
-owned and retryable. GPose exit, disposal, and actor reconciliation use this
-same restore path. Stance restoration releases base state and loops first.
+Pose Expression Preview and Advanced Facial Apply share direct
+`HoldExpression`; their Reset shares `ReleaseExpression`. Release clears Facial
+speed, plays Straight Face (604), clears again, then restores the immutable
+Facial timeline and speed. Apply schedules at most one identical retry 500 ms
+later when the same session, actor generation, binding, and exact selection
+still match. This bounded retry does not observe face output and a paused actor
+may still require a second click. Pose also provides Bake into pose history.
 
-Speed uses the supported hooks and range and is cleared only when Poser owns
-it. Replay releases a Poser-owned pause before playing again. Physics freeze
-is one change that rolls back on partial failure. The UI shows the shared
-physics state.
-
-Stance changes use the supported native transition. Scrubbing freezes at the
-start of the gesture, clamps to the captured duration, and cancels if the
-skeleton changes. A pending facial bake or transform recovery blocks another
-mutation. Controls show only state that the session owns.
+Switching modes restores the outgoing ownership before changing the mode flag.
+That multi-layer restore is intentionally non-atomic: if a later restore fails,
+the prior mode remains selected, while earlier successful restores stay applied.

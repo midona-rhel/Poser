@@ -1,19 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Poser.Domain.Animation;
 
 namespace Poser.Application.Animation;
 
-/// <summary>
-/// The searchable animation catalog. Holds one flat list of playable
-/// timelines and answers filtered queries; it never touches the game, so
-/// the loader can populate it off the framework thread and every surface
-/// reads the same rows.
-///
-/// Entries that cannot be played are never admitted (that is the loader's
-/// job), so a search result is always selectable — the PBI's "unsupported
-/// entries remain absent rather than failing after selection".
-/// </summary>
+/// <summary>Searchable catalog of sheet-backed animation choices.</summary>
 public sealed class AnimationCatalog
 {
     private IReadOnlyList<TimelineEntry> _entries = Array.Empty<TimelineEntry>();
@@ -24,14 +16,17 @@ public sealed class AnimationCatalog
 
     public void Publish(IReadOnlyList<TimelineEntry> entries)
     {
-        _entries = entries;
+        // Visible names define result order; source kind remains routing-only.
+        _entries = entries
+            .OrderBy(static entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static entry => entry.EmoteIndex)
+            .ThenBy(static entry => entry.TimelineId)
+            .ToArray();
         IsLoaded = true;
     }
 
     /// <summary>
-    /// Case-insensitive name search composed with the kind and slot
-    /// filters. An empty query matches everything; a null slot means no
-    /// slot restriction. Kind and slot compose as AND, matching Ktisis.
+    /// Case-insensitive name/key search composed with kind and slot filters.
     /// </summary>
     public IReadOnlyList<TimelineEntry> Search(
         string query,
@@ -49,6 +44,8 @@ public sealed class AnimationCatalog
                 continue;
             if (!matchAll &&
                 entry.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0 &&
+                (entry.Key == null || entry.Key.IndexOf(
+                    query, StringComparison.OrdinalIgnoreCase) < 0) &&
                 !MatchesId(entry, query))
                 continue;
             results.Add(entry);
@@ -58,55 +55,27 @@ public sealed class AnimationCatalog
         return results;
     }
 
-    /// <summary>Typing a bare number finds the timeline with that id, so
-    /// direct id entry and search are the same box.</summary>
+    /// <summary>A bare number matches the native timeline id.</summary>
     private static bool MatchesId(TimelineEntry entry, string query) =>
         uint.TryParse(query, out var id) && entry.TimelineId == id;
 
-    public TimelineEntry? Find(uint timelineId)
-    {
-        foreach (var entry in _entries)
-            if (entry.TimelineId == timelineId)
-                return entry;
-        return null;
-    }
-
     /// <summary>
-    /// Kinds that cannot occur in a slot, so the kind filter can drop
-    /// choices that would always return nothing (Ktisis' cross-filter
-    /// invalidation). Returns an empty set when no slot is selected.
+    /// Resolves a label only. Playback must retain the exact chosen entry.
+    /// Friendly sheet rows win over raw aliases for the same native id.
     /// </summary>
-    public static IReadOnlyList<AnimationKind> ExcludedKinds(AnimationSlot? slot) => slot switch
+    public TimelineEntry? FindDisplay(uint timelineId, AnimationSlot? slot = null)
     {
-        null => Array.Empty<AnimationKind>(),
-        AnimationSlot.Base or AnimationSlot.UpperBody =>
-            new[] { AnimationKind.Expression },
-        AnimationSlot.Facial =>
-            new[] { AnimationKind.Action, AnimationKind.Emote },
-        AnimationSlot.Additive =>
-            new[] { AnimationKind.Action, AnimationKind.Expression },
-        AnimationSlot.Lips =>
-            new[] { AnimationKind.Action, AnimationKind.Emote, AnimationKind.Expression },
-        _ => Array.Empty<AnimationKind>(),
-    };
-
-    /// <summary>The most useful kind still available for a slot, used when
-    /// the current kind becomes impossible after a slot change.</summary>
-    public static AnimationKind BestKind(AnimationSlot? slot)
-    {
-        var excluded = ExcludedKinds(slot);
-        foreach (var candidate in new[]
-                 {
-                     AnimationKind.Emote, AnimationKind.Action, AnimationKind.Expression,
-                 })
+        TimelineEntry? raw = null;
+        foreach (var entry in _entries)
         {
-            bool blocked = false;
-            foreach (var kind in excluded)
-                if (kind == candidate)
-                    blocked = true;
-            if (!blocked)
-                return candidate;
+            if (entry.TimelineId != timelineId ||
+                slot is { } exactSlot && entry.Slot != exactSlot)
+                continue;
+            if (entry.Kind != AnimationKind.RawTimeline)
+                return entry;
+            raw ??= entry;
         }
-        return AnimationKind.RawTimeline;
+        return raw;
     }
+
 }

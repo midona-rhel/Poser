@@ -9,22 +9,9 @@ using Poser.Domain.Animation;
 namespace Poser.Game.Animation;
 
 /// <summary>
-/// Builds the animation catalog from game data, once per session, off the
-/// framework thread. Reads three sheets, exactly as Ktisis does:
-/// Emote (one entry per valid timeline the emote references, so an
-/// emote's intro and loop are separately playable), Action (deduplicated
-/// by name/icon/animation because the sheet repeats every action per job
-/// and rank), and ActionTimeline (raw rows with a key).
-///
-/// The admission rules are the filter: an entry only exists if it has a
-/// name, a non-zero timeline, and a slot the runtime is willing to write.
-/// Nothing that reaches the UI can therefore fail after selection.
-///
-/// The slot comes from the sheet's STANCE column, as Ktisis derives it in
-/// all three entry types. The sheet also has a column literally named
-/// Slot, and it is the wrong one: deriving from it left every facial
-/// timeline unclassified, so the Expression picker found nothing and a
-/// facial-layer pick offered timelines the sequencer then ignored.
+/// Builds one catalog from Emote, Action, and ActionTimeline sheets.
+/// Entries carry their native slot from ActionTimeline.Stance so every
+/// picker can filter choices before a native command is issued.
 /// </summary>
 public sealed class AnimationCatalogLoader
 {
@@ -80,9 +67,7 @@ public sealed class AnimationCatalogLoader
         if (emotes == null)
             return;
 
-        // Distinct on (name, slot): the sheet repeats the same emote across
-        // several timeline indices that land in the same slot, and showing
-        // each one separately is noise rather than choice.
+        // One named emote per native slot avoids duplicate sheet phases.
         var seen = new HashSet<(string, AnimationSlot)>();
         foreach (var emote in emotes)
         {
@@ -109,8 +94,8 @@ public sealed class AnimationCatalogLoader
                     emote.Icon,
                     emote.RowId,
                     index,
-                    // Only emotes know their weapon state; actions and raw
-                    // timelines stay null and pass Brio's drawn filter.
+                    // Only emotes carry weapon state; null entries remain
+                    // eligible for either current weapon state.
                     emote.DrawsWeapon));
             }
         }
@@ -128,7 +113,7 @@ public sealed class AnimationCatalogLoader
             var name = action.Name.ExtractText();
             if (string.IsNullOrWhiteSpace(name))
                 continue;
-            // The playable timeline is the action's END animation; the
+            // The playable timeline is the action's end animation; the
             // start is the wind-up and is the sheet's dedupe key.
             if (!action.AnimationEnd.IsValid || action.AnimationEnd.RowId == 0)
                 continue;
@@ -161,7 +146,8 @@ public sealed class AnimationCatalogLoader
                 timeline.RowId,
                 key,
                 AnimationKind.RawTimeline,
-                (AnimationSlot)timeline.Stance));
+                (AnimationSlot)timeline.Stance,
+                Key: key));
         }
     }
 
