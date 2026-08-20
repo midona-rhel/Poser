@@ -117,6 +117,9 @@ public sealed class ExpressionHoldTests
         Assert.True(app.Hold.Begin(Actor, Smile).Success);
         app.Framework.FireUpdate();
         Assert.Null(app.Animation.HeldExpressionFor(Actor));
+        Assert.Equal(2, app.Port.Calls.Count(call => call == $"Blend:{Smile}"));
+        Assert.DoesNotContain("ClearOverallSpeed", app.Port.Calls);
+        Assert.True(app.Animation.OverridesFor(Actor).IsPaused);
         app.SetFace(1);
         app.Framework.FireUpdate();
         app.Framework.FireUpdate();

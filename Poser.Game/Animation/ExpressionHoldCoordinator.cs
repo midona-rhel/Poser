@@ -34,6 +34,7 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         public int StableRuns;
         public int SettleTicks;
         public bool Changed;
+        public bool ReplayedWhilePaused;
     }
 
     private readonly IFramework _framework;
@@ -151,7 +152,35 @@ public sealed class ExpressionHoldCoordinator : IDisposable
             ? pending.StableRuns + 1
             : 0;
         pending.LastReading = reading;
-        bool timedOut = ++pending.SettleTicks >= SettleTimeoutTicks;
+        pending.SettleTicks++;
+
+        // A paused actor can accept the first Facial write without evaluating
+        // it. One validated replay reproduces the next-click path internally.
+        if (!pending.Changed && !pending.ReplayedWhilePaused &&
+            _animation.IsPaused(pending.Actor))
+        {
+            pending.ReplayedWhilePaused = true;
+            var replayed = _animation.BeginExpressionHold(
+                pending.Actor, pending.Timeline);
+            if (!replayed.Success)
+            {
+                _pending = null;
+                _animation.AbandonExpressionHold(
+                    pending.Actor, discardRestorePoint: false);
+                _log.Warning(
+                    $"Expression preview retry failed actor={pending.Actor} " +
+                    $"timeline={pending.Timeline}: {replayed.Detail}");
+            }
+            else
+            {
+                _log.Debug(
+                    $"Expression preview replayed while paused actor={pending.Actor} " +
+                    $"timeline={pending.Timeline}.");
+            }
+            return;
+        }
+
+        bool timedOut = pending.SettleTicks >= SettleTimeoutTicks;
         if (pending.StableRuns < StableTicks && !timedOut)
             return;
 
