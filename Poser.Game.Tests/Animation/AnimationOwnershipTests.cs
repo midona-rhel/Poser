@@ -185,12 +185,11 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Routed_upper_emote_shares_slot_selection_and_suspends_base_repeat()
+    public void Upper_emote_choice_stages_and_apply_preserves_ordinary_base()
     {
         var port = FakePort.Create();
         port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
         var session = new AnimationSession(port.Port);
-        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
         Assert.True(session.PlayBase(ActorA, 42).Success);
         var upper = new TimelineEntry(
             43, "Upper emote", AnimationKind.Emote, AnimationSlot.UpperBody,
@@ -198,16 +197,17 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(session.ChooseSlot(
             ActorA, upper.Slot, (ushort)upper.TimelineId).Success);
+        Assert.Equal((ushort)42, port.LiveBaseTimeline);
+        Assert.DoesNotContain("Blend:43", port.Calls);
         Assert.True(session.PlaySelectedSlot(ActorA, upper.Slot, upper).Success);
 
         Assert.Equal((ushort)43, session.SelectedFor(ActorA, AnimationSlot.UpperBody));
         Assert.Equal((ushort)77,
             session.OverridesFor(ActorA).SlotCaptures[AnimationSlot.UpperBody]);
-        Assert.Contains("PlayEmote", port.Calls);
-        Assert.DoesNotContain("Blend:43", port.Calls);
-        Assert.True(port.Calls.LastIndexOf("SetForceLoop:0") <
-            port.Calls.LastIndexOf("PlayEmote"));
-        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.Contains("Blend:43", port.Calls);
+        Assert.DoesNotContain("PlayEmote", port.Calls);
+        Assert.Equal((ushort)42, port.LiveBaseTimeline);
+        Assert.False(session.OverridesFor(ActorA).BaseRepeatSuspended);
     }
 
     [Fact]
@@ -665,6 +665,8 @@ public sealed class AnimationOwnershipTests
         public int CaptureBaseCalls { get; private set; }
         public int RestoreBaseCalls { get; private set; }
         public ActorAnimationReading? ReadValue { get; set; }
+        public ushort LiveBaseTimeline { get; private set; } =
+            AnimationTimelines.Idle;
 
         public static FakePort Create()
         {
@@ -715,15 +717,22 @@ public sealed class AnimationOwnershipTests
                 case "Blend":
                     Calls.Add($"Blend:{args![1]}");
                     args[3] = null;
-                    return FailBlend
-                        ? AnimationPortResult.Fail("blend failed")
-                        : AnimationPortResult.Ok();
+                    if (FailBlend)
+                        return AnimationPortResult.Fail("blend failed");
+                    if ((ushort)args[1]! is not (43 or 44 or 45 or 46 or 47))
+                        LiveBaseTimeline = (ushort)args[1]!;
+                    return AnimationPortResult.Ok();
                 case "PlayBase":
                     Calls.Add($"PlayBase:{args![1]}");
+                    LiveBaseTimeline = (ushort)args[1]!;
                     if (args![2] == null)
                         args[3] = BaseCapture;
                     else
                         args[3] = null;
+                    return AnimationPortResult.Ok();
+                case "PlayEmote":
+                    Calls.Add("PlayEmote");
+                    LiveBaseTimeline = 0;
                     return AnimationPortResult.Ok();
                 case "RestoreBase":
                     RestoreBaseCalls++;

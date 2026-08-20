@@ -356,7 +356,7 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    /// <summary>Plays a catalog entry through its native route.</summary>
+    /// <summary>Plays a catalog entry; only Base uses the emote lifecycle.</summary>
     public AnimationResult PlayEntry(
         ActorId actor, TimelineEntry entry, bool asBase, bool playFromStart)
     {
@@ -368,12 +368,6 @@ public sealed class AnimationSession
                 ? ApplySelectedSlotCore(
                     actor, AnimationSlot.Base, playFromStart ? entry : null)
                 : chosen;
-        }
-        if (playFromStart && entry.CanPlayFromStart)
-        {
-            var result = PlayEmote(actor, entry.EmoteId);
-            if (result.Success)
-                return result;
         }
         return Blend(actor, timeline);
     }
@@ -591,7 +585,7 @@ public sealed class AnimationSession
     public AnimationResult PlaySelectedSlot(ActorId actor, AnimationSlot slot)
         => PlaySelectedSlot(actor, slot, null);
 
-    /// <summary>Applies Selected using its catalog-native route when available.</summary>
+    /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
     public AnimationResult PlaySelectedSlot(
         ActorId actor, AnimationSlot slot, TimelineEntry? entry)
     {
@@ -622,11 +616,10 @@ public sealed class AnimationSession
         var current = OverridesFor(actor);
         if (!current.SelectedSlots.TryGetValue(slot, out var selected))
             return AnimationResult.Fail("Choose an animation first.");
-        if (entry is { CanPlayFromStart: true } && entry.TimelineId == selected &&
+        if (slot == AnimationSlot.Base &&
+            entry is { CanPlayFromStart: true } && entry.TimelineId == selected &&
             entry.Slot == slot)
-            return slot == AnimationSlot.Base
-                ? PlayBaseEmoteCore(actor, entry, current)
-                : PlayLayerEmoteCore(actor, slot, entry, current);
+            return PlayBaseEmoteCore(actor, entry, current);
         if (slot == AnimationSlot.Base)
         {
             return PlayBaseCore(
@@ -641,58 +634,6 @@ public sealed class AnimationSession
 
         var result = BlendCore(actor, selected, slot);
         return result;
-    }
-
-    private AnimationResult PlayLayerEmoteCore(
-        ActorId actor,
-        AnimationSlot slot,
-        TimelineEntry entry,
-        AnimationOverrides before)
-    {
-        if (Suspended() is { } blocked) return blocked;
-        bool suspendBaseRepeat = before.LoopedSlots.ContainsKey(AnimationSlot.Base);
-        ushort suspendedTimeline = suspendBaseRepeat
-            ? before.LoopedSlots[AnimationSlot.Base]
-            : (ushort)0;
-        if (suspendBaseRepeat)
-        {
-            var cleared = _port.SetForceLoop(actor, 0);
-            if (!cleared.Success)
-                return AnimationResult.Fail(
-                    cleared.Detail ?? "Full-body repeat suspension failed.");
-        }
-
-        var capturedBase = before.BaseCapture == null ? _port.CaptureBase(actor) : null;
-        var played = _port.PlayEmote(actor, entry.EmoteId);
-        if (!played.Success)
-        {
-            if (suspendBaseRepeat)
-            {
-                var restored = _port.SetForceLoop(actor, suspendedTimeline);
-                if (!restored.Success)
-                {
-                    Mutate(actor, o => o with { BaseRepeatSuspended = true });
-                    return AnimationResult.Fail(
-                        $"{played.Detail ?? "Emote playback failed."} Repeat restore failed: " +
-                        (restored.Detail ?? "full-body repeat arm failed."));
-                }
-            }
-            return AnimationResult.Fail(played.Detail ?? "Emote playback failed.");
-        }
-
-        Mutate(actor, o =>
-        {
-            var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
-            if (suspendBaseRepeat)
-                loops.Remove(AnimationSlot.Base);
-            return o with
-            {
-                BaseCapture = o.BaseCapture ?? capturedBase,
-                LoopedSlots = loops,
-                BaseRepeatSuspended = suspendBaseRepeat || o.BaseRepeatSuspended,
-            };
-        });
-        return AnimationResult.Ok();
     }
 
     private AnimationResult PlayBaseEmoteCore(
