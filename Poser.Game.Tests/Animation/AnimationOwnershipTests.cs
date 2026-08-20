@@ -59,7 +59,7 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Upper_apply_and_reset_preserve_then_release_independent_loop_ownership()
+    public void Upper_apply_and_loop_intent_preserve_independent_ownership()
     {
         var port = FakePort.Create();
         port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
@@ -86,7 +86,22 @@ public sealed class AnimationOwnershipTests
         Assert.Equal((ushort)43,
             session.OverridesFor(Actor).LoopedSlots[AnimationSlot.UpperBody]);
 
+        Assert.True(session.SetSlotLoop(
+            Actor, AnimationSlot.UpperBody, 0, false).Success);
+        Assert.Equal("ClearSlotLoop:UpperBody", port.Calls.Last());
+        var nextUpper = upper with { TimelineId = 44 };
         Assert.True(session.ChooseSlot(Actor, AnimationSlot.UpperBody, 44).Success);
+        int toggleStart = port.Calls.Count;
+        Assert.True(session.SetSlotLoop(
+            Actor, AnimationSlot.UpperBody, 0, true).Success);
+        Assert.Equal(toggleStart, port.Calls.Count);
+        Assert.True(session.LoopWantedFor(Actor, AnimationSlot.UpperBody));
+        Assert.False(session.OverridesFor(Actor).LoopedSlots.ContainsKey(
+            AnimationSlot.UpperBody));
+
+        Assert.True(session.PlaySelectedSlot(
+            Actor, AnimationSlot.UpperBody, nextUpper, playFromStart: true).Success);
+        Assert.Equal("SetSlotLoop:UpperBody:44", port.Calls.Last());
         Assert.True(session.ResetSlot(Actor, AnimationSlot.UpperBody).Success);
         Assert.Contains("ClearSlotLoop:UpperBody", port.Calls);
         Assert.Equal("Blend:77", port.Calls.Last(call => call.StartsWith("Blend")));

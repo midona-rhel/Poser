@@ -323,12 +323,11 @@ public sealed class AnimationSession
 
         if (slot == AnimationSlot.UpperBody)
         {
-            // Selection is staged. Repeat owns only a timeline that Apply
-            // has already placed in the native Upper slot.
-            ushort upperTarget = timeline != 0
-                ? timeline
-                : current.AppliedSlots.GetValueOrDefault(slot);
-            if (upperTarget == 0)
+            // The switch may resume ownership only when Apply's last target
+            // is still live; it never starts or retargets Upper playback.
+            ushort upperTarget = current.AppliedSlots.GetValueOrDefault(slot);
+            ushort liveUpper = _port.Read(actor)?.TimelineFor(slot) ?? 0;
+            if (upperTarget == 0 || liveUpper != upperTarget)
                 return AnimationResult.Ok();
             var armedUpper = _port.SetSlotLoop(actor, slot, upperTarget);
             if (!armedUpper.Success)
