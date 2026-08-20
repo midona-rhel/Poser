@@ -43,6 +43,8 @@ public sealed class AnimationPane
     private TimelineFeed? _openFeed;
     // General stages one catalog command; native ownership begins on Apply.
     private readonly Dictionary<ActorId, GeneralSelection> _generalSelections = new();
+    // Both expression surfaces show the friendly row chosen from the catalog.
+    private readonly Dictionary<ActorId, TimelineEntry> _expressionSelections = new();
     // A Base scrub keeps one captured control identity until release.
     private ActorId? _scrubActor;
     private ScrubControlId? _scrubControl;
@@ -436,6 +438,8 @@ public sealed class AnimationPane
             DrawLayer(form, actor, reading, owned, slot, label, !advanced);
             if (slot is AnimationSlot.Base or AnimationSlot.UpperBody)
             {
+                // The visible label is shared, so the slot scopes its ImGui identity.
+                ImGui.PushID($"anim-{slot}-loop");
                 form.Switch(
                     "Loop",
                     _animation.LoopWantedFor(actor, slot),
@@ -444,6 +448,7 @@ public sealed class AnimationPane
                             actor, slot, 0, next),
                         $"{label} loop"),
                     disabled: !advanced);
+                ImGui.PopID();
             }
         }
         ImGui.EndDisabled();
@@ -665,7 +670,7 @@ public sealed class AnimationPane
         bool pending = _expressionHold.IsPendingFor(actor);
         form.Picker(
             "Expression",
-            NameFor(selected, "Choose expression"),
+            ExpressionNameFor(actor, selected, "Choose expression"),
             () => OpenPicker(_expressionFeed, actor, selected),
             actions =>
             {
@@ -679,8 +684,7 @@ public sealed class AnimationPane
                     help: "Preview the selected expression and hold its facial frame");
                 actions.Button(
                     "Reset",
-                    () => ReportExpression(
-                        _expressionHold.Release(actor), "Expression"),
+                    () => ResetExpression(actor),
                     style: poseSurface ? default : actionStyle,
                     disabled: disabled || (held == 0 && selected == 0),
                     help: "Restore the facial state captured before Poser's first choice");
@@ -1066,10 +1070,11 @@ public sealed class AnimationPane
                     AnimationSlots.DisplayName(pick.Slot));
                 break;
             case AnimationPickTarget.Expression:
-                Report(
-                    _animation.ChooseSlot(
-                        actor, AnimationSlot.Facial, timeline),
-                    "Expression");
+                var expression = _animation.ChooseSlot(
+                    actor, AnimationSlot.Facial, timeline);
+                if (expression.Success)
+                    _expressionSelections[actor] = pick.Entry;
+                Report(expression, "Expression");
                 break;
             case AnimationPickTarget.Lips:
                 Report(
@@ -1124,6 +1129,29 @@ public sealed class AnimationPane
 
     private void ReportExpression(AnimationResult result, string what) =>
         Report(result, what);
+
+    private string ExpressionNameFor(ActorId actor, ushort timeline, string empty)
+    {
+        if (timeline == 0)
+            return empty;
+        if (_expressionSelections.TryGetValue(actor, out var chosen) &&
+            chosen.TimelineId == timeline)
+            return chosen.Name;
+        foreach (var entry in _catalog.Entries)
+            if (entry.TimelineId == timeline &&
+                entry.Kind == AnimationKind.Expression &&
+                entry.Slot == AnimationSlot.Facial)
+                return entry.Name;
+        return $"Timeline {timeline}";
+    }
+
+    private void ResetExpression(ActorId actor)
+    {
+        var result = _expressionHold.Release(actor);
+        if (result.Success)
+            _expressionSelections.Remove(actor);
+        ReportExpression(result, "Expression");
+    }
 
     private void Report(AnimationResult result, string what)
     {
