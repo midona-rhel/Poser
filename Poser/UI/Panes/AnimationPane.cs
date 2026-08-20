@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using Poser.Application.Animation;
 using Poser.Application.Scene;
@@ -335,6 +336,7 @@ public sealed class AnimationPane
         };
 
         var actionStyle = FixedActionStyle();
+        var selectionStyle = FixedSelectionStyle();
         // The row pairs live native state with the shared staged slot selection.
         form.ReadOnlyWithActions(
             "Animation",
@@ -344,7 +346,7 @@ public sealed class AnimationPane
                 actions.Button(
                     NameFor(selected, "Choose animation"),
                     () => OpenPicker(feed, actor, selected),
-                    style: actionStyle,
+                    style: selectionStyle,
                     disabled: disabled);
                 actions.Button(
                     "Apply",
@@ -518,6 +520,7 @@ public sealed class AnimationPane
             ? reading.TimelineFor(staged.Entry.Slot)
             : (ushort)0;
         var actionStyle = FixedActionStyle();
+        var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
             NameFor(live, "None"),
@@ -531,7 +534,7 @@ public sealed class AnimationPane
                         command is { } selected
                             ? (ushort)selected.Entry.TimelineId
                             : (ushort)0),
-                    style: actionStyle,
+                    style: selectionStyle,
                     disabled: advanced);
                 actions.Button(
                     "Apply",
@@ -556,6 +559,15 @@ public sealed class AnimationPane
         {
             Width = UiWidth.Fixed(Crystarium.ActiveTheme.Form.ValueColumnWidth),
         };
+
+    // Selection text clips inside the natural Choose animation button seat.
+    private static ControlStyle FixedSelectionStyle()
+    {
+        var style = ControlStyle.Workspace;
+        float width = Crystarium.MeasureButton("Choose animation", style).X
+            / ImGuiHelpers.GlobalScale;
+        return style with { Width = UiWidth.Fixed(width) };
+    }
 
     private void DrawScrub(
         Crystarium.FormScope form,
@@ -899,18 +911,51 @@ public sealed class AnimationPane
             var kind = _showKindStrip
                 ? KindValues[Math.Clamp(_kindIndex, 0, KindValues.Length - 1)]
                 : _kindFilter;
+            bool namedKindsFirst = kind == null &&
+                _slotFilter is AnimationSlot.Base or AnimationSlot.UpperBody;
             var found = _pane._catalog.Search(
-                search, kind,
-                _slotFilter, limit: 400);
-            if (!_weaponAware || weapon == 0)
-                return found;
+                search, kind, _slotFilter,
+                limit: namedKindsFirst ? int.MaxValue : 400);
+            IReadOnlyList<TimelineEntry> eligible = found;
 
-            bool drawn = weapon == 2;
-            var narrowed = new List<TimelineEntry>(found.Count);
-            foreach (var entry in found)
-                if (entry.DrawsWeapon is not { } state || state == drawn)
-                    narrowed.Add(entry);
-            return narrowed;
+            if (_weaponAware && weapon != 0)
+            {
+                bool drawn = weapon == 2;
+                var narrowed = new List<TimelineEntry>(found.Count);
+                foreach (var entry in found)
+                    if (entry.DrawsWeapon is not { } state || state == drawn)
+                        narrowed.Add(entry);
+                eligible = narrowed;
+            }
+            return namedKindsFirst
+                ? NamedKindsFirst(eligible, 400)
+                : eligible;
+        }
+
+        // Compatible Base/Upper feeds lead with named emotes, then actions.
+        private static IReadOnlyList<TimelineEntry> NamedKindsFirst(
+            IReadOnlyList<TimelineEntry> entries, int limit)
+        {
+            var ordered = new List<TimelineEntry>(Math.Min(entries.Count, limit));
+            Append(static kind => kind is
+                AnimationKind.Emote or AnimationKind.Expression);
+            Append(static kind => kind == AnimationKind.Action);
+            Append(static kind => kind == AnimationKind.RawTimeline);
+            return ordered;
+
+            void Append(Func<AnimationKind, bool> accepts)
+            {
+                if (ordered.Count >= limit)
+                    return;
+                foreach (var entry in entries)
+                {
+                    if (!accepts(entry.Kind))
+                        continue;
+                    ordered.Add(entry);
+                    if (ordered.Count >= limit)
+                        return;
+                }
+            }
         }
 
         private string? Metadata(TimelineEntry entry)
