@@ -154,9 +154,14 @@ public sealed class ExpressionHoldCoordinator : IDisposable
         pending.LastReading = reading;
         pending.SettleTicks++;
 
+        bool timedOut = pending.SettleTicks >= SettleTimeoutTicks;
+        if (pending.StableRuns < StableTicks && !timedOut)
+            return;
+
         // A paused actor can accept the first Facial write without evaluating
-        // it. One validated replay reproduces the next-click path internally.
-        if (!pending.Changed && !pending.ReplayedWhilePaused &&
+        // it. Replay only after that full native window has elapsed, then give
+        // the replay its own bounded observation window.
+        if (timedOut && !pending.Changed && !pending.ReplayedWhilePaused &&
             _animation.IsPaused(pending.Actor))
         {
             pending.ReplayedWhilePaused = true;
@@ -173,16 +178,17 @@ public sealed class ExpressionHoldCoordinator : IDisposable
             }
             else
             {
+                pending.Baseline = reading;
+                pending.LastReading = new List<LegacyTransform>();
+                pending.StableRuns = 0;
+                pending.SettleTicks = 0;
+                pending.Changed = false;
                 _log.Debug(
                     $"Expression preview replayed while paused actor={pending.Actor} " +
                     $"timeline={pending.Timeline}.");
             }
             return;
         }
-
-        bool timedOut = pending.SettleTicks >= SettleTimeoutTicks;
-        if (pending.StableRuns < StableTicks && !timedOut)
-            return;
 
         _pending = null;
         var completed = _animation.CompleteExpressionHold(

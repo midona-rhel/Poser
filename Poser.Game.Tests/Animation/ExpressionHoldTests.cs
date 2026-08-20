@@ -115,6 +115,9 @@ public sealed class ExpressionHoldTests
         app.Port.Calls.Clear();
 
         Assert.True(app.Hold.Begin(Actor, Smile).Success);
+        for (var tick = 0; tick < 19; tick++)
+            app.Framework.FireUpdate();
+        Assert.Equal(1, app.Port.Calls.Count(call => call == $"Blend:{Smile}"));
         app.Framework.FireUpdate();
         Assert.Null(app.Animation.HeldExpressionFor(Actor));
         Assert.Equal(2, app.Port.Calls.Count(call => call == $"Blend:{Smile}"));

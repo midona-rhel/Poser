@@ -38,8 +38,9 @@ applied. Pose calls that action Preview and also provides Bake. Apply drives onl
 the Facial slot until its bound face output changes and settles, with the same
 bounded timeout as face capture, so a paused actor can evaluate the chosen face
 without changing overall speed. If the first Facial write produces no output
-while overall pause is owned, the coordinator validates identity and replays the
-same Facial selection once; it never retries indefinitely or resumes the body.
+during the full bounded settle window while overall pause is owned, the
+coordinator validates identity and replays the same Facial selection once with a
+fresh bounded window; it never retries indefinitely or resumes the body.
 Reset uses a
 Straight Face bridge and immediately restores the first captured Facial timeline
 and speed. Action-unit sliders remain a separate named pose layer.
