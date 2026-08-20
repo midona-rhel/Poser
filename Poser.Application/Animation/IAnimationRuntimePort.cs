@@ -111,8 +111,8 @@ public interface IAnimationRuntimePort
     /// The control driving a specific slot, by the reference lookup
     /// (control index == slot index, searched across partials) rather than
     /// by position in the flattened list. Null when the slot is empty or
-    /// has no such control. Only Base and UpperBody are supported; the
-    /// correspondence does not hold for the other slots.
+    /// has no such control. Only Base control zero is supported; other
+    /// logical layers do not have a verified stable control mapping.
     /// </summary>
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
 

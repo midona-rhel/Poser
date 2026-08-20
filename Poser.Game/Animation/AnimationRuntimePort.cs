@@ -374,11 +374,42 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : CollectControls(character, out token);
     }
 
-    /// <summary>Logical slot scrub bindings are unavailable.</summary>
+    /// <summary>Resolves only the verified full-body control-zero binding.</summary>
     public ScrubControlReading? FindSlotControl(
         ActorId actor, AnimationSlot slot, out ulong token)
     {
         token = 0;
+        var character = Resolve(actor, out _);
+        if (character == null || slot != AnimationSlot.Base ||
+            character->Timeline.TimelineSequencer.TimelineIds[0] == 0)
+            return null;
+
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return null;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return null;
+        var skeleton = charaBase->Skeleton;
+        token = CurrentToken(skeleton);
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (animated == null || animated->AnimationControls.Length == 0)
+                continue;
+            var control = animated->AnimationControls[0].Value;
+            if (control == null)
+                continue;
+            var binding = control->hkaAnimationControl.Binding;
+            if (binding.ptr == null || binding.ptr->Animation.ptr == null ||
+                binding.ptr->Animation.ptr->Duration <= 0f)
+                continue;
+            return new ScrubControlReading(
+                new ScrubControlId(p, 0),
+                control->hkaAnimationControl.LocalTime,
+                binding.ptr->Animation.ptr->Duration,
+                control->PlaybackSpeed);
+        }
         return null;
     }
 

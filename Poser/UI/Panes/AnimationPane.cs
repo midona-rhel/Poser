@@ -35,6 +35,9 @@ public sealed class AnimationPane
     // A picker keeps its actor and feed until it closes.
     private ActorId? _pickActor;
     private TimelineFeed? _openFeed;
+    // A Base scrub keeps one captured control identity until release.
+    private ActorId? _scrubActor;
+    private ScrubControlId? _scrubControl;
 
     // Each row keeps one memoized catalog feed.
     private readonly TimelineFeed _baseFeed;
@@ -312,8 +315,9 @@ public sealed class AnimationPane
     {
         ushort live = reading.TimelineFor(slot);
         ushort selected = _animation.SelectedFor(actor, slot) ?? 0;
-        bool paused = owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
-            ownedSpeed == 0f;
+        bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
+            ownedSpeed == 0f) ||
+            (slot == AnimationSlot.Base && _animation.IsPaused(actor));
         bool needsReplay = selected != 0 && live != selected;
         var feed = slot switch
         {
@@ -322,43 +326,49 @@ public sealed class AnimationPane
             _ => SlotFeed(slot),
         };
 
-        // Layer headers use the same shared read/action row; only Base has repeat.
-        form.ReadOnlyWithActions(
-            label,
+        // Headers expose the live native timeline; only Base owns Repeat.
+        form.Pair(
+            $"{label}: {NameFor(live, "None")}",
+            _ => { },
             slot == AnimationSlot.Base ? "Repeat" : string.Empty,
-            actions =>
+            cell =>
             {
                 if (slot == AnimationSlot.Base)
-                    actions.Switch(
-                        "Repeat",
+                    cell.Switch(
+                        $"##anim-{slot}-repeat",
                         _animation.LoopWantedFor(actor, slot),
                         next => Report(
                             _animation.SetSlotLoop(actor, slot, 0, next),
                             "Full body loop"));
-            },
-            id: $"anim-{slot}-header");
+            });
 
-        // Current is native state; Apply replays Poser's remembered selection.
+        var actionStyle = ControlStyle.Workspace with
+        {
+            Width = UiWidth.Fixed(Crystarium.ActiveTheme.Form.ValueColumnWidth),
+        };
+        // Current on this row is Poser's durable selection, not the live header.
         form.ReadOnlyWithActions(
             "Current",
-            NameFor(live, "None"),
+            NameFor(selected, "None"),
             actions =>
             {
                 actions.Button(
                     "Choose animation",
                     () => OpenPicker(feed, actor, selected));
-                if (needsReplay)
-                    actions.Button(
-                        "Apply",
-                        () => Report(
-                            _animation.PlaySelectedSlot(actor, slot),
-                            $"{label} playback"));
-                else if (_animation.OwnsSlot(actor, slot))
-                    actions.Button(
-                        "Reset",
-                        () => Report(
-                            _animation.ResetSlot(actor, slot),
-                            $"{label} reset"));
+                actions.Button(
+                    "Apply",
+                    () => Report(
+                        _animation.PlaySelectedSlot(actor, slot),
+                        $"{label} playback"),
+                    style: actionStyle,
+                    disabled: selected == 0);
+                actions.Button(
+                    "Reset",
+                    () => Report(
+                        _animation.ResetSlot(actor, slot),
+                        $"{label} reset"),
+                    style: actionStyle,
+                    disabled: !_animation.OwnsSlot(actor, slot));
             },
             id: $"anim-{slot}-current");
 
@@ -385,9 +395,70 @@ public sealed class AnimationPane
                             ? _animation.PlaySelectedSlot(actor, slot)
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
+                    style: actionStyle,
                     disabled: play && !paused && selected == 0);
             },
             id: $"anim-{slot}-speed");
+
+        if (slot == AnimationSlot.Base)
+            DrawBaseScrub(form, actor, actionStyle);
+    }
+
+    private void DrawBaseScrub(
+        Crystarium.FormScope form, ActorId actor, ControlStyle actionStyle)
+    {
+        var control = _animation.FindSlotControl(actor, AnimationSlot.Base);
+        bool available = control is { Duration: > 0f };
+        float time = available ? control!.Time : 0f;
+        float duration = available ? control!.Duration : 1f;
+        form.Slider(
+            "Scrub",
+            time,
+            0f,
+            duration,
+            next => ScrubTo(actor, control, next),
+            format: "0.00",
+            disabled: !available,
+            actions: actions => actions.Button(
+                "Reset",
+                () => ScrubTo(actor, control, 0f, finish: true),
+                style: actionStyle,
+                disabled: !available),
+            id: "anim-base-scrub");
+
+        if (_scrubActor is { } scrubActor && scrubActor.Equals(actor) &&
+            !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            _animation.EndScrub();
+            _scrubActor = null;
+            _scrubControl = null;
+        }
+    }
+
+    private void ScrubTo(
+        ActorId actor, ScrubControlReading? control, float time, bool finish = false)
+    {
+        if (control == null)
+            return;
+        if (_scrubActor is not { } scrubActor || !scrubActor.Equals(actor) ||
+            _scrubControl != control.Id)
+        {
+            var begun = _animation.BeginScrub(actor, control.Id);
+            if (!begun.Success)
+            {
+                Report(begun, "Full body scrub");
+                return;
+            }
+            _scrubActor = actor;
+            _scrubControl = control.Id;
+        }
+        Report(_animation.UpdateScrub(actor, time), "Full body scrub");
+        if (finish)
+        {
+            _animation.EndScrub();
+            _scrubActor = null;
+            _scrubControl = null;
+        }
     }
 
     /// <summary>Draws the expression controls for the face workspace.</summary>
@@ -783,13 +854,13 @@ public sealed class AnimationPane
         {
             case AnimationPickTarget.Base:
                 Report(
-                    _animation.SelectSlot(
+                    _animation.ChooseSlot(
                         actor, AnimationSlot.Base, timeline, pick.Entry.IsLoop),
                     pick.Entry.Name);
                 break;
             case AnimationPickTarget.Slot:
                 Report(
-                    _animation.SelectSlot(actor, pick.Slot, timeline),
+                    _animation.ChooseSlot(actor, pick.Slot, timeline),
                     AnimationSlots.DisplayName(pick.Slot));
                 break;
             case AnimationPickTarget.Expression:
@@ -799,7 +870,7 @@ public sealed class AnimationPane
                 break;
             case AnimationPickTarget.Lips:
                 Report(
-                    _animation.SelectSlot(actor, AnimationSlot.Lips, timeline),
+                    _animation.ChooseSlot(actor, AnimationSlot.Lips, timeline),
                     "Lips");
                 break;
         }

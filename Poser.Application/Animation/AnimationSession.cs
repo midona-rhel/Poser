@@ -86,56 +86,66 @@ public sealed class AnimationSession
     public ushort? SelectedFor(ActorId actor, AnimationSlot slot)
     {
         var owned = OverridesFor(actor);
-        if (slot == AnimationSlot.Base)
-            return owned.BaseTimeline;
-        if (slot == AnimationSlot.Lips)
-            return owned.Lips;
         return owned.SelectedSlots.TryGetValue(slot, out var timeline)
             ? timeline
             : null;
     }
 
-    /// <summary>Selects a timeline through the route verified for its layer.</summary>
-    public AnimationResult SelectSlot(
+    /// <summary>
+    /// Remembers a selection and its first native restore point without playing it.
+    /// </summary>
+    public AnimationResult ChooseSlot(
         ActorId actor, AnimationSlot slot, ushort timeline, bool nativeLoop = false)
     {
+        if (Suspended() is { } blocked) return blocked;
         if (!AnimationSlots.Selectable.Contains(slot))
             return AnimationResult.Fail("This animation layer is not selectable.");
         if (timeline == 0)
             return AnimationResult.Fail("Choose an animation first.");
-        if (slot == AnimationSlot.Base)
-            return PlayBase(actor, timeline, nativeLoop);
-        if (slot == AnimationSlot.Lips)
-            return SetLips(actor, timeline);
-
-        var landing = _port.TimelineSlot(timeline);
-        if (landing != slot)
+        if (slot is not AnimationSlot.Base and not AnimationSlot.Lips &&
+            _port.TimelineSlot(timeline) != slot)
             return AnimationResult.Fail(
                 $"Timeline {timeline} does not route to {AnimationSlots.DisplayName(slot)}.");
 
-        var before = OverridesFor(actor);
-        var result = BlendCore(actor, timeline, landing);
-        if (!result.Success)
-            return result;
+        var current = OverridesFor(actor);
+        BaseAnimationCapture? baseCapture = null;
+        ushort? slotCapture = null;
+        ushort? lipsCapture = null;
+        if (slot == AnimationSlot.Base && current.BaseCapture == null)
+            baseCapture = _port.CaptureBase(actor);
+        else if (slot == AnimationSlot.Lips && current.LipsCapture == null)
+            lipsCapture = _port.Read(actor)?.LipsOverride;
+        else if (slot is not AnimationSlot.Base and not AnimationSlot.Lips &&
+            !current.SlotCaptures.ContainsKey(slot))
+            slotCapture = _port.Read(actor)?.TimelineFor(slot) ?? 0;
+
         Mutate(actor, o =>
         {
             var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots)
             {
                 [slot] = timeline,
             };
+            var captures = new Dictionary<AnimationSlot, ushort>(o.SlotCaptures);
+            if (slotCapture is { } incoming && !captures.ContainsKey(slot))
+                captures[slot] = incoming;
             return o with
             {
                 SelectedSlots = selected,
-                // The Animation picker takes authority from a held Pose
-                // expression; both surfaces still share this one selection.
-                HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+                SlotCaptures = captures,
+                BaseCapture = o.BaseCapture ?? baseCapture,
+                LipsCapture = o.LipsCapture ?? lipsCapture,
+                BaseUsesNativeLoop = slot == AnimationSlot.Base ? nativeLoop : o.BaseUsesNativeLoop,
             };
         });
-
-        if (slot == AnimationSlot.Facial && before.HeldExpression != null &&
-            OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f)
-            return ResumeSlotSpeedCore(actor, slot);
         return AnimationResult.Ok();
+    }
+
+    /// <summary>Selects and immediately applies a timeline through its verified route.</summary>
+    public AnimationResult SelectSlot(
+        ActorId actor, AnimationSlot slot, ushort timeline, bool nativeLoop = false)
+    {
+        var chosen = ChooseSlot(actor, slot, timeline, nativeLoop);
+        return chosen.Success ? ApplySelectedSlotCore(actor, slot) : chosen;
     }
 
     /// <summary>Plays the actor's full-body timeline.</summary>
@@ -144,13 +154,7 @@ public sealed class AnimationSession
 
     private AnimationResult PlayBase(ActorId actor, ushort timeline, bool nativeLoop)
     {
-        var before = OverridesFor(actor);
-        return PlayBaseCore(
-            actor,
-            timeline,
-            before,
-            before.LoopWantedSlots.Contains(AnimationSlot.Base),
-            nativeLoop);
+        return SelectSlot(actor, AnimationSlot.Base, timeline, nativeLoop);
     }
 
     private AnimationResult PlayBaseCore(
@@ -161,7 +165,7 @@ public sealed class AnimationSession
         bool nativeLoop)
     {
         if (Suspended() is { } blocked) return blocked;
-        bool armRepeat = loopWanted && !nativeLoop && !HasLayerSelection(before);
+        bool armRepeat = loopWanted;
         // A retarget needs the immediate native state, not the session's
         // original restore point, if repeat arming has to be rolled back.
         var rollbackCapture = armRepeat && before.BaseCapture != null
@@ -216,7 +220,7 @@ public sealed class AnimationSession
                 BaseTimeline = timeline,
                 BaseUsesNativeLoop = nativeLoop,
                 LoopedSlots = loops,
-                BaseRepeatSuspended = loopWanted && !nativeLoop && !armRepeat,
+                BaseRepeatSuspended = false,
             };
         });
         return AnimationResult.Ok();
@@ -305,10 +309,6 @@ public sealed class AnimationSession
             });
         return AnimationResult.Ok();
     }
-
-    private static bool HasLayerSelection(AnimationOverrides overrides) =>
-        overrides.SelectedSlots.Count > 0 || overrides.SlotCaptures.Keys.Any(
-            slot => slot != AnimationSlot.Base);
 
     public AnimationResult PlayEmote(ActorId actor, uint emoteId) =>
         PlayEmoteCore(actor, emoteId);
@@ -414,23 +414,12 @@ public sealed class AnimationSession
 
         // Zero means sticky intent. Only a Poser selection or an explicit
         // timeline may establish native base ownership.
-        ushort target = current.BaseUsesNativeLoop
-            ? (ushort)0
-            : timeline != 0 ? timeline : current.BaseTimeline ?? 0;
+        ushort target = timeline != 0 ? timeline : current.BaseTimeline ?? 0;
         if (target == 0)
             return AnimationResult.Ok();
         if (!SupportsForceLoop)
             return AnimationResult.Fail("Full-body repeat is unavailable for this client layout.");
         var captured = current.BaseCapture == null ? _port.CaptureBase(actor) : null;
-        if (current.BaseRepeatSuspended || HasLayerSelection(current))
-        {
-            Mutate(actor, o => o with
-            {
-                BaseCapture = o.BaseCapture ?? captured,
-                BaseRepeatSuspended = true,
-            });
-            return AnimationResult.Ok();
-        }
         var armed = _port.SetForceLoop(actor, target);
         if (!armed.Success)
             return AnimationResult.Fail(armed.Detail ?? "Repeat arm failed.");
@@ -595,24 +584,56 @@ public sealed class AnimationSession
 
     public AnimationResult PlaySelectedSlot(ActorId actor, AnimationSlot slot)
     {
-        var current = OverridesFor(actor);
-        var selected = SelectedFor(actor, slot);
-        ushort live = _port.Read(actor)?.TimelineFor(slot) ?? 0;
-        if (selected is { } chosen && live != chosen)
+        bool resumedOverall = false;
+        if (SelectedFor(actor, slot) != null)
         {
-            var replayed = SelectSlot(
-                actor,
-                slot,
-                chosen,
-                slot == AnimationSlot.Base && current.BaseUsesNativeLoop);
-            if (!replayed.Success)
-                return replayed;
+            var played = ApplySelectedSlotCore(actor, slot);
+            if (!played.Success)
+                return played;
+        }
+        if (IsPaused(actor))
+        {
+            var resumed = ClearSpeedCore(actor);
+            if (!resumed.Success)
+                return resumed;
+            resumedOverall = true;
         }
         if (OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f)
             return ResumeSlotSpeedCore(actor, slot);
-        return selected == null
-            ? AnimationResult.Fail("Choose an animation first.")
-            : AnimationResult.Ok();
+        return SelectedFor(actor, slot) != null || resumedOverall
+            ? AnimationResult.Ok()
+            : AnimationResult.Fail("Choose an animation first.");
+    }
+
+    private AnimationResult ApplySelectedSlotCore(ActorId actor, AnimationSlot slot)
+    {
+        var current = OverridesFor(actor);
+        if (!current.SelectedSlots.TryGetValue(slot, out var selected))
+            return AnimationResult.Fail("Choose an animation first.");
+        if (slot == AnimationSlot.Base)
+            return PlayBaseCore(
+                actor,
+                selected,
+                current,
+                current.LoopWantedSlots.Contains(AnimationSlot.Base),
+                current.BaseUsesNativeLoop);
+        if (slot == AnimationSlot.Lips)
+            return SetLipsCore(actor, selected);
+
+        bool heldExpression = slot == AnimationSlot.Facial && current.HeldExpression != null;
+        var result = BlendCore(actor, selected, slot);
+        if (!result.Success)
+            return result;
+        Mutate(actor, o => o with
+        {
+            // Applying the Animation picker hands Facial authority over
+            // from Pose while keeping the durable picker selection.
+            HeldExpression = slot == AnimationSlot.Facial ? null : o.HeldExpression,
+        });
+        if (heldExpression && OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) &&
+            speed == 0f)
+            return ResumeSlotSpeedCore(actor, slot);
+        return AnimationResult.Ok();
     }
 
     private AnimationResult ResumeSlotSpeedCore(ActorId actor, AnimationSlot slot)
@@ -653,7 +674,7 @@ public sealed class AnimationSession
         {
             AnimationSlot.Base => ResetBaseSelection(actor),
             AnimationSlot.Lips => SelectedFor(actor, slot) != null
-                ? SetLips(actor, 0)
+                ? ResetLipsSelection(actor)
                 : AnimationResult.Ok(),
             _ => ResetBlendSelection(actor, slot),
         };
@@ -667,7 +688,8 @@ public sealed class AnimationSession
     private AnimationResult ResetBaseSelection(ActorId actor)
     {
         var current = OverridesFor(actor);
-        if (current.BaseTimeline == null)
+        if (current.BaseTimeline == null &&
+            !current.SelectedSlots.ContainsKey(AnimationSlot.Base))
             return AnimationResult.Ok();
         if (current.LoopedSlots.ContainsKey(AnimationSlot.Base))
         {
@@ -685,14 +707,20 @@ public sealed class AnimationSession
         {
             var loops = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots);
             loops.Remove(AnimationSlot.Base);
-            bool baseStillNeeded = o.SelectedSlots.Count > 0 || o.SlotCaptures.Count > 0;
+            var wanted = new HashSet<AnimationSlot>(o.LoopWantedSlots);
+            wanted.Remove(AnimationSlot.Base);
+            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
+            selected.Remove(AnimationSlot.Base);
+            bool baseStillNeeded = selected.Count > 0 || o.SlotCaptures.Count > 0;
             return o with
             {
+                SelectedSlots = selected,
                 BaseTimeline = null,
                 BaseUsesNativeLoop = false,
                 BaseCapture = baseStillNeeded ? o.BaseCapture : null,
                 BaseRepeatSuspended = false,
                 LoopedSlots = loops,
+                LoopWantedSlots = wanted,
             };
         });
         return AnimationResult.Ok();
@@ -801,24 +829,44 @@ public sealed class AnimationSession
     /// </summary>
     public AnimationResult SetLips(ActorId actor, ushort timeline)
     {
+        if (timeline == 0)
+            return ResetLipsSelection(actor);
+        var chosen = ChooseSlot(actor, AnimationSlot.Lips, timeline);
+        return chosen.Success ? SetLipsCore(actor, timeline) : chosen;
+    }
+
+    private AnimationResult SetLipsCore(ActorId actor, ushort timeline)
+    {
         if (Suspended() is { } blocked) return blocked;
         var current = OverridesFor(actor);
-        ushort? capture = current.LipsCapture;
-        if (capture == null && _port.Read(actor) is { } reading)
-            capture = reading.LipsOverride;
-
-        bool clearing = timeline == 0;
-        ushort target = clearing ? capture ?? 0 : timeline;
-
-        var result = _port.SetLips(actor, target);
+        var result = _port.SetLips(actor, timeline);
         if (!result.Success)
             return AnimationResult.Fail(result.Detail ?? "Lips failed.");
 
         Mutate(actor, o => o with
         {
-            Lips = clearing ? null : timeline,
-            // The capture is released only once it has been restored.
-            LipsCapture = clearing ? null : (o.LipsCapture ?? capture),
+            Lips = timeline,
+        });
+        return AnimationResult.Ok();
+    }
+
+    private AnimationResult ResetLipsSelection(ActorId actor)
+    {
+        var current = OverridesFor(actor);
+        ushort target = current.LipsCapture ?? 0;
+        var result = _port.SetLips(actor, target);
+        if (!result.Success)
+            return AnimationResult.Fail(result.Detail ?? "Lips restore failed.");
+        Mutate(actor, o =>
+        {
+            var selected = new Dictionary<AnimationSlot, ushort>(o.SelectedSlots);
+            selected.Remove(AnimationSlot.Lips);
+            return o with
+            {
+                SelectedSlots = selected,
+                Lips = null,
+                LipsCapture = null,
+            };
         });
         return AnimationResult.Ok();
     }
@@ -1169,8 +1217,11 @@ public sealed class AnimationSession
         if (owned.BaseCapture is { } capture && Try(_port.RestoreBase(actor, capture)) &&
             remaining.HeldExpression == null && remaining.SlotCaptures.Count == 0)
         {
+            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
+            selected.Remove(AnimationSlot.Base);
             remaining = remaining with
             {
+                SelectedSlots = selected,
                 BaseCapture = null,
                 BaseTimeline = null,
                 BaseUsesNativeLoop = false,
@@ -1204,7 +1255,28 @@ public sealed class AnimationSession
             Try(_port.SetWeaponDrawn(actor, weapon)))
             remaining = remaining with { WeaponCapture = null };
         if (owned.LipsCapture is { } lips && Try(_port.SetLips(actor, lips)))
-            remaining = remaining with { LipsCapture = null, Lips = null };
+        {
+            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
+            selected.Remove(AnimationSlot.Lips);
+            remaining = remaining with
+            {
+                SelectedSlots = selected,
+                LipsCapture = null,
+                Lips = null,
+            };
+        }
+        // A staged selection with no readable restore point made no native
+        // write, so reset can simply forget that intent.
+        if (remaining.BaseCapture == null && remaining.BaseTimeline == null ||
+            remaining.LipsCapture == null && remaining.Lips == null)
+        {
+            var selected = new Dictionary<AnimationSlot, ushort>(remaining.SelectedSlots);
+            if (remaining.BaseCapture == null && remaining.BaseTimeline == null)
+                selected.Remove(AnimationSlot.Base);
+            if (remaining.LipsCapture == null && remaining.Lips == null)
+                selected.Remove(AnimationSlot.Lips);
+            remaining = remaining with { SelectedSlots = selected };
+        }
         if (owned.PositionLock && Try(_port.SetPositionLock(actor, false)))
             remaining = remaining with { PositionLock = false };
 

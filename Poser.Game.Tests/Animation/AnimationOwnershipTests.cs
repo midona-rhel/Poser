@@ -88,8 +88,9 @@ public sealed class AnimationOwnershipTests
         Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
         var owned = session.OverridesFor(ActorA);
         Assert.True(owned.LoopWantedSlots.Contains(AnimationSlot.Base));
-        Assert.Null(owned.BaseCapture);
+        Assert.Equal(port.BaseCapture, owned.BaseCapture);
         Assert.Null(owned.BaseTimeline);
+        Assert.Equal((ushort)42, session.SelectedFor(ActorA, AnimationSlot.Base));
         Assert.False(owned.LoopedSlots.ContainsKey(AnimationSlot.Base));
     }
 
@@ -146,18 +147,21 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Native_loop_base_respects_sticky_repeat_without_forcing()
+    public void Native_loop_metadata_does_not_bypass_explicit_repeat()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
         Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
 
-        Assert.True(session.SelectSlot(
+        Assert.True(session.ChooseSlot(
             ActorA, AnimationSlot.Base, 42, nativeLoop: true).Success);
 
         Assert.True(session.LoopWantedFor(ActorA, AnimationSlot.Base));
         Assert.True(session.OverridesFor(ActorA).BaseUsesNativeLoop);
         Assert.DoesNotContain(port.Calls, call => call.StartsWith("SetForceLoop"));
+
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.Base).Success);
+        Assert.Contains("SetForceLoop:42", port.Calls);
     }
 
     [Fact]
@@ -237,7 +241,7 @@ public sealed class AnimationOwnershipTests
     }
 
     [Fact]
-    public void Base_retarget_after_layer_selection_keeps_forced_repeat_suspended()
+    public void Base_retarget_after_layer_selection_reclaims_forced_repeat()
     {
         var port = FakePort.Create();
         var session = new AnimationSession(port.Port);
@@ -248,9 +252,8 @@ public sealed class AnimationOwnershipTests
 
         Assert.True(session.PlayBase(ActorA, 44).Success);
 
-        Assert.True(session.OverridesFor(ActorA).BaseRepeatSuspended);
-        Assert.DoesNotContain(port.Calls.Skip(upper + 1),
-            call => call.StartsWith("SetForceLoop"));
+        Assert.False(session.OverridesFor(ActorA).BaseRepeatSuspended);
+        Assert.Contains("SetForceLoop:44", port.Calls.Skip(upper + 1));
     }
 
     [Fact]
@@ -504,6 +507,49 @@ public sealed class AnimationOwnershipTests
         Assert.DoesNotContain(
             AnimationSlot.UpperBody,
             session.OverridesFor(ActorA).SlotCaptures.Keys);
+    }
+
+    [Fact]
+    public void Base_choose_captures_first_state_apply_keeps_selection_and_reset_restores_it()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithBase(3);
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.Base, 42).Success);
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.Base, 43).Success);
+        Assert.Equal(1, port.CaptureBaseCalls);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("PlayBase"));
+
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.Base).Success);
+        Assert.Equal((ushort)43, session.SelectedFor(ActorA, AnimationSlot.Base));
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.Base).Success);
+        Assert.Equal(1, port.CaptureBaseCalls);
+        Assert.True(session.SetSlotLoop(ActorA, AnimationSlot.Base, 0, true).Success);
+
+        Assert.True(session.ResetSlot(ActorA, AnimationSlot.Base).Success);
+        Assert.Equal(port.BaseCapture, port.RestoredBaseCapture);
+        Assert.Null(session.SelectedFor(ActorA, AnimationSlot.Base));
+        Assert.False(session.LoopWantedFor(ActorA, AnimationSlot.Base));
+    }
+
+    [Fact]
+    public void Upper_choose_keeps_first_incoming_timeline_across_rechoose_and_apply()
+    {
+        var port = FakePort.Create();
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 77, 1f);
+        var session = new AnimationSession(port.Port);
+
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.UpperBody, 43).Success);
+        port.ReadValue = ReadingWithSlot(AnimationSlot.UpperBody, 88, 1f);
+        Assert.True(session.ChooseSlot(ActorA, AnimationSlot.UpperBody, 44).Success);
+        Assert.DoesNotContain(port.Calls, call => call.StartsWith("Blend"));
+        Assert.True(session.PlaySelectedSlot(ActorA, AnimationSlot.UpperBody).Success);
+        Assert.Equal((ushort)44, session.SelectedFor(ActorA, AnimationSlot.UpperBody));
+
+        Assert.True(session.ResetSlot(ActorA, AnimationSlot.UpperBody).Success);
+        Assert.Equal("Blend:77", port.Calls.Last(call => call.StartsWith("Blend")));
+        Assert.Null(session.SelectedFor(ActorA, AnimationSlot.UpperBody));
     }
 
     [Fact]
