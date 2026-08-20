@@ -16,6 +16,18 @@ Capture does not change the scene. It refreshes pose data, takes the document
 on the framework thread, then validates and writes it in the background. A
 capture waits while pose import uses the shared refresh slot. Scene autosave
 uses its own root and retention and skips a name while a scene operation runs.
+Camera targets retain their exact saved actor relationship and whether that
+relationship was locked; stale actor generations are never rebound.
+
+## Centering the live camera
+
+Actor "Center camera" is a one-shot framing action on the current live GPose
+orbit camera. It uses the actor's drawn mid-body pivot and a height-derived,
+clamped distance while preserving view orientation and every target, follow,
+link, and ownership field. It never creates a camera or changes parentage.
+Free, locked, pinned, unavailable, stale, hidden, and undrawn actors are
+refused before any camera write; the action is available from the actor menu
+and the Inspector's Actor → Camera section.
 
 ## Loading a scene
 

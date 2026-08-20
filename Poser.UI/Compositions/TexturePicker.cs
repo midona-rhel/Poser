@@ -16,7 +16,7 @@ public enum TextureProbe
 
     /// <summary>The texture exists but its wrap is not ready this frame, so
     /// the id is asked again. A game texture is loaded asynchronously, which
-    /// makes this the answer EVERY id gives the first time it is asked.
+    /// makes this the usual answer the first time an id is asked.
     /// </summary>
     Pending,
 
@@ -26,11 +26,11 @@ public enum TextureProbe
 }
 
 /// <summary>Resolves one candidate texture id to a frame-local ImGui handle
-/// and the PIXEL SIZE of the image behind it. Stated by the caller, exactly as
+/// and the pixel size of the image behind it. Stated by the caller, exactly as
 /// <see cref="PickerOptions{T}.Texture"/> is — game paths and the texture
 /// service stay outside Crystarium.
 ///
-/// <para>The size is what tells a picture from an ANIMATION ATLAS, which the
+/// <para>The size is what tells a picture from an animation atlas, which the
 /// tile must sample differently; an unresolved probe answers
 /// <see cref="Vector2.Zero"/> and is drawn whole.</para></summary>
 public delegate TextureProbe TexturePreview(
@@ -39,8 +39,8 @@ public delegate TextureProbe TexturePreview(
 public static partial class Crystarium
 {
     /// <summary>
-    /// ONE texture id, chosen off a grid of what the textures actually look
-    /// like. The field is a stepped numeric id — the id IS the value, and a
+    /// One texture id, chosen off a grid of what the textures actually look
+    /// like. The field is a stepped numeric id — the id is the value, and a
     /// pose file states it — with a preview tile beside it that opens the grid.
     ///
     /// <para>Retained like <see cref="SearchPicker{T}"/> and drained the same
@@ -48,13 +48,12 @@ public static partial class Crystarium
     /// answers with the pick, so the row that opened it reports the outcome.
     /// </para>
     ///
-    /// <para>The catalog is PROBED rather than known: the game exposes no list
+    /// <para>The catalog is probed rather than known: the game exposes no list
     /// of sky or cloud textures, so the ids are walked and the ones the game
     /// has no file for are dropped — every id but zero, which is the
     /// no-texture choice and is always offered. The walk is chunked over
     /// frames because a texture wrap blocks while it resolves — a thousand of
-    /// them on one frame is a visible hitch (Ktisis staggers the same walk
-    /// off-thread).</para>
+    /// them on one frame is a visible hitch.</para>
     /// </summary>
     public sealed class TexturePicker
     {
@@ -75,7 +74,7 @@ public static partial class Crystarium
         /// selected ring never crops the preview.</summary>
         private const float TextureTileInset = 3f;
 
-        /// <summary>The caption band UNDER the art — its own strip of panel,
+        /// <summary>The caption band under the art — its own strip of panel,
         /// never a scrim over the preview: a name printed on the art both
         /// hides it and fights it for contrast.</summary>
         private const float TextureTileCaption = 16f;
@@ -90,12 +89,11 @@ public static partial class Crystarium
         private const int TextureProbesPerFrame = 16;
 
         /// <summary>
-        /// Zero is NO TEXTURE and is admitted whatever the game answers for
+        /// Zero means no texture and is admitted whatever the game answers for
         /// it — the one id the walk may not drop. Every other id earns its
         /// tile by having a file; zero earns its tile by being the value that
-        /// means "none", which the grid must be able to reach (user
-        /// 2026-08-14) rather than leaving to the steppers beside it. Ktisis
-        /// keeps the same id for the same reason.
+        /// means "none", which the grid must expose directly rather than
+        /// leaving to the steppers beside it.
         /// </summary>
         private const uint NoTextureId = 0;
 
@@ -120,11 +118,10 @@ public static partial class Crystarium
         private uint _selected;
         private uint? _picked;
 
-        /// <param name="count">How many ids to walk. Ktisis walks 0..999 for
-        /// every one of these catalogs and drops what the game does not
-        /// have.</param>
+        /// <param name="count">How many ids to walk. Missing ids are dropped.
+        /// </param>
         /// <param name="caption">The tile's caption for an id — a catalog
-        /// whose entries have NAMES states them here; unset, the id itself
+        /// whose entries have names states them here; unset, the id itself
         /// is the caption.</param>
         public TexturePicker(
             string id, TexturePreview preview, uint count = 1000,
@@ -183,9 +180,7 @@ public static partial class Crystarium
                     Padding = 0f,
                     AnchorMin = _anchorMin,
                     AnchorMax = _anchorMax,
-                    // OPAQUE, for the reason SearchPicker's panel is: glass
-                    // let the page bleed through in game.
-                    Treatment = FloatingSurfaceTreatment.Unframed,
+                    Treatment = FloatingSurfaceTreatment.Glass,
                 },
                 _body);
             return _picked;
@@ -321,9 +316,6 @@ public static partial class Crystarium
         {
             var min = ImGui.GetWindowPos();
             float scale = ImGuiHelpers.GlobalScale;
-            PaintPanel(
-                ImGui.GetWindowDrawList(), min, min + ImGui.GetWindowSize(),
-                ActiveTheme);
             float pitch = TextureTileSize + TextureTileCaption + TextureTileGap;
             // Left and top insets by hand (the window's own padding is zero);
             // the right inset is the ScrollRegion's reserved gutter itself.
@@ -402,14 +394,14 @@ public static partial class Crystarium
 
         /// <summary>
         /// The corners of the image a tile actually samples. Some of the
-        /// game's textures in these catalogs are ANIMATION ATLASES — a wide
+        /// game's textures in these catalogs are animation atlases — a wide
         /// sheet of square frames laid side by side — and squashing a whole
         /// sheet into a square tile shows every frame at once instead of the
         /// picture. Anything that is not 1:1 is therefore sampled at its
-        /// TOP-LEFT SQUARE, which is the atlas's first frame; a square texture
+        /// top-left square, which is the atlas's first frame; a square texture
         /// keeps the whole image.
         ///
-        /// <para>DISPLAY ONLY, and free: the id the scene is given never sees
+        /// <para>This affects display only: the id the scene is given never sees
         /// this, and the crop is two UV corners handed to ImGui — no pixels
         /// are decoded, resized, or cached. A probe that could not state a
         /// size answers zero and is drawn whole.</para>
@@ -425,8 +417,8 @@ public static partial class Crystarium
         }
 
         /// <summary>
-        /// One preview square, hit-tested. The FIELD's tile opens the surface;
-        /// a GRID tile picks. The wrap is re-resolved every frame — a shared
+        /// One preview square, hit-tested. The field tile opens the surface;
+        /// a grid tile picks. The wrap is re-resolved every frame — a shared
         /// texture's handle is the frame's and nothing else.
         /// </summary>
         private void DrawTile(
@@ -500,7 +492,7 @@ public static partial class Crystarium
 
             if (grid)
             {
-                // The caption stands UNDER the art on the tile's own fill —
+                // The caption stands under the art on the tile's own fill —
                 // the art stays whole and the text never fights a bright
                 // preview for contrast. A named catalog prints its name; a
                 // walked one prints the id. A name wider than the tile is

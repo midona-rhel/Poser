@@ -913,6 +913,18 @@ public class PoseInspectorPane
 
                 var stack = new SectionStack(
                     "pose-surface", origin, contentWidth);
+                if (actor != null && OwningActorId() is { } actorId)
+                    stack.Section(
+                        "camera",
+                        "CAMERA",
+                        open: true,
+                        _ => { },
+                        form => form.Actions("Frame", actions =>
+                            actions.Button(
+                                "Center camera on actor",
+                                () => _cameraPane.CenterOnActor(actorId),
+                                help: "Move the current orbit view to this actor without following it")),
+                        divider: stack.Any);
                 if (actor != null && !IsCreature(actor))
                     stack.Section(
                         "gaze",
@@ -2325,6 +2337,10 @@ public class PoseInspectorPane
         _cleanTransforms.ClearActorOverrides(
             SelectedActorIds().Select(TransformTargetId.ForActor).ToList());
     }
+
+    /// <summary>Routes the camera rail's reset action to the camera pane's
+    /// exact-id validation and state owner.</summary>
+    public void ResetCameraTransform() => _cameraPane.ResetSelectedCameraTransform();
 
     public void ResetSelectedBones()
     {

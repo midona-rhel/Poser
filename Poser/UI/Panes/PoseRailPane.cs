@@ -123,15 +123,24 @@ public class PoseRailPane
             // resets address anything it has, and its own actions live on
             // the Light tab. A gaze point takes none either — its buttons
             // would act on the owning actor while claiming to act on it.
-            // A camera's actions live on the Camera tab the same way.
+            // Camera framing lives on the Camera tab; its reset transform
+            // deliberately stays here beside the actor and bone resets.
             // An overlay node stands down for the same reason a light does:
             // it has no bones to reset and no actor override to clear, and its
             // own actions live on the Overlay tab.
             if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
+                !_inspector.IsOverlaySelection)
             {
                 ImGui.SetCursorScreenPos(cursor);
-                if (_inspector.IsActorSelection)
+                if (_inspector.IsCameraSelection)
+                {
+                    if (Crystarium.Button("Reset transform",
+                            id: "rail-camera-reset",
+                            help: "Restore the selected camera's framing",
+                            style: ControlStyle.Workspace))
+                        _inspector.ResetCameraTransform();
+                }
+                else if (_inspector.IsActorSelection)
                 {
                     // Always clickable: clearing overrides is a safe no-op when
                     // none exist.

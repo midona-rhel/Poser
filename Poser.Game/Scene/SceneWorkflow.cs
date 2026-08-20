@@ -960,7 +960,8 @@ public sealed class SceneWorkflow : IDisposable
                             continue;
                         }
                         var targetDetail = _runtime.SetCameraTarget(
-                            token, actorTokens[targetKey], camera.TargetActorName);
+                            token, actorTokens[targetKey],
+                            camera.TargetActorName, camera.IsTargetLocked);
                         if (targetDetail != null)
                         {
                             entities.Add(new SceneEntityOutcome(

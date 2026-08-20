@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 
 namespace Poser.Entities;
@@ -68,6 +69,23 @@ public interface IVirtualCamera
 
     /// <summary>Display name for the followed actor; empty when none.</summary>
     string TargetActorName { get; set; }
+
+    /// <summary>The exact actor generation followed by this camera. The name
+    /// is presentation only and must never recover this identity.</summary>
+    ActorId? TargetActorId { get; set; }
+
+    /// <summary>Retains the exact target actor until explicitly unlocked.
+    /// The target identity may exist while this is false.</summary>
+    bool IsTargetLocked
+    {
+        get => false;
+        set { }
+    }
+
+    /// <summary>The native actor reference retained by the follow state. It
+    /// must be the exact object admitted for <see cref="TargetActorId"/>;
+    /// this is intentionally separate from the display name.</summary>
+    IActor? TargetActor { get; }
 
     /// <summary>The camera's real world position this frame — the native
     /// position while live, the retained free-cam position otherwise.</summary>

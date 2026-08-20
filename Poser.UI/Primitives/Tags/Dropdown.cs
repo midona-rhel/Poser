@@ -7,53 +7,20 @@ namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>
-    /// <c>.drop max-height: calc(7 * 26px + 6 * 2px + 12px)</c> — the
-    /// dropdown scrolls past seven rows. A CSS literal, not a token: the
-    /// shared Picker.MaximumRows belongs to the search pickers.
-    /// </summary>
+    /// <summary>The dropdown scrolls after seven visible rows.</summary>
     private const int DropVisibleRows = 7;
 
-    /// <summary>CmSelect.tsx places the portal at
-    /// <c>top: cssRect.bottom + 4</c>.</summary>
+    /// <summary>Gap between the trigger and popup.</summary>
     private const float DropAnchorGap = 4f;
 
-    /// <summary><c>.btnChevron { width: 20px }</c> — the fixed slot the
-    /// 14px IconSelector centers in.</summary>
+    /// <summary>Fixed slot that centers the selector glyph.</summary>
     private const float ChevronSlot = 20f;
 
-    /// <summary><c>.btnChevron { opacity: .5 }</c>.</summary>
+    /// <summary>Selector glyph opacity.</summary>
     private const float ChevronOpacity = 0.5f;
 
-    /// <summary>Tabler <c>IconSelector</c>, the glyph CmSelect.tsx
-    /// renders in <c>.btnChevron</c>.</summary>
+    /// <summary>Selector glyph name.</summary>
     private const string ChevronIcon = "selector";
-
-    /// <summary>
-    /// The OPAQUE fill <c>.drop</c> wears — the color the trigger already
-    /// SHOWS at rest, not the token it is painted with.
-    ///
-    /// <para><c>.btn</c> and <c>.drop</c> share
-    /// <c>--color-subtle-overlay</c>, which is white at 10%: a TRANSLUCENT
-    /// token whose result belongs to whatever sits behind it. Behind the
-    /// trigger is the window surface; behind the popup is the popup's own
-    /// <c>--shadow-panel</c>, whose solid core <see cref="BoxRenderer"/>
-    /// lays down before the fill. The one token therefore reads visibly
-    /// darker on the menu than on the closed control the menu is supposed
-    /// to continue. Flattening it over <see cref="Theme.Surface"/> yields
-    /// that resting appearance as an opaque color, and the opacity is the
-    /// point: shadow, blur, or whatever the menu overhangs can no longer
-    /// tint it.</para>
-    ///
-    /// <para>The BORDER token is deliberately NOT flattened.
-    /// <see cref="BoxRenderer"/> strokes the border over the fill, so
-    /// <c>--color-border-secondary</c> over this opaque fill composites to
-    /// the trigger's border pixel by construction — flattening it first
-    /// would compute the identical number a second time and hide where the
-    /// match comes from.</para>
-    /// </summary>
-    private static Vector4 DropdownPopupFill(in Theme theme) =>
-        ColorEx.FlattenOver(theme.Chrome.ControlHover, theme.Surface);
 
     public static bool Dropdown(
         string id, string[] items, int selected, Action<int> onChange,
@@ -65,24 +32,7 @@ public static partial class Crystarium
         ControlStyle style = default, bool disabled = false, string? help = null) =>
         DropdownCore(id, items, selected, onChange, style, disabled, help, previewText, true);
 
-    /// <summary>
-    /// Picto's <c>shared/ui/CmSelect</c>. The trigger is <c>.btn</c>
-    /// (26px, <c>padding: 0 6px 0 12px</c>, <c>gap: 6px</c>, radius 6,
-    /// <c>--color-subtle-overlay</c> over a 1px
-    /// <c>--color-border-secondary</c>, 12px <c>--color-text-primary</c>,
-    /// then the 20px <c>.btnChevron</c> slot); the portal is
-    /// <c>.drop</c> (the same 1px border and radius, 4px padding, 2px
-    /// row gap, <c>--shadow-panel</c>) over
-    /// <c>.opt</c> rows (26px, <c>padding: 0 8px</c>, radius 4,
-    /// <c>--color-hover-overlay</c> for both <c>:hover</c> and
-    /// <c>.optActive</c>). The module declares no <c>:hover</c> and no
-    /// <c>transition</c> on <c>.btn</c>, so the trigger has no hover
-    /// paint and no motion channel.
-    /// One product deviation: <c>.drop</c> takes the trigger's APPEARANCE
-    /// instead of <c>--glass-bg</c>, so the open dropdown reads as one
-    /// continuous control. Appearance, not token: see
-    /// <see cref="DropdownPopupFill"/>.
-    /// </summary>
+    /// <summary>Draws the shared dropdown trigger and glass popup.</summary>
     private static bool DropdownCore(
         string id, string[] items, int selected, Action<int> onChange,
         ControlStyle style, bool disabled, string? help,
@@ -119,8 +69,7 @@ public static partial class Crystarium
         var labelColor = boxPaint.LabelColor;
         float chevronOpacity = boxPaint.ChevronOpacity;
 
-        // CSS content box: the 1px border is inside the border box, so
-        // padding measures from the border's INNER edge.
+        // Padding begins inside the trigger border.
         float contentLeft = valueMin.X + borderPx + padLeft;
         float contentRight = valueMax.X - borderPx - padRight;
         float chevronLeft = contentRight - chevronSlot;
@@ -134,9 +83,7 @@ public static partial class Crystarium
         {
             var measured = MeasureText(currentText, triggerLabelStyle);
             labelClipped = measured.X > labelWidth;
-            // `align-items: center` on the 24px content box, on the INK:
-            // TextInBand's metric seat replaces the line-box centre, which
-            // reads low. No per-surface nudge on top of it.
+            // TextInBand centers the measured glyph ink in the control.
             TextInBand(
                 new Vector2(contentLeft, valueMin.Y),
                 new Vector2(labelWidth, height),
@@ -150,7 +97,7 @@ public static partial class Crystarium
             HoverHelp.Preview(
                 Ids.Join(id, "-full"), valueMin, valueMax, currentText);
 
-        // .btnChevron: <IconSelector size={14} /> centered in the 20px slot.
+        // Center the selector glyph in its fixed trailing slot.
         float iconSpan = theme.Controls.SmallIconSize * scale;
         var iconMin = new Vector2(
             chevronLeft + (chevronSlot - iconSpan) * 0.5f,
@@ -163,7 +110,7 @@ public static partial class Crystarium
 
         ImGui.SetCursorScreenPos(pos + new Vector2(0, height));
 
-        // ---- .drop ----------------------------------------------------
+        // ---- popup ---------------------------------------------------
         var popupMetrics =
             MeasureDropdownPopup(items.Length, metrics.LogicalHeight);
         int visibleItems = popupMetrics.VisibleItems;
@@ -184,14 +131,11 @@ public static partial class Crystarium
                 AnchorMin = valueMin,
                 AnchorMax = valueMax + new Vector2(
                     0f, popupMetrics.AnchorGapCompensation),
-                Treatment = FloatingSurfaceTreatment.Unframed,
+                Treatment = FloatingSurfaceTreatment.Glass,
             },
             () =>
             {
-                var popupMin = ImGui.GetWindowPos();
-                var popupMax = popupMin + ImGui.GetWindowSize();
                 var popupDrawList = ImGui.GetWindowDrawList();
-                PaintDropdownSurface(popupDrawList, popupMin, popupMax);
 
                 float regionWidth = ImGui.GetContentRegionAvail().X / scale;
                 ScrollRegion(
@@ -200,7 +144,7 @@ public static partial class Crystarium
                     itemListHeight / scale,
                     region =>
                     {
-                        float optPad = theme.Spacing.Four * scale; // padding: 0 8px
+                        float optPad = theme.Spacing.Four * scale;
                         float optRadius = theme.Radii.Medium * scale;
                         var spacing = ImGui.GetStyle().ItemSpacing;
                         ImGui.PushStyleVar(
@@ -308,39 +252,30 @@ public static partial class Crystarium
         public readonly float Width;
         public readonly float Height;
         public readonly float LogicalHeight;
-        /// <summary>The widest option (or preview) in pixels — the span the
-        /// invisible <c>.sizer</c> rows force the label area to.</summary>
+        /// <summary>The widest option or preview in pixels.</summary>
         public readonly float WidestLabel;
         public readonly float BorderPx;
         public readonly float PadLeft;
         public readonly float PadRight;
         public readonly float Gap;
         public readonly float ChevronSlot;
-        /// <summary>The 12px <c>.btn</c> font both the trigger label and the
-        /// <c>.opt</c> rows are measured and drawn with.</summary>
+        /// <summary>The text style shared by the trigger and option rows.</summary>
         public readonly TextStyle LabelStyle;
     }
 
-    /// <summary>
-    /// CmSelect's base contract is intrinsic sizing: the invisible
-    /// <c>.sizer</c> spans force the label area to the WIDEST option, so
-    /// Content/Unspecified must never inherit the surrounding region. Fixed
-    /// and Fill may still override the resolved width. The intrinsic span is
-    /// only known after measuring the options, so the shared sizing preamble
-    /// runs here rather than at the top of the control.
-    /// </summary>
+    /// <summary>Measures intrinsic width from the widest option. Fixed and
+    /// fill sizing may override that width.</summary>
     private static DropdownMetrics MeasureDropdown(
         string[] items, string? previewText, ControlStyle style)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
-        float borderPx = 1f * scale;                 // border: 1px solid
-        float padLeft = theme.Spacing.Six * scale;   // padding-left: 12px
-        float padRight = theme.Spacing.Three * scale;// padding-right: 6px
-        float gap = theme.Spacing.Three * scale;     // gap: 6px
+        float borderPx = 1f * scale;
+        float padLeft = theme.Spacing.Six * scale;
+        float padRight = theme.Spacing.Three * scale;
+        float gap = theme.Spacing.Three * scale;
         float chevronSlot = ChevronSlot * scale;
 
-        // .btn font: 12px --font-family at --color-text-primary.
         var labelStyle = new TextStyle { Size = theme.Typography.LabelSize };
 
         float widestLabel = 0f;
@@ -349,7 +284,7 @@ public static partial class Crystarium
         if (!string.IsNullOrEmpty(previewText))
             widestLabel = MathF.Max(
                 widestLabel, MeasureText(previewText!, labelStyle).X);
-        // CSS border-box: both borders + both paddings + label + gap + slot.
+        // The border box includes both borders, padding, label, gap, and glyph.
         float intrinsicWidth =
             borderPx * 2f + padLeft + widestLabel + gap + chevronSlot + padRight;
 
@@ -369,10 +304,7 @@ public static partial class Crystarium
             borderPx, padLeft, padRight, gap, chevronSlot, labelStyle);
     }
 
-    /// <summary>
-    /// What the closed box hands its two pieces of content: the label's
-    /// color and the chevron's effective <c>.btnChevron</c> opacity.
-    /// </summary>
+    /// <summary>Text and glyph treatment for the closed trigger.</summary>
     private readonly struct DropdownTriggerPaint
     {
         public DropdownTriggerPaint(Vector4 labelColor, float chevronOpacity)
@@ -385,32 +317,22 @@ public static partial class Crystarium
         public readonly float ChevronOpacity;
     }
 
-    /// <summary>
-    /// The closed trigger's BOX alone — fill, border, and the disabled
-    /// group, returning what the label and chevron must take from it.
-    /// </summary>
+    /// <summary>Paints the closed trigger and returns its content treatment.</summary>
     private static DropdownTriggerPaint PaintDropdownBox(
         in InteractionResult hit, bool disabled)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         var drawList = ImGui.GetWindowDrawList();
-        float radius = theme.Radii.Control;           // border-radius: 6px
-        float borderPx = 1f * scale;                  // border: 1px solid
-        var triggerFill = theme.Chrome.ControlHover;  // --color-subtle-overlay
-        var triggerBorder = theme.Border;             // --color-border-secondary
-        var labelColor = theme.Text;                  // --color-text-primary
+        float radius = theme.Radii.Control;
+        float borderPx = 1f * scale;
+        var triggerFill = theme.Chrome.ControlHover;
+        var triggerBorder = theme.Border;
+        var labelColor = theme.Text;
 
         if (disabled)
         {
-            // CmSelect declares NO :disabled rule; this borrows the Picto
-            // action-button family's `.btn:disabled { opacity: .35 }`
-            // GROUP opacity — the SAME recipe Button uses, so it comes
-            // from the one implementation rather than a second copy. The
-            // trigger has two pieces of content inside that group and
-            // both take their transform from the same return value: the
-            // label compensates, the chevron scales its `.btnChevron`
-            // opacity.
+            // The shared disabled group keeps the label and glyph consistent.
             var content = ControlPaint.DisabledGroup(
                 drawList, hit.ScreenMin, hit.ScreenMax,
                 radius * scale, borderPx, triggerFill, triggerBorder,
@@ -432,43 +354,7 @@ public static partial class Crystarium
         return new DropdownTriggerPaint(labelColor, ChevronOpacity);
     }
 
-    /// <summary>
-    /// The open <c>.drop</c> panel itself. The <c>--shadow-panel</c> pair
-    /// must escape the popup window's own clip, so the surface is drawn
-    /// against the full display rect.
-    /// </summary>
-    private static void PaintDropdownSurface(
-        ImDrawListPtr drawList, Vector2 min, Vector2 max)
-    {
-        var theme = ActiveTheme;
-        var border = theme.Border;
-        drawList.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
-        BoxRenderer.Draw(drawList, min, max, new BoxStyle
-        {
-            // PRODUCT DEVIATION from `.drop { background: var(--glass-bg) }`:
-            // the popup wears the TRIGGER's own surface so the open
-            // control reads as one object. Opaque by construction —
-            // see DropdownPopupFill — and the same border token as `.btn`;
-            // the CSS glass recipe is not used.
-            BackgroundColor = DropdownPopupFill(theme),
-            BorderWidth = 1f,
-            BorderRadius = theme.Radii.Control,
-            BorderTopColor = border,
-            BorderRightColor = border,
-            BorderBottomColor = border,
-            BorderLeftColor = border,
-            BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
-        });
-        drawList.PopClipRect();
-    }
-
-    /// <summary>
-    /// One <c>.opt</c> row's state fill. <c>.opt:hover</c> is
-    /// <c>--color-menu-hover</c> and <c>.optActive</c> is
-    /// <c>--color-hover-overlay</c> — the SAME token, and <c>:hover</c>
-    /// outranks <c>.optActive</c> on specificity, so one fill covers both
-    /// states. The caller decides WHEN a row is filled.
-    /// </summary>
+    /// <summary>Paints one active or hovered option row.</summary>
     private static void PaintDropdownRowFill(
         ImDrawListPtr drawList, Vector2 pos, Vector2 fillSize, float radius)
     {
@@ -477,11 +363,7 @@ public static partial class Crystarium
         drawList.AddRectFilled(pos, pos + fillSize, rowFill, radius);
     }
 
-    /// <summary>
-    /// The open panel's box: the row list it scrolls, the content inset that
-    /// surrounds it, and the anchor nudge CmSelect's 4px gap needs on top of
-    /// the shared anchored placement. All spans are pixels.
-    /// </summary>
+    /// <summary>Pixel measurements for the open dropdown surface.</summary>
     private readonly struct DropdownPopupMetrics
     {
         public DropdownPopupMetrics(
@@ -500,32 +382,23 @@ public static partial class Crystarium
         public readonly int VisibleItems;
         public readonly float RowHeight;
         public readonly float RowGap;
-        /// <summary><c>.drop</c> is content-box: its own 1px border plus the
-        /// 4px padding sit outside the row list, so the popup's content
-        /// inset is both.</summary>
+        /// <summary>Border and padding outside the row list.</summary>
         public readonly float DropInset;
         public readonly float ItemListHeight;
         public readonly float PopupHeight;
-        /// <summary>The shared anchored placement already adds
-        /// <c>Floating.AnchorGap</c>; CmSelect asks for
-        /// <see cref="DropAnchorGap"/>, so the anchor carries the rest.
-        /// </summary>
+        /// <summary>Additional gap beyond the shared anchored placement.</summary>
         public readonly float AnchorGapCompensation;
     }
 
-    /// <summary>
-    /// Sizes the <c>.drop</c> panel from the row count and the trigger's own
-    /// resolved height — <c>.opt</c> rows are the trigger's 26px tall, and
-    /// the list scrolls past <see cref="DropVisibleRows"/>.
-    /// </summary>
+    /// <summary>Sizes the popup from the trigger and visible row count.</summary>
     private static DropdownPopupMetrics MeasureDropdownPopup(
         int itemCount, float triggerLogicalHeight)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var theme = ActiveTheme;
         int visibleItems = Math.Min(itemCount, DropVisibleRows);
-        float rowHeight = triggerLogicalHeight * scale;        // .opt height: 26px
-        float rowGap = theme.Floating.DropdownRowGap * scale;  // gap: 2px
+        float rowHeight = triggerLogicalHeight * scale;
+        float rowGap = theme.Floating.DropdownRowGap * scale;
         float itemListHeight =
             visibleItems * rowHeight + Math.Max(0, visibleItems - 1) * rowGap;
         float dropInset = 1f * scale + theme.Floating.PopupPadding * scale;

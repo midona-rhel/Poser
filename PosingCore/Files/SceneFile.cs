@@ -511,6 +511,8 @@ public class SceneCamera
     public Guid? TargetActorKey { get; set; }
     public string TargetActorName { get; set; } = string.Empty;
     public Vector3 TargetOffset { get; set; }
+    /// <summary>Whether the target identity stays fixed until unlocked.</summary>
+    public bool IsTargetLocked { get; set; }
 }
 
 /// <summary>

@@ -24,6 +24,9 @@ public record struct PickerOptions<T> where T : class
     /// <summary>Right-aligned mono readout.</summary>
     public Func<T, string?>? Badge;
 
+    /// <summary>Whether a row owns a selectable mark in multi-select mode.</summary>
+    public Func<T, bool>? IsSelectable;
+
     public PickerStrip? Strip;
     public PickerStrip? SecondStrip;
 
@@ -149,7 +152,7 @@ public static partial class Crystarium
         /// </summary>
         public void OpenMulti(
             string owner,
-            string caption,
+            string? caption,
             IReadOnlyList<T> items,
             Func<T, string> label,
             Func<T, string> key,
@@ -171,6 +174,21 @@ public static partial class Crystarium
         {
             if (ImGui.IsPopupOpen(_popupId))
                 _options = options;
+        }
+
+        /// <summary>Replaces the rows of an open picker. Selection remains
+        /// owned by the caller.</summary>
+        public void UpdateItems(IReadOnlyList<T> items)
+        {
+            _items = items;
+        }
+
+        /// <summary>Restates the caller-owned selection while the popup
+        /// remains open.</summary>
+        public void UpdateSelection(IReadOnlySet<string> selectedKeys)
+        {
+            if (_selectedKeys is not null)
+                _selectedKeys = selectedKeys;
         }
 
         /// <summary>Updates the visible loading or failure status.</summary>
@@ -213,7 +231,8 @@ public static partial class Crystarium
                 + _listHeight;
 
             _picked = null;
-            // The picker paints its own opaque panel.
+            // The shared floating surface supplies the same translucent glass
+            // treatment used by the rest of the picker family.
             FloatingSurface.Popup(
                 _popupId,
                 new FloatingSurfaceProps
@@ -223,7 +242,7 @@ public static partial class Crystarium
                     Padding = 0f,
                     AnchorMin = _anchorMin,
                     AnchorMax = _anchorMax,
-                    Treatment = FloatingSurfaceTreatment.Unframed,
+                    Treatment = FloatingSurfaceTreatment.Glass,
                 },
                 _body);
             _visible = Array.Empty<T>();
@@ -281,8 +300,6 @@ public static partial class Crystarium
             float scale = ImGuiHelpers.GlobalScale;
             var theme = ActiveTheme;
             var draw = ImGui.GetWindowDrawList();
-            var min = ImGui.GetWindowPos();
-            PaintPanel(draw, min, min + ImGui.GetWindowSize(), theme);
 
             var origin = ImGui.GetCursorScreenPos();
             // The fixed gutter keeps content aligned when the scrollbar appears.
@@ -441,29 +458,35 @@ public static partial class Crystarium
                     BorderRadius = theme.Radii.Control,
                 });
 
-            float gap = theme.Spacing.Three * scale;
-            float x = pillMin.X + PickerRowPadding * scale;
             float centerY = pillMin.Y + pillSize.Y * 0.5f;
+            float gap = theme.Spacing.Three * scale;
+            float baseX = pillMin.X + PickerRowPadding * scale;
+            float x = baseX;
 
-            // Both modes reserve the same mark slot to align labels.
+            // Multi-select rows reserve one selection seat.
             float slot = PickerCheckSlot * scale;
             var slotMin = new Vector2(x, centerY - slot * 0.5f);
-            if (multi)
+            bool selectable = _options.IsSelectable?.Invoke(item) ?? true;
+            if (multi && selectable)
+            {
                 PaintCheckBox(
                     draw, slotMin, slotMin + new Vector2(slot), active, theme);
-            if (active)
-            {
-                float tick = PickerCheckGlyph * scale;
-                var tickMin = new Vector2(
-                    slotMin.X + (slot - tick) * 0.5f, centerY - tick * 0.5f);
-                IconIn(
-                    tickMin,
-                    tickMin + new Vector2(tick),
-                    TablerIcon.Check,
-                    multi ? theme.Chrome.Checkmark : theme.Text,
-                    strokeWidth: PickerCheckStroke);
+                if (active)
+                {
+                    float tick = PickerCheckGlyph * scale;
+                    var tickMin = new Vector2(
+                        slotMin.X + (slot - tick) * 0.5f,
+                        centerY - tick * 0.5f);
+                    IconIn(
+                        tickMin,
+                        tickMin + new Vector2(tick),
+                        TablerIcon.Check,
+                        theme.Chrome.Checkmark,
+                        strokeWidth: PickerCheckStroke);
+                }
             }
-            x += slot + gap;
+            if (multi)
+                x += slot + gap;
 
             // A glyph is the fallback when no texture is available.
             nint texture = _options.Texture is { } toTexture ? toTexture(item) : 0;
@@ -527,7 +550,11 @@ public static partial class Crystarium
             if (!hit.Clicked)
                 return;
             if (_onToggle is { } toggle)
-                toggle(item, !active);
+            {
+                if (selectable)
+                    toggle(item, !active);
+                return;
+            }
             else
                 _picked = item;
         }
@@ -555,33 +582,6 @@ public static partial class Crystarium
                     Color = FormHintColor,
                 });
             ImGui.Dummy(new Vector2(0f, PickerRowPitch * scale));
-        }
-    }
-
-    /// <summary>Paints the picker panel and its border.</summary>
-    private static void PaintPanel(
-        ImDrawListPtr draw, Vector2 min, Vector2 max, Theme theme)
-    {
-        // Panel shadows extend beyond the popup clip.
-        draw.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
-        try
-        {
-            BoxRenderer.Draw(draw, min, max, new BoxStyle
-            {
-                BackgroundColor = ColorEx.FlattenOver(
-                    FloatingSurface.FillColor, theme.Surface),
-                BorderWidth = 1f,
-                BorderRadius = theme.Radii.Surface,
-                BorderTopColor = theme.Border,
-                BorderRightColor = theme.Border,
-                BorderBottomColor = theme.Border,
-                BorderLeftColor = theme.Border,
-                BoxShadows = [theme.Shadows.Panel, theme.Shadows.PanelRing],
-            });
-        }
-        finally
-        {
-            draw.PopClipRect();
         }
     }
 

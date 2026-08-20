@@ -7,7 +7,6 @@ using Poser.Domain.Animation;
 using Poser.Entities;
 using Poser.Files;
 using Poser.Game.Bindings;
-using Poser.Game.Cameras;
 using Poser.Game.Posing;
 using Poser.Services;
 
@@ -701,7 +700,7 @@ public sealed class SceneCaptureService
             Guid? targetKey = null;
             var targetName = string.Empty;
             var targetOffset = System.Numerics.Vector3.Zero;
-            if (!string.IsNullOrEmpty(camera.TargetActorName))
+            if (camera.TargetActorId != null)
             {
                 var target = ResolveTarget(camera, actorKeys);
                 if (target is { } resolved)
@@ -726,26 +725,24 @@ public sealed class SceneCaptureService
                 TargetActorKey = targetKey,
                 TargetActorName = targetName,
                 TargetOffset = targetOffset,
+                IsTargetLocked = targetKey != null && camera.IsTargetLocked,
             });
         }
     }
 
-    /// <summary>Resolves the followed actor: the retained exact reference
-    /// first, then a unique display-name match for cameras that predate the
-    /// retention. Ambiguity resolves to nothing rather than guessing.</summary>
-    private static Guid? ResolveTarget(
+    /// <summary>Resolves the followed actor through its exact stable
+    /// generation. Display names are presentation only and never identify a
+    /// camera relationship.</summary>
+    private Guid? ResolveTarget(
         IVirtualCamera camera, Dictionary<IActor, Guid> actorKeys)
     {
-        if (camera is VirtualCamera { TargetActor: { } exact } &&
-            actorKeys.TryGetValue(exact, out var key))
-            return key;
-
-        var matches = actorKeys
-            .Where(pair => string.Equals(
-                pair.Key.Name, camera.TargetActorName, StringComparison.Ordinal))
-            .Select(pair => pair.Value)
-            .ToList();
-        return matches.Count == 1 ? matches[0] : null;
+        if (camera.TargetActorId is not { } targetId ||
+            _bindings.Resolve(targetId) is not
+                { Success: true, Value: { } exact } ||
+            !ReferenceEquals(exact, camera.TargetActor) ||
+            _bindings.GetActorId(exact) != targetId)
+            return null;
+        return actorKeys.TryGetValue(exact, out var key) ? key : null;
     }
 
     /// <summary>

@@ -4,6 +4,7 @@ using System.Reflection;
 using Poser.Application.Transforms;
 using Poser.Core;
 using Poser.Domain.Companions;
+using Poser.Domain.Identity;
 using Poser.Domain.Presentation;
 using Poser.Domain.Scene;
 using Poser.Game.WorldObjects;
@@ -342,8 +343,14 @@ public sealed class SceneLifecycleHistoryTests
         public void DestroyAllCameras() => _cameras.Clear();
         public void SetLive(IVirtualCamera camera) { }
         public bool SetTargetActor(
-            IVirtualCamera camera, IActor actor, string displayName) => false;
+            IVirtualCamera camera, IActor actor, ActorId actorId,
+            string displayName) => false;
         public void ClearTargetActor(IVirtualCamera camera) { }
+        // Camera framing is outside lifecycle-history coverage.
+        public CameraCenterResult CenterOnActor(IActor actor) =>
+            CameraCenterResult.Refused("not available in lifecycle fake");
+        public CameraCenterResult CenterOnBone(IBone bone) =>
+            CameraCenterResult.Refused("not available in lifecycle fake");
     }
 
     private sealed class FakeCamera(CameraKind kind) : IVirtualCamera
@@ -364,6 +371,8 @@ public sealed class SceneLifecycleHistoryTests
         public Vector3? FixedPosition { get; set; }
         public Vector3 TargetOffset { get; set; }
         public string TargetActorName { get; set; } = string.Empty;
+        public IActor? TargetActor { get; set; }
+        public ActorId? TargetActorId { get; set; }
         public Vector3 WorldPosition => Vector3.Zero;
         public bool DisableCollision { get; set; }
         public bool DelimitCamera { get; set; }

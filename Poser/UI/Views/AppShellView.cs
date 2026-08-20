@@ -15,7 +15,7 @@ public sealed class ShellSidebarRow
     public string? IconName;
     /// <summary>Nested rows normally draw no mark, because their guide column
     /// already spans the same distance the root's icon cell does. A nested row
-    /// that IS a thing rather than a grouping (the gaze anchor under an actor)
+    /// that is a thing rather than a grouping (the gaze anchor under an actor)
     /// opts the mark back in.</summary>
     public bool ForceIcon;
     public int Depth;              // 0 root, 1+ nested (20px indent per level)
@@ -36,7 +36,7 @@ public sealed class ShellSidebarRow
     public bool ActorActions;
     public bool ActorVisible = true;
     public bool ActorPaused;
-    /// <summary>The GAME's current target: its crosshair stands at full
+    /// <summary>The game's current target: its crosshair stands at full
     /// opacity, every other actor's fades — the live camera's treatment.
     /// </summary>
     public bool ActorTargeted;
@@ -45,9 +45,7 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
-    /// <summary>A camera row's action slots: a lock protecting the framing,
-    /// then the video mark making this the LIVE camera — the light eye's
-    /// twin, except exactly one camera wears it at a time.</summary>
+    /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;
     public bool CameraLocked;
@@ -80,12 +78,7 @@ public sealed class ShellSidebarSection
 /// states it: a glyph that is lit while that class marks the world with
 /// clickable handles and faded while it does not.
 ///
-/// <para>The classes were rows under a WORLD section once. They are not scene
-/// entities — nothing selects, nothing expands — so a tree row was the wrong
-/// shape for them, and the section existed only to hold them (user 2026-08-15:
-/// "you have actors and world as options under World — put that at the footer
-/// instead"). The footer is where the shell states what is TRUE right now, and
-/// which classes are marked is exactly that.</para>
+/// <para>The classes are footer toggles rather than scene entities.</para>
 /// </summary>
 public sealed class ShellWorldClass
 {
@@ -129,9 +122,7 @@ public sealed class AppShellViewModel
     public bool RotationPivotEnabled;
     public bool RotationPivotParentAvailable;
     public int SymmetryMode;          // 0 off, 1 link, 2 mirror
-    /// <summary>Animation is a PER-ACTOR override, so its switch is present
-    /// exactly when the selection can carry one — hidden, never greyed, on an
-    /// entity that has no animation to pause (user 2026-08-14).</summary>
+    /// <summary>Whether animation is enabled for the current actor.</summary>
     public bool AnimationOn;
     public bool AnimationAvailable;
 
@@ -143,10 +134,7 @@ public sealed class AppShellViewModel
     public bool CanUndo = true;
     public bool CanRedo;
 
-    /// <summary>What the next undo/redo would actually do. The history has
-    /// carried these all along and the titlebar said "the last move, rotation
-    /// or scale" regardless — which is wrong the moment the entry is a pose
-    /// import, a mirror, or a spawn.</summary>
+    /// <summary>Descriptions for the pending undo and redo actions.</summary>
     public string? UndoDescription;
     public string? RedoDescription;
     public bool ShowSpawn;
@@ -174,13 +162,13 @@ public sealed class AppShellViewModel
     public bool ContentUsesPage;
 
     /// <summary>
-    /// The content ScrollRegion's identity, keyed by the ACTIVE STRIP and
-    /// TAB: ImGui persists scroll offset and extent per child id, so one
+    /// The content ScrollRegion's identity, keyed by the active strip and
+    /// tab: ImGui persists scroll offset and extent per child id, so one
     /// shared id would carry tab A's offset into tab B's first frame and
     /// clamp-jump on the next — and strips reuse labels ("Light" is a light's
-    /// whole editor AND the environment's lighting tab), so the tab key alone
+    /// whole editor and the environment's lighting tab), so the tab key alone
     /// would still share scroll memory across strips. Minted by the active
-    /// tab's owner ON STRIP/TAB SWITCH, never per frame.
+    /// tab's owner on strip/tab switch, never per frame.
     /// </summary>
     public string ContentScrollId = ContentScrollIdFor("actor", "Pose");
 
@@ -196,7 +184,7 @@ public sealed class AppShellViewModel
     public bool ContentOwnsViewport;
 
     /// <summary>
-    /// The pane takes the viewport WALL TO WALL: no shell horizontal inset and
+    /// The pane takes the viewport wall to wall: no shell horizontal inset and
     /// no reserved scrollbar column, because the pane paints its own bands,
     /// rules and gutters against the workspace edges. The library uses this —
     /// its footer rule has to meet the same edges every other shell rule does.
@@ -216,7 +204,7 @@ public sealed class AppShellViewModel
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
-    /// <summary>ONE toggle: detached mode floats the toolbar strip and the
+    /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
     /// inspector. Off is the compact single-window UI.</summary>
     public bool Detached;
@@ -236,14 +224,8 @@ public sealed class AppShellViewModel
     public Action<bool>? OnPhysics;
     public Action? OnUndo, OnRedo, OnSettings, OnHideUi, OnPopOut, OnProject;
     /// <summary>
-    /// A BUTTON-BORNE surface anchors under the button that opened it, never
-    /// at the pointer: the pointer is merely where the press landed, the
-    /// button is what the surface belongs to. Every such opener is therefore
-    /// told the button's bottom-left screen position and places its surface
-    /// from that (user 2026-08-14: the sidebar plus opened at the cursor
-    /// while the burger correctly opened under its button). A surface with no
-    /// seat — a row's context menu — keeps the pointer, because there is no
-    /// button to hang it off.
+    /// Button-opened surfaces use the button seat; context menus use the
+    /// pointer because they have no button seat.
     /// </summary>
     public Action<Vector2>? OnBurger;
 
@@ -263,10 +245,7 @@ public sealed class AppShellViewModel
     /// <summary>A footer world-class glyph was clicked, told its index into
     /// <see cref="WorldClasses"/>.</summary>
     public Action<int>? OnWorldClassToggle;
-    /// <summary>A row's overlay state as one of three: 0 none, 1 partial,
-    /// 2 all — <c>OverlayVisibility</c>'s declaration order. The eye reads
-    /// three states because a category row covers many bones and "some of
-    /// them" is a real answer (Brio's tri-state category checkbox).</summary>
+    /// <summary>Returns overlay visibility as none, partial, or all.</summary>
     public Func<IReadOnlyList<Domain.Identity.BoneId>, int>?
         OverlayVisibilityOf;
     /// <summary>The world manip-handle toggle every entity row carries; the
@@ -301,22 +280,12 @@ public sealed class AppShellViewModel
 /// its control clusters, the sidebar chassis and status bar, the workspace
 /// toolbar, the content viewport and the inspector rail.
 ///
-/// <para>The sidebar's search field and tree are NOT here — <see
-/// cref="ShellSidebar"/> owns them behind its own cache. The shell seats it and
+/// <para>The sidebar's search field and tree are owned by <see
+/// cref="ShellSidebar"/> behind its own cache. The shell seats it and
 /// keeps everything around it: chassis, rules, status bar, resize strip.</para>
 ///
-/// <para>Chrome, and the ONE normative statement of it: <b>one shell-level
-/// blur, one ground coat per pixel, one edge.</b> The chrome pass prepends the
-/// blur and the elevation shadows and nothing else; each COLUMN then lays a
-/// single translucent ground over it — the panels' (sidebar, rail) and the
-/// workspace's, which is the same glass over the darker app ground — and the
-/// asymmetric glass edge is drawn last, once, so no column fill can hide
-/// it.</para>
-///
-/// <para>Nothing may repaint a ground and nothing may repaint the edge.
-/// Translucency laid on itself stops being glass — it goes flat, it brightens
-/// the white edge tokens and darkens the black one, and it is the single defect
-/// behind every "the glass looks wrong" report this chassis has had.</para>
+/// <para>Chrome draws one shell blur, one ground coat per pixel, and one edge.
+/// Columns add their translucent grounds and the final edge is drawn last.</para>
 /// </summary>
 public static class AppShellView
 {
@@ -347,7 +316,7 @@ public static class AppShellView
     /// frame cost the visible band instead of the whole tree.</summary>
     private static readonly ShellSidebar Sidebar = new();
 
-    /// <summary>The tab strip reads ALL of the array, so the buffer is exactly
+    /// <summary>The tab strip reads all of the array, so the buffer is exactly
     /// the tab count and is reallocated only when that count changes.</summary>
     private static string[] _tabLabels = [];
     private static int _tabActive;
@@ -373,18 +342,16 @@ public static class AppShellView
     private static readonly Action SpawnPressed =
         static () => _spawnPressed = true;
 
-    /// <summary>The PANELS' ground — the sidebar's and the rail's. One coat of
-    /// it per pixel: nothing may repaint it, because a translucent fill laid on
-    /// itself stops being glass.</summary>
+    /// <summary>Shared glass fill for sidebar and rail panels.</summary>
     private static Vector4 Glass =>
         Crystarium.FloatingSurface.FillColor;
 
-    /// <summary>The WORKSPACE's ground. The same glass — same alpha, same blur
+    /// <summary>The workspace ground. The same glass — same alpha, same blur
     /// behind it — mixed over the app ground instead of over the panels' raised
-    /// surface, because the content sits BELOW the panels in the ladder.
+    /// surface, because the content sits below the panels in the ladder.
     /// <see cref="Theme.Surface"/> is picto --color-bg-app, the rung under
-    /// SurfaceRaised. Deliberately NOT SurfaceSunken: picto's surface-2 is
-    /// BRIGHTER than surface-1 — an input well, not a ground.</summary>
+    /// SurfaceRaised. SurfaceSunken is reserved for input wells: picto's surface-2 is
+    /// brighter than surface-1 — an input well, not a ground.</summary>
     private static Vector4 WellGlass =>
         Crystarium.ActiveTheme.Surface with { W = Glass.W };
     private static Vector4 BorderPrimary =>
@@ -392,10 +359,7 @@ public static class AppShellView
     private static Vector4 BorderSecondary =>
         Crystarium.ActiveTheme.FormSeparator;
 
-    /// <summary>ONE bar height: the titlebar (expanded AND collapsed), the
-    /// floating toolbar, the part and pop-out headers all share the modal bar
-    /// height — collapse must not move a single icon (user 2026-08-11).
-    /// </summary>
+    /// <summary>Shared height for titlebar and modal bars.</summary>
     public static float TitlebarHeight =>
         Crystarium.ActiveTheme.Floating.ModalBarHeight;
 
@@ -433,7 +397,7 @@ public static class AppShellView
         vm.CollapseToggled ??= () => vm.OnCollapse?.Invoke(!vm.Collapsed);
         vm.WorkspaceRightActions ??= right =>
         {
-            // ABSENT, not greyed, on an entity with no animation: a switch
+            // Omit the switch on an entity with no animation: a switch
             // that can never be thrown is chrome pretending to be a control.
             // Physics has no such gate — one global patch, always live — so
             // it holds the bar's trailing slot alone whenever animation
@@ -453,10 +417,7 @@ public static class AppShellView
                 vm.PhysicsOn
                     ? "Switch off to freeze physics for the whole scene"
                     : "Switch on to resume physics for the whole scene");
-            // The world-adoption layer is NOT here. It adds things to the
-            // scene, so it belongs with the scene tree that lists them — the
-            // sidebar's WORLD section — not on a bar of per-selection
-            // modifiers (user 2026-08-14).
+            // World adoption belongs to the scene tree, not this toolbar.
         };
     }
 
@@ -477,38 +438,15 @@ public static class AppShellView
         {
             float radius = Crystarium.ActiveTheme.Radii.Window;
 
-            // ONE BLUR, then ONE ground coat per pixel, then ONE edge.
-            //
-            // The chrome keeps its blur and its elevation pass and gives up
-            // the other two: the WINDOW-WIDE glass fill, because every column
-            // below lays its own ground and a fill underneath them is a second
-            // coat; and the glass EDGE, because this method draws the edge
-            // itself at the end, after the columns, so their fills cannot hide
-            // it. Both used to be drawn here as well, and both were therefore
-            // painted twice — the sidebar wore two coats of glass, and the
-            // asymmetric edge wore two of itself: white 0.25 composites to
-            // 0.4375 along the TOP and 0.12 to 0.2256 down the SIDES, while
-            // the bottom's BLACK 0.2 only goes darker. That is exactly the
-            // shape reported against the MERGED window — uncollapsed "the
-            // top", collapsed "the top AND the sides", never the bottom (user
-            // 2026-08-14: "the merged window glass effect is still wrong, it
-            // has the same bug the separated window had").
+            // Draw the shared blur and elevation once; each column supplies
+            // its own translucent ground and the final edge.
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, radius, fill: false, border: false);
 
-            // THE WELL — the one ground that is NOT the panels'. The workspace
-            // is the app's ground and the ground is DARKER than the panels
-            // standing on it (user 2026-08-14: "the main content window — i.e.
-            // NOT sidebar or inspector — is supposed to have a DARKER color").
-            // It keeps the glass: same coat, same alpha, same blur behind it —
-            // only the colour under it changes ("the BG COLOR, not the glass
-            // effect"), so the merged and separated content columns are the
-            // same translucent surface as each other and as the panels.
+            // The workspace ground uses the same glass treatment over the
+            // darker app surface, separate from raised sidebar and rail cells.
             //
-            // Collapsed, the bar IS the workspace band — the sidebar and rail
-            // cells only exist while the window is open — so the coat takes
-            // the whole strip and the "one continuous titlebar" of collapse
-            // stays one continuous thing.
+            // In collapsed mode the titlebar is the complete workspace band.
             if (vm.Collapsed)
             {
                 dl.AddRectFilled(min, max, U32(WellGlass), radius * s);
@@ -517,7 +455,7 @@ public static class AppShellView
             {
                 float wellLeft = vm.Detached ? 0f : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
-                // Only the window's OWN corners round; an edge that meets a
+                // Only the window's own corners round; an edge that meets a
                 // panel is square. The radius is dropped along with them, so
                 // the flags cannot fall through to ImGui's round-everything
                 // default.
@@ -591,17 +529,8 @@ public static class AppShellView
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
-        // A COLUMN'S CELL, not a band across the bar. Each of these lays the
-        // panel ground over the blur exactly once, and stops at its own
-        // column's edge — the band between them is the workspace's, and Draw
-        // has already coated it with the well's ground. That is what makes a
-        // column one material from this bar down to the window's bottom, and
-        // what keeps any pixel from wearing two coats: the bar used to lay a
-        // full-width fill over the window-wide one whenever the sidebar cell
-        // was absent, which read flat instead of glass and scalloped its own
-        // rounded BOTTOM corners out of the window's left edge (user
-        // 2026-08-14: the detached chrome "too bright", the detached library
-        // "didn't have correct glass chrome on left").
+        // Each column lays its panel ground once and stops at its own edge;
+        // the workspace ground remains visible between columns.
         if (!vm.Collapsed && !vm.Detached)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
@@ -631,14 +560,14 @@ public static class AppShellView
 
         if (vm.Detached)
         {
-            // The detached main window IS the inspector's window: it names
-            // itself so, with the selected entity (user 2026-08-11).
+            // The detached main window is the inspector's window: it names
+            // itself so the selected entity remains readable.
             string title = vm.TitleEntity == "Poser"
                 ? "Inspector"
                 : $"Inspector – {vm.TitleEntity}";
-            // The title stands on the CONTENT column's own inset, so the
+            // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
-            // strips, content (user 2026-08-11).
+            // strips and content.
             Crystarium.TextInBand(
                 new Vector2(min.X + MainHorizontalPadding * s, min.Y),
                 new Vector2(
@@ -658,7 +587,7 @@ public static class AppShellView
             DrawBrand(vm, min, height, s, dl);
             // The title cell's content stops at the divider's x whether or
             // not the divider paints this state: collapse must not shift the
-            // cluster by the rule's pixel (user 2026-08-11).
+            // cluster by the rule's pixel.
             DrawHistory(
                 vm,
                 min.X + cellWidth - rule - TitleActionInset * s,
@@ -670,9 +599,9 @@ public static class AppShellView
         DrawTitleActions(vm, max.X, min.Y, height, s);
     }
 
-    /// <summary>The sidebar's title cell OWNS the brand and its GPose pill
+    /// <summary>The sidebar's title cell owns the brand and its GPose pill
     /// while attached; detached mode takes them to the floating toolbar
-    /// (user 2026-08-11).</summary>
+    /// </summary>
     private static void DrawBrand(
         AppShellViewModel vm, Vector2 min, float height, float s, ImDrawListPtr dl)
         => DrawBrandPill(vm, min.X + TitleInset * s, min.Y, height, s, dl);
@@ -771,11 +700,8 @@ public static class AppShellView
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
 
-        // The command menu hangs off its own button, not off the pointer, so
-        // the seat hands its bottom-left corner to the opener. The click
-        // callback captures NOTHING — a warm titlebar frame must not mint a
-        // closure — so the press is reported through a static flag the seat
-        // reads back one line later, while the anchor is still a local.
+        // The command menu is anchored to its button. The static callback
+        // records the press without allocating a frame closure.
         IconAt(
             new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
             "##shell-burger",
@@ -890,14 +816,8 @@ public static class AppShellView
                 1 => "Also apply the same edit to the opposite-side bone",
                 _ => "Also apply a mirrored edit to the opposite-side bone",
             });
-        // NOTHING overlay-shaped follows the gizmo segments. The cluster that
-        // briefly stood here (master switch, view-mode picker,
-        // selected-bones-only) left on the user's call, 2026-08-14: the two
-        // display options are standing preferences and now read as ordinary
-        // rows under Settings ▸ Skeleton, and the master switch is not a UI
-        // control at all — bone visibility is decided PER ACTOR, by the
-        // sidebar's eyes and the bone presets. Its chord survives in the
-        // keybind registry, which writes the overlay window's own flag.
+        // Overlay visibility is configured in Settings and per-actor sidebar
+        // controls; no extra controls follow the gizmo segments.
     }
 
     /// <summary>Rightmost is the collapse chevron, then the close X.
@@ -926,8 +846,7 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        // The pop-out lives on the TITLE bar, not the workspace bar
-        // (user 2026-08-11).
+        // The pop-out remains available from the titlebar toolbar.
         if (vm.ShowPopOut)
         {
             x -= step;
@@ -936,10 +855,8 @@ public static class AppShellView
                 "##shell-popout",
                 help: "Pop the selected actor's content into its own window");
         }
-        // The armature toggle left this bar (user 2026-08-11) and came back
-        // in the OVERLAY CLUSTER beside the gizmo segments, which is where
-        // both references keep theirs. Nothing overlay-shaped belongs here:
-        // this cluster is the WINDOW's own chrome.
+        // Armature visibility is controlled by the sidebar and settings, not
+        // by this titlebar cluster.
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────
@@ -1109,9 +1026,9 @@ public static class AppShellView
         SyncTabs(vm);
         if (_tabLabels.Length > 0)
         {
-            // The tab strip is the SAME segmented pill every other mode
+            // The tab strip uses the shared segmented pill every other mode
             // selector uses, not hand-drawn buttons; alignFirstTabToCursor
-            // lands the first tab's LABEL on the content inset, because the
+            // lands the first tab's label on the content inset, because the
             // pill's dark chrome is decoration and not padding.
             var size = Crystarium.MeasureSegmentedControl(_tabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
@@ -1125,7 +1042,7 @@ public static class AppShellView
                 alignFirstTabToCursor: true);
         }
 
-        // Actor physics occupies ONE stable right-aligned slot on every
+        // Actor physics occupies one stable right-aligned slot on every
         // workspace tab: a tab change never replaces it with selection text and
         // never moves it.
         Crystarium.ActionBar(
@@ -1141,36 +1058,24 @@ public static class AppShellView
 
     /// <summary>
     /// The hosting seam: the viewport child and the page scroll own the gutter
-    /// and the extent bookkeeping, and the active pane's OWN root renders inside
+    /// and the extent bookkeeping, and the active pane's own root renders inside
     /// them — exactly as the Settings page is hosted.
     /// </summary>
     private static void DrawContentViewport(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
         float toolbarBottom = min.Y + ToolbarHeight * s;
-        // The viewport is an ImGui CHILD, and a child renders after the window
-        // that hosts it: whatever the child fills, it fills OVER the outer
-        // glass edge the shell repaints last. The child therefore stops a
-        // border pixel short of every side that IS the window's own edge.
-        // Attached, the sidebar owns the left side and only the right and the
-        // bottom are shell edges; DETACHED the sidebar is a window of its own
-        // and the workspace's left edge is the window's, so the left border
-        // needs the same pixel — without it a full-bleed pane (the library
-        // paints its own bands wall to wall) erases the left glass chrome
-        // (user 2026-08-14, screenshot).
+        // The child stops one border pixel short of shell-owned edges. In
+        // detached mode its left edge is also shell-owned.
         float leftEdge = vm.Detached ? 1f * s : 0f;
-        // Toolbar and content share one 12px horizontal inset. The viewport
-        // still reaches the outer-right glass edge, and content width always
-        // excludes the 12px scrollbar gutter so overflow cannot cause reflow.
-        // ONE content origin for every tab: panes own their breathing room,
-        // the shell owns the origin.
+        // Toolbar and content share the horizontal inset; the shell owns the
+        // origin while panes own their internal spacing.
         var childOrigin = new Vector2(min.X + leftEdge, toolbarBottom);
         var childSize = new Vector2(
             max.X - min.X - 1f * s - leftEdge,
             max.Y - toolbarBottom - 1f * s);
-        // The inset is measured from the CHILD, not the panel: the child is 1px
-        // narrower than the panel (the glass border pixel), and the scrollbar
-        // hugs the child's right edge.
+        // Measure the inset from the child so the border and scrollbar remain
+        // outside the pane's content box.
         ImGui.SetCursorScreenPos(childOrigin);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
         if (ImGui.BeginChild(
@@ -1438,7 +1343,7 @@ public static class AppShellView
     }
 
     /// <summary>
-    /// The tooltip for one history button. The generic line is the FALLBACK,
+    /// The tooltip for one history button. The generic line is the fallback,
     /// not the answer: when the stack knows what its top entry is, the button
     /// says so, because "the last move, rotation or scale" is simply untrue of
     /// a pose import or a spawn.
@@ -1472,7 +1377,7 @@ public static class AppShellView
     }
 
     // ── the split shell's standalone parts ───────────────────────────────
-    // Each part draws with the SAME retained state and ids it has inside the
+    // Each part draws with the same retained state and ids it has inside the
     // shell — the sidebar cache, the segment motion channels, the keybind
     // help — so splitting a part moves it without resetting it. Exactly one
     // host draws a part per frame; the split flags are that gate.
@@ -1480,7 +1385,7 @@ public static class AppShellView
     /// <summary>The floating toolbar's content: the brand and its GPose
     /// pill, the command menu, undo/redo, then the same four segment groups
     /// the titlebar centre hosts when attached. The spawn plus stays with
-    /// the scene window (user 2026-08-11).</summary>
+    /// the scene window.</summary>
     public static void DrawToolbarContent(
         AppShellViewModel vm, Vector2 origin, float height)
     {

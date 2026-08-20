@@ -691,14 +691,24 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     public string? SetCameraTarget(
-        object? camera, object targetActor, string displayName)
+        object? camera, object targetActor, string displayName,
+        bool targetLocked)
     {
         var target = camera as IVirtualCamera ?? DefaultCamera;
         if (target is null)
             return "The session has no default camera.";
-        return _cameras.SetTargetActor(target, (IActor)targetActor, displayName)
-            ? null
-            : "The target actor has no draw object.";
+        var exactActor = (IActor)targetActor;
+        // Validate the exact generation before SetTargetActor can touch any
+        // native target state; a replacement occupant is never rebound.
+        if (_bindings.GetActorId(exactActor) is not { } targetId ||
+            _bindings.Resolve(targetId) is not
+                { Success: true, Value: { } resolved } ||
+            !ReferenceEquals(resolved, exactActor))
+            return "The target actor is no longer available.";
+        if (!_cameras.SetTargetActor(target, exactActor, targetId, displayName))
+            return "The target actor has no draw object.";
+        target.IsTargetLocked = targetLocked;
+        return null;
     }
 
     public string? SetLiveCamera(object? camera)
