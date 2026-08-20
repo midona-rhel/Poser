@@ -21,7 +21,6 @@ public sealed class AnimationPane
     // The expression workspace may open before another catalog row.
     private readonly Game.Animation.AnimationCatalogLoader _catalogLoader;
     private readonly Game.Animation.FacialPoseCapture _facialCapture;
-    private readonly Game.Animation.ExpressionReleaseCoordinator _expressionRelease;
     private readonly SceneSession _scene;
 
     // All picker rows share one open feed.
@@ -106,6 +105,15 @@ public sealed class AnimationPane
 
     private static readonly float[] UnitMarks = [1f];
 
+    private static readonly string[] KindLabels =
+        ["Compatible", "Emotes", "Actions", "Raw"];
+
+    private static readonly AnimationKind?[] KindValues =
+    [
+        null, AnimationKind.Emote, AnimationKind.Action,
+        AnimationKind.RawTimeline,
+    ];
+
     private static readonly string[] WeaponLabels = ["All", "Sheathed", "Drawn"];
 
     public AnimationPane(
@@ -113,7 +121,6 @@ public sealed class AnimationPane
         AnimationCatalog catalog,
         Game.Animation.AnimationCatalogLoader catalogLoader,
         Game.Animation.FacialPoseCapture facialCapture,
-        Game.Animation.ExpressionReleaseCoordinator expressionRelease,
         ITextureProvider textures,
         SceneSession scene,
         UserNotices notices)
@@ -123,8 +130,6 @@ public sealed class AnimationPane
         _catalog = catalog;
         _catalogLoader = catalogLoader;
         _facialCapture = facialCapture;
-        _expressionRelease = expressionRelease;
-        _expressionRelease.Completed += OnExpressionReleaseCompleted;
         _icons = new GameIconResolver(textures);
         _scene = scene;
         _timelineKey = RowKey;
@@ -136,7 +141,7 @@ public sealed class AnimationPane
         _generalFeed = new TimelineFeed(
             this, "general-animation", AnimationPickTarget.General,
             AnimationSlot.Base, AnimationSlot.Base, kindFilter: null,
-            weaponAware: true, entries: null);
+            weaponAware: true, entries: null, showKindStrip: true);
         _expressionFeed = new TimelineFeed(
             this, "expression", AnimationPickTarget.Expression,
             AnimationSlot.Facial, AnimationSlot.Facial,
@@ -339,6 +344,7 @@ public sealed class AnimationPane
                 actions.Button(
                     NameFor(selected, "Choose animation"),
                     () => OpenPicker(feed, actor, selected),
+                    style: actionStyle,
                     disabled: disabled);
                 actions.Button(
                     "Apply",
@@ -406,21 +412,19 @@ public sealed class AnimationPane
         form.Switch(
             "Advanced animation",
             advanced,
-            next => SetAdvanced(actor, next),
-            disabled: _expressionRelease.IsPendingFor(actor));
+            next => SetAdvanced(actor, next));
 
         // Keep every layer visible while the shared scope makes it inert.
         ImGui.BeginDisabled(!advanced);
         for (int index = 0; index < PrimaryLayers.Length; index++)
         {
-            if (index > 0)
-                form.Divider();
             var slot = PrimaryLayers[index];
             string label = AnimationSlots.DisplayName(slot);
-            form.Label(label);
+            form.Subgroup(label, disabled: !advanced);
             if (slot == AnimationSlot.Facial)
             {
-                DrawHeldExpression(form, actor, bake: false, disabled: !advanced);
+                DrawHeldExpression(
+                    form, actor, poseSurface: false, disabled: !advanced);
                 continue;
             }
             DrawLayer(form, actor, reading, owned, slot, label, !advanced);
@@ -527,6 +531,7 @@ public sealed class AnimationPane
                         command is { } selected
                             ? (ushort)selected.Entry.TimelineId
                             : (ushort)0),
+                    style: actionStyle,
                     disabled: advanced);
                 actions.Button(
                     "Apply",
@@ -632,18 +637,17 @@ public sealed class AnimationPane
         Crystarium.FormScope form,
         ActorId actor)
     {
-        DrawHeldExpression(form, actor, bake: true, disabled: false);
+        DrawHeldExpression(form, actor, poseSurface: true, disabled: false);
     }
 
     private void DrawHeldExpression(
         Crystarium.FormScope form,
         ActorId actor,
-        bool bake,
+        bool poseSurface,
         bool disabled)
     {
         ushort held = _animation.HeldExpressionFor(actor) ?? 0;
         ushort selected = _animation.SelectedFor(actor, AnimationSlot.Facial) ?? 0;
-        bool pending = _expressionRelease.IsPendingFor(actor);
         var actionStyle = FixedActionStyle();
         form.Picker(
             "Expression",
@@ -652,22 +656,21 @@ public sealed class AnimationPane
             actions =>
             {
                 actions.Button(
-                    "Apply",
+                    poseSurface ? "Preview" : "Apply",
                     () => ReportExpression(
                         _animation.HoldExpression(actor, selected),
                         "Expression"),
                     style: actionStyle,
-                    disabled: disabled || pending || selected == 0,
-                    help: "Apply the selected expression and hold its facial frame");
+                    disabled: disabled || selected == 0,
+                    help: "Preview the selected expression and hold its facial frame");
                 actions.Button(
                     "Reset",
                     () => ReportExpression(
-                        _expressionRelease.Begin(actor), "Expression"),
+                        _animation.ReleaseExpression(actor), "Expression"),
                     style: actionStyle,
-                    disabled: disabled || pending ||
-                        (held == 0 && selected == 0),
+                    disabled: disabled || (held == 0 && selected == 0),
                     help: "Restore the facial state captured before Poser's first choice");
-                if (bake)
+                if (poseSurface)
                 {
                     actions.Button(
                         "Bake expression",
@@ -687,13 +690,15 @@ public sealed class AnimationPane
                                 _notices.Failed(
                                     $"Bake expression: {failed.Detail}");
                         },
-                        disabled: disabled || pending || selected == 0 ||
+                        disabled: disabled || selected == 0 ||
                             _facialCapture.IsPending,
                         help: "Write the held face into the pose as one undoable edit");
                 }
             },
-            disabled: disabled || pending,
-            help: "Choose a facial expression, then Apply to hold it");
+            disabled: disabled,
+            help: poseSurface
+                ? "Choose a facial expression, then Preview to hold it"
+                : "Choose a facial expression, then Apply to hold it");
     }
 
 
@@ -702,6 +707,7 @@ public sealed class AnimationPane
     {
         _pickActor = actor;
         _openFeed = feed;
+        feed.ResetFilter();
         _picker.Open(
             feed.Owner,
             Array.Empty<TimelineEntry>(),
@@ -733,6 +739,7 @@ public sealed class AnimationPane
             Texture = _timelineTexture,
             Glyph = TimelineGlyph,
             Badge = feed.Badge,
+            Strip = feed.KindStrip,
             SecondStrip = feed.WeaponStrip,
             Width = Crystarium.ActiveTheme.Picker.WideWidth,
         };
@@ -777,9 +784,12 @@ public sealed class AnimationPane
         private readonly AnimationKind? _kindFilter;
         private readonly bool _weaponAware;
         private readonly Func<IReadOnlyList<TimelineEntry>>? _entries;
+        private readonly bool _showKindStrip;
+        private int _kindIndex;
 
         // Cache keys cover every query input.
         private string? _memoQuery;
+        private int _memoKind = -1;
         private int _memoWeapon = -1;
         private bool _memoLoaded;
         private IReadOnlyList<TimelineEntry> _memo = Array.Empty<TimelineEntry>();
@@ -790,6 +800,7 @@ public sealed class AnimationPane
 
         internal readonly Func<string, IReadOnlyList<TimelineEntry>> Results;
         internal readonly Func<TimelineEntry, string?> Badge;
+        private readonly Action<int> _setKind;
 
         internal TimelineFeed(
             AnimationPane pane,
@@ -799,7 +810,8 @@ public sealed class AnimationPane
             AnimationSlot? slotFilter,
             AnimationKind? kindFilter,
             bool weaponAware,
-            Func<IReadOnlyList<TimelineEntry>>? entries)
+            Func<IReadOnlyList<TimelineEntry>>? entries,
+            bool showKindStrip = false)
         {
             _pane = pane;
             Owner = owner;
@@ -809,10 +821,17 @@ public sealed class AnimationPane
             _kindFilter = kindFilter;
             _weaponAware = weaponAware;
             _entries = entries;
+            _showKindStrip = showKindStrip;
 
             Results = Compute;
             Badge = Metadata;
+            _setKind = chosen => _kindIndex = chosen;
         }
+
+        internal PickerStrip? KindStrip =>
+            _showKindStrip
+                ? new PickerStrip(KindLabels, _kindIndex, _setKind)
+                : null;
 
         internal PickerStrip? WeaponStrip =>
             _weaponAware
@@ -824,6 +843,8 @@ public sealed class AnimationPane
             _entries == null && !_pane._catalog.IsLoaded
                 ? "Building animation catalog"
                 : null;
+
+        internal void ResetFilter() => _kindIndex = 0;
 
         internal string? SelectedKey(ushort timeline)
         {
@@ -846,10 +867,12 @@ public sealed class AnimationPane
             int weapon = _pane._weaponFilter;
             bool loaded = _pane._catalog.IsLoaded;
             if (_memoQuery == search
+                && _memoKind == _kindIndex
                 && _memoWeapon == weapon
                 && _memoLoaded == loaded)
                 return _memo;
             _memoQuery = search;
+            _memoKind = _kindIndex;
             _memoWeapon = weapon;
             _memoLoaded = loaded;
             _memo = Query(search, weapon);
@@ -873,8 +896,11 @@ public sealed class AnimationPane
                 return filtered;
             }
 
+            var kind = _showKindStrip
+                ? KindValues[Math.Clamp(_kindIndex, 0, KindValues.Length - 1)]
+                : _kindFilter;
             var found = _pane._catalog.Search(
-                search, _kindFilter,
+                search, kind,
                 _slotFilter, limit: 400);
             if (!_weaponAware || weapon == 0)
                 return found;
@@ -1051,13 +1077,6 @@ public sealed class AnimationPane
 
     private void ReportExpression(AnimationResult result, string what) =>
         Report(result, what);
-
-    private void OnExpressionReleaseCompleted(
-        ActorId _, AnimationResult result)
-    {
-        if (!result.Success)
-            ReportExpression(result, "Expression reset");
-    }
 
     private void Report(AnimationResult result, string what)
     {

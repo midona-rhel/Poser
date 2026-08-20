@@ -1120,6 +1120,37 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>Draws a static subgroup name with its rule on the same row.</summary>
+        public void Subgroup(
+            string text, string? help = null, bool disabled = false)
+        {
+            string id = Id(text);
+            var row = _page.BeginRow(string.Empty);
+            var style = new TextStyle
+            {
+                Size = ActiveTheme.Typography.LabelSize,
+                Color = FormLabelColor,
+                Disabled = disabled,
+            };
+            float textWidth = Crystarium.MeasureText(text, style).X;
+            float gap = ActiveTheme.Page.ActionGap * row.Scale;
+            float height = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            LabelInBand(row.Origin, new(textWidth, height), text, style);
+
+            float ruleStart = row.Origin.X + textWidth + gap;
+            if (ruleStart < row.Origin.X + row.Width)
+            {
+                ControlPaint.Separator(
+                    ImGui.GetWindowDrawList(),
+                    new(ruleStart, MathF.Round(row.Origin.Y + height * 0.5f)),
+                    row.Origin.X + row.Width,
+                    row.Scale,
+                    FormSeparatorColor.Fade(
+                        disabled ? ActiveTheme.Chrome.DisabledOpacity : 1f));
+            }
+            _page.EndRow(row, id, help);
+        }
+
         /// <summary>Draws custom row content.</summary>
         /// <param name="height">Logical row height.</param>
         public void Canvas(

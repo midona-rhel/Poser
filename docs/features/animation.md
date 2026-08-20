@@ -11,9 +11,10 @@ provide scrub; Full Body alone provides Loop. The layer controls remain visible
 and inert while Advanced is off. Returning to Basic restores every Advanced layer
 before General commands become available.
 
-Every picker filters by compatible native slot. Search matches display name,
-native timeline id, and sheet key. Results show only name, the native layer they
-apply to, and timeline id. Native route metadata remains internal.
+Every picker filters by compatible native slot. General can further narrow the
+catalog to Emotes, Actions, or Raw entries. Search matches display name, native
+timeline id, and sheet key. Results show only name, the native layer they apply
+to, and timeline id. Native route metadata remains internal.
 
 Loop belongs only to Full Body. It can be armed before selection without
 capturing or writing native state. Apply gives every explicit Full Body selection
@@ -27,13 +28,11 @@ forced field when a Base animation ends, the framework update replays Selected
 before restoring the field instead of treating a field rewrite as playback.
 
 Advanced Facial and Pose > Expression are two views of one held-expression
-authority. Both stage an expression, Apply it, and freeze Facial speed at zero.
-Reset releases that pin, plays Straight Face, holds the neutral bridge for two
-validated framework ticks, then restores the first captured Facial timeline and
-speed and clears selection. A stale or failed completion retains ownership for
-retry. Straight Face follows Brio's release bridge
-(`Brio/Brio/UI/Widgets/Actor/ActorDynamicPoseWidget.cs:58-70`). Pose alone adds
-Bake. Action-unit sliders remain a separate named pose layer.
+authority. Both stage an expression and freeze Facial speed at zero when it is
+applied. Pose calls that action Preview and also provides Bake. Reset immediately
+restores the first captured Facial timeline and speed and clears selection, even
+while overall animation is paused. Action-unit sliders remain a separate named
+pose layer.
 
 Full Body and Upper Body expose scrub through their verified slot-index lookup,
 searched across live skeleton partials and guarded by the captured skeleton
