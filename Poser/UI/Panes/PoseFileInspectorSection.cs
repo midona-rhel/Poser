@@ -206,7 +206,6 @@ public sealed class PoseFileInspectorSection
         return null;
     }
 
-    // Host pushes remain valid for the current and next frame.
     public void SetHostImportTarget(IActor? target, bool inLibrary)
     {
         _hostTarget = target;
@@ -240,7 +239,6 @@ public sealed class PoseFileInspectorSection
     private const float FilterMenuWidth = 216f;
     private const float MenuLabelColumn = 78f;
     private const float DenseLabelColumn = 64f;
-    // Shared by the three import option groups.
     private const float ImportOptionLabelColumn = 64f;
 
     private const string ImportMenuId = "##pose-import-menu";
@@ -377,7 +375,6 @@ public sealed class PoseFileInspectorSection
             menuPos.Y - gap));
     }
 
-    // The filter popup must be opened and pumped in its owner window.
     private void DrawBoneFilterMenu(Vector2 anchor) =>
         Crystarium.FloatingSurface.Popup(
             BoneFilterMenuId,
@@ -409,15 +406,12 @@ public sealed class PoseFileInspectorSection
 
     private const string ImportPreviewRebaseText = "Reading the actor's pose…";
 
-    // Target actor and skeleton are captured when the dialog opens.
     private IActor? _importTarget;
 
     private ISkeleton? _importSkeleton;
 
-    // The dialog drives the shared preview while open; closing hands it back.
     private bool _importPreviewOwned;
 
-    // A fresh session hides the previous render until it states a pose.
     private bool _importPreviewPosed;
 
     private void DrawImportPreviewPanel(
@@ -501,11 +495,9 @@ public sealed class PoseFileInspectorSection
             new Vector2(applyTop.X, applyTop.Y + applyHeight), columnWidth);
         DrawNestedBoneFilter();
 
-        // Apply option changes to the preview in the same frame.
         SyncImportPreview(highlighted);
     }
 
-    // The filter popup must be opened and pumped in its owner window.
     private void DrawNestedBoneFilter()
     {
         if (_boneFilterRequested)
@@ -560,7 +552,6 @@ public sealed class PoseFileInspectorSection
 
     private (bool Rotation, bool Position, bool Scale)? _preCmpComponents;
 
-    // .cmp has no position or scale and clamps components.
     private void SyncCmpComponentLock(string? highlighted)
     {
         _lastHighlighted = highlighted;
@@ -581,7 +572,6 @@ public sealed class PoseFileInspectorSection
         }
     }
 
-    // Apply-on-select imports only when the highlighted path changes.
     private void SyncApplyOnSelect(string? highlighted)
     {
         if (!_applyOnSelect || highlighted is null || !IsPoseFile(highlighted))
@@ -651,8 +641,6 @@ public sealed class PoseFileInspectorSection
     private bool _previewVisible;
     private string? _previewIdleText;
 
-    // MCDF highlights show inventory only; preview does not apply character
-    // transactions.
     public void SetCharacterFile(McdfSummary? summary, string? status)
     {
         _characterFile = summary;
@@ -736,8 +724,9 @@ public sealed class PoseFileInspectorSection
 
     private ISharedImmediateTexture? _previewBacking;
     private bool _previewBackingFailed;
+    private int _previewBackingPendingFrames;
+    private const int PreviewBackingWarmFrames = 30;
 
-    // Each preview mount needs its own fade ramp.
     private float _previewFadeRamp;
 
     private float _dialogFadeRamp;
@@ -750,13 +739,27 @@ public sealed class PoseFileInspectorSection
         try
         {
             _previewBacking ??= _textures.GetFromGame(PreviewBackingPath);
-            wrap = _previewBacking.GetWrapOrDefault();
+            if (!_previewBacking.TryGetWrap(out wrap, out _))
+                return 0;
         }
         catch (Exception)
         {
             _previewBackingFailed = true;
         }
         return wrap is null ? 0 : (nint)wrap.Handle.Handle;
+    }
+
+    // Pending preview loading delays primary opening for a bounded interval.
+    internal bool PrewarmPreviewBacking()
+    {
+        if (_previewBackingFailed || ResolvePreviewBacking() != 0)
+            return true;
+        if (_previewBackingPendingFrames < PreviewBackingWarmFrames)
+        {
+            _previewBackingPendingFrames++;
+            return false;
+        }
+        return true;
     }
 
     private const string PreviewWaitingText = "Preparing preview…";
@@ -767,7 +770,6 @@ public sealed class PoseFileInspectorSection
 
     private const float PreviewDragYawScale = 0.5f;
 
-    // Vertical drag moves the viewed body with the pointer.
     private const float PreviewDragPanScale = 0.006f;
 
     private static readonly int[] PreviewCameraGroups = [2, 1];
@@ -822,7 +824,6 @@ public sealed class PoseFileInspectorSection
             leadSection = true;
         }
 
-        // Dense rails separate each option group.
         y += DrawImportTypeSection(
             new Vector2(origin.X, y), width,
             divider: leadSection, dense: dense);
@@ -1171,7 +1172,6 @@ public sealed class PoseFileInspectorSection
                 if (dense)
                     form.Canvas("type-gap", Crystarium.ActiveTheme.Spacing.Three,
                         static (_, _) => { });
-                // Direct selected bones bypass type gates; descendants do not.
                 bool typeLocked =
                     selective && _selectiveImport && !_selectiveDescendants;
                 const string typeLockedWhy =
@@ -1196,7 +1196,6 @@ public sealed class PoseFileInspectorSection
                             ? typeLockedWhy
                             : "Import the face as an expression — always every "
                                 + "component"));
-                // File and target warnings are dialog-only.
                 if (selective)
                 {
                     if (_faceWarning is { } faceWarning)
@@ -1218,7 +1217,6 @@ public sealed class PoseFileInspectorSection
             origin, width,
             form =>
             {
-                // .cmp has no position or scale and clamps the components.
                 bool locked = _cmpHighlighted || _typeExpression || _smartImport;
                 string? why = _cmpHighlighted
                     ? "CMTool poses carry rotations only — there is no "
@@ -1264,7 +1262,6 @@ public sealed class PoseFileInspectorSection
             origin, width,
             form =>
             {
-                // Selected-bone scope is available only in the import dialog.
                 var scope = new List<Crystarium.CheckItem>(4);
                 if (selective)
                 {
@@ -1312,7 +1309,6 @@ public sealed class PoseFileInspectorSection
                 form.Checkboxes(
                     "Scope", disabled: false, fullWidth: false,
                     scope.ToArray());
-                // The category filter applies only to the default route.
                 bool typed = _typeBody || _typeExpression;
                 if (dense)
                     form.Canvas("scope-filter-gap",
@@ -1399,7 +1395,6 @@ public sealed class PoseFileInspectorSection
 
     private static float PreviewTopPadding(Theme theme) => theme.Page.Inset;
 
-    // The height cap narrows the box to preserve its portrait aspect.
     private static Vector2 PreviewBox(float width, float cap)
     {
         float height = width * (PreviewAspect.Y / PreviewAspect.X);
@@ -1425,7 +1420,6 @@ public sealed class PoseFileInspectorSection
         var draw = ImGui.GetWindowDrawList();
         float radius = theme.Radii.Control * scale;
 
-        // The backing renders below the fade.
         var handle = _preview.TextureHandle;
         if (!showRender)
             handle = 0;
@@ -1481,7 +1475,6 @@ public sealed class PoseFileInspectorSection
                 TextAlign.Center);
         }
 
-        // Refusal overlays the standing render.
         if (showRender && handle != 0
             && _preview.RefusalText is { Length: > 0 } notice)
             DrawPreviewNotice(boxMin, boxSize, radius, scale, theme, notice);
@@ -1518,7 +1511,6 @@ public sealed class PoseFileInspectorSection
             TextAlign.Center);
     }
 
-    // The preview claims wheel ownership so the rail does not scroll instead.
     private void DrawPreviewInput(Vector2 min, Vector2 size)
     {
         ImGui.SetCursorScreenPos(min);
@@ -1536,7 +1528,6 @@ public sealed class PoseFileInspectorSection
             }
             else
             {
-                // Drag down pans the view up to move the body with the pointer.
                 var drag = ImGui.GetIO().MouseDelta;
                 if (drag.X != 0f)
                     _preview.Rotate(drag.X * PreviewDragYawScale);
@@ -1679,7 +1670,6 @@ public sealed class PoseFileInspectorSection
             _notices.Refused(NoActorText);
     }
 
-    // Imports invalidate the preview baseline and rebase it on the next draw.
     private void NotePoseApplied()
     {
         TargetPoseRevision++;
@@ -1829,8 +1819,6 @@ public sealed class PoseFileInspectorSection
         }));
     }
 
-    // Smart Import updates the type pair before source recording, .cmp
-    // handling, and option building.
     private void ImportFromPath(ISkeleton skeleton, string path, bool fromDialog = false)
     {
         bool isCmp = path.EndsWith(".cmp", StringComparison.OrdinalIgnoreCase);
@@ -1856,19 +1844,14 @@ public sealed class PoseFileInspectorSection
             _notices.Failed("Import: the actor could not be resolved.");
             return;
         }
-        // Selected scope is dialog-only; confirmation freezes target-actor
-        // BoneIds, and empty or stale selections refuse.
         IReadOnlyList<BoneId>? frozenSelection = null;
         var options = cmp ?? BuildOptions();
         if (fromDialog && _selectiveImport)
         {
             frozenSelection = FrozenSelectedBones(expectedActor);
-            // Direct selected bones bypass type, category, face, and slot gates;
-            // descendants use the selected route.
             if (!_selectiveDescendants && cmp == null)
                 options = RouteAsType(options, body: true, expression: false);
             options.FilterIncludesDescendants = _selectiveDescendants;
-            // Anchor uses the effective position component.
             options.AnchorSelectedPositions = _selectiveAnchor;
         }
         var imported = _poseFacade.ImportPose(
@@ -1897,7 +1880,6 @@ public sealed class PoseFileInspectorSection
         return false;
     }
 
-    // Freeze only BoneIds selected on the target actor; an empty set refuses.
     private List<BoneId> FrozenSelectedBones(ActorId target)
     {
         var frozen = new List<BoneId>();
@@ -1910,8 +1892,6 @@ public sealed class PoseFileInspectorSection
         return frozen;
     }
 
-    // Typed .cmp imports use the rotation-only preset; expression-only is
-    // refused, while Body plus Expression continues as Body.
     public PoseImportOptions? CmpImportOverride(
         string path, out bool blocked, out string? notice)
     {
@@ -1933,7 +1913,6 @@ public sealed class PoseFileInspectorSection
         return CmpImportOptions();
     }
 
-    // In-memory imports share the file route after format loading.
     private void ImportLoadedPose(
         ISkeleton skeleton, PoseFile pose, string description, string statusPrefix)
     {
@@ -1962,7 +1941,6 @@ public sealed class PoseFileInspectorSection
             _notices.Refused(notice);
     }
 
-    // .cmp upgrades before classification; classification is advisory.
     private static PoseFile? LoadForSmartRouting(string path, bool isCmp)
     {
         if (isCmp)
@@ -1993,7 +1971,6 @@ public sealed class PoseFileInspectorSection
         return options;
     }
 
-    // Reapply imports the saved source through current options.
     private void ReapplyLastPose()
     {
         if (SelectedSkeleton() is not { } skeleton)
@@ -2024,7 +2001,6 @@ public sealed class PoseFileInspectorSection
         ImportLoadedPose(skeleton, pose, "Import stashed pose", "Stash");
     }
 
-    // The stash is a full pose-file capture.
     private void StashPose()
     {
         if (SelectedSkeleton() is not { } skeleton)
@@ -2268,8 +2244,6 @@ public sealed class PoseFileInspectorSection
 
     public PoseImportOptions BuildImportOptions() => BuildOptions();
 
-    // The type matrix is centralized; the category filter folds only into the
-    // default route, and ear exclusion folds last.
     private PoseImportOptions BuildOptions()
     {
         var options = PoseImportOptions.ForImportType(
@@ -2277,7 +2251,6 @@ public sealed class PoseFileInspectorSection
             presetComponents: _smartImport);
         options.ResetBeforeImport = _reset;
         options.FreezeOnImport = _freeze;
-        // Expression does not apply a model transform.
         options.ApplyModelTransform = _modelTransform && !options.AsExpression;
         return ApplyEarExclusion(
             _typeBody || _typeExpression
@@ -2303,8 +2276,6 @@ public sealed class PoseFileInspectorSection
         return ApplyEarExclusion(routed);
     }
 
-    // Anchor availability follows the effective position component, not the
-    // Position widget.
     private bool SelectiveImportAppliesPosition() =>
         PoseImportOptions.ForImportType(
             body: !_selectiveDescendants || _typeBody,
@@ -2312,7 +2283,6 @@ public sealed class PoseFileInspectorSection
             _rotation, _position, _scale,
             presetComponents: _smartImport).ApplyPosition;
 
-    // Smart Import changes the type pair before downstream decisions.
     private string SmartRoute(ISkeleton skeleton, PoseFile file)
     {
         if (PoseFileService.IsExpressionOnlyPose(file))

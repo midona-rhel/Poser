@@ -5,60 +5,37 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 
 namespace Poser.UI;
 
 public static partial class Crystarium
 {
-    /// <summary>
-    /// Host hook for turning a straight-alpha RGBA8 bitmap into an ImGui
-    /// texture. Crystarium cannot reference a graphics device, so the host
-    /// supplies the upload and, if its handle needs an owner alive, a
-    /// keepalive the cache disposes with the texture.
-    ///
-    /// <para>Without it every icon falls back to the per-pixel painter —
-    /// correct, but hundreds of 1px rects per glyph per frame.</para>
-    /// </summary>
     public static Func<byte[], int, int, (nint Handle, IDisposable? Keepalive)>?
         IconTextureUploader
     {
         get => SvgIconTextureCache.Uploader;
         set => SvgIconTextureCache.Uploader = value;
     }
+
+    /// <summary>Whether bounded startup icon warming has finished.</summary>
+    public static bool StartupIconsReady => SvgIconTextureCache.StartupIconsReady;
+
+    /// <summary>Advances bounded startup icon warming on the UI thread.</summary>
+    public static void PumpStartupIcons(float libraryIconSize) =>
+        SvgIconTextureCache.PumpStartupIcons(libraryIconSize);
 }
 
-/// <summary>
-/// Bake-once cache for icon draws: one uploaded bitmap per distinct
-/// (document, size, colour) draw, blitted as a single quad afterwards. The
-/// bitmap is the painter's own per-pixel output, so the warm path is a
-/// transport change and not a rendering change.
-///
-/// <para>Cold FRAMES are the hard part. A plugin reload, the first shell
-/// draw, and every theme or accent retint turn ~40 visible icons into
-/// first-seen keys simultaneously; done inline that is one frame of
-/// software painting plus one frame of rasterize-and-upload, a ~300ms wall
-/// either way. So the rasterization runs on a background worker and the
-/// main thread spends a fixed, small budget per frame draining it.</para>
-/// </summary>
 internal static class SvgIconTextureCache
 {
     private const int MaxEntries = 1024;
+    private const int MaxStartupJobs = 172;
     private const uint White = 0xFFFFFFFFu;
 
-    /// <summary>Painter fallbacks allowed per ImGui frame. Steady frames have
-    /// no first-seen keys at all, so this is never reached outside a storm;
-    /// during one it caps the per-pixel painter at a handful of icons and the
-    /// rest are simply absent for a frame or two while their bakes land.
-    /// </summary>
     private const int PaintBudget = 6;
 
-    /// <summary>Completed rasterizations packed and uploaded per ImGui frame.
-    /// </summary>
     private const int UploadBudget = 8;
 
-    /// <summary><see cref="Handle"/> 0 with <see cref="Painter"/> false is a
-    /// bakeable draw whose mask is empty — it draws nothing, correctly.
-    /// </summary>
     private struct Entry(
         nint Handle,
         Vector2 Offset,
@@ -72,51 +49,394 @@ internal static class SvgIconTextureCache
         public readonly IDisposable? Keepalive = Keepalive;
         public readonly bool Painter = Painter;
 
-        /// <summary>Recency ordinal for the overflow sweep, stamped per hit
-        /// through the dictionary ref so a hit stays one lookup.</summary>
         public int LastDraw;
     }
 
     private static readonly Dictionary<ulong, Entry> Cache = new();
 
-    /// <summary>Monotonic draw ordinal; recency, not time.</summary>
     private static int _drawTick;
 
-    // Overflow sweep scratch (cold path, static so it never allocates).
     private static readonly int[] SweepTicks = new int[MaxEntries];
     private static readonly ulong[] SweepKeys = new ulong[MaxEntries];
 
-    // A key is drawn by the painter the first time it is seen and only earns
-    // a texture once it comes back. Hover/press transitions retint an icon
-    // every frame, and baking those would upload a texture per frame for a
-    // state that never repeats; a resting icon repeats immediately.
     private static readonly ulong[] Seen = new ulong[64];
     private static int _seenAt;
 
     private static Func<byte[], int, int, (nint, IDisposable?)>? _uploader;
+    private static bool _startupStarted;
+    private static int _startupRemaining;
+    // Signature changes rewarm new keys without clearing device textures.
+    private static int _startupGeneration;
+    private static bool _startupSignatureSet;
+    private static Theme _startupTheme;
+    private static float _startupScale;
+    private static float _startupStyleAlpha;
+    private static float _startupLibraryFallbackSide;
+
+    private static readonly TablerIcon[] ShellIcons =
+    [
+        TablerIcon.Menu2,
+        TablerIcon.ArrowBackUp,
+        TablerIcon.Plus,
+        TablerIcon.Folder,
+        TablerIcon.Settings,
+        TablerIcon.ExternalLink,
+        TablerIcon.X,
+        TablerIcon.Refresh,
+        TablerIcon.ZoomOut,
+        TablerIcon.ZoomIn,
+    ];
+
+    private static readonly TablerIcon[] ShellSegmentIcons =
+    [
+        TablerIcon.ArrowsMove,
+        TablerIcon.Rotate,
+        TablerIcon.ArrowsDiagonal,
+        TablerIcon.ArrowsMaximize,
+    ];
+
+    private static readonly TablerIcon[] ContextMenuIcons =
+    [
+        TablerIcon.Book,
+        TablerIcon.UserPlus,
+        TablerIcon.UserMinus,
+        TablerIcon.Download,
+        TablerIcon.Upload,
+        TablerIcon.DeviceFloppy,
+        TablerIcon.WindowMaximize,
+        TablerIcon.WindowMinimize,
+        TablerIcon.DeviceIpadX,
+        TablerIcon.LayoutPanel,
+        TablerIcon.LayoutSidebarLeft,
+        TablerIcon.BrowserX,
+        TablerIcon.Settings,
+        TablerIcon.Crosshair,
+        TablerIcon.Eye,
+        TablerIcon.EyeOff,
+        TablerIcon.PlayerPlay,
+        TablerIcon.PlayerPause,
+        TablerIcon.Edit,
+        TablerIcon.Copy,
+        TablerIcon.Trash,
+        TablerIcon.Armature,
+        TablerIcon.Check,
+        TablerIcon.Circle,
+        TablerIcon.Rotate,
+        TablerIcon.Refresh,
+        TablerIcon.ArrowUp,
+        TablerIcon.Sitemap,
+        TablerIcon.ArrowsMove,
+        TablerIcon.Lock,
+        TablerIcon.LockOpen,
+        TablerIcon.Star,
+        TablerIcon.Shield,
+        TablerIcon.FileText,
+        TablerIcon.ExternalLink,
+        TablerIcon.Stack2,
+        TablerIcon.ArrowBackUp,
+        TablerIcon.Video,
+        TablerIcon.X,
+        TablerIcon.Movie,
+        TablerIcon.Folder,
+    ];
+
+    private static readonly TablerIcon[] SidebarActionIcons =
+    [
+        TablerIcon.ArrowsMove,
+        TablerIcon.Crosshair,
+        TablerIcon.Eye,
+        TablerIcon.PlayerPlay,
+        TablerIcon.PlayerPause,
+        TablerIcon.Lock,
+        TablerIcon.LockOpen,
+        TablerIcon.Video,
+    ];
+
+    private static readonly TablerIcon[] SidebarWorldClassIcons =
+    [
+        TablerIcon.Bulb,
+        TablerIcon.Square,
+        TablerIcon.User,
+    ];
+
+    private static readonly TablerIcon[] SidebarTreeIcons =
+    [
+        TablerIcon.User,
+        TablerIcon.Diamond,
+        TablerIcon.Square,
+        TablerIcon.Camera,
+        TablerIcon.BuildingStore,
+        TablerIcon.Sun,
+        TablerIcon.Bulb,
+        TablerIcon.LightPanel,
+        TablerIcon.Spotlight,
+        TablerIcon.MessageCircle,
+        TablerIcon.Star,
+        TablerIcon.Message,
+        TablerIcon.Video,
+        TablerIcon.Photo,
+        TablerIcon.Armature,
+        TablerIcon.Paw,
+        TablerIcon.Horse,
+    ];
+
+    private static readonly TablerIcon[] LibraryIcons =
+    [
+        TablerIcon.Folder,
+        TablerIcon.Star,
+        TablerIcon.ChevronRight,
+        TablerIcon.ChevronDown,
+        TablerIcon.AlertTriangle,
+        TablerIcon.Armature,
+        TablerIcon.File,
+        TablerIcon.UserCircle,
+        TablerIcon.Movie,
+    ];
+
+    private static readonly TablerIcon[] LibraryFallbackIcons =
+    [
+        TablerIcon.Armature,
+        TablerIcon.File,
+        TablerIcon.UserCircle,
+        TablerIcon.Movie,
+    ];
 
     internal static Func<byte[], int, int, (nint, IDisposable?)>? Uploader
     {
         get => _uploader;
         set
         {
-            // Handles belong to the device that made them.
             Clear();
             _uploader = value;
         }
     }
 
-    // ---------- background rasterization ----------
+    // Painter fallback remains available when no uploader is registered.
+    internal static bool StartupIconsReady =>
+        _uploader is null || (_startupStarted && _startupRemaining == 0);
 
-    /// <summary>
-    /// One icon waiting to be rasterized, then the result on the way back.
-    /// Allocated per job, which only happens on a miss — storms allocate, warm
-    /// frames do not touch any of this.
-    /// </summary>
+    internal static void PumpStartupIcons(float libraryIconSize)
+    {
+        if (_uploader is null)
+            return;
+        var theme = Crystarium.ActiveTheme;
+        float scale = ImGuiHelpers.GlobalScale;
+        float styleAlpha = ImGui.GetStyle().Alpha;
+        float libraryFallbackSide = LibraryFallbackSide(
+            libraryIconSize, theme, scale);
+        if (!MatchesStartupSignature(
+                theme, scale, styleAlpha, libraryFallbackSide))
+            StartStartupWarm(theme, scale, styleAlpha, libraryFallbackSide);
+        BeginFrame();
+        if (!Completed.IsEmpty)
+            Integrate(ref _uploads);
+    }
+
+    private static bool MatchesStartupSignature(
+        Theme theme, float scale, float styleAlpha,
+        float libraryFallbackSide) =>
+        _startupSignatureSet
+        && _startupTheme.Equals(theme)
+        && BitConverter.SingleToUInt32Bits(_startupScale)
+            == BitConverter.SingleToUInt32Bits(scale)
+        && BitConverter.SingleToUInt32Bits(_startupStyleAlpha)
+            == BitConverter.SingleToUInt32Bits(styleAlpha)
+        && BitConverter.SingleToUInt32Bits(_startupLibraryFallbackSide)
+            == BitConverter.SingleToUInt32Bits(libraryFallbackSide);
+
+    private static void StartStartupWarm(
+        Theme theme, float scale, float styleAlpha,
+        float libraryFallbackSide)
+    {
+        _startupStarted = true;
+        _startupRemaining = 0;
+        _startupGeneration++;
+        _startupSignatureSet = true;
+        _startupTheme = theme;
+        _startupScale = scale;
+        _startupStyleAlpha = styleAlpha;
+        _startupLibraryFallbackSide = libraryFallbackSide;
+        float shellSide = 16f * scale;
+        foreach (var icon in ShellIcons)
+            QueueStartup(
+                Tabler.Get(icon), shellSide, theme.Text, false, 1.5f,
+                0.8f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("chevron-down"), shellSide, theme.Text, false, 1.5f,
+            0.8f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("chevron-up"), shellSide, theme.Text, false, 1.5f,
+            0.8f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, true,
+            1.5f, 0.8f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, false,
+            1.5f, 0.2f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, true,
+            1.5f, 0.2f, Vector4.Zero, styleAlpha);
+        float segmentSide = theme.Controls.SmallIconSize * scale;
+        var segmentTint = theme.Text with { W = 0.72f };
+        foreach (var icon in ShellSegmentIcons)
+            QueueStartup(
+                Tabler.Get(icon), segmentSide, segmentTint, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var icon in ShellSegmentIcons)
+            QueueStartup(
+                Tabler.Get(icon), segmentSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+
+        float menuSide = theme.Controls.IconSize * scale;
+        var menuTint = theme.Chrome.Text.Fade(0.8f);
+        foreach (var icon in ContextMenuIcons)
+            QueueStartup(
+                Tabler.Get(icon), menuSide, menuTint, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var icon in ContextMenuIcons)
+            QueueStartup(
+                Tabler.Get(icon), menuSide,
+                theme.Chrome.Text.Fade(
+                    theme.Chrome.DisabledOpacity * 0.8f),
+                false, null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Trash), menuSide,
+            theme.Chrome.Danger.Fade(0.8f), false, null,
+            1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Refresh), menuSide,
+            theme.Chrome.Danger.Fade(0.8f), false, null,
+            1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Trash), menuSide,
+            theme.Chrome.Danger.Fade(
+                theme.Chrome.DisabledOpacity * 0.8f), false, null,
+            1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Refresh), menuSide,
+            theme.Chrome.Danger.Fade(
+                theme.Chrome.DisabledOpacity * 0.8f), false, null,
+            1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ChevronRight), menuSide * 0.8f, menuTint,
+            false, null, 1f, Vector4.Zero, styleAlpha);
+
+        float librarySide = theme.Controls.SmallIconSize * scale;
+        foreach (var icon in LibraryIcons)
+            QueueStartup(
+                Tabler.Get(icon), librarySide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Star), librarySide, theme.TextMuted, false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ChevronRight), librarySide,
+            theme.TextMuted, false, null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.ChevronDown), librarySide,
+            theme.TextMuted, false, null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.Star), librarySide, theme.Warning, false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get(TablerIcon.AlertTriangle), librarySide, theme.Warning,
+            false, null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("search"), librarySide,
+            theme.TextMuted.Fade(0.6f), false, null,
+            1f, Vector4.Zero, styleAlpha);
+        foreach (var icon in LibraryFallbackIcons)
+            QueueStartup(
+                Tabler.Get(icon), libraryFallbackSide, theme.TextDim, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        float sidebarSide = theme.Controls.SwitchHeight
+            * theme.Controls.IconContentScale * scale;
+        foreach (var icon in SidebarActionIcons)
+        {
+            QueueStartup(
+                Tabler.Get(icon), sidebarSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+            QueueStartup(
+                Tabler.Get(icon), sidebarSide, theme.Text.Fade(0.45f), false,
+                null, 1f, Vector4.Zero, styleAlpha);
+        }
+        foreach (var icon in SidebarWorldClassIcons)
+        {
+            QueueStartup(
+                Tabler.Get(icon), sidebarSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+            QueueStartup(
+                Tabler.Get(icon), sidebarSide, theme.Text.Fade(0.45f), false,
+                null, 1f, Vector4.Zero, styleAlpha);
+        }
+        QueueStartup(
+            Tabler.Get(TablerIcon.Plus), sidebarSide, theme.Text, false, 1.5f,
+            0.8f, Vector4.Zero, styleAlpha);
+        float treeSide = 16f * scale;
+        foreach (var icon in SidebarTreeIcons)
+            QueueStartup(
+                Tabler.Get(icon), treeSide, theme.Text.Fade(0.85f), false,
+                null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("eye"), treeSide, theme.Text.Fade(0.85f), false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("head"), treeSide, theme.Text.Fade(0.85f), false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("body"), treeSide, theme.Text.Fade(0.85f), false,
+            null, 1f, Vector4.Zero, styleAlpha);
+    }
+
+    private static float LibraryFallbackSide(
+        float libraryIconSize, Theme theme, float scale)
+    {
+        float icon = Math.Clamp(libraryIconSize, 80f, 200f);
+        float bucket = 8f * scale;
+        float boxSide = (icon - theme.Spacing.Two * 2f) * scale;
+        return MathF.Max(bucket, MathF.Floor(boxSide * 0.4f / bucket) * bucket);
+    }
+
+    private static void QueueStartup(
+        SvgDocument? doc,
+        float side,
+        Vector4 tint,
+        bool flipX,
+        float? strokeWidth,
+        float groupOpacity,
+        Vector4 groupBackground,
+        float styleAlpha)
+    {
+        if (doc is null || _startupRemaining >= MaxStartupJobs)
+            return;
+        var size = new Vector2(side);
+        ulong key = Key(
+            doc, Vector2.Zero, size, tint, flipX, strokeWidth,
+            groupOpacity, groupBackground, styleAlpha);
+        if (Cache.ContainsKey(key) || !Pending.Add(key))
+            return;
+        _startupRemaining++;
+        Inbox.Enqueue(new RasterJob
+        {
+            Generation = _generation,
+            Key = key,
+            Doc = doc,
+            Size = size,
+            Tint = tint,
+            FlipX = flipX,
+            StrokeWidth = strokeWidth,
+            GroupOpacity = groupOpacity,
+            GroupBackground = groupBackground,
+            StyleAlpha = styleAlpha,
+            Startup = true,
+            StartupGeneration = _startupGeneration,
+        });
+        Pump();
+    }
+
+
     private sealed class RasterJob
     {
-        // Request. Note the box is a SIZE, not a screen rect: the bake is
-        // rasterized in local space, so position cannot reach the worker.
         public int Generation;
         public ulong Key;
         public SvgDocument Doc = null!;
@@ -127,12 +447,11 @@ internal static class SvgIconTextureCache
         public float GroupOpacity;
         public Vector4 GroupBackground;
 
-        /// <summary>Captured at ENQUEUE. The pack runs frames later and the
-        /// key was taken under this alpha, so the live value is wrong.
-        /// </summary>
         public float StyleAlpha;
 
-        // Result.
+        public bool Startup;
+        public int StartupGeneration;
+
         public bool Bakeable;
         public SvgStrokeMask.Baked? Baked;
     }
@@ -140,21 +459,10 @@ internal static class SvgIconTextureCache
     private static readonly ConcurrentQueue<RasterJob> Inbox = new();
     private static readonly ConcurrentQueue<RasterJob> Completed = new();
 
-    /// <summary>Keys with a job in flight, so a storm enqueues each icon once
-    /// however many frames it takes to come back. Main thread only.</summary>
     private static readonly HashSet<ulong> Pending = new();
 
-    /// <summary>Bumped by <see cref="Clear"/>; results stamped with an older
-    /// value are dropped on drain. This is how pending work is discarded
-    /// safely without reaching into a thread that may be mid-rasterize.
-    /// </summary>
     private static int _generation;
 
-    /// <summary>0 or 1: whether a drain task is live. A bounded
-    /// <see cref="Task.Run"/> pump rather than a dedicated thread, because a
-    /// long-lived thread rooted in the plugin's assembly load context would
-    /// block Dalamud from unloading it — and reload is one of the exact cases
-    /// this code exists to make smooth.</summary>
     private static int _draining;
 
     private static void Pump()
@@ -171,22 +479,11 @@ internal static class SvgIconTextureCache
             while (Inbox.TryDequeue(out var job))
                 Rasterize(job);
             Volatile.Write(ref _draining, 0);
-            // A job queued between the failed dequeue and the release above
-            // found _draining still set and scheduled nothing, so re-check
-            // before really giving up.
         }
         while (!Inbox.IsEmpty
             && Interlocked.CompareExchange(ref _draining, 1, 0) == 0);
     }
 
-    /// <summary>
-    /// The background half. <c>SvgDocument.TryResolveMask</c> is pure CPU —
-    /// geometry projection, stroke extraction and the 4x4-supersampled
-    /// coverage build — with no ImGui, draw-list or otherwise thread-affine
-    /// call in its reach; the style alpha that used to leak in through
-    /// <c>ColorEx.ApplyAlpha</c> is now captured at enqueue and carried on the
-    /// job. The colour pack and the upload stay on the main thread.
-    /// </summary>
     private static void Rasterize(RasterJob job)
     {
         if (job.Generation != Volatile.Read(ref _generation))
@@ -201,22 +498,12 @@ internal static class SvgIconTextureCache
         }
         catch (Exception)
         {
-            // An escaped rasterizer fault must not take the process down from
-            // a pool thread. Hand the draw back to the painter instead.
             job.Bakeable = false;
             job.Baked = null;
         }
         Completed.Enqueue(job);
     }
 
-    /// <summary>
-    /// Main-thread half: pack and upload at most <see cref="UploadBudget"/>
-    /// finished rasterizations. Uploads stay here because the
-    /// <see cref="Uploader"/> delegate's thread-safety is unknown — it is a
-    /// host callback into a graphics device (Dalamud's texture provider, the
-    /// harness's D3D11 device), and neither documents being callable off the
-    /// render thread.
-    /// </summary>
     private static void Integrate(ref int uploads)
     {
         while (uploads < UploadBudget && Completed.TryDequeue(out var job))
@@ -224,6 +511,10 @@ internal static class SvgIconTextureCache
             if (job.Generation != _generation)
                 continue;
             Pending.Remove(job.Key);
+            if (job.Startup
+                && job.StartupGeneration == _startupGeneration
+                && _startupRemaining > 0)
+                _startupRemaining--;
             uploads++;
             Entry entry;
             if (!job.Bakeable)
@@ -231,7 +522,16 @@ internal static class SvgIconTextureCache
             else if (job.Baked is not { } baked)
                 entry = new Entry(0, default, default, null, false);
             else
-                entry = Upload(baked);
+            {
+                try
+                {
+                    entry = Upload(baked);
+                }
+                catch (Exception)
+                {
+                    entry = new Entry(0, default, default, null, true);
+                }
+            }
             entry.LastDraw = _drawTick;
             if (Cache.Count >= MaxEntries)
                 EvictStale();
@@ -241,7 +541,6 @@ internal static class SvgIconTextureCache
 
     private static Entry Upload(SvgStrokeMask.Baked baked)
     {
-        // Bakeable, but the mask came out empty: this draw paints nothing.
         if (baked.Width <= 0 || baked.Height <= 0)
             return new Entry(0, default, default, null, false);
         var (handle, keepalive) = _uploader!(
@@ -267,23 +566,16 @@ internal static class SvgIconTextureCache
         Array.Clear(Seen);
         _seenAt = 0;
 
-        // Discard pending work. The queues are emptied for the jobs that have
-        // not been picked up, and the generation bump covers the one a worker
-        // may be inside RIGHT NOW: its result is enqueued as usual and dropped
-        // on the next drain. Nothing here waits on or interrupts a worker.
         _generation++;
         while (Inbox.TryDequeue(out _)) { }
         while (Completed.TryDequeue(out _)) { }
         Pending.Clear();
+        _startupStarted = false;
+        _startupRemaining = 0;
+        _startupGeneration++;
+        _startupSignatureSet = false;
     }
 
-    /// <summary>
-    /// Overflow eviction: drop the least-recently-drawn HALF. The old policy
-    /// cleared the whole cache, which re-baked every visible icon on the next
-    /// frame — a one-off 100ms-class hitch whenever a long session finally
-    /// crossed <see cref="MaxEntries"/>. Cold path by construction; the
-    /// scratch arrays are static so it allocates nothing.
-    /// </summary>
     private static void EvictStale()
     {
         int count = 0;
@@ -293,8 +585,6 @@ internal static class SvgIconTextureCache
             SweepKeys[count] = pair.Key;
             count++;
         }
-        // Median by sorting a COPY of the ticks; the keys keep dictionary
-        // order and are re-tested against the threshold instead.
         Array.Sort(SweepTicks, 0, count);
         int threshold = SweepTicks[count / 2];
         for (int i = 0; i < count; i++)
@@ -309,16 +599,21 @@ internal static class SvgIconTextureCache
         }
     }
 
-    // Per-frame budget state. The frame is read from ImGui rather than taken
-    // from a new public seam, so nothing outside has to remember to tick this.
     private static int _frame = -1;
     private static int _paints;
     private static int _uploads;
 
-    /// <summary>Draws the icon from a baked texture, reports that this draw
-    /// belongs to the painter (false), or absorbs it for this frame while its
-    /// bake is in flight (true, drawing nothing). Allocation-free on a cache
-    /// hit.</summary>
+    // All drains share this reset so uploads remain capped per frame.
+    private static void BeginFrame()
+    {
+        int frame = ImGui.GetFrameCount();
+        if (frame == _frame)
+            return;
+        _frame = frame;
+        _paints = 0;
+        _uploads = 0;
+    }
+
     internal static bool TryDraw(
         ImDrawListPtr draw,
         SvgDocument doc,
@@ -343,13 +638,7 @@ internal static class SvgIconTextureCache
         var floor = new Vector2(MathF.Floor(min.X), MathF.Floor(min.Y));
         _drawTick++;
 
-        int frame = ImGui.GetFrameCount();
-        if (frame != _frame)
-        {
-            _frame = frame;
-            _paints = 0;
-            _uploads = 0;
-        }
+        BeginFrame();
         if (!Completed.IsEmpty)
             Integrate(ref _uploads);
 
@@ -363,10 +652,6 @@ internal static class SvgIconTextureCache
         }
         else
         {
-            // Repeated keys are the ones worth a texture, and one job covers
-            // however many frames the bake takes to come back. A transition
-            // tint that never repeats never enqueues — it stays on the
-            // painter path exactly as before, and spends painter budget.
             if (Repeated(key) && Pending.Add(key))
             {
                 Inbox.Enqueue(new RasterJob
@@ -389,9 +674,6 @@ internal static class SvgIconTextureCache
                 _paints++;
                 return false;
             }
-            // Over budget: claim the draw and emit nothing. Losing an icon
-            // for a frame or two during a storm is the price of never
-            // software-painting forty of them at once.
             return true;
         }
 
@@ -411,8 +693,6 @@ internal static class SvgIconTextureCache
         return true;
     }
 
-    /// <summary>Records the key and reports whether it had already been
-    /// seen. A fixed ring, so the guard itself never allocates.</summary>
     private static bool Repeated(ulong key)
     {
         foreach (ulong seen in Seen)
@@ -426,13 +706,6 @@ internal static class SvgIconTextureCache
     private const ulong FnvOffset = 14695981039346656037UL;
     private const ulong FnvPrime = 1099511628211UL;
 
-    /// <summary>
-    /// Everything the baked pixels depend on — and POSITION IS NOT IN IT.
-    /// The bake is rasterized in local space off a whole-pixel box, so the
-    /// bitmap depends only on the size and the paint inputs. Keying position
-    /// (its float exponent and sub-pixel phase, as this originally did) made
-    /// window drags re-bake every visible icon at each power-of-two crossing.
-    /// </summary>
     private static ulong Key(
         SvgDocument doc,
         Vector2 min,
@@ -456,7 +729,6 @@ internal static class SvgIconTextureCache
             hash = Mix(hash, color);
         hash = Mix(hash, Bits(groupOpacity));
         hash = Mix(hash, background);
-        // The style alpha the painter would fold in at draw time.
         return Mix(hash, Bits(styleAlpha));
     }
 
