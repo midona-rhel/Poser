@@ -11,18 +11,10 @@ public readonly record struct AnimationPortResult(bool Success, string? Detail =
 }
 
 /// <summary>
-/// The ONE stable-id native boundary for animation. Every member takes an
-/// exact-generation <see cref="ActorId"/>; the runtime re-resolves it
-/// immediately before touching memory, so a replaced or removed actor
-/// fails explicitly instead of writing through a stale pointer. No
-/// address, pointer, or retained legacy entity crosses this interface —
-/// that is what keeps animation ownership stable across redraws.
-///
-/// Speed overrides are ENFORCED, not merely written: the implementation
-/// registers them so the game's own per-frame recalculation is overridden
-/// again each time it runs (Brio's model). Clearing an override therefore
-/// hands authority back to the game rather than writing a remembered
-/// value.
+/// Native animation boundary keyed by exact actor generation. The runtime
+/// resolves the actor immediately before each memory operation. Speed
+/// overrides are enforced per frame; clearing one restores its captured
+/// value before releasing enforcement.
 /// </summary>
 public interface IAnimationRuntimePort
 {
@@ -34,16 +26,12 @@ public interface IAnimationRuntimePort
     ActorAnimationReading? Read(ActorId actor);
 
     // ── Base and blend ────────────────────────────────────────────────
-    /// <summary>
-    /// Plays a timeline through the game's own sequencer with the
-    /// reference's mode handling: a sheet-Pause timeline holds the actor
-    /// (EmoteLoop with parameter 0), and a normal play first leaves a
-    /// held or stale-latched mode, which otherwise eats the play. The
-    /// timeline row picks its own slot; there is no blend weight
-    /// anywhere. When <paramref name="existing"/> is null the pre-play
-    /// mode state is captured and returned for restoration.
-    /// </summary>
+    /// <summary>Plays a timeline and captures the first base state.</summary>
     AnimationPortResult Blend(ActorId actor, ushort timeline,
+        BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
+
+    /// <summary>Clears the forced base timeline, then plays a base timeline.</summary>
+    AnimationPortResult PlayBase(ActorId actor, ushort timeline,
         BaseAnimationCapture? existing, out BaseAnimationCapture? captured);
 
     /// <summary>Puts mode, mode parameter, and the base-override field
@@ -60,17 +48,12 @@ public interface IAnimationRuntimePort
     /// that go through the emote entry point rather than Blend.</summary>
     BaseAnimationCapture? CaptureBase(ActorId actor);
 
-    /// <summary>The game's own cancellation of the container's running
-    /// timeline (the stance transition's function; container-wide, since
-    /// no per-slot stop is proven in either reference).</summary>
+    /// <summary>Cancels the container's running timeline. The available
+    /// native operation is container-wide rather than slot-specific.</summary>
     AnimationPortResult CancelActiveTimeline(ActorId actor);
 
     // ── Loops ───────────────────────────────────────────
-    /// <summary>Arms Poser-driven looping for one slot: whenever the slot
-    /// leaves this timeline (the one-shot ended and the game swapped its
-    /// own idle in), the timeline is played again through the same proven
-    /// sequencer call. The game's forced-timeline field stays unused — it
-    /// is unproven for this client.</summary>
+    /// <summary>Arms exact-slot replay for verified Base or Upper ownership.</summary>
     AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);
     AnimationPortResult ClearSlotLoop(ActorId actor, AnimationSlot slot);
     /// <summary>Drops every armed loop for the actor. No native writes.</summary>
@@ -83,13 +66,7 @@ public interface IAnimationRuntimePort
     /// is the only way to get intro-then-loop playback.</summary>
     AnimationPortResult PlayEmote(ActorId actor, uint emoteId);
 
-    /// <summary>
-    /// False when the game's persistent forced-timeline field is not mapped
-    /// for the running client, in which case <see cref="SetForceLoop"/>
-    /// always fails and surfaces must not offer the control. Reported
-    /// rather than silently approximated, because every approximation
-    /// (latching Base, re-blending idle) changes what the actor is doing.
-    /// </summary>
+    /// <summary>Whether full-body repeat is available.</summary>
     bool SupportsForceLoop { get; }
 
     /// <summary>False when the stance-transition functions (SetEmoteMode /
@@ -97,8 +74,8 @@ public interface IAnimationRuntimePort
     /// disable the stance row rather than offer writes that will fail.</summary>
     bool SupportsStance { get; }
 
-    /// <summary>Writes the forced timeline id the game re-asserts every
-    /// frame; 0 clears the loop.</summary>
+    /// <summary>Owns the forced timeline id until a zero write releases it.
+    /// The runtime reasserts an armed id after native animation updates.</summary>
     AnimationPortResult SetForceLoop(ActorId actor, ushort timeline);
 
     // ── Speed ─────────────────────────────────────────────────────────
@@ -108,20 +85,14 @@ public interface IAnimationRuntimePort
     AnimationPortResult ClearOverallSpeed(ActorId actor);
 
     /// <summary>
-    /// Rewinds every PAUSED Havok animation control of the actor to
-    /// LocalTime 0, across all partials — the face partial's blink/lip/
-    /// expression timeline controls included. Brio's settle rewind
-    /// (ActionTimelineCapability.StopSpeedAndResetTimeline,
-    /// Brio\Brio\Capabilities\Actor\ActionTimelineCapability.cs:120-165):
-    /// run a few ticks AFTER pausing, it snaps every held timeline to its
-    /// frame-0 neutral so a pose import diffs against that frame instead
-    /// of whatever mid-blink frame the pause happened to catch. Controls
-    /// still playing (PlaybackSpeed != 0) are untouched, exactly Brio's
-    /// condition. Owns no state; there is nothing to restore.
+    /// Rewinds every paused Havok control to local time zero. Playing
+    /// controls are unchanged, and the operation owns no persistent state.
     /// </summary>
     AnimationPortResult RewindPausedControls(ActorId actor);
     AnimationPortResult SetSlotSpeed(ActorId actor, AnimationSlot slot, float speed);
-    AnimationPortResult ClearSlotSpeed(ActorId actor, AnimationSlot slot);
+    /// <summary>Releases enforcement after restoring the captured speed.</summary>
+    AnimationPortResult ClearSlotSpeed(
+        ActorId actor, AnimationSlot slot, float restoreSpeed = 1f);
 
     // ── Lips, stance, weapon, position ────────────────────────────────
     AnimationPortResult SetLips(ActorId actor, ushort timeline);
@@ -136,11 +107,9 @@ public interface IAnimationRuntimePort
     IReadOnlyList<ScrubControlReading> EnumerateControls(ActorId actor, out ulong token);
 
     /// <summary>
-    /// The control driving a specific slot, by the reference lookup
-    /// (control index == slot index, searched across partials) rather than
-    /// by position in the flattened list. Null when the slot is empty or
-    /// has no such control. Only Base and UpperBody are supported; the
-    /// correspondence does not hold for the other slots.
+    /// Finds a slot control by its native slot index across skeleton partials.
+    /// Null means the slot is empty or has no matching control. Base and Upper
+    /// Body have verified indexes; other logical layers have no stable mapping.
     /// </summary>
     ScrubControlReading? FindSlotControl(ActorId actor, AnimationSlot slot, out ulong token);
 

@@ -3,11 +3,7 @@ using System.Collections.Generic;
 
 namespace Poser.Domain.Animation;
 
-/// <summary>
-/// The game's animation slots, as Brio enumerates them. Values ARE the
-/// native slot indices. 4..6 have no known purpose and are deliberately
-/// absent: an absent value cannot be shown or written by mistake.
-/// </summary>
+/// <summary>Native animation slots.</summary>
 public enum AnimationSlot
 {
     Base = 0,
@@ -22,7 +18,7 @@ public enum AnimationSlot
     Overlay = 12,
 }
 
-/// <summary>What a catalog entry came from; also the catalog's kind filter.</summary>
+/// <summary>Source identity retained for the entry's native play route.</summary>
 public enum AnimationKind
 {
     Action,
@@ -32,11 +28,8 @@ public enum AnimationKind
 }
 
 /// <summary>
-/// Pose families. Values ARE the game's pose-mode byte. Only the four
-/// selectable families appear in the stance picker; the rest exist so a
-/// read-back can report the TRUE state (a weapon-drawn actor is "Battle",
-/// not a lie of "Idle") — they are reached through weapon or gear state,
-/// never selected directly.
+/// Native pose-mode values. The stance picker exposes its four selectable
+/// families; the remaining values preserve exact live read-back.
 /// </summary>
 public enum AnimationStance
 {
@@ -60,11 +53,14 @@ public static class AnimationSlots
         AnimationSlot.Parts4, AnimationSlot.Overlay,
     };
 
-    /// <summary>Slots whose Havok control is reliably the friendly
-    /// scrub target; everything else scrubs through Advanced.</summary>
-    public static IReadOnlyList<AnimationSlot> Scrubbable { get; } = new[]
+    /// <summary>Layers with verified selection and speed routes.</summary>
+    public static IReadOnlyList<AnimationSlot> Selectable { get; } = new[]
     {
-        AnimationSlot.Base, AnimationSlot.UpperBody,
+        AnimationSlot.Base,
+        AnimationSlot.UpperBody,
+        AnimationSlot.Facial,
+        AnimationSlot.Additive,
+        AnimationSlot.Lips,
     };
 
     public static bool IsKnown(int slot) => slot is 0 or 1 or 2 or 3 or 7 or 8 or 9 or 10 or 11 or 12;
@@ -89,11 +85,9 @@ public static class AnimationSlots
 /// </summary>
 public static class AnimationTimelines
 {
-    /// <summary>The idle timeline; blending it is how both references
-    /// visibly leave an overridden animation.</summary>
+    /// <summary>The idle timeline.</summary>
     public const ushort Idle = 3;
-    /// <summary>The "Straight face" timeline Brio plays to clear a held
-    /// expression before returning to idle.</summary>
+    /// <summary>The neutral facial timeline.</summary>
     public const ushort StraightFace = 604;
     public const ushort DrawWeapon = 1;
     public const ushort SheatheWeapon = 2;
@@ -132,8 +126,7 @@ public static class AnimationTimelines
 }
 
 /// <summary>
-/// One catalog row: a playable timeline with the identity needed to find
-/// it, display it, and route it to the right slot.
+/// One catalog row with native routing and searchable sheet metadata.
 /// </summary>
 public sealed record TimelineEntry(
     uint TimelineId,
@@ -143,7 +136,8 @@ public sealed record TimelineEntry(
     uint Icon = 0,
     uint EmoteId = 0,
     int EmoteIndex = -1,
-    bool? DrawsWeapon = null)
+    bool? DrawsWeapon = null,
+    string? Key = null)
 {
     /// <summary>Emote index 0 is the only one the game can play "from the
     /// start" through its own emote entry point (intro then loop).</summary>
@@ -151,15 +145,13 @@ public sealed record TimelineEntry(
         EmoteIndex == 0 && EmoteId != 0;
 }
 
-/// <summary>
-/// The exact native state Poser captured before its FIRST play, and the
-/// only thing that can put the actor back: character mode, mode parameter,
-/// the base-override field, and the timeline the base slot was actually
-/// playing. Stored as raw values so the domain never references native
-/// enums.
-/// </summary>
+/// <summary>Native base state captured before Poser's first write.</summary>
 public readonly record struct BaseAnimationCapture(
-    byte Mode, byte ModeParam, ushort BaseTimeline, ushort BaseSlotTimeline = 0);
+    byte Mode,
+    uint ModeParam,
+    ushort BaseTimeline,
+    ushort BaseSlotTimeline = 0,
+    ushort ForcedTimeline = 0);
 
 /// <summary>Identity of one Havok animation control, by position. Paired
 /// with the skeleton generation it was enumerated under so a scrub can be
@@ -182,8 +174,7 @@ public sealed record AnimationSlotReading(
 
 /// <summary>
 /// One frame's live native read for an actor. Immutable; valid for the
-/// frame it was taken. Poser-owned override state is NOT here — it lives
-/// in the session, so the two never drift into two authorities.
+/// frame it was taken. Poser-owned override state lives in the session.
 /// </summary>
 public sealed record ActorAnimationReading(
     ushort BaseTimeline,
@@ -220,52 +211,46 @@ public sealed record ActorAnimationReading(
 }
 
 /// <summary>
-/// Everything Poser authored for one actor. This is the ONLY record of
-/// what must be undone; anything absent here was never Poser's to restore.
+/// Everything Poser authored for one actor. Anything absent here was never
+/// Poser's to restore.
 /// </summary>
 public readonly record struct StanceCapture(AnimationStance Stance, int Pose);
 
 public sealed record AnimationOverrides
 {
     public ushort? BaseTimeline { get; init; }
+    /// <summary>Explicit non-base timeline selections.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> SelectedSlots { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
+    /// <summary>Last timeline successfully applied to each non-base slot.</summary>
+    public IReadOnlyDictionary<AnimationSlot, ushort> AppliedSlots { get; init; } =
+        new Dictionary<AnimationSlot, ushort>();
     public float? OverallSpeed { get; init; }
-    /// <summary>Slots Poser keeps re-driving: when the slot leaves the
-    /// armed timeline (the one-shot ended and the game swapped its own
-    /// idle in), the port plays it again. Poser-orchestrated — the game's
-    /// forced-timeline field is unproven for this client.</summary>
+    /// <summary>Slots with active Poser repeat arms.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> LoopedSlots { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
-    /// <summary>Incoming timeline per non-base slot, captured once before
-    /// Poser's first play landed there; 0 records "was empty". Restore
-    /// replays a non-zero capture through the sequencer; an empty slot has
-    /// nothing to replay and is released without a write. The base slot
-    /// belongs to <see cref="BaseCapture"/>.</summary>
+    public IReadOnlySet<AnimationSlot> LoopWantedSlots { get; init; } =
+        new HashSet<AnimationSlot>();
+    /// <summary>Original non-base timelines.</summary>
     public IReadOnlyDictionary<AnimationSlot, ushort> SlotCaptures { get; init; } =
         new Dictionary<AnimationSlot, ushort>();
     public IReadOnlyDictionary<AnimationSlot, float> SlotSpeeds { get; init; } =
         new Dictionary<AnimationSlot, float>();
+    /// <summary>Native speed before Poser's first override per slot.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotSpeedCaptures { get; init; } =
+        new Dictionary<AnimationSlot, float>();
+    /// <summary>Last nonzero speed restored by the layer Play action.</summary>
+    public IReadOnlyDictionary<AnimationSlot, float> SlotResumeSpeeds { get; init; } =
+        new Dictionary<AnimationSlot, float>();
     public ushort? Lips { get; init; }
     public bool PositionLock { get; init; }
 
-    // ── Captures ──────────────────────────────────────────────────────
-    // Each is taken ONCE, before the first override of its kind, and is
-    // the only thing that can put that aspect back. A capture survives
-    // repeated changes so restore always targets the state Poser found,
-    // not an intermediate one it created.
-
-    /// <summary>Mode, mode parameter, and base-override field before the
-    /// first Poser play. Every play may adjust the character mode (the
-    /// reference's Pause-timeline hold), so the capture belongs to the
-    /// first play of ANY kind, not just a transport pick.</summary>
+    /// <summary>Original base animation state.</summary>
     public BaseAnimationCapture? BaseCapture { get; init; }
-    /// <summary>The expression currently HELD on the face: blended onto
-    /// the facial layer and pinned there by that layer's speed at 0 --
-    /// Brio's mechanism, the only one that exists. Release plays Straight
-    /// face then idle and unpins.</summary>
+    /// <summary>The held facial expression.</summary>
     public ushort? HeldExpression { get; init; }
-    /// <summary>Lips timeline before the first lips override. Selecting
-    /// None restores THIS, rather than writing 0 — 0 is "no speech
-    /// timeline", which is not necessarily what the actor arrived with.</summary>
+    /// <summary>Lips timeline before the first override. Selecting None
+    /// restores this value rather than writing native "no speech" zero.</summary>
     public ushort? LipsCapture { get; init; }
     /// <summary>Stance family and pose index before the first stance change.</summary>
     public StanceCapture? StanceCaptureValue { get; init; }
@@ -278,7 +263,9 @@ public sealed record AnimationOverrides
     public bool HasAny =>
         BaseCapture != null || LipsCapture != null || OverallSpeed != null ||
         PositionLock || SlotSpeeds.Count > 0 || HeldExpression != null ||
-        LoopedSlots.Count > 0 || SlotCaptures.Count > 0 ||
+        SelectedSlots.Count > 0 || AppliedSlots.Count > 0 ||
+        SlotSpeedCaptures.Count > 0 || LoopedSlots.Count > 0 ||
+        LoopWantedSlots.Count > 0 || SlotCaptures.Count > 0 ||
         StanceCaptureValue != null || WeaponCapture != null;
 
     public bool IsPaused => OverallSpeed is 0f;
