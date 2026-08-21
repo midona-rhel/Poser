@@ -557,4 +557,35 @@ public sealed class SceneWorkflowTests
         Assert.Equal("Midona Rhel", refusal.Name);
         Assert.Equal("The pose import rolled itself back.", refusal.Detail);
     }
+
+    /// <summary>Every refused entity leaves the terminal publication with a
+    /// next step, and no restored one carries one. A row that only restates
+    /// the entity's own name is the reported defect.</summary>
+    [Fact]
+    public async Task Every_refused_entity_carries_a_reason_and_a_next_step()
+    {
+        var scene = SceneWith(Actor("Midona Rhel", out _));
+        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
+        var runtime = new FakeRuntime
+        {
+            ReadResult = scene,
+            PropSpawnFailure = _ => "No free spawn slot.",
+            PoseTerminalFailure = _ => "The pose import rolled itself back.",
+        };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        await load.Drain;
+
+        var entities = load.Progress!.Outcome!.Entities;
+        foreach (var entity in entities.Where(entity => !entity.Restored))
+        {
+            Assert.False(string.IsNullOrWhiteSpace(entity.Detail));
+            Assert.False(string.IsNullOrWhiteSpace(entity.Remedy));
+            Assert.NotEqual(entity.Name, entity.Detail);
+        }
+        Assert.Contains(entities, entity => entity.Kind == "Object" && !entity.Restored);
+        Assert.Contains(entities, entity => entity.Kind == "Actor" && !entity.Restored);
+        Assert.DoesNotContain(
+            entities, entity => entity.Restored && entity.Remedy != null);
+    }
 }

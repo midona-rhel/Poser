@@ -1105,6 +1105,39 @@ public static partial class Crystarium
             _page.EndRow(row, id, help);
         }
 
+        /// <summary>
+        /// A WRAPPED status run across the row's whole width, growing the row
+        /// to as many lines as it takes. <see cref="Status"/> is the one-line
+        /// form and truncates; this is the form for a sentence the user has to
+        /// be able to READ — a refusal reason, a next step — where cutting the
+        /// text off would delete the only thing the row exists to say.
+        /// </summary>
+        /// <param name="warning">Uses the warning colour.</param>
+        public void Paragraph(
+            string text, string? help = null, bool warning = false)
+        {
+            string id = UnlabelledId("paragraph", ref _paragraphRows);
+            var row = _page.BeginRow(string.Empty);
+            var style = new TextStyle
+            {
+                Size = ActiveTheme.Typography.CaptionSize,
+                Color = warning ? ActiveTheme.Warning : FormHintColor,
+            };
+            var wrap = TextConstraint.Wrap(row.Width);
+            float height = Crystarium.MeasureText(text, style, wrap).Y;
+            float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
+            // One line seats exactly as a Status row does; more lines start at
+            // that same seat and run on, so a paragraph beside single-line
+            // rows shares their first baseline.
+            Crystarium.TextInBand(
+                row.Origin, new(row.Width, band), text, style, wrap);
+            _page.EndRow(
+                row, id, help,
+                MathF.Max(ActiveTheme.Controls.FormRowHeight, height / row.Scale));
+        }
+
+        private int _paragraphRows;
+
         public void Label(string text, string? help = null)
         {
             string id = Id(text);

@@ -65,6 +65,12 @@ public sealed class SceneWorkflow : IDisposable
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
+
+    /// <summary>Where the operation record goes. Null only under the contract
+    /// tests, which assert the published read models rather than the log.
+    /// </summary>
+    private readonly Dalamud.Plugin.Services.IPluginLog? _log;
+
     private readonly object _publishGate = new();
     private readonly CancellationTokenSource _disposal = new();
 
@@ -103,18 +109,22 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.IActorManager actors,
         Dalamud.Plugin.Services.IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
-        Poser.Services.IPlaceService place)
+        Poser.Services.IPlaceService place,
+        Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place))
+            worldObjects, place), log)
     {
     }
 
-    internal SceneWorkflow(ISceneRuntime runtime)
+    internal SceneWorkflow(
+        ISceneRuntime runtime,
+        Dalamud.Plugin.Services.IPluginLog? log = null)
     {
         _runtime = runtime;
+        _log = log;
     }
 
     /// <summary>The armed capture's bound. Only the contract tests set it —
@@ -1427,6 +1437,16 @@ public sealed class SceneWorkflow : IDisposable
             OperationReceiptState.Cancelled => ScenePhase.Cancelled,
             _ => ScenePhase.Failed,
         };
+        // Every refusal leaves here carrying its next step. Filling it in at
+        // the ONE terminal publication rather than at each of the twenty-odd
+        // refusal sites is what makes "a refused row explains itself" an
+        // invariant rather than a habit a new site can forget.
+        entities = entities
+            .Select(entity => entity.Restored || entity.Remedy != null
+                ? entity
+                : entity with { Remedy = SceneEntityRemedy.For(entity.Kind) })
+            .ToList();
+
         var progress = new SceneProgress(
             kind, operation.FileName, phase, 0, 0, false,
             new SceneOutcome(state, detail, entities, notes, evidence));
@@ -1445,7 +1465,65 @@ public sealed class SceneWorkflow : IDisposable
                 operation.OperationId, operation.Epoch, operation.Session,
                 operation.Target, detail),
         };
+        LogTerminal(operation, kind, state, detail, entities, notes, evidence);
         PublishTerminal(operation, progress, receipt);
+    }
+
+    /// <summary>
+    /// The scene operation's own record, and the answer to issue #41's
+    /// headline diagnostic defect: the log showed the SIDE EFFECTS of a load
+    /// (a spawned clone, a built skeleton, a spawned light) and never the
+    /// operation that caused them, so a partial restore could not be
+    /// attributed to anything at all.
+    ///
+    /// <para>Every line is prefixed with the same correlated
+    /// <c>Scene {kind} {operationId}</c>, so one grep gathers a whole
+    /// operation out of an interleaved Dalamud log: one terminal line, then
+    /// one line PER ENTITY carrying its kind, its stable scene name, its
+    /// outcome, its refusal reason and its next step, then the notes and every
+    /// recovery file left on disk.</para>
+    /// </summary>
+    private void LogTerminal(
+        Operation operation,
+        SceneOperationKind kind,
+        OperationReceiptState state,
+        string detail,
+        IReadOnlyList<SceneEntityOutcome> entities,
+        IReadOnlyList<string> notes,
+        IReadOnlyList<string> evidence)
+    {
+        if (_log is null)
+            return;
+
+        string prefix = $"Scene {kind} {operation.OperationId:D}";
+        string terminal =
+            $"{prefix}: {state}: {operation.FileName}: {detail}";
+        if (state == OperationReceiptState.Applied)
+            _log.Information(terminal);
+        else if (state is OperationReceiptState.Cancelled
+                 or OperationReceiptState.RolledBack)
+            _log.Warning(terminal);
+        else
+            _log.Error(terminal);
+
+        foreach (var entity in entities)
+        {
+            string line = $"{prefix}: {entity.Kind} '{entity.Name}': " +
+                (entity.Restored ? "restored" : "refused");
+            if (!string.IsNullOrWhiteSpace(entity.Detail))
+                line += $": {entity.Detail}";
+            if (!entity.Restored && !string.IsNullOrWhiteSpace(entity.Remedy))
+                line += $" Next: {entity.Remedy}";
+            if (entity.Restored)
+                _log.Debug(line);
+            else
+                _log.Warning(line);
+        }
+
+        foreach (var note in notes)
+            _log.Information($"{prefix}: {note}");
+        foreach (var path in evidence)
+            _log.Warning($"{prefix}: recovery file: {path}");
     }
 
     /// <summary>Bounded cancel/drain before disposal: admission closes

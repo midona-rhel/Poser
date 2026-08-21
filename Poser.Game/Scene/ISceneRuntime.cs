@@ -49,12 +49,20 @@ public enum ScenePhase
 
 /// <summary>One entity's typed restore outcome. A missing parent or
 /// resource is a named, explained refusal here — never a silent detach or a
-/// silently skipped row.</summary>
+/// silently skipped row.
+///
+/// <para><see cref="Detail"/> is what happened; <see cref="Remedy"/> is what
+/// the user can do about it. A refused entity carries BOTH — a row that only
+/// restates the entity's own name is the defect issue #41 reported — and the
+/// workflow fills the remedy in from <c>SceneEntityRemedy</c> at the terminal
+/// publication, so the result list and the operation log say the same thing.
+/// </para></summary>
 public sealed record SceneEntityOutcome(
     string Kind,
     string Name,
     bool Restored,
-    string? Detail = null);
+    string? Detail = null,
+    string? Remedy = null);
 
 /// <summary>
 /// Immutable terminal outcome of one scene operation. The state is the SAME

@@ -302,16 +302,26 @@ public sealed class ScenePane
                 help: receipt is null
                     ? null
                     : $"Operation {receipt.OperationId:D}, epoch {receipt.OperationEpoch}.");
-            form.Status(outcome.Detail);
+            // The primary reason wraps. It is the one line the user needs
+            // whole, so it is never cut to a count or an ellipsis.
+            form.Paragraph(outcome.Detail, warning: !outcome.Success);
 
             // Named refusals beside restored entities: this is the partial
             // recovery, so every one of them is a row rather than a count.
+            //
+            // Three lines each, deliberately: WHAT did not come back, WHY,
+            // and WHAT TO DO. The reason and the next step wrap instead of
+            // truncating — a row that cuts its own reason off is the defect
+            // issue #41 reported, where the only thing a failed actor row
+            // said was the actor's name back at the user.
             foreach (var refusal in refusals)
             {
-                form.ReadOnly(
-                    refusal.Kind,
-                    $"{refusal.Name} — {refusal.Detail ?? "refused"}",
-                    unavailable: true);
+                form.ReadOnly(refusal.Kind, refusal.Name, unavailable: true);
+                form.Paragraph(
+                    refusal.Detail ?? "It was refused without a stated reason.",
+                    warning: true);
+                if (refusal.Remedy is { Length: > 0 } remedy)
+                    form.Paragraph(remedy);
             }
 
             foreach (var note in outcome.Notes)
