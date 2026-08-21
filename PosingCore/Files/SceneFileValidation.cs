@@ -82,7 +82,12 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.FutureVersion,
                 $"The scene was saved by a newer Poser (file version {scene.FileVersion}, " +
                 $"this build reads up to {SceneFile.CurrentVersion}).");
-        if (scene.FileVersion < 1)
+        // The floor is the CURRENT version, not 1. `.xivs` has only ever been
+        // written at version 2, so anything lower can only be a development
+        // `.poserscene` document that was renamed — and nothing reads those.
+        // It takes the ordinary invalid-document refusal; there is no
+        // migration shim and no legacy-specific message.
+        if (scene.FileVersion < SceneFile.CurrentVersion)
             return Fail(SceneFileValidationFailureKind.Document,
                 $"The scene file version {scene.FileVersion} is invalid.");
 

@@ -73,6 +73,36 @@ public sealed class SceneFileStoreTests
         Assert.Equal(SceneStoreFailureKind.FutureVersion, future.Failure!.Kind);
     }
 
+    /// <summary>`.xivs` has only ever been written at the current version, so
+    /// anything below it is a renamed development document. It takes the
+    /// ordinary invalid-document refusal — there is no migration shim and no
+    /// legacy-specific message to keep working.</summary>
+    [Fact]
+    public void A_scene_below_the_current_version_is_not_read()
+    {
+        var json = JsonSerializer
+            .Serialize(ValidScene(), SceneJsonOptionsAccessor.Options)
+            .Replace(
+                $"\"FileVersion\": {SceneFile.CurrentVersion}",
+                $"\"FileVersion\": {SceneFile.CurrentVersion - 1}",
+                StringComparison.Ordinal);
+
+        var legacy = SceneFileStore.Default.Parse(json);
+
+        Assert.False(legacy.Succeeded);
+        Assert.NotEqual(SceneStoreFailureKind.FutureVersion, legacy.Failure!.Kind);
+    }
+
+    /// <summary>The extension is part of the format's identity, and it is the
+    /// only one. A development `.poserscene` is simply not a scene file.
+    /// </summary>
+    [Fact]
+    public void Xivs_is_the_only_scene_extension()
+    {
+        Assert.Equal(".xivs", SceneFile.Extension);
+        Assert.Equal(2, SceneFile.CurrentVersion);
+    }
+
     [Fact]
     public void A_scene_write_failure_preserves_an_existing_destination()
     {
