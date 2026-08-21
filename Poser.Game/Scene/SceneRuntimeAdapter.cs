@@ -511,7 +511,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             }
             else
             {
-                refused.Add(actor.Name);
+                // The row says why, in the gate's own words, not just who.
+                refused.Add(_spawns.RemovalRefusal(actor) is { } why
+                    ? $"{actor.Name}: {why}"
+                    : actor.Name);
             }
         }
 

@@ -1625,51 +1625,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
             if (_ownership.TryGetBound(actor, out _))
                 return DestroyActor(actor);
 
-            if (actor.Address == _localPlayerAddress())
+            if (RemovalRefusal(actor) is { } refusal)
             {
-                _log?.Warning(
-                    "ActorSpawnService: Refused to remove the local/GPose primary actor");
-                return false;
-            }
-            if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount
-                or ActorKind.Ornament)
-            {
-                _log?.Warning(
-                    "ActorSpawnService: Refused to remove a companion child");
-                return false;
-            }
-
-            // The wrapper check is the root/ownership boundary: it excludes
-            // auxiliary registrations and an old wrapper after a refresh even
-            // when a native address happens to be reused. A caller cannot
-            // manufacture a wrapper with a copied address and turn that stale
-            // view into permission to delete a scene slot.
-            EntityId? expectedIdentity;
-            try
-            {
-                expectedIdentity = _expectedWrapperIdentity(actor.Address);
-            }
-            catch
-            {
-                expectedIdentity = null;
-            }
-            if (expectedIdentity is not { } expected
-                || expected != actor.Id
-                || !_actorManager.Actors.Any(candidate =>
-                    ReferenceEquals(candidate, actor)
-                    && candidate.Id == expected
-                    && candidate.Address == actor.Address))
-            {
-                _log?.Warning(
-                    "ActorSpawnService: Refused to remove a stale or non-root actor wrapper");
-                return false;
-            }
-
-            // Brio's gate, in Brio's index space, re-read now.
-            if (!InGPoseTable(actor.Address))
-            {
-                _log?.Warning(
-                    "ActorSpawnService: Refused to remove an actor outside the GPose object table");
+                _log?.Warning($"ActorSpawnService: {refusal}");
                 return false;
             }
 
@@ -1697,6 +1655,59 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 $"ActorSpawnService: Failed to remove actor from scene: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// The removal gates, read-only, each with the reason a user can act on.
+    /// Null means removal would be admitted right now. The UI uses this to
+    /// decide whether to offer the verb at all; the mutation re-runs it, so
+    /// the answer can never be stale by more than the click.
+    /// </summary>
+    public string? RemovalRefusal(IActor actor)
+    {
+        if (actor.Address == nint.Zero)
+            return "The actor is no longer in the scene.";
+
+        // A Poser-owned actor is always removable: it routes to the
+        // stronger owned-teardown path, not the scene-table delete.
+        if (_ownership.TryGetBound(actor, out _))
+            return null;
+
+        if (actor.Address == _localPlayerAddress())
+            return "Your own character cannot be removed from GPose.";
+        if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount
+            or ActorKind.Ornament)
+            return "Companions are removed by detaching them from their " +
+                "owner, not from the scene.";
+
+        // The wrapper check is the root/ownership boundary: it excludes
+        // auxiliary registrations and an old wrapper after a refresh even
+        // when a native address happens to be reused. A caller cannot
+        // manufacture a wrapper with a copied address and turn that stale
+        // view into permission to delete a scene slot.
+        EntityId? expectedIdentity;
+        try
+        {
+            expectedIdentity = _expectedWrapperIdentity(actor.Address);
+        }
+        catch
+        {
+            expectedIdentity = null;
+        }
+        if (expectedIdentity is not { } expected
+            || expected != actor.Id
+            || !_actorManager.Actors.Any(candidate =>
+                ReferenceEquals(candidate, actor)
+                && candidate.Id == expected
+                && candidate.Address == actor.Address))
+            return "The actor's identity is stale; it may have just been " +
+                "replaced. Try again.";
+
+        // Brio's gate, in Brio's index space, re-read now.
+        if (!InGPoseTable(actor.Address))
+            return "The actor is not part of the GPose scene.";
+
+        return null;
     }
 
     /// <summary>Whether this address is currently a GPose-table object.

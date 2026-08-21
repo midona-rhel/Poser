@@ -68,6 +68,14 @@ public interface IActorSpawnService : IDisposable
     bool RemoveActorFromScene(IActor actor);
 
     /// <summary>
+    /// The reason <see cref="RemoveActorFromScene"/> would refuse this actor
+    /// right now, in the user's words — or null when removal is admitted.
+    /// Read-only: the UI offers the verb only when this is null, and the
+    /// mutation re-checks for itself.
+    /// </summary>
+    string? RemovalRefusal(IActor actor);
+
+    /// <summary>
     /// Set an actor's visibility.
     /// </summary>
     void SetVisibility(IActor actor, bool visible);

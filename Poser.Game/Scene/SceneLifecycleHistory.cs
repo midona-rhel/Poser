@@ -344,13 +344,17 @@ public sealed class SceneLifecycleHistory
         Dalamud.Plugin.Services.IPluginLog log,
         PropSpawnService props,
         OverlayNodeService overlays,
-        WorldObjectService worldObjects)
+        WorldObjectService worldObjects,
+        IGazeService gaze,
+        Poser.Application.Integration.ActorIntegrationSession integration,
+        Bindings.StableBindingRegistry bindings)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
-                actors, posing, skeletons, poseFiles, poses, framework, log),
+                actors, posing, skeletons, poseFiles, poses, framework, log,
+                gaze, integration, bindings),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
@@ -685,22 +689,22 @@ public sealed class SceneLifecycleHistory
     /// overlay, one spawned before the history was last cleared — is destroyed
     /// all the same and NAMED as unundoable, never silently skipped.</para>
     /// </summary>
-    public void DespawnActor(IActor actor)
+    public bool DespawnActor(IActor actor)
     {
         if (!_actorSlots.TryGetValue(actor, out var slot) || !slot.HasRespawn)
         {
             _actors.Note(
                 $"Despawning '{actor.Name}' cannot be undone: Poser has no record of spawning this actor, so it has no call to run again and no way to reproduce the appearance it is wearing.");
-            _actors.Destroy(actor);
-            return;
+            return _actors.Destroy(actor);
         }
         string description = $"Despawn actor '{actor.Name}'";
         if (!RemoveActor(slot))
-            return;
+            return false;
         _history.Append(new SceneLifecyclePatch(
             description,
             () => RestoreActor(slot),
             () => RemoveActor(slot)));
+        return true;
     }
 
     private ActorSlot SlotFor(IActor actor)
