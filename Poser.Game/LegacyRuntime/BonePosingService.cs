@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Linq;
@@ -1053,13 +1053,36 @@ public unsafe class BonePosingService : IBonePosingService
         modelSpace->Scale = *(hkVector4f*)(&tempScale);
     }
 
+    /// <summary>
+    /// The store for one slot skeleton, MATERIALIZING it if this is the first
+    /// time the skeleton has been seen — which is what makes this an adoption
+    /// point and not merely a lookup.
+    ///
+    /// <para>It has to take the parked carryover for the same (actor, slot),
+    /// exactly as the SkeletonCreated handler does. Both run after a redraw
+    /// and either can be first: the handler is the ordinary path, but ANY
+    /// caller that asks for a store — the Pose tab's footer does, on its first
+    /// frame — gets here before the handler on a redraw the handler has not
+    /// processed yet. Installing an empty store there used to strand the
+    /// authored pose: the purge above parked it, the fresh empty store then
+    /// made the handler return early on <c>ContainsKey(newKey)</c>, and the
+    /// parked entry was never adopted. The bones still LOOKED right until the
+    /// next evaluation re-drove them from the animated basis, which is why the
+    /// pose survived an MCDF import and then vanished the moment the user
+    /// opened the Pose tab.</para>
+    ///
+    /// <para>The invariant this restores: after a rebuild, the store and the
+    /// native skeleton agree. Restoring one without the other only re-arms the
+    /// reset for whenever enforcement next runs.</para>
+    /// </summary>
     public SkeletonPoseInfo GetPoseInfo(ISkeleton skeleton)
     {
         var slotKey = SkeletonKey.Of(skeleton);
         if (!_poseInfos.TryGetValue(slotKey, out var poseInfo))
         {
             // A replaced slot skeleton gets a FRESH store; any state still
-            // keyed to the old instance of the same (actor, slot) is purged.
+            // keyed to the old instance of the same (actor, slot) is parked
+            // and purged.
             foreach (var stale in _poseInfos.Keys
                          .Where(key => key.Actor == slotKey.Actor &&
                                        key.Slot == slotKey.Slot)
@@ -1068,8 +1091,36 @@ public unsafe class BonePosingService : IBonePosingService
                 TryCaptureCarryover(skeleton.Actor, stale);
                 PurgeSkeletonState(stale);
             }
-            poseInfo = new SkeletonPoseInfo();
+
+            // Whatever is parked for this (actor, slot) — including what the
+            // purge just parked — is this skeleton's pose.
+            SkeletonPoseInfo? carried = null;
+            Transform? modelOverride = null;
+            if (_bindings.GetActorId(skeleton.Actor) is { } actorId &&
+                _carryover.Take(actorId.LogicalId, skeleton.Slot) is { } entry)
+            {
+                carried = entry.Pose;
+                modelOverride = entry.ModelOverride;
+            }
+
+            poseInfo = carried ?? new SkeletonPoseInfo();
             _poseInfos[slotKey] = poseInfo;
+
+            if (carried != null)
+            {
+                // Registered the same way the handler does: the physics detour
+                // can run before the next framework tick rebuilds the pass
+                // membership, and an adopted pose has to land on the very next
+                // update or the frame in between shows the reset.
+                _skeletonsToUpdate.Add(slotKey);
+                if ((_posingService.GetTransformOverride(skeleton.Actor)
+                        ?? modelOverride) is { } modelTransform)
+                    _posingService.SetTransformOverride(
+                        skeleton.Actor, modelTransform);
+                _log.Debug(
+                    $"BonePosingService: adopted parked {skeleton.Slot} pose for " +
+                    $"{skeleton.Actor.Name} on first store access");
+            }
         }
         return poseInfo;
     }

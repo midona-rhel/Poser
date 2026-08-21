@@ -1,4 +1,4 @@
-# Posing runtime
+﻿# Posing runtime
 
 `Poser.Game` connects the application to the game. Framework-thread work,
 unsafe offsets, signatures, hooks, native handles, and lookup-only indices stay
@@ -13,6 +13,21 @@ and bone again. A stale or changed observation fails. A bone index helps find
 the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
+
+## Poses crossing a rebuild
+
+A redraw replaces the draw object and every slot skeleton, so an authored pose
+is parked by stable identity (logical actor id + slot) and adopted onto the
+replacement. Entries expire, so a rebuild that never completes cannot drop a
+pose onto an unrelated later skeleton.
+
+There are TWO adoption points and either can run first: the SkeletonCreated
+handler, and the first access to a skeleton's pose store. Both must take the
+parked entry. A store materialized empty at one of them strands the pose — the
+handler then returns early because the key already exists, the bones still look
+right until the next evaluation, and the pose vanishes the moment anything
+re-drives them. After a rebuild the store and the native skeleton agree, or the
+reset is merely deferred.
 
 ## Object identity and lifetime
 
