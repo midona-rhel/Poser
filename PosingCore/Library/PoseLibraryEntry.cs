@@ -21,6 +21,16 @@ public enum PoseLibraryEntryKind : byte
     /// through the scene codec, so a listing can never advertise a scene the
     /// load would reject.</summary>
     Scene,
+
+    /// <summary>An <c>.xiva</c> actor entry: the scene container restricted
+    /// to one actor. Read through the same codec as a scene.</summary>
+    Actor,
+
+    /// <summary>An <c>.xivl</c> light document.</summary>
+    Light,
+
+    /// <summary>An <c>.xivc</c> camera document.</summary>
+    Camera,
 }
 
 /// <summary>
