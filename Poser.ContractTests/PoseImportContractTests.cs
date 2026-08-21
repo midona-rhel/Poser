@@ -247,6 +247,10 @@ public sealed class PoseImportContractTests
 
         using (var app = new PoseImportCaptureHarness())
         {
+            // Issue #78: actor identity is the admitted (lineage, generation),
+            // not a wrapper object. Replacing the wrapper at an UNCHANGED
+            // identity between Reserve and Begin is invisible to the import —
+            // it resolves the live wrapper through the registry and applies.
             var receipts = new List<OperationReceipt>();
             var reserved = app.Imports.Reserve(
                 app.Actor,
@@ -256,11 +260,13 @@ public sealed class PoseImportContractTests
             Assert.True(reserved.Success);
             app.ReplaceActorObjectAtSameLogicalIdentity();
             var begun = app.Imports.Begin(operation!, app.CreateModelPlan(3));
-            Assert.False(begun.Success);
-            var terminal = Assert.Single(receipts);
-            Assert.Equal(OperationReceiptState.Failed, terminal.State);
-            Assert.Equal(app.ActorId, terminal.TargetActorId);
-            Assert.Empty(app.Runtime.ApplyCalls);
+            Assert.True(begun.Success, begun.Detail);
+            Assert.Single(app.Runtime.ApplyCalls);
+            app.RunIfQueued(0);
+            Assert.Equal(OperationReceiptState.Applied, Assert.Single(
+                receipts,
+                receipt => receipt.State != OperationReceiptState.Pending).State);
+            Assert.Equal(app.ActorId, receipts[^1].TargetActorId);
             Assert.False(app.Imports.IsPending);
         }
 

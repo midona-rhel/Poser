@@ -225,11 +225,8 @@ public sealed class CleanPoseFacade
         var plan = _poseFiles.BuildImportPlan(_skeletons.GetSkeletons(actor), path, options);
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
-        var fileOptions = options;
         return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}", onReceipt,
-            () => _poseFiles.BuildImportPlan(
-                _skeletons.GetSkeletons(actor), path, fileOptions));
+            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
     }
 
     /// <summary>In-memory variant of the file import — same plan builder,
@@ -249,11 +246,7 @@ public sealed class CleanPoseFacade
 
         var plan = _poseFiles.BuildImportPlan(
             _skeletons.GetSkeletons(actor), poseFile, options);
-        var memoryOptions = options;
-        return BeginImport(
-            actor, plan, options, description, onReceipt,
-            () => _poseFiles.BuildImportPlan(
-                _skeletons.GetSkeletons(actor), poseFile, memoryOptions));
+        return BeginImport(actor, plan, options, description, onReceipt);
     }
 
     /// <summary>
@@ -375,39 +368,21 @@ public sealed class CleanPoseFacade
 
     /// <summary>The import tail shared by every source of a plan: the pause
     /// bracket around the apply window, freeze-on-import, and the in-pass
-    /// application itself.</summary>
-    /// <summary>A short ordinal for an object INSTANCE, for breadcrumbs.
+    /// application itself.
+    ///
+    /// <para>The plan is name-keyed (issue #78): it carries (slot, partial,
+    /// bone name) and file values, never skeleton or bone instances, so the
+    /// four ticks between arming and the settle tick cannot stale it. The
+    /// capture resolves each name against the live skeletons at the settle
+    /// tick — the write moment — and a redraw inside the window is simply
+    /// not observable by the armed import.</para>
     /// </summary>
-    private static string Ord(object? instance) =>
-        instance is null
-            ? "none"
-            : System.Runtime.CompilerServices.RuntimeHelpers
-                .GetHashCode(instance).ToString("X8");
-
-    /// <param name="rebuildPlan">
-    /// Rebuilds the plan against the LIVE skeletons at the settle tick.
-    ///
-    /// <para>The plan holds <c>IBone</c> INSTANCES, and the apply resolves
-    /// each one through the binding registry, which requires the id to bind to
-    /// that very object. Four ticks separate the arm from the apply, and a
-    /// redraw inside that window replaces every bone: an MCDF import's redraw
-    /// lands there routinely, so a scene load armed a plan against skeleton A
-    /// and applied it after the game had moved to skeleton B. Every bone then
-    /// resolved to null and the import refused on the first one — n_root.
-    /// </para>
-    ///
-    /// <para>Re-deriving the plan at apply time covers ANY redraw source
-    /// rather than just the one we found, which is why this and not a longer
-    /// wait: no ordering guarantee upstream can promise there will never be
-    /// another redraw in a four-tick window.</para>
-    /// </param>
     private PoseEditResult BeginImport(
         IActor actor,
         PoseImportPlan plan,
         PoseImportOptions options,
         string description,
-        Action<OperationReceipt>? onReceipt = null,
-        Func<PoseImportPlan?>? rebuildPlan = null)
+        Action<OperationReceipt>? onReceipt = null)
     {
         // Synchronous validation BEFORE the pause side effect: both
         // ImportPose overloads build the plan before calling here (a bad
@@ -586,25 +561,9 @@ public sealed class CleanPoseFacade
                                 $"Pose edit '{description}': settle rewind failed: {rewound.Detail}");
                     }
 
-                    // LATE BINDING. Re-derive against whatever skeletons are
-                    // live NOW; the plan built at arm may name bones the game
-                    // has already replaced.
-                    var applied = plan;
-                    if (rebuildPlan?.Invoke() is { IsEmpty: false } rebuilt)
-                    {
-                        if (!ReferenceEquals(
-                                FirstBoneOf(rebuilt), FirstBoneOf(plan)))
-                            _log.Debug(
-                                $"Pose edit '{description}': skeleton changed " +
-                                $"between arm ({Ord(FirstBoneOf(plan))}) and " +
-                                $"apply ({Ord(FirstBoneOf(rebuilt))}); the plan " +
-                                "was re-resolved against the live skeleton.");
-                        applied = rebuilt;
-                    }
-
                     var begun = _imports.Begin(
                         arm.Operation,
-                        applied,
+                        plan,
                         expression: options.AsExpression,
                         suppressHistory: options.SuppressHistory);
                     if (!begun.Success)
@@ -643,14 +602,6 @@ public sealed class CleanPoseFacade
             OperationReceipt = pending,
         };
     }
-
-    /// <summary>The plan's first bone instance, for comparing an armed plan
-    /// against a re-derived one. Null only for an empty plan, which the caller
-    /// has already rejected.</summary>
-    private static IBone? FirstBoneOf(PoseImportPlan plan) =>
-        plan.Writes.Count > 0 ? plan.Writes[0].Bone
-        : plan.Resets.Count > 0 ? plan.Resets[0]
-        : null;
 
     private readonly ISkeletonService _skeletons;
 

@@ -108,6 +108,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         Skeleton.Slot.Returns(PoseSlot.Character);
         Skeleton.CharacterBaseAddress.Returns((nint)2);
         Skeleton.IsValid.Returns(true);
+        Skeleton.BuildRevision.Returns(1);
 
         Bone = Substitute.For<IBone>();
         Bone.Id.Returns(new EntityId("pose-import-bone"));
@@ -140,6 +141,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         WeaponSkeleton.Slot.Returns(PoseSlot.MainHand);
         WeaponSkeleton.CharacterBaseAddress.Returns((nint)3);
         WeaponSkeleton.IsValid.Returns(true);
+        WeaponSkeleton.BuildRevision.Returns(2);
         WeaponBone = Substitute.For<IBone>();
         WeaponBone.Id.Returns(new EntityId("pose-import-weapon-bone"));
         WeaponBone.Name.Returns("n_hara");
@@ -392,7 +394,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     {
         _nextPlan = new PoseImportPlan
         {
-            ModelActor = Actor,
+            HasModelTransform = true,
             ModelTransform = new Transform
             {
                 Position = new Vector3(positionX, 0, 0),
@@ -416,8 +418,8 @@ internal sealed class PoseImportCaptureHarness : IDisposable
     public GestureResult BeginResetImport(Action<OperationReceipt> onReceipt)
     {
         var plan = new PoseImportPlan { FileBoneCount = 1 };
-        plan.Resets.Add(Bone);
-        return Imports.Begin(plan, "reset import", onReceipt: onReceipt);
+        plan.Resets.Add(new PoseImportReset(PoseSlot.Character, 0, "j_kao"));
+        return Imports.Begin(Actor, plan, "reset import", onReceipt: onReceipt);
     }
 
     public GestureResult BeginModelImport(
@@ -425,12 +427,12 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         Action<OperationReceipt> onReceipt)
     {
         var plan = CreateModelPlan(positionX);
-        return Imports.Begin(plan, "model import", onReceipt: onReceipt);
+        return Imports.Begin(Actor, plan, "model import", onReceipt: onReceipt);
     }
 
     public PoseImportPlan CreateModelPlan(float positionX) => new()
     {
-        ModelActor = Actor,
+        HasModelTransform = true,
         ModelTransform = new Transform
         {
             Position = new Vector3(positionX, 0, 0),
@@ -471,6 +473,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         replacementSkeleton.Slot.Returns(PoseSlot.MainHand);
         replacementSkeleton.CharacterBaseAddress.Returns((nint)4);
         replacementSkeleton.IsValid.Returns(true);
+        replacementSkeleton.BuildRevision.Returns(3);
         var replacementBone = Substitute.For<IBone>();
         replacementBone.Id.Returns(new EntityId("pose-import-weapon-bone-replacement"));
         replacementBone.Name.Returns("n_hara");
@@ -526,6 +529,7 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         skeleton.Slot.Returns(PoseSlot.Character);
         skeleton.CharacterBaseAddress.Returns((nint)442);
         skeleton.IsValid.Returns(true);
+        skeleton.BuildRevision.Returns(4);
 
         var bone = Substitute.For<IBone>();
         bone.Id.Returns(new EntityId("preview-bone"));
@@ -582,8 +586,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         var desired = Transform.Identity;
         desired.Position = new Vector3(1, 0, 0);
         var plan = new PoseImportPlan { FileBoneCount = 1 };
-        plan.Writes.Add((body.Bone, desired, TransformComponents.All));
-        return Imports.Begin(plan, "preview pose", onReceipt: onReceipt);
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 0, "j_kao", desired, TransformComponents.All));
+        return Imports.Begin(body.Actor, plan, "preview pose", onReceipt: onReceipt);
     }
 
     public void FirePreviewNativeAction(PreviewBody body)
@@ -605,8 +610,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         var desired = Transform.Identity;
         desired.Position = new Vector3(1, 0, 0);
         var plan = new PoseImportPlan { FileBoneCount = 1 };
-        plan.Writes.Add((Bone, desired, TransformComponents.All));
-        return Imports.Begin(plan, "write import", onReceipt: onReceipt);
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 0, "j_kao", desired, TransformComponents.All));
+        return Imports.Begin(Actor, plan, "write import", onReceipt: onReceipt);
     }
 
     public GestureResult BeginFaceExpressionImport(Action<OperationReceipt> onReceipt)
@@ -614,8 +620,10 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         var desired = Transform.Identity;
         desired.Position = new Vector3(1, 0, 0);
         var plan = new PoseImportPlan { FileBoneCount = 1 };
-        plan.Writes.Add((FaceBone, desired, TransformComponents.All));
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 1, "j_mab_l", desired, TransformComponents.All));
         return Imports.Begin(
+            Actor,
             plan,
             "face expression import",
             expression: true,
@@ -627,9 +635,12 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         var desired = Transform.Identity;
         desired.Position = new Vector3(1, 0, 0);
         var plan = new PoseImportPlan { FileBoneCount = 2 };
-        plan.Writes.Add((Bone, desired, TransformComponents.All));
-        plan.Writes.Add((FaceBone, desired, TransformComponents.All));
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 0, "j_kao", desired, TransformComponents.All));
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 1, "j_mab_l", desired, TransformComponents.All));
         return Imports.Begin(
+            Actor,
             plan,
             "head restore import",
             expression: true,
@@ -653,8 +664,9 @@ internal sealed class PoseImportCaptureHarness : IDisposable
         var desired = Transform.Identity;
         desired.Position = new Vector3(2, 0, 0);
         _nextPlan = new PoseImportPlan { FileBoneCount = 1 };
-        _nextPlan.Resets.Add(WeaponBone);
-        _nextPlan.Writes.Add((WeaponBone, desired, TransformComponents.All));
+        _nextPlan.Resets.Add(new PoseImportReset(PoseSlot.MainHand, 0, "n_hara"));
+        _nextPlan.Writes.Add(new PoseImportWrite(
+            PoseSlot.MainHand, 0, "n_hara", desired, TransformComponents.All));
     }
 
     public void ReachFlattenSetup()

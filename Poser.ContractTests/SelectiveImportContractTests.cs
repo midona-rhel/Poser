@@ -33,7 +33,9 @@ public sealed class SelectiveImportContractTests
     private static PoseImportPlan PlanWithOneWrite(PoseImportCaptureHarness app)
     {
         var plan = new PoseImportPlan { FileBoneCount = 1 };
-        plan.Writes.Add((app.Bone, Transform.Identity, TransformComponents.All));
+        plan.Writes.Add(new PoseImportWrite(
+            PoseSlot.Character, 0, "j_kao",
+            Transform.Identity, TransformComponents.All));
         return plan;
     }
 
@@ -101,8 +103,8 @@ public sealed class SelectiveImportContractTests
                     { (PoseSlot.Character, "j_kao") },
                 FilterIncludesDescendants = true,
             });
-        Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_kao");
-        Assert.Contains(plan.Writes, write => write.Bone.BoneName == "j_mab_l");
+        Assert.Contains(plan.Writes, write => write.Bone == "j_kao");
+        Assert.Contains(plan.Writes, write => write.Bone == "j_mab_l");
 
         var delta = TransformDelta.Identity with
         {
@@ -265,13 +267,15 @@ public sealed class SelectiveImportContractTests
 
         Assert.Contains(
             plan.Writes,
-            write => write.Bone == app.Bone &&
+            write => write.Slot == PoseSlot.Character &&
+                write.Bone == "j_kao" &&
                 write.Components == (TransformComponents.Rotation |
                     TransformComponents.Scale));
-        Assert.DoesNotContain(plan.Writes, write => write.Bone == app.FaceBone);
+        Assert.DoesNotContain(plan.Writes, write => write.Bone == "j_mab_l");
         Assert.Contains(
             plan.Writes,
-            write => write.Bone == app.WeaponBone &&
+            write => write.Slot == PoseSlot.MainHand &&
+                write.Bone == "n_hara" &&
                 write.Components == (TransformComponents.Rotation |
                     TransformComponents.Scale));
     }
@@ -321,7 +325,8 @@ public sealed class SelectiveImportContractTests
             Arg.Any<PoseFile>(),
             Arg.Any<PoseImportOptions>());
         var write = Assert.Single(builtPlan!.Writes);
-        Assert.Equal(app.Bone, write.Bone);
+        Assert.Equal(PoseSlot.Character, write.Slot);
+        Assert.Equal("j_kao", write.Bone);
         Assert.Equal(reference, write.File);
         Assert.Equal(
             TransformComponents.Position | TransformComponents.Rotation,
