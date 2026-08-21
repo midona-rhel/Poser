@@ -117,6 +117,34 @@ public sealed class ScenePane
         set => _preferences.Options = value;
     }
 
+    /// <summary>What the NEXT save is asked to include. Same shared home as
+    /// the load's answer, for the same reason: the workspace's SAVE section
+    /// and the save dialog's band are two mounts of ONE answer.</summary>
+    private SceneSaveOptions SaveOptions
+    {
+        get => _preferences.SaveOptions;
+        set => _preferences.SaveOptions = value;
+    }
+
+    /// <summary>
+    /// What the appearance switch promises, in one place, so the workspace and
+    /// the save dialog cannot describe the same switch differently. It states
+    /// the three things the user is deciding between: which providers it
+    /// reads, what leaves the machine, and how much bigger the file gets.
+    /// </summary>
+    private const string AppearanceHelp =
+        "Packages each actor's Glamourer, Penumbra and Customize+ state into "
+        + "the scene so it looks the same on another machine. Needs Penumbra "
+        + "and Glamourer available. The scene then CONTAINS those mods — do "
+        + "not share it with anyone you would not send the mod files to — and "
+        + "grows by the size of each actor's package, tens of megabytes each. "
+        + "Off saves no appearance at all.";
+
+    /// <summary>The operation that has already been notified, so a finished
+    /// result is announced ONCE rather than every frame the page draws it.
+    /// </summary>
+    private Guid? _notifiedOperation;
+
     /// <summary>The options band's logical height, corrected by its first
     /// draw — the self-measure idiom the import dialog's band uses, so every
     /// open after the first fits its rows exactly.</summary>
@@ -139,6 +167,9 @@ public sealed class ScenePane
         _notices = notices;
         _lastPath = config.Config.Library.EnsureSceneRootExists();
 
+        // The verdict column is not a reserved rectangle: it states what the
+        // highlighted file IS, and says so in its own words when nothing is
+        // highlighted yet, which is the only case where centred text belongs.
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
         _snapshotBrowser.SidePanels.Add(verdict);
@@ -148,6 +179,11 @@ public sealed class ScenePane
         var band = new FileSidePanel(_optionsBandHeight, DrawLoadOptionsBand);
         _loadBrowser.BottomPanel = band;
         _snapshotBrowser.BottomPanel = band;
+        // The save dialog carries the ONE save choice that changes what the
+        // file contains, so the destination and the consent are decided in the
+        // same place.
+        _saveBrowser.BottomPanel =
+            new FileSidePanel(SaveBandHeight, DrawSaveOptionsBand);
     }
 
     /// <summary>Asks for the save destination from ANOTHER surface — the
@@ -180,46 +216,75 @@ public sealed class ScenePane
     /// since the last pass is exactly what the user is looking for.</summary>
     public void OnShown() => _library.RequestScan();
 
+    /// <summary>
+    /// The workspace, ordered by TASK: what a save will write, what a load
+    /// will do, what is happening now, what the last one left behind, then the
+    /// two places a scene comes from. Each is its own titled section, so the
+    /// five concerns the issue named are visually distinct without any of them
+    /// inventing a layout — every row is a shared form row on the page's one
+    /// label grid.
+    ///
+    /// <para>Both option sets are HERE as well as in their dialogs, and both
+    /// mounts read and write the same shared preference: an option only
+    /// reachable through a file browser is an option the user has to open a
+    /// browser to find out about.</para>
+    /// </summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
         var receipt = _workflow.Receipt;
         bool busy = _workflow.Busy;
+        if (!busy && progress?.Outcome is { } terminal && receipt is { } completed)
+            NotifyTerminal(progress, terminal, completed);
 
         Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("SCENE", form =>
+            page.Section("SAVE", form =>
             {
                 form.TextInput(
                     "Description",
                     _description,
                     value => _description = value,
-                    placeholder: "What this scene is",
-                    disabled: busy,
-                    help: "Saved into the file and shown beside it in every listing.");
+                    placeholder: "Optional description",
+                    disabled: busy);
+                form.Switch(
+                    "Modded appearance",
+                    SaveOptions.IncludeModdedAppearance,
+                    next => SaveOptions = SaveOptions with
+                    {
+                        IncludeModdedAppearance = next,
+                    },
+                    help: AppearanceHelp,
+                    disabled: busy);
                 form.Actions(
                     string.Empty,
-                    actions =>
-                    {
-                        actions.Button(
-                            "Save scene…",
-                            OpenSave,
-                            disabled: busy,
-                            help: busy
-                                ? "A scene operation is already running."
-                                : "Capture every actor, object, light, camera and the environment into one file.",
-                            variant: ButtonVariant.Primary);
-                        actions.Button(
-                            "Load scene…",
-                            OpenLoad,
-                            disabled: busy,
-                            help: busy
-                                ? "A scene operation is already running."
-                                : "Validate a whole scene file, then restore it into this session.");
-                    },
+                    actions => actions.Button(
+                        "Save scene…",
+                        OpenSave,
+                        disabled: busy,
+                        help: busy
+                            ? "A scene operation is already running."
+                            : null,
+                        variant: ButtonVariant.Primary),
                     fullWidth: true);
             },
             divider: false);
+
+            page.Section("LOAD", form =>
+            {
+                DrawSessionOptions(form, busy);
+                DrawIncludeOptions(form, busy);
+                form.Actions(
+                    string.Empty,
+                    actions => actions.Button(
+                        "Load scene…",
+                        OpenLoad,
+                        disabled: busy,
+                        help: busy
+                            ? "A scene operation is already running."
+                            : null),
+                    fullWidth: true);
+            });
 
             if (busy && progress is { } running)
                 DrawProgress(page, running);
@@ -229,6 +294,38 @@ public sealed class ScenePane
 
             DrawRecent(page, busy);
             DrawSnapshots(page, busy);
+        });
+    }
+
+    /// <summary>Publishes one finished operation through the ordinary Dalamud
+    /// notification channel, once. It stays a HEADLINE — the per-entity
+    /// detail is the result section's job, and repeating it in a toast would
+    /// be the same prose in two places.</summary>
+    private void NotifyTerminal(
+        SceneProgress progress,
+        SceneOutcome outcome,
+        OperationReceipt receipt)
+    {
+        if (_notifiedOperation == receipt.OperationId)
+            return;
+        _notifiedOperation = receipt.OperationId;
+
+        string action = progress.Kind == SceneOperationKind.Save
+            ? "Saved" : "Loaded";
+        if (outcome.State == OperationReceiptState.Applied)
+        {
+            _notices.Done($"{action} {progress.FileName}.");
+            return;
+        }
+
+        int failures = outcome.Entities.Count(entity => !entity.Restored);
+        _notices.Failed(failures switch
+        {
+            0 => outcome.Detail,
+            1 => $"{progress.FileName}: one item could not be restored. " +
+                 "The Scene tab names it.",
+            _ => $"{progress.FileName}: {failures} items could not be " +
+                 "restored. The Scene tab names them.",
         });
     }
 
@@ -532,55 +629,103 @@ public sealed class ScenePane
     private float DrawLoadSceneOptions(Vector2 origin, float width) =>
         Section(
             $"{OptionsBandId}-scene", origin, width,
-            form => form.Checkboxes(
-                "Load",
-                disabled: false,
-                fullWidth: false,
-                new Crystarium.CheckItem(
-                    "Clear the session first",
-                    Options.ClearExistingScene,
-                    next => Options = Options with { ClearExistingScene = next },
-                    "Destroy every actor, object, light, camera and overlay node "
-                        + "this session holds before restoring the file. "
-                        + "Undoing the load does not bring them back."),
-                new Crystarium.CheckItem(
-                    "Place relative to me",
-                    Options.PlaceRelativeToCurrentOrigin,
-                    next => Options =
-                        Options with { PlaceRelativeToCurrentOrigin = next },
-                    "Put the scene down where you are standing instead of where "
-                        + "it was captured. Needs a file that recorded where it "
-                        + "was taken.")));
+            form => DrawSessionOptions(form, disabled: false));
 
     private float DrawLoadIncludeOptions(Vector2 origin, float width) =>
         Section(
             $"{OptionsBandId}-include", origin, width,
+            form => DrawIncludeOptions(form, disabled: false));
+
+    /// <summary>
+    /// The two LOAD BEHAVIOUR choices, one group. They stay together because
+    /// they are the same question — what happens to the session the file lands
+    /// in — and they are drawn from here in both mounts, so the workspace and
+    /// the dialog cannot drift into two wordings of one option.
+    /// </summary>
+    private void DrawSessionOptions(Crystarium.FormScope form, bool disabled) =>
+        form.Checkboxes(
+            "Session",
+            disabled,
+            fullWidth: false,
+            new Crystarium.CheckItem(
+                "Clear the session first",
+                Options.ClearExistingScene,
+                next => Options = Options with { ClearExistingScene = next },
+                "Destroy every actor, object, light, camera and overlay node "
+                    + "this session holds before restoring the file. "
+                    + "Undoing the load does not bring them back."),
+            new Crystarium.CheckItem(
+                "Place relative to me",
+                Options.PlaceRelativeToCurrentOrigin,
+                next => Options =
+                    Options with { PlaceRelativeToCurrentOrigin = next },
+                "Put the scene down where you are standing instead of where "
+                    + "it was captured. Needs a file that recorded where it "
+                    + "was taken."));
+
+    /// <summary>The six INCLUSION filters, one group, in the order the load
+    /// restores them. Only the three whose scope is not obvious from the word
+    /// carry help — a tooltip that repeats its own label is noise.</summary>
+    private void DrawIncludeOptions(Crystarium.FormScope form, bool disabled) =>
+        form.Checkboxes(
+            "Include",
+            disabled,
+            fullWidth: false,
+            new Crystarium.CheckItem(
+                "Actors", Options.IncludeActors,
+                next => Options = Options with { IncludeActors = next },
+                "Actors, their poses, animation, companions and gaze"),
+            new Crystarium.CheckItem(
+                "Objects", Options.IncludeProps,
+                next => Options = Options with { IncludeProps = next }),
+            new Crystarium.CheckItem(
+                "Lights", Options.IncludeLights,
+                next => Options = Options with { IncludeLights = next }),
+            new Crystarium.CheckItem(
+                "Cameras", Options.IncludeCameras,
+                next => Options = Options with { IncludeCameras = next }),
+            new Crystarium.CheckItem(
+                "Environment", Options.IncludeEnvironment,
+                next => Options = Options with { IncludeEnvironment = next },
+                "Time, weather, the held sky sections and the frozen "
+                    + "water and physics toggles"),
+            new Crystarium.CheckItem(
+                "Overlays", Options.IncludeOverlays,
+                next => Options = Options with { IncludeOverlays = next },
+                "Dialogue, balloon and status nodes"));
+
+    // ── the save dialog's options band ───────────────────────────────────
+
+    /// <summary>The save band holds one switch row plus its inset.</summary>
+    private const float SaveBandHeight = 52f;
+
+    /// <summary>
+    /// The one save choice that changes what the file CONTAINS, under the
+    /// destination it is about. Same shared answer as the workspace's SAVE
+    /// section and the same sentence explaining it — this is a second mount,
+    /// not a second option.
+    /// </summary>
+    private void DrawSaveOptionsBand(Vector2 origin, Vector2 size, string? path)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        Section(
+            "##scene-save-options",
+            origin + new Vector2(inset, inset),
+            MathF.Max(1f, size.X - inset * 2f),
             form => form.Checkboxes(
                 "Include",
                 disabled: false,
                 fullWidth: false,
                 new Crystarium.CheckItem(
-                    "Actors", Options.IncludeActors,
-                    next => Options = Options with { IncludeActors = next },
-                    "Actors, their poses, animation, companions and gaze"),
-                new Crystarium.CheckItem(
-                    "Objects", Options.IncludeProps,
-                    next => Options = Options with { IncludeProps = next }),
-                new Crystarium.CheckItem(
-                    "Lights", Options.IncludeLights,
-                    next => Options = Options with { IncludeLights = next }),
-                new Crystarium.CheckItem(
-                    "Cameras", Options.IncludeCameras,
-                    next => Options = Options with { IncludeCameras = next }),
-                new Crystarium.CheckItem(
-                    "Environment", Options.IncludeEnvironment,
-                    next => Options = Options with { IncludeEnvironment = next },
-                    "Time, weather, the held sky sections and the frozen "
-                        + "water and physics toggles"),
-                new Crystarium.CheckItem(
-                    "Overlays", Options.IncludeOverlays,
-                    next => Options = Options with { IncludeOverlays = next },
-                    "Dialogue, balloon and status nodes")));
+                    "Modded appearance",
+                    SaveOptions.IncludeModdedAppearance,
+                    next => SaveOptions = SaveOptions with
+                    {
+                        IncludeModdedAppearance = next,
+                    },
+                    AppearanceHelp)));
+    }
 
     /// <summary>One headerless dense option section, the band's only shape.
     /// </summary>
@@ -613,15 +758,33 @@ public sealed class ScenePane
     /// </summary>
     private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
-        if (path is null)
-            return;
-
         var theme = Crystarium.ActiveTheme;
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         float inset = theme.Spacing.Four * scale;
         float width = size.X - inset * 2f;
         if (!(width > 0f))
             return;
+
+        // The column reserves space, so it must never BE space. With nothing
+        // highlighted it says so, centred in the whole column — an empty state
+        // is the one thing that is centred here; every stated fact below is
+        // left-aligned on the same start edge.
+        if (path is null)
+        {
+            Crystarium.TextInBand(
+                new Vector2(origin.X + inset, origin.Y),
+                new Vector2(width, size.Y),
+                "Choose a scene to see what is in it.",
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.FormHint,
+                },
+                TextConstraint.Wrap(width, alignment: TextAlign.Center),
+                TextAlign.Center);
+            return;
+        }
+
         var cursor = new Vector2(origin.X + inset, origin.Y + inset);
         float line = theme.Controls.FormRowHeight * scale;
 
@@ -817,7 +980,8 @@ public sealed class ScenePane
             path += SceneFile.Extension;
         var started = _workflow.BeginSave(
             path,
-            string.IsNullOrWhiteSpace(_description) ? null : _description);
+            string.IsNullOrWhiteSpace(_description) ? null : _description,
+            SaveOptions);
         if (started.Success)
             _library.RequestScan();
         else

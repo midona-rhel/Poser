@@ -60,6 +60,33 @@ The sidebar and Scenes tab show progress, cancellation, results, refusals, and
 recovery information. The load probe uses the same file reader in the
 background.
 
+Every terminal writes one correlated Scene operation line plus one line per
+entity with its kind, scene name, outcome, reason and next step. A refused
+entity carries both a reason and a corrective action, and neither is truncated
+in the result list. Completion and failure are also announced once through the
+normal Dalamud notification channel; the per-entity detail stays in the Scene
+tab rather than being repeated in a notification.
+
+The Scene workspace and the two file dialogs are two mounts of one answer. The
+save options and the load options are editable in both and stored once for the
+session, so an option is never reachable only from inside a file browser. The
+appearance switch is off by default, is never persisted, and is never inferred
+from a previous save.
+
+## Portable appearance
+
+`Modded appearance` makes a save PORTABLE: the scene carries each actor's
+appearance package bytes, not a path. Poser embeds the package it already owns
+for an actor, and creates one from the actor's live Glamourer, Penumbra and
+Customize+ state through the MCDF exporter when it owns none. An actor whose
+package cannot be produced, or which does not fit the per-actor or
+whole-document byte limit, is saved with no appearance and named in a note — a
+path, a temporary collection, or any other live handle is not a portable save.
+
+Restoring an embedded payload checks it against its own digest, stages it into
+one owned temporary file, and imports it through the same MCDF transaction a
+hand-driven import uses.
+
 Poser intentionally keeps absolute stored values and additive default loading,
 while Brio and Ktisis use destructive best-effort loads. Poser also records
 animation and gaze because its runtime can restore them. These are deliberate
