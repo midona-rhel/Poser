@@ -604,4 +604,192 @@ public sealed class SceneWorkflowTests
         Assert.DoesNotContain(
             entities, entity => entity.Restored && entity.Remedy != null);
     }
+
+    /// <summary>The save's appearance phase: it runs only when the save asked
+    /// for it, and whatever it could not package leaves as a note on the
+    /// terminal rather than as a silently dropped fact.</summary>
+    [Fact]
+    public async Task Sealing_runs_only_for_a_portable_save_and_reports_its_notes()
+    {
+        var plain = new FakeRuntime();
+        using (var save = new SceneWorkflow(plain))
+        {
+            Assert.True(save.BeginSave("shot.xivs").Success);
+            await save.Drain;
+            Assert.DoesNotContain("SealAppearance", plain.Calls);
+        }
+
+        var portable = new FakeRuntime
+        {
+            SealAppearanceResult = _ => new[]
+            {
+                "Actor 'Lead' has no stable identity, so its appearance could " +
+                "not be packaged.",
+            },
+        };
+        using var sealing = new SceneWorkflow(portable);
+        Assert.True(sealing.BeginSave(
+            "shot.xivs",
+            null,
+            new SceneSaveOptions { IncludeModdedAppearance = true }).Success);
+        await sealing.Drain;
+
+        Assert.Contains("SealAppearance", portable.Calls);
+        Assert.Contains(
+            sealing.Progress!.Outcome!.Notes,
+            note => note.Contains("could not be packaged"));
+    }
+
+    // ── issue #41: one failure mode per load phase ───────────────────────
+
+    /// <summary>A whole scene: one of every entity kind the load restores, so
+    /// a per-phase failure can be asserted to keep everything the OTHER phases
+    /// produced.</summary>
+    private static SceneFile WholeScene()
+    {
+        var lead = Actor("Lead", out var leadKey);
+        lead.CompanionKind = CompanionKind.Companion;
+        lead.CompanionId = 4;
+        lead.CompanionPose = new PoseFile();
+        lead.Mcdf = new SceneActorMcdf
+        {
+            Path = @"C:\packages\lead.mcdf",
+            FileName = "lead.mcdf",
+        };
+        var scene = SceneWith(lead);
+        scene.Props.Add(new SceneProp { Key = Guid.NewGuid(), Name = "Chair" });
+        scene.Overlays = new List<SceneOverlay>
+        {
+            new()
+            {
+                Key = Guid.NewGuid(),
+                Node = new Poser.Domain.Presentation.OverlayNodeState
+                {
+                    Name = "Line",
+                },
+            },
+        };
+        scene.WorldObjects = new List<SceneWorldObject>
+        {
+            WorldObject("bg/example.mdl"),
+        };
+        scene.Lights.Add(new SceneLight
+        {
+            Key = Guid.NewGuid(),
+            Light = new LightFile { Name = "Key" },
+        });
+        scene.Cameras.Add(new SceneCamera
+        {
+            Key = Guid.NewGuid(),
+            Camera = new CameraFile { Name = "Default" },
+            IsDefault = true,
+            IsLive = true,
+            TargetActorKey = leadKey,
+            TargetActorName = "Lead",
+        });
+        scene.Environment = new SceneEnvironment();
+        return scene;
+    }
+
+    /// <summary>One named entity-level failure mode per load phase, driven
+    /// through the seam the way the real refusals arrive. Every one of them
+    /// must land the SAME shape — the operation ends Failed rather than rolled
+    /// back, the refused entity is named with its kind, a reason and a next
+    /// step, nothing this load created is destroyed, and the outcome says the
+    /// successes were kept — because that shape is what the result list and
+    /// the operation log both read.</summary>
+    public static TheoryData<string, string, Action<object>> PhaseFailures()
+    {
+        var data = new TheoryData<string, string, Action<object>>();
+        void Add(string phase, string kind, Action<FakeRuntime> arrange) =>
+            data.Add(phase, kind, runtime => arrange((FakeRuntime)runtime));
+
+        Add("objects", "Object",
+            runtime => runtime.PropSpawnFailure = _ => "No free spawn slot.");
+        Add("overlays", "Overlay",
+            runtime => runtime.OverlayStageFailure = _ => "The node would not stage.");
+        Add("world objects", "World object",
+            runtime => runtime.WorldObjectAdoptFailure = _ => "It is already borrowed.");
+        Add("appearance", "Character file",
+            runtime => runtime.McdfImport =
+                _ => SceneMcdfOutcome.Refused("The package is gone."));
+        Add("relationships", "Companion",
+            runtime => runtime.CompanionPoseFailure = _ => "The body never drew.");
+        Add("animation", "Animation",
+            runtime => runtime.AnimationFailure = _ => "The timeline is unavailable.");
+        Add("pose", "Actor",
+            runtime => runtime.PoseTerminalFailure = _ => "The import rolled back.");
+        Add("placement", "Actor",
+            runtime => runtime.PlacementFailure = _ => "The transform is not finite.");
+        Add("gaze", "Gaze",
+            runtime => runtime.GazeFailure = _ => "The look-at target is gone.");
+        Add("lights", "Light",
+            runtime => runtime.LightSpawnFailure = _ => "The light budget is full.");
+        Add("world toggles", "World",
+            runtime => runtime.WorldFailure = "The render toggles are unavailable.");
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(PhaseFailures))]
+    public async Task Each_phase_failure_keeps_the_scene_and_names_the_entity(
+        string phase, string kind, Action<object> arrange)
+    {
+        var runtime = new FakeRuntime { ReadResult = WholeScene() };
+        arrange(runtime);
+
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        var outcome = load.Progress!.Outcome!;
+        Assert.Equal(OperationReceiptState.Failed, load.Receipt!.State);
+        Assert.Equal(OperationReceiptState.Failed, outcome.State);
+        Assert.True(outcome.LeftEntitiesBehind, $"{phase} tore the scene down");
+        Assert.Empty(runtime.Destroyed);
+
+        var refusal = Assert.Single(
+            outcome.Entities, entity => !entity.Restored);
+        Assert.Equal(kind, refusal.Kind);
+        Assert.False(string.IsNullOrWhiteSpace(refusal.Detail));
+        Assert.False(string.IsNullOrWhiteSpace(refusal.Remedy));
+
+        // The successes stand beside the one refusal, and the terminal states
+        // a reason of its own rather than leaving the entity list to speak.
+        Assert.Contains(outcome.Entities, entity => entity.Restored);
+        Assert.False(string.IsNullOrWhiteSpace(outcome.Detail));
+    }
+
+    /// <summary>The two STRUCTURAL failure modes, for contrast: they roll the
+    /// whole operation back and leave nothing behind, so a partial-recovery
+    /// assertion can never pass by accident.</summary>
+    [Fact]
+    public async Task Structural_phase_failures_roll_the_whole_load_back()
+    {
+        var spawnRuntime = new FakeRuntime
+        {
+            ReadResult = WholeScene(),
+            ActorSpawnFailure = _ => "No free actor slot.",
+        };
+        using (var spawn = new SceneWorkflow(spawnRuntime))
+        {
+            Assert.True(spawn.BeginLoad("shot.xivs").Success);
+            await spawn.Drain;
+            Assert.Equal(
+                OperationReceiptState.RolledBack, spawn.Receipt!.State);
+            Assert.False(spawn.Progress!.Outcome!.LeftEntitiesBehind);
+        }
+
+        var readRuntime = new FakeRuntime
+        {
+            ReadFailure = Corrupt("The document is not a scene."),
+        };
+        using var read = new SceneWorkflow(readRuntime);
+        Assert.True(read.BeginLoad("shot.xivs").Success);
+        await read.Drain;
+        Assert.Equal(OperationReceiptState.Failed, read.Receipt!.State);
+        Assert.Empty(readRuntime.Destroyed);
+        Assert.Contains(
+            "The document is not a scene.", read.Progress!.Outcome!.Detail);
+    }
 }
