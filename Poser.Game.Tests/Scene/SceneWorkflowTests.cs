@@ -166,6 +166,34 @@ public sealed class SceneWorkflowTests
             return CompanionFailure?.Invoke(data);
         }
 
+        /// <summary>The TERMINAL receipt detail a pose import ends on, when a
+        /// test wants an admitted-then-failed import rather than an admitted
+        /// one. Distinct from <see cref="PoseFailure"/>, which refuses at the
+        /// arm and never publishes a receipt at all.</summary>
+        public Func<SceneActor, string?>? PoseTerminalFailure;
+
+        /// <summary>
+        /// Publishes the PENDING acknowledgement before the terminal receipt,
+        /// exactly as the real engine does (<c>PoseImportCapture.Reserve</c>
+        /// publishes a Pending receipt whose Detail is the import DESCRIPTION,
+        /// synchronously, from inside the arm). A workflow that latches the
+        /// first receipt it is handed therefore reports every pose import
+        /// failed with its own label — issue #41's reported defect.
+        /// </summary>
+        private void PublishPoseReceipts(
+            string description, Action<OperationReceipt> onReceipt, string? terminal)
+        {
+            var id = Guid.NewGuid();
+            var target = new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1);
+            onReceipt(OperationReceipt.Pending(
+                id, OperationEpoch.First, Session!.Value, target, description));
+            onReceipt(terminal is null
+                ? OperationReceipt.Applied(
+                    id, OperationEpoch.First, Session!.Value, target)
+                : OperationReceipt.Failed(
+                    id, OperationEpoch.First, Session!.Value, target, terminal));
+        }
+
         public string? ArmPoseImport(
             object actor,
             SceneActor data,
@@ -175,9 +203,8 @@ public sealed class SceneWorkflowTests
             Record($"ArmPoseImport:{data.Name}");
             if (PoseFailure?.Invoke(data) is { } refusal)
                 return refusal;
-            onReceipt(OperationReceipt.Applied(
-                Guid.NewGuid(), OperationEpoch.First, Session!.Value,
-                new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1)));
+            PublishPoseReceipts(
+                description, onReceipt, PoseTerminalFailure?.Invoke(data));
             return null;
         }
 
@@ -205,9 +232,7 @@ public sealed class SceneWorkflowTests
             Record($"ArmCompanionPoseImport:{data.Name}");
             if (CompanionPoseFailure?.Invoke(data) is { } refusal)
                 return refusal;
-            onReceipt(OperationReceipt.Applied(
-                Guid.NewGuid(), OperationEpoch.First, Session!.Value,
-                new Poser.Domain.Identity.ActorId(Guid.NewGuid(), 1)));
+            PublishPoseReceipts(description, onReceipt, null);
             return null;
         }
 
@@ -485,5 +510,51 @@ public sealed class SceneWorkflowTests
         Assert.Equal(new[] { "actor:Lead" }, replacedRuntime.Destroyed.ToArray());
         Assert.Equal(OperationReceiptState.Cancelled, replaced.Receipt!.State);
         Assert.Contains("session ended", replaced.Progress!.Outcome!.Detail);
+    }
+
+    // ── issue #41: the pose import's pending acknowledgement ─────────────
+
+    /// <summary>
+    /// The reported defect. The engine publishes a Pending receipt whose
+    /// Detail is the import DESCRIPTION before it publishes anything terminal;
+    /// a load that answered on the first receipt reported every posed actor
+    /// failed, with <c>Scene pose: &lt;actor&gt;</c> as the only stated reason.
+    /// </summary>
+    [Fact]
+    public async Task Pose_import_answers_on_the_terminal_receipt_not_the_pending_label()
+    {
+        var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Midona Rhel", out _)) };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        var outcome = load.Progress!.Outcome!;
+        Assert.DoesNotContain(outcome.Entities, entity => !entity.Restored);
+        Assert.DoesNotContain(
+            outcome.Entities,
+            entity => entity.Detail?.Contains("Scene pose:") == true);
+    }
+
+    /// <summary>An import that IS admitted and then fails terminally still
+    /// reports the terminal reason, and only that one — the pending label must
+    /// not survive as a fallback detail.</summary>
+    [Fact]
+    public async Task Pose_import_reports_the_terminal_reason_for_an_admitted_failure()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Midona Rhel", out _)),
+            PoseTerminalFailure = _ => "The pose import rolled itself back.",
+        };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        await load.Drain;
+
+        var refusal = Assert.Single(
+            load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+        Assert.Equal("Actor", refusal.Kind);
+        Assert.Equal("Midona Rhel", refusal.Name);
+        Assert.Equal("The pose import rolled itself back.", refusal.Detail);
     }
 }

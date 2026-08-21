@@ -1153,9 +1153,22 @@ public sealed class SceneWorkflow : IDisposable
             : $"The file's {count} {category} were not loaded.");
     }
 
-    /// <summary>Arms ONE atomic pose import — an actor's or its companion's,
-    /// through <paramref name="arm"/> — and awaits its terminal receipt within
-    /// a bound. Returns null on Applied, else the detail.</summary>
+    /// <summary>
+    /// Arms ONE atomic pose import — an actor's or its companion's, through
+    /// <paramref name="arm"/> — and awaits its TERMINAL receipt within a
+    /// bound. Returns null on Applied, else the detail.
+    ///
+    /// <para>Pending receipts are DROPPED rather than latched. The import
+    /// engine acknowledges an admitted import by publishing a Pending receipt
+    /// synchronously from inside <paramref name="arm"/>
+    /// (<c>PoseImportCapture.Reserve</c> → <c>CleanPoseFacade.BeginImport</c>),
+    /// and that receipt's Detail is the import's DESCRIPTION. Completing on it
+    /// made every scene pose import report itself failed with its own label —
+    /// the reported "1 of 4 entities could not be restored" whose only stated
+    /// reason was <c>Scene pose: &lt;actor&gt;</c>. Only a terminal state is an
+    /// answer; <see cref="OperationReceiptState.Pending"/> is the explicit
+    /// non-terminal acknowledgement and says nothing about the outcome.</para>
+    /// </summary>
     private async Task<string?> ImportPose(
         Operation operation,
         Func<Action<OperationReceipt>, string?> arm,
@@ -1168,7 +1181,11 @@ public sealed class SceneWorkflow : IDisposable
         {
             refusal = await _runtime.OnFramework(() =>
                 Guard(operation, cancellation)
-                    ?? arm(receipt => completion.TrySetResult(receipt)));
+                    ?? arm(receipt =>
+                    {
+                        if (receipt.State != OperationReceiptState.Pending)
+                            completion.TrySetResult(receipt);
+                    }));
         }
         catch (Exception ex)
         {

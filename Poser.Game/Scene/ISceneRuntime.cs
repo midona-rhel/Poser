@@ -245,7 +245,9 @@ internal interface ISceneRuntime
     /// on failure.</summary>
     object? SpawnActor(SceneActor data, out string? detail);
 
-    /// <summary>Whether the spawned actor's slot skeletons exist yet.</summary>
+    /// <summary>Whether the spawned actor has slot skeletons AND its exact
+    /// current generation is published to the binding registry. Both are
+    /// required before the pose-import admission can succeed.</summary>
     bool ActorReady(object actor);
 
     /// <summary>

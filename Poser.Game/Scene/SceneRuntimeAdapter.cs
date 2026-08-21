@@ -215,8 +215,18 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         return actor;
     }
 
-    public bool ActorReady(object actor) =>
-        _skeletons.GetSkeletons((IActor)actor).Count > 0;
+    public bool ActorReady(object actor)
+    {
+        var candidate = (IActor)actor;
+        // Skeleton discovery can lead binding publication by one update. Pose
+        // admission requires this exact live actor generation, so admitting on
+        // the skeleton alone races into a predictable partial scene restore.
+        if (_skeletons.GetSkeletons(candidate).Count == 0 ||
+            _bindings.GetActorId(candidate) is not { } id)
+            return false;
+        return _bindings.Resolve(id) is { Success: true, Value: { } bound } &&
+            ReferenceEquals(bound, candidate);
+    }
 
     /// <summary>
     /// Re-imports the saved character file through <c>McdfTransaction</c> —
