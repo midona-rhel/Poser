@@ -33,10 +33,6 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ScenePane
 {
-    /// <summary>How many recent scenes the page lists. The list is a shortcut
-    /// to the last few, not a browser — the browser is the load dialog.</summary>
-    private const int RecentSceneCount = 8;
-
     private readonly SceneWorkflow _workflow;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
@@ -128,17 +124,19 @@ public sealed class ScenePane
 
     /// <summary>
     /// What the appearance switch promises, in one place, so the workspace and
-    /// the save dialog cannot describe the same switch differently. It states
-    /// the three things the user is deciding between: which providers it
-    /// reads, what leaves the machine, and how much bigger the file gets.
+    /// the save dialog cannot describe the same switch differently.
+    ///
+    /// <para>It says a copy of the FILES the mods supply, not the mods: an
+    /// MCDF carries appearance data — Glamourer state, Penumbra's file
+    /// replacements and manipulations, a Customize+ profile — and not the mod
+    /// packages themselves. Overstating that is its own kind of wrong.</para>
     /// </summary>
     private const string AppearanceHelp =
         "Packages each actor's Glamourer, Penumbra and Customize+ state into "
-        + "the scene so it looks the same on another machine. Needs Penumbra "
-        + "and Glamourer available. The scene then CONTAINS those mods — do "
-        + "not share it with anyone you would not send the mod files to — and "
-        + "grows by the size of each actor's package, tens of megabytes each. "
-        + "Off saves no appearance at all.";
+        + "the scene so it looks the same on another machine. The scene then "
+        + "contains a copy of the files those mods supply for that character, "
+        + "so treat it like sharing the mod files themselves. Adds their full "
+        + "size to the scene.";
 
     /// <summary>The operation that has already been notified, so a finished
     /// result is announced ONCE rather than every frame the page draws it.
@@ -246,7 +244,7 @@ public sealed class ScenePane
 
         Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("SAVE", form =>
+            page.Section("SCENE", form =>
             {
                 form.TextInput(
                     "Description",
@@ -255,7 +253,7 @@ public sealed class ScenePane
                     placeholder: "Optional description",
                     disabled: busy);
                 form.Switch(
-                    "Modded appearance",
+                    "Include MCDFs",
                     SaveOptions.IncludeModdedAppearance,
                     next => SaveOptions = SaveOptions with
                     {
@@ -263,17 +261,32 @@ public sealed class ScenePane
                     },
                     help: AppearanceHelp,
                     disabled: busy);
-                form.Actions(
-                    string.Empty,
-                    actions => actions.Button(
-                        "Save scene…",
+                form.ReadOnly("Size", SaveSizeText());
+                form.Actions("File", actions =>
+                {
+                    actions.Button(
+                        "Save…",
                         OpenSave,
                         disabled: busy,
-                        help: busy
-                            ? "A scene operation is already running."
-                            : null,
-                        variant: ButtonVariant.Primary),
-                    fullWidth: true);
+                        help: busy ? BusyHelp : null,
+                        variant: ButtonVariant.Primary);
+                    actions.Button(
+                        "Load…",
+                        OpenLoad,
+                        disabled: busy,
+                        help: busy ? BusyHelp : null);
+                    // A snapshot IS a scene, so loading one is a load and
+                    // belongs in the same group. The automatic-snapshot
+                    // STATUS is a library concern and has left this page.
+                    bool snapshots = Directory.Exists(_snapshots.RootDirectory);
+                    actions.Button(
+                        "Snapshots…",
+                        OpenSnapshots,
+                        disabled: busy || !snapshots,
+                        help: busy ? BusyHelp
+                            : snapshots ? _snapshots.RootDirectory
+                            : "No automatic snapshot has been taken yet.");
+                });
             },
             divider: false);
 
@@ -281,16 +294,6 @@ public sealed class ScenePane
             {
                 DrawSessionOptions(form, busy);
                 DrawIncludeOptions(form, busy);
-                form.Actions(
-                    string.Empty,
-                    actions => actions.Button(
-                        "Load scene…",
-                        OpenLoad,
-                        disabled: busy,
-                        help: busy
-                            ? "A scene operation is already running."
-                            : null),
-                    fullWidth: true);
             });
 
             if (busy && progress is { } running)
@@ -298,10 +301,26 @@ public sealed class ScenePane
 
             if (!busy && progress?.Outcome is { } outcome)
                 DrawOutcome(page, outcome, receipt);
-
-            DrawRecent(page, busy);
-            DrawSnapshots(page, busy);
         });
+    }
+
+    private const string BusyHelp = "A scene operation is already running.";
+
+    /// <summary>
+    /// What the next save will weigh, live. The appearance payloads are the
+    /// only part big enough to matter and their sizes are REAL file lengths —
+    /// the container stores them raw, so this is a sum and not a guess. With
+    /// the switch off it says so rather than showing a number the save would
+    /// not produce.
+    /// </summary>
+    private string SaveSizeText()
+    {
+        if (!SaveOptions.IncludeModdedAppearance)
+            return "Pose data only";
+        long appearance = _workflow.EstimatedAppearanceBytes;
+        return appearance == 0
+            ? "Pose data only — no actor is wearing an MCDF"
+            : $"About {FormatBytes(appearance)} of appearance data";
     }
 
     /// <summary>Publishes one finished operation through the ordinary Dalamud
@@ -466,108 +485,6 @@ public sealed class ScenePane
         _ => state.ToString(),
     };
 
-    // ── recent scenes ────────────────────────────────────────────────────
-
-    private void DrawRecent(Crystarium.PageScope page, bool busy)
-    {
-        var recent = _library.Snapshot.Entries
-            .Where(entry => entry.Kind == PoseLibraryEntryKind.Scene)
-            .OrderByDescending(entry => entry.Modified)
-            .Take(RecentSceneCount)
-            .ToList();
-
-        page.Section("RECENT SCENES", form =>
-        {
-            if (recent.Count == 0)
-            {
-                form.Status(
-                    "No scenes in the pose library folders yet. A scene saved " +
-                    "into one shows up here.");
-                return;
-            }
-
-            foreach (var entry in recent)
-            {
-                bool valid = entry.MetadataStatus == PoseLibraryMetadataStatus.Valid;
-                string value = valid
-                    ? entry.SceneContents
-                    : StatusWord(entry.MetadataStatus);
-                form.ReadOnlyWithActions(
-                    entry.Name,
-                    $"{value} · {entry.ModifiedText}",
-                    actions => actions.Button(
-                        "Load",
-                        () => BeginLoad(entry.FilePath),
-                        disabled: busy || !valid,
-                        help: valid
-                            ? entry.FilePath
-                            : entry.MetadataDetail),
-                    help: valid ? entry.FilePath : entry.MetadataDetail,
-                    unavailable: !valid);
-            }
-        });
-    }
-
-    /// <summary>A listing's one-word verdict. A file the codec refuses is
-    /// LISTED and named — never hidden, so a user can see that the file they
-    /// remember is the one that went bad.</summary>
-    private static string StatusWord(PoseLibraryMetadataStatus status) =>
-        status switch
-        {
-            PoseLibraryMetadataStatus.Future => "Saved by a newer Poser",
-            PoseLibraryMetadataStatus.Oversized => "Too large to read",
-            PoseLibraryMetadataStatus.Corrupt => "Cannot be read",
-            _ => string.Empty,
-        };
-
-    // ── automatic snapshots ──────────────────────────────────────────────
-
-    private void DrawSnapshots(Crystarium.PageScope page, bool busy)
-    {
-        var last = _snapshots.LastResult;
-        page.Section("AUTOMATIC SNAPSHOTS", form =>
-        {
-            form.ReadOnly(
-                "Status",
-                last.Status switch
-                {
-                    SceneAutoSaveStatus.Written => "Taken",
-                    SceneAutoSaveStatus.Skipped => "Skipped",
-                    SceneAutoSaveStatus.Failed => "Failed",
-                    SceneAutoSaveStatus.RecoveryRequired => "Needs recovery",
-                    _ => "None yet",
-                },
-                unavailable: last.Status is SceneAutoSaveStatus.Failed
-                    or SceneAutoSaveStatus.RecoveryRequired,
-                help: last.Path);
-            form.Status(last.Detail);
-
-            foreach (var evidence in last.Evidence)
-            {
-                form.ReadOnlyWithActions(
-                    "Recovered file",
-                    Path.GetFileName(evidence),
-                    actions => actions.Button(
-                        "Open folder",
-                        () => OpenFolder(Path.GetDirectoryName(evidence)),
-                        help: evidence),
-                    help: evidence,
-                    unavailable: true);
-            }
-
-            form.Actions(
-                string.Empty,
-                actions => actions.Button(
-                    "Load snapshot…",
-                    OpenSnapshots,
-                    disabled: busy || !Directory.Exists(_snapshots.RootDirectory),
-                    help: Directory.Exists(_snapshots.RootDirectory)
-                        ? _snapshots.RootDirectory
-                        : "No automatic snapshot has been taken yet."),
-                fullWidth: true);
-        });
-    }
-
     // ── the load dialog's options band ───────────────────────────────────
 
     /// <summary>The band's label column, logical px — the dense form's, as
@@ -658,17 +575,15 @@ public sealed class ScenePane
                 "Clear the session first",
                 Options.ClearExistingScene,
                 next => Options = Options with { ClearExistingScene = next },
-                "Destroy every actor, object, light, camera and overlay node "
-                    + "this session holds before restoring the file. "
-                    + "Undoing the load does not bring them back."),
+                "Empties the session before loading. Undoing does not bring "
+                    + "any of it back."),
             new Crystarium.CheckItem(
                 "Place relative to me",
                 Options.PlaceRelativeToCurrentOrigin,
                 next => Options =
                     Options with { PlaceRelativeToCurrentOrigin = next },
-                "Put the scene down where you are standing instead of where "
-                    + "it was captured. Needs a file that recorded where it "
-                    + "was taken."));
+                "Puts the scene where you are standing. Needs a file that "
+                    + "recorded where it was taken."));
 
     /// <summary>The six INCLUSION filters, one group, in the order the load
     /// restores them. Only the three whose scope is not obvious from the word
@@ -694,8 +609,8 @@ public sealed class ScenePane
             new Crystarium.CheckItem(
                 "Environment", Options.IncludeEnvironment,
                 next => Options = Options with { IncludeEnvironment = next },
-                "Time, weather, the held sky sections and the frozen "
-                    + "water and physics toggles"),
+                "Time, weather, sky, and the frozen water and physics "
+                    + "toggles"),
             new Crystarium.CheckItem(
                 "Overlays", Options.IncludeOverlays,
                 next => Options = Options with { IncludeOverlays = next },

@@ -82,11 +82,17 @@ in the result list. Completion and failure are also announced once through the
 normal Dalamud notification channel; the per-entity detail stays in the Scene
 tab rather than being repeated in a notification.
 
-The Scene workspace and the two file dialogs are two mounts of one answer. The
-save options and the load options are editable in both and stored once for the
+The Scene workspace and the file dialogs are two mounts of one answer. The save
+options and the load options are editable in both and stored once for the
 session, so an option is never reachable only from inside a file browser. The
 appearance switch is off by default, is never persisted, and is never inferred
-from a previous save.
+from a previous save. The workspace states what the next save will weigh,
+updating as the options change; the appearance figure is a sum of real package
+sizes, because the container stores them raw.
+
+The workspace manages the LIVE scene. Browsing saved scenes — recent files and
+automatic snapshots — belongs to the Library, which already scans the scene
+extension.
 
 ## Portable appearance
 

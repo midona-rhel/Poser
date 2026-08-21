@@ -97,9 +97,11 @@ public sealed class SceneWorkflowTests
                 return TransientArmRefusals.Dequeue();
             if (CaptureArmRefusal is { } refusal)
                 return refusal;
-            var outcome = SceneCaptureOutcome.Ok(
-                new SceneFile { SceneId = sceneId, Description = description },
-                new List<string>());
+            var captured = CapturedScene?.Invoke()
+                ?? new SceneFile { SceneId = sceneId, Description = description };
+            captured.SceneId = sceneId;
+            captured.Description = description;
+            var outcome = SceneCaptureOutcome.Ok(captured, new List<string>());
             if (DeferCapture)
             {
                 _pendingCapture = onCaptured;
@@ -122,6 +124,10 @@ public sealed class SceneWorkflowTests
             Record("CaptureScene");
             callback(outcome);
         }
+
+        /// <summary>The document the capture hands back, for a test that needs
+        /// a save to have something in it.</summary>
+        public Func<SceneFile>? CapturedScene;
 
         /// <summary>Notes the hash pass hands back, and the record of whether
         /// it ran before the write at all.</summary>
@@ -155,6 +161,10 @@ public sealed class SceneWorkflowTests
         public List<string> SealTemporaries = new();
 
         public readonly List<string> DeletedTemporaries = new();
+
+        public long AppearanceEstimate;
+
+        public long EstimateAppearanceBytes() => AppearanceEstimate;
 
         public void DeleteTemporary(string path)
         {
@@ -709,6 +719,66 @@ public sealed class SceneWorkflowTests
         Assert.DoesNotContain(
             load.Progress!.Outcome!.Entities,
             entity => entity.Kind == "Animation");
+    }
+
+    /// <summary>
+    /// A save may not call itself a success while dropping something it was
+    /// asked to include. The appearance case is how this was found — an
+    /// oversized package was refused, the reference was dropped with it, and
+    /// the save reported "Saved shot.xivs" — but the rule is general.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_omits_requested_content_is_not_a_plain_success()
+    {
+        var runtime = new FakeRuntime();
+        // The seal could not build the package, so the policy drops the
+        // reference and the document goes out without appearance.
+        runtime.CapturedScene = () =>
+        {
+            var scene = SceneWith(Actor("Lead", out _));
+            scene.Actors[0].Mcdf = new SceneActorMcdf
+            {
+                Path = @"C:\packages\lead.mcdf",
+                FileName = "lead.mcdf",
+            };
+            return scene;
+        };
+        runtime.SealAppearanceResult = _ => new[]
+        {
+            "Actor 'Lead''s appearance is 900 MB, over what Poser can import " +
+            "back; the scene saved without it.",
+        };
+
+        using var save = new SceneWorkflow(runtime);
+        Assert.True(save.BeginSave(
+            "shot.xivs",
+            null,
+            new SceneSaveOptions { IncludeModdedAppearance = true }).Success);
+        await save.Drain;
+
+        // The file was written, so this is not a failure — it is the partial
+        // state, and it has to be visible as one.
+        Assert.NotEqual(OperationReceiptState.Applied, save.Receipt!.State);
+        var outcome = save.Progress!.Outcome!;
+        var refusal = Assert.Single(
+            outcome.Entities, entity => !entity.Restored);
+        Assert.Equal("Character file", refusal.Kind);
+        Assert.Contains("appearance", outcome.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The save surface reads the appearance figure every frame, so
+    /// it has to be a live pass-through and not a cached number that goes
+    /// stale the moment an actor puts a package on.</summary>
+    [Fact]
+    public void The_appearance_estimate_is_read_live()
+    {
+        var runtime = new FakeRuntime { AppearanceEstimate = 900L * 1024 * 1024 };
+        using var workflow = new SceneWorkflow(runtime);
+
+        Assert.Equal(900L * 1024 * 1024, workflow.EstimatedAppearanceBytes);
+
+        runtime.AppearanceEstimate = 0;
+        Assert.Equal(0, workflow.EstimatedAppearanceBytes);
     }
 
     // ── issue #41: one failure mode per load phase ───────────────────────

@@ -141,6 +141,11 @@ public sealed class SceneWorkflow : IDisposable
         _log = log;
     }
 
+    /// <summary>What including modded appearance would add to a save right
+    /// now, in bytes. Read every frame by the save surface, so it stays a
+    /// cheap stat over the actors in the session and nothing more.</summary>
+    public long EstimatedAppearanceBytes => _runtime.EstimateAppearanceBytes();
+
     /// <summary>The armed capture's bound. Only the contract tests set it —
     /// waiting the real bound out would make asserting the timeout a
     /// fifteen-second test.</summary>

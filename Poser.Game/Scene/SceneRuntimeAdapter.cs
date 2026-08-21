@@ -330,6 +330,32 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         }
     }
 
+    public long EstimateAppearanceBytes()
+    {
+        long total = 0;
+        foreach (var actor in _actors.Actors)
+        {
+            if (_bindings.GetActorId(actor) is not { } id)
+                continue;
+            if (_integration.OverridesFor(id).Mcdf is not { } worn)
+                continue;
+            if (string.IsNullOrWhiteSpace(worn.SourcePath))
+                continue;
+            try
+            {
+                var info = new System.IO.FileInfo(worn.SourcePath);
+                if (info.Exists)
+                    total += info.Length;
+            }
+            catch (Exception)
+            {
+                // A package that cannot be stat'd contributes nothing to the
+                // estimate; the save will name it if it also cannot read it.
+            }
+        }
+        return total;
+    }
+
     public void DeleteTemporary(string path) => DeleteQuietly(path);
 
     private static void DeleteQuietly(string path)

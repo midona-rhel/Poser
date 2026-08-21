@@ -257,6 +257,15 @@ internal interface ISceneRuntime
     /// its own framework work, waits on the export transaction's own receipt,
     /// and does file work off the frame.</para>
     /// </summary>
+    /// <summary>
+    /// What the appearance payloads would add to a save RIGHT NOW, in bytes:
+    /// the real size of every package the actors in the session are currently
+    /// wearing. It is a sum of file lengths, not a guess — the container
+    /// stores payloads raw, so what it measures is what the scene will cost.
+    /// Zero when nobody is wearing one.
+    /// </summary>
+    long EstimateAppearanceBytes();
+
     /// <summary>Drops one temporary file the seal created, after the write has
     /// streamed it into the container. Never fails a save.</summary>
     void DeleteTemporary(string path);
