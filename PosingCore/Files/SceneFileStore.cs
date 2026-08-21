@@ -110,6 +110,15 @@ public sealed class SceneMetadataReadOutcome
     public int PropCount { get; }
     public int LightCount { get; }
     public int CameraCount { get; }
+
+    /// <summary>The document's own format name and version, read back rather
+    /// than assumed. A viewer states them beside the file so a scene's format
+    /// identity is visible BEFORE a load, which is the point of a versioned
+    /// format.</summary>
+    public string? TypeName { get; }
+
+    public int FileVersion { get; }
+
     public SceneStoreFailure? Failure { get; }
 
     private SceneMetadataReadOutcome(
@@ -120,6 +129,8 @@ public sealed class SceneMetadataReadOutcome
         if (scene is null)
             return;
         SceneId = scene.SceneId;
+        TypeName = scene.TypeName;
+        FileVersion = scene.FileVersion;
         Author = scene.Author;
         Description = scene.Description;
         SavedAt = scene.SavedAt;

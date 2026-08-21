@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Poser.Domain.Presentation;
 
@@ -112,7 +112,7 @@ public enum StatusKind
 /// discriminated set, because this is the shape the scene file, the undo
 /// journal and the native port all speak, and a kind's unused fields simply
 /// go unread. It is what a removal captures, what a restore replays, and what
-/// a <c>.poserscene</c> carries — the same discipline a light's
+/// an <c>.xivs</c> scene carries — the same discipline a light's
 /// <c>LightFile</c> follows.</para>
 /// </summary>
 public sealed record OverlayNodeState

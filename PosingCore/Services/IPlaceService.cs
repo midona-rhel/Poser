@@ -1,4 +1,4 @@
-namespace Poser.Services;
+﻿namespace Poser.Services;
 
 /// <summary>
 /// Where the session is, in the two forms a document keeps: the durable
@@ -11,7 +11,7 @@ public readonly record struct CapturePlace(uint TerritoryId, string? PlaceName);
 /// <summary>
 /// The one <c>TerritoryType</c> → <c>PlaceName</c> resolution. Whole-scene
 /// capture and pose auto-save both stamp their documents from here, so "where
-/// this was taken" means the same thing in a <c>.poserscene</c> and in a
+/// this was taken" means the same thing in an <c>.xivs</c> scene and in a
 /// <c>.pose</c>, and the Brio-verified lookup has a single home.
 /// </summary>
 public interface IPlaceService

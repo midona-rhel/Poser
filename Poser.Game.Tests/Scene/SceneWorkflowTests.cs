@@ -464,7 +464,7 @@ public sealed class SceneWorkflowTests
         var saveRuntime = new FakeRuntime();
         using (var save = new SceneWorkflow(saveRuntime))
         {
-            Assert.True(save.BeginSave("shot.poserscene", "A shot").Success);
+            Assert.True(save.BeginSave("shot.xivs", "A shot").Success);
             await save.Drain;
             Assert.Equal(new[] { "ArmSceneCapture", "CaptureScene", "StampMcdfHashes", "WriteScene" }, saveRuntime.Calls);
             Assert.Equal(OperationReceiptState.Applied, save.Receipt!.State);
@@ -481,7 +481,7 @@ public sealed class SceneWorkflowTests
 
         var runtime = new FakeRuntime { ReadResult = scene };
         using var load = new SceneWorkflow(runtime);
-        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
         Assert.Equal(new[] { "ReadScene", "CaptureEnvironmentState", "CaptureWorldState", "CaptureDefaultCameraState", "SpawnActor:Lead", "SpawnProp:Chair", "ActorReady", "AttachCompanion:Lead", "SetActorVisibility", "ApplyActorAnimation:Lead", "ArmPoseImport:Lead", "PlaceActor:Lead", "ApplyActorGaze:Lead", "ApplyDefaultCamera", "SetCameraTarget", "SetLiveCamera", "SpawnLight", "ApplyEnvironment", "ApplyWorld" }, runtime.Calls);
         Assert.Empty(runtime.Destroyed);
@@ -495,7 +495,7 @@ public sealed class SceneWorkflowTests
         var failedRuntime = new FakeRuntime { ReadResult = scene, ActorSpawnFailure = a => a.Name == "Second" ? "no free slot" : null };
         using (var failed = new SceneWorkflow(failedRuntime))
         {
-            Assert.True(failed.BeginLoad("shot.poserscene").Success);
+            Assert.True(failed.BeginLoad("shot.xivs").Success);
             await failed.Drain;
             Assert.Equal(new[] { "actor:Lead" }, failedRuntime.Destroyed.ToArray());
             Assert.Equal(OperationReceiptState.RolledBack, failed.Receipt!.State);
@@ -505,7 +505,7 @@ public sealed class SceneWorkflowTests
         var replacedRuntime = new FakeRuntime { ReadResult = SceneWith(Actor("Lead", out _)) };
         replacedRuntime.AfterCall = call => { if (call == "SpawnActor:Lead") replacedRuntime.Session = SessionGeneration.New(); };
         using var replaced = new SceneWorkflow(replacedRuntime);
-        Assert.True(replaced.BeginLoad("shot.poserscene").Success);
+        Assert.True(replaced.BeginLoad("shot.xivs").Success);
         await replaced.Drain;
         Assert.Equal(new[] { "actor:Lead" }, replacedRuntime.Destroyed.ToArray());
         Assert.Equal(OperationReceiptState.Cancelled, replaced.Receipt!.State);
@@ -525,7 +525,7 @@ public sealed class SceneWorkflowTests
     {
         var runtime = new FakeRuntime { ReadResult = SceneWith(Actor("Midona Rhel", out _)) };
         using var load = new SceneWorkflow(runtime);
-        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
         Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
@@ -548,7 +548,7 @@ public sealed class SceneWorkflowTests
             PoseTerminalFailure = _ => "The pose import rolled itself back.",
         };
         using var load = new SceneWorkflow(runtime);
-        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
         var refusal = Assert.Single(
@@ -573,7 +573,7 @@ public sealed class SceneWorkflowTests
             PoseTerminalFailure = _ => "The pose import rolled itself back.",
         };
         using var load = new SceneWorkflow(runtime);
-        Assert.True(load.BeginLoad("shot.poserscene").Success);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
 
         var entities = load.Progress!.Outcome!.Entities;

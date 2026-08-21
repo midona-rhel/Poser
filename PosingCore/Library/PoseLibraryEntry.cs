@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -17,7 +17,7 @@ public enum PoseLibraryEntryKind : byte
     /// author, no tags, no preview — so the scan never opens one.</summary>
     Mcdf,
 
-    /// <summary>A <c>.poserscene</c> whole scene. Its metadata is observed
+    /// <summary>An <c>.xivs</c> whole scene. Its metadata is observed
     /// through the scene codec, so a listing can never advertise a scene the
     /// load would reject.</summary>
     Scene,

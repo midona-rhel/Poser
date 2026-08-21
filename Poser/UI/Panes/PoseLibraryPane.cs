@@ -2416,7 +2416,7 @@ public sealed class PoseLibraryPane
         // A WHITELIST, stated as one: every tab whose entries are pose files —
         // auto-saves included, whose tiles key on the .pose path exactly as
         // the library's do. Written as an exclusion this silently admitted the
-        // next tab added; scenes did exactly that, feeding .poserscene paths
+        // next tab added; scenes did exactly that, feeding .xivs scene paths
         // into the pose preview binder. Character files never travel the
         // import pipeline, and a scene is not a pose file at all: it has no
         // single skeleton to stand on a preview body.

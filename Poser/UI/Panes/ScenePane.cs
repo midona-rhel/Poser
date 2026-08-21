@@ -270,7 +270,9 @@ public sealed class ScenePane
         ScenePhase.Reading => "Reading and validating the file",
         ScenePhase.SpawningEntities => "Spawning actors and objects",
         ScenePhase.AwaitingActors => "Waiting for the actors to build",
+        ScenePhase.ApplyingAppearance => "Restoring appearance",
         ScenePhase.ApplyingRelationships => "Attaching companions",
+        ScenePhase.ApplyingAnimation => "Restoring animation",
         ScenePhase.ApplyingPose => "Applying poses",
         ScenePhase.ApplyingPresentation => "Applying visibility",
         ScenePhase.ApplyingCameras => "Restoring cameras",
@@ -687,6 +689,16 @@ public sealed class ScenePane
         Line($"{metadata.PropCount} objects", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.LightCount} lights", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.CameraCount} cameras", theme.FormHint, theme.Typography.CaptionSize);
+
+        // Format identity and size, from the document itself. A versioned
+        // format the user cannot see the version of is not a versioned format,
+        // and the size is what the appearance payload shows up in.
+        Line(
+            $"{metadata.TypeName ?? "Scene"} v{metadata.FileVersion} · " +
+            FormatBytes(StampOf(path).Length),
+            theme.FormHint,
+            theme.Typography.CaptionSize);
+
         if (metadata.SavedAt is { } saved)
         {
             Line(
@@ -697,6 +709,18 @@ public sealed class ScenePane
                 theme.Typography.CaptionSize);
         }
     }
+
+    /// <summary>Binary-prefix file size for the dialog's compact inspector.
+    /// A stamp that could not be taken reads as unknown rather than as zero.
+    /// </summary>
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        <= 0 => "size unknown",
+        < 1024 => $"{bytes:N0} B",
+        < 1024 * 1024 => $"{bytes / 1024d:N1} KiB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024d * 1024):N1} MiB",
+        _ => $"{bytes / (1024d * 1024 * 1024):N1} GiB",
+    };
 
     /// <summary>
     /// The probe for one path, never blocking the frame. Answers false while a

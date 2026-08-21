@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Poser.Files;
@@ -126,7 +126,7 @@ public sealed class PoseLibraryFileActions
 
     /// <summary>The same mapping for a SCENE, which is a different document
     /// read by a different codec — the ONE mapping the scan and the retry
-    /// probe both answer a <c>.poserscene</c> with.</summary>
+    /// probe both answer an <c>.xivs</c> scene with.</summary>
     internal static (PoseLibraryMetadataStatus Status, string Detail) Classify(
         SceneMetadataReadOutcome metadata)
     {

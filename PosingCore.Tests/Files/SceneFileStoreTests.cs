@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
@@ -63,7 +63,10 @@ public sealed class SceneFileStoreTests
         Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Parse("{ nope").Failure!.Kind);
 
         var json = JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options);
-        json = json.Replace("\"FileVersion\": 1", "\"FileVersion\": 2", StringComparison.Ordinal);
+        json = json.Replace(
+            $"\"FileVersion\": {SceneFile.CurrentVersion}",
+            $"\"FileVersion\": {SceneFile.CurrentVersion + 1}",
+            StringComparison.Ordinal);
         var future = SceneFileStore.Default.Parse(json);
 
         Assert.False(future.Succeeded);
@@ -208,7 +211,7 @@ internal sealed class SceneFixture : IDisposable
 {
     public string Root { get; } = System.IO.Path.Combine(
         System.IO.Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
-    public string Path => System.IO.Path.Combine(Root, "scene.poserscene");
+    public string Path => System.IO.Path.Combine(Root, "scene" + SceneFile.Extension);
 
     public SceneFixture() => Directory.CreateDirectory(Root);
 

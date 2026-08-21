@@ -1,10 +1,15 @@
 # Scenes
 
-A `.poserscene` is versioned JSON with a stable `SceneId`. It contains actors
+An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store
 model id, companion attachment and pose, visibility, absolute transform,
-animation, gaze, and an MCDF reference. Other appearance remains external.
+animation, gaze, and an appearance payload. Other appearance remains external.
+
+The extension and the file version are one identity: `.xivs` is format version
+2. Development-format `.poserscene` files are not read and are not migrated.
+The file viewer states the format, the version and the size before a load, and
+the size includes any embedded appearance payload.
 
 Placements in the file are absolute. An optional origin records a capture
 anchor for relative loading; it is not needed to read the stored numbers.

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
@@ -12,7 +12,7 @@ using Poser.Services;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser scene file format (.poserscene): one versioned JSON
+/// Poser scene file format (.xivs): one versioned JSON
 /// document carrying every entity of a scene — actors with their complete
 /// embedded Brio-format <see cref="PoseFile"/>, props, lights and cameras as
 /// their existing per-entity documents (<see cref="LightFile"/>,
@@ -35,13 +35,13 @@ public class SceneFile
     /// <summary>Bumped on any breaking meaning change of a persisted field.
     /// Readers refuse versions above this as typed Future outcomes instead
     /// of guessing at unknown semantics.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     /// <summary>The one extension every scene reader, writer and listing
     /// filters on.</summary>
-    public const string Extension = ".poserscene";
+    public const string Extension = ".xivs";
 
-    public string TypeName { get; set; } = "Poser Scene";
+    public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
     /// <summary>Stable logical scene identity; never empty in a valid file.</summary>
