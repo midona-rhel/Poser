@@ -3840,41 +3840,35 @@ public class MainWindow : Window
                 actorId.LogicalId, DisplayName(actor.Name))));
         actions.Add(() => _cleanPose.ApplyStash(actor));
 
-        // Both provenances get the one removal verb, worded for what it is:
-        // a Poser-spawned actor despawns; a pre-existing actor is removed
-        // from the GPose scene. The row appears only when the service would
-        // admit the removal right now — an actor it must refuse (your own
-        // character, a companion child, a stale wrapper) gets no row rather
-        // than a row that refuses.
-        bool spawned = _spawnService.IsSpawnedActor(actor);
-        if (spawned || _spawnService.RemovalRefusal(actor) is null)
+        // ONE verb for every actor, Brio's: Destroy
+        // (Brio ActorLifetimeWidget.cs:82 — the same word whoever spawned
+        // the actor, your own clone included). The row appears only when the
+        // service would admit it right now — an actor it must refuse (a
+        // companion child, a stale wrapper) gets no row rather than a row
+        // that refuses.
+        if (_spawnService.IsSpawnedActor(actor)
+            || _spawnService.RemovalRefusal(actor) is null)
         {
-            string verb = spawned ? "Despawn" : "Remove from scene";
             items.Add(ContextMenuItem.Separator);
-            items.Add(new ContextMenuItem(
-                verb, TablerIcon.Trash, danger: true,
-                help: spawned ? null : "Cannot be undone"));
+            items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true));
             actions.Add(null);
             actions.Add(() =>
             {
                 string name = DisplayName(actor.Name);
                 // Through the seam, exactly as Clone is: spawning an actor
-                // is a history step, while despawning is not (a pre-existing
-                // actor's removal never is — Poser cannot respawn it).
+                // is a history step; destroying is undoable only when Poser
+                // spawned it and can respawn it.
                 if (_lifecycle.DespawnActor(actor))
                 {
                     // Drop the whole selection lineage — the actor, its
                     // bones, its bone groups — not every selection the user
                     // holds.
                     _selection.RemoveActorLineage(actorId.LogicalId);
-                    _notices.Done(spawned
-                        ? $"Despawned '{name}'."
-                        : $"Removed '{name}' from the scene.");
+                    _notices.Done($"Destroyed '{name}'.");
                 }
                 else
                 {
-                    _notices.Failed(
-                        $"'{name}' could not be removed from the scene.");
+                    _notices.Failed($"'{name}' could not be destroyed.");
                 }
             });
         }
