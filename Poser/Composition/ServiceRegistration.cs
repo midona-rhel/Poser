@@ -22,6 +22,7 @@ using Poser.Game.Posing;
 using Poser.Game.Scene;
 using Poser.Game.Transforms;
 using Poser.Game.Validation;
+using Poser.Library;
 using Poser.Lifecycle;
 using Poser.Services;
 using Poser.UI;
@@ -399,6 +400,12 @@ internal static class ServiceRegistration
             sp.GetRequiredService<ConfigurationService>(),
             sp.GetRequiredService<IPlaceService>(),
             sp.GetRequiredService<IDalamudPluginInterface>()));
+
+        // The checksum index over the MCDF home. ONE instance: its whole
+        // value is the digests it remembers between scene loads, and a
+        // per-resolve copy would re-read the library every time.
+        services.AddSingleton<IMcdfHashIndex>(sp =>
+            new McdfHashIndex(sp.GetRequiredService<ConfigurationService>()));
 
         // SceneWorkflow owns the scene transaction; autosave reuses its
         // capture and store through SceneCaptureService.

@@ -7,7 +7,8 @@ model id, companion attachment and pose, visibility, absolute transform,
 animation, gaze, and an appearance payload. Other appearance remains external.
 
 The extension and the file version are one identity: `.xivs` is format version
-2. Development-format `.poserscene` files are not read and are not migrated.
+2, and the reader accepts that version alone. `.xivs` is the only scene format
+Poser has; anything else is not a scene and is not listed, opened or migrated.
 The file viewer states the format, the version and the size before a load, and
 the size includes any embedded appearance payload.
 
@@ -83,9 +84,32 @@ package cannot be produced, or which does not fit the per-actor or
 whole-document byte limit, is saved with no appearance and named in a note — a
 path, a temporary collection, or any other live handle is not a portable save.
 
-Restoring an embedded payload checks it against its own digest, stages it into
-one owned temporary file, and imports it through the same MCDF transaction a
-hand-driven import uses.
+Restoring an embedded payload stages it into one owned temporary file and
+imports it through the same MCDF transaction a hand-driven import uses. Its
+checksum is not consulted: the bytes in the document are the package, so there
+is nothing to identify them against.
+
+## Appearance identity
+
+Every appearance capture records the SHA-256 of the package's bytes, on both
+portable and reference saves. The checksum is the identity; the filename and
+the path are not.
+
+A reference is resolved in this order:
+
+1. An embedded portable payload, when the scene has one.
+2. The MCDF library, searched for a package whose bytes match the recorded
+   checksum. A package that was renamed, filed into a subfolder, or downloaded
+   again elsewhere still matches, and the load says where it found it.
+3. The recorded path, when the library has no match. A file still at that path
+   whose bytes no longer match the checksum is applied with a named warning.
+4. Otherwise a refusal that states both things that were tried.
+
+The index hashes lazily — nothing is read until a load asks for a checksum, and
+the search stops at the first match — and caches each digest against the path,
+byte length and last-write time it was read from, so a package replaced in
+place cannot serve its old digest. The cache is in memory for the session,
+because the library keeps no derived state on disk. There is no startup pass.
 
 Poser intentionally keeps absolute stored values and additive default loading,
 while Brio and Ktisis use destructive best-effort loads. Poser also records

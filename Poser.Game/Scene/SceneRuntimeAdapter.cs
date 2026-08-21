@@ -48,6 +48,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly WorldObjects.WorldObjectService _worldObjects;
     private readonly Poser.Services.IPlaceService _place;
 
+    /// <summary>Finds an appearance package by its bytes. Held as the
+    /// interface: the library owns MCDFs and will own this index too.
+    /// </summary>
+    private readonly Poser.Library.IMcdfHashIndex _mcdfHashes;
+
     public SceneRuntimeAdapter(
         IFramework framework,
         ISessionGenerationSource sessions,
@@ -69,8 +74,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IActorManager actors,
         IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
-        Poser.Services.IPlaceService place)
+        Poser.Services.IPlaceService place,
+        Poser.Library.IMcdfHashIndex mcdfHashes)
     {
+        _mcdfHashes = mcdfHashes;
         _actors = actors;
         _objects = objects;
         _worldObjects = worldObjects;
@@ -416,13 +423,22 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// registers, and therefore the by-name unlock-and-restore teardown, the
     /// same for a scene-restored actor as for a hand-imported one.
     ///
-    /// <para>A PORTABLE entry carries the package itself. Its bytes are
-    /// checked against the document's own digest and staged into one owned
-    /// temporary file, and the import runs from there — the transaction takes
-    /// a path, and inventing a second import route for embedded bytes would
-    /// mean a second set of phases, a second rollback and a second ownership
+    /// <para>A PORTABLE entry carries the package itself, and is staged into
+    /// one owned temporary file the import runs from — the transaction takes a
+    /// path, and inventing a second import route for embedded bytes would mean
+    /// a second set of phases, a second rollback and a second ownership
     /// ledger. The staged file is deleted once the import reaches its terminal
-    /// receipt, whichever way it ended.</para>
+    /// receipt, whichever way it ended. Its checksum is NOT consulted: the
+    /// bytes in the document ARE the package, so there is nothing to identify
+    /// them against.</para>
+    ///
+    /// <para>A REFERENCE entry is resolved by CONTENT first. The scene records
+    /// the package's SHA-256, so the user's MCDF library is searched for those
+    /// exact bytes before the recorded path is tried — a package that was
+    /// renamed, filed into a subfolder or re-downloaded elsewhere is still the
+    /// package this scene was saved against, and only its checksum can say so.
+    /// The recorded path is the fallback, not the identity. When neither
+    /// answers, the refusal states BOTH things that were tried.</para>
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
         object actor,
@@ -444,14 +460,6 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             if (saved.IsPortable)
             {
                 var bytes = saved.Package!;
-                string digest = Convert.ToHexString(
-                    System.Security.Cryptography.SHA256.HashData(bytes));
-                if (!string.Equals(
-                    digest, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
-                    return SceneMcdfOutcome.Refused(
-                        $"The appearance package '{saved.FileName}' embedded in " +
-                        "this scene does not match its own checksum; the actor " +
-                        "was restored without it.");
                 staged = System.IO.Path.Combine(
                     System.IO.Path.GetTempPath(),
                     $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
@@ -470,23 +478,37 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             }
             else
             {
-                if (!System.IO.File.Exists(saved.Path))
+                // BY CONTENT first; the decision itself lives in
+                // SceneAppearanceSource so the order can be stated and tested
+                // without a live client.
+                var resolved = SceneAppearanceSource.Resolve(
+                    saved, _mcdfHashes, System.IO.File.Exists, cancellation);
+                if (resolved.Origin == SceneAppearanceOrigin.None ||
+                    resolved.Path is not { } found)
                     return SceneMcdfOutcome.Refused(
-                        $"The character file '{saved.FileName}' is no longer at " +
-                        $"{saved.Path}; the actor was restored without it.");
-                if (saved.ContentHash.Length > 0)
+                        resolved.Detail
+                        ?? $"The character file '{saved.FileName}' could not be found.");
+
+                changed = resolved.Detail;
+                if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
+                    saved.ContentHash.Length > 0)
                 {
-                    var hash = HashFile(saved.Path);
-                    if (hash is null)
-                        changed = $"The character file '{saved.FileName}' could not be " +
-                            "read to check it against the scene.";
-                    else if (!string.Equals(
-                        hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
-                        changed = $"The character file '{saved.FileName}' has changed " +
-                            "since this scene was saved; the actor is wearing the file " +
-                            "as it is now.";
+                    // The library had no match and this file is still here, so
+                    // its bytes cannot be the saved ones — but say WHY rather
+                    // than inferring it, since the digest may simply have been
+                    // unreadable when the scene was saved.
+                    var hash = HashFile(found);
+                    changed = hash is null
+                        ? $"The character file '{saved.FileName}' could not be " +
+                            "read to check it against the scene."
+                        : string.Equals(
+                            hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase)
+                            ? null
+                            : $"The character file '{saved.FileName}' has changed " +
+                                "since this scene was saved; the actor is wearing " +
+                                "the file as it is now.";
                 }
-                source = saved.Path;
+                source = found;
             }
 
             var target = (IActor)actor;

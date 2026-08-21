@@ -110,12 +110,13 @@ public sealed class SceneWorkflow : IDisposable
         Dalamud.Plugin.Services.IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
         Poser.Services.IPlaceService place,
+        Poser.Library.IMcdfHashIndex mcdfHashes,
         Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place), log)
+            worldObjects, place, mcdfHashes), log)
     {
     }
 
