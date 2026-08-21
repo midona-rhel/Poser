@@ -61,6 +61,7 @@ public class MainWindow : Window
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly UserNotices _notices;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -532,6 +533,7 @@ public class MainWindow : Window
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
+        UserNotices notices,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -612,6 +614,7 @@ public class MainWindow : Window
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
         _lifecycle = lifecycle;
+        _notices = notices;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
@@ -3837,17 +3840,36 @@ public class MainWindow : Window
                 actorId.LogicalId, DisplayName(actor.Name))));
         actions.Add(() => _cleanPose.ApplyStash(actor));
 
-        if (_spawnService.IsSpawnedActor(actor))
+        // ONE verb for every actor, Brio's: Destroy
+        // (Brio ActorLifetimeWidget.cs:82 — the same word whoever spawned
+        // the actor, your own clone included). The row appears only when the
+        // service would admit it right now — an actor it must refuse (a
+        // companion child, a stale wrapper) gets no row rather than a row
+        // that refuses.
+        if (_spawnService.IsSpawnedActor(actor)
+            || _spawnService.RemovalRefusal(actor) is null)
         {
             items.Add(ContextMenuItem.Separator);
-            items.Add(new ContextMenuItem("Despawn", TablerIcon.Trash, danger: true));
+            items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true));
             actions.Add(null);
             actions.Add(() =>
             {
+                string name = DisplayName(actor.Name);
                 // Through the seam, exactly as Clone is: spawning an actor
-                // is a history step, while despawning is not.
-                _lifecycle.DespawnActor(actor);
-                _selection.Clear();
+                // is a history step; destroying is undoable only when Poser
+                // spawned it and can respawn it.
+                if (_lifecycle.DespawnActor(actor))
+                {
+                    // Drop the whole selection lineage — the actor, its
+                    // bones, its bone groups — not every selection the user
+                    // holds.
+                    _selection.RemoveActorLineage(actorId.LogicalId);
+                    _notices.Done($"Destroyed '{name}'.");
+                }
+                else
+                {
+                    _notices.Failed($"'{name}' could not be destroyed.");
+                }
             });
         }
 

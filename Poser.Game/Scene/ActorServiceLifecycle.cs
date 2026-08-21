@@ -56,6 +56,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     private readonly CleanPoseFacade _poses;
     private readonly IFramework _framework;
     private readonly IPluginLog _log;
+    private readonly IGazeService _gaze;
+    private readonly Poser.Application.Integration.ActorIntegrationSession
+        _integration;
+    private readonly Bindings.StableBindingRegistry _bindings;
 
     public ActorServiceLifecycle(
         IActorSpawnService spawns,
@@ -64,7 +68,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         IPoseFileService poseFiles,
         CleanPoseFacade poses,
         IFramework framework,
-        IPluginLog log)
+        IPluginLog log,
+        IGazeService gaze,
+        Poser.Application.Integration.ActorIntegrationSession integration,
+        Bindings.StableBindingRegistry bindings)
     {
         _spawns = spawns;
         _posing = posing;
@@ -73,11 +80,53 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         _poses = poses;
         _framework = framework;
         _log = log;
+        _gaze = gaze;
+        _integration = integration;
+        _bindings = bindings;
     }
 
     public bool IsSpawned(object actor) => _spawns.IsSpawnedActor((IActor)actor);
 
-    public bool Destroy(object actor) => _spawns.DestroyActor((IActor)actor);
+    public bool Destroy(object actor)
+    {
+        var target = (IActor)actor;
+        // One verb for both provenances: the service routes an owned actor
+        // through its ownership ledger and an adopted one through the gated
+        // scene-table delete. An adopted actor first gets the same pre-delete
+        // cleanup a scene clear gives it — gaze released, appearance
+        // reverted — because after the delete there is nothing left to name.
+        if (!_spawns.IsSpawnedActor(target))
+            PrepareAdoptedRemoval(target);
+        return _spawns.RemoveActorFromScene(target);
+    }
+
+    private void PrepareAdoptedRemoval(IActor actor)
+    {
+        try
+        {
+            _gaze.ResetGaze(actor);
+        }
+        catch (Exception ex)
+        {
+            Note($"'{actor.Name}': the gaze could not be released before " +
+                $"removal ({ex.Message}).");
+        }
+
+        if (_bindings.GetActorId(actor) is not { } id)
+            return;
+        try
+        {
+            var reverted = _integration.ResetActor(id);
+            if (!reverted.Success)
+                Note($"'{actor.Name}': the appearance could not be reverted " +
+                    $"before removal ({reverted.Detail ?? "the revert was refused"}).");
+        }
+        catch (Exception ex)
+        {
+            Note($"'{actor.Name}': the appearance could not be reverted " +
+                $"before removal ({ex.Message}).");
+        }
+    }
 
     public ActorState Read(object actor)
     {
