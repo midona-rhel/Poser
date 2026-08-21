@@ -33,10 +33,6 @@ namespace Poser.UI;
 /// </summary>
 public sealed class ScenePane
 {
-    /// <summary>How many recent scenes the page lists. The list is a shortcut
-    /// to the last few, not a browser — the browser is the load dialog.</summary>
-    private const int RecentSceneCount = 8;
-
     private readonly SceneWorkflow _workflow;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
@@ -117,6 +113,28 @@ public sealed class ScenePane
         set => _preferences.Options = value;
     }
 
+    /// <summary>What the NEXT save is asked to include. Same shared home as
+    /// the load's answer, for the same reason: the workspace's SAVE section
+    /// and the save dialog's band are two mounts of ONE answer.</summary>
+    private SceneSaveOptions SaveOptions
+    {
+        get => _preferences.SaveOptions;
+        set => _preferences.SaveOptions = value;
+    }
+
+    /// <summary>
+    /// The appearance switch's hover, in one place so both mounts say the same
+    /// thing. A few WORDS: what the scene actually contains — a copy of the
+    /// files the mods supply, which is what an MCDF is — belongs in
+    /// docs/features/scenes.md, not in a tooltip.
+    /// </summary>
+    private const string AppearanceHelp = "Embeds appearance files";
+
+    /// <summary>The operation that has already been notified, so a finished
+    /// result is announced ONCE rather than every frame the page draws it.
+    /// </summary>
+    private Guid? _notifiedOperation;
+
     /// <summary>The options band's logical height, corrected by its first
     /// draw — the self-measure idiom the import dialog's band uses, so every
     /// open after the first fits its rows exactly.</summary>
@@ -139,6 +157,9 @@ public sealed class ScenePane
         _notices = notices;
         _lastPath = config.Config.Library.EnsureSceneRootExists();
 
+        // The verdict column is not a reserved rectangle: it states what the
+        // highlighted file IS, and says so in its own words when nothing is
+        // highlighted yet, which is the only case where centred text belongs.
         var verdict = new FileSidePanel(220f, DrawVerdictPanel);
         _loadBrowser.SidePanels.Add(verdict);
         _snapshotBrowser.SidePanels.Add(verdict);
@@ -148,6 +169,11 @@ public sealed class ScenePane
         var band = new FileSidePanel(_optionsBandHeight, DrawLoadOptionsBand);
         _loadBrowser.BottomPanel = band;
         _snapshotBrowser.BottomPanel = band;
+        // The save dialog carries the ONE save choice that changes what the
+        // file contains, so the destination and the consent are decided in the
+        // same place.
+        _saveBrowser.BottomPanel =
+            new FileSidePanel(SaveBandHeight, DrawSaveOptionsBand);
     }
 
     /// <summary>Asks for the save destination from ANOTHER surface — the
@@ -173,6 +199,15 @@ public sealed class ScenePane
         _saveBrowser.Draw();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+
+        // The notification is pumped HERE, not from the page, for the same
+        // reason the dialogs are: a scene load finishes while the user is on
+        // another tab as often as not, and a completion announced only by the
+        // surface that happened to be drawing is not an announcement.
+        if (!_workflow.Busy &&
+            _workflow.Progress is { Outcome: { } outcome } progress &&
+            _workflow.Receipt is { } receipt)
+            NotifyTerminal(progress, outcome, receipt);
     }
 
     /// <summary>Refreshes the library scan when the scene workspace is opened:
@@ -180,6 +215,19 @@ public sealed class ScenePane
     /// since the last pass is exactly what the user is looking for.</summary>
     public void OnShown() => _library.RequestScan();
 
+    /// <summary>
+    /// The workspace, ordered by TASK: what a save will write, what a load
+    /// will do, what is happening now, what the last one left behind, then the
+    /// two places a scene comes from. Each is its own titled section, so the
+    /// five concerns the issue named are visually distinct without any of them
+    /// inventing a layout — every row is a shared form row on the page's one
+    /// label grid.
+    ///
+    /// <para>Both option sets are HERE as well as in their dialogs, and both
+    /// mounts read and write the same shared preference: an option only
+    /// reachable through a file browser is an option the user has to open a
+    /// browser to find out about.</para>
+    /// </summary>
     public void Draw(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
@@ -194,41 +242,108 @@ public sealed class ScenePane
                     "Description",
                     _description,
                     value => _description = value,
-                    placeholder: "What this scene is",
-                    disabled: busy,
-                    help: "Saved into the file and shown beside it in every listing.");
-                form.Actions(
-                    string.Empty,
-                    actions =>
+                    placeholder: "Optional description",
+                    disabled: busy);
+                form.Switch(
+                    "Include MCDFs",
+                    SaveOptions.IncludeModdedAppearance,
+                    next => SaveOptions = SaveOptions with
                     {
-                        actions.Button(
-                            "Save scene…",
-                            OpenSave,
-                            disabled: busy,
-                            help: busy
-                                ? "A scene operation is already running."
-                                : "Capture every actor, object, light, camera and the environment into one file.",
-                            variant: ButtonVariant.Primary);
-                        actions.Button(
-                            "Load scene…",
-                            OpenLoad,
-                            disabled: busy,
-                            help: busy
-                                ? "A scene operation is already running."
-                                : "Validate a whole scene file, then restore it into this session.");
+                        IncludeModdedAppearance = next,
                     },
-                    fullWidth: true);
+                    help: AppearanceHelp,
+                    disabled: busy);
+                form.ReadOnly("Size", SaveSizeText());
+                form.Actions("File", actions =>
+                {
+                    actions.Button(
+                        "Save…",
+                        OpenSave,
+                        disabled: busy,
+                        help: busy ? BusyHelp : null,
+                        variant: ButtonVariant.Primary);
+                    actions.Button(
+                        "Load…",
+                        OpenLoad,
+                        disabled: busy,
+                        help: busy ? BusyHelp : null);
+                    // A snapshot IS a scene, so loading one is a load and
+                    // belongs in the same group. The automatic-snapshot
+                    // STATUS is a library concern and has left this page.
+                    bool snapshots = Directory.Exists(_snapshots.RootDirectory);
+                    actions.Button(
+                        "Snapshots…",
+                        OpenSnapshots,
+                        disabled: busy || !snapshots,
+                        help: busy ? BusyHelp
+                            : snapshots ? "Automatic snapshots"
+                            : "None taken yet");
+                });
             },
             divider: false);
+
+            page.Section("LOAD", form =>
+            {
+                DrawSessionOptions(form, busy);
+                DrawIncludeOptions(form, busy);
+            });
 
             if (busy && progress is { } running)
                 DrawProgress(page, running);
 
             if (!busy && progress?.Outcome is { } outcome)
                 DrawOutcome(page, outcome, receipt);
+        });
+    }
 
-            DrawRecent(page, busy);
-            DrawSnapshots(page, busy);
+    private const string BusyHelp = "Scene operation running";
+
+    /// <summary>
+    /// What the next save will weigh, live. The appearance payloads are the
+    /// only part big enough to matter and their sizes are REAL file lengths —
+    /// the container stores them raw, so this is a sum and not a guess. With
+    /// the switch off it says so rather than showing a number the save would
+    /// not produce.
+    /// </summary>
+    private string SaveSizeText()
+    {
+        if (!SaveOptions.IncludeModdedAppearance)
+            return "Pose data only";
+        long appearance = _workflow.EstimatedAppearanceBytes;
+        return appearance == 0
+            ? "Pose data only — no actor is wearing an MCDF"
+            : $"About {FormatBytes(appearance)} of appearance data";
+    }
+
+    /// <summary>Publishes one finished operation through the ordinary Dalamud
+    /// notification channel, once. It stays a HEADLINE — the per-entity
+    /// detail is the result section's job, and repeating it in a toast would
+    /// be the same prose in two places.</summary>
+    private void NotifyTerminal(
+        SceneProgress progress,
+        SceneOutcome outcome,
+        OperationReceipt receipt)
+    {
+        if (_notifiedOperation == receipt.OperationId)
+            return;
+        _notifiedOperation = receipt.OperationId;
+
+        string action = progress.Kind == SceneOperationKind.Save
+            ? "Saved" : "Loaded";
+        if (outcome.State == OperationReceiptState.Applied)
+        {
+            _notices.Done($"{action} {progress.FileName}.");
+            return;
+        }
+
+        int failures = outcome.Entities.Count(entity => !entity.Restored);
+        _notices.Failed(failures switch
+        {
+            0 => outcome.Detail,
+            1 => $"{progress.FileName}: one item could not be restored. " +
+                 "The Scene tab names it.",
+            _ => $"{progress.FileName}: {failures} items could not be " +
+                 "restored. The Scene tab names them.",
         });
     }
 
@@ -252,8 +367,8 @@ public sealed class ScenePane
                 cancel: () => _workflow.Cancel(),
                 cancelDisabled: !progress.Cancellable,
                 cancelHelp: progress.Cancellable
-                    ? "Stop and undo everything this load has created."
-                    : "This phase can no longer be cancelled.");
+                    ? "Stop and undo"
+                    : "Past the point of cancelling");
             form.Status(
                 $"{(progress.Kind == SceneOperationKind.Save ? "Saving" : "Loading")} " +
                 $"{progress.FileName}.");
@@ -270,7 +385,9 @@ public sealed class ScenePane
         ScenePhase.Reading => "Reading and validating the file",
         ScenePhase.SpawningEntities => "Spawning actors and objects",
         ScenePhase.AwaitingActors => "Waiting for the actors to build",
+        ScenePhase.ApplyingAppearance => "Restoring appearance",
         ScenePhase.ApplyingRelationships => "Attaching companions",
+        ScenePhase.FreezingActors => "Stopping the actors",
         ScenePhase.ApplyingPose => "Applying poses",
         ScenePhase.ApplyingPresentation => "Applying visibility",
         ScenePhase.ApplyingCameras => "Restoring cameras",
@@ -302,16 +419,26 @@ public sealed class ScenePane
                 help: receipt is null
                     ? null
                     : $"Operation {receipt.OperationId:D}, epoch {receipt.OperationEpoch}.");
-            form.Status(outcome.Detail);
+            // The primary reason wraps. It is the one line the user needs
+            // whole, so it is never cut to a count or an ellipsis.
+            form.Paragraph(outcome.Detail, warning: !outcome.Success);
 
             // Named refusals beside restored entities: this is the partial
             // recovery, so every one of them is a row rather than a count.
+            //
+            // Three lines each, deliberately: WHAT did not come back, WHY,
+            // and WHAT TO DO. The reason and the next step wrap instead of
+            // truncating — a row that cuts its own reason off is the defect
+            // issue #41 reported, where the only thing a failed actor row
+            // said was the actor's name back at the user.
             foreach (var refusal in refusals)
             {
-                form.ReadOnly(
-                    refusal.Kind,
-                    $"{refusal.Name} — {refusal.Detail ?? "refused"}",
-                    unavailable: true);
+                form.ReadOnly(refusal.Kind, refusal.Name, unavailable: true);
+                form.Paragraph(
+                    refusal.Detail ?? "It was refused without a stated reason.",
+                    warning: true);
+                if (refusal.Remedy is { Length: > 0 } remedy)
+                    form.Paragraph(remedy);
             }
 
             foreach (var note in outcome.Notes)
@@ -349,108 +476,6 @@ public sealed class ScenePane
         OperationReceiptState.Failed => "Failed",
         _ => state.ToString(),
     };
-
-    // ── recent scenes ────────────────────────────────────────────────────
-
-    private void DrawRecent(Crystarium.PageScope page, bool busy)
-    {
-        var recent = _library.Snapshot.Entries
-            .Where(entry => entry.Kind == PoseLibraryEntryKind.Scene)
-            .OrderByDescending(entry => entry.Modified)
-            .Take(RecentSceneCount)
-            .ToList();
-
-        page.Section("RECENT SCENES", form =>
-        {
-            if (recent.Count == 0)
-            {
-                form.Status(
-                    "No scenes in the pose library folders yet. A scene saved " +
-                    "into one shows up here.");
-                return;
-            }
-
-            foreach (var entry in recent)
-            {
-                bool valid = entry.MetadataStatus == PoseLibraryMetadataStatus.Valid;
-                string value = valid
-                    ? entry.SceneContents
-                    : StatusWord(entry.MetadataStatus);
-                form.ReadOnlyWithActions(
-                    entry.Name,
-                    $"{value} · {entry.ModifiedText}",
-                    actions => actions.Button(
-                        "Load",
-                        () => BeginLoad(entry.FilePath),
-                        disabled: busy || !valid,
-                        help: valid
-                            ? entry.FilePath
-                            : entry.MetadataDetail),
-                    help: valid ? entry.FilePath : entry.MetadataDetail,
-                    unavailable: !valid);
-            }
-        });
-    }
-
-    /// <summary>A listing's one-word verdict. A file the codec refuses is
-    /// LISTED and named — never hidden, so a user can see that the file they
-    /// remember is the one that went bad.</summary>
-    private static string StatusWord(PoseLibraryMetadataStatus status) =>
-        status switch
-        {
-            PoseLibraryMetadataStatus.Future => "Saved by a newer Poser",
-            PoseLibraryMetadataStatus.Oversized => "Too large to read",
-            PoseLibraryMetadataStatus.Corrupt => "Cannot be read",
-            _ => string.Empty,
-        };
-
-    // ── automatic snapshots ──────────────────────────────────────────────
-
-    private void DrawSnapshots(Crystarium.PageScope page, bool busy)
-    {
-        var last = _snapshots.LastResult;
-        page.Section("AUTOMATIC SNAPSHOTS", form =>
-        {
-            form.ReadOnly(
-                "Status",
-                last.Status switch
-                {
-                    SceneAutoSaveStatus.Written => "Taken",
-                    SceneAutoSaveStatus.Skipped => "Skipped",
-                    SceneAutoSaveStatus.Failed => "Failed",
-                    SceneAutoSaveStatus.RecoveryRequired => "Needs recovery",
-                    _ => "None yet",
-                },
-                unavailable: last.Status is SceneAutoSaveStatus.Failed
-                    or SceneAutoSaveStatus.RecoveryRequired,
-                help: last.Path);
-            form.Status(last.Detail);
-
-            foreach (var evidence in last.Evidence)
-            {
-                form.ReadOnlyWithActions(
-                    "Recovered file",
-                    Path.GetFileName(evidence),
-                    actions => actions.Button(
-                        "Open folder",
-                        () => OpenFolder(Path.GetDirectoryName(evidence)),
-                        help: evidence),
-                    help: evidence,
-                    unavailable: true);
-            }
-
-            form.Actions(
-                string.Empty,
-                actions => actions.Button(
-                    "Load snapshot…",
-                    OpenSnapshots,
-                    disabled: busy || !Directory.Exists(_snapshots.RootDirectory),
-                    help: Directory.Exists(_snapshots.RootDirectory)
-                        ? _snapshots.RootDirectory
-                        : "No automatic snapshot has been taken yet."),
-                fullWidth: true);
-        });
-    }
 
     // ── the load dialog's options band ───────────────────────────────────
 
@@ -520,55 +545,98 @@ public sealed class ScenePane
     private float DrawLoadSceneOptions(Vector2 origin, float width) =>
         Section(
             $"{OptionsBandId}-scene", origin, width,
-            form => form.Checkboxes(
-                "Load",
-                disabled: false,
-                fullWidth: false,
-                new Crystarium.CheckItem(
-                    "Clear the session first",
-                    Options.ClearExistingScene,
-                    next => Options = Options with { ClearExistingScene = next },
-                    "Destroy every actor, object, light, camera and overlay node "
-                        + "this session holds before restoring the file. "
-                        + "Undoing the load does not bring them back."),
-                new Crystarium.CheckItem(
-                    "Place relative to me",
-                    Options.PlaceRelativeToCurrentOrigin,
-                    next => Options =
-                        Options with { PlaceRelativeToCurrentOrigin = next },
-                    "Put the scene down where you are standing instead of where "
-                        + "it was captured. Needs a file that recorded where it "
-                        + "was taken.")));
+            form => DrawSessionOptions(form, disabled: false));
 
     private float DrawLoadIncludeOptions(Vector2 origin, float width) =>
         Section(
             $"{OptionsBandId}-include", origin, width,
+            form => DrawIncludeOptions(form, disabled: false));
+
+    /// <summary>
+    /// The two LOAD BEHAVIOUR choices, one group. They stay together because
+    /// they are the same question — what happens to the session the file lands
+    /// in — and they are drawn from here in both mounts, so the workspace and
+    /// the dialog cannot drift into two wordings of one option.
+    /// </summary>
+    private void DrawSessionOptions(Crystarium.FormScope form, bool disabled) =>
+        form.Checkboxes(
+            "Session",
+            disabled,
+            fullWidth: false,
+            new Crystarium.CheckItem(
+                "Clear the session first",
+                Options.ClearExistingScene,
+                next => Options = Options with { ClearExistingScene = next },
+                "Removes everything first"),
+            new Crystarium.CheckItem(
+                "Place relative to me",
+                Options.PlaceRelativeToCurrentOrigin,
+                next => Options =
+                    Options with { PlaceRelativeToCurrentOrigin = next },
+                "Places it where you stand"));
+
+    /// <summary>The six INCLUSION filters, one group, in the order the load
+    /// restores them. Only the three whose scope is not obvious from the word
+    /// carry help — a tooltip that repeats its own label is noise.</summary>
+    private void DrawIncludeOptions(Crystarium.FormScope form, bool disabled) =>
+        form.Checkboxes(
+            "Include",
+            disabled,
+            fullWidth: false,
+            new Crystarium.CheckItem(
+                "Actors", Options.IncludeActors,
+                next => Options = Options with { IncludeActors = next },
+                "Poses, companions and gaze"),
+            new Crystarium.CheckItem(
+                "Objects", Options.IncludeProps,
+                next => Options = Options with { IncludeProps = next }),
+            new Crystarium.CheckItem(
+                "Lights", Options.IncludeLights,
+                next => Options = Options with { IncludeLights = next }),
+            new Crystarium.CheckItem(
+                "Cameras", Options.IncludeCameras,
+                next => Options = Options with { IncludeCameras = next }),
+            new Crystarium.CheckItem(
+                "Environment", Options.IncludeEnvironment,
+                next => Options = Options with { IncludeEnvironment = next },
+                "Time, weather and sky"),
+            new Crystarium.CheckItem(
+                "Overlays", Options.IncludeOverlays,
+                next => Options = Options with { IncludeOverlays = next },
+                "Dialogue and status nodes"));
+
+    // ── the save dialog's options band ───────────────────────────────────
+
+    /// <summary>The save band holds one switch row plus its inset.</summary>
+    private const float SaveBandHeight = 52f;
+
+    /// <summary>
+    /// The one save choice that changes what the file CONTAINS, under the
+    /// destination it is about. Same shared answer as the workspace's SAVE
+    /// section and the same sentence explaining it — this is a second mount,
+    /// not a second option.
+    /// </summary>
+    private void DrawSaveOptionsBand(Vector2 origin, Vector2 size, string? path)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        Section(
+            "##scene-save-options",
+            origin + new Vector2(inset, inset),
+            MathF.Max(1f, size.X - inset * 2f),
             form => form.Checkboxes(
                 "Include",
                 disabled: false,
                 fullWidth: false,
                 new Crystarium.CheckItem(
-                    "Actors", Options.IncludeActors,
-                    next => Options = Options with { IncludeActors = next },
-                    "Actors, their poses, animation, companions and gaze"),
-                new Crystarium.CheckItem(
-                    "Objects", Options.IncludeProps,
-                    next => Options = Options with { IncludeProps = next }),
-                new Crystarium.CheckItem(
-                    "Lights", Options.IncludeLights,
-                    next => Options = Options with { IncludeLights = next }),
-                new Crystarium.CheckItem(
-                    "Cameras", Options.IncludeCameras,
-                    next => Options = Options with { IncludeCameras = next }),
-                new Crystarium.CheckItem(
-                    "Environment", Options.IncludeEnvironment,
-                    next => Options = Options with { IncludeEnvironment = next },
-                    "Time, weather, the held sky sections and the frozen "
-                        + "water and physics toggles"),
-                new Crystarium.CheckItem(
-                    "Overlays", Options.IncludeOverlays,
-                    next => Options = Options with { IncludeOverlays = next },
-                    "Dialogue, balloon and status nodes")));
+                    "Modded appearance",
+                    SaveOptions.IncludeModdedAppearance,
+                    next => SaveOptions = SaveOptions with
+                    {
+                        IncludeModdedAppearance = next,
+                    },
+                    AppearanceHelp)));
+    }
 
     /// <summary>One headerless dense option section, the band's only shape.
     /// </summary>
@@ -601,15 +669,33 @@ public sealed class ScenePane
     /// </summary>
     private void DrawVerdictPanel(Vector2 origin, Vector2 size, string? path)
     {
-        if (path is null)
-            return;
-
         var theme = Crystarium.ActiveTheme;
         float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
         float inset = theme.Spacing.Four * scale;
         float width = size.X - inset * 2f;
         if (!(width > 0f))
             return;
+
+        // The column reserves space, so it must never BE space. With nothing
+        // highlighted it says so, centred in the whole column — an empty state
+        // is the one thing that is centred here; every stated fact below is
+        // left-aligned on the same start edge.
+        if (path is null)
+        {
+            Crystarium.TextInBand(
+                new Vector2(origin.X + inset, origin.Y),
+                new Vector2(width, size.Y),
+                "Choose a scene to see what is in it.",
+                new TextStyle
+                {
+                    Size = theme.Typography.CaptionSize,
+                    Color = theme.FormHint,
+                },
+                TextConstraint.Wrap(width, alignment: TextAlign.Center),
+                TextAlign.Center);
+            return;
+        }
+
         var cursor = new Vector2(origin.X + inset, origin.Y + inset);
         float line = theme.Controls.FormRowHeight * scale;
 
@@ -677,6 +763,16 @@ public sealed class ScenePane
         Line($"{metadata.PropCount} objects", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.LightCount} lights", theme.FormHint, theme.Typography.CaptionSize);
         Line($"{metadata.CameraCount} cameras", theme.FormHint, theme.Typography.CaptionSize);
+
+        // Format identity and size, from the document itself. A versioned
+        // format the user cannot see the version of is not a versioned format,
+        // and the size is what the appearance payload shows up in.
+        Line(
+            $"{metadata.TypeName ?? "Scene"} v{metadata.FileVersion} · " +
+            FormatBytes(StampOf(path).Length),
+            theme.FormHint,
+            theme.Typography.CaptionSize);
+
         if (metadata.SavedAt is { } saved)
         {
             Line(
@@ -687,6 +783,18 @@ public sealed class ScenePane
                 theme.Typography.CaptionSize);
         }
     }
+
+    /// <summary>Binary-prefix file size for the dialog's compact inspector.
+    /// A stamp that could not be taken reads as unknown rather than as zero.
+    /// </summary>
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        <= 0 => "size unknown",
+        < 1024 => $"{bytes:N0} B",
+        < 1024 * 1024 => $"{bytes / 1024d:N1} KiB",
+        < 1024L * 1024 * 1024 => $"{bytes / (1024d * 1024):N1} MiB",
+        _ => $"{bytes / (1024d * 1024 * 1024):N1} GiB",
+    };
 
     /// <summary>
     /// The probe for one path, never blocking the frame. Answers false while a
@@ -783,7 +891,8 @@ public sealed class ScenePane
             path += SceneFile.Extension;
         var started = _workflow.BeginSave(
             path,
-            string.IsNullOrWhiteSpace(_description) ? null : _description);
+            string.IsNullOrWhiteSpace(_description) ? null : _description,
+            SaveOptions);
         if (started.Success)
             _library.RequestScan();
         else

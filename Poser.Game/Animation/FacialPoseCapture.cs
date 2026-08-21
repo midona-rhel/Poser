@@ -604,7 +604,7 @@ public sealed class FacialPoseCapture : IDisposable
             detail = "Finish the current transform gesture first.";
             return false;
         }
-        if (_gestures.PendingRecovery != null)
+        if (!_gestures.TryCompleteRecovery())
         {
             detail = "Transform recovery must complete before face capture.";
             return false;

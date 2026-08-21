@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Objects;
@@ -869,6 +869,11 @@ public unsafe class ActorSpawnService : IActorSpawnService
     private readonly IPluginLog? _log;
     private readonly IFramework? _framework;
     private readonly Func<nint> _localPlayerAddress;
+
+    /// <summary>Address of one object-table slot, re-read on demand. Held as a
+    /// function for the same reason <see cref="_localPlayerAddress"/> is: the
+    /// service is constructed in tests without a live table.</summary>
+    private readonly Func<int, nint> _objectAddressAt;
     private readonly Func<nint, EntityId?> _expectedWrapperIdentity;
     private readonly Func<long> _clock;
     private readonly bool _ownsAdapter;
@@ -914,7 +919,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
             address => ExpectedWrapperIdentity(objectTable, address),
             null,
             collections,
-            ownsAdapter: true)
+            ownsAdapter: true,
+            objectAddressAt: objectTable.GetObjectAddress)
     {
     }
 
@@ -930,7 +936,8 @@ public unsafe class ActorSpawnService : IActorSpawnService
         Func<nint, EntityId?>? expectedWrapperIdentity = null,
         Func<long>? clock = null,
         ISpawnCollectionPort? collections = null,
-        bool ownsAdapter = false)
+        bool ownsAdapter = false,
+        Func<int, nint>? objectAddressAt = null)
     {
         _framework = framework;
         _collections = collections;
@@ -940,6 +947,9 @@ public unsafe class ActorSpawnService : IActorSpawnService
         _log = log;
         _native = native;
         _localPlayerAddress = localPlayerAddress;
+        // Fail closed here too: with no way to read the object table, no
+        // address is inside the GPose range and nothing pre-existing deletes.
+        _objectAddressAt = objectAddressAt ?? (_ => nint.Zero);
         _applySpawnMutations = applySpawnMutations ?? ApplySpawnMutations;
         // Fail closed: without a way to derive the expected wrapper identity,
         // no bind can be proven and spawn rolls back.
@@ -961,7 +971,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // non-null EntityId(null), silently defeating the fail-closed check.
         return gameObject is null
             ? (EntityId?)null
-            : new EntityId($"actor_{gameObject.GameObjectId}");
+            : ActorManager.ActorIdentity.For(gameObject);
     }
 
     /// <summary>All native access happens on the framework (main) thread;
@@ -1567,6 +1577,138 @@ public unsafe class ActorSpawnService : IActorSpawnService
             _log?.Error($"ActorSpawnService: Failed to destroy actor: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// The GPose object table's range. Brio gates its own scene destruction on
+    /// exactly this and nothing else — <c>DestroyAll</c> walks
+    /// <c>_objectTable[GPoseStart..GPoseEnd]</c> and hands each object to
+    /// <c>DestroyObject</c> (<c>Brio/Game/Actor/ActorSpawnService.cs:175-183</c>,
+    /// <c>ActorTableHelpers.cs:5-8</c>). 200 is the GPose primary and is
+    /// deliberately outside the range, which is what makes "clear the scene"
+    /// safe to mean everything in it.
+    /// </summary>
+    private const int GPoseTableStart = 201;
+    private const int GPoseTableEnd = 439;
+
+    /// <summary>
+    /// Removes exactly one actor from the temporary GPose object table.
+    ///
+    /// <para>An actor Poser owns keeps the stronger create-time identity and
+    /// collection-release contract — it routes to <see cref="DestroyActor"/>
+    /// rather than being downgraded to a scene scan because the caller used
+    /// the general verb.</para>
+    ///
+    /// <para>THE GATE, and where it lives. Brio range-checks the OBJECT TABLE
+    /// index at the enumeration site and never range-checks the
+    /// ClientObjectManager slot it ultimately deletes by
+    /// (<c>com-&gt;GetIndexByObject</c> → <c>DeleteObjectByIndex</c>, guarded
+    /// only against the 0xFFFFFFFF sentinel). Those are two DIFFERENT index
+    /// spaces, so a 201-439 test on the manager slot would be checking the
+    /// wrong number and refusing valid deletes. This states the real gate in
+    /// the real space: the actor must still be standing in the GPose table
+    /// range right now. It does not lean on the fact that
+    /// <c>ActorManager</c> happens to scan the same range — a gate inherited
+    /// by assumption widens silently the day that scan changes.</para>
+    ///
+    /// <para>Refuses the local/GPose primary, companion bodies, stale or
+    /// non-root wrappers, and anything whose typed descriptor no longer
+    /// resolves.</para>
+    /// </summary>
+    public bool RemoveActorFromScene(IActor actor)
+    {
+        if (actor.Address == nint.Zero || !OnOwnerThread)
+            return false;
+
+        try
+        {
+            if (_ownership.TryGetBound(actor, out _))
+                return DestroyActor(actor);
+
+            if (actor.Address == _localPlayerAddress())
+            {
+                _log?.Warning(
+                    "ActorSpawnService: Refused to remove the local/GPose primary actor");
+                return false;
+            }
+            if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount
+                or ActorKind.Ornament)
+            {
+                _log?.Warning(
+                    "ActorSpawnService: Refused to remove a companion child");
+                return false;
+            }
+
+            // The wrapper check is the root/ownership boundary: it excludes
+            // auxiliary registrations and an old wrapper after a refresh even
+            // when a native address happens to be reused. A caller cannot
+            // manufacture a wrapper with a copied address and turn that stale
+            // view into permission to delete a scene slot.
+            EntityId? expectedIdentity;
+            try
+            {
+                expectedIdentity = _expectedWrapperIdentity(actor.Address);
+            }
+            catch
+            {
+                expectedIdentity = null;
+            }
+            if (expectedIdentity is not { } expected
+                || expected != actor.Id
+                || !_actorManager.Actors.Any(candidate =>
+                    ReferenceEquals(candidate, actor)
+                    && candidate.Id == expected
+                    && candidate.Address == actor.Address))
+            {
+                _log?.Warning(
+                    "ActorSpawnService: Refused to remove a stale or non-root actor wrapper");
+                return false;
+            }
+
+            // Brio's gate, in Brio's index space, re-read now.
+            if (!InGPoseTable(actor.Address))
+            {
+                _log?.Warning(
+                    "ActorSpawnService: Refused to remove an actor outside the GPose object table");
+                return false;
+            }
+
+            var descriptor = _native.ResolveActor(actor.Address);
+            if (descriptor is not { } current)
+            {
+                _log?.Warning(
+                    "ActorSpawnService: Refused to remove actor without a current typed scene descriptor");
+                return false;
+            }
+
+            // DeleteExact re-reads the typed descriptor immediately before
+            // invoking ClientObjectManager.DeleteObjectByIndex(index, 0).
+            if (!_native.DeleteExact(current))
+                return false;
+
+            _log?.Debug(
+                $"ActorSpawnService: Removed GPose actor at index {current.Index}");
+            _actorManager.RefreshActors();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log?.Error(
+                $"ActorSpawnService: Failed to remove actor from scene: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Whether this address is currently a GPose-table object.
+    /// Re-read at the write, never cached.</summary>
+    private bool InGPoseTable(nint address)
+    {
+        for (int index = GPoseTableStart; index <= GPoseTableEnd; index++)
+        {
+            if (_objectAddressAt(index) == address)
+                return true;
+        }
+        return false;
     }
 
     public void SetVisibility(IActor actor, bool visible)

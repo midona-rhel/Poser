@@ -308,7 +308,7 @@ public class PoseFileService : IPoseFileService
                 ? _posingService.GetOriginalTransform(actor)
                 : _posingService.GetEffectiveTransform(actor);
             Transform difference = poseFile.ModelDifference;
-            plan.ModelActor = actor;
+            plan.HasModelTransform = true;
             plan.ModelTransform = new Transform
             {
                 Position = current.Position + difference.Position,
@@ -372,8 +372,13 @@ public class PoseFileService : IPoseFileService
         if (character != null && poseFile.Bones.Count > 0 &&
             (options.ApplyBody || options.BoneFilter != null))
         {
-            foreach (var bone in character.Bones.Where(InCharacterScope))
-                plan.Resets.Add(bone);
+            // Virtual bones never carry stacks of their own; the resolver at
+            // the write moment deliberately maps only concrete bones.
+            foreach (var bone in character.Bones.Where(
+                         bone => bone is not VirtualBone &&
+                                 InCharacterScope(bone)))
+                plan.Resets.Add(new PoseImportReset(
+                    character.Slot, bone.PartialId, bone.BoneName));
         }
 
         if (options.AsExpression)
@@ -391,12 +396,15 @@ public class PoseFileService : IPoseFileService
                 continue;
             foreach (var bone in skeleton.Bones)
             {
+                if (bone is VirtualBone)
+                    continue;
                 var match = ClassifyBoneFilter(bone, options);
                 if (match == BoneFilterMatch.Excluded)
                     continue;
                 if (slotGated && match != BoneFilterMatch.Direct)
                     continue;
-                plan.Resets.Add(bone);
+                plan.Resets.Add(new PoseImportReset(
+                    skeleton.Slot, bone.PartialId, bone.BoneName));
             }
         }
     }
@@ -640,12 +648,17 @@ public class PoseFileService : IPoseFileService
         // 316-317, :370-401). Excluded components are masked on the DELTA
         // (Brio PoseInfo.cs:108), so the bone's live values stay put without
         // being re-asserted.
-        plan.Writes.Add((bone, new Transform
-        {
-            Position = boneData.Position,
-            Rotation = TransformMath.NormalizeRotation(boneData.Rotation),
-            Scale = boneData.Scale
-        }, components));
+        plan.Writes.Add(new PoseImportWrite(
+            bone.Skeleton.Slot,
+            bone.PartialId,
+            bone.BoneName,
+            new Transform
+            {
+                Position = boneData.Position,
+                Rotation = TransformMath.NormalizeRotation(boneData.Rotation),
+                Scale = boneData.Scale
+            },
+            components));
     }
 
     /// <summary>Brio PoseWindow's TransformComponents assembly from the three

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Domain.Animation;
@@ -82,7 +82,12 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.FutureVersion,
                 $"The scene was saved by a newer Poser (file version {scene.FileVersion}, " +
                 $"this build reads up to {SceneFile.CurrentVersion}).");
-        if (scene.FileVersion < 1)
+        // The floor is the CURRENT version, not 1. `.xivs` has only ever been
+        // written at version 2, so anything lower can only be a development
+        // `.poserscene` document that was renamed — and nothing reads those.
+        // It takes the ordinary invalid-document refusal; there is no
+        // migration shim and no legacy-specific message.
+        if (scene.FileVersion < SceneFile.CurrentVersion)
             return Fail(SceneFileValidationFailureKind.Document,
                 $"The scene file version {scene.FileVersion} is invalid.");
 
@@ -138,6 +143,11 @@ public static class SceneFileValidation
             if (ValidateActor(actor, actorKeys) is { } failure)
                 return failure;
         }
+
+        // There is deliberately NO whole-document appearance cap. Payloads are
+        // streamed container entries, so ten actors cost ten files' worth of
+        // disk and nothing else; a total cap here would refuse a save the user
+        // asked for in order to protect a memory budget that no longer exists.
 
         // Gaze references another ACTOR, so it can only be checked once every
         // actor key is known — a forward reference is as valid as a backward
@@ -273,11 +283,6 @@ public static class SceneFileValidation
                 is { } placementFailure)
             return placementFailure;
 
-        if (actor.Animation is { } animation &&
-            ValidateAnimation(animation, $"Actor '{actor.Name}' animation")
-                is { } animationFailure)
-            return animationFailure;
-
         if (actor.Mcdf is { } mcdf &&
             ValidateMcdf(mcdf, $"Actor '{actor.Name}' character file")
                 is { } mcdfFailure)
@@ -286,15 +291,41 @@ public static class SceneFileValidation
         return null;
     }
 
-    /// <summary>A stated character file must be followable: a reference with no
-    /// path names nothing, and a hash that is neither absent nor a SHA-256
-    /// digest could only mislead a staleness check.</summary>
+    /// <summary>
+    /// A stated character file must be followable in exactly one of its two
+    /// modes. A REFERENCE with no path names nothing. A PORTABLE payload
+    /// without a digest cannot be checked against its own bytes, and an
+    /// unchecked payload is one an actor would wear on trust — so the digest
+    /// is required there, and the per-actor byte cap is enforced here rather
+    /// than at the file cap, where the only thing a refusal could say is a
+    /// number. A hash that is neither absent nor a SHA-256 digest could only
+    /// mislead a staleness check.
+    /// </summary>
     private static SceneFileValidationOutcome? ValidateMcdf(
         SceneActorMcdf mcdf, string label)
     {
-        if (string.IsNullOrWhiteSpace(mcdf.Path))
+        if (mcdf.IsPortable)
+        {
+            if (mcdf.PackageBytes < 0 ||
+                mcdf.PackageBytes > SceneFileLimits.MaxEmbeddedAppearanceBytes)
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} embeds {mcdf.PackageBytes:N0} bytes, over the " +
+                    $"{SceneFileLimits.MaxEmbeddedAppearanceBytes:N0} byte " +
+                    "limit for one actor.");
+            if (mcdf.PackageEntry!.Length > SceneFileLimits.MaxPathCharacters)
+                return Fail(SceneFileValidationFailureKind.Name,
+                    $"{label} payload entry name is too long.");
+            if (mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} embeds a package with no SHA-256 digest to check " +
+                    "it against.");
+        }
+        else if (string.IsNullOrWhiteSpace(mcdf.Path))
+        {
             return Fail(SceneFileValidationFailureKind.Document,
                 $"{label} states no path.");
+        }
+
         if (mcdf.Path.Length > SceneFileLimits.MaxPathCharacters)
             return Fail(SceneFileValidationFailureKind.Name,
                 $"{label} path exceeds {SceneFileLimits.MaxPathCharacters} characters.");
@@ -346,67 +377,6 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Overlay '{node.Name}' carries {node.Text.Length} characters " +
                 $"(limit {OverlayNodeLimits.MaxTextCharacters}).");
-        return null;
-    }
-
-    private static SceneFileValidationOutcome? ValidateAnimation(
-        SceneActorAnimation animation, string label)
-    {
-        if (!float.IsFinite(animation.Speed) || animation.Speed < 0)
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} speed {animation.Speed} is invalid.");
-        if (!Enum.IsDefined(animation.Stance))
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} names an unknown stance.");
-        if (animation.Pose < 0)
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} has a negative pose index.");
-        if (animation.Slots is null)
-            return Fail(SceneFileValidationFailureKind.Document,
-                $"{label} slot list is missing.");
-
-        var slots = new HashSet<AnimationSlot>();
-        foreach (var slot in animation.Slots)
-        {
-            if (slot is null)
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} contains a null slot entry.");
-            if (!Enum.IsDefined(slot.Slot))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} names an unknown slot.");
-            if (!slots.Add(slot.Slot))
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} states slot {slot.Slot} twice.");
-            if (slot.Speed is { } speed && (!float.IsFinite(speed) || speed < 0))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} slot {slot.Slot} speed {speed} is invalid.");
-        }
-
-        if (animation.Frames is null)
-            return Fail(SceneFileValidationFailureKind.Document,
-                $"{label} frame list is missing.");
-        var frames = new HashSet<AnimationSlot>();
-        foreach (var frame in animation.Frames)
-        {
-            if (frame is null)
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} contains a null frame entry.");
-            if (!Enum.IsDefined(frame.Slot))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} frames name an unknown slot.");
-            if (!frames.Add(frame.Slot))
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} states a frame for slot {frame.Slot} twice.");
-            if (!float.IsFinite(frame.Time) || frame.Time < 0)
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} frame for slot {frame.Slot} is at an invalid time.");
-        }
-        // A frame is only meaningful on a paused timeline; a running one is
-        // wherever the game advanced it to, so a stated frame would restore a
-        // fact the file cannot have observed.
-        if (frames.Count > 0 && animation.Speed != 0f)
-            return Fail(SceneFileValidationFailureKind.Relationship,
-                $"{label} states a paused frame while the actor is not paused.");
         return null;
     }
 

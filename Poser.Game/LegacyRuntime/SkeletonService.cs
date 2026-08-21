@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -35,6 +35,18 @@ public class SkeletonService : ISkeletonService
     public ISkeleton? GetSkeleton(IActor actor) =>
         GetSkeleton(actor, PoseSlot.Character);
 
+    /// <summary>
+    /// One cache entry per (actor id, slot), guarded on NATIVE facts only:
+    /// validity and the slot's current CharacterBase. Which wrapper OBJECT
+    /// asks is irrelevant — a caller holding a different wrapper for the
+    /// same logical actor gets the same skeleton, with the entry re-pointed
+    /// at the live wrapper. A guard failure rebuilds the SAME instance in
+    /// place instead of releasing and recreating it. Together these make
+    /// the historical refresh storm structurally impossible: no call path
+    /// can release an entry another caller's identical request just built,
+    /// and no rebuild mints a new instance for an unchanged native skeleton
+    /// (issue #78).
+    /// </summary>
     public unsafe ISkeleton? GetSkeleton(IActor actor, PoseSlot slot)
     {
         if (actor.Address == nint.Zero || slot == PoseSlot.Unknown)
@@ -44,16 +56,45 @@ public class SkeletonService : ISkeletonService
         var key = (actor.Id, slot);
         if (_skeletons.TryGetValue(key, out var skeleton))
         {
-            if (ReferenceEquals(skeleton.Actor, actor) &&
-                skeleton.Actor.Address == actor.Address &&
-                skeleton.IsValid &&
+            // Same id, newer wrapper object: same actor. Follow the caller's
+            // wrapper so the entry never pins a stale one.
+            if (!ReferenceEquals(skeleton.Actor, actor))
+                RebindActor(key, skeleton, actor);
+
+            if (skeleton.IsValid &&
                 currentBase != nint.Zero &&
                 skeleton.CharacterBaseAddress == currentBase)
             {
                 return skeleton;
             }
 
-            // The slot vanished or was replaced: release only this entry.
+            if (currentBase == nint.Zero)
+            {
+                // The slot is genuinely gone; release only this entry.
+                _log.Debug(
+                    $"Skeleton released for {actor.Name} {slot}: the slot has no character base");
+                ReleaseSkeleton(key, skeleton);
+                _eventBus.Publish(new SkeletonChangedEvent(actor, null));
+                return null;
+            }
+
+            // The native skeleton changed (redraw, equipment replacement):
+            // rebuild THIS instance in place. The instance, its id, and its
+            // cache entry all survive; only the native view and the build
+            // revision move.
+            _log.Debug(
+                $"Skeleton rebuilt in place for {actor.Name} {slot}: " +
+                (!skeleton.IsValid
+                    ? "the skeleton went invalid"
+                    : $"the character base moved " +
+                      $"({skeleton.CharacterBaseAddress:X} to {currentBase:X})"));
+            skeleton.Refresh();
+            if (skeleton.IsValid)
+            {
+                _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton));
+                return skeleton;
+            }
+
             ReleaseSkeleton(key, skeleton);
             _eventBus.Publish(new SkeletonChangedEvent(actor, null));
         }
@@ -66,7 +107,7 @@ public class SkeletonService : ISkeletonService
             skeleton = new Skeleton(
                 actor,
                 slot,
-                () => (nint)SlotCharacterBases.Resolve(actor.Address, slot));
+                owner => (nint)SlotCharacterBases.Resolve(owner.Address, slot));
             if (skeleton.IsValid)
             {
                 _skeletons[key] = skeleton;
@@ -87,6 +128,19 @@ public class SkeletonService : ISkeletonService
         return null;
     }
 
+    /// <summary>Re-points a cached skeleton at the live wrapper for its
+    /// unchanged actor id, moving the Character slot's entity attachment
+    /// with it.</summary>
+    private static void RebindActor(
+        (EntityId Actor, PoseSlot Slot) key, Skeleton skeleton, IActor actor)
+    {
+        if (skeleton.Actor is ActorBase previous)
+            previous.DetachChild(skeleton);
+        skeleton.RebindActor(actor);
+        if (key.Slot == PoseSlot.Character && actor is ActorBase next)
+            next.AttachChild(skeleton);
+    }
+
     public IReadOnlyList<ISkeleton> GetSkeletons(IActor actor)
     {
         var result = new List<ISkeleton>();
@@ -102,8 +156,10 @@ public class SkeletonService : ISkeletonService
     {
         foreach (var (key, skeleton) in _skeletons.ToArray())
         {
-            if (!key.Actor.Equals(actor.Id) || !ReferenceEquals(skeleton.Actor, actor))
+            if (!key.Actor.Equals(actor.Id))
                 continue;
+            if (!ReferenceEquals(skeleton.Actor, actor))
+                RebindActor(key, skeleton, actor);
             skeleton.Refresh();
             _eventBus.Publish(new SkeletonChangedEvent(actor, skeleton.IsValid ? skeleton : null));
         }
@@ -143,10 +199,14 @@ public class SkeletonService : ISkeletonService
         var liveActors = e.Actors.ToDictionary(actor => actor.Id);
         foreach (var (key, skeleton) in _skeletons.ToArray())
         {
+            // A live actor at the same id and native address keeps its
+            // entry, wrapper object or not; the entry follows the live
+            // wrapper. An actor gone or moved releases the slot.
             if (liveActors.TryGetValue(key.Actor, out var actor) &&
-                ReferenceEquals(skeleton.Actor, actor) &&
                 skeleton.Actor.Address == actor.Address)
             {
+                if (!ReferenceEquals(skeleton.Actor, actor))
+                    RebindActor(key, skeleton, actor);
                 continue;
             }
 

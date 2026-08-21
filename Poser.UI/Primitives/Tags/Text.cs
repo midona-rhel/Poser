@@ -266,6 +266,42 @@ public static partial class Crystarium
     }
 
     /// <summary>
+    /// The LAYOUT size a constrained run occupies, without drawing it —
+    /// the same answer <see cref="TextAt(Vector2, string, in TextStyle,
+    /// TextConstraint)"/> would return, shaped through the same wrap. A
+    /// caller that must reserve a wrapped run's height before it draws (a
+    /// form row, which states its logical height to the page) has no other
+    /// way to ask, and re-deriving line counts at the call site would be a
+    /// second wrap implementation.
+    /// </summary>
+    public static Vector2 MeasureText(
+        string text, in TextStyle style, TextConstraint constraint)
+    {
+        if (constraint.Mode == TextConstraint.FitMode.Intrinsic)
+            return MeasureText(text, style);
+        var (font, pushed, size, _) = ResolveStyle(style);
+        try
+        {
+            float natural = ImGui.GetTextLineHeight();
+            if (constraint.Mode == TextConstraint.FitMode.Truncate)
+                return new Vector2(constraint.Width, natural);
+            float advance = constraint.LineHeight is { } multiplier
+                ? size * multiplier * ImGuiHelpers.GlobalScale
+                : natural;
+            int lines = 0;
+            foreach (var _ in WrapResolved(
+                Presentation(text), constraint.Width, constraint.Whitespace))
+                lines++;
+            return new Vector2(constraint.Width, MathF.Ceiling(advance * lines));
+        }
+        finally
+        {
+            if (pushed)
+                font!.Pop();
+        }
+    }
+
+    /// <summary>
     /// Composition-internal ellipsis fitting for labels that a composed
     /// control renders itself (button captions). Everything else goes
     /// through the canonical CLIPPED renderer — this helper must never

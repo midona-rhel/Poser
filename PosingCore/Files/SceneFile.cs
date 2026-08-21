@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json;
@@ -12,7 +12,7 @@ using Poser.Services;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser scene file format (.poserscene): one versioned JSON
+/// Poser scene file format (.xivs): one versioned JSON
 /// document carrying every entity of a scene — actors with their complete
 /// embedded Brio-format <see cref="PoseFile"/>, props, lights and cameras as
 /// their existing per-entity documents (<see cref="LightFile"/>,
@@ -35,13 +35,13 @@ public class SceneFile
     /// <summary>Bumped on any breaking meaning change of a persisted field.
     /// Readers refuse versions above this as typed Future outcomes instead
     /// of guessing at unknown semantics.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     /// <summary>The one extension every scene reader, writer and listing
     /// filters on.</summary>
-    public const string Extension = ".poserscene";
+    public const string Extension = ".xivs";
 
-    public string TypeName { get; set; } = "Poser Scene";
+    public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
     /// <summary>Stable logical scene identity; never empty in a valid file.</summary>
@@ -145,9 +145,16 @@ public class SceneFile
 /// <summary>Hard bounds every scene read and write enforces.</summary>
 public static class SceneFileLimits
 {
-    /// <summary>Scenes embed one complete pose document per actor, so the
-    /// byte cap is double the ordinary pose cap.</summary>
-    public const long MaxFileBytes = 64L * 1024 * 1024;
+    /// <summary>
+    /// The DOCUMENT's cap — the JSON entry inside the container, which holds
+    /// one complete pose document per actor and no payload bytes at all. It is
+    /// double the ordinary pose cap for the same reason it always was.
+    ///
+    /// <para>This is deliberately NOT a cap on the file: appearance payloads
+    /// are separate container entries, so a scene carrying half a gigabyte of
+    /// packages still has a small document.</para>
+    /// </summary>
+    public const long MaxDocumentBytes = 64L * 1024 * 1024;
     public const int MaxJsonDepth = 64;
     public const int MaxActors = 100;
     public const int MaxProps = 100;
@@ -166,6 +173,24 @@ public static class SceneFileLimits
 
     /// <summary>Hex characters of a SHA-256 digest.</summary>
     public const int ContentHashCharacters = 64;
+
+    /// <summary>
+    /// One actor's embedded appearance package. It matches the MCDF importer's
+    /// own ceiling (<c>IntegrationConfiguration.McdfMaxFileBytes</c>) because a
+    /// package Poser will happily IMPORT must be a package it can SAVE — real
+    /// character files run to hundreds of megabytes, and a scene format that
+    /// refuses them is a scene format that cannot record appearance.
+    ///
+    /// <para>Payloads are stored as their own container entries and streamed,
+    /// never encoded into the document, so this bounds disk rather than
+    /// memory.</para>
+    /// </summary>
+    public const long MaxEmbeddedAppearanceBytes = 512L * 1024 * 1024;
+
+    /// <summary>Above this, a save still writes the payload and SAYS how big
+    /// the file became. It is a warning threshold, never a refusal: a user who
+    /// asked for portable appearance gets portable appearance.</summary>
+    public const long LargeAppearanceWarningBytes = 256L * 1024 * 1024;
     public const float MinQuaternionLengthSquared =
         PoseFileLimits.MinQuaternionLengthSquared;
 }
@@ -245,12 +270,6 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public LightFile.TransformData? ModelTransform { get; set; }
 
-    /// <summary>What the actor is PLAYING. Absent when nothing about the
-    /// actor's animation was worth recording — no Poser-owned override and a
-    /// plain idle at ordinary speed.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public SceneActorAnimation? Animation { get; set; }
-
     /// <summary>Where the actor is LOOKING. Absent when no gaze override is
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -264,22 +283,36 @@ public class SceneActor
 }
 
 /// <summary>
-/// A REFERENCE to the character file an actor is wearing — never the payload.
-/// An MCDF is tens of megabytes of another player's mods; a scene states where
-/// it was and lets the existing import machinery read it again.
+/// The character file an actor is wearing, in ONE of two modes — and the mode
+/// is the difference between a scene that travels and one that does not.
+///
+/// <para>REFERENCE mode (<see cref="Package"/> absent) states where the package
+/// was and lets the existing import machinery read it again. It is the default
+/// because an MCDF is tens of megabytes of another player's mods, and it is
+/// only meaningful on the machine that saved it.</para>
+///
+/// <para>PORTABLE mode (<see cref="Package"/> present) carries the package's
+/// own bytes. A path, a temporary collection id, or any other live handle is
+/// NOT a portable save — it names something the receiving machine does not
+/// have — so a save the user asked to make portable either embeds the bytes or
+/// refuses by name and saves the actor without appearance. It never keeps the
+/// reference and calls itself portable.</para>
 ///
 /// <para>Divergence from both references, deliberately: Brio records only a
 /// <c>WasMCDF</c> boolean and then explicitly REFUSES to restore the appearance
 /// ("was locked at the time of saving. Appearance will not be imported",
 /// SceneService.cs:516-519). Ktisis records the path
 /// (<c>SceneFile.ActorInfo.MCDF</c>) and re-imports it, warning by name when
-/// the file has moved (SceneDataService.cs:429-437) — this follows Ktisis, and
-/// adds the content hash Ktisis has no equivalent of.</para>
+/// the file has moved (SceneDataService.cs:429-437) — reference mode follows
+/// Ktisis and adds the content hash Ktisis has no equivalent of; portable mode
+/// is Poser's own and neither reference has anything like it.</para>
 /// </summary>
 [Serializable]
 public class SceneActorMcdf
 {
-    /// <summary>The package's full path AT SAVE. Required.</summary>
+    /// <summary>The package's full path AT SAVE. Required in reference mode;
+    /// EMPTY in portable mode, where the bytes are the document's own and no
+    /// path on the saving machine means anything to a reader.</summary>
     public string Path { get; set; } = string.Empty;
 
     /// <summary>The display name, kept beside the path so a load can name the
@@ -291,91 +324,44 @@ public class SceneActorMcdf
     /// when the file could not be read while saving — an unverifiable
     /// reference, which a load still follows but cannot vouch for. A hash that
     /// no longer matches is a named warning on load, never a silent import of
-    /// different content.</summary>
+    /// different content. In portable mode it is the digest of
+    /// <see cref="Package"/> and is REQUIRED: embedded bytes whose hash does
+    /// not check out are refused rather than imported.</summary>
     public string ContentHash { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// One actor's animation state. Every member here has an APPLY route in
-/// <c>AnimationSession</c> — a scene never records animation facts it cannot
-/// put back. Base timeline, speed, lips, stance/pose and weapon are the LIVE
-/// reading (what the actor is doing); the held expression, the per-slot speeds
-/// and the armed loops are Poser-owned overrides, which have no live field to
-/// read and exist only in the session.
-/// </summary>
-[Serializable]
-public class SceneActorAnimation
-{
-    /// <summary>The base slot's timeline; 0 means the actor was on whatever
-    /// the game gives it and nothing is replayed.</summary>
-    public ushort BaseTimeline { get; set; }
-
-    /// <summary>Overall playback speed. 0 IS the pause state — a paused actor
-    /// is one whose speed override is zero, which is the only pause either
-    /// reference has.</summary>
-    public float Speed { get; set; } = 1f;
-
-    /// <summary>Speech timeline override; 0 means none.</summary>
-    public ushort Lips { get; set; }
-
-    public bool WeaponDrawn { get; set; }
-    public AnimationStance Stance { get; set; } = AnimationStance.Idle;
-    public int Pose { get; set; }
-
-    /// <summary>The expression pinned onto the facial layer; 0 means none.
-    /// Restored through the same hold mechanism that authored it, so the
-    /// facial pin comes back with it rather than as a bare slot speed.
-    /// </summary>
-    public ushort HeldExpression { get; set; }
-
-    public bool PositionLock { get; set; }
-
-    /// <summary>Per-slot overrides, one entry per slot Poser owns something
-    /// on. A list rather than a keyed map: the wire shape then matches
-    /// <see cref="SceneEnvironment.HeldSections"/> and never depends on how a
-    /// serializer chooses to spell an enum used as a dictionary key.</summary>
-    public List<SceneAnimationSlot> Slots { get; set; } = new();
 
     /// <summary>
-    /// Where a PAUSED timeline actually stands — the exact frame the user
-    /// scrubbed to, which the speed and the timeline id together cannot
-    /// express. Recorded only while <see cref="Speed"/> is zero: a running
-    /// animation's frame is whatever the game advanced it to this tick and
-    /// means nothing an instant later, so writing one back would be inventing
-    /// a fact. Empty for a running actor, and for every scene written before
-    /// frames were recorded.
+    /// The container entry holding this package's bytes, present only in
+    /// portable mode.
+    ///
+    /// <para>The bytes are an entry of their own, NOT a field of this
+    /// document. A real character file is hundreds of megabytes; base64 inside
+    /// the JSON would inflate it by a third, force the whole thing through a
+    /// single string and a single byte[] on every read, every write and every
+    /// commit verification, and put a multi-gigabyte transient in a game
+    /// process. The entry is written and read as a STREAM, so the cost of a
+    /// large payload is disk and nothing else.</para>
     /// </summary>
-    public List<SceneAnimationFrame> Frames { get; set; } = new();
-}
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PackageEntry { get; set; }
 
-/// <summary>One paused control's local time, named by the SLOT it drives
-/// rather than by a control index: an index is a position in a freshly
-/// enumerated native list, and a saved one would name whatever occupies that
-/// position on a restored skeleton.</summary>
-[Serializable]
-public class SceneAnimationFrame
-{
-    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
-
-    /// <summary>Local time within the control, in seconds.</summary>
-    public float Time { get; set; }
-}
-
-/// <summary>One animation slot's owned state: its pinned speed, its armed
-/// loop, or both.</summary>
-[Serializable]
-public class SceneAnimationSlot
-{
-    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
-
-    /// <summary>The pinned playback speed; absent when Poser owns no speed on
-    /// this slot.</summary>
+    /// <summary>The payload entry's length in bytes, as recorded at save. It
+    /// lets a listing state a scene's real size, and the save preview state
+    /// what a scene is about to cost, without opening the container.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public float? Speed { get; set; }
+    public long PackageBytes { get; set; }
 
-    /// <summary>The armed loop's timeline; 0 means no loop.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public ushort Loop { get; set; }
+    /// <summary>
+    /// Where the package is being read FROM while a save is in flight. Never
+    /// serialized and never present on a document that came off disk: the
+    /// sealing step records it, the writer streams it into the container
+    /// entry, and nothing else may look at it.
+    /// </summary>
+    [JsonIgnore]
+    public string? PackageSourcePath { get; set; }
+
+    /// <summary>Whether this entry carries the package itself.</summary>
+    [JsonIgnore]
+    public bool IsPortable => PackageEntry is { Length: > 0 };
 }
 
 /// <summary>

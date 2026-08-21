@@ -1,4 +1,4 @@
-# Animation
+﻿# Animation
 
 Basic mode owns one General Full Body selection. Choose only stages a catalog
 row; Apply captures the actor's current Base state and then plays that exact
@@ -18,6 +18,9 @@ global force, performs the exact slot write, then rearms Base. Upper Body loop
 replays its last successfully applied Upper timeline. Turning Loop off stops
 replay without changing the current frame; Reset releases the loop and restores
 the captured layer.
+
+Scenes do not replay any of this. A scene records no animation at all and
+restores every actor stopped; see `scenes.md`.
 
 Pose Expression Preview and Advanced Facial Apply share direct
 `HoldExpression`; their Reset shares `ReleaseExpression`. Release clears Facial

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
@@ -84,7 +84,6 @@ public class SettingsWindow : Window
             Category = 1,
             OpenOnGPose = c.OpenOnGPoseEnter,
             CloseWithGPose = c.CloseWithGPose,
-            PreservePoseAcrossRedraws = c.PreservePoseAcrossRedraws,
             RelativeSecondaryBones = c.RelativeSecondaryBones,
             LinkSiblingBones = c.LinkSiblingBones,
             FollowGameTarget = c.GPoseTargetChangesSelection,
@@ -257,7 +256,6 @@ public class SettingsWindow : Window
 
         c.OpenOnGPoseEnter = _vm.OpenOnGPose;
         c.CloseWithGPose = _vm.CloseWithGPose;
-        c.PreservePoseAcrossRedraws = _vm.PreservePoseAcrossRedraws;
         c.RelativeSecondaryBones = _vm.RelativeSecondaryBones;
         c.LinkSiblingBones = _vm.LinkSiblingBones;
         c.GPoseTargetChangesSelection = _vm.FollowGameTarget;

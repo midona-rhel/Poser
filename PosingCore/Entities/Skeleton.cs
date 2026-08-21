@@ -83,12 +83,30 @@ public class Skeleton : EntityBase, ISkeleton
                 : null;
     }
 
-    public IActor Actor { get; }
+    public IActor Actor { get; private set; }
     public Poser.Domain.Identity.PoseSlot Slot { get; }
     public nint CharacterBaseAddress { get; private set; }
     public IBone? RootBone { get; private set; }
     public IReadOnlyList<IBone> Bones => _bonesView;
     public bool IsValid { get; private set; }
+
+    /// <summary>Monotonic counter across every skeleton (re)build in the
+    /// process. This — not any per-instance id — is the skeleton-change key:
+    /// it advances exactly when the cache invalidated and rebuilt the native
+    /// view, so the binding registry can tell a real skeleton change from
+    /// wrapper churn (issue #78). A fresh guid per instance was the banned
+    /// pattern it replaces: it advanced whenever an OBJECT was recreated,
+    /// which fed rebuild loops that never touched the native skeleton.
+    /// </summary>
+    public long BuildRevision { get; private set; }
+
+    private static long _buildCounter;
+
+    /// <summary>Follows the actor MANAGER's wrapper for the same logical
+    /// actor: when the manager replaces the wrapper object at an unchanged
+    /// identity, the cached skeleton is re-pointed instead of released. One
+    /// cache entry per (actor id, slot) — never one per wrapper.</summary>
+    public void RebindActor(IActor actor) => Actor = actor;
 
     /// <summary>
     /// Skeletons are always collapsible.
@@ -101,15 +119,20 @@ public class Skeleton : EntityBase, ISkeleton
     public override EntityType EntityType => EntityType.Skeleton;
 
     // Slot-native discovery is OWNED by Poser.Game: this transitional entity
-    // receives only a resolver returning the slot's current CharacterBase
-    // address (zero when the slot is absent).
-    private readonly Func<nint> _resolveCharacterBase;
+    // receives only a resolver returning a given actor's current
+    // CharacterBase address for this slot (zero when the slot is absent).
+    // It takes the actor as a parameter so an actor-wrapper rebind never
+    // leaves the resolver reading a stale capture.
+    private readonly Func<IActor, nint> _resolveCharacterBase;
 
+    // The id is DERIVED from (actor, slot) — stable across rebuilds and
+    // instance replacements, per issue #78: a skeleton has no identity of
+    // its own above the write layer, only an address.
     public Skeleton(
         IActor actor,
         Poser.Domain.Identity.PoseSlot slot,
-        Func<nint> resolveCharacterBase)
-        : base(EntityId.New(), "Skeleton")
+        Func<IActor, nint> resolveCharacterBase)
+        : base(new EntityId($"skeleton_{actor.Id.Unique}_{slot}"), "Skeleton")
     {
         Actor = actor;
         Slot = slot;
@@ -193,6 +216,9 @@ public class Skeleton : EntityBase, ISkeleton
 
     private unsafe void BuildSkeleton()
     {
+        // Every (re)build is a cache invalidation: whatever pointers were
+        // handed out before this line are no longer this skeleton's view.
+        BuildRevision = System.Threading.Interlocked.Increment(ref _buildCounter);
         var gameSkeleton = GetGameSkeleton();
         if (gameSkeleton != null)
             BuildFromGameSkeleton(gameSkeleton);
@@ -203,7 +229,7 @@ public class Skeleton : EntityBase, ISkeleton
         // Slot-exact resolution: this skeleton reads ONLY its own slot's
         // CharacterBase; there is no fallback to the Character slot.
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
-            _resolveCharacterBase();
+            _resolveCharacterBase(Actor);
         if (charaBase == null)
             return null;
         CharacterBaseAddress = (nint)charaBase;
@@ -610,7 +636,7 @@ public class Skeleton : EntityBase, ISkeleton
         // The matrix comes from THIS slot's draw object: a weapon's model
         // moves with the hand, not with the actor origin.
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
-            _resolveCharacterBase();
+            _resolveCharacterBase(Actor);
         if (charaBase == null)
             return Matrix4x4.Identity;
 

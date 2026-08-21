@@ -6,6 +6,34 @@ using Poser.Files;
 namespace Poser.Game.Scene;
 
 /// <summary>
+/// What a scene SAVE is asked to put in the document. The six category flags
+/// mirror the load's, so "what a scene contains" is one vocabulary in both
+/// directions.
+///
+/// <para><see cref="IncludeModdedAppearance"/> is the one consent switch, and
+/// it is off by default and never inferred: a scene saved with it on cannot
+/// hand the next save its answer, because the actor's mods are somebody's
+/// private data and each save is its own decision. On, it means PORTABLE —
+/// the package's bytes go into the document. It never means "keep a path and
+/// call it portable".</para>
+/// </summary>
+public sealed record SceneSaveOptions
+{
+    public bool IncludeActors { get; init; } = true;
+    public bool IncludeProps { get; init; } = true;
+    public bool IncludeLights { get; init; } = true;
+    public bool IncludeCameras { get; init; } = true;
+    public bool IncludeEnvironment { get; init; } = true;
+    public bool IncludeOverlays { get; init; } = true;
+
+    /// <summary>Embeds a portable modded-appearance package per actor. Off by
+    /// default; consent is per save.</summary>
+    public bool IncludeModdedAppearance { get; init; }
+
+    public static SceneSaveOptions Default { get; } = new();
+}
+
+/// <summary>
 /// What a scene load is asked to do with the document it read. Every member's
 /// DEFAULT is the behaviour the load had before options existed, so
 /// <see cref="Default"/> and no options at all are the same load.

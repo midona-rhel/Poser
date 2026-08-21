@@ -8,5 +8,4 @@
   <Project Path="Poser.Game.Tests/Poser.Game.Tests.csproj" />
   <Project Path="PosingCore/PosingCore.csproj" />
   <Project Path="PosingCore.Tests/PosingCore.Tests.csproj" />
-  <Project Path="Poser.ContractTests/Poser.ContractTests.csproj" />
 </Solution>

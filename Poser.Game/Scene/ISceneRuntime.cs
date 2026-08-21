@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Application.Operations;
+using Poser.Domain.Identity;
 using Poser.Files;
 
 namespace Poser.Game.Scene;
@@ -33,7 +34,9 @@ public enum ScenePhase
     /// </summary>
     ApplyingAppearance,
     ApplyingRelationships,
-    ApplyingAnimation,
+    /// <summary>Stopping every actor so its pose lands on a held frame.
+    /// Scenes restore a picture, not a performance.</summary>
+    FreezingActors,
     ApplyingPose,
     ApplyingPresentation,
     ApplyingCameras,
@@ -47,14 +50,32 @@ public enum ScenePhase
     Cancelled,
 }
 
+/// <summary>
+/// What sealing left behind: the per-actor notes, and every TEMPORARY package
+/// it created that the writer still has to stream into the container. The
+/// caller deletes them once the write is done — deleting them here would
+/// delete the bytes the save is about to store.
+/// </summary>
+public sealed record SceneSealOutcome(
+    IReadOnlyList<string> Notes,
+    IReadOnlyList<string> TemporaryFiles);
+
 /// <summary>One entity's typed restore outcome. A missing parent or
 /// resource is a named, explained refusal here — never a silent detach or a
-/// silently skipped row.</summary>
+/// silently skipped row.
+///
+/// <para><see cref="Detail"/> is what happened; <see cref="Remedy"/> is what
+/// the user can do about it. A refused entity carries BOTH — a row that only
+/// restates the entity's own name is the defect issue #41 reported — and the
+/// workflow fills the remedy in from <c>SceneEntityRemedy</c> at the terminal
+/// publication, so the result list and the operation log say the same thing.
+/// </para></summary>
 public sealed record SceneEntityOutcome(
     string Kind,
     string Name,
     bool Restored,
-    string? Detail = null);
+    string? Detail = null,
+    string? Remedy = null);
 
 /// <summary>
 /// Immutable terminal outcome of one scene operation. The state is the SAME
@@ -123,13 +144,24 @@ public readonly record struct SceneActionResult(bool Success, string? Detail = n
 /// </summary>
 public readonly record struct SceneClearOutcome(
     int Actors, int Props, int Overlays, int Lights, int Cameras,
-    int WorldObjects = 0)
+    int WorldObjects = 0,
+    IReadOnlyList<string>? UnclearableActors = null)
 {
     public int Total =>
         Actors + Props + Overlays + Lights + Cameras + WorldObjects;
 
+    /// <summary>Actors the clear could not remove, BY NAME. The clear takes
+    /// everything the session holds, so this is the exception path — a stale
+    /// wrapper, a companion body, the GPose primary — and it is never silent:
+    /// the user asked for an empty session and has to know what is left.
+    /// </summary>
+    public IReadOnlyList<string> Refused =>
+        UnclearableActors ?? Array.Empty<string>();
+
     /// <summary>The clear in the user's words, or null when it removed
-    /// nothing — an empty session needs no sentence about being emptied.
+    /// nothing AND left nothing behind — an empty session needs no sentence
+    /// about being emptied, but a session that could not be emptied always
+    /// needs one.
     ///
     /// <para>Borrowed map objects are counted but spoken of SEPARATELY, and
     /// never as destroyed: a clear gives them back to the map exactly where it
@@ -138,7 +170,7 @@ public readonly record struct SceneClearOutcome(
     /// </summary>
     public string? Summary()
     {
-        if (Total == 0)
+        if (Total == 0 && Refused.Count == 0)
             return null;
         var parts = new List<string>(5);
         void Part(int count, string singular, string plural)
@@ -157,9 +189,29 @@ public readonly record struct SceneClearOutcome(
             : $" {WorldObjects} borrowed map " +
                 $"{(WorldObjects == 1 ? "object was" : "objects were")} put back.";
         if (parts.Count == 0)
-            return $"Cleared the session first:{borrowed}".TrimEnd();
-        return $"Cleared the session first: {string.Join(", ", parts)} were " +
-            $"destroyed. Undoing the load does not bring them back.{borrowed}";
+            return $"Cleared the session first:{borrowed}{Left()}".TrimEnd();
+        // The verb agrees with what was actually destroyed, the way the
+        // borrowed-object line below already does. "1 actor were destroyed" is
+        // the only place the two disagreed.
+        int destroyed = Actors + Props + Overlays + Lights + Cameras;
+        return $"Cleared the session first: {string.Join(", ", parts)} " +
+            (destroyed == 1 ? "was" : "were") +
+            " destroyed. Undoing the load does not bring " +
+            (destroyed == 1 ? "it" : "them") +
+            $" back.{borrowed}{Left()}";
+    }
+
+    /// <summary>What the clear could not take, named. Empty when it took
+    /// everything.</summary>
+    private string Left()
+    {
+        if (Refused.Count == 0)
+            return string.Empty;
+        return $" {string.Join(", ", Refused)} " +
+            (Refused.Count == 1 ? "is" : "are") +
+            " still in the scene: the removal was refused. Remove " +
+            (Refused.Count == 1 ? "it" : "them") +
+            " through GPose before loading, or the scene will load on top.";
     }
 }
 
@@ -192,6 +244,43 @@ internal interface ISceneRuntime
     /// a frame on it.
     /// </summary>
     IReadOnlyList<string> StampMcdfHashes(SceneFile scene);
+
+    /// <summary>
+    /// Turns every actor's appearance into a PORTABLE payload, in place, and
+    /// answers one note per actor it could not. Only a save that was asked for
+    /// modded appearance runs it.
+    ///
+    /// <para>Two sources, in this order: the package Poser already owns for the
+    /// actor (its bytes are read from the recorded path), and — when the actor
+    /// wears no imported package — a package created NOW from the actor's live
+    /// Glamourer, Penumbra and Customize+ state through the existing exporter.
+    /// Either way the document ends up holding bytes. A temporary collection
+    /// id, an actor address or a source path is not a portable save, so an
+    /// actor whose payload cannot be produced or does not fit the cap keeps
+    /// NOTHING and is named in a note.</para>
+    ///
+    /// <para>Runs from the workflow task, not a framework action: it marshals
+    /// its own framework work, waits on the export transaction's own receipt,
+    /// and does file work off the frame.</para>
+    /// </summary>
+    /// <summary>
+    /// What the appearance payloads would add to a save RIGHT NOW, in bytes:
+    /// the real size of every package the actors in the session are currently
+    /// wearing. It is a sum of file lengths, not a guess — the container
+    /// stores payloads raw, so what it measures is what the scene will cost.
+    /// Zero when nobody is wearing one.
+    /// </summary>
+    long EstimateAppearanceBytes();
+
+    /// <summary>Drops one temporary file the seal created, after the write has
+    /// streamed it into the container. Never fails a save.</summary>
+    void DeleteTemporary(string path);
+
+    Task<SceneSealOutcome> SealAppearance(
+        SceneFile scene,
+        IReadOnlyDictionary<Guid, ActorId> identities,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation);
 
     // ── capture (framework thread) ───────────────────────────────────────
 
@@ -245,7 +334,9 @@ internal interface ISceneRuntime
     /// on failure.</summary>
     object? SpawnActor(SceneActor data, out string? detail);
 
-    /// <summary>Whether the spawned actor's slot skeletons exist yet.</summary>
+    /// <summary>Whether the spawned actor has slot skeletons AND its exact
+    /// current generation is published to the binding registry. Both are
+    /// required before the pose-import admission can succeed.</summary>
     bool ActorReady(object actor);
 
     /// <summary>
@@ -262,6 +353,7 @@ internal interface ISceneRuntime
     /// </para>
     /// </summary>
     Task<SceneMcdfOutcome> ImportMcdf(
+        string scenePath,
         object actor,
         SceneActor data,
         TimeSpan bound,
@@ -300,11 +392,11 @@ internal interface ISceneRuntime
     /// no-op.</summary>
     string? PlaceActor(object actor, SceneActor data);
 
-    /// <summary>Replays the actor's saved animation state — base timeline,
-    /// speed (zero being the pause), lips, stance, weapon, held expression,
-    /// slot pins, armed loops and the position lock. Null when the file
-    /// records none, else the joined refusal detail.</summary>
-    string? ApplyActorAnimation(object actor, SceneActor data);
+    /// <summary>Stops the actor so its pose lands on a held frame. Scenes
+    /// carry no animation — a timeline id means something different on every
+    /// client — so a restored actor is always frozen and the picture is always
+    /// the same one. Null on success, else the refusal detail.</summary>
+    string? FreezeActor(object actor);
 
     /// <summary>Restores the actor's saved gaze. <paramref name="target"/> is
     /// the restored actor the saved Entity key resolved to, or null when the

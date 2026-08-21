@@ -650,6 +650,7 @@ public sealed class PoseEditService
     /// must reject before inspecting their own local state.
     /// </summary>
     internal PoseEditResult? RecoveryBarrier() =>
+        !_gestures.TryCompleteRecovery() &&
         _gestures.PendingRecovery is { } recovery
             ? PoseEditResult.Fail(
                 "Transform recovery must complete before another mutation.") with

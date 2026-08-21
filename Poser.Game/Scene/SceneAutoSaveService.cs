@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -67,7 +67,7 @@ public sealed record SceneAutoSaveResult(
 /// they then leave the scene alone.
 ///
 /// Layout mirrors the pose auto-saves' user-decided shape:
-/// <c>&lt;pluginConfigDir&gt;/SceneAutoSaves/&lt;yyyy-MM-dd&gt;/&lt;HH-mm-ss&gt; Scene.poserscene</c>
+/// <c>&lt;pluginConfigDir&gt;/SceneAutoSaves/&lt;yyyy-MM-dd&gt;/&lt;HH-mm-ss&gt; Scene.xivs</c>
 /// — one folder per LOCAL day, 24-hour prefix so name order is time order.
 /// Retention counts FILES from disk (one file is one save event here), newest
 /// first by write date, and a day folder left empty goes with them.

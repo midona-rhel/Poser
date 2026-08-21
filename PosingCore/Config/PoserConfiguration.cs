@@ -1,4 +1,4 @@
-using Dalamud.Configuration;
+﻿using Dalamud.Configuration;
 using Poser.Library;
 
 namespace Poser.Config;
@@ -52,13 +52,6 @@ public class PoserConfiguration : IPluginConfiguration
     public bool SelectionChangesGPoseTarget { get; set; } = false;
     public bool GPoseTargetChangesSelection { get; set; } = true;
 
-    /// <summary>
-    /// Park the authored pose while a slot skeleton is rebuilt and restore it
-    /// onto the replacement (Ktisis semantics: rotation everywhere, position on
-    /// the pose root only). Off means a redraw keeps the current behaviour of
-    /// giving the replacement a fresh, empty pose store.
-    /// </summary>
-    public bool PreservePoseAcrossRedraws { get; set; } = true;
 
     /// <summary>
     /// With several bones selected, rotate every bone but the FIRST about the

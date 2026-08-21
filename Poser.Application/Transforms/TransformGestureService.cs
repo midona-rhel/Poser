@@ -93,7 +93,7 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Begin(BeginTransformGesture command)
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -186,7 +186,7 @@ public sealed class TransformGestureService : IDisposable
         TransformGestureId gestureId,
         TransformDelta delta)
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -313,7 +313,7 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Commit(TransformGestureId gestureId)
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -365,7 +365,7 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Cancel(TransformGestureId gestureId)
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -399,7 +399,7 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Undo()
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -445,7 +445,7 @@ public sealed class TransformGestureService : IDisposable
 
     public GestureResult Redo()
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -531,6 +531,30 @@ public sealed class TransformGestureService : IDisposable
     }
 
     /// <summary>
+    /// One automatic retry of the pending recovery, run before a mutation is
+    /// refused for it. A recovery usually goes incomplete because its bones
+    /// were unreachable for a moment (mid-redraw), and nothing in the product
+    /// retries by hand — without this, one transient failure refused every
+    /// later mutation permanently. Returns true when nothing is pending
+    /// anymore.
+    /// </summary>
+    public bool TryCompleteRecovery()
+    {
+        if (PendingRecovery is not { } pending)
+            return true;
+        if (_active != null)
+            return false;
+        using var transition = TryEnterTransition();
+        if (transition == null)
+            return false;
+        var retried = TransformRecovery.RestoreAll(
+            _runtime,
+            pending.Attempts.Select(attempt => attempt.RequestedState));
+        PendingRecovery = retried.Complete ? null : retried;
+        return retried.Complete;
+    }
+
+    /// <summary>
     /// Restores an operation-owned exact snapshot through the same ordered
     /// recovery barrier used by gesture cancellation. This is intentionally
     /// the only public recovery entry point for another application workflow:
@@ -541,7 +565,7 @@ public sealed class TransformGestureService : IDisposable
     public GestureResult RestoreForOperation(
         IReadOnlyList<TransformTargetState> states)
     {
-        if (PendingRecovery is { } pending)
+        if (!TryCompleteRecovery() && PendingRecovery is { } pending)
             return RecoveryRequired(pending);
         using var transition = TryEnterTransition();
         if (transition == null)
@@ -551,9 +575,9 @@ public sealed class TransformGestureService : IDisposable
     }
 
     internal GestureResult? RecoveryBarrier() =>
-        PendingRecovery is { } pending
-            ? RecoveryRequired(pending)
-            : null;
+        TryCompleteRecovery()
+            ? null
+            : RecoveryRequired(PendingRecovery!);
 
     internal IDisposable? TryEnterTransition()
     {

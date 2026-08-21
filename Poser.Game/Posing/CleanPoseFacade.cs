@@ -1,4 +1,4 @@
-using Dalamud.Plugin.Services;
+﻿using Dalamud.Plugin.Services;
 using Poser.Application.Operations;
 using Poser.Application.Posing;
 using Poser.Domain.Identity;
@@ -368,7 +368,15 @@ public sealed class CleanPoseFacade
 
     /// <summary>The import tail shared by every source of a plan: the pause
     /// bracket around the apply window, freeze-on-import, and the in-pass
-    /// application itself.</summary>
+    /// application itself.
+    ///
+    /// <para>The plan is name-keyed (issue #78): it carries (slot, partial,
+    /// bone name) and file values, never skeleton or bone instances, so the
+    /// four ticks between arming and the settle tick cannot stale it. The
+    /// capture resolves each name against the live skeletons at the settle
+    /// tick — the write moment — and a redraw inside the window is simply
+    /// not observable by the armed import.</para>
+    /// </summary>
     private PoseEditResult BeginImport(
         IActor actor,
         PoseImportPlan plan,

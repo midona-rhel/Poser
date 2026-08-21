@@ -48,6 +48,21 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private readonly WorldObjects.WorldObjectService _worldObjects;
     private readonly Poser.Services.IPlaceService _place;
 
+    /// <summary>Finds an appearance package by its bytes. Held as the
+    /// interface: the library owns MCDFs and will own this index too.
+    /// </summary>
+    private readonly Poser.Library.IMcdfHashIndex _mcdfHashes;
+
+    /// <summary>The selection, so a destroy path can never leave it pointing
+    /// at something that no longer exists. Injected directly, matching
+    /// <c>TargetSyncService</c> — there is no despawn event the selection
+    /// listens to, so a service that destroys entities holds it.</summary>
+    private readonly Poser.Application.Selection.SelectionSession _selection;
+
+    /// <summary>Breadcrumbs for the scene pose leg. Null under the contract
+    /// tests, which assert read models rather than the log.</summary>
+    private readonly IPluginLog? _log;
+
     public SceneRuntimeAdapter(
         IFramework framework,
         ISessionGenerationSource sessions,
@@ -69,8 +84,14 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IActorManager actors,
         IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
-        Poser.Services.IPlaceService place)
+        Poser.Services.IPlaceService place,
+        Poser.Library.IMcdfHashIndex mcdfHashes,
+        Poser.Application.Selection.SelectionSession selection,
+        IPluginLog? log = null)
     {
+        _mcdfHashes = mcdfHashes;
+        _selection = selection;
+        _log = log;
         _actors = actors;
         _objects = objects;
         _worldObjects = worldObjects;
@@ -112,6 +133,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         {
             if (actor.Mcdf is not { } mcdf)
                 continue;
+            // A sealed portable payload already carries the digest of the
+            // bytes in the document. Re-hashing the source path would stamp a
+            // file the document no longer depends on.
+            if (mcdf.IsPortable)
+                continue;
             var hashed = HashFile(mcdf.Path);
             if (hashed is null)
             {
@@ -142,6 +168,281 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         }
     }
 
+    // ── portable appearance ──────────────────────────────────────────────
+
+    public async Task<SceneSealOutcome> SealAppearance(
+        SceneFile scene,
+        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        var notes = new List<string>();
+        var temporaries = new List<string>();
+        long total = 0;
+        foreach (var actor in scene.Actors)
+        {
+            if (cancellation.IsCancellationRequested)
+                return new SceneSealOutcome(notes, temporaries);
+
+            // The package Poser already owns for this actor is the source of
+            // truth; only when the actor wears none does a new one get built.
+            string? source = actor.Mcdf is { } existing &&
+                !string.IsNullOrWhiteSpace(existing.Path) &&
+                System.IO.File.Exists(existing.Path)
+                ? existing.Path
+                : null;
+            string? created = null;
+
+            if (source is null)
+            {
+                if (!identities.TryGetValue(actor.Key, out var id))
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}' has no stable identity, so its " +
+                        "appearance could not be packaged.");
+                    continue;
+                }
+                created = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(),
+                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                var exported = await ExportAppearance(
+                    id, actor.Name, created, bound, cancellation);
+                if (exported != null)
+                {
+                    notes.Add($"Actor '{actor.Name}': {exported}");
+                    DeleteQuietly(created);
+                    continue;
+                }
+                source = created;
+            }
+
+            try
+            {
+                var info = new System.IO.FileInfo(source);
+                if (!info.Exists)
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}''s appearance package was gone " +
+                        "before it could be read into the scene.");
+                    if (created != null)
+                        DeleteQuietly(created);
+                    continue;
+                }
+                if (info.Length > SceneFileLimits.MaxEmbeddedAppearanceBytes)
+                {
+                    // The one remaining refusal, and it is the IMPORTER's own
+                    // ceiling: a package Poser could not import back is a
+                    // package there is no point saving.
+                    notes.Add(
+                        $"Actor '{actor.Name}''s appearance is " +
+                        $"{Megabytes(info.Length)}, over the " +
+                        $"{Megabytes(SceneFileLimits.MaxEmbeddedAppearanceBytes)} " +
+                        "that Poser can import back; the scene saved without it.");
+                    if (created != null)
+                        DeleteQuietly(created);
+                    continue;
+                }
+
+                // Hashed by STREAM, and the bytes stay on disk: the writer
+                // copies them straight into the container entry, so a
+                // half-gigabyte package never becomes a half-gigabyte array.
+                string digest = HashFile(source)
+                    ?? throw new System.IO.IOException(
+                        "the package could not be checksummed.");
+                total += info.Length;
+                actor.Mcdf = new SceneActorMcdf
+                {
+                    Path = string.Empty,
+                    FileName = actor.Mcdf?.FileName is { Length: > 0 } named
+                        ? named
+                        : $"{actor.Name}.mcdf",
+                    ContentHash = digest,
+                    PackageEntry = SceneFileStore.AppearanceEntry(digest),
+                    PackageBytes = info.Length,
+                    PackageSourcePath = source,
+                };
+                if (created != null)
+                    temporaries.Add(created);
+            }
+            catch (Exception ex)
+            {
+                notes.Add(
+                    $"Actor '{actor.Name}''s appearance package could not be " +
+                    $"read into the scene: {ex.Message}");
+                if (created != null)
+                    DeleteQuietly(created);
+            }
+        }
+
+        if (total > SceneFileLimits.LargeAppearanceWarningBytes)
+        {
+            notes.Add(
+                $"This scene carries {Megabytes(total)} of appearance data. " +
+                "It saved in full; expect it to take a while to move or share.");
+        }
+
+        return new SceneSealOutcome(notes, temporaries);
+    }
+
+    private static string Megabytes(long bytes) =>
+        bytes >= 1024L * 1024 * 1024
+            ? $"{bytes / (1024d * 1024 * 1024):N1} GB"
+            : $"{bytes / (1024d * 1024):N0} MB";
+
+    /// <summary>
+    /// Builds ONE new package from the actor's live supported state through
+    /// the existing MCDF export transaction — the same admission, the same
+    /// capability refusals, the same receipt. Returns null on success, else the
+    /// refusal detail, which is already the exporter's own words about which
+    /// provider was unavailable.
+    /// </summary>
+    private async Task<string?> ExportAppearance(
+        Poser.Domain.Identity.ActorId id,
+        string name,
+        string destination,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        Guid? operationId = null;
+        var refusal = await _framework.RunOnFrameworkThread(() =>
+        {
+            if (_integration.McdfBusy)
+                return "another character-file operation is running.";
+            var started = _integration.BeginExport(
+                id, destination, $"Scene appearance: {name}");
+            if (!started.Success)
+                return started.Detail ?? "the appearance could not be packaged.";
+            operationId = _integration.McdfReceipt?.OperationId;
+            return null;
+        });
+        if (refusal != null)
+            return refusal;
+
+        var deadline = DateTime.UtcNow + bound;
+        while (true)
+        {
+            var receipt = _integration.McdfReceipt;
+            if (receipt is { } terminal &&
+                terminal.OperationId == operationId &&
+                terminal.State != OperationReceiptState.Pending)
+            {
+                return terminal.State == OperationReceiptState.Applied
+                    ? null
+                    : terminal.Detail
+                        ?? $"the appearance export ended {terminal.State}.";
+            }
+            if (DateTime.UtcNow >= deadline)
+                return "the appearance export did not finish within its bound.";
+            try
+            {
+                await Task.Delay(50, cancellation);
+            }
+            catch (OperationCanceledException)
+            {
+                return "the save was cancelled.";
+            }
+        }
+    }
+
+    /// <summary>
+    /// Brio's <c>CleanObject</c> semantics, in Poser's terms, run BEFORE the
+    /// native delete: Brio releases look-at and reverts the character handler
+    /// while the object still exists
+    /// (<c>Brio/Game/Actor/ActorSpawnService.cs:245-256</c>, called at
+    /// <c>:203</c> — before <c>DeleteObjectByIndex</c> at <c>:208</c>), because
+    /// after the delete there is nothing left to name.
+    ///
+    /// <para>Two of the three parts apply here. The actor's own GAZE is
+    /// released so Poser stops driving channels on a body that is about to go.
+    /// Its APPEARANCE is reverted through the ordinary integration teardown,
+    /// which is what releases MCDF ownership, the temporary collection, the
+    /// Glamourer design and the Customize+ profile — the adopted equivalent of
+    /// what <c>TryDelete</c> already does for an owned actor's Penumbra
+    /// collection.</para>
+    ///
+    /// <para>The third part does NOT apply, deliberately. Brio scrubs the
+    /// removed object out of every other actor's look-at. Poser keeps an
+    /// Entity gaze target BY ID and marks it stale
+    /// (<c>IGazeService.TargetStale</c>), so a target that leaves the scene is
+    /// refused by name on reapply instead of being followed. Scrubbing it here
+    /// would delete the user's stated intent to look at that actor; leaving it
+    /// stale is the stronger behaviour and is already the design.</para>
+    ///
+    /// <para>A cleanup that fails is NAMED, never skipped silently — the actor
+    /// is still removed, but the outcome says what did not come apart.</para>
+    /// </summary>
+    private void PrepareActorRemoval(IActor actor, List<string> refusals)
+    {
+        try
+        {
+            _gaze.ResetGaze(actor);
+        }
+        catch (Exception ex)
+        {
+            refusals.Add(
+                $"{actor.Name}: the gaze could not be released before removal " +
+                $"({ex.Message}).");
+        }
+
+        if (_bindings.GetActorId(actor) is not { } id)
+            return;
+        try
+        {
+            var reverted = _integration.ResetActor(id);
+            if (!reverted.Success)
+                refusals.Add(
+                    $"{actor.Name}: the appearance could not be reverted before " +
+                    $"removal ({reverted.Detail ?? "the revert was refused"}).");
+        }
+        catch (Exception ex)
+        {
+            refusals.Add(
+                $"{actor.Name}: the appearance could not be reverted before " +
+                $"removal ({ex.Message}).");
+        }
+    }
+
+    public long EstimateAppearanceBytes()
+    {
+        long total = 0;
+        foreach (var actor in _actors.Actors)
+        {
+            if (_bindings.GetActorId(actor) is not { } id)
+                continue;
+            if (_integration.OverridesFor(id).Mcdf is not { } worn)
+                continue;
+            if (string.IsNullOrWhiteSpace(worn.SourcePath))
+                continue;
+            try
+            {
+                var info = new System.IO.FileInfo(worn.SourcePath);
+                if (info.Exists)
+                    total += info.Length;
+            }
+            catch (Exception)
+            {
+                // A package that cannot be stat'd contributes nothing to the
+                // estimate; the save will name it if it also cannot read it.
+            }
+        }
+        return total;
+    }
+
+    public void DeleteTemporary(string path) => DeleteQuietly(path);
+
+    private static void DeleteQuietly(string path)
+    {
+        try
+        {
+            System.IO.File.Delete(path);
+        }
+        catch (Exception)
+        {
+            // A temporary export that outlives the save costs disk, not
+            // correctness; the save must not fail on a cleanup.
+        }
+    }
+
     public string? ArmSceneCapture(
         Guid sceneId,
         string? description,
@@ -166,15 +467,52 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// ownership rule (a borrowed world light is released, the default camera
     /// cannot be destroyed), so their counts are read before the sweep.
     /// </summary>
+    /// <summary>
+    /// Empties the session of everything it can empty, and NAMES what it
+    /// cannot.
+    ///
+    /// <para>EVERY kind comes out, actors included. An actor Poser spawned
+    /// goes through its ownership ledger; one that was already in the GPose
+    /// scene goes through the native scene-removal route, which deletes it
+    /// from the temporary GPose object table and never touches the overworld
+    /// actor. "Clear the session first" means the session, not the part of it
+    /// Poser happens to own.</para>
+    ///
+    /// <para>A removal the native gates refuse — a stale wrapper, a companion
+    /// body, the GPose primary, an actor no longer in the table — is named in
+    /// the outcome. That is the exception path now, not the design.</para>
+    /// </summary>
     public SceneClearOutcome ClearScene()
     {
         int actors = 0;
+        var refused = new List<string>();
+        var refusedCleanup = new List<string>();
         foreach (var actor in _actors.Actors.ToList())
         {
-            if (!_spawns.IsSpawnedActor(actor))
-                continue;
-            if (_spawns.DestroyActor(actor))
+            // Gaze and appearance are released BEFORE the delete, while the
+            // actor still exists to release them against; Brio does the same
+            // in CleanObject (Brio/Game/Actor/ActorSpawnService.cs:245-256)
+            // and for the same reason — after the delete there is nothing left
+            // to name.
+            var lineage = _bindings.GetActorId(actor)?.LogicalId;
+            PrepareActorRemoval(actor, refusedCleanup);
+
+            // One verb for both provenances: the service routes an owned
+            // actor to its ledger and an adopted one to the scene table.
+            if (_spawns.RemoveActorFromScene(actor))
+            {
                 actors++;
+                // Deselect the moment it is gone, per actor, rather than only
+                // at the end: a removal that succeeds for some actors and is
+                // refused for others must not leave the successful ones
+                // selected.
+                if (lineage is { } gone)
+                    _selection.RemoveActorLineage(gone);
+            }
+            else
+            {
+                refused.Add(actor.Name);
+            }
         }
 
         int props = _props.Props.Count;
@@ -195,9 +533,19 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         int worldObjects = _worldObjects.Count;
         _worldObjects.ReleaseAll();
 
+        // Everything this session pointed at is gone, so the selection is
+        // gone with it. The per-actor deselect above covers a partial clear;
+        // this covers the props, overlays, lights, cameras and borrowed
+        // objects that have no lineage of their own.
+        _selection.Clear();
+
+        foreach (var note in refusedCleanup)
+            refused.Add(note);
+
         return new SceneClearOutcome(
-            actors, props, overlays, lights, cameras, worldObjects);
+            actors, props, overlays, lights, cameras, worldObjects, refused);
     }
+
 
     // ── actors ───────────────────────────────────────────────────────────
 
@@ -215,8 +563,93 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         return actor;
     }
 
-    public bool ActorReady(object actor) =>
-        _skeletons.GetSkeletons((IActor)actor).Count > 0;
+    /// <summary>
+    /// Whether this actor can be POSED yet — which is a stricter question than
+    /// whether it exists.
+    ///
+    /// <para>Three things have to be true, and they land at different times.
+    /// The slot skeletons have to be built. The actor's own binding has to
+    /// name this exact live generation. And — the one that bit — the BONE
+    /// bindings have to have been republished for these skeleton instances.
+    /// </para>
+    ///
+    /// <para>Bone ids are published by the binding registry's staged
+    /// candidate/commit pass, not by the skeleton service, so after a redraw
+    /// the skeleton service hands out NEW bone objects while the registry
+    /// still holds the pre-redraw ones. <c>GetBoneId</c> requires the id to
+    /// bind to the very same instance (<c>ReferenceEquals</c>), so every bone
+    /// of a freshly rebuilt skeleton resolves to null until that pass runs.
+    /// The pose import resolves its targets up front and fails on the FIRST
+    /// one, which is why a clear-first load of a scene carrying appearance
+    /// reported "Import target n_root could not be resolved" — the MCDF redraw
+    /// had replaced the skeleton and the barrier had already let the load
+    /// through.</para>
+    ///
+    /// <para>Probing the root bone through the registry is the whole test: if
+    /// the maps resolve THAT instance they were rebuilt for this skeleton, and
+    /// every other bone of it resolves too. The barrier polls, so a skeleton
+    /// mid-publication is WAITED for; only a skeleton that never publishes
+    /// inside the bound is refused.</para>
+    /// </summary>
+    /// <summary>
+    /// A stable short ordinal for an object INSTANCE, for breadcrumbs. Two
+    /// lines quoting different ordinals for "the same" skeleton is the whole
+    /// diagnosis of a rebind race, and it fits on one screen.
+    /// </summary>
+    private static string Ord(object? instance) =>
+        instance is null
+            ? "none"
+            : System.Runtime.CompilerServices.RuntimeHelpers
+                .GetHashCode(instance).ToString("X8");
+
+    /// <summary>
+    /// One breadcrumb for the scene pose leg. Debug level: it must be there
+    /// when a load misbehaves and invisible in ordinary play.
+    /// </summary>
+    private void Trace(string message) =>
+        _log?.Debug($"Scene pose leg: {message}");
+
+    public bool ActorReady(object actor)
+    {
+        var candidate = (IActor)actor;
+        var skeletons = _skeletons.GetSkeletons(candidate);
+        if (skeletons.Count == 0 ||
+            _bindings.GetActorId(candidate) is not { } id)
+            return false;
+        if (_bindings.Resolve(id) is not { Success: true, Value: { } bound } ||
+            !ReferenceEquals(bound, candidate))
+            return false;
+
+        foreach (var skeleton in skeletons)
+        {
+            // A skeleton still building may have no root yet; that is
+            // not-ready, not a refusal.
+            if (skeleton.RootBone is not { } root)
+            {
+                Trace(
+                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} has no root yet");
+                return false;
+            }
+            if (_bindings.GetBoneId(root) is null)
+            {
+                Trace(
+                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} " +
+                    $"base {skeleton.CharacterBaseAddress:X} root {Ord(root)} " +
+                    "is not published to the binding registry");
+                return false;
+            }
+        }
+
+        Trace(
+            $"ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+            string.Join(", ", skeletons.Select(skeleton =>
+                $"[{skeleton.Slot} skeleton {Ord(skeleton)} " +
+                $"base {skeleton.CharacterBaseAddress:X} " +
+                $"root {Ord(skeleton.RootBone)} bones {skeleton.Bones.Count}]")));
+        return true;
+    }
 
     /// <summary>
     /// Re-imports the saved character file through <c>McdfTransaction</c> —
@@ -225,8 +658,26 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// receipt that transaction publishes. That is what keeps the ownership it
     /// registers, and therefore the by-name unlock-and-restore teardown, the
     /// same for a scene-restored actor as for a hand-imported one.
+    ///
+    /// <para>A PORTABLE entry carries the package itself, and is staged into
+    /// one owned temporary file the import runs from — the transaction takes a
+    /// path, and inventing a second import route for embedded bytes would mean
+    /// a second set of phases, a second rollback and a second ownership
+    /// ledger. The staged file is deleted once the import reaches its terminal
+    /// receipt, whichever way it ended. Its checksum is NOT consulted: the
+    /// bytes in the document ARE the package, so there is nothing to identify
+    /// them against.</para>
+    ///
+    /// <para>A REFERENCE entry is resolved by CONTENT first. The scene records
+    /// the package's SHA-256, so the user's MCDF library is searched for those
+    /// exact bytes before the recorded path is tried — a package that was
+    /// renamed, filed into a subfolder or re-downloaded elsewhere is still the
+    /// package this scene was saved against, and only its checksum can say so.
+    /// The recorded path is the fallback, not the identity. When neither
+    /// answers, the refusal states BOTH things that were tried.</para>
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
+        string scenePath,
         object actor,
         SceneActor data,
         TimeSpan bound,
@@ -235,72 +686,124 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         if (data.Mcdf is not { } saved)
             return SceneMcdfOutcome.Silent;
 
-        // File work first, off the framework thread: a missing package is a
-        // refusal that never touches the actor, and a changed one is named
-        // before anything is applied.
-        string? changed = null;
-        if (!System.IO.File.Exists(saved.Path))
-            return SceneMcdfOutcome.Refused(
-                $"The character file '{saved.FileName}' is no longer at " +
-                $"{saved.Path}; the actor was restored without it.");
-        if (saved.ContentHash.Length > 0)
+        string? staged = null;
+        try
         {
-            var hash = HashFile(saved.Path);
-            if (hash is null)
-                changed = $"The character file '{saved.FileName}' could not be " +
-                    "read to check it against the scene.";
-            else if (!string.Equals(
-                hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
-                changed = $"The character file '{saved.FileName}' has changed " +
-                    "since this scene was saved; the actor is wearing the file " +
-                    "as it is now.";
+            // File work first, off the framework thread: a missing package is a
+            // refusal that never touches the actor, and a changed one is named
+            // before anything is applied.
+            string? changed = null;
+            string source;
+            if (saved.IsPortable)
+            {
+                staged = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(),
+                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                try
+                {
+                    // Container entry to disk, as a STREAM. A real package is
+                    // hundreds of megabytes; nothing here holds it.
+                    using var payload = _store.OpenAppearance(
+                        scenePath, saved.PackageEntry!)
+                        ?? throw new System.IO.IOException(
+                            "the scene holds no such payload.");
+                    using var staging = System.IO.File.Create(staged);
+                    await payload.CopyToAsync(staging, cancellation);
+                }
+                catch (Exception ex)
+                {
+                    return SceneMcdfOutcome.Refused(
+                        $"The appearance package '{saved.FileName}' could not be " +
+                        $"staged for import: {ex.Message}");
+                }
+                source = staged;
+            }
+            else
+            {
+                // BY CONTENT first; the decision itself lives in
+                // SceneAppearanceSource so the order can be stated and tested
+                // without a live client.
+                var resolved = SceneAppearanceSource.Resolve(
+                    saved, _mcdfHashes, System.IO.File.Exists, cancellation);
+                if (resolved.Origin == SceneAppearanceOrigin.None ||
+                    resolved.Path is not { } found)
+                    return SceneMcdfOutcome.Refused(
+                        resolved.Detail
+                        ?? $"The character file '{saved.FileName}' could not be found.");
+
+                changed = resolved.Detail;
+                if (resolved.Origin == SceneAppearanceOrigin.RecordedPath &&
+                    saved.ContentHash.Length > 0)
+                {
+                    // The library had no match and this file is still here, so
+                    // its bytes cannot be the saved ones — but say WHY rather
+                    // than inferring it, since the digest may simply have been
+                    // unreadable when the scene was saved.
+                    var hash = HashFile(found);
+                    changed = hash is null
+                        ? $"The character file '{saved.FileName}' could not be " +
+                            "read to check it against the scene."
+                        : string.Equals(
+                            hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase)
+                            ? null
+                            : $"The character file '{saved.FileName}' has changed " +
+                                "since this scene was saved; the actor is wearing " +
+                                "the file as it is now.";
+                }
+                source = found;
+            }
+
+            var target = (IActor)actor;
+            Guid? operationId = null;
+            var refusal = await _framework.RunOnFrameworkThread(() =>
+            {
+                if (_bindings.GetActorId(target) is not { } id)
+                    return "The actor has no stable identity to import a character file onto.";
+                if (_integration.McdfBusy)
+                    return "Another character-file operation is running.";
+                var started = _integration.BeginImport(id, source);
+                if (!started.Success)
+                    return started.Detail ?? "The character file import was refused.";
+                // The transaction publishes a Pending receipt inside admission, so
+                // the id of THIS operation is readable the moment it is admitted.
+                operationId = _integration.McdfReceipt?.OperationId;
+                return null;
+            });
+            if (refusal != null)
+                return SceneMcdfOutcome.Refused(refusal);
+
+            var deadline = DateTime.UtcNow + bound;
+            while (true)
+            {
+                var receipt = _integration.McdfReceipt;
+                if (receipt is { } terminal &&
+                    terminal.OperationId == operationId &&
+                    terminal.State != OperationReceiptState.Pending)
+                {
+                    return terminal.State == OperationReceiptState.Applied
+                        ? SceneMcdfOutcome.Ok(changed)
+                        : SceneMcdfOutcome.Refused(
+                            terminal.Detail
+                            ?? $"The character file import ended {terminal.State}.");
+                }
+                if (DateTime.UtcNow >= deadline)
+                    return SceneMcdfOutcome.Refused(
+                        $"The character file '{saved.FileName}' did not finish " +
+                        "importing within its bound.");
+                try
+                {
+                    await Task.Delay(50, cancellation);
+                }
+                catch (OperationCanceledException)
+                {
+                    return SceneMcdfOutcome.Refused("The load was cancelled.");
+                }
+            }
         }
-
-        var target = (IActor)actor;
-        Guid? operationId = null;
-        var refusal = await _framework.RunOnFrameworkThread(() =>
+        finally
         {
-            if (_bindings.GetActorId(target) is not { } id)
-                return "The actor has no stable identity to import a character file onto.";
-            if (_integration.McdfBusy)
-                return "Another character-file operation is running.";
-            var started = _integration.BeginImport(id, saved.Path);
-            if (!started.Success)
-                return started.Detail ?? "The character file import was refused.";
-            // The transaction publishes a Pending receipt inside admission, so
-            // the id of THIS operation is readable the moment it is admitted.
-            operationId = _integration.McdfReceipt?.OperationId;
-            return null;
-        });
-        if (refusal != null)
-            return SceneMcdfOutcome.Refused(refusal);
-
-        var deadline = DateTime.UtcNow + bound;
-        while (true)
-        {
-            var receipt = _integration.McdfReceipt;
-            if (receipt is { } terminal &&
-                terminal.OperationId == operationId &&
-                terminal.State != OperationReceiptState.Pending)
-            {
-                return terminal.State == OperationReceiptState.Applied
-                    ? SceneMcdfOutcome.Ok(changed)
-                    : SceneMcdfOutcome.Refused(
-                        terminal.Detail
-                        ?? $"The character file import ended {terminal.State}.");
-            }
-            if (DateTime.UtcNow >= deadline)
-                return SceneMcdfOutcome.Refused(
-                    $"The character file '{saved.FileName}' did not finish " +
-                    "importing within its bound.");
-            try
-            {
-                await Task.Delay(50, cancellation);
-            }
-            catch (OperationCanceledException)
-            {
-                return SceneMcdfOutcome.Refused("The load was cancelled.");
-            }
+            if (staged != null)
+                DeleteQuietly(staged);
         }
     }
 
@@ -331,8 +834,36 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         string description,
         Action<OperationReceipt> onReceipt)
     {
+        // The arm's own view of the world, quoted the same way readiness
+        // quotes it. If these ordinals differ from the ready line, the plan is
+        // being built against a skeleton the registry never bound — which is
+        // exactly the shape that reports "Import target n_root could not be
+        // resolved" for every bone at once.
+        var target = (IActor)actor;
+        var skeletons = _skeletons.GetSkeletons(target);
+        int resolvable = 0;
+        int total = 0;
+        foreach (var skeleton in skeletons)
+        {
+            foreach (var bone in skeleton.Bones)
+            {
+                total++;
+                if (_bindings.GetBoneId(bone) is not null)
+                    resolvable++;
+            }
+        }
+        Trace(
+            $"arming import for actor {target.Name} wrapper {Ord(target)}: " +
+            string.Join(", ", skeletons.Select(skeleton =>
+                $"[{skeleton.Slot} skeleton {Ord(skeleton)} " +
+                $"base {skeleton.CharacterBaseAddress:X} " +
+                $"root {Ord(skeleton.RootBone)}]")) +
+            $" — {resolvable} of {total} bones resolve through the registry");
+
         var result = _poses.ImportPose(
-            (IActor)actor, data.Pose!, SceneImportOptions, description, onReceipt);
+            target, data.Pose!, SceneImportOptions, description, onReceipt);
+        if (!result.Success)
+            Trace($"import refused for {target.Name}: {result.Detail}");
         return result.Success ? null : result.Detail ?? "The pose import refused.";
     }
 
@@ -408,81 +939,25 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     /// <summary>
-    /// Replays the saved animation in the one order that survives its own
-    /// dependencies: stance and weapon FIRST (a stance transition cancels the
-    /// container's timelines, so anything played before it would be taken
-    /// down), then the base timeline, then the held expression (which pins the
-    /// facial layer itself), then lips, then the explicit slot pins and armed
-    /// loops, then the overall speed LAST — a pause written before the plays
-    /// would be lifted by the very sequencer calls that follow it.
+    /// FREEZES the actor. A scene restores a picture, not a performance: it
+    /// carries pose data, which is self-contained, and deliberately carries no
+    /// animation at all — a timeline id resolves against the LOADING client's
+    /// game and mod list, so the same scene file would play something
+    /// different on someone else's machine, or nothing.
+    ///
+    /// <para>So every restored actor is stopped at speed 0 and the pose lands
+    /// on a held frame. That is the definition of a successful load: the same
+    /// picture every time, on every client. Expressions come back as part of
+    /// the pose, on the frozen face.</para>
     /// </summary>
-    public string? ApplyActorAnimation(object actor, SceneActor data)
+    public string? FreezeActor(object actor)
     {
-        if (data.Animation is not { } saved)
-            return null;
         if (_bindings.GetActorId((IActor)actor) is not { } id)
-            return "The actor has no stable identity to own animation state.";
-
-        var failures = new List<string>();
-        void Try(AnimationResult result)
-        {
-            if (!result.Success && result.Detail is { } detail)
-                failures.Add(detail);
-        }
-
-        if (saved.WeaponDrawn)
-            Try(_animation.SetWeaponDrawn(id, true));
-        if (_animation.SupportsStance &&
-            (saved.Stance != AnimationStance.Idle || saved.Pose != 0))
-            Try(_animation.SetStance(id, saved.Stance, saved.Pose));
-
-        if (saved.BaseTimeline != 0)
-            Try(_animation.PlayBase(id, saved.BaseTimeline));
-        if (saved.HeldExpression != 0)
-            Try(_animation.HoldExpression(id, saved.HeldExpression));
-        if (saved.Lips != 0)
-            Try(_animation.SetLips(id, saved.Lips));
-
-        foreach (var slot in saved.Slots)
-        {
-            if (slot.Loop != 0)
-                Try(_animation.SetSlotLoop(id, slot.Slot, slot.Loop, true));
-            // The facial pin belongs to the held expression and is re-applied
-            // by it; re-writing it here would double the ownership.
-            if (slot.Speed is { } speed &&
-                !(slot.Slot == AnimationSlot.Facial && saved.HeldExpression != 0))
-                Try(_animation.SetSlotSpeed(id, slot.Slot, speed));
-        }
-
-        if (saved.PositionLock)
-            Try(_animation.SetPositionLock(id, true));
-        if (saved.Speed != 1f)
-            Try(_animation.SetSpeed(id, saved.Speed));
-
-        // The paused frames LAST, after the pause that makes them meaningful.
-        // The scrub gesture is the one route that writes a control time, and
-        // it needs a token from a FRESH enumeration — which is exactly what
-        // BeginScrub takes here, on the restored skeleton. It leaves the actor
-        // paused on the frame, which is the state the file recorded.
-        foreach (var frame in saved.Frames)
-        {
-            if (_animation.FindSlotControl(id, frame.Slot) is not { } control)
-            {
-                failures.Add(
-                    $"The saved {frame.Slot} frame has no control on this actor.");
-                continue;
-            }
-            var begun = _animation.BeginScrub(id, control.Id);
-            if (!begun.Success)
-            {
-                failures.Add(begun.Detail ?? $"The {frame.Slot} frame was refused.");
-                continue;
-            }
-            Try(_animation.UpdateScrub(id, frame.Time));
-            _animation.EndScrub();
-        }
-
-        return failures.Count == 0 ? null : string.Join("; ", failures);
+            return "The actor has no stable identity to freeze.";
+        var paused = _animation.Pause(id);
+        return paused.Success
+            ? null
+            : paused.Detail ?? "The actor could not be frozen for its pose.";
     }
 
     /// <summary>

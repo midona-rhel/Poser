@@ -60,11 +60,30 @@ public sealed class SceneWorkflow : IDisposable
     /// <summary>Bound for one saved character file to import. Generous because
     /// the transaction behind it extracts a whole package and waits out its
     /// own redraw barrier; cancelling the load cuts it short.</summary>
-    private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// A character-file import's bound. Real packages run to hundreds of
+    /// megabytes and the import decompresses, extracts, applies and waits for
+    /// a redraw, so this is minutes rather than the one minute it used to be —
+    /// a bound that expires mid-import turns a working restore into a named
+    /// failure for no reason but impatience.
+    /// </summary>
+    private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>Building a package from live provider state, per actor. The
+    /// exporter walks Penumbra's resource tree and writes the archive.
+    /// </summary>
+    private static readonly TimeSpan AppearanceSealTimeout =
+        TimeSpan.FromMinutes(10);
 
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
     private readonly ISceneRuntime _runtime;
+
+    /// <summary>Where the operation record goes. Null only under the contract
+    /// tests, which assert the published read models rather than the log.
+    /// </summary>
+    private readonly Dalamud.Plugin.Services.IPluginLog? _log;
+
     private readonly object _publishGate = new();
     private readonly CancellationTokenSource _disposal = new();
 
@@ -103,19 +122,30 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.IActorManager actors,
         Dalamud.Plugin.Services.IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
-        Poser.Services.IPlaceService place)
+        Poser.Services.IPlaceService place,
+        Poser.Library.IMcdfHashIndex mcdfHashes,
+        Poser.Application.Selection.SelectionSession selection,
+        Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place))
+            worldObjects, place, mcdfHashes, selection, log), log)
     {
     }
 
-    internal SceneWorkflow(ISceneRuntime runtime)
+    internal SceneWorkflow(
+        ISceneRuntime runtime,
+        Dalamud.Plugin.Services.IPluginLog? log = null)
     {
         _runtime = runtime;
+        _log = log;
     }
+
+    /// <summary>What including modded appearance would add to a save right
+    /// now, in bytes. Read every frame by the save surface, so it stays a
+    /// cheap stat over the actors in the session and nothing more.</summary>
+    public long EstimatedAppearanceBytes => _runtime.EstimateAppearanceBytes();
 
     /// <summary>The armed capture's bound. Only the contract tests set it —
     /// waiting the real bound out would make asserting the timeout a
@@ -252,7 +282,10 @@ public sealed class SceneWorkflow : IDisposable
     /// <summary>Starts the whole-scene save: the bone-cache refresh is armed
     /// first, the framework-thread pointer-free capture runs once it lands,
     /// then off-thread validation and the atomic write.</summary>
-    public SceneActionResult BeginSave(string path, string? description = null)
+    public SceneActionResult BeginSave(
+        string path,
+        string? description = null,
+        SceneSaveOptions? options = null)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -269,7 +302,12 @@ public sealed class SceneWorkflow : IDisposable
             ScenePhase.RefreshingPoses, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
-            () => RunSave(operation, path, description, cancellation),
+            () => RunSave(
+                operation,
+                path,
+                description,
+                options ?? SceneSaveOptions.Default,
+                cancellation),
             CancellationToken.None);
         return SceneActionResult.Ok();
     }
@@ -312,6 +350,7 @@ public sealed class SceneWorkflow : IDisposable
         Operation operation,
         string path,
         string? description,
+        SceneSaveOptions options,
         CancellationToken cancellation)
     {
         // A save never mutates the session, so its only terminal states are
@@ -394,15 +433,62 @@ public sealed class SceneWorkflow : IDisposable
                 SceneOperationKind.Save, operation.FileName,
                 ScenePhase.Writing, 0, 0, false, null));
 
+            var notes = captured.Notes.ToList();
+
+            // Appearance is sealed BEFORE the policy narrows the document:
+            // the policy's job is to drop what could not be sealed, so it has
+            // to run second. Only a save that asked for appearance pays for
+            // this — it packages mods and reads tens of megabytes.
+            IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
+            if (options.IncludeModdedAppearance)
+            {
+                PublishStep(operation, new SceneProgress(
+                    SceneOperationKind.Save, operation.FileName,
+                    ScenePhase.ApplyingAppearance, 0, 0, false, null));
+                var sealed_ = await _runtime.SealAppearance(
+                    scene, captured.ActorIdentities, AppearanceSealTimeout,
+                    cancellation);
+                notes.AddRange(sealed_.Notes);
+                sealTemporaries = sealed_.TemporaryFiles;
+                PublishStep(operation, new SceneProgress(
+                    SceneOperationKind.Save, operation.FileName,
+                    ScenePhase.Writing, 0, 0, false, null));
+            }
+
+            int unsealedAppearance = SceneSavePolicy.Apply(scene, options, notes);
+
+            if (cancellation.IsCancellationRequested)
+            {
+                Finish(false, "The save was cancelled before writing.", notes);
+                return;
+            }
+
             // Character-file references are hashed HERE, off the framework
             // thread, between the capture that produced them and the write:
             // hashing a package is file work the frame the capture ran on may
             // not spend.
-            var notes = captured.Notes;
             if (_runtime.StampMcdfHashes(scene) is { Count: > 0 } stamped)
-                notes = captured.Notes.Concat(stamped).ToList();
+                notes.AddRange(stamped);
+
+            // The narrowed, sealed document is what gets written, so its own
+            // limits — the per-actor and whole-document appearance caps — are
+            // enforced against what is actually going to disk.
+            var validated = SceneFileValidation.Validate(scene);
+            if (!validated.Succeeded)
+            {
+                Finish(
+                    false,
+                    $"The scene did not validate: {validated.Failure!.Detail}",
+                    notes);
+                return;
+            }
 
             var written = _runtime.WriteScene(scene, path);
+            // The writer has streamed every payload into the container, so the
+            // packages sealing created are the caller's to drop now — and only
+            // now: deleting them earlier would delete the bytes being saved.
+            foreach (var temporary in sealTemporaries)
+                _runtime.DeleteTemporary(temporary);
             if (!written.Succeeded)
             {
                 Finish(
@@ -419,6 +505,31 @@ public sealed class SceneWorkflow : IDisposable
                 $"{operation.FileName}.";
             if (notes.Count > 0)
                 summary += $" {notes.Count} entities carried notes.";
+
+            // A save that dropped appearance the user explicitly asked for is
+            // NOT a plain success. It wrote a file, so it is not a failure
+            // either — it is the partial state the entity list exists for, and
+            // it has to reach the notification rather than only the log.
+            if (unsealedAppearance > 0)
+            {
+                var appearanceOutcomes = new List<SceneEntityOutcome>();
+                foreach (var actor in scene.Actors)
+                    appearanceOutcomes.Add(
+                        new SceneEntityOutcome("Actor", actor.Name, true));
+                appearanceOutcomes.Add(new SceneEntityOutcome(
+                    "Character file",
+                    unsealedAppearance == 1 ? "1 actor" : $"{unsealedAppearance} actors",
+                    false,
+                    "The appearance package could not be built, so the scene "
+                    + "saved without it."));
+                FinishTerminal(
+                    operation, SceneOperationKind.Save,
+                    OperationReceiptState.Failed,
+                    summary + " Modded appearance was requested but not saved.",
+                    appearanceOutcomes, notes, Array.Empty<string>());
+                return;
+            }
+
             Finish(true, summary, notes);
         }
         catch (Exception ex)
@@ -736,8 +847,8 @@ public sealed class SceneWorkflow : IDisposable
                         return;
                     }
                     var appearance = await _runtime.ImportMcdf(
-                        actorTokens[actor.Key], actor, McdfImportTimeout,
-                        cancellation);
+                        path, actorTokens[actor.Key], actor,
+                        McdfImportTimeout, cancellation);
                     // A missing package is a refusal by name; a package whose
                     // bytes moved on is restored WITH the divergence named.
                     // Neither is ever a silent skip.
@@ -793,14 +904,14 @@ public sealed class SceneWorkflow : IDisposable
                     operation, actors, actorTokens, cancellation);
             }
 
-            // Phase 4b — animation, BEFORE the pose. The saved state is what
-            // the actor was playing when the pose was authored on top of it,
-            // so the pose must land last or the replayed timeline animates
-            // over it. It also lands inside the import's own pause bracket
-            // correctly: a restored pause becomes the import's prior speed and
-            // survives, and a restored rate is what the import hands back.
-            Step(ScenePhase.ApplyingAnimation);
-            var animationFailure = await _runtime.OnFramework(() =>
+            // Phase 4b — FREEZE, before the pose. A scene carries pose data
+            // and no animation: a timeline id resolves against the loading
+            // client's own game and mods, so replaying one would show a
+            // different thing on every machine, or nothing. Stopping the actor
+            // first is what makes the pose land on a held frame and the load
+            // deterministic.
+            Step(ScenePhase.FreezingActors);
+            var freezeFailure = await _runtime.OnFramework(() =>
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
@@ -815,17 +926,16 @@ public sealed class SceneWorkflow : IDisposable
                     // the pose it had just applied to it. Stated here so no
                     // later change to how an actor hides can bring that back.
                     _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
-                    var detail = _runtime.ApplyActorAnimation(
-                        actorTokens[actor.Key], actor);
+                    var detail = _runtime.FreezeActor(actorTokens[actor.Key]);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
                             "Animation", actor.Name, false, detail));
                 }
                 return null;
             });
-            if (animationFailure != null)
+            if (freezeFailure != null)
             {
-                await Abort(animationFailure);
+                await Abort(freezeFailure);
                 return;
             }
 
@@ -1099,12 +1209,15 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
-                    ? $"Loaded {operation.FileName}: {actors.Count} actors, " +
-                      $"{props.Count} objects, {lights.Count} lights, " +
-                      $"{cameras.Count} cameras."
+                    ? $"Loaded {operation.FileName}: " +
+                      $"{Count(actors.Count, "actor")}, " +
+                      $"{Count(props.Count, "object")}, " +
+                      $"{Count(lights.Count, "light")}, " +
+                      $"{Count(cameras.Count, "camera")}."
                     : $"Loaded {operation.FileName} partially: " +
-                      $"{failures.Count} of {total} entities could not be restored " +
-                      "(the restored entities were kept): " +
+                      $"{failures.Count} of {total} " +
+                      (total == 1 ? "entity" : "entities") + " could not be " +
+                      "restored (everything that did restore was kept): " +
                       string.Join("; ", failures.Select(failure =>
                           $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
                 // Publishing inside the framework action orders the terminal
@@ -1153,9 +1266,22 @@ public sealed class SceneWorkflow : IDisposable
             : $"The file's {count} {category} were not loaded.");
     }
 
-    /// <summary>Arms ONE atomic pose import — an actor's or its companion's,
-    /// through <paramref name="arm"/> — and awaits its terminal receipt within
-    /// a bound. Returns null on Applied, else the detail.</summary>
+    /// <summary>
+    /// Arms ONE atomic pose import — an actor's or its companion's, through
+    /// <paramref name="arm"/> — and awaits its TERMINAL receipt within a
+    /// bound. Returns null on Applied, else the detail.
+    ///
+    /// <para>Pending receipts are DROPPED rather than latched. The import
+    /// engine acknowledges an admitted import by publishing a Pending receipt
+    /// synchronously from inside <paramref name="arm"/>
+    /// (<c>PoseImportCapture.Reserve</c> → <c>CleanPoseFacade.BeginImport</c>),
+    /// and that receipt's Detail is the import's DESCRIPTION. Completing on it
+    /// made every scene pose import report itself failed with its own label —
+    /// the reported "1 of 4 entities could not be restored" whose only stated
+    /// reason was <c>Scene pose: &lt;actor&gt;</c>. Only a terminal state is an
+    /// answer; <see cref="OperationReceiptState.Pending"/> is the explicit
+    /// non-terminal acknowledgement and says nothing about the outcome.</para>
+    /// </summary>
     private async Task<string?> ImportPose(
         Operation operation,
         Func<Action<OperationReceipt>, string?> arm,
@@ -1168,7 +1294,11 @@ public sealed class SceneWorkflow : IDisposable
         {
             refusal = await _runtime.OnFramework(() =>
                 Guard(operation, cancellation)
-                    ?? arm(receipt => completion.TrySetResult(receipt)));
+                    ?? arm(receipt =>
+                    {
+                        if (receipt.State != OperationReceiptState.Pending)
+                            completion.TrySetResult(receipt);
+                    }));
         }
         catch (Exception ex)
         {
@@ -1391,6 +1521,12 @@ public sealed class SceneWorkflow : IDisposable
         }
     }
 
+    /// <summary>A count and its noun, agreeing. Scene outcomes are read by a
+    /// user who just watched the thing happen; "1 actors" reads as a bug in
+    /// the count, not a bug in the grammar.</summary>
+    private static string Count(int value, string noun) =>
+        $"{value} {noun}{(value == 1 ? string.Empty : "s")}";
+
     /// <summary>The ONE terminal publication: the receipt state, the progress
     /// phase and the outcome state are derived from a single decision so a UI
     /// can never read a phase that disagrees with its receipt.</summary>
@@ -1410,6 +1546,16 @@ public sealed class SceneWorkflow : IDisposable
             OperationReceiptState.Cancelled => ScenePhase.Cancelled,
             _ => ScenePhase.Failed,
         };
+        // Every refusal leaves here carrying its next step. Filling it in at
+        // the ONE terminal publication rather than at each of the twenty-odd
+        // refusal sites is what makes "a refused row explains itself" an
+        // invariant rather than a habit a new site can forget.
+        entities = entities
+            .Select(entity => entity.Restored || entity.Remedy != null
+                ? entity
+                : entity with { Remedy = SceneEntityRemedy.For(entity.Kind) })
+            .ToList();
+
         var progress = new SceneProgress(
             kind, operation.FileName, phase, 0, 0, false,
             new SceneOutcome(state, detail, entities, notes, evidence));
@@ -1428,7 +1574,65 @@ public sealed class SceneWorkflow : IDisposable
                 operation.OperationId, operation.Epoch, operation.Session,
                 operation.Target, detail),
         };
+        LogTerminal(operation, kind, state, detail, entities, notes, evidence);
         PublishTerminal(operation, progress, receipt);
+    }
+
+    /// <summary>
+    /// The scene operation's own record, and the answer to issue #41's
+    /// headline diagnostic defect: the log showed the SIDE EFFECTS of a load
+    /// (a spawned clone, a built skeleton, a spawned light) and never the
+    /// operation that caused them, so a partial restore could not be
+    /// attributed to anything at all.
+    ///
+    /// <para>Every line is prefixed with the same correlated
+    /// <c>Scene {kind} {operationId}</c>, so one grep gathers a whole
+    /// operation out of an interleaved Dalamud log: one terminal line, then
+    /// one line PER ENTITY carrying its kind, its stable scene name, its
+    /// outcome, its refusal reason and its next step, then the notes and every
+    /// recovery file left on disk.</para>
+    /// </summary>
+    private void LogTerminal(
+        Operation operation,
+        SceneOperationKind kind,
+        OperationReceiptState state,
+        string detail,
+        IReadOnlyList<SceneEntityOutcome> entities,
+        IReadOnlyList<string> notes,
+        IReadOnlyList<string> evidence)
+    {
+        if (_log is null)
+            return;
+
+        string prefix = $"Scene {kind} {operation.OperationId:D}";
+        string terminal =
+            $"{prefix}: {state}: {operation.FileName}: {detail}";
+        if (state == OperationReceiptState.Applied)
+            _log.Information(terminal);
+        else if (state is OperationReceiptState.Cancelled
+                 or OperationReceiptState.RolledBack)
+            _log.Warning(terminal);
+        else
+            _log.Error(terminal);
+
+        foreach (var entity in entities)
+        {
+            string line = $"{prefix}: {entity.Kind} '{entity.Name}': " +
+                (entity.Restored ? "restored" : "refused");
+            if (!string.IsNullOrWhiteSpace(entity.Detail))
+                line += $": {entity.Detail}";
+            if (!entity.Restored && !string.IsNullOrWhiteSpace(entity.Remedy))
+                line += $" Next: {entity.Remedy}";
+            if (entity.Restored)
+                _log.Debug(line);
+            else
+                _log.Warning(line);
+        }
+
+        foreach (var note in notes)
+            _log.Information($"{prefix}: {note}");
+        foreach (var path in evidence)
+            _log.Warning($"{prefix}: recovery file: {path}");
     }
 
     /// <summary>Bounded cancel/drain before disposal: admission closes

@@ -41,6 +41,14 @@ public interface ISkeleton : IEntity
     bool IsValid { get; }
 
     /// <summary>
+    /// Advances every time the skeleton's native view is (re)built — the
+    /// skeleton-change key consumers compare instead of any per-instance id
+    /// (issue #78). Two reads returning the same value have seen the same
+    /// build of the same native skeleton.
+    /// </summary>
+    long BuildRevision { get; }
+
+    /// <summary>
     /// Gets a bone by name.
     /// </summary>
     IBone? GetBone(string name);

@@ -1,4 +1,4 @@
-# Posing runtime
+﻿# Posing runtime
 
 `Poser.Game` connects the application to the game. Framework-thread work,
 unsafe offsets, signatures, hooks, native handles, and lookup-only indices stay
@@ -13,6 +13,41 @@ and bone again. A stale or changed observation fails. A bone index helps find
 the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
+
+## Actor identity
+
+An actor's identity is its GameObjectId AND its object-table index. The index
+is not decoration: a GPose clone shares its source's GameObjectId, so cloning
+the local player produces an actor the game calls the same thing as the player.
+
+Two actors sharing an identity share a binding lineage and the registry's
+per-actor bone keys. The second one bound overwrites the first, so every bone
+of the loser resolves to a BoneId that binds to the winner's bone object; the
+reference check then fails and the loser is bone-dead — no pose import, no
+overlay toggles — until something reorders the table. The index is unique among
+coexisting objects and stable while an actor holds its slot, which buys
+uniqueness without costing the continuity the lineage depends on.
+
+One formula, in ActorManager.ActorIdentity. The spawn service's fail-closed
+wrapper check reads it from there rather than restating it, because the two
+must agree exactly or a freshly spawned actor cannot be bound at all.
+
+## Poses do not cross a rebuild — they never move
+
+A pose is addressed by (actor, slot) above the write layer, and by bone NAME
+and partial inside that. A redraw builds a new skeleton instance and nothing
+above the write layer notices: the store keeps the pose exactly where it is and
+the next apply pass lands the same authored stacks on whatever instance the
+slot currently holds.
+
+The store key used to carry the skeleton instance id, so a redraw filed the
+pose under a key nothing would look up again. Everything that existed to move
+poses off that dead key — a parking lot with an expiry window, an adoption
+point in the skeleton-created handler, a second one in the store accessor, and
+an apply-pass check that refused a replaced instance — is deleted. There is no
+setting for it either: pose survival is structural, not optional.
+
+A bone name no live skeleton resolves is still refused by name, at the write.
 
 ## Object identity and lifetime
 

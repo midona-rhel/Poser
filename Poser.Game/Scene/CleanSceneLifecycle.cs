@@ -47,6 +47,12 @@ public sealed class CleanSceneLifecycle : IDisposable
     private DateTime _nextRetryUtc = DateTime.MinValue;
     private DateTime _nextSlotPollUtc = DateTime.MinValue;
 
+    /// <summary>Breadcrumbs for binding publication. The interesting line is
+    /// the one that says a refresh published NOTHING: bone bindings only ever
+    /// change here, so an actor whose bones never resolve is an actor this
+    /// pass coalesced away.</summary>
+    private readonly IPluginLog? _log;
+
     public CleanSceneLifecycle(
         StableBindingRegistry bindings,
         SceneSession scene,
@@ -59,8 +65,10 @@ public sealed class CleanSceneLifecycle : IDisposable
         Poser.Game.Animation.AnimationRuntimePort animationPort,
         Poser.Game.Animation.FacialPoseCapture facialCapture,
         IEventBus events,
-        IFramework framework)
+        IFramework framework,
+        IPluginLog? log = null)
     {
+        _log = log;
         _bindings = bindings;
         _scene = scene;
         _gestures = gestures;
@@ -157,7 +165,15 @@ public sealed class CleanSceneLifecycle : IDisposable
         // SkeletonService publishes SkeletonChangedEvent synchronously while
         // doing so — suppress the nested re-entry it would trigger.
         if (_refreshing)
+        {
+            // Breadcrumb, because this is a place a real change can be LOST: a
+            // skeleton replaced after its actor was already enumerated into the
+            // candidate publishes its event in here, gets suppressed, and
+            // nothing re-triggers. If bone bindings are stale, look for this
+            // line without a "published" line after it.
+            _log?.Debug("Scene bindings: refresh re-entry suppressed");
             return;
+        }
         _refreshing = true;
         try
         {
@@ -202,7 +218,16 @@ public sealed class CleanSceneLifecycle : IDisposable
                 _retryInterval = InitialRetryInterval;
             if (_lastSignature?.ContentEquals(signature) == true
                 && !_bindings.AuxiliaryBindingsChanged(staged))
+            {
+                // ABSENCE IS THE FINDING. Bone bindings are republished only
+                // by CommitCandidate below, so every early return here leaves
+                // whatever instances the last commit bound. If a scene-spawned
+                // actor's bones never resolve, this line is where to look.
+                _log?.Debug(
+                    "Scene bindings: refresh coalesced, nothing published " +
+                    $"({candidate.Actors.Count} actors, retry pending: {_retryPending})");
                 return;
+            }
 
             var result = _scene.TryRefresh(CreateAdmissionCandidate(
                 candidate,
@@ -216,6 +241,10 @@ public sealed class CleanSceneLifecycle : IDisposable
             // against the admitted structural snapshot before map publication.
             _bindings.CommitCandidate(staged, _scene.Snapshot);
             admitted = true;
+            _log?.Debug(
+                "Scene bindings: published " +
+                string.Join(", ", candidate.Actors.Select(actor =>
+                    $"[{actor.Name} skeleton {(actor.CharacterSkeleton is null ? "none" : "bound")}]")));
 
             // A rejected candidate is deliberately retried: recording its
             // signature would coalesce away the correction opportunity.

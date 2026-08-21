@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using Poser.Domain.Identity;
 
 namespace Poser.Application.Selection;
@@ -99,6 +99,29 @@ public sealed class SelectionScope
         if (CompanionResolver?.Invoke(id) is { } companion && companion != id)
             _selected.Remove(companion);
         if (_anchor is not { } anchor || anchor == id || !_selected.Contains(anchor))
+            _anchor = Primary;
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// Drops EVERYTHING that belongs to one actor — the actor row, its bones,
+    /// and its bone groups, which all carry the same
+    /// <see cref="SelectionId.ActorLineage"/>.
+    ///
+    /// <para>It exists because a destroy path must never leave the selection
+    /// pointing at something that no longer exists. Removing the actor row
+    /// alone is not enough: a selected BONE outlives its actor just as
+    /// happily, and every surface that reads the selection would then resolve
+    /// a skeleton that has been freed. One notification for the whole lineage,
+    /// so no listener observes a half-cleared actor.</para>
+    /// </summary>
+    public void RemoveActorLineage(Guid lineage)
+    {
+        int removed = _selected.RemoveAll(
+            id => id.ActorLineage == lineage);
+        if (removed == 0)
+            return;
+        if (_anchor is not { } anchor || !_selected.Contains(anchor))
             _anchor = Primary;
         NotifyChanged();
     }
@@ -320,6 +343,9 @@ public sealed class SelectionSession
     public void Toggle(SelectionId id) => Target.Toggle(id);
 
     public void Remove(SelectionId id) => Target.Remove(id);
+
+    public void RemoveActorLineage(Guid lineage) =>
+        Target.RemoveActorLineage(lineage);
 
     public void Promote(SelectionId id) => Target.Promote(id);
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Numerics;
 using System.Text.Json;
@@ -49,12 +49,55 @@ public sealed class SceneFileStoreTests
 
         var withUnknown = json.TrimEnd();
         withUnknown = withUnknown[..^1] + ",\"FutureMember\":true}";
-        File.WriteAllText(fixture.Path, withUnknown);
+        WriteContainer(fixture.Path, withUnknown);
         var read = SceneFileStore.Default.Read(fixture.Path);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Null(read.Scene!.World);
         Assert.Null(read.Scene.WorldObjects);
+    }
+
+    /// <summary>Writes a raw document into a scene CONTAINER, which is what a
+    /// .xivs is: the payload entries are what let a scene carry hundreds of
+    /// megabytes of appearance without the document growing at all.</summary>
+    internal static void WriteContainer(string path, string documentJson)
+    {
+        using var stream = File.Create(path);
+        using var archive = new System.IO.Compression.ZipArchive(
+            stream, System.IO.Compression.ZipArchiveMode.Create);
+        var entry = archive.CreateEntry(SceneFileStore.DocumentEntry);
+        using var writing = new StreamWriter(entry.Open());
+        writing.Write(documentJson);
+    }
+
+    [Fact]
+    public void A_document_that_is_not_a_container_is_not_a_scene()
+    {
+        using var fixture = new SceneFixture();
+        File.WriteAllText(
+            fixture.Path,
+            JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options));
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.False(read.Succeeded);
+        Assert.Contains("container", read.Failure!.Detail);
+    }
+
+    [Fact]
+    public void A_saved_scene_round_trips_through_its_container()
+    {
+        using var fixture = new SceneFixture();
+        var written = SceneFileStore.Default.Write(ValidScene(), fixture.Path);
+        Assert.True(written.Succeeded, written.Failure?.Detail);
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+
+        // The document lives in its own entry, so the file is a container and
+        // not the JSON itself.
+        using var archive = System.IO.Compression.ZipFile.OpenRead(fixture.Path);
+        Assert.NotNull(archive.GetEntry(SceneFileStore.DocumentEntry));
     }
 
     [Fact]
@@ -63,11 +106,44 @@ public sealed class SceneFileStoreTests
         Assert.Equal(SceneStoreFailureKind.Json, SceneFileStore.Default.Parse("{ nope").Failure!.Kind);
 
         var json = JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options);
-        json = json.Replace("\"FileVersion\": 1", "\"FileVersion\": 2", StringComparison.Ordinal);
+        json = json.Replace(
+            $"\"FileVersion\": {SceneFile.CurrentVersion}",
+            $"\"FileVersion\": {SceneFile.CurrentVersion + 1}",
+            StringComparison.Ordinal);
         var future = SceneFileStore.Default.Parse(json);
 
         Assert.False(future.Succeeded);
         Assert.Equal(SceneStoreFailureKind.FutureVersion, future.Failure!.Kind);
+    }
+
+    /// <summary>`.xivs` has only ever been written at the current version, so
+    /// anything below it is a renamed development document. It takes the
+    /// ordinary invalid-document refusal — there is no migration shim and no
+    /// legacy-specific message to keep working.</summary>
+    [Fact]
+    public void A_scene_below_the_current_version_is_not_read()
+    {
+        var json = JsonSerializer
+            .Serialize(ValidScene(), SceneJsonOptionsAccessor.Options)
+            .Replace(
+                $"\"FileVersion\": {SceneFile.CurrentVersion}",
+                $"\"FileVersion\": {SceneFile.CurrentVersion - 1}",
+                StringComparison.Ordinal);
+
+        var legacy = SceneFileStore.Default.Parse(json);
+
+        Assert.False(legacy.Succeeded);
+        Assert.NotEqual(SceneStoreFailureKind.FutureVersion, legacy.Failure!.Kind);
+    }
+
+    /// <summary>The extension is part of the format's identity, and it is the
+    /// only one. A development `.poserscene` is simply not a scene file.
+    /// </summary>
+    [Fact]
+    public void Xivs_is_the_only_scene_extension()
+    {
+        Assert.Equal(".xivs", SceneFile.Extension);
+        Assert.Equal(2, SceneFile.CurrentVersion);
     }
 
     [Fact]
@@ -208,7 +284,7 @@ internal sealed class SceneFixture : IDisposable
 {
     public string Root { get; } = System.IO.Path.Combine(
         System.IO.Path.GetTempPath(), "poser-scene-store-tests", Guid.NewGuid().ToString("N"));
-    public string Path => System.IO.Path.Combine(Root, "scene.poserscene");
+    public string Path => System.IO.Path.Combine(Root, "scene" + SceneFile.Extension);
 
     public SceneFixture() => Directory.CreateDirectory(Root);
 

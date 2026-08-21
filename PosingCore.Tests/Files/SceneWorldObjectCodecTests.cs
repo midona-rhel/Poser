@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -48,7 +48,7 @@ public sealed class SceneWorldObjectCodecTests
         scene.WorldObjects = null;
         var json = System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
         json = json.TrimEnd()[..^1] + ",\"FutureMember\":true}";
-        File.WriteAllText(file.Path, json);
+        SceneFileStoreTests.WriteContainer(file.Path, json);
 
         var read = SceneFileStore.Default.Read(file.Path);
 
@@ -161,7 +161,7 @@ public sealed class SceneWorldObjectCodecTests
     private sealed class TempWorldScene : IDisposable
     {
         public string Path { get; } = System.IO.Path.Combine(
-            System.IO.Path.GetTempPath(), $"poser-worldobject-{Guid.NewGuid():N}.poserscene");
+            System.IO.Path.GetTempPath(), $"poser-worldobject-{Guid.NewGuid():N}{SceneFile.Extension}");
 
         public void Dispose()
         {
