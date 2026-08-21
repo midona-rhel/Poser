@@ -209,6 +209,15 @@ public sealed class ScenePane
         _saveBrowser.Draw();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+
+        // The notification is pumped HERE, not from the page, for the same
+        // reason the dialogs are: a scene load finishes while the user is on
+        // another tab as often as not, and a completion announced only by the
+        // surface that happened to be drawing is not an announcement.
+        if (!_workflow.Busy &&
+            _workflow.Progress is { Outcome: { } outcome } progress &&
+            _workflow.Receipt is { } receipt)
+            NotifyTerminal(progress, outcome, receipt);
     }
 
     /// <summary>Refreshes the library scan when the scene workspace is opened:
@@ -234,8 +243,6 @@ public sealed class ScenePane
         var progress = _workflow.Progress;
         var receipt = _workflow.Receipt;
         bool busy = _workflow.Busy;
-        if (!busy && progress?.Outcome is { } terminal && receipt is { } completed)
-            NotifyTerminal(progress, terminal, completed);
 
         Crystarium.Page("scene", origin, size, page =>
         {
