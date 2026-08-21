@@ -684,8 +684,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
         foreach (var slot in saved.Slots)
         {
+            // The REPLAY route, not the live toggle: the toggle only re-arms a
+            // repeat this session already applied, and a restore has applied
+            // nothing, so it used to answer Ok having armed nothing at all.
             if (slot.Loop != 0)
-                Try(_animation.SetSlotLoop(id, slot.Slot, slot.Loop, true));
+                Try(_animation.ReplaySlotLoop(id, slot.Slot, slot.Loop));
             // The facial pin belongs to the held expression and is re-applied
             // by it; re-writing it here would double the ownership.
             if (slot.Speed is { } speed &&
