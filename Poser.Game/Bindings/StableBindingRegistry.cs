@@ -248,13 +248,16 @@ public sealed class StableBindingRegistry
                     lineage.Slots.Add(skeleton.Slot, slotState);
                 }
 
-                var skeletonKey = skeleton.Id.Unique;
+                // The slot replacement key is the skeleton CACHE's own
+                // invalidation counter: it advances exactly when the native
+                // view was rebuilt (issue #78). It used to be a fresh guid
+                // per Skeleton OBJECT, which bumped the generation whenever
+                // an instance was recreated — wrapper churn looked like a
+                // skeleton change and fed the refresh loop.
+                var skeletonKey = skeleton.BuildRevision;
                 if (slotState.HasEverBeenPresent &&
                     (!slotState.PresentBeforeScan ||
-                     !string.Equals(
-                         slotState.LastKey,
-                         skeletonKey,
-                         StringComparison.Ordinal)))
+                     slotState.LastKey != skeletonKey))
                     slotState.Generation++;
                 slotState.LastKey = skeletonKey;
                 slotState.Present = true;
@@ -957,7 +960,7 @@ public sealed class StableBindingRegistry
     internal sealed class SlotState
     {
         public uint Generation { get; set; }
-        public string? LastKey { get; set; }
+        public long? LastKey { get; set; }
         public bool Present { get; set; }
         public bool PresentBeforeScan { get; set; }
         public bool HasEverBeenPresent { get; set; }
