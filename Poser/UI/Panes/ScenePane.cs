@@ -123,20 +123,12 @@ public sealed class ScenePane
     }
 
     /// <summary>
-    /// What the appearance switch promises, in one place, so the workspace and
-    /// the save dialog cannot describe the same switch differently.
-    ///
-    /// <para>It says a copy of the FILES the mods supply, not the mods: an
-    /// MCDF carries appearance data — Glamourer state, Penumbra's file
-    /// replacements and manipulations, a Customize+ profile — and not the mod
-    /// packages themselves. Overstating that is its own kind of wrong.</para>
+    /// The appearance switch's hover, in one place so both mounts say the same
+    /// thing. A few WORDS: what the scene actually contains — a copy of the
+    /// files the mods supply, which is what an MCDF is — belongs in
+    /// docs/features/scenes.md, not in a tooltip.
     /// </summary>
-    private const string AppearanceHelp =
-        "Packages each actor's Glamourer, Penumbra and Customize+ state into "
-        + "the scene so it looks the same on another machine. The scene then "
-        + "contains a copy of the files those mods supply for that character, "
-        + "so treat it like sharing the mod files themselves. Adds their full "
-        + "size to the scene.";
+    private const string AppearanceHelp = "Embeds appearance files";
 
     /// <summary>The operation that has already been notified, so a finished
     /// result is announced ONCE rather than every frame the page draws it.
@@ -284,8 +276,8 @@ public sealed class ScenePane
                         OpenSnapshots,
                         disabled: busy || !snapshots,
                         help: busy ? BusyHelp
-                            : snapshots ? _snapshots.RootDirectory
-                            : "No automatic snapshot has been taken yet.");
+                            : snapshots ? "Automatic snapshots"
+                            : "None taken yet");
                 });
             },
             divider: false);
@@ -304,7 +296,7 @@ public sealed class ScenePane
         });
     }
 
-    private const string BusyHelp = "A scene operation is already running.";
+    private const string BusyHelp = "Scene operation running";
 
     /// <summary>
     /// What the next save will weigh, live. The appearance payloads are the
@@ -375,8 +367,8 @@ public sealed class ScenePane
                 cancel: () => _workflow.Cancel(),
                 cancelDisabled: !progress.Cancellable,
                 cancelHelp: progress.Cancellable
-                    ? "Stop and undo everything this load has created."
-                    : "This phase can no longer be cancelled.");
+                    ? "Stop and undo"
+                    : "Past the point of cancelling");
             form.Status(
                 $"{(progress.Kind == SceneOperationKind.Save ? "Saving" : "Loading")} " +
                 $"{progress.FileName}.");
@@ -575,15 +567,13 @@ public sealed class ScenePane
                 "Clear the session first",
                 Options.ClearExistingScene,
                 next => Options = Options with { ClearExistingScene = next },
-                "Empties the session before loading. Undoing does not bring "
-                    + "any of it back."),
+                "Removes everything first"),
             new Crystarium.CheckItem(
                 "Place relative to me",
                 Options.PlaceRelativeToCurrentOrigin,
                 next => Options =
                     Options with { PlaceRelativeToCurrentOrigin = next },
-                "Puts the scene where you are standing. Needs a file that "
-                    + "recorded where it was taken."));
+                "Places it where you stand"));
 
     /// <summary>The six INCLUSION filters, one group, in the order the load
     /// restores them. Only the three whose scope is not obvious from the word
@@ -596,7 +586,7 @@ public sealed class ScenePane
             new Crystarium.CheckItem(
                 "Actors", Options.IncludeActors,
                 next => Options = Options with { IncludeActors = next },
-                "Actors, their poses, animation, companions and gaze"),
+                "Poses, companions and gaze"),
             new Crystarium.CheckItem(
                 "Objects", Options.IncludeProps,
                 next => Options = Options with { IncludeProps = next }),
@@ -609,12 +599,11 @@ public sealed class ScenePane
             new Crystarium.CheckItem(
                 "Environment", Options.IncludeEnvironment,
                 next => Options = Options with { IncludeEnvironment = next },
-                "Time, weather, sky, and the frozen water and physics "
-                    + "toggles"),
+                "Time, weather and sky"),
             new Crystarium.CheckItem(
                 "Overlays", Options.IncludeOverlays,
                 next => Options = Options with { IncludeOverlays = next },
-                "Dialogue, balloon and status nodes"));
+                "Dialogue and status nodes"));
 
     // ── the save dialog's options band ───────────────────────────────────
 

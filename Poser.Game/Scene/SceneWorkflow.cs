@@ -130,7 +130,7 @@ public sealed class SceneWorkflow : IDisposable
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection), log)
+            worldObjects, place, mcdfHashes, selection, log), log)
     {
     }
 

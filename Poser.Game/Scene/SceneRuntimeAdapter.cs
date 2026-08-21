@@ -59,6 +59,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// listens to, so a service that destroys entities holds it.</summary>
     private readonly Poser.Application.Selection.SelectionSession _selection;
 
+    /// <summary>Breadcrumbs for the scene pose leg. Null under the contract
+    /// tests, which assert read models rather than the log.</summary>
+    private readonly IPluginLog? _log;
+
     public SceneRuntimeAdapter(
         IFramework framework,
         ISessionGenerationSource sessions,
@@ -82,10 +86,12 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         WorldObjects.WorldObjectService worldObjects,
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
-        Poser.Application.Selection.SelectionSession selection)
+        Poser.Application.Selection.SelectionSession selection,
+        IPluginLog? log = null)
     {
         _mcdfHashes = mcdfHashes;
         _selection = selection;
+        _log = log;
         _actors = actors;
         _objects = objects;
         _worldObjects = worldObjects;
@@ -585,6 +591,24 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// mid-publication is WAITED for; only a skeleton that never publishes
     /// inside the bound is refused.</para>
     /// </summary>
+    /// <summary>
+    /// A stable short ordinal for an object INSTANCE, for breadcrumbs. Two
+    /// lines quoting different ordinals for "the same" skeleton is the whole
+    /// diagnosis of a rebind race, and it fits on one screen.
+    /// </summary>
+    private static string Ord(object? instance) =>
+        instance is null
+            ? "none"
+            : System.Runtime.CompilerServices.RuntimeHelpers
+                .GetHashCode(instance).ToString("X8");
+
+    /// <summary>
+    /// One breadcrumb for the scene pose leg. Debug level: it must be there
+    /// when a load misbehaves and invisible in ordinary play.
+    /// </summary>
+    private void Trace(string message) =>
+        _log?.Debug($"Scene pose leg: {message}");
+
     public bool ActorReady(object actor)
     {
         var candidate = (IActor)actor;
@@ -601,10 +625,29 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             // A skeleton still building may have no root yet; that is
             // not-ready, not a refusal.
             if (skeleton.RootBone is not { } root)
+            {
+                Trace(
+                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} has no root yet");
                 return false;
+            }
             if (_bindings.GetBoneId(root) is null)
+            {
+                Trace(
+                    $"not ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+                    $"slot {skeleton.Slot} skeleton {Ord(skeleton)} " +
+                    $"base {skeleton.CharacterBaseAddress:X} root {Ord(root)} " +
+                    "is not published to the binding registry");
                 return false;
+            }
         }
+
+        Trace(
+            $"ready: actor {candidate.Name} wrapper {Ord(candidate)} " +
+            string.Join(", ", skeletons.Select(skeleton =>
+                $"[{skeleton.Slot} skeleton {Ord(skeleton)} " +
+                $"base {skeleton.CharacterBaseAddress:X} " +
+                $"root {Ord(skeleton.RootBone)} bones {skeleton.Bones.Count}]")));
         return true;
     }
 
@@ -791,8 +834,36 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         string description,
         Action<OperationReceipt> onReceipt)
     {
+        // The arm's own view of the world, quoted the same way readiness
+        // quotes it. If these ordinals differ from the ready line, the plan is
+        // being built against a skeleton the registry never bound — which is
+        // exactly the shape that reports "Import target n_root could not be
+        // resolved" for every bone at once.
+        var target = (IActor)actor;
+        var skeletons = _skeletons.GetSkeletons(target);
+        int resolvable = 0;
+        int total = 0;
+        foreach (var skeleton in skeletons)
+        {
+            foreach (var bone in skeleton.Bones)
+            {
+                total++;
+                if (_bindings.GetBoneId(bone) is not null)
+                    resolvable++;
+            }
+        }
+        Trace(
+            $"arming import for actor {target.Name} wrapper {Ord(target)}: " +
+            string.Join(", ", skeletons.Select(skeleton =>
+                $"[{skeleton.Slot} skeleton {Ord(skeleton)} " +
+                $"base {skeleton.CharacterBaseAddress:X} " +
+                $"root {Ord(skeleton.RootBone)}]")) +
+            $" — {resolvable} of {total} bones resolve through the registry");
+
         var result = _poses.ImportPose(
-            (IActor)actor, data.Pose!, SceneImportOptions, description, onReceipt);
+            target, data.Pose!, SceneImportOptions, description, onReceipt);
+        if (!result.Success)
+            Trace($"import refused for {target.Name}: {result.Detail}");
         return result.Success ? null : result.Detail ?? "The pose import refused.";
     }
 
