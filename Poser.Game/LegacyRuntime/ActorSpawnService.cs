@@ -1673,8 +1673,11 @@ public unsafe class ActorSpawnService : IActorSpawnService
         if (_ownership.TryGetBound(actor, out _))
             return null;
 
-        if (actor.Address == _localPlayerAddress())
-            return "Your own character cannot be removed from GPose.";
+        // No local-player exception, deliberately: Brio's CanDestroy admits
+        // every actor in its container including your own GPose clone
+        // (Brio/Capabilities/Actor/ActorLifetimeCapability.cs:88), and its
+        // ClearAll deletes the whole GPose table. The clone is a temporary
+        // copy; the overworld character is untouched by deleting it.
         if (actor.ActorKind is ActorKind.Companion or ActorKind.Mount
             or ActorKind.Ornament)
             return "Companions are removed by detaching them from their " +
