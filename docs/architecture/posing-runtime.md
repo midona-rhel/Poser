@@ -32,20 +32,22 @@ One formula, in ActorManager.ActorIdentity. The spawn service's fail-closed
 wrapper check reads it from there rather than restating it, because the two
 must agree exactly or a freshly spawned actor cannot be bound at all.
 
-## Poses crossing a rebuild
+## Poses do not cross a rebuild — they never move
 
-A redraw replaces the draw object and every slot skeleton, so an authored pose
-is parked by stable identity (logical actor id + slot) and adopted onto the
-replacement. Entries expire, so a rebuild that never completes cannot drop a
-pose onto an unrelated later skeleton.
+A pose is addressed by (actor, slot) above the write layer, and by bone NAME
+and partial inside that. A redraw builds a new skeleton instance and nothing
+above the write layer notices: the store keeps the pose exactly where it is and
+the next apply pass lands the same authored stacks on whatever instance the
+slot currently holds.
 
-There are TWO adoption points and either can run first: the SkeletonCreated
-handler, and the first access to a skeleton's pose store. Both must take the
-parked entry. A store materialized empty at one of them strands the pose — the
-handler then returns early because the key already exists, the bones still look
-right until the next evaluation, and the pose vanishes the moment anything
-re-drives them. After a rebuild the store and the native skeleton agree, or the
-reset is merely deferred.
+The store key used to carry the skeleton instance id, so a redraw filed the
+pose under a key nothing would look up again. Everything that existed to move
+poses off that dead key — a parking lot with an expiry window, an adoption
+point in the skeleton-created handler, a second one in the store accessor, and
+an apply-pass check that refused a replaced instance — is deleted. There is no
+setting for it either: pose survival is structural, not optional.
+
+A bone name no live skeleton resolves is still refused by name, at the write.
 
 ## Object identity and lifetime
 

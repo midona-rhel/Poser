@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
@@ -42,7 +42,6 @@ public sealed class SettingsViewModel
 
     public bool OpenOnGPose = true;
     public bool CloseWithGPose;
-    public bool PreservePoseAcrossRedraws = true;
     public bool RelativeSecondaryBones;
     public bool LinkSiblingBones;
     public bool FollowGameTarget = true;
@@ -365,11 +364,6 @@ public static class SettingsView
                 vm.CloseWithGPose,
                 next => vm.CloseWithGPose = next,
                 "Hide all Poser windows when leaving GPose");
-            form.Switch(
-                "Keep pose through redraws",
-                vm.PreservePoseAcrossRedraws,
-                next => vm.PreservePoseAcrossRedraws = next,
-                "Restore the authored pose after an actor redraw (Penumbra collections, Glamourer, MCDF)");
             form.Switch(
                 "Link left and right bones",
                 vm.LinkSiblingBones,
