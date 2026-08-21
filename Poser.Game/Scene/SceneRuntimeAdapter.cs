@@ -53,6 +53,12 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// </summary>
     private readonly Poser.Library.IMcdfHashIndex _mcdfHashes;
 
+    /// <summary>The selection, so a destroy path can never leave it pointing
+    /// at something that no longer exists. Injected directly, matching
+    /// <c>TargetSyncService</c> — there is no despawn event the selection
+    /// listens to, so a service that destroys entities holds it.</summary>
+    private readonly Poser.Application.Selection.SelectionSession _selection;
+
     public SceneRuntimeAdapter(
         IFramework framework,
         ISessionGenerationSource sessions,
@@ -75,9 +81,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         IObjectTable objects,
         WorldObjects.WorldObjectService worldObjects,
         Poser.Services.IPlaceService place,
-        Poser.Library.IMcdfHashIndex mcdfHashes)
+        Poser.Library.IMcdfHashIndex mcdfHashes,
+        Poser.Application.Selection.SelectionSession selection)
     {
         _mcdfHashes = mcdfHashes;
+        _selection = selection;
         _actors = actors;
         _objects = objects;
         _worldObjects = worldObjects;
@@ -330,6 +338,64 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         }
     }
 
+    /// <summary>
+    /// Brio's <c>CleanObject</c> semantics, in Poser's terms, run BEFORE the
+    /// native delete: Brio releases look-at and reverts the character handler
+    /// while the object still exists
+    /// (<c>Brio/Game/Actor/ActorSpawnService.cs:245-256</c>, called at
+    /// <c>:203</c> — before <c>DeleteObjectByIndex</c> at <c>:208</c>), because
+    /// after the delete there is nothing left to name.
+    ///
+    /// <para>Two of the three parts apply here. The actor's own GAZE is
+    /// released so Poser stops driving channels on a body that is about to go.
+    /// Its APPEARANCE is reverted through the ordinary integration teardown,
+    /// which is what releases MCDF ownership, the temporary collection, the
+    /// Glamourer design and the Customize+ profile — the adopted equivalent of
+    /// what <c>TryDelete</c> already does for an owned actor's Penumbra
+    /// collection.</para>
+    ///
+    /// <para>The third part does NOT apply, deliberately. Brio scrubs the
+    /// removed object out of every other actor's look-at. Poser keeps an
+    /// Entity gaze target BY ID and marks it stale
+    /// (<c>IGazeService.TargetStale</c>), so a target that leaves the scene is
+    /// refused by name on reapply instead of being followed. Scrubbing it here
+    /// would delete the user's stated intent to look at that actor; leaving it
+    /// stale is the stronger behaviour and is already the design.</para>
+    ///
+    /// <para>A cleanup that fails is NAMED, never skipped silently — the actor
+    /// is still removed, but the outcome says what did not come apart.</para>
+    /// </summary>
+    private void PrepareActorRemoval(IActor actor, List<string> refusals)
+    {
+        try
+        {
+            _gaze.ResetGaze(actor);
+        }
+        catch (Exception ex)
+        {
+            refusals.Add(
+                $"{actor.Name}: the gaze could not be released before removal " +
+                $"({ex.Message}).");
+        }
+
+        if (_bindings.GetActorId(actor) is not { } id)
+            return;
+        try
+        {
+            var reverted = _integration.ResetActor(id);
+            if (!reverted.Success)
+                refusals.Add(
+                    $"{actor.Name}: the appearance could not be reverted before " +
+                    $"removal ({reverted.Detail ?? "the revert was refused"}).");
+        }
+        catch (Exception ex)
+        {
+            refusals.Add(
+                $"{actor.Name}: the appearance could not be reverted before " +
+                $"removal ({ex.Message}).");
+        }
+    }
+
     public long EstimateAppearanceBytes()
     {
         long total = 0;
@@ -414,14 +480,33 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     {
         int actors = 0;
         var refused = new List<string>();
+        var refusedCleanup = new List<string>();
         foreach (var actor in _actors.Actors.ToList())
         {
+            // Gaze and appearance are released BEFORE the delete, while the
+            // actor still exists to release them against; Brio does the same
+            // in CleanObject (Brio/Game/Actor/ActorSpawnService.cs:245-256)
+            // and for the same reason — after the delete there is nothing left
+            // to name.
+            var lineage = _bindings.GetActorId(actor)?.LogicalId;
+            PrepareActorRemoval(actor, refusedCleanup);
+
             // One verb for both provenances: the service routes an owned
             // actor to its ledger and an adopted one to the scene table.
             if (_spawns.RemoveActorFromScene(actor))
+            {
                 actors++;
+                // Deselect the moment it is gone, per actor, rather than only
+                // at the end: a removal that succeeds for some actors and is
+                // refused for others must not leave the successful ones
+                // selected.
+                if (lineage is { } gone)
+                    _selection.RemoveActorLineage(gone);
+            }
             else
+            {
                 refused.Add(actor.Name);
+            }
         }
 
         int props = _props.Props.Count;
@@ -441,6 +526,15 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         // four exits the restore contract names, and this is where it runs.
         int worldObjects = _worldObjects.Count;
         _worldObjects.ReleaseAll();
+
+        // Everything this session pointed at is gone, so the selection is
+        // gone with it. The per-actor deselect above covers a partial clear;
+        // this covers the props, overlays, lights, cameras and borrowed
+        // objects that have no lineage of their own.
+        _selection.Clear();
+
+        foreach (var note in refusedCleanup)
+            refused.Add(note);
 
         return new SceneClearOutcome(
             actors, props, overlays, lights, cameras, worldObjects, refused);

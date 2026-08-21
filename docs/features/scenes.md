@@ -65,6 +65,19 @@ redraws the actor. Loads add to the current session by default. Clearing the
 session is outside rollback. Relative loading moves the whole scene from its
 saved origin before game work.
 
+Clearing the session removes everything it holds, actors included: an actor
+Poser spawned goes through its ownership ledger, an adopted one through the
+native scene table. Before either delete the actor's gaze is released and its
+appearance reverted, while it still exists to release them against; an Entity
+gaze target that LEAVES the scene is kept by id and marked stale, so another
+actor's intent to look at it is refused by name rather than scrubbed. A
+cleanup that fails is named in the outcome and the removal still proceeds.
+
+No destroy path leaves the selection pointing at something that is gone. Each
+removed actor deselects its whole lineage — the actor, its bones and its bone
+groups — and emptying the session drops the selection entirely, because props,
+overlays, lights, cameras and borrowed objects carry no lineage of their own.
+
 If a load must stop after creating things, Poser removes only the actors and
 objects it created, in reverse order. A refused item does not remove successful
 items, and Poser names each refusal. A borrowed world object is matched by
