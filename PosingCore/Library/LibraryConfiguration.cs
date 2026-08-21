@@ -88,9 +88,6 @@ public class LibraryConfiguration
     /// names the format; a "Poser" prefix on it said nothing.</summary>
     public const string McdfSourceName = "MCDFs";
 
-    /// <summary>The old character-file source name, renamed on load.</summary>
-    private const string LegacyMcdfSourceName = "Poser MCDFs";
-
     /// <summary>The shipped objects root's source name: the home for every
     /// library entry that is not a pose, a scene or a character file —
     /// actors, lights, cameras, overlays, environments.</summary>
@@ -243,16 +240,6 @@ public class LibraryConfiguration
     public void EnsureDefaults()
     {
         var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-
-        // The character-file home used to be named "Poser MCDFs"; an existing
-        // configuration keeps its path but takes the new name, so every
-        // lookup by name keeps finding it.
-        foreach (var source in Sources)
-        {
-            if (string.Equals(
-                    source.Name, LegacyMcdfSourceName, StringComparison.Ordinal))
-                source.Name = McdfSourceName;
-        }
 
         SeedHome(PoseSourceName, DefaultPoseRoot, PoseRootSeeded,
             () => PoseRootSeeded = true);
