@@ -94,9 +94,9 @@ from a previous save.
 appearance package bytes, not a path. Poser embeds the package it already owns
 for an actor, and creates one from the actor's live Glamourer, Penumbra and
 Customize+ state through the MCDF exporter when it owns none. An actor whose
-package cannot be produced, or which does not fit the per-actor or
-whole-document byte limit, is saved with no appearance and named in a note — a
-path, a temporary collection, or any other live handle is not a portable save.
+package cannot be produced is saved with no appearance and named in a note, and
+the save reports a partial result — a path, a temporary collection, or any
+other live handle is not a portable save.
 
 Restoring an embedded payload streams the container entry into one owned
 temporary file and imports it through the same MCDF transaction a hand-driven
