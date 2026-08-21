@@ -59,6 +59,15 @@ readiness → character files → readiness → relationships → wait for compa
 bodies → freeze → pose and transforms (owner, then companion) →
 presentation and gaze → cameras → lights → environment and world toggles.
 
+Readiness means POSE-ready, not merely alive: the slot skeletons exist, the
+actor binding names this exact generation, and the bone bindings have been
+republished for these skeleton instances. Bone ids are published by the binding
+registry's own commit pass, so after a redraw the skeleton service hands out
+new bone objects while the registry still holds the previous ones, and every
+bone resolves to null until that pass runs. The barrier polls, so a skeleton
+mid-publication is waited for; only one that never publishes inside the bound
+is refused.
+
 Each phase checks that the load is still running and belongs to the same
 session. Character files come before body-dependent state because import
 redraws the actor. Loads add to the current session by default. Clearing the

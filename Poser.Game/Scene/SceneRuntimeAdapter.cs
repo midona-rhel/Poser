@@ -557,17 +557,55 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         return actor;
     }
 
+    /// <summary>
+    /// Whether this actor can be POSED yet — which is a stricter question than
+    /// whether it exists.
+    ///
+    /// <para>Three things have to be true, and they land at different times.
+    /// The slot skeletons have to be built. The actor's own binding has to
+    /// name this exact live generation. And — the one that bit — the BONE
+    /// bindings have to have been republished for these skeleton instances.
+    /// </para>
+    ///
+    /// <para>Bone ids are published by the binding registry's staged
+    /// candidate/commit pass, not by the skeleton service, so after a redraw
+    /// the skeleton service hands out NEW bone objects while the registry
+    /// still holds the pre-redraw ones. <c>GetBoneId</c> requires the id to
+    /// bind to the very same instance (<c>ReferenceEquals</c>), so every bone
+    /// of a freshly rebuilt skeleton resolves to null until that pass runs.
+    /// The pose import resolves its targets up front and fails on the FIRST
+    /// one, which is why a clear-first load of a scene carrying appearance
+    /// reported "Import target n_root could not be resolved" — the MCDF redraw
+    /// had replaced the skeleton and the barrier had already let the load
+    /// through.</para>
+    ///
+    /// <para>Probing the root bone through the registry is the whole test: if
+    /// the maps resolve THAT instance they were rebuilt for this skeleton, and
+    /// every other bone of it resolves too. The barrier polls, so a skeleton
+    /// mid-publication is WAITED for; only a skeleton that never publishes
+    /// inside the bound is refused.</para>
+    /// </summary>
     public bool ActorReady(object actor)
     {
         var candidate = (IActor)actor;
-        // Skeleton discovery can lead binding publication by one update. Pose
-        // admission requires this exact live actor generation, so admitting on
-        // the skeleton alone races into a predictable partial scene restore.
-        if (_skeletons.GetSkeletons(candidate).Count == 0 ||
+        var skeletons = _skeletons.GetSkeletons(candidate);
+        if (skeletons.Count == 0 ||
             _bindings.GetActorId(candidate) is not { } id)
             return false;
-        return _bindings.Resolve(id) is { Success: true, Value: { } bound } &&
-            ReferenceEquals(bound, candidate);
+        if (_bindings.Resolve(id) is not { Success: true, Value: { } bound } ||
+            !ReferenceEquals(bound, candidate))
+            return false;
+
+        foreach (var skeleton in skeletons)
+        {
+            // A skeleton still building may have no root yet; that is
+            // not-ready, not a refusal.
+            if (skeleton.RootBone is not { } root)
+                return false;
+            if (_bindings.GetBoneId(root) is null)
+                return false;
+        }
+        return true;
     }
 
     /// <summary>

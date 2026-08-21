@@ -193,10 +193,18 @@ public sealed class SceneWorkflowTests
             return detail is null ? new Token($"actor:{data.Name}") : null;
         }
 
+        /// <summary>Polls the barrier must absorb before the actor reports
+        /// pose-ready. Models the real gap: after an appearance redraw the
+        /// skeleton exists but its BONE bindings have not been republished, so
+        /// readiness is false for a few frames.</summary>
+        public int ActorReadyAfterPolls;
+
+        public int ActorReadyPolls;
+
         public bool ActorReady(object actor)
         {
             Record("ActorReady");
-            return true;
+            return ++ActorReadyPolls > ActorReadyAfterPolls;
         }
 
         public string? AttachCompanion(object actor, SceneActor data)
@@ -667,6 +675,37 @@ public sealed class SceneWorkflowTests
     }
 
     /// <summary>
+    /// A skeleton that is not pose-ready yet must be WAITED for, not refused.
+    ///
+    /// <para>This is the shape of the reported failure: a clear-first load
+    /// respawns the actor, the appearance import redraws it, and the bone
+    /// bindings are republished a frame or two later. The barrier polls, so
+    /// the load has to absorb that gap and still pose the actor — the import
+    /// resolves its targets up front and fails on the first one, which is what
+    /// produced "Import target n_root could not be resolved".</para>
+    /// </summary>
+    [Fact]
+    public async Task A_skeleton_that_is_not_ready_yet_is_waited_for_not_refused()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Midona Rhel", out _)),
+            ActorReadyAfterPolls = 3,
+        };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        // It polled rather than giving up on the first look.
+        Assert.True(runtime.ActorReadyPolls > 3);
+        // And it still posed the actor once readiness landed.
+        Assert.Contains("ArmPoseImport:Midona Rhel", runtime.Calls);
+        Assert.DoesNotContain(
+            load.Progress!.Outcome!.Entities, entity => !entity.Restored);
+    }
+
+    /// <summary>
     /// THE RESTORE CONTRACT. A scene is a picture, not a performance: it
     /// carries pose data and no animation, because a timeline id resolves
     /// against the loading client's own game and mods and would show something
@@ -899,6 +938,24 @@ public sealed class SceneWorkflowTests
         // a reason of its own rather than leaving the entity list to speak.
         Assert.Contains(outcome.Entities, entity => entity.Restored);
         Assert.False(string.IsNullOrWhiteSpace(outcome.Detail));
+    }
+
+    /// <summary>Outcome copy agrees with its own counts. A user reading
+    /// "1 actor were destroyed" reads a bug in the count.</summary>
+    [Fact]
+    public void Clear_and_load_summaries_agree_with_their_counts()
+    {
+        var one = new SceneClearOutcome(1, 0, 0, 0, 0).Summary();
+        Assert.Contains("1 actor was destroyed", one);
+        Assert.Contains("does not bring it back", one);
+
+        var many = new SceneClearOutcome(2, 1, 0, 0, 0).Summary();
+        Assert.Contains("2 actors, 1 object were destroyed", many);
+        Assert.Contains("does not bring them back", many);
+
+        // The borrowed line already agreed; it must keep agreeing.
+        var borrowed = new SceneClearOutcome(0, 0, 0, 0, 0, 1).Summary();
+        Assert.Contains("1 borrowed map object was put back", borrowed);
     }
 
     /// <summary>The two STRUCTURAL failure modes, for contrast: they roll the

@@ -190,9 +190,15 @@ public readonly record struct SceneClearOutcome(
                 $"{(WorldObjects == 1 ? "object was" : "objects were")} put back.";
         if (parts.Count == 0)
             return $"Cleared the session first:{borrowed}{Left()}".TrimEnd();
-        return $"Cleared the session first: {string.Join(", ", parts)} were " +
-            $"destroyed. Undoing the load does not bring them back." +
-            $"{borrowed}{Left()}";
+        // The verb agrees with what was actually destroyed, the way the
+        // borrowed-object line below already does. "1 actor were destroyed" is
+        // the only place the two disagreed.
+        int destroyed = Actors + Props + Overlays + Lights + Cameras;
+        return $"Cleared the session first: {string.Join(", ", parts)} " +
+            (destroyed == 1 ? "was" : "were") +
+            " destroyed. Undoing the load does not bring " +
+            (destroyed == 1 ? "it" : "them") +
+            $" back.{borrowed}{Left()}";
     }
 
     /// <summary>What the clear could not take, named. Empty when it took

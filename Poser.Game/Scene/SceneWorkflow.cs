@@ -1209,12 +1209,15 @@ public sealed class SceneWorkflow : IDisposable
                     return stop;
                 var failures = entities.Where(entity => !entity.Restored).ToList();
                 string detail = failures.Count == 0
-                    ? $"Loaded {operation.FileName}: {actors.Count} actors, " +
-                      $"{props.Count} objects, {lights.Count} lights, " +
-                      $"{cameras.Count} cameras."
+                    ? $"Loaded {operation.FileName}: " +
+                      $"{Count(actors.Count, "actor")}, " +
+                      $"{Count(props.Count, "object")}, " +
+                      $"{Count(lights.Count, "light")}, " +
+                      $"{Count(cameras.Count, "camera")}."
                     : $"Loaded {operation.FileName} partially: " +
-                      $"{failures.Count} of {total} entities could not be restored " +
-                      "(the restored entities were kept): " +
+                      $"{failures.Count} of {total} " +
+                      (total == 1 ? "entity" : "entities") + " could not be " +
+                      "restored (everything that did restore was kept): " +
                       string.Join("; ", failures.Select(failure =>
                           $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
                 // Publishing inside the framework action orders the terminal
@@ -1517,6 +1520,12 @@ public sealed class SceneWorkflow : IDisposable
             }
         }
     }
+
+    /// <summary>A count and its noun, agreeing. Scene outcomes are read by a
+    /// user who just watched the thing happen; "1 actors" reads as a bug in
+    /// the count, not a bug in the grammar.</summary>
+    private static string Count(int value, string noun) =>
+        $"{value} {noun}{(value == 1 ? string.Empty : "s")}";
 
     /// <summary>The ONE terminal publication: the receipt state, the progress
     /// phase and the outcome state are derived from a single decision so a UI
