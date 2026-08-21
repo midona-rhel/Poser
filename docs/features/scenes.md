@@ -1,4 +1,4 @@
-# Scenes
+﻿# Scenes
 
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
@@ -6,11 +6,25 @@ world objects, relationships, and optional world toggles. An actor can store
 model id, companion attachment and pose, visibility, absolute transform,
 animation, gaze, and an appearance payload. Other appearance remains external.
 
+An `.xivs` is a CONTAINER, not a JSON file. `scene.json` inside it is the
+document; each appearance payload is its own stored entry under `appearance/`,
+named by its content hash so two actors wearing the same package share one
+copy. Payload entries are written and read as streams, so a scene carrying
+hundreds of megabytes of appearance still has a small document and never puts
+that payload in memory.
+
 The extension and the file version are one identity: `.xivs` is format version
 2, and the reader accepts that version alone. `.xivs` is the only scene format
 Poser has; anything else is not a scene and is not listed, opened or migrated.
 The file viewer states the format, the version and the size before a load, and
-the size includes any embedded appearance payload.
+the size includes the appearance payloads.
+
+The only size refusal is the MCDF importer's own per-package ceiling: a package
+Poser could not import back is one there is no point saving. There is no
+whole-document appearance budget. Past a threshold the outcome WARNS how large
+the scene became; it never refuses and never silently saves without the payload
+the user asked for. A save that could not build a requested payload reports a
+partial result, not a success.
 
 Placements in the file are absolute. An optional origin records a capture
 anchor for relative loading; it is not needed to read the stored numbers.
@@ -84,10 +98,10 @@ package cannot be produced, or which does not fit the per-actor or
 whole-document byte limit, is saved with no appearance and named in a note — a
 path, a temporary collection, or any other live handle is not a portable save.
 
-Restoring an embedded payload stages it into one owned temporary file and
-imports it through the same MCDF transaction a hand-driven import uses. Its
-checksum is not consulted: the bytes in the document are the package, so there
-is nothing to identify them against.
+Restoring an embedded payload streams the container entry into one owned
+temporary file and imports it through the same MCDF transaction a hand-driven
+import uses. Its checksum is not consulted: the bytes in the container are the
+package, so there is nothing to identify them against.
 
 ## Appearance identity
 

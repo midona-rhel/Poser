@@ -139,20 +139,34 @@ public sealed class SceneWorkflowTests
         /// </summary>
         public Func<SceneFile, IReadOnlyList<string>>? SealAppearanceResult;
 
-        public Task<IReadOnlyList<string>> SealAppearance(
+        public Task<SceneSealOutcome> SealAppearance(
             SceneFile scene,
             IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
             TimeSpan bound,
             CancellationToken cancellation)
         {
             Record("SealAppearance");
-            return Task.FromResult(
-                SealAppearanceResult?.Invoke(scene) ?? Array.Empty<string>());
+            return Task.FromResult(new SceneSealOutcome(
+                SealAppearanceResult?.Invoke(scene) ?? Array.Empty<string>(),
+                SealTemporaries));
+        }
+
+        /// <summary>Temporary packages the seal claims to have created, so a
+        /// test can assert the writer's cleanup runs after the write.</summary>
+        public List<string> SealTemporaries = new();
+
+        public readonly List<string> DeletedTemporaries = new();
+
+        public void DeleteTemporary(string path)
+        {
+            Record($"DeleteTemporary:{path}");
+            DeletedTemporaries.Add(path);
         }
 
         public Func<SceneActor, SceneMcdfOutcome>? McdfImport;
 
         public Task<SceneMcdfOutcome> ImportMcdf(
+            string scenePath,
             object actor,
             SceneActor data,
             TimeSpan bound,

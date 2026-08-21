@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Poser.Files;
 
 namespace Poser.Game.Scene;
@@ -19,7 +19,12 @@ namespace Poser.Game.Scene;
 /// </summary>
 internal static class SceneSavePolicy
 {
-    public static void Apply(
+    /// <summary>Applies the options, and answers how many actors asked for a
+    /// portable appearance and did not get one. A save that quietly drops what
+    /// the user explicitly asked for must not report plain success — that is
+    /// the shape of the defect where an oversized package vanished and the
+    /// load then had nothing to apply.</summary>
+    public static int Apply(
         SceneFile scene,
         SceneSaveOptions options,
         List<string> notes)
@@ -79,5 +84,7 @@ internal static class SceneSavePolicy
                 $"{unsealed} actors' appearance could not be packaged, so the "
                 + "scene saved without it rather than recording where the mods "
                 + "were.");
+
+        return unsealed;
     }
 }

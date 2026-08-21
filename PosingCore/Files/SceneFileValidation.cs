@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Poser.Domain.Animation;
@@ -138,24 +138,16 @@ public static class SceneFileValidation
                 "The scene origin is not finite.");
 
         var actorKeys = new HashSet<Guid>();
-        long embedded = 0;
         foreach (var actor in scene.Actors)
         {
             if (ValidateActor(actor, actorKeys) is { } failure)
                 return failure;
-            if (actor!.Mcdf is { IsPortable: true } portable)
-                embedded += portable.Package!.LongLength;
         }
 
-        // The document's total embedded appearance, checked before the write
-        // rather than at the file cap: the whole point of stating this limit is
-        // that a refusal can name the payload the user chose to include.
-        if (embedded > SceneFileLimits.MaxEmbeddedAppearanceTotalBytes)
-            return Fail(SceneFileValidationFailureKind.CollectionSize,
-                $"The scene embeds {embedded:N0} bytes of appearance, over the " +
-                $"{SceneFileLimits.MaxEmbeddedAppearanceTotalBytes:N0} byte " +
-                "limit. Save fewer actors with appearance included, or save " +
-                "without it.");
+        // There is deliberately NO whole-document appearance cap. Payloads are
+        // streamed container entries, so ten actors cost ten files' worth of
+        // disk and nothing else; a total cap here would refuse a save the user
+        // asked for in order to protect a memory budget that no longer exists.
 
         // Gaze references another ACTOR, so it can only be checked once every
         // actor key is known — a forward reference is as valid as a backward
@@ -319,12 +311,15 @@ public static class SceneFileValidation
     {
         if (mcdf.IsPortable)
         {
-            if (mcdf.Package!.LongLength >
-                SceneFileLimits.MaxEmbeddedAppearanceBytes)
+            if (mcdf.PackageBytes < 0 ||
+                mcdf.PackageBytes > SceneFileLimits.MaxEmbeddedAppearanceBytes)
                 return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} embeds {mcdf.Package.LongLength:N0} bytes, over " +
-                    $"the {SceneFileLimits.MaxEmbeddedAppearanceBytes:N0} byte " +
+                    $"{label} embeds {mcdf.PackageBytes:N0} bytes, over the " +
+                    $"{SceneFileLimits.MaxEmbeddedAppearanceBytes:N0} byte " +
                     "limit for one actor.");
+            if (mcdf.PackageEntry!.Length > SceneFileLimits.MaxPathCharacters)
+                return Fail(SceneFileValidationFailureKind.Name,
+                    $"{label} payload entry name is too long.");
             if (mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
                 return Fail(SceneFileValidationFailureKind.Document,
                     $"{label} embeds a package with no SHA-256 digest to check " +

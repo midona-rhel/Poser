@@ -48,7 +48,7 @@ public sealed class SceneWorldObjectCodecTests
         scene.WorldObjects = null;
         var json = System.Text.Json.JsonSerializer.Serialize(scene, SceneJsonOptionsAccessor.Options);
         json = json.TrimEnd()[..^1] + ",\"FutureMember\":true}";
-        File.WriteAllText(file.Path, json);
+        SceneFileStoreTests.WriteContainer(file.Path, json);
 
         var read = SceneFileStore.Default.Read(file.Path);
 

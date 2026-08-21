@@ -49,12 +49,55 @@ public sealed class SceneFileStoreTests
 
         var withUnknown = json.TrimEnd();
         withUnknown = withUnknown[..^1] + ",\"FutureMember\":true}";
-        File.WriteAllText(fixture.Path, withUnknown);
+        WriteContainer(fixture.Path, withUnknown);
         var read = SceneFileStore.Default.Read(fixture.Path);
 
         Assert.True(read.Succeeded, read.Failure?.Detail);
         Assert.Null(read.Scene!.World);
         Assert.Null(read.Scene.WorldObjects);
+    }
+
+    /// <summary>Writes a raw document into a scene CONTAINER, which is what a
+    /// .xivs is: the payload entries are what let a scene carry hundreds of
+    /// megabytes of appearance without the document growing at all.</summary>
+    internal static void WriteContainer(string path, string documentJson)
+    {
+        using var stream = File.Create(path);
+        using var archive = new System.IO.Compression.ZipArchive(
+            stream, System.IO.Compression.ZipArchiveMode.Create);
+        var entry = archive.CreateEntry(SceneFileStore.DocumentEntry);
+        using var writing = new StreamWriter(entry.Open());
+        writing.Write(documentJson);
+    }
+
+    [Fact]
+    public void A_document_that_is_not_a_container_is_not_a_scene()
+    {
+        using var fixture = new SceneFixture();
+        File.WriteAllText(
+            fixture.Path,
+            JsonSerializer.Serialize(ValidScene(), SceneJsonOptionsAccessor.Options));
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+
+        Assert.False(read.Succeeded);
+        Assert.Contains("container", read.Failure!.Detail);
+    }
+
+    [Fact]
+    public void A_saved_scene_round_trips_through_its_container()
+    {
+        using var fixture = new SceneFixture();
+        var written = SceneFileStore.Default.Write(ValidScene(), fixture.Path);
+        Assert.True(written.Succeeded, written.Failure?.Detail);
+
+        var read = SceneFileStore.Default.Read(fixture.Path);
+        Assert.True(read.Succeeded, read.Failure?.Detail);
+
+        // The document lives in its own entry, so the file is a container and
+        // not the JSON itself.
+        using var archive = System.IO.Compression.ZipFile.OpenRead(fixture.Path);
+        Assert.NotNull(archive.GetEntry(SceneFileStore.DocumentEntry));
     }
 
     [Fact]

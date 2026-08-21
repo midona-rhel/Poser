@@ -156,18 +156,19 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     // ── portable appearance ──────────────────────────────────────────────
 
-    public async Task<IReadOnlyList<string>> SealAppearance(
+    public async Task<SceneSealOutcome> SealAppearance(
         SceneFile scene,
         IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
         TimeSpan bound,
         System.Threading.CancellationToken cancellation)
     {
         var notes = new List<string>();
+        var temporaries = new List<string>();
         long total = 0;
         foreach (var actor in scene.Actors)
         {
             if (cancellation.IsCancellationRequested)
-                return notes;
+                return new SceneSealOutcome(notes, temporaries);
 
             // The package Poser already owns for this actor is the source of
             // truth; only when the actor wears none does a new one get built.
@@ -209,57 +210,70 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                     notes.Add(
                         $"Actor '{actor.Name}''s appearance package was gone " +
                         "before it could be read into the scene.");
+                    if (created != null)
+                        DeleteQuietly(created);
                     continue;
                 }
                 if (info.Length > SceneFileLimits.MaxEmbeddedAppearanceBytes)
                 {
+                    // The one remaining refusal, and it is the IMPORTER's own
+                    // ceiling: a package Poser could not import back is a
+                    // package there is no point saving.
                     notes.Add(
                         $"Actor '{actor.Name}''s appearance is " +
-                        $"{info.Length / (1024d * 1024):N1} MiB, over the " +
-                        $"{SceneFileLimits.MaxEmbeddedAppearanceBytes / (1024 * 1024)} " +
-                        "MiB limit for one actor; the scene saved without it.");
-                    continue;
-                }
-                if (total + info.Length >
-                    SceneFileLimits.MaxEmbeddedAppearanceTotalBytes)
-                {
-                    notes.Add(
-                        $"Actor '{actor.Name}''s appearance did not fit the " +
-                        $"scene's " +
-                        $"{SceneFileLimits.MaxEmbeddedAppearanceTotalBytes / (1024 * 1024)} " +
-                        "MiB appearance budget; save fewer actors with " +
-                        "appearance included.");
+                        $"{Megabytes(info.Length)}, over the " +
+                        $"{Megabytes(SceneFileLimits.MaxEmbeddedAppearanceBytes)} " +
+                        "that Poser can import back; the scene saved without it.");
+                    if (created != null)
+                        DeleteQuietly(created);
                     continue;
                 }
 
-                var bytes = await System.IO.File.ReadAllBytesAsync(
-                    source, cancellation);
-                total += bytes.LongLength;
+                // Hashed by STREAM, and the bytes stay on disk: the writer
+                // copies them straight into the container entry, so a
+                // half-gigabyte package never becomes a half-gigabyte array.
+                string digest = HashFile(source)
+                    ?? throw new System.IO.IOException(
+                        "the package could not be checksummed.");
+                total += info.Length;
                 actor.Mcdf = new SceneActorMcdf
                 {
                     Path = string.Empty,
                     FileName = actor.Mcdf?.FileName is { Length: > 0 } named
                         ? named
                         : $"{actor.Name}.mcdf",
-                    ContentHash = Convert.ToHexString(
-                        System.Security.Cryptography.SHA256.HashData(bytes)),
-                    Package = bytes,
+                    ContentHash = digest,
+                    PackageEntry = SceneFileStore.AppearanceEntry(digest),
+                    PackageBytes = info.Length,
+                    PackageSourcePath = source,
                 };
+                if (created != null)
+                    temporaries.Add(created);
             }
             catch (Exception ex)
             {
                 notes.Add(
                     $"Actor '{actor.Name}''s appearance package could not be " +
                     $"read into the scene: {ex.Message}");
-            }
-            finally
-            {
                 if (created != null)
                     DeleteQuietly(created);
             }
         }
-        return notes;
+
+        if (total > SceneFileLimits.LargeAppearanceWarningBytes)
+        {
+            notes.Add(
+                $"This scene carries {Megabytes(total)} of appearance data. " +
+                "It saved in full; expect it to take a while to move or share.");
+        }
+
+        return new SceneSealOutcome(notes, temporaries);
     }
+
+    private static string Megabytes(long bytes) =>
+        bytes >= 1024L * 1024 * 1024
+            ? $"{bytes / (1024d * 1024 * 1024):N1} GB"
+            : $"{bytes / (1024d * 1024):N0} MB";
 
     /// <summary>
     /// Builds ONE new package from the actor's live supported state through
@@ -315,6 +329,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             }
         }
     }
+
+    public void DeleteTemporary(string path) => DeleteQuietly(path);
 
     private static void DeleteQuietly(string path)
     {
@@ -441,6 +457,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// answers, the refusal states BOTH things that were tried.</para>
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
+        string scenePath,
         object actor,
         SceneActor data,
         TimeSpan bound,
@@ -459,14 +476,19 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             string source;
             if (saved.IsPortable)
             {
-                var bytes = saved.Package!;
                 staged = System.IO.Path.Combine(
                     System.IO.Path.GetTempPath(),
                     $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
                 try
                 {
-                    await System.IO.File.WriteAllBytesAsync(
-                        staged, bytes, cancellation);
+                    // Container entry to disk, as a STREAM. A real package is
+                    // hundreds of megabytes; nothing here holds it.
+                    using var payload = _store.OpenAppearance(
+                        scenePath, saved.PackageEntry!)
+                        ?? throw new System.IO.IOException(
+                            "the scene holds no such payload.");
+                    using var staging = System.IO.File.Create(staged);
+                    await payload.CopyToAsync(staging, cancellation);
                 }
                 catch (Exception ex)
                 {

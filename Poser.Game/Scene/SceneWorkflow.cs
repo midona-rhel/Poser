@@ -60,7 +60,20 @@ public sealed class SceneWorkflow : IDisposable
     /// <summary>Bound for one saved character file to import. Generous because
     /// the transaction behind it extracts a whole package and waits out its
     /// own redraw barrier; cancelling the load cuts it short.</summary>
-    private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// A character-file import's bound. Real packages run to hundreds of
+    /// megabytes and the import decompresses, extracts, applies and waits for
+    /// a redraw, so this is minutes rather than the one minute it used to be —
+    /// a bound that expires mid-import turns a working restore into a named
+    /// failure for no reason but impatience.
+    /// </summary>
+    private static readonly TimeSpan McdfImportTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>Building a package from live provider state, per actor. The
+    /// exporter walks Penumbra's resource tree and writes the archive.
+    /// </summary>
+    private static readonly TimeSpan AppearanceSealTimeout =
+        TimeSpan.FromMinutes(10);
 
     private static readonly TimeSpan DisposeDrainTimeout = TimeSpan.FromSeconds(2);
 
@@ -420,20 +433,23 @@ public sealed class SceneWorkflow : IDisposable
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
             // this — it packages mods and reads tens of megabytes.
+            IReadOnlyList<string> sealTemporaries = Array.Empty<string>();
             if (options.IncludeModdedAppearance)
             {
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
-                notes.AddRange(await _runtime.SealAppearance(
-                    scene, captured.ActorIdentities, McdfImportTimeout,
-                    cancellation));
+                var sealed_ = await _runtime.SealAppearance(
+                    scene, captured.ActorIdentities, AppearanceSealTimeout,
+                    cancellation);
+                notes.AddRange(sealed_.Notes);
+                sealTemporaries = sealed_.TemporaryFiles;
                 PublishStep(operation, new SceneProgress(
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.Writing, 0, 0, false, null));
             }
 
-            SceneSavePolicy.Apply(scene, options, notes);
+            int unsealedAppearance = SceneSavePolicy.Apply(scene, options, notes);
 
             if (cancellation.IsCancellationRequested)
             {
@@ -462,6 +478,11 @@ public sealed class SceneWorkflow : IDisposable
             }
 
             var written = _runtime.WriteScene(scene, path);
+            // The writer has streamed every payload into the container, so the
+            // packages sealing created are the caller's to drop now — and only
+            // now: deleting them earlier would delete the bytes being saved.
+            foreach (var temporary in sealTemporaries)
+                _runtime.DeleteTemporary(temporary);
             if (!written.Succeeded)
             {
                 Finish(
@@ -478,6 +499,31 @@ public sealed class SceneWorkflow : IDisposable
                 $"{operation.FileName}.";
             if (notes.Count > 0)
                 summary += $" {notes.Count} entities carried notes.";
+
+            // A save that dropped appearance the user explicitly asked for is
+            // NOT a plain success. It wrote a file, so it is not a failure
+            // either — it is the partial state the entity list exists for, and
+            // it has to reach the notification rather than only the log.
+            if (unsealedAppearance > 0)
+            {
+                var appearanceOutcomes = new List<SceneEntityOutcome>();
+                foreach (var actor in scene.Actors)
+                    appearanceOutcomes.Add(
+                        new SceneEntityOutcome("Actor", actor.Name, true));
+                appearanceOutcomes.Add(new SceneEntityOutcome(
+                    "Character file",
+                    unsealedAppearance == 1 ? "1 actor" : $"{unsealedAppearance} actors",
+                    false,
+                    "The appearance package could not be built, so the scene "
+                    + "saved without it."));
+                FinishTerminal(
+                    operation, SceneOperationKind.Save,
+                    OperationReceiptState.Failed,
+                    summary + " Modded appearance was requested but not saved.",
+                    appearanceOutcomes, notes, Array.Empty<string>());
+                return;
+            }
+
             Finish(true, summary, notes);
         }
         catch (Exception ex)
@@ -795,8 +841,8 @@ public sealed class SceneWorkflow : IDisposable
                         return;
                     }
                     var appearance = await _runtime.ImportMcdf(
-                        actorTokens[actor.Key], actor, McdfImportTimeout,
-                        cancellation);
+                        path, actorTokens[actor.Key], actor,
+                        McdfImportTimeout, cancellation);
                     // A missing package is a refusal by name; a package whose
                     // bytes moved on is restored WITH the divergence named.
                     // Neither is ever a silent skip.

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Application.Operations;
@@ -47,6 +47,16 @@ public enum ScenePhase
     Failed,
     Cancelled,
 }
+
+/// <summary>
+/// What sealing left behind: the per-actor notes, and every TEMPORARY package
+/// it created that the writer still has to stream into the container. The
+/// caller deletes them once the write is done — deleting them here would
+/// delete the bytes the save is about to store.
+/// </summary>
+public sealed record SceneSealOutcome(
+    IReadOnlyList<string> Notes,
+    IReadOnlyList<string> TemporaryFiles);
 
 /// <summary>One entity's typed restore outcome. A missing parent or
 /// resource is a named, explained refusal here — never a silent detach or a
@@ -220,7 +230,11 @@ internal interface ISceneRuntime
     /// its own framework work, waits on the export transaction's own receipt,
     /// and does file work off the frame.</para>
     /// </summary>
-    Task<IReadOnlyList<string>> SealAppearance(
+    /// <summary>Drops one temporary file the seal created, after the write has
+    /// streamed it into the container. Never fails a save.</summary>
+    void DeleteTemporary(string path);
+
+    Task<SceneSealOutcome> SealAppearance(
         SceneFile scene,
         IReadOnlyDictionary<Guid, ActorId> identities,
         TimeSpan bound,
@@ -297,6 +311,7 @@ internal interface ISceneRuntime
     /// </para>
     /// </summary>
     Task<SceneMcdfOutcome> ImportMcdf(
+        string scenePath,
         object actor,
         SceneActor data,
         TimeSpan bound,

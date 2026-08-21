@@ -145,9 +145,16 @@ public class SceneFile
 /// <summary>Hard bounds every scene read and write enforces.</summary>
 public static class SceneFileLimits
 {
-    /// <summary>Scenes embed one complete pose document per actor, so the
-    /// byte cap is double the ordinary pose cap.</summary>
-    public const long MaxFileBytes = 64L * 1024 * 1024;
+    /// <summary>
+    /// The DOCUMENT's cap — the JSON entry inside the container, which holds
+    /// one complete pose document per actor and no payload bytes at all. It is
+    /// double the ordinary pose cap for the same reason it always was.
+    ///
+    /// <para>This is deliberately NOT a cap on the file: appearance payloads
+    /// are separate container entries, so a scene carrying half a gigabyte of
+    /// packages still has a small document.</para>
+    /// </summary>
+    public const long MaxDocumentBytes = 64L * 1024 * 1024;
     public const int MaxJsonDepth = 64;
     public const int MaxActors = 100;
     public const int MaxProps = 100;
@@ -167,17 +174,23 @@ public static class SceneFileLimits
     /// <summary>Hex characters of a SHA-256 digest.</summary>
     public const int ContentHashCharacters = 64;
 
-    /// <summary>One actor's embedded appearance package, uncompressed bytes.
+    /// <summary>
+    /// One actor's embedded appearance package. It matches the MCDF importer's
+    /// own ceiling (<c>IntegrationConfiguration.McdfMaxFileBytes</c>) because a
+    /// package Poser will happily IMPORT must be a package it can SAVE — real
+    /// character files run to hundreds of megabytes, and a scene format that
+    /// refuses them is a scene format that cannot record appearance.
+    ///
+    /// <para>Payloads are stored as their own container entries and streamed,
+    /// never encoded into the document, so this bounds disk rather than
+    /// memory.</para>
     /// </summary>
-    public const long MaxEmbeddedAppearanceBytes = 24L * 1024 * 1024;
+    public const long MaxEmbeddedAppearanceBytes = 512L * 1024 * 1024;
 
-    /// <summary>Every embedded appearance package in one document. Base64
-    /// costs a third on the wire, so this is set well under
-    /// <see cref="MaxFileBytes"/>: a document that fits the total cap still
-    /// fits the file cap once encoded, which is what stops a portable save
-    /// from refusing at the codec with a byte count nobody can act on.
-    /// </summary>
-    public const long MaxEmbeddedAppearanceTotalBytes = 32L * 1024 * 1024;
+    /// <summary>Above this, a save still writes the payload and SAYS how big
+    /// the file became. It is a warning threshold, never a refusal: a user who
+    /// asked for portable appearance gets portable appearance.</summary>
+    public const long LargeAppearanceWarningBytes = 256L * 1024 * 1024;
     public const float MinQuaternionLengthSquared =
         PoseFileLimits.MinQuaternionLengthSquared;
 }
@@ -323,19 +336,38 @@ public class SceneActorMcdf
     public string ContentHash { get; set; } = string.Empty;
 
     /// <summary>
-    /// The package's own bytes, base64 on the wire. Present only in portable
-    /// mode, bounded by
-    /// <see cref="SceneFileLimits.MaxEmbeddedAppearanceBytes"/> per actor and
-    /// <see cref="SceneFileLimits.MaxEmbeddedAppearanceTotalBytes"/> across the
-    /// document, both enforced before the write so an oversized scene refuses
-    /// with a size rather than failing at the file cap with a byte count.
+    /// The container entry holding this package's bytes, present only in
+    /// portable mode.
+    ///
+    /// <para>The bytes are an entry of their own, NOT a field of this
+    /// document. A real character file is hundreds of megabytes; base64 inside
+    /// the JSON would inflate it by a third, force the whole thing through a
+    /// single string and a single byte[] on every read, every write and every
+    /// commit verification, and put a multi-gigabyte transient in a game
+    /// process. The entry is written and read as a STREAM, so the cost of a
+    /// large payload is disk and nothing else.</para>
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public byte[]? Package { get; set; }
+    public string? PackageEntry { get; set; }
+
+    /// <summary>The payload entry's length in bytes, as recorded at save. It
+    /// lets a listing state a scene's real size, and the save preview state
+    /// what a scene is about to cost, without opening the container.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long PackageBytes { get; set; }
+
+    /// <summary>
+    /// Where the package is being read FROM while a save is in flight. Never
+    /// serialized and never present on a document that came off disk: the
+    /// sealing step records it, the writer streams it into the container
+    /// entry, and nothing else may look at it.
+    /// </summary>
+    [JsonIgnore]
+    public string? PackageSourcePath { get; set; }
 
     /// <summary>Whether this entry carries the package itself.</summary>
     [JsonIgnore]
-    public bool IsPortable => Package is { Length: > 0 };
+    public bool IsPortable => PackageEntry is { Length: > 0 };
 }
 
 /// <summary>

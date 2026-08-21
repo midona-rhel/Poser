@@ -1,4 +1,4 @@
-using Poser.Files;
+﻿using Poser.Files;
 using Poser.Game.Scene;
 
 namespace Poser.Game.Tests.Scene;
@@ -16,7 +16,8 @@ public sealed class ScenePortableAppearanceTests
         var excluded = SceneWithReference();
         var excludedNotes = new List<string>();
 
-        SceneSavePolicy.Apply(excluded, SceneSaveOptions.Default, excludedNotes);
+        Assert.Equal(
+            0, SceneSavePolicy.Apply(excluded, SceneSaveOptions.Default, excludedNotes));
 
         Assert.Null(Assert.Single(excluded.Actors).Mcdf);
         Assert.Equal(
@@ -28,13 +29,17 @@ public sealed class ScenePortableAppearanceTests
     public void A_portable_save_keeps_bytes_and_drops_an_unsealed_reference()
     {
         var scene = SceneWithReference();
-        scene.Actors.Add(PortableActor("Sealed", new byte[] { 1, 2, 3, 4 }));
+        scene.Actors.Add(PortableActor("Sealed", 4));
         var notes = new List<string>();
 
-        SceneSavePolicy.Apply(
-            scene,
-            new SceneSaveOptions { IncludeModdedAppearance = true },
-            notes);
+        // One reference could not be sealed: it is dropped AND counted, so the
+        // save can refuse to call itself a plain success.
+        Assert.Equal(
+            1,
+            SceneSavePolicy.Apply(
+                scene,
+                new SceneSaveOptions { IncludeModdedAppearance = true },
+                notes));
 
         var reference = scene.Actors[0];
         var sealedActor = scene.Actors[1];
@@ -49,33 +54,30 @@ public sealed class ScenePortableAppearanceTests
     [Fact]
     public void An_embedded_payload_needs_its_own_digest_and_fits_the_actor_cap()
     {
-        var missingDigest = SceneWith(PortableActor("A", new byte[] { 9 }));
+        var missingDigest = SceneWith(PortableActor("A", 16));
         missingDigest.Actors[0].Mcdf!.ContentHash = string.Empty;
         Assert.False(SceneFileValidation.Validate(missingDigest).Succeeded);
 
+        // The one remaining refusal is the importer's own ceiling: a package
+        // Poser could not import back is one there is no point saving.
         var oversized = SceneWith(PortableActor(
-            "A",
-            new byte[SceneFileLimits.MaxEmbeddedAppearanceBytes + 1]));
+            "A", SceneFileLimits.MaxEmbeddedAppearanceBytes + 1));
         var refusal = SceneFileValidation.Validate(oversized);
         Assert.False(refusal.Succeeded);
         Assert.Contains("over the", refusal.Failure!.Detail);
     }
 
     [Fact]
-    public void The_document_appearance_budget_is_enforced_across_actors()
+    public void A_large_payload_saves_rather_than_being_refused()
     {
-        long each = SceneFileLimits.MaxEmbeddedAppearanceBytes;
-        int actors = (int)(
-            SceneFileLimits.MaxEmbeddedAppearanceTotalBytes / each) + 2;
-        var scene = new SceneFile { SceneId = Guid.NewGuid() };
-        for (int index = 0; index < actors; index++)
-            scene.Actors.Add(PortableActor($"A{index}", new byte[each]));
+        // Well past the old 24 MiB refusal and past the warning threshold:
+        // real character files are this big, and a save the user asked for
+        // must produce one.
+        long large = SceneFileLimits.LargeAppearanceWarningBytes + 1;
+        var scene = SceneWith(PortableActor("Big", large));
 
-        var refusal = SceneFileValidation.Validate(scene);
-
-        Assert.False(refusal.Succeeded);
-        Assert.Contains("appearance", refusal.Failure!.Detail);
-        Assert.Contains("Save fewer actors", refusal.Failure.Detail);
+        Assert.True(SceneFileValidation.Validate(scene).Succeeded);
+        Assert.True(large < SceneFileLimits.MaxEmbeddedAppearanceBytes);
     }
 
     private static SceneFile SceneWith(params SceneActor[] actors)
@@ -98,8 +100,16 @@ public sealed class ScenePortableAppearanceTests
             },
         });
 
-    private static SceneActor PortableActor(string name, byte[] package) =>
-        new()
+    /// <summary>A portable entry of a stated SIZE. The bytes live in their own
+    /// container entry, so a document only carries the entry name, the digest
+    /// and the length — which is what makes a half-gigabyte payload testable
+    /// without allocating one.</summary>
+    private static SceneActor PortableActor(string name, long bytes)
+    {
+        string digest = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(name)));
+        return new SceneActor
         {
             Key = Guid.NewGuid(),
             Name = name,
@@ -108,9 +118,10 @@ public sealed class ScenePortableAppearanceTests
             {
                 Path = string.Empty,
                 FileName = $"{name}.mcdf",
-                ContentHash = Convert.ToHexString(
-                    System.Security.Cryptography.SHA256.HashData(package)),
-                Package = package,
+                ContentHash = digest,
+                PackageEntry = SceneFileStore.AppearanceEntry(digest),
+                PackageBytes = bytes,
             },
         };
+    }
 }
