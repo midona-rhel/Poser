@@ -34,7 +34,9 @@ public enum ScenePhase
     /// </summary>
     ApplyingAppearance,
     ApplyingRelationships,
-    ApplyingAnimation,
+    /// <summary>Stopping every actor so its pose lands on a held frame.
+    /// Scenes restore a picture, not a performance.</summary>
+    FreezingActors,
     ApplyingPose,
     ApplyingPresentation,
     ApplyingCameras,
@@ -142,13 +144,24 @@ public readonly record struct SceneActionResult(bool Success, string? Detail = n
 /// </summary>
 public readonly record struct SceneClearOutcome(
     int Actors, int Props, int Overlays, int Lights, int Cameras,
-    int WorldObjects = 0)
+    int WorldObjects = 0,
+    IReadOnlyList<string>? UnclearableActors = null)
 {
     public int Total =>
         Actors + Props + Overlays + Lights + Cameras + WorldObjects;
 
+    /// <summary>Actors the clear could not remove, BY NAME. The clear takes
+    /// everything the session holds, so this is the exception path — a stale
+    /// wrapper, a companion body, the GPose primary — and it is never silent:
+    /// the user asked for an empty session and has to know what is left.
+    /// </summary>
+    public IReadOnlyList<string> Refused =>
+        UnclearableActors ?? Array.Empty<string>();
+
     /// <summary>The clear in the user's words, or null when it removed
-    /// nothing — an empty session needs no sentence about being emptied.
+    /// nothing AND left nothing behind — an empty session needs no sentence
+    /// about being emptied, but a session that could not be emptied always
+    /// needs one.
     ///
     /// <para>Borrowed map objects are counted but spoken of SEPARATELY, and
     /// never as destroyed: a clear gives them back to the map exactly where it
@@ -157,7 +170,7 @@ public readonly record struct SceneClearOutcome(
     /// </summary>
     public string? Summary()
     {
-        if (Total == 0)
+        if (Total == 0 && Refused.Count == 0)
             return null;
         var parts = new List<string>(5);
         void Part(int count, string singular, string plural)
@@ -176,9 +189,23 @@ public readonly record struct SceneClearOutcome(
             : $" {WorldObjects} borrowed map " +
                 $"{(WorldObjects == 1 ? "object was" : "objects were")} put back.";
         if (parts.Count == 0)
-            return $"Cleared the session first:{borrowed}".TrimEnd();
+            return $"Cleared the session first:{borrowed}{Left()}".TrimEnd();
         return $"Cleared the session first: {string.Join(", ", parts)} were " +
-            $"destroyed. Undoing the load does not bring them back.{borrowed}";
+            $"destroyed. Undoing the load does not bring them back." +
+            $"{borrowed}{Left()}";
+    }
+
+    /// <summary>What the clear could not take, named. Empty when it took
+    /// everything.</summary>
+    private string Left()
+    {
+        if (Refused.Count == 0)
+            return string.Empty;
+        return $" {string.Join(", ", Refused)} " +
+            (Refused.Count == 1 ? "is" : "are") +
+            " still in the scene: the removal was refused. Remove " +
+            (Refused.Count == 1 ? "it" : "them") +
+            " through GPose before loading, or the scene will load on top.";
     }
 }
 
@@ -350,11 +377,11 @@ internal interface ISceneRuntime
     /// no-op.</summary>
     string? PlaceActor(object actor, SceneActor data);
 
-    /// <summary>Replays the actor's saved animation state — base timeline,
-    /// speed (zero being the pause), lips, stance, weapon, held expression,
-    /// slot pins, armed loops and the position lock. Null when the file
-    /// records none, else the joined refusal detail.</summary>
-    string? ApplyActorAnimation(object actor, SceneActor data);
+    /// <summary>Stops the actor so its pose lands on a held frame. Scenes
+    /// carry no animation — a timeline id means something different on every
+    /// client — so a restored actor is always frozen and the picture is always
+    /// the same one. Null on success, else the refusal detail.</summary>
+    string? FreezeActor(object actor);
 
     /// <summary>Restores the actor's saved gaze. <paramref name="target"/> is
     /// the restored actor the saved Entity key resolved to, or null when the

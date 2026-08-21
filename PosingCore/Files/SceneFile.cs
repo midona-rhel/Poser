@@ -270,12 +270,6 @@ public class SceneActor
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public LightFile.TransformData? ModelTransform { get; set; }
 
-    /// <summary>What the actor is PLAYING. Absent when nothing about the
-    /// actor's animation was worth recording — no Poser-owned override and a
-    /// plain idle at ordinary speed.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public SceneActorAnimation? Animation { get; set; }
-
     /// <summary>Where the actor is LOOKING. Absent when no gaze override is
     /// configured, which is the ordinary case.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -368,89 +362,6 @@ public class SceneActorMcdf
     /// <summary>Whether this entry carries the package itself.</summary>
     [JsonIgnore]
     public bool IsPortable => PackageEntry is { Length: > 0 };
-}
-
-/// <summary>
-/// One actor's animation state. Every member here has an APPLY route in
-/// <c>AnimationSession</c> — a scene never records animation facts it cannot
-/// put back. Base timeline, speed, lips, stance/pose and weapon are the LIVE
-/// reading (what the actor is doing); the held expression, the per-slot speeds
-/// and the armed loops are Poser-owned overrides, which have no live field to
-/// read and exist only in the session.
-/// </summary>
-[Serializable]
-public class SceneActorAnimation
-{
-    /// <summary>The base slot's timeline; 0 means the actor was on whatever
-    /// the game gives it and nothing is replayed.</summary>
-    public ushort BaseTimeline { get; set; }
-
-    /// <summary>Overall playback speed. 0 IS the pause state — a paused actor
-    /// is one whose speed override is zero, which is the only pause either
-    /// reference has.</summary>
-    public float Speed { get; set; } = 1f;
-
-    /// <summary>Speech timeline override; 0 means none.</summary>
-    public ushort Lips { get; set; }
-
-    public bool WeaponDrawn { get; set; }
-    public AnimationStance Stance { get; set; } = AnimationStance.Idle;
-    public int Pose { get; set; }
-
-    /// <summary>The expression pinned onto the facial layer; 0 means none.
-    /// Restored through the same hold mechanism that authored it, so the
-    /// facial pin comes back with it rather than as a bare slot speed.
-    /// </summary>
-    public ushort HeldExpression { get; set; }
-
-    public bool PositionLock { get; set; }
-
-    /// <summary>Per-slot overrides, one entry per slot Poser owns something
-    /// on. A list rather than a keyed map: the wire shape then matches
-    /// <see cref="SceneEnvironment.HeldSections"/> and never depends on how a
-    /// serializer chooses to spell an enum used as a dictionary key.</summary>
-    public List<SceneAnimationSlot> Slots { get; set; } = new();
-
-    /// <summary>
-    /// Where a PAUSED timeline actually stands — the exact frame the user
-    /// scrubbed to, which the speed and the timeline id together cannot
-    /// express. Recorded only while <see cref="Speed"/> is zero: a running
-    /// animation's frame is whatever the game advanced it to this tick and
-    /// means nothing an instant later, so writing one back would be inventing
-    /// a fact. Empty for a running actor, and for every scene written before
-    /// frames were recorded.
-    /// </summary>
-    public List<SceneAnimationFrame> Frames { get; set; } = new();
-}
-
-/// <summary>One paused control's local time, named by the SLOT it drives
-/// rather than by a control index: an index is a position in a freshly
-/// enumerated native list, and a saved one would name whatever occupies that
-/// position on a restored skeleton.</summary>
-[Serializable]
-public class SceneAnimationFrame
-{
-    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
-
-    /// <summary>Local time within the control, in seconds.</summary>
-    public float Time { get; set; }
-}
-
-/// <summary>One animation slot's owned state: its pinned speed, its armed
-/// loop, or both.</summary>
-[Serializable]
-public class SceneAnimationSlot
-{
-    public AnimationSlot Slot { get; set; } = AnimationSlot.Base;
-
-    /// <summary>The pinned playback speed; absent when Poser owns no speed on
-    /// this slot.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public float? Speed { get; set; }
-
-    /// <summary>The armed loop's timeline; 0 means no loop.</summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public ushort Loop { get; set; }
 }
 
 /// <summary>

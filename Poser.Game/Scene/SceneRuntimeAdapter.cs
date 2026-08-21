@@ -369,15 +369,33 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// ownership rule (a borrowed world light is released, the default camera
     /// cannot be destroyed), so their counts are read before the sweep.
     /// </summary>
+    /// <summary>
+    /// Empties the session of everything it can empty, and NAMES what it
+    /// cannot.
+    ///
+    /// <para>EVERY kind comes out, actors included. An actor Poser spawned
+    /// goes through its ownership ledger; one that was already in the GPose
+    /// scene goes through the native scene-removal route, which deletes it
+    /// from the temporary GPose object table and never touches the overworld
+    /// actor. "Clear the session first" means the session, not the part of it
+    /// Poser happens to own.</para>
+    ///
+    /// <para>A removal the native gates refuse — a stale wrapper, a companion
+    /// body, the GPose primary, an actor no longer in the table — is named in
+    /// the outcome. That is the exception path now, not the design.</para>
+    /// </summary>
     public SceneClearOutcome ClearScene()
     {
         int actors = 0;
+        var refused = new List<string>();
         foreach (var actor in _actors.Actors.ToList())
         {
-            if (!_spawns.IsSpawnedActor(actor))
-                continue;
-            if (_spawns.DestroyActor(actor))
+            // One verb for both provenances: the service routes an owned
+            // actor to its ledger and an adopted one to the scene table.
+            if (_spawns.RemoveActorFromScene(actor))
                 actors++;
+            else
+                refused.Add(actor.Name);
         }
 
         int props = _props.Props.Count;
@@ -399,8 +417,9 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         _worldObjects.ReleaseAll();
 
         return new SceneClearOutcome(
-            actors, props, overlays, lights, cameras, worldObjects);
+            actors, props, overlays, lights, cameras, worldObjects, refused);
     }
+
 
     // ── actors ───────────────────────────────────────────────────────────
 
@@ -691,84 +710,25 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     /// <summary>
-    /// Replays the saved animation in the one order that survives its own
-    /// dependencies: stance and weapon FIRST (a stance transition cancels the
-    /// container's timelines, so anything played before it would be taken
-    /// down), then the base timeline, then the held expression (which pins the
-    /// facial layer itself), then lips, then the explicit slot pins and armed
-    /// loops, then the overall speed LAST — a pause written before the plays
-    /// would be lifted by the very sequencer calls that follow it.
+    /// FREEZES the actor. A scene restores a picture, not a performance: it
+    /// carries pose data, which is self-contained, and deliberately carries no
+    /// animation at all — a timeline id resolves against the LOADING client's
+    /// game and mod list, so the same scene file would play something
+    /// different on someone else's machine, or nothing.
+    ///
+    /// <para>So every restored actor is stopped at speed 0 and the pose lands
+    /// on a held frame. That is the definition of a successful load: the same
+    /// picture every time, on every client. Expressions come back as part of
+    /// the pose, on the frozen face.</para>
     /// </summary>
-    public string? ApplyActorAnimation(object actor, SceneActor data)
+    public string? FreezeActor(object actor)
     {
-        if (data.Animation is not { } saved)
-            return null;
         if (_bindings.GetActorId((IActor)actor) is not { } id)
-            return "The actor has no stable identity to own animation state.";
-
-        var failures = new List<string>();
-        void Try(AnimationResult result)
-        {
-            if (!result.Success && result.Detail is { } detail)
-                failures.Add(detail);
-        }
-
-        if (saved.WeaponDrawn)
-            Try(_animation.SetWeaponDrawn(id, true));
-        if (_animation.SupportsStance &&
-            (saved.Stance != AnimationStance.Idle || saved.Pose != 0))
-            Try(_animation.SetStance(id, saved.Stance, saved.Pose));
-
-        if (saved.BaseTimeline != 0)
-            Try(_animation.PlayBase(id, saved.BaseTimeline));
-        if (saved.HeldExpression != 0)
-            Try(_animation.HoldExpression(id, saved.HeldExpression));
-        if (saved.Lips != 0)
-            Try(_animation.SetLips(id, saved.Lips));
-
-        foreach (var slot in saved.Slots)
-        {
-            // The REPLAY route, not the live toggle: the toggle only re-arms a
-            // repeat this session already applied, and a restore has applied
-            // nothing, so it used to answer Ok having armed nothing at all.
-            if (slot.Loop != 0)
-                Try(_animation.ReplaySlotLoop(id, slot.Slot, slot.Loop));
-            // The facial pin belongs to the held expression and is re-applied
-            // by it; re-writing it here would double the ownership.
-            if (slot.Speed is { } speed &&
-                !(slot.Slot == AnimationSlot.Facial && saved.HeldExpression != 0))
-                Try(_animation.SetSlotSpeed(id, slot.Slot, speed));
-        }
-
-        if (saved.PositionLock)
-            Try(_animation.SetPositionLock(id, true));
-        if (saved.Speed != 1f)
-            Try(_animation.SetSpeed(id, saved.Speed));
-
-        // The paused frames LAST, after the pause that makes them meaningful.
-        // The scrub gesture is the one route that writes a control time, and
-        // it needs a token from a FRESH enumeration — which is exactly what
-        // BeginScrub takes here, on the restored skeleton. It leaves the actor
-        // paused on the frame, which is the state the file recorded.
-        foreach (var frame in saved.Frames)
-        {
-            if (_animation.FindSlotControl(id, frame.Slot) is not { } control)
-            {
-                failures.Add(
-                    $"The saved {frame.Slot} frame has no control on this actor.");
-                continue;
-            }
-            var begun = _animation.BeginScrub(id, control.Id);
-            if (!begun.Success)
-            {
-                failures.Add(begun.Detail ?? $"The {frame.Slot} frame was refused.");
-                continue;
-            }
-            Try(_animation.UpdateScrub(id, frame.Time));
-            _animation.EndScrub();
-        }
-
-        return failures.Count == 0 ? null : string.Join("; ", failures);
+            return "The actor has no stable identity to freeze.";
+        var paused = _animation.Pause(id);
+        return paused.Success
+            ? null
+            : paused.Detail ?? "The actor could not be frozen for its pose.";
     }
 
     /// <summary>

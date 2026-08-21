@@ -283,11 +283,6 @@ public static class SceneFileValidation
                 is { } placementFailure)
             return placementFailure;
 
-        if (actor.Animation is { } animation &&
-            ValidateAnimation(animation, $"Actor '{actor.Name}' animation")
-                is { } animationFailure)
-            return animationFailure;
-
         if (actor.Mcdf is { } mcdf &&
             ValidateMcdf(mcdf, $"Actor '{actor.Name}' character file")
                 is { } mcdfFailure)
@@ -382,67 +377,6 @@ public static class SceneFileValidation
             return Fail(SceneFileValidationFailureKind.Range,
                 $"Overlay '{node.Name}' carries {node.Text.Length} characters " +
                 $"(limit {OverlayNodeLimits.MaxTextCharacters}).");
-        return null;
-    }
-
-    private static SceneFileValidationOutcome? ValidateAnimation(
-        SceneActorAnimation animation, string label)
-    {
-        if (!float.IsFinite(animation.Speed) || animation.Speed < 0)
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} speed {animation.Speed} is invalid.");
-        if (!Enum.IsDefined(animation.Stance))
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} names an unknown stance.");
-        if (animation.Pose < 0)
-            return Fail(SceneFileValidationFailureKind.Range,
-                $"{label} has a negative pose index.");
-        if (animation.Slots is null)
-            return Fail(SceneFileValidationFailureKind.Document,
-                $"{label} slot list is missing.");
-
-        var slots = new HashSet<AnimationSlot>();
-        foreach (var slot in animation.Slots)
-        {
-            if (slot is null)
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} contains a null slot entry.");
-            if (!Enum.IsDefined(slot.Slot))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} names an unknown slot.");
-            if (!slots.Add(slot.Slot))
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} states slot {slot.Slot} twice.");
-            if (slot.Speed is { } speed && (!float.IsFinite(speed) || speed < 0))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} slot {slot.Slot} speed {speed} is invalid.");
-        }
-
-        if (animation.Frames is null)
-            return Fail(SceneFileValidationFailureKind.Document,
-                $"{label} frame list is missing.");
-        var frames = new HashSet<AnimationSlot>();
-        foreach (var frame in animation.Frames)
-        {
-            if (frame is null)
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} contains a null frame entry.");
-            if (!Enum.IsDefined(frame.Slot))
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} frames name an unknown slot.");
-            if (!frames.Add(frame.Slot))
-                return Fail(SceneFileValidationFailureKind.Document,
-                    $"{label} states a frame for slot {frame.Slot} twice.");
-            if (!float.IsFinite(frame.Time) || frame.Time < 0)
-                return Fail(SceneFileValidationFailureKind.Range,
-                    $"{label} frame for slot {frame.Slot} is at an invalid time.");
-        }
-        // A frame is only meaningful on a paused timeline; a running one is
-        // wherever the game advanced it to, so a stated frame would restore a
-        // fact the file cannot have observed.
-        if (frames.Count > 0 && animation.Speed != 0f)
-            return Fail(SceneFileValidationFailureKind.Relationship,
-                $"{label} states a paused frame while the actor is not paused.");
         return null;
     }
 

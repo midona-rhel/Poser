@@ -41,7 +41,6 @@ public sealed class SceneWorkflowTests
         public Func<SceneActor, string?>? PoseFailure;
         public Func<SceneActor, string?>? CompanionFailure;
         public Func<SceneActor, string?>? PlacementFailure;
-        public Func<SceneActor, string?>? AnimationFailure;
         public Func<SceneActor, string?>? GazeFailure;
 
         /// <summary>The token each actor's gaze was handed, by actor name —
@@ -272,11 +271,14 @@ public sealed class SceneWorkflowTests
             return PlacementFailure?.Invoke(data);
         }
 
-        public string? ApplyActorAnimation(object actor, SceneActor data)
+        public string? FreezeActor(object actor)
         {
-            Record($"ApplyActorAnimation:{data.Name}");
-            return AnimationFailure?.Invoke(data);
+            Record($"FreezeActor:{((Token)actor).Name["actor:".Length..]}");
+            return FreezeFailure?.Invoke(((Token)actor).Name["actor:".Length..]);
         }
+
+        /// <summary>A freeze the runtime refuses, by actor name.</summary>
+        public Func<string, string?>? FreezeFailure;
 
         public string? ApplyActorGaze(object actor, SceneActor data, object? target)
         {
@@ -513,7 +515,7 @@ public sealed class SceneWorkflowTests
         using var load = new SceneWorkflow(runtime);
         Assert.True(load.BeginLoad("shot.xivs").Success);
         await load.Drain;
-        Assert.Equal(new[] { "ReadScene", "CaptureEnvironmentState", "CaptureWorldState", "CaptureDefaultCameraState", "SpawnActor:Lead", "SpawnProp:Chair", "ActorReady", "AttachCompanion:Lead", "SetActorVisibility", "ApplyActorAnimation:Lead", "ArmPoseImport:Lead", "PlaceActor:Lead", "ApplyActorGaze:Lead", "ApplyDefaultCamera", "SetCameraTarget", "SetLiveCamera", "SpawnLight", "ApplyEnvironment", "ApplyWorld" }, runtime.Calls);
+        Assert.Equal(new[] { "ReadScene", "CaptureEnvironmentState", "CaptureWorldState", "CaptureDefaultCameraState", "SpawnActor:Lead", "SpawnProp:Chair", "ActorReady", "AttachCompanion:Lead", "SetActorVisibility", "FreezeActor:Lead", "ArmPoseImport:Lead", "PlaceActor:Lead", "ApplyActorGaze:Lead", "ApplyDefaultCamera", "SetCameraTarget", "SetLiveCamera", "SpawnLight", "ApplyEnvironment", "ApplyWorld" }, runtime.Calls);
         Assert.Empty(runtime.Destroyed);
         Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
     }
@@ -654,6 +656,61 @@ public sealed class SceneWorkflowTests
             note => note.Contains("could not be packaged"));
     }
 
+    /// <summary>
+    /// THE RESTORE CONTRACT. A scene is a picture, not a performance: it
+    /// carries pose data and no animation, because a timeline id resolves
+    /// against the loading client's own game and mods and would show something
+    /// different — or nothing — on someone else's machine. So every restored
+    /// actor is stopped first and the pose lands on a held frame.
+    /// </summary>
+    [Fact]
+    public async Task Every_restored_actor_is_frozen_before_its_pose()
+    {
+        var runtime = new FakeRuntime
+        {
+            ReadResult = SceneWith(Actor("Lead", out _)),
+        };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        int frozen = runtime.Calls.IndexOf("FreezeActor:Lead");
+        int posed = runtime.Calls.IndexOf("ArmPoseImport:Lead");
+        Assert.True(frozen >= 0, "the actor was never stopped");
+        Assert.True(
+            frozen < posed,
+            "the pose must land on an actor that is already stopped");
+    }
+
+    /// <summary>A scene saved while an actor was PLAYING restores exactly like
+    /// any other: stopped, at the saved pose. There is nothing in the document
+    /// to resume from, by design.</summary>
+    [Fact]
+    public async Task A_document_carries_no_animation_to_restore()
+    {
+        var scene = SceneWith(Actor("Lead", out _));
+        // Default options, deliberately: they emit every public member, so a
+        // surviving animation property would show up here even if the codec's
+        // own options would have hidden it behind a null.
+        var json = System.Text.Json.JsonSerializer.Serialize(scene);
+
+        Assert.DoesNotContain("Animation", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("BaseTimeline", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("HeldExpression", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Frames", json, StringComparison.Ordinal);
+
+        var runtime = new FakeRuntime { ReadResult = scene };
+        using var load = new SceneWorkflow(runtime);
+        Assert.True(load.BeginLoad("shot.xivs").Success);
+        await load.Drain;
+
+        Assert.Equal(OperationReceiptState.Applied, load.Receipt!.State);
+        Assert.DoesNotContain(
+            load.Progress!.Outcome!.Entities,
+            entity => entity.Kind == "Animation");
+    }
+
     // ── issue #41: one failure mode per load phase ───────────────────────
 
     /// <summary>A whole scene: one of every entity kind the load restores, so
@@ -729,8 +786,8 @@ public sealed class SceneWorkflowTests
                 _ => SceneMcdfOutcome.Refused("The package is gone."));
         Add("relationships", "Companion",
             runtime => runtime.CompanionPoseFailure = _ => "The body never drew.");
-        Add("animation", "Animation",
-            runtime => runtime.AnimationFailure = _ => "The timeline is unavailable.");
+        Add("freeze", "Animation",
+            runtime => runtime.FreezeFailure = _ => "The actor could not be stopped.");
         Add("pose", "Actor",
             runtime => runtime.PoseTerminalFailure = _ => "The import rolled back.");
         Add("placement", "Actor",

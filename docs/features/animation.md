@@ -1,4 +1,4 @@
-# Animation
+﻿# Animation
 
 Basic mode owns one General Full Body selection. Choose only stages a catalog
 row; Apply captures the actor's current Base state and then plays that exact
@@ -19,11 +19,8 @@ replays its last successfully applied Upper timeline. Turning Loop off stops
 replay without changing the current frame; Reset releases the loop and restores
 the captured layer.
 
-Restoring a saved scene is a different route from the live switch. The switch
-only re-arms the timeline this session last applied, so a restore, which has
-applied nothing, would arm nothing. Scene replay brings the layer to the
-timeline the file recorded and then arms, and refuses by name when the file
-recorded no timeline. It never reports success without arming.
+Scenes do not replay any of this. A scene records no animation at all and
+restores every actor stopped; see `scenes.md`.
 
 Pose Expression Preview and Advanced Facial Apply share direct
 `HoldExpression`; their Reset shares `ReleaseExpression`. Release clears Facial

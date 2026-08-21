@@ -341,7 +341,6 @@ public sealed class SceneCaptureService
                 ModelTransform = NormalizedTransform(
                     _posing.GetEffectiveTransform(actor),
                     $"Actor '{actor.Name}' placement", notes),
-                Animation = id is { } actorId ? CaptureAnimation(actorId) : null,
                 Mcdf = id is { } mcdfActorId ? CaptureMcdf(mcdfActorId, notes) : null,
             };
             captured.Add((actor, entry));
@@ -417,92 +416,6 @@ public sealed class SceneCaptureService
             notes.Add(
                 $"Actor '{owner.Name}''s companion pose could not be captured.");
         return pose;
-    }
-
-    /// <summary>
-    /// What the actor is playing, as ONE record combining the live native
-    /// reading (base timeline, speed, lips, stance/pose, weapon — the things
-    /// the game itself holds) with the Poser-owned overrides (the held
-    /// expression, the slot pins, the armed loops, the position lock — which
-    /// exist nowhere but the session). Nothing is written that
-    /// <c>AnimationSession</c> has no route to put back.
-    ///
-    /// <para>Null when the actor sits at the defaults: an ordinary idle at
-    /// ordinary speed with nothing owned. A scene then records no animation
-    /// member at all, which is exactly what a scene saved before this said.
-    /// </para>
-    /// </summary>
-    private SceneActorAnimation? CaptureAnimation(Poser.Domain.Identity.ActorId id)
-    {
-        var reading = _animation.Read(id);
-        var owned = _animation.OverridesFor(id);
-        if (reading is null && !owned.HasAny)
-            return null;
-
-        var live = reading ?? ActorAnimationReading.Empty;
-        var animation = new SceneActorAnimation
-        {
-            // The owned base pick outranks the live field: a base override is
-            // the timeline Poser asked for, and it is what a replay reissues.
-            BaseTimeline = owned.BaseTimeline ?? live.BaseTimeline,
-            Speed = float.IsFinite(live.OverallSpeed) && live.OverallSpeed >= 0
-                ? live.OverallSpeed
-                : 1f,
-            Lips = live.LipsOverride,
-            WeaponDrawn = live.WeaponDrawn,
-            Stance = live.Stance,
-            Pose = Math.Max(0, live.Pose),
-            HeldExpression = owned.HeldExpression ?? 0,
-            PositionLock = owned.PositionLock,
-        };
-
-        // One row per slot Poser owns something on, in the display order the
-        // slot catalog states so the file reads the way the transport does.
-        foreach (var slot in AnimationSlots.All)
-        {
-            owned.SlotSpeeds.TryGetValue(slot, out var speed);
-            bool hasSpeed = owned.SlotSpeeds.ContainsKey(slot);
-            owned.LoopedSlots.TryGetValue(slot, out var loop);
-            if (!hasSpeed && loop == 0)
-                continue;
-            animation.Slots.Add(new SceneAnimationSlot
-            {
-                Slot = slot,
-                Speed = hasSpeed && float.IsFinite(speed) && speed >= 0
-                    ? speed
-                    : null,
-                Loop = loop,
-            });
-        }
-
-        // Where the paused timelines STAND. Only while paused: a running
-        // control's time is whatever this tick advanced it to, and the very
-        // next tick disagrees. Base and UpperBody only — the reference lookup
-        // that finds a slot's control does not hold for the other slots
-        // (IAnimationRuntimePort.FindSlotControl).
-        if (animation.Speed == 0f)
-        {
-            foreach (var slot in new[] { AnimationSlot.Base, AnimationSlot.UpperBody })
-            {
-                if (_animation.FindSlotControl(id, slot) is not { } control)
-                    continue;
-                if (!float.IsFinite(control.Time) || control.Time < 0)
-                    continue;
-                animation.Frames.Add(new SceneAnimationFrame
-                {
-                    Slot = slot,
-                    Time = control.Time,
-                });
-            }
-        }
-
-        bool interesting =
-            animation.BaseTimeline != 0 || animation.Speed != 1f ||
-            animation.Lips != 0 || animation.WeaponDrawn ||
-            animation.Stance != AnimationStance.Idle || animation.Pose != 0 ||
-            animation.HeldExpression != 0 || animation.PositionLock ||
-            animation.Slots.Count > 0;
-        return interesting ? animation : null;
     }
 
     /// <summary>

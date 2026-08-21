@@ -376,7 +376,7 @@ public sealed class ScenePane
         ScenePhase.AwaitingActors => "Waiting for the actors to build",
         ScenePhase.ApplyingAppearance => "Restoring appearance",
         ScenePhase.ApplyingRelationships => "Attaching companions",
-        ScenePhase.ApplyingAnimation => "Restoring animation",
+        ScenePhase.FreezingActors => "Stopping the actors",
         ScenePhase.ApplyingPose => "Applying poses",
         ScenePhase.ApplyingPresentation => "Applying visibility",
         ScenePhase.ApplyingCameras => "Restoring cameras",

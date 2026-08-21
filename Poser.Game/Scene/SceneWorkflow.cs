@@ -898,14 +898,14 @@ public sealed class SceneWorkflow : IDisposable
                     operation, actors, actorTokens, cancellation);
             }
 
-            // Phase 4b — animation, BEFORE the pose. The saved state is what
-            // the actor was playing when the pose was authored on top of it,
-            // so the pose must land last or the replayed timeline animates
-            // over it. It also lands inside the import's own pause bracket
-            // correctly: a restored pause becomes the import's prior speed and
-            // survives, and a restored rate is what the import hands back.
-            Step(ScenePhase.ApplyingAnimation);
-            var animationFailure = await _runtime.OnFramework(() =>
+            // Phase 4b — FREEZE, before the pose. A scene carries pose data
+            // and no animation: a timeline id resolves against the loading
+            // client's own game and mods, so replaying one would show a
+            // different thing on every machine, or nothing. Stopping the actor
+            // first is what makes the pose land on a held frame and the load
+            // deterministic.
+            Step(ScenePhase.FreezingActors);
+            var freezeFailure = await _runtime.OnFramework(() =>
             {
                 if (Guard(operation, cancellation) is { } stop)
                     return stop;
@@ -920,17 +920,16 @@ public sealed class SceneWorkflow : IDisposable
                     // the pose it had just applied to it. Stated here so no
                     // later change to how an actor hides can bring that back.
                     _runtime.SetActorVisibility(actorTokens[actor.Key], actor.Visible);
-                    var detail = _runtime.ApplyActorAnimation(
-                        actorTokens[actor.Key], actor);
+                    var detail = _runtime.FreezeActor(actorTokens[actor.Key]);
                     if (detail != null)
                         entities.Add(new SceneEntityOutcome(
                             "Animation", actor.Name, false, detail));
                 }
                 return null;
             });
-            if (animationFailure != null)
+            if (freezeFailure != null)
             {
-                await Abort(animationFailure);
+                await Abort(freezeFailure);
                 return;
             }
 

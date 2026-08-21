@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Poser.Domain.Animation;
@@ -284,72 +284,6 @@ public sealed class AnimationSession
     public AnimationResult SetSlotLoop(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on) =>
         SetSlotLoopCore(actor, slot, timeline, on);
-
-    /// <summary>
-    /// Re-arms a repeat a SAVED scene recorded, on the timeline it was armed
-    /// on. It exists because <see cref="SetSlotLoop"/> is the live toggle and
-    /// deliberately refuses to start playback: on Upper Body it arms only when
-    /// this session's own last Apply target is still the live timeline, so a
-    /// restore — which has no Apply behind it — hit
-    /// <c>upperTarget == 0</c> and returned Ok having armed NOTHING. A replay
-    /// that says it worked and did not is worse than one that refuses.
-    ///
-    /// <para>So this route brings the layer to the recorded timeline first,
-    /// exactly as applying a chosen animation does, and only then arms. Base
-    /// needs none of that: its own branch already honours an explicit
-    /// timeline. Every failure is named; there is no success path that does
-    /// nothing.</para>
-    /// </summary>
-    public AnimationResult ReplaySlotLoop(
-        ActorId actor, AnimationSlot slot, ushort timeline)
-    {
-        if (Suspended() is { } blocked) return blocked;
-        if (slot != AnimationSlot.UpperBody)
-            return SetSlotLoopCore(actor, slot, timeline, true);
-        if (timeline == 0)
-            return AnimationResult.Fail(
-                "The scene recorded an upper-body repeat without the timeline " +
-                "it was armed on, so there is nothing to replay.");
-
-        // Intent first: a failure below must leave the wanted set truthful, so
-        // choosing an upper-body animation afterwards arms the repeat the file
-        // asked for.
-        Mutate(actor, o => o with
-        {
-            LoopWantedSlots = new HashSet<AnimationSlot>(o.LoopWantedSlots) { slot },
-        });
-
-        ushort live = _port.Read(actor)?.TimelineFor(slot) ?? 0;
-        if (live != timeline)
-        {
-            var played = BlendCore(actor, timeline, slot);
-            if (!played.Success)
-                return AnimationResult.Fail(
-                    played.Detail
-                    ?? "The upper-body layer could not be replayed, so its "
-                        + "repeat was not armed.");
-        }
-        Mutate(actor, o => o with
-        {
-            AppliedSlots = new Dictionary<AnimationSlot, ushort>(o.AppliedSlots)
-            {
-                [slot] = timeline,
-            },
-        });
-
-        var armed = _port.SetSlotLoop(actor, slot, timeline);
-        if (!armed.Success)
-            return AnimationResult.Fail(
-                armed.Detail ?? "Upper-body loop arm failed.");
-        Mutate(actor, o => o with
-        {
-            LoopedSlots = new Dictionary<AnimationSlot, ushort>(o.LoopedSlots)
-            {
-                [slot] = timeline,
-            },
-        });
-        return AnimationResult.Ok();
-    }
 
     private AnimationResult SetSlotLoopCore(
         ActorId actor, AnimationSlot slot, ushort timeline, bool on)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Poser.Entities;
 
 using Poser.Domain.Companions;
@@ -53,6 +53,19 @@ public interface IActorSpawnService : IDisposable
     /// Destroy a spawned actor.
     /// </summary>
     bool DestroyActor(IActor actor);
+
+    /// <summary>
+    /// Removes one CURRENT root actor from the temporary GPose scene. An actor
+    /// Poser spawned goes through the same ownership ledger
+    /// <see cref="DestroyActor"/> uses; an actor that was already in the GPose
+    /// scene is deleted from the temporary GPose object table only.
+    ///
+    /// <para>Refuses the GPose primary/local actor, companion bodies, stale or
+    /// non-root wrappers, and anything not currently standing in the GPose
+    /// object-table range. Never edits the overworld actor or persistent game
+    /// data — the GPose table is a copy that ends with the session.</para>
+    /// </summary>
+    bool RemoveActorFromScene(IActor actor);
 
     /// <summary>
     /// Set an actor's visibility.

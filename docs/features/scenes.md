@@ -3,8 +3,8 @@
 An `.xivs` scene is versioned JSON with a stable `SceneId`. It contains actors
 with embedded poses, objects, lights, cameras, environment, overlays, adopted
 world objects, relationships, and optional world toggles. An actor can store
-model id, companion attachment and pose, visibility, absolute transform,
-animation, gaze, and an appearance payload. Other appearance remains external.
+model id, companion attachment and pose, visibility, absolute transform, gaze,
+and an appearance payload. Other appearance remains external.
 
 An `.xivs` is a CONTAINER, not a JSON file. `scene.json` inside it is the
 document; each appearance payload is its own stored entry under `appearance/`,
@@ -56,7 +56,7 @@ are:
 
 `set up actors, objects, overlay nodes, and borrowed map objects` →
 readiness → character files → readiness → relationships → wait for companion
-bodies → animation → pose and transforms (owner, then companion) →
+bodies → freeze → pose and transforms (owner, then companion) →
 presentation and gaze → cameras → lights → environment and world toggles.
 
 Each phase checks that the load is still running and belongs to the same
@@ -125,7 +125,23 @@ byte length and last-write time it was read from, so a package replaced in
 place cannot serve its old digest. The cache is in memory for the session,
 because the library keeps no derived state on disk. There is no startup pass.
 
+## A scene is a picture, not a performance
+
+Scenes record no animation: no timeline id, no playback position, no speed, no
+paused/playing distinction. A timeline id resolves against the LOADING client's
+own game and mod list, so the same file would play something different on
+another machine, or nothing. Pose data is self-contained and is what a scene
+carries instead.
+
+Every restored actor is therefore stopped at speed 0 before its pose is
+applied, and the pose lands on a held frame. Expressions come back as part of
+the pose, on the frozen face. The same file produces the same picture on every
+client, which is the definition of a successful load. Nothing about animation
+is attempted, so nothing about animation is refused.
+
+This does not touch the Animation tab, expression hold, or anything else
+outside scene save and load.
+
 Poser intentionally keeps absolute stored values and additive default loading,
-while Brio and Ktisis use destructive best-effort loads. Poser also records
-animation and gaze because its runtime can restore them. These are deliberate
+while Brio and Ktisis use destructive best-effort loads. These are deliberate
 compatibility choices, not claims about the other formats.
