@@ -14,6 +14,24 @@ the bone and catch mismatches; it is not a portable id. Feature ports capture,
 apply, restore, and report using stable ids. `ViewportProjection` is a
 frame-scoped display value, not a gesture baseline.
 
+## Actor identity
+
+An actor's identity is its GameObjectId AND its object-table index. The index
+is not decoration: a GPose clone shares its source's GameObjectId, so cloning
+the local player produces an actor the game calls the same thing as the player.
+
+Two actors sharing an identity share a binding lineage and the registry's
+per-actor bone keys. The second one bound overwrites the first, so every bone
+of the loser resolves to a BoneId that binds to the winner's bone object; the
+reference check then fails and the loser is bone-dead — no pose import, no
+overlay toggles — until something reorders the table. The index is unique among
+coexisting objects and stable while an actor holds its slot, which buys
+uniqueness without costing the continuity the lineage depends on.
+
+One formula, in ActorManager.ActorIdentity. The spawn service's fail-closed
+wrapper check reads it from there rather than restating it, because the two
+must agree exactly or a freshly spawned actor cannot be bound at all.
+
 ## Poses crossing a rebuild
 
 A redraw replaces the draw object and every slot skeleton, so an authored pose

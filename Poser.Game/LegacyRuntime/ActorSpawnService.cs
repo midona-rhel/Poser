@@ -971,7 +971,7 @@ public unsafe class ActorSpawnService : IActorSpawnService
         // non-null EntityId(null), silently defeating the fail-closed check.
         return gameObject is null
             ? (EntityId?)null
-            : new EntityId($"actor_{gameObject.GameObjectId}");
+            : ActorManager.ActorIdentity.For(gameObject);
     }
 
     /// <summary>All native access happens on the framework (main) thread;

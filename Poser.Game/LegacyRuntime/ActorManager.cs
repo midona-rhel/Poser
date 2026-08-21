@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects;
@@ -19,6 +19,37 @@ namespace Poser.Game;
 /// </summary>
 public class ActorManager : IActorManager
 {
+    /// <summary>
+    /// THE actor identity formula, in one place because two call sites have to
+    /// agree exactly: this one, and the spawn service's fail-closed check that
+    /// a freshly bound wrapper is the one it asked for.
+    ///
+    /// <para>It is keyed on the GameObjectId AND the object-table index, and
+    /// the index is not decoration. A GPose clone SHARES its source's
+    /// GameObjectId — cloning the local player produces an actor whose id
+    /// equals the player's — so the id alone is not unique among actors that
+    /// coexist in the table. Two actors sharing an identity share a binding
+    /// lineage and, worse, share the registry's per-actor bone keys: the
+    /// second one bound overwrites the first, and every bone of the loser
+    /// resolves to a BoneId that binds to the winner's bone object. The
+    /// reference check then fails and the loser is bone-dead — no pose import,
+    /// no overlay toggles — until something reorders the table.</para>
+    ///
+    /// <para>The index is unique among coexisting objects and stable for as
+    /// long as an actor holds its slot, so it buys uniqueness without costing
+    /// the continuity the lineage depends on. A slot genuinely reused by a
+    /// different actor is a different actor, and the registry's own
+    /// address-change check ages the generation for it.</para>
+    /// </summary>
+    internal static class ActorIdentity
+    {
+        public static EntityId For(IGameObject gameObject) =>
+            For(gameObject.GameObjectId, gameObject.ObjectIndex);
+
+        public static EntityId For(ulong gameObjectId, ushort objectIndex) =>
+            new($"actor_{gameObjectId}_{objectIndex}");
+    }
+
     // GPose actors are in object table slots 201-439
     private const int GPoseStart = 201;
     private const int GPoseEnd = 439;
@@ -185,7 +216,7 @@ public class ActorManager : IActorManager
 
         foreach (var gameObject in GetGPoseCharacters())
         {
-            var id = new EntityId($"actor_{gameObject.GameObjectId}");
+            var id = ActorIdentity.For(gameObject);
             IActor actor;
 
             if (existingByAddress.Remove(gameObject.Address, out var existing) &&
