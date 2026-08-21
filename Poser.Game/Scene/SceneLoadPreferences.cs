@@ -21,4 +21,15 @@ public sealed class SceneLoadPreferences
     /// <summary>Defaults to the load Poser had before options existed.
     /// </summary>
     public SceneLoadOptions Options { get; set; } = SceneLoadOptions.Default;
+
+    /// <summary>What the NEXT save is asked to include. It lives beside the
+    /// load's answer for the same reason: the Inspector and the save dialog
+    /// are two mounts of ONE answer, not two answers.
+    ///
+    /// <para>Deliberately session-scoped and never written to configuration.
+    /// The appearance switch is consent to package somebody's mods, and a
+    /// switch remembered across sessions is consent inferred from a previous
+    /// scene, which the issue forbids by name.</para>
+    /// </summary>
+    public SceneSaveOptions SaveOptions { get; set; } = SceneSaveOptions.Default;
 }

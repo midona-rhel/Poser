@@ -166,6 +166,18 @@ public static class SceneFileLimits
 
     /// <summary>Hex characters of a SHA-256 digest.</summary>
     public const int ContentHashCharacters = 64;
+
+    /// <summary>One actor's embedded appearance package, uncompressed bytes.
+    /// </summary>
+    public const long MaxEmbeddedAppearanceBytes = 24L * 1024 * 1024;
+
+    /// <summary>Every embedded appearance package in one document. Base64
+    /// costs a third on the wire, so this is set well under
+    /// <see cref="MaxFileBytes"/>: a document that fits the total cap still
+    /// fits the file cap once encoded, which is what stops a portable save
+    /// from refusing at the codec with a byte count nobody can act on.
+    /// </summary>
+    public const long MaxEmbeddedAppearanceTotalBytes = 32L * 1024 * 1024;
     public const float MinQuaternionLengthSquared =
         PoseFileLimits.MinQuaternionLengthSquared;
 }
@@ -264,22 +276,36 @@ public class SceneActor
 }
 
 /// <summary>
-/// A REFERENCE to the character file an actor is wearing — never the payload.
-/// An MCDF is tens of megabytes of another player's mods; a scene states where
-/// it was and lets the existing import machinery read it again.
+/// The character file an actor is wearing, in ONE of two modes — and the mode
+/// is the difference between a scene that travels and one that does not.
+///
+/// <para>REFERENCE mode (<see cref="Package"/> absent) states where the package
+/// was and lets the existing import machinery read it again. It is the default
+/// because an MCDF is tens of megabytes of another player's mods, and it is
+/// only meaningful on the machine that saved it.</para>
+///
+/// <para>PORTABLE mode (<see cref="Package"/> present) carries the package's
+/// own bytes. A path, a temporary collection id, or any other live handle is
+/// NOT a portable save — it names something the receiving machine does not
+/// have — so a save the user asked to make portable either embeds the bytes or
+/// refuses by name and saves the actor without appearance. It never keeps the
+/// reference and calls itself portable.</para>
 ///
 /// <para>Divergence from both references, deliberately: Brio records only a
 /// <c>WasMCDF</c> boolean and then explicitly REFUSES to restore the appearance
 /// ("was locked at the time of saving. Appearance will not be imported",
 /// SceneService.cs:516-519). Ktisis records the path
 /// (<c>SceneFile.ActorInfo.MCDF</c>) and re-imports it, warning by name when
-/// the file has moved (SceneDataService.cs:429-437) — this follows Ktisis, and
-/// adds the content hash Ktisis has no equivalent of.</para>
+/// the file has moved (SceneDataService.cs:429-437) — reference mode follows
+/// Ktisis and adds the content hash Ktisis has no equivalent of; portable mode
+/// is Poser's own and neither reference has anything like it.</para>
 /// </summary>
 [Serializable]
 public class SceneActorMcdf
 {
-    /// <summary>The package's full path AT SAVE. Required.</summary>
+    /// <summary>The package's full path AT SAVE. Required in reference mode;
+    /// EMPTY in portable mode, where the bytes are the document's own and no
+    /// path on the saving machine means anything to a reader.</summary>
     public string Path { get; set; } = string.Empty;
 
     /// <summary>The display name, kept beside the path so a load can name the
@@ -291,8 +317,25 @@ public class SceneActorMcdf
     /// when the file could not be read while saving — an unverifiable
     /// reference, which a load still follows but cannot vouch for. A hash that
     /// no longer matches is a named warning on load, never a silent import of
-    /// different content.</summary>
+    /// different content. In portable mode it is the digest of
+    /// <see cref="Package"/> and is REQUIRED: embedded bytes whose hash does
+    /// not check out are refused rather than imported.</summary>
     public string ContentHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The package's own bytes, base64 on the wire. Present only in portable
+    /// mode, bounded by
+    /// <see cref="SceneFileLimits.MaxEmbeddedAppearanceBytes"/> per actor and
+    /// <see cref="SceneFileLimits.MaxEmbeddedAppearanceTotalBytes"/> across the
+    /// document, both enforced before the write so an oversized scene refuses
+    /// with a size rather than failing at the file cap with a byte count.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte[]? Package { get; set; }
+
+    /// <summary>Whether this entry carries the package itself.</summary>
+    [JsonIgnore]
+    public bool IsPortable => Package is { Length: > 0 };
 }
 
 /// <summary>

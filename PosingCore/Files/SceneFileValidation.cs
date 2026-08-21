@@ -133,11 +133,24 @@ public static class SceneFileValidation
                 "The scene origin is not finite.");
 
         var actorKeys = new HashSet<Guid>();
+        long embedded = 0;
         foreach (var actor in scene.Actors)
         {
             if (ValidateActor(actor, actorKeys) is { } failure)
                 return failure;
+            if (actor!.Mcdf is { IsPortable: true } portable)
+                embedded += portable.Package!.LongLength;
         }
+
+        // The document's total embedded appearance, checked before the write
+        // rather than at the file cap: the whole point of stating this limit is
+        // that a refusal can name the payload the user chose to include.
+        if (embedded > SceneFileLimits.MaxEmbeddedAppearanceTotalBytes)
+            return Fail(SceneFileValidationFailureKind.CollectionSize,
+                $"The scene embeds {embedded:N0} bytes of appearance, over the " +
+                $"{SceneFileLimits.MaxEmbeddedAppearanceTotalBytes:N0} byte " +
+                "limit. Save fewer actors with appearance included, or save " +
+                "without it.");
 
         // Gaze references another ACTOR, so it can only be checked once every
         // actor key is known — a forward reference is as valid as a backward
@@ -286,15 +299,38 @@ public static class SceneFileValidation
         return null;
     }
 
-    /// <summary>A stated character file must be followable: a reference with no
-    /// path names nothing, and a hash that is neither absent nor a SHA-256
-    /// digest could only mislead a staleness check.</summary>
+    /// <summary>
+    /// A stated character file must be followable in exactly one of its two
+    /// modes. A REFERENCE with no path names nothing. A PORTABLE payload
+    /// without a digest cannot be checked against its own bytes, and an
+    /// unchecked payload is one an actor would wear on trust — so the digest
+    /// is required there, and the per-actor byte cap is enforced here rather
+    /// than at the file cap, where the only thing a refusal could say is a
+    /// number. A hash that is neither absent nor a SHA-256 digest could only
+    /// mislead a staleness check.
+    /// </summary>
     private static SceneFileValidationOutcome? ValidateMcdf(
         SceneActorMcdf mcdf, string label)
     {
-        if (string.IsNullOrWhiteSpace(mcdf.Path))
+        if (mcdf.IsPortable)
+        {
+            if (mcdf.Package!.LongLength >
+                SceneFileLimits.MaxEmbeddedAppearanceBytes)
+                return Fail(SceneFileValidationFailureKind.Range,
+                    $"{label} embeds {mcdf.Package.LongLength:N0} bytes, over " +
+                    $"the {SceneFileLimits.MaxEmbeddedAppearanceBytes:N0} byte " +
+                    "limit for one actor.");
+            if (mcdf.ContentHash.Length != SceneFileLimits.ContentHashCharacters)
+                return Fail(SceneFileValidationFailureKind.Document,
+                    $"{label} embeds a package with no SHA-256 digest to check " +
+                    "it against.");
+        }
+        else if (string.IsNullOrWhiteSpace(mcdf.Path))
+        {
             return Fail(SceneFileValidationFailureKind.Document,
                 $"{label} states no path.");
+        }
+
         if (mcdf.Path.Length > SceneFileLimits.MaxPathCharacters)
             return Fail(SceneFileValidationFailureKind.Name,
                 $"{label} path exceeds {SceneFileLimits.MaxPathCharacters} characters.");

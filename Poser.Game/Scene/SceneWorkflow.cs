@@ -262,7 +262,10 @@ public sealed class SceneWorkflow : IDisposable
     /// <summary>Starts the whole-scene save: the bone-cache refresh is armed
     /// first, the framework-thread pointer-free capture runs once it lands,
     /// then off-thread validation and the atomic write.</summary>
-    public SceneActionResult BeginSave(string path, string? description = null)
+    public SceneActionResult BeginSave(
+        string path,
+        string? description = null,
+        SceneSaveOptions? options = null)
     {
         if (AdmissionGate() is { } refused)
             return refused;
@@ -279,7 +282,12 @@ public sealed class SceneWorkflow : IDisposable
             ScenePhase.RefreshingPoses, 0, 0, true, null);
         RaiseChanged();
         _task = Task.Run(
-            () => RunSave(operation, path, description, cancellation),
+            () => RunSave(
+                operation,
+                path,
+                description,
+                options ?? SceneSaveOptions.Default,
+                cancellation),
             CancellationToken.None);
         return SceneActionResult.Ok();
     }
@@ -322,6 +330,7 @@ public sealed class SceneWorkflow : IDisposable
         Operation operation,
         string path,
         string? description,
+        SceneSaveOptions options,
         CancellationToken cancellation)
     {
         // A save never mutates the session, so its only terminal states are
@@ -404,13 +413,52 @@ public sealed class SceneWorkflow : IDisposable
                 SceneOperationKind.Save, operation.FileName,
                 ScenePhase.Writing, 0, 0, false, null));
 
+            var notes = captured.Notes.ToList();
+
+            // Appearance is sealed BEFORE the policy narrows the document:
+            // the policy's job is to drop what could not be sealed, so it has
+            // to run second. Only a save that asked for appearance pays for
+            // this — it packages mods and reads tens of megabytes.
+            if (options.IncludeModdedAppearance)
+            {
+                PublishStep(operation, new SceneProgress(
+                    SceneOperationKind.Save, operation.FileName,
+                    ScenePhase.ApplyingAppearance, 0, 0, false, null));
+                notes.AddRange(await _runtime.SealAppearance(
+                    scene, captured.ActorIdentities, McdfImportTimeout,
+                    cancellation));
+                PublishStep(operation, new SceneProgress(
+                    SceneOperationKind.Save, operation.FileName,
+                    ScenePhase.Writing, 0, 0, false, null));
+            }
+
+            SceneSavePolicy.Apply(scene, options, notes);
+
+            if (cancellation.IsCancellationRequested)
+            {
+                Finish(false, "The save was cancelled before writing.", notes);
+                return;
+            }
+
             // Character-file references are hashed HERE, off the framework
             // thread, between the capture that produced them and the write:
             // hashing a package is file work the frame the capture ran on may
             // not spend.
-            var notes = captured.Notes;
             if (_runtime.StampMcdfHashes(scene) is { Count: > 0 } stamped)
-                notes = captured.Notes.Concat(stamped).ToList();
+                notes.AddRange(stamped);
+
+            // The narrowed, sealed document is what gets written, so its own
+            // limits — the per-actor and whole-document appearance caps — are
+            // enforced against what is actually going to disk.
+            var validated = SceneFileValidation.Validate(scene);
+            if (!validated.Succeeded)
+            {
+                Finish(
+                    false,
+                    $"The scene did not validate: {validated.Failure!.Detail}",
+                    notes);
+                return;
+            }
 
             var written = _runtime.WriteScene(scene, path);
             if (!written.Succeeded)

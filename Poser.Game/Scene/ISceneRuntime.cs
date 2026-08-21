@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Poser.Application.Operations;
+using Poser.Domain.Identity;
 using Poser.Files;
 
 namespace Poser.Game.Scene;
@@ -200,6 +201,30 @@ internal interface ISceneRuntime
     /// a frame on it.
     /// </summary>
     IReadOnlyList<string> StampMcdfHashes(SceneFile scene);
+
+    /// <summary>
+    /// Turns every actor's appearance into a PORTABLE payload, in place, and
+    /// answers one note per actor it could not. Only a save that was asked for
+    /// modded appearance runs it.
+    ///
+    /// <para>Two sources, in this order: the package Poser already owns for the
+    /// actor (its bytes are read from the recorded path), and — when the actor
+    /// wears no imported package — a package created NOW from the actor's live
+    /// Glamourer, Penumbra and Customize+ state through the existing exporter.
+    /// Either way the document ends up holding bytes. A temporary collection
+    /// id, an actor address or a source path is not a portable save, so an
+    /// actor whose payload cannot be produced or does not fit the cap keeps
+    /// NOTHING and is named in a note.</para>
+    ///
+    /// <para>Runs from the workflow task, not a framework action: it marshals
+    /// its own framework work, waits on the export transaction's own receipt,
+    /// and does file work off the frame.</para>
+    /// </summary>
+    Task<IReadOnlyList<string>> SealAppearance(
+        SceneFile scene,
+        IReadOnlyDictionary<Guid, ActorId> identities,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation);
 
     // ── capture (framework thread) ───────────────────────────────────────
 

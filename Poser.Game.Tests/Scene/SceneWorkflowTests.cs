@@ -134,6 +134,22 @@ public sealed class SceneWorkflowTests
             return McdfStampNotes;
         }
 
+        /// <summary>What the seal does to the captured document, so a test can
+        /// model an actor whose appearance sealed and one whose did not.
+        /// </summary>
+        public Func<SceneFile, IReadOnlyList<string>>? SealAppearanceResult;
+
+        public Task<IReadOnlyList<string>> SealAppearance(
+            SceneFile scene,
+            IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
+            TimeSpan bound,
+            CancellationToken cancellation)
+        {
+            Record("SealAppearance");
+            return Task.FromResult(
+                SealAppearanceResult?.Invoke(scene) ?? Array.Empty<string>());
+        }
+
         public Func<SceneActor, SceneMcdfOutcome>? McdfImport;
 
         public Task<SceneMcdfOutcome> ImportMcdf(

@@ -112,6 +112,11 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         {
             if (actor.Mcdf is not { } mcdf)
                 continue;
+            // A sealed portable payload already carries the digest of the
+            // bytes in the document. Re-hashing the source path would stamp a
+            // file the document no longer depends on.
+            if (mcdf.IsPortable)
+                continue;
             var hashed = HashFile(mcdf.Path);
             if (hashed is null)
             {
@@ -139,6 +144,181 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         catch (Exception)
         {
             return null;
+        }
+    }
+
+    // ── portable appearance ──────────────────────────────────────────────
+
+    public async Task<IReadOnlyList<string>> SealAppearance(
+        SceneFile scene,
+        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> identities,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        var notes = new List<string>();
+        long total = 0;
+        foreach (var actor in scene.Actors)
+        {
+            if (cancellation.IsCancellationRequested)
+                return notes;
+
+            // The package Poser already owns for this actor is the source of
+            // truth; only when the actor wears none does a new one get built.
+            string? source = actor.Mcdf is { } existing &&
+                !string.IsNullOrWhiteSpace(existing.Path) &&
+                System.IO.File.Exists(existing.Path)
+                ? existing.Path
+                : null;
+            string? created = null;
+
+            if (source is null)
+            {
+                if (!identities.TryGetValue(actor.Key, out var id))
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}' has no stable identity, so its " +
+                        "appearance could not be packaged.");
+                    continue;
+                }
+                created = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(),
+                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                var exported = await ExportAppearance(
+                    id, actor.Name, created, bound, cancellation);
+                if (exported != null)
+                {
+                    notes.Add($"Actor '{actor.Name}': {exported}");
+                    DeleteQuietly(created);
+                    continue;
+                }
+                source = created;
+            }
+
+            try
+            {
+                var info = new System.IO.FileInfo(source);
+                if (!info.Exists)
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}''s appearance package was gone " +
+                        "before it could be read into the scene.");
+                    continue;
+                }
+                if (info.Length > SceneFileLimits.MaxEmbeddedAppearanceBytes)
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}''s appearance is " +
+                        $"{info.Length / (1024d * 1024):N1} MiB, over the " +
+                        $"{SceneFileLimits.MaxEmbeddedAppearanceBytes / (1024 * 1024)} " +
+                        "MiB limit for one actor; the scene saved without it.");
+                    continue;
+                }
+                if (total + info.Length >
+                    SceneFileLimits.MaxEmbeddedAppearanceTotalBytes)
+                {
+                    notes.Add(
+                        $"Actor '{actor.Name}''s appearance did not fit the " +
+                        $"scene's " +
+                        $"{SceneFileLimits.MaxEmbeddedAppearanceTotalBytes / (1024 * 1024)} " +
+                        "MiB appearance budget; save fewer actors with " +
+                        "appearance included.");
+                    continue;
+                }
+
+                var bytes = await System.IO.File.ReadAllBytesAsync(
+                    source, cancellation);
+                total += bytes.LongLength;
+                actor.Mcdf = new SceneActorMcdf
+                {
+                    Path = string.Empty,
+                    FileName = actor.Mcdf?.FileName is { Length: > 0 } named
+                        ? named
+                        : $"{actor.Name}.mcdf",
+                    ContentHash = Convert.ToHexString(
+                        System.Security.Cryptography.SHA256.HashData(bytes)),
+                    Package = bytes,
+                };
+            }
+            catch (Exception ex)
+            {
+                notes.Add(
+                    $"Actor '{actor.Name}''s appearance package could not be " +
+                    $"read into the scene: {ex.Message}");
+            }
+            finally
+            {
+                if (created != null)
+                    DeleteQuietly(created);
+            }
+        }
+        return notes;
+    }
+
+    /// <summary>
+    /// Builds ONE new package from the actor's live supported state through
+    /// the existing MCDF export transaction — the same admission, the same
+    /// capability refusals, the same receipt. Returns null on success, else the
+    /// refusal detail, which is already the exporter's own words about which
+    /// provider was unavailable.
+    /// </summary>
+    private async Task<string?> ExportAppearance(
+        Poser.Domain.Identity.ActorId id,
+        string name,
+        string destination,
+        TimeSpan bound,
+        System.Threading.CancellationToken cancellation)
+    {
+        Guid? operationId = null;
+        var refusal = await _framework.RunOnFrameworkThread(() =>
+        {
+            if (_integration.McdfBusy)
+                return "another character-file operation is running.";
+            var started = _integration.BeginExport(
+                id, destination, $"Scene appearance: {name}");
+            if (!started.Success)
+                return started.Detail ?? "the appearance could not be packaged.";
+            operationId = _integration.McdfReceipt?.OperationId;
+            return null;
+        });
+        if (refusal != null)
+            return refusal;
+
+        var deadline = DateTime.UtcNow + bound;
+        while (true)
+        {
+            var receipt = _integration.McdfReceipt;
+            if (receipt is { } terminal &&
+                terminal.OperationId == operationId &&
+                terminal.State != OperationReceiptState.Pending)
+            {
+                return terminal.State == OperationReceiptState.Applied
+                    ? null
+                    : terminal.Detail
+                        ?? $"the appearance export ended {terminal.State}.";
+            }
+            if (DateTime.UtcNow >= deadline)
+                return "the appearance export did not finish within its bound.";
+            try
+            {
+                await Task.Delay(50, cancellation);
+            }
+            catch (OperationCanceledException)
+            {
+                return "the save was cancelled.";
+            }
+        }
+    }
+
+    private static void DeleteQuietly(string path)
+    {
+        try
+        {
+            System.IO.File.Delete(path);
+        }
+        catch (Exception)
+        {
+            // A temporary export that outlives the save costs disk, not
+            // correctness; the save must not fail on a cleanup.
         }
     }
 
@@ -235,6 +415,14 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// receipt that transaction publishes. That is what keeps the ownership it
     /// registers, and therefore the by-name unlock-and-restore teardown, the
     /// same for a scene-restored actor as for a hand-imported one.
+    ///
+    /// <para>A PORTABLE entry carries the package itself. Its bytes are
+    /// checked against the document's own digest and staged into one owned
+    /// temporary file, and the import runs from there — the transaction takes
+    /// a path, and inventing a second import route for embedded bytes would
+    /// mean a second set of phases, a second rollback and a second ownership
+    /// ledger. The staged file is deleted once the import reaches its terminal
+    /// receipt, whichever way it ended.</para>
     /// </summary>
     public async Task<SceneMcdfOutcome> ImportMcdf(
         object actor,
@@ -245,72 +433,113 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
         if (data.Mcdf is not { } saved)
             return SceneMcdfOutcome.Silent;
 
-        // File work first, off the framework thread: a missing package is a
-        // refusal that never touches the actor, and a changed one is named
-        // before anything is applied.
-        string? changed = null;
-        if (!System.IO.File.Exists(saved.Path))
-            return SceneMcdfOutcome.Refused(
-                $"The character file '{saved.FileName}' is no longer at " +
-                $"{saved.Path}; the actor was restored without it.");
-        if (saved.ContentHash.Length > 0)
+        string? staged = null;
+        try
         {
-            var hash = HashFile(saved.Path);
-            if (hash is null)
-                changed = $"The character file '{saved.FileName}' could not be " +
-                    "read to check it against the scene.";
-            else if (!string.Equals(
-                hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
-                changed = $"The character file '{saved.FileName}' has changed " +
-                    "since this scene was saved; the actor is wearing the file " +
-                    "as it is now.";
+            // File work first, off the framework thread: a missing package is a
+            // refusal that never touches the actor, and a changed one is named
+            // before anything is applied.
+            string? changed = null;
+            string source;
+            if (saved.IsPortable)
+            {
+                var bytes = saved.Package!;
+                string digest = Convert.ToHexString(
+                    System.Security.Cryptography.SHA256.HashData(bytes));
+                if (!string.Equals(
+                    digest, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
+                    return SceneMcdfOutcome.Refused(
+                        $"The appearance package '{saved.FileName}' embedded in " +
+                        "this scene does not match its own checksum; the actor " +
+                        "was restored without it.");
+                staged = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(),
+                    $"poser-scene-appearance-{Guid.NewGuid():N}.mcdf");
+                try
+                {
+                    await System.IO.File.WriteAllBytesAsync(
+                        staged, bytes, cancellation);
+                }
+                catch (Exception ex)
+                {
+                    return SceneMcdfOutcome.Refused(
+                        $"The appearance package '{saved.FileName}' could not be " +
+                        $"staged for import: {ex.Message}");
+                }
+                source = staged;
+            }
+            else
+            {
+                if (!System.IO.File.Exists(saved.Path))
+                    return SceneMcdfOutcome.Refused(
+                        $"The character file '{saved.FileName}' is no longer at " +
+                        $"{saved.Path}; the actor was restored without it.");
+                if (saved.ContentHash.Length > 0)
+                {
+                    var hash = HashFile(saved.Path);
+                    if (hash is null)
+                        changed = $"The character file '{saved.FileName}' could not be " +
+                            "read to check it against the scene.";
+                    else if (!string.Equals(
+                        hash, saved.ContentHash, StringComparison.OrdinalIgnoreCase))
+                        changed = $"The character file '{saved.FileName}' has changed " +
+                            "since this scene was saved; the actor is wearing the file " +
+                            "as it is now.";
+                }
+                source = saved.Path;
+            }
+
+            var target = (IActor)actor;
+            Guid? operationId = null;
+            var refusal = await _framework.RunOnFrameworkThread(() =>
+            {
+                if (_bindings.GetActorId(target) is not { } id)
+                    return "The actor has no stable identity to import a character file onto.";
+                if (_integration.McdfBusy)
+                    return "Another character-file operation is running.";
+                var started = _integration.BeginImport(id, source);
+                if (!started.Success)
+                    return started.Detail ?? "The character file import was refused.";
+                // The transaction publishes a Pending receipt inside admission, so
+                // the id of THIS operation is readable the moment it is admitted.
+                operationId = _integration.McdfReceipt?.OperationId;
+                return null;
+            });
+            if (refusal != null)
+                return SceneMcdfOutcome.Refused(refusal);
+
+            var deadline = DateTime.UtcNow + bound;
+            while (true)
+            {
+                var receipt = _integration.McdfReceipt;
+                if (receipt is { } terminal &&
+                    terminal.OperationId == operationId &&
+                    terminal.State != OperationReceiptState.Pending)
+                {
+                    return terminal.State == OperationReceiptState.Applied
+                        ? SceneMcdfOutcome.Ok(changed)
+                        : SceneMcdfOutcome.Refused(
+                            terminal.Detail
+                            ?? $"The character file import ended {terminal.State}.");
+                }
+                if (DateTime.UtcNow >= deadline)
+                    return SceneMcdfOutcome.Refused(
+                        $"The character file '{saved.FileName}' did not finish " +
+                        "importing within its bound.");
+                try
+                {
+                    await Task.Delay(50, cancellation);
+                }
+                catch (OperationCanceledException)
+                {
+                    return SceneMcdfOutcome.Refused("The load was cancelled.");
+                }
+            }
         }
-
-        var target = (IActor)actor;
-        Guid? operationId = null;
-        var refusal = await _framework.RunOnFrameworkThread(() =>
+        finally
         {
-            if (_bindings.GetActorId(target) is not { } id)
-                return "The actor has no stable identity to import a character file onto.";
-            if (_integration.McdfBusy)
-                return "Another character-file operation is running.";
-            var started = _integration.BeginImport(id, saved.Path);
-            if (!started.Success)
-                return started.Detail ?? "The character file import was refused.";
-            // The transaction publishes a Pending receipt inside admission, so
-            // the id of THIS operation is readable the moment it is admitted.
-            operationId = _integration.McdfReceipt?.OperationId;
-            return null;
-        });
-        if (refusal != null)
-            return SceneMcdfOutcome.Refused(refusal);
-
-        var deadline = DateTime.UtcNow + bound;
-        while (true)
-        {
-            var receipt = _integration.McdfReceipt;
-            if (receipt is { } terminal &&
-                terminal.OperationId == operationId &&
-                terminal.State != OperationReceiptState.Pending)
-            {
-                return terminal.State == OperationReceiptState.Applied
-                    ? SceneMcdfOutcome.Ok(changed)
-                    : SceneMcdfOutcome.Refused(
-                        terminal.Detail
-                        ?? $"The character file import ended {terminal.State}.");
-            }
-            if (DateTime.UtcNow >= deadline)
-                return SceneMcdfOutcome.Refused(
-                    $"The character file '{saved.FileName}' did not finish " +
-                    "importing within its bound.");
-            try
-            {
-                await Task.Delay(50, cancellation);
-            }
-            catch (OperationCanceledException)
-            {
-                return SceneMcdfOutcome.Refused("The load was cancelled.");
-            }
+            if (staged != null)
+                DeleteQuietly(staged);
         }
     }
 
