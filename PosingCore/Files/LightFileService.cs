@@ -6,7 +6,7 @@ using Poser.Services;
 namespace Poser.Files;
 
 /// <summary>
-/// .poserlight import/export. Export snapshots the live light; import spawns
+/// .xivl import/export. Export snapshots the live light; import spawns
 /// a light of the file's kind and writes the file's every property onto it.
 /// </summary>
 public class LightFileService : ILightFileService
@@ -74,7 +74,7 @@ public class LightFileService : ILightFileService
     }
 
     /// <summary>The ONE ILight → LightFile mapping; scene capture reuses it
-    /// so a scene light and a .poserlight are the same document.</summary>
+    /// so a scene light and a .xivl are the same document.</summary>
     internal static LightFile CreateLightFile(ILight light) => new()
     {
         Name = light.Name,

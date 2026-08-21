@@ -72,17 +72,32 @@ public class LibraryConfiguration
     /// </summary>
     public bool McdfRootSeeded { get; set; }
 
+    /// <summary>
+    /// Set once the shipped objects root has been appended. Its OWN flag for
+    /// the same reason <see cref="SceneRootSeeded"/> has one.
+    /// </summary>
+    public bool ObjectsRootSeeded { get; set; }
+
     /// <summary>The shipped poses root's source name.</summary>
     public const string PoseSourceName = "Poser Poses";
 
     /// <summary>The shipped scenes root's source name.</summary>
     public const string SceneSourceName = "Poser Scenes";
 
-    /// <summary>The shipped character-file root's source name.</summary>
-    public const string McdfSourceName = "Poser MCDFs";
+    /// <summary>The shipped character-file root's source name. "MCDF" already
+    /// names the format; a "Poser" prefix on it said nothing.</summary>
+    public const string McdfSourceName = "MCDFs";
+
+    /// <summary>The old character-file source name, renamed on load.</summary>
+    private const string LegacyMcdfSourceName = "Poser MCDFs";
+
+    /// <summary>The shipped objects root's source name: the home for every
+    /// library entry that is not a pose, a scene or a character file —
+    /// actors, lights, cameras, overlays, environments.</summary>
+    public const string ObjectsSourceName = "Poser Objects";
 
     /// <summary>
-    /// The three shipped home sources, in the order they seat on the rail.
+    /// The shipped home sources, in the order they seat on the rail.
     /// One table so a surface that has to walk the homes — the settings page,
     /// the composition root's pre-scan creation — cannot go out of step with
     /// the seeding.
@@ -92,6 +107,7 @@ public class LibraryConfiguration
         (PoseSourceName, DefaultPoseRoot),
         (SceneSourceName, DefaultSceneRoot),
         (McdfSourceName, DefaultMcdfRoot),
+        (ObjectsSourceName, DefaultObjectsRoot),
     ];
 
     /// <summary>
@@ -113,6 +129,9 @@ public class LibraryConfiguration
 
     /// <inheritdoc cref="HomeRoot"/>
     public static string DefaultMcdfRoot => HomeRoot("MCDFs");
+
+    /// <inheritdoc cref="HomeRoot"/>
+    public static string DefaultObjectsRoot => HomeRoot("Objects");
 
     /// <summary>
     /// The scanned root a save of that kind should land in: the shipped home
@@ -144,6 +163,10 @@ public class LibraryConfiguration
     /// <inheritdoc cref="ResolveHomeRoot"/>
     public string ResolveMcdfRoot() =>
         ResolveHomeRoot(McdfSourceName, DefaultMcdfRoot);
+
+    /// <inheritdoc cref="ResolveHomeRoot"/>
+    public string ResolveObjectsRoot() =>
+        ResolveHomeRoot(ObjectsSourceName, DefaultObjectsRoot);
 
     /// <summary>
     /// Re-points one home at <paramref name="path"/>, re-adding the source
@@ -198,6 +221,10 @@ public class LibraryConfiguration
     public string EnsureMcdfRootExists() =>
         EnsureHomeRootExists(McdfSourceName, DefaultMcdfRoot);
 
+    /// <inheritdoc cref="EnsureHomeRootExists"/>
+    public string EnsureObjectsRootExists() =>
+        EnsureHomeRootExists(ObjectsSourceName, DefaultObjectsRoot);
+
     /// <summary>
     /// Creates every home before the library service is constructed. The scan
     /// aborts on the FIRST configured root it cannot observe, so one missing
@@ -217,12 +244,24 @@ public class LibraryConfiguration
     {
         var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
+        // The character-file home used to be named "Poser MCDFs"; an existing
+        // configuration keeps its path but takes the new name, so every
+        // lookup by name keeps finding it.
+        foreach (var source in Sources)
+        {
+            if (string.Equals(
+                    source.Name, LegacyMcdfSourceName, StringComparison.Ordinal))
+                source.Name = McdfSourceName;
+        }
+
         SeedHome(PoseSourceName, DefaultPoseRoot, PoseRootSeeded,
             () => PoseRootSeeded = true);
         SeedHome(SceneSourceName, DefaultSceneRoot, SceneRootSeeded,
             () => SceneRootSeeded = true);
         SeedHome(McdfSourceName, DefaultMcdfRoot, McdfRootSeeded,
             () => McdfRootSeeded = true);
+        SeedHome(ObjectsSourceName, DefaultObjectsRoot, ObjectsRootSeeded,
+            () => ObjectsRootSeeded = true);
 
         if (DefaultsSeeded)
             return;

@@ -8,7 +8,7 @@ using Poser.Domain.Scene;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser camera file format (.posercam). Carries EVERY property an
+/// Poser camera file format (.xivc). Carries EVERY property an
 /// <see cref="Poser.Entities.IVirtualCamera"/> owns except the live flag and
 /// the tracked bones — liveness belongs to the session and bone references
 /// belong to the scene they were picked in. Angular values are stored in the
@@ -55,7 +55,7 @@ public class CameraFile
     public bool Orthographic { get; set; }
     public float OrthographicZoom { get; set; } = 10f;
 
-    // The same wire style .poserlight uses — numerics as "X, Y, Z" strings,
+    // The same wire style .xivl uses — numerics as "X, Y, Z" strings,
     // enums by name, relaxed escaping, trailing commas tolerated.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

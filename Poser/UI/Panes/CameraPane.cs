@@ -62,9 +62,9 @@ public sealed class CameraPane
     public Func<IActor?>? GetNativeTarget;
 
     private readonly Crystarium.FileDialog _saveBrowser =
-        new("Save Camera", new[] { ".posercam" }, isSaveMode: true);
+        new("Save Camera", new[] { ".xivc" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
-        new("Load Camera", new[] { ".posercam" });
+        new("Load Camera", new[] { ".xivc" });
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 

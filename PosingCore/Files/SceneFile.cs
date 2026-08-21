@@ -22,7 +22,7 @@ namespace Poser.Files;
 /// Entity payloads deliberately embed the EXISTING codecs rather than
 /// restating their fields: there is one codec per entity kind, and a light
 /// that round-trips through a scene is bit-for-bit the light that round-trips
-/// through a .poserlight — including that codec's own FileVersion semantics.
+/// through a .xivl — including that codec's own FileVersion semantics.
 ///
 /// <see cref="SceneId"/> is the document's stable logical identity. It
 /// persists across saves of the same scene and is the exact identity a scene
@@ -482,7 +482,7 @@ public class SceneLight
 }
 
 /// <summary>One virtual camera: the complete existing camera document plus
-/// the session facts a .posercam deliberately omits — liveness, whether it is
+/// the session facts a .xivc deliberately omits — liveness, whether it is
 /// the session default, and the explicit target-actor relationship.</summary>
 [Serializable]
 public class SceneCamera

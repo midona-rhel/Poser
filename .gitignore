@@ -79,3 +79,5 @@ CLAUDE.md
 # directory itself; git will not descend into an excluded directory, so the
 # negation has to name the directory, not the files under it.
 !/docs/release/
+.codex-branch-label/
+.worktrees/

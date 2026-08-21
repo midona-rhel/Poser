@@ -93,9 +93,9 @@ public sealed class LightPane
         BoneId Id, string BoneName, string ActorName);
 
     private readonly Crystarium.FileDialog _saveBrowser =
-        new("Save Light", new[] { ".poserlight" }, isSaveMode: true);
+        new("Save Light", new[] { ".xivl" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
-        new("Load Light", new[] { ".poserlight" });
+        new("Load Light", new[] { ".xivl" });
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 

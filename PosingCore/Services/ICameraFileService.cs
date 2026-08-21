@@ -3,7 +3,7 @@ using Poser.Entities;
 namespace Poser.Services;
 
 /// <summary>
-/// .posercam import/export for a single virtual camera. Import always creates
+/// .xivc import/export for a single virtual camera. Import always creates
 /// a NEW camera — a camera file describes a camera, not an edit to one.
 /// </summary>
 public interface ICameraFileService
