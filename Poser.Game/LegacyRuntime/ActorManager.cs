@@ -147,7 +147,11 @@ public class ActorManager : IActorManager
         var identities = new HashSet<(nint Address, EntityId Id)>();
         foreach (var obj in GetGPoseCharacters())
         {
-            identities.Add((obj.Address, new EntityId($"actor_{obj.GameObjectId}")));
+            // MUST be the one identity formula. This line once restated it by
+            // hand, was missed when the formula gained the object index, and
+            // the mismatch made "did the actor list change?" answer yes every
+            // frame — a full list rebuild and event publish per frame.
+            identities.Add((obj.Address, ActorIdentity.For(obj)));
         }
         // Registered auxiliary slots participate in change detection too: the
         // CharaView body appears at 441 several frames after registration and

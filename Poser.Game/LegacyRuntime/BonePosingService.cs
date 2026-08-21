@@ -479,14 +479,16 @@ public unsafe class BonePosingService : IBonePosingService
             // A REPLACED skeleton is not a reason to drop the pose — it is
             // exactly where the pose belongs. The store is keyed by actor and
             // slot, so the apply pass lands the same authored stacks on
-            // whatever instance the slot currently holds. Only a slot that has
-            // genuinely gone is purged.
+            // whatever instance the slot currently holds.
+            //
+            // A MISSING skeleton is not a reason either: every redraw passes
+            // through frames where the actor has no character base, and
+            // purging there threw the pose away right before the rebuilt
+            // skeleton arrived to receive it. While the ACTOR exists the pose
+            // waits; only actor teardown purges.
             var skeleton = _skeletonService.GetSkeleton(actor, slotKey.Slot) as Skeleton;
             if (skeleton == null || !skeleton.IsValid)
-            {
-                PurgeSkeletonState(slotKey);
                 continue;
-            }
 
             ApplySkeletonTransforms(slotKey, skeleton, poseInfo);
         }

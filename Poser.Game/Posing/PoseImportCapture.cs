@@ -373,7 +373,8 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
             return GestureResult.Fail("A pose import is already applying.");
         if (_ikBake.IsPending)
             return GestureResult.Fail("An IK bake is still applying.");
-        if (_gestures.PendingRecovery is { } pendingRecovery)
+        if (!_gestures.TryCompleteRecovery() &&
+            _gestures.PendingRecovery is { } pendingRecovery)
             return GestureResult.Fail(
                 "Transform recovery must complete before another mutation.") with
             {
