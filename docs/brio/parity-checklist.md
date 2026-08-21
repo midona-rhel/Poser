@@ -37,7 +37,7 @@ mean live-game acceptance; that remains pending on the applicable rows.
 
 | Gap | Source status |
 |---|---|
-| 1 Redraw pose carryover | **Source-verified; acceptance pending** |
+| 1 Redraw pose carryover | **OBSOLETE** — a redraw is no longer observable above the write layer (issue #78); the pose store is keyed by name and never moves |
 | 2 Rest poses | **Source-verified; acceptance pending** — A/T done (import surfaces, per user rule 2026-08-08); reference pose UI-exposed 2026-08-14 behind a two-step armed confirm in the Presets row |
 | 3 Pose library | **Source-verified; acceptance pending** (exceeds spec) |
 | 4 Auto-save | **Source-verified; acceptance pending** |
@@ -76,14 +76,10 @@ design: the Appearance pane's Penumbra-collection / Glamourer / MCDF actions req
 (`Poser.Application/Integration/ActorIntegrationSession.cs:91,116,399`), so using Poser's own
 appearance integrations wipes the pose you just authored.
 
-**Verified 2026-08-11: DONE.** Carryover store `Poser.Game/LegacyRuntime/PoseCarryover.cs`
-keyed `(LogicalId, Slot)` with 30 s expiry; capture runs before both purge paths
-(`BonePosingService.cs:597-598,1007-1008`), restore in `OnSkeletonChanged`
-(`BonePosingService.cs:429-482`) with no history entry; rotation everywhere, root position
-only, scale never. Config `PreservePoseAcrossRedraws` default-on, Settings → BEHAVIOR
-"Keep pose through redraws" (`SettingsView.cs:350-354`). Deviation: restore hangs off
-`SkeletonChangedEvent` inside `BonePosingService`, not the lifecycle retry pump —
-functionally equivalent. Known hole: capture bails if the actor loses its binding mid-redraw.
+**OBSOLETE 2026-08-21 (issue #78).** The carryover store, both adoption
+points and the config toggle are deleted. The pose store is keyed by (actor,
+slot) and bone name, so a redraw does not move a pose and there is nothing to
+carry. See `docs/architecture/posing-runtime.md`.
 
 **Task:** Add a redraw pose-carryover: before `PurgeSkeletonState` runs for a replaced
 `(actor, slot)`, capture the authored `SkeletonPoseInfo` (and the actor's world-transform

@@ -444,49 +444,6 @@ public unsafe class BonePosingService : IBonePosingService
         }
     }
 
-    private static SkeletonPoseInfo? BuildCarryoverPose(SkeletonPoseInfo source)
-    {
-        SkeletonPoseInfo? carried = null;
-
-        foreach (var bonePose in source.AllPoses)
-        {
-            var isPositionRoot = bonePose.PartialId == 0 &&
-                string.Equals(bonePose.BoneName, PositionRootBoneName, StringComparison.Ordinal);
-
-            List<BonePoseTransformInfo>? kept = null;
-            var stacks = bonePose.Stacks;
-            for (var i = 0; i < stacks.Count; i++)
-            {
-                var stack = stacks[i];
-                if (stack.Layer != null)
-                    continue;
-
-                var delta = new Transform
-                {
-                    Position = isPositionRoot ? stack.Transform.Position : Vector3.Zero,
-                    Rotation = stack.Transform.Rotation,
-                    Scale = Vector3.Zero,
-                };
-                if (IsIdentityDelta(delta))
-                    continue;
-
-                (kept ??= new List<BonePoseTransformInfo>()).Add(
-                    stack with { Transform = delta });
-            }
-
-            if (kept == null)
-                continue;
-
-            // The skeleton-wide default is set first: assigning it rewrites
-            // every existing bone default, so per-bone values are applied after.
-            carried ??= new SkeletonPoseInfo { DefaultPropagation = source.DefaultPropagation };
-            var target = carried.GetPoseInfo(bonePose.BoneName, bonePose.PartialId);
-            target.DefaultPropagation = bonePose.DefaultPropagation;
-            target.ReplaceStacks(kept);
-        }
-
-        return carried;
-    }
 
     /// <summary>Stack deltas are additive for position/scale and multiplicative
     /// for rotation, so identity is (0, identity quaternion, 0).</summary>
