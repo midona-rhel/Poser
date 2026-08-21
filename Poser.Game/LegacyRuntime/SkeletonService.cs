@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Services;
@@ -32,6 +32,14 @@ public class SkeletonService : ISkeletonService
         _eventBus.Subscribe<ActorListChangedEvent>(OnActorListChanged);
     }
 
+    /// <summary>A short ordinal for an object INSTANCE, for breadcrumbs.
+    /// </summary>
+    private static string Ord(object? instance) =>
+        instance is null
+            ? "none"
+            : System.Runtime.CompilerServices.RuntimeHelpers
+                .GetHashCode(instance).ToString("X8");
+
     public ISkeleton? GetSkeleton(IActor actor) =>
         GetSkeleton(actor, PoseSlot.Character);
 
@@ -54,6 +62,27 @@ public class SkeletonService : ISkeletonService
             }
 
             // The slot vanished or was replaced: release only this entry.
+            //
+            // BREADCRUMB, because this is a rebuild ENGINE: every release
+            // publishes SkeletonChangedEvent, the binding pass refreshes on
+            // that event, and the refresh calls back in here. If two callers
+            // hold different IActor wrappers for the same (Id, slot) they
+            // ping-pong forever — each one's call releases the other's
+            // skeleton — and the whole plugin refreshes bindings every frame.
+            // The line names WHICH guard failed, so a storm is one grep.
+            _log.Debug(
+                $"Skeleton rebuild for {actor.Name} {slot}: " +
+                (!ReferenceEquals(skeleton.Actor, actor)
+                    ? $"a different actor wrapper asked " +
+                      $"(held {Ord(skeleton.Actor)}, asked {Ord(actor)})"
+                    : skeleton.Actor.Address != actor.Address
+                        ? "the wrapper address moved"
+                        : !skeleton.IsValid
+                            ? "the skeleton went invalid"
+                            : currentBase == nint.Zero
+                                ? "the slot has no character base"
+                                : $"the character base moved " +
+                                  $"({skeleton.CharacterBaseAddress:X} to {currentBase:X})"));
             ReleaseSkeleton(key, skeleton);
             _eventBus.Publish(new SkeletonChangedEvent(actor, null));
         }
