@@ -3762,6 +3762,11 @@ public class MainWindow : Window
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Copy),
+            new("Save to library", TablerIcon.Library,
+                disabled: !actor.HasSkeleton,
+                help: actor.HasSkeleton
+                    ? "Saves this actor with its appearance as a library entry"
+                    : "Needs a loaded skeleton"),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -3803,6 +3808,10 @@ public class MainWindow : Window
                 if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
+            () => _scenePane.SaveActorEntry(
+                actorId.LogicalId,
+                Config.ConfigurationService.Instance.GetDisplayName(
+                    actorId.LogicalId, DisplayName(actor.Name))),
             null, // separator
             () =>
             {

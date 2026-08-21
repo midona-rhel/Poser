@@ -41,6 +41,14 @@ public class SceneFile
     /// filters on.</summary>
     public const string Extension = ".xivs";
 
+    /// <summary>
+    /// An actor library entry: the SAME container and document as a scene,
+    /// restricted to exactly one actor and nothing else. It gets its own
+    /// extension so the library can tab it without opening it; every codec,
+    /// store and restore path treats it as the scene it is.
+    /// </summary>
+    public const string ActorEntryExtension = ".xiva";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
