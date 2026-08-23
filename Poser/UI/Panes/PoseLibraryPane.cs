@@ -138,10 +138,11 @@ public sealed class PoseLibraryPane
     private readonly SceneWorkflow _scenes;
     private readonly LightPane _lightPane;
     private readonly ObjectPlacementPreferences _placement;
+    private readonly IEnvironmentService _environment;
 
     /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
-        ["As saved", "Camera", "Actor"];
+        ["As saved", "Relative to camera", "Relative to actor"];
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
@@ -395,6 +396,7 @@ public sealed class PoseLibraryPane
         LightPane lightPane,
         ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
+        IEnvironmentService environment,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices)
     {
@@ -408,6 +410,7 @@ public sealed class PoseLibraryPane
         _lightPane = lightPane;
         _cameraFiles = cameraFiles;
         _placement = placement;
+        _environment = environment;
         _sceneOptions = sceneOptions;
         _selection = selection;
         _bindings = bindings;
@@ -777,36 +780,49 @@ public sealed class PoseLibraryPane
     /// so the probe runs inline on the click.</summary>
     private string? _detailsPath;
     private readonly List<(string Label, string Value)> _detailsRows = [];
+    private Vector3? _detailsColor;
 
     /// <summary>
     /// The Objects tab's INSPECTOR rail — the same right column every other
-    /// library tab fills with its import options. Placement first (where a
-    /// load lands), then what the selected entry IS: the properties a person
-    /// recognizes it by, never raw coordinates.
+    /// library tab fills. One plain run of rows: where a load lands, then
+    /// what the selected entry IS — the properties a person recognizes it
+    /// by, never raw coordinates.
     /// </summary>
     public void DrawObjectsRail(Vector2 origin, Vector2 size)
     {
-        float y = origin.Y;
-        y += Crystarium.Section(
-            "##objects-placement", "Placement",
-            new Vector2(origin.X, y), size.X, true, null,
-            form => form.Segmented(
-                "Load at", PlacementModeLabels, (int)_placement.Mode,
-                next => _placement.Mode = (ObjectPlacementMode)next,
-                help: "Where a loaded entry lands"),
-            divider: true, dense: true);
-
         int selected = _vm.Selected;
-        if (selected < 0 || selected >= _vm.Tiles.Count ||
-            selected >= _tileKinds.Count)
-            return;
-        ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
+        bool hasEntry = selected >= 0 && selected < _vm.Tiles.Count &&
+            selected < _tileKinds.Count;
+        if (hasEntry)
+            ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
 
         Crystarium.Section(
-            "##objects-details", "Details",
-            new Vector2(origin.X, y), size.X, true, null,
+            "##objects-inspector", string.Empty,
+            origin, size.X, true, null,
             form =>
             {
+                form.Dropdown(
+                    "Load at", PlacementModeLabels, (int)_placement.Mode,
+                    next => _placement.Mode = (ObjectPlacementMode)next,
+                    help: "Where a loaded entry lands");
+                if (!hasEntry)
+                    return;
+                if (_detailsColor is { } color)
+                {
+                    form.Custom("Color", 20f, row =>
+                    {
+                        float scale = ImGuiHelpers.GlobalScale;
+                        float radius = 8f * scale;
+                        var center = row.CenterControl(16f)
+                            + new Vector2(radius, radius);
+                        var clamped = Vector3.Clamp(
+                            color, Vector3.Zero, Vector3.One);
+                        ImGui.GetWindowDrawList().AddCircleFilled(
+                            center, radius,
+                            ImGui.ColorConvertFloat4ToU32(
+                                new Vector4(clamped, 1f)));
+                    });
+                }
                 foreach (var (label, value) in _detailsRows)
                     form.ReadOnly(label, value);
             },
@@ -819,6 +835,7 @@ public sealed class PoseLibraryPane
             return;
         _detailsPath = path;
         _detailsRows.Clear();
+        _detailsColor = null;
         try
         {
             switch (kind)
@@ -827,13 +844,13 @@ public sealed class PoseLibraryPane
                     if (LightFile.Load(path) is { } light)
                     {
                         _detailsRows.Add(("Kind", light.Kind.ToString()));
-                        _detailsRows.Add(("Color", ColorText(light.Color)));
                         _detailsRows.Add(("Intensity", light.Intensity
                             .ToString("0.##", CultureInfo.InvariantCulture)));
                         _detailsRows.Add(("Range", light.Range
                             .ToString("0.##", CultureInfo.InvariantCulture)));
                         _detailsRows.Add(("Anchors", Anchors(
                             light.CameraAnchor, light.ActorAnchor)));
+                        _detailsColor = light.Color;
                     }
                     break;
                 case PoseLibraryEntryKind.Camera:
@@ -853,9 +870,21 @@ public sealed class PoseLibraryPane
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
-                        if (kind == PoseLibraryEntryKind.Environment &&
-                            metadata.WeatherName.Length > 0)
-                            _detailsRows.Add(("Weather", metadata.WeatherName));
+                        if (kind == PoseLibraryEntryKind.Environment)
+                        {
+                            // The name travels in the file when the capture
+                            // recorded it; an older file resolves through the
+                            // live weather sheet by id.
+                            string weather = metadata.WeatherName.Length > 0
+                                ? metadata.WeatherName
+                                : metadata.WeatherId != 0 &&
+                                  _environment.GetWeatherInfo(
+                                      metadata.WeatherId) is { } known
+                                    ? known.Name
+                                    : string.Empty;
+                            if (weather.Length > 0)
+                                _detailsRows.Add(("Weather", weather));
+                        }
                         if (metadata.SavedAt is { } saved)
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
@@ -868,15 +897,8 @@ public sealed class PoseLibraryPane
         {
             _detailsRows.Add(("Details", "could not be read"));
         }
-        if (_detailsRows.Count == 0)
+        if (_detailsRows.Count == 0 && _detailsColor is null)
             _detailsRows.Add(("Details", "none recorded"));
-    }
-
-    /// <summary>An sRGB-ish read of an HDR light colour, for a glance.</summary>
-    private static string ColorText(Vector3 color)
-    {
-        var c = Vector3.Clamp(color, Vector3.Zero, Vector3.One);
-        return $"#{(int)(c.X * 255):X2}{(int)(c.Y * 255):X2}{(int)(c.Z * 255):X2}";
     }
 
     private static string Anchors(

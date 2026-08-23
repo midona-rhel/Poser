@@ -112,6 +112,11 @@ public sealed class SceneMetadataReadOutcome
     /// records no environment or predates the field.</summary>
     public string WeatherName { get; } = string.Empty;
 
+    /// <summary>The captured weather's id; 0 when the document records no
+    /// environment. A viewer with the weather sheet resolves this when the
+    /// name above is empty.</summary>
+    public uint WeatherId { get; }
+
     public int ActorCount { get; }
     public int PropCount { get; }
     public int LightCount { get; }
@@ -143,6 +148,7 @@ public sealed class SceneMetadataReadOutcome
         PlaceName = scene.PlaceName;
         TerritoryId = scene.TerritoryId;
         WeatherName = scene.Environment?.WeatherName ?? string.Empty;
+        WeatherId = scene.Environment?.WeatherId ?? 0;
         ActorCount = scene.Actors.Count;
         PropCount = scene.Props.Count;
         LightCount = scene.Lights.Count;
