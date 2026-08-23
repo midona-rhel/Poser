@@ -781,10 +781,13 @@ public sealed class PoseLibraryPane
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
         if (_type == LibraryType.Objects)
+        {
+            scope.Label("Load at");
             scope.Dropdown(
                 "load-placement", PlacementModeLabels, (int)_placement.Mode,
                 next => _placement.Mode = (ObjectPlacementMode)next,
                 help: "Where a spawned entry lands");
+        }
         scope.Label(_vm.Status);
     }
 
