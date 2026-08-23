@@ -440,6 +440,14 @@ public sealed class PoseLibraryPane
                 LoadScene(_vm.Selected);
                 return;
             }
+            // An object tile's action is its own (spawn or apply by what the
+            // file is); the actor-target picker is for poses and character
+            // files only.
+            if (_type == LibraryType.Objects)
+            {
+                ActivateObject(_vm.Selected);
+                return;
+            }
             _applyMenuAnchor = Crystarium.ButtonSeat;
             _applyMenuRequested = true;
         };
