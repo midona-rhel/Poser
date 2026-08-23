@@ -48,6 +48,10 @@ public sealed class SettingsViewModel
     public bool TargetFollowsSelection;
     public int UndoDepth = 200;
 
+    /// <summary>Whether the frame profiler records and shows its panel.
+    /// </summary>
+    public bool ShowFrameProfiler;
+
     public bool AutoSaveEnabled = true;
     public float AutoSaveIntervalSeconds = 60f;
     public string AutoSaveMaxKept = "10";
@@ -456,6 +460,19 @@ public static class SettingsView
                 next => vm.TransformBoneSpeed = next,
                 format: "0.0000",
                 help: "How far one pixel of drag moves a single bone");
+        });
+        // The one diagnostic surface a photographer is ever pointed at, on the
+        // page they already open. It is a switch rather than a hidden command
+        // because a feature reachable only from a console is not shipped.
+        page.Section("DIAGNOSTICS", form =>
+        {
+            form.Switch(
+                "Show frame profiler",
+                vm.ShowFrameProfiler,
+                next => vm.ShowFrameProfiler = next,
+                "Measure what each Poser window, pane and section costs the "
+                    + "frame, and list it worst first. Off, it records "
+                    + "nothing.");
         });
         page.Section("RESET", form =>
         {

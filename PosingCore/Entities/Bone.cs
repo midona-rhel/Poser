@@ -24,7 +24,32 @@ public class Bone : EntityBase, IBone
     public ISkeleton Skeleton { get; }
     public bool IsPartialRoot { get; internal set; }
     public bool IsSkeletonRoot { get; internal set; }
-    public Transform LastTransform { get; internal set; } = Transform.Identity;
+    private Transform _lastTransform = Transform.Identity;
+    private long _transformReadFrame;
+
+    /// <summary>
+    /// The finalize hook's last snapshot of this bone. READING it is the
+    /// demand signal: the hook copies only bones read within the last couple
+    /// of frames, so every consumer pays for exactly the bones it displays —
+    /// a skeleton is hundreds of bones and an overlay mask shows dozens.
+    /// </summary>
+    public Transform LastTransform
+    {
+        get
+        {
+            System.Threading.Volatile.Write(
+                ref _transformReadFrame, BoneReadClock.Frame);
+            BoneReadClock.MarkRead();
+            return _lastTransform;
+        }
+        internal set => _lastTransform = value;
+    }
+
+    /// <summary>Whether a reader touched this bone recently enough for the
+    /// hook to keep its snapshot fresh.</summary>
+    public bool TransformWanted =>
+        BoneReadClock.Frame -
+            System.Threading.Volatile.Read(ref _transformReadFrame) <= 2;
 
     /// <summary>
     /// Current Havok model-space baseline captured during the Brio-style apply/cache

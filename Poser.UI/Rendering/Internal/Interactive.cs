@@ -101,6 +101,21 @@ public static class Interactive
 
     private static List<Occluder> _previousOccluders = new();
     private static List<Occluder> _currentOccluders = new();
+    // Reserve asks the same owner about the same pointer once for every
+    // control in a surface. Keep that repeated query bounded and allocation
+    // free; any geometry or exclusive-state mutation retires the entries.
+    private struct PointerQuery
+    {
+        public int Generation;
+        public InteractionOwner Owner;
+        public Vector2 Point;
+        public bool Result;
+    }
+
+    private const int PointerQueryCapacity = 64;
+    private static readonly PointerQuery[] PointerQueries =
+        new PointerQuery[PointerQueryCapacity];
+    private static int _pointerQueryGeneration = 1;
     private static readonly List<InteractionOwner> OwnerStack = new();
     private sealed class ExclusiveNode
     {
@@ -137,6 +152,7 @@ public static class Interactive
         _nextOrder = 0;
         _frame = ImGui.GetFrameCount();
         _openingBarrier = null;
+        ClearPointerQueries();
     }
 
     public static void EndFrame()
@@ -148,6 +164,7 @@ public static class Interactive
             ExclusiveChain.RemoveRange(i, ExclusiveChain.Count - i);
             break;
         }
+        ClearPointerQueries();
     }
 
     public static InteractionOwner BeginOwner(
@@ -172,6 +189,7 @@ public static class Interactive
             id, layer, ++_nextOrder, surfaceToken);
         OwnerStack.Add(owner);
         _currentOccluders.Add(new Occluder(owner, min, max));
+        ClearPointerQueries();
         return owner;
     }
 
@@ -203,14 +221,26 @@ public static class Interactive
             $"Interaction owner stack mismatch for '{owner.Id}'.");
     }
 
-    public static void RegisterOccluder(Vector2 min, Vector2 max) =>
+    public static void RegisterOccluder(Vector2 min, Vector2 max)
+    {
         _currentOccluders.Add(new Occluder(CurrentOwner, min, max));
+        ClearPointerQueries();
+    }
 
     public static void RegisterOccluder(
         InteractionOwner owner,
         Vector2 min,
         Vector2 max) =>
+        AddOccluder(owner, min, max);
+
+    private static void AddOccluder(
+        InteractionOwner owner,
+        Vector2 min,
+        Vector2 max)
+    {
         _currentOccluders.Add(new Occluder(owner, min, max));
+        ClearPointerQueries();
+    }
 
     public static void ClaimExclusive(
         string id,
@@ -252,6 +282,7 @@ public static class Interactive
         node.LastSeenFrame = _frame;
         _openingBarrier = new InteractionOwner(
             id, layer, int.MaxValue, node.Token);
+        ClearPointerQueries();
     }
 
     public static bool OwnsExclusive(string id) =>
@@ -272,8 +303,11 @@ public static class Interactive
         int index = ExclusiveChain.FindIndex(
             node => string.Equals(node.Id, id, StringComparison.Ordinal));
         if (index >= 0)
+        {
             ExclusiveChain.RemoveRange(
                 index, ExclusiveChain.Count - index);
+            ClearPointerQueries();
+        }
     }
 
     public static bool PointerOccluded() =>
@@ -283,10 +317,23 @@ public static class Interactive
         InteractionOwner owner,
         Vector2 point)
     {
+        ref readonly var cached = ref PointerQueries[
+            PointerQueryIndex(owner, point)];
+        if (cached.Generation == _pointerQueryGeneration
+            && cached.Owner == owner
+            && cached.Point == point)
+            return cached.Result;
+
         if (_openingBarrier is { } barrier
             && IsHigher(barrier, owner))
+        {
+            StorePointerQuery(owner, point, true);
             return true;
-        return HighestAt(point, owner) is not null;
+        }
+
+        bool result = HighestAt(point, owner) is not null;
+        StorePointerQuery(owner, point, result);
+        return result;
     }
 
     /// <summary>
@@ -495,6 +542,44 @@ public static class Interactive
 
     private static int SurfaceIndex(int token) =>
         ExclusiveChain.FindIndex(node => node.Token == token);
+
+    private static void ClearPointerQueries()
+    {
+        _pointerQueryGeneration++;
+    }
+
+    private static void StorePointerQuery(
+        InteractionOwner owner,
+        Vector2 point,
+        bool result)
+    {
+        int index = PointerQueryIndex(owner, point);
+
+        PointerQueries[index] = new PointerQuery
+        {
+            Generation = _pointerQueryGeneration,
+            Owner = owner,
+            Point = point,
+            Result = result,
+        };
+    }
+
+    private static int PointerQueryIndex(
+        InteractionOwner owner,
+        Vector2 point)
+    {
+        unchecked
+        {
+            uint hash = (uint)owner.Order;
+            hash = (hash * 16777619u) ^ (uint)owner.Layer;
+            hash = (hash * 16777619u) ^ (uint)owner.SurfaceToken;
+            hash = (hash * 16777619u) ^
+                (uint)BitConverter.SingleToInt32Bits(point.X);
+            hash = (hash * 16777619u) ^
+                (uint)BitConverter.SingleToInt32Bits(point.Y);
+            return (int)(hash & (PointerQueryCapacity - 1));
+        }
+    }
 
     private static bool Contains(in Occluder rect, Vector2 point) =>
         point.X >= rect.Min.X && point.X < rect.Max.X

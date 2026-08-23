@@ -270,6 +270,10 @@ public class SkeletonOverlayWindow : Window
 
     public override void Draw()
     {
+        // This surface reads the finalize hook's bone snapshot; asking for
+        // it is what keeps the hook walking while the overlay shows.
+        Game.BoneSnapshotDemand.Request();
+        using var profile = FrameProfiler.Scope("Window · Bone overlay");
         // First line of the frame, before every gate: a left press ALWAYS
         // logs, so a missing line means this method never ran that frame.
         // Debug, not Information: these are standing breadcrumbs for the

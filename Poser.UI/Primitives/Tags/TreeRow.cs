@@ -172,6 +172,18 @@ public static partial class Crystarium
         bool chevronReserves = discloses && !props.ExpanderDisabled;
         if (chevronReserves || props.ActionSlots > 0)
             ImGui.SetItemAllowOverlap();
+
+        // A row scrolled outside the host window cannot be hovered, clicked,
+        // or seen — its reserve advanced the layout, and that is all a long
+        // list needs from it. Everything below is paint and secondary
+        // reserves for controls nobody can reach.
+        float rowClipTop = ImGui.GetWindowPos().Y;
+        if (hit.ScreenMax.Y < rowClipTop
+            || hit.ScreenMin.Y > rowClipTop + ImGui.GetWindowSize().Y)
+        {
+            actionsOrigin = default;
+            return TreeRowAction.None;
+        }
         var dl = ImGui.GetWindowDrawList();
 
         // Selection completes on release.

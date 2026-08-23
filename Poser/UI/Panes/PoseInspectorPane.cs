@@ -369,6 +369,8 @@ public class PoseInspectorPane
 
     public void Draw(Vector2 origin, Vector2 size)
     {
+        Game.BoneSnapshotDemand.Request();
+        using var profile = FrameProfiler.Scope("Workspace · Pose");
         float s = ImGuiHelpers.GlobalScale;
         var dl = ImGui.GetWindowDrawList();
         var cursor = origin;
@@ -533,6 +535,9 @@ public class PoseInspectorPane
 
     public void DrawRailSections(Vector2 origin, float width)
     {
+        using var profile = FrameProfiler.Scope("Rail · sections");
+        // The rail's bone rows read the finalize hook's snapshot.
+        Game.BoneSnapshotDemand.Request();
         // Gesture guards run even when Translation is collapsed.
         UpdateGestureGuards();
 
@@ -961,6 +966,7 @@ public class PoseInspectorPane
         float viewportHeight,
         float s)
     {
+        using var profile = FrameProfiler.Scope("Surface · Matrix");
         var theme = Crystarium.ActiveTheme;
         if (!SurfaceBand(cursor, width, viewportHeight, s, out var min, out var max))
             return viewportHeight;
@@ -1031,14 +1037,19 @@ public class PoseInspectorPane
             _matrixRevision = _scene.Revision;
             _matrixSkeletonId = matrixSkeleton.Id;
         }
-        BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
+        using (FrameProfiler.Scope("Matrix · selection sync"))
+            BoneMatrixBuilder.SyncSelection(_matrixVm, _selection);
         InsetScrollSurface(
             "##pose-matrix-scroll", viewMin, viewMax, s,
-            (contentOrigin, contentWidth) => BoneMatrixView.Draw(
-                _matrixVm,
-                contentOrigin,
-                contentWidth,
-                "livemx"));
+            (contentOrigin, contentWidth) =>
+            {
+                using var rows = FrameProfiler.Scope("Matrix · rows");
+                return BoneMatrixView.Draw(
+                    _matrixVm,
+                    contentOrigin,
+                    contentWidth,
+                    "livemx");
+            });
         return viewportHeight;
     }
 
@@ -1263,6 +1274,7 @@ public class PoseInspectorPane
     // Axis rows update one shared transform gesture.
     private void DrawTransform(Crystarium.FormScope form)
     {
+        using var profile = FrameProfiler.Scope("Rail · TRANSLATION");
         var (transform, canEdit) = ReadTransform();
         var pos = transform.Position;
         var euler = _dragEuler ?? PoseMath.QuaternionToEuler(transform.Rotation);
@@ -1449,6 +1461,8 @@ public class PoseInspectorPane
 
     private void DrawGaze(Crystarium.FormScope form, IActor actor, bool wide)
     {
+        using var profile = FrameProfiler.Scope(
+            wide ? "Surface · GAZE" : "Rail · GAZE");
         if (!_gazeService.IsAvailable)
         {
             form.Status($"Gaze unavailable: {_gazeService.UnavailableDetail ?? "native capability unavailable."}");
@@ -2086,6 +2100,8 @@ public class PoseInspectorPane
         ISkeleton skeleton,
         bool wide)
     {
+        using var profile = FrameProfiler.Scope(
+            wide ? "Surface · POSE" : "Rail · POSE");
         var bone = _entity as IBone;
         bool hasAuthoredEdits = _cleanPose.HasAuthoredEdits(skeleton.Actor);
         form.Actions("Edit", actions =>

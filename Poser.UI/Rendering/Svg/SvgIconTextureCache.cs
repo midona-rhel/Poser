@@ -58,6 +58,14 @@ internal static class SvgIconTextureCache
 
     private static readonly Dictionary<ulong, Entry> Cache = new();
 
+    /// <summary>The last size that BAKED per icon variant (the full key
+    /// minus size). During a tile-size drag every exact size is a fresh
+    /// cache miss, and misses fall back to per-frame vector tessellation —
+    /// the library-resize hitch. The stale texture draws stretched instead
+    /// while the worker bakes the new size.</summary>
+    private static readonly Dictionary<ulong, (ulong Key, Vector2 Size)>
+        LastGood = new();
+
     private static int _drawTick;
 
     private static readonly int[] SweepTicks = new int[MaxEntries];
@@ -598,6 +606,7 @@ internal static class SvgIconTextureCache
         foreach (var entry in Cache.Values)
             entry.Keepalive?.Dispose();
         Cache.Clear();
+        LastGood.Clear();
         Array.Clear(Seen);
         _seenAt = 0;
 
@@ -642,6 +651,12 @@ internal static class SvgIconTextureCache
     /// a whole menu of small glyphs in one frame, bounded so a pathological
     /// surface degrades to the async path instead of a hitch.</summary>
     private const int SyncPaintBudget = 12;
+
+    /// <summary>Only small glyphs paint synchronously: a menu icon bakes in
+    /// under a millisecond, a 120px library tile does not — the profiler
+    /// attributed 25–99ms spikes to exactly that. Large icons keep the
+    /// async path and briefly show their tile without a glyph.</summary>
+    private const float SyncPaintMaxSide = 40f;
     private static int _syncPaints;
 
     // All drains share this reset so uploads remain capped per frame.
@@ -677,6 +692,9 @@ internal static class SvgIconTextureCache
         ulong key = Key(
             doc, min, max, tint, flipX, strokeWidth,
             groupOpacity, groupBackground, styleAlpha);
+        ulong variant = KeyVariant(
+            doc, tint, flipX, strokeWidth,
+            groupOpacity, groupBackground, styleAlpha);
         var floor = new Vector2(MathF.Floor(min.X), MathF.Floor(min.Y));
         _drawTick++;
 
@@ -692,7 +710,8 @@ internal static class SvgIconTextureCache
             slot.LastDraw = _drawTick;
             entry = slot;
         }
-        else if (_syncPaints < SyncPaintBudget && !Pending.Contains(key))
+        else if (_syncPaints < SyncPaintBudget && !Pending.Contains(key)
+            && (max - min).Y <= SyncPaintMaxSide)
         {
             // FIRST USE PAINTS NOW. A small SVG mask bakes in well under a
             // millisecond, so a bounded number per frame render the frame
@@ -748,6 +767,28 @@ internal static class SvgIconTextureCache
                 });
                 Pump();
             }
+            if (LastGood.TryGetValue(variant, out var good)
+                && good.Size.Y > 0f)
+            {
+                ref var stale = ref System.Runtime.InteropServices
+                    .CollectionsMarshal.GetValueRefOrNullRef(Cache, good.Key);
+                if (!System.Runtime.CompilerServices.Unsafe.IsNullRef(
+                        ref stale)
+                    && stale.Handle != 0)
+                {
+                    stale.LastDraw = _drawTick;
+                    var factor = (max - min) / good.Size;
+                    var at = floor + stale.Offset * factor;
+                    draw.AddImage(
+                        new ImTextureID(stale.Handle),
+                        at,
+                        at + stale.Size * factor,
+                        Vector2.Zero,
+                        Vector2.One,
+                        White);
+                    return true;
+                }
+            }
             if (_paints < PaintBudget)
             {
                 _paints++;
@@ -768,6 +809,7 @@ internal static class SvgIconTextureCache
                 Vector2.Zero,
                 Vector2.One,
                 White);
+            LastGood[variant] = (key, max - min);
         }
         return true;
     }
@@ -782,6 +824,28 @@ internal static class SvgIconTextureCache
         Seen[_seenAt] = key;
         _seenAt = (_seenAt + 1) % Seen.Length;
         return false;
+    }
+
+    private static ulong KeyVariant(
+        SvgDocument doc,
+        Vector4? tint,
+        bool flipX,
+        float? strokeWidth,
+        float groupOpacity,
+        Vector4 background,
+        float styleAlpha)
+    {
+        ulong hash = Mix(FnvOffset, (uint)doc.CacheId);
+        hash = Mix(hash, flipX ? 1u : 0u);
+        hash = Mix(
+            hash,
+            strokeWidth.HasValue ? Bits(strokeWidth.Value) : 0xFFFFFFFFu);
+        hash = Mix(hash, tint.HasValue ? 1u : 0u);
+        if (tint is { } color)
+            hash = Mix(hash, color);
+        hash = Mix(hash, Bits(groupOpacity));
+        hash = Mix(hash, background);
+        return Mix(hash, Bits(styleAlpha));
     }
 
     private const ulong FnvOffset = 14695981039346656037UL;
