@@ -102,6 +102,9 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
+        global::Poser.UI.Crystarium.Log = message =>
+            _serviceProvider.GetRequiredService<
+                Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
         FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);

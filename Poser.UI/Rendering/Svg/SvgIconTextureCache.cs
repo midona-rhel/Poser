@@ -24,6 +24,10 @@ public static partial class Crystarium
     /// <summary>Advances bounded startup icon warming on the UI thread.</summary>
     public static void PumpStartupIcons(float libraryIconSize) =>
         SvgIconTextureCache.PumpStartupIcons(libraryIconSize);
+
+    /// <summary>Diagnostics sink — the host wires it to its debug log.
+    /// Poser.UI stays free of Dalamud, so the seam is one delegate.</summary>
+    public static Action<string>? Log;
 }
 
 internal static class SvgIconTextureCache
@@ -273,6 +277,37 @@ internal static class SvgIconTextureCache
         QueueStartup(
             Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, false,
             1.5f, 0.2f, Vector4.Zero, styleAlpha);
+        // The first-open miss list, measured in game (issue #31): every key
+        // below showed as a warm miss on a fresh session's first pass over
+        // the burger menu, the library tabs and a context menu. Exact
+        // parameters, because the cache keys exactly.
+        foreach (var name in new[] { "menu-2" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, 1.5f,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "settings", "library" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "search", "selector" })
+            QueueStartup(
+                Tabler.Get(name), 14f * scale, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("chevron-right"), 13f * scale, theme.Text, false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "plus", "x" })
+            QueueStartup(
+                Tabler.Get(name),
+                name == "plus" ? 14f * scale : shellSide,
+                theme.Text, false, 1.5f, 0.8f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "refresh", "lock-open" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, 1.5f,
+                0.2f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("bulb"), 32f * scale, theme.Text, false, null,
+            1f, Vector4.Zero, styleAlpha);
         QueueStartup(
             Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, true,
             1.5f, 0.2f, Vector4.Zero, styleAlpha);
@@ -603,6 +638,12 @@ internal static class SvgIconTextureCache
     private static int _paints;
     private static int _uploads;
 
+    /// <summary>Synchronous first-use paints allowed per frame — enough for
+    /// a whole menu of small glyphs in one frame, bounded so a pathological
+    /// surface degrades to the async path instead of a hitch.</summary>
+    private const int SyncPaintBudget = 12;
+    private static int _syncPaints;
+
     // All drains share this reset so uploads remain capped per frame.
     private static void BeginFrame()
     {
@@ -612,6 +653,7 @@ internal static class SvgIconTextureCache
         _frame = frame;
         _paints = 0;
         _uploads = 0;
+        _syncPaints = 0;
     }
 
     internal static bool TryDraw(
@@ -650,10 +692,47 @@ internal static class SvgIconTextureCache
             slot.LastDraw = _drawTick;
             entry = slot;
         }
+        else if (_syncPaints < SyncPaintBudget && !Pending.Contains(key))
+        {
+            // FIRST USE PAINTS NOW. A small SVG mask bakes in well under a
+            // millisecond, so a bounded number per frame render the frame
+            // they are first asked for — pop-in stopped being possible the
+            // day this branch landed. The async worker keeps everything
+            // over budget, and the startup warm remains an optimization
+            // rather than a correctness mechanism.
+            _syncPaints++;
+            if (_startupRemaining == 0 && _missLogged.Add(key))
+                Crystarium.Log?.Invoke(
+                    $"Icon painted on first use: {Tabler.NameOf(doc)} at " +
+                    $"{(max - min).Y:0}px");
+            try
+            {
+                bool bakeable = doc.TryResolveMask(
+                    Vector2.Zero, max - min, tint, flipX, strokeWidth,
+                    groupOpacity, groupBackground, styleAlpha,
+                    out var baked);
+                entry = !bakeable
+                    ? new Entry(0, default, default, null, true)
+                    : baked is not { } bakedMask
+                        ? new Entry(0, default, default, null, false)
+                        : Upload(bakedMask);
+            }
+            catch (Exception)
+            {
+                entry = new Entry(0, default, default, null, true);
+            }
+            entry.LastDraw = _drawTick;
+            if (Cache.Count >= MaxEntries)
+                EvictStale();
+            Cache[key] = entry;
+        }
         else
         {
             if (Repeated(key) && Pending.Add(key))
             {
+                // Post-startup misses ARE the pop-in: each unique one is a
+                // key the warm list does not cover. Logged once per key so a
+                // single first-open pass enumerates the whole gap.
                 Inbox.Enqueue(new RasterJob
                 {
                     Generation = _generation,
@@ -692,6 +771,8 @@ internal static class SvgIconTextureCache
         }
         return true;
     }
+
+    private static readonly HashSet<ulong> _missLogged = new();
 
     private static bool Repeated(ulong key)
     {

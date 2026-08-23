@@ -95,8 +95,11 @@ public class ActorManager : IActorManager
 
     public IReadOnlyList<IActor> AuxiliaryActors => _auxiliaryActors.AsReadOnly();
 
-    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager)
+    private readonly Dalamud.Plugin.Services.IPluginLog? _log;
+
+    public ActorManager(IObjectTable objectTable, IGPoseService gPoseService, IFramework framework, IEventBus eventBus, ITargetManager targetManager, Dalamud.Plugin.Services.IPluginLog? log = null)
     {
+        _log = log;
         _objectTable = objectTable;
         _gPoseService = gPoseService;
         _framework = framework;
@@ -130,7 +133,16 @@ public class ActorManager : IActorManager
         if (_pendingRefresh)
         {
             _pendingRefresh = false;
+            var entryWatch = System.Diagnostics.Stopwatch.StartNew();
             RefreshActors();
+            entryWatch.Stop();
+            // The GPose-entry freeze diagnostic (#31): this is the burst
+            // frame; the skeleton-created and bindings lines that follow
+            // carry their own timestamps.
+            _log?.Debug(
+                $"GPose entry: actor refresh took " +
+                $"{entryWatch.Elapsed.TotalMilliseconds:0.0}ms " +
+                $"({_actors.Count} actors)");
             return;
         }
 

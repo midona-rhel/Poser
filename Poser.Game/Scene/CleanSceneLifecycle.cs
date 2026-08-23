@@ -161,6 +161,23 @@ public sealed class CleanSceneLifecycle : IDisposable
 
     private void Refresh()
     {
+        var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            RefreshGuarded();
+        }
+        finally
+        {
+            refreshWatch.Stop();
+            if (refreshWatch.Elapsed.TotalMilliseconds > 2.0)
+                _log?.Debug(
+                    "Scene bindings: refresh took " +
+                    $"{refreshWatch.Elapsed.TotalMilliseconds:0.0}ms");
+        }
+    }
+
+    private void RefreshGuarded()
+    {
         // The registry refresh itself creates missing skeletons, and
         // SkeletonService publishes SkeletonChangedEvent synchronously while
         // doing so — suppress the nested re-entry it would trigger.
