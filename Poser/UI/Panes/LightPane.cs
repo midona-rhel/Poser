@@ -211,12 +211,25 @@ public sealed class LightPane
         };
     }
 
-    /// <summary>Where the selected actor stands right now, yaw-flattened;
-    /// null when no actor is selected or it cannot be read.</summary>
+    /// <summary>Where the anchor actor stands right now, yaw-flattened: the
+    /// selected actor, else the scene's first — a save always carries an
+    /// actor anchor when any actor exists (user rule: both anchors, always).
+    /// Null only in an actorless scene or when nothing can be read.</summary>
     private PlacementAnchorData? ActorAnchorNow()
     {
-        if (_scene.Selection.Primary is not
-            { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        ActorId? anchor = _scene.Selection.Primary is
+            { Kind: SceneEntityKind.Actor, Actor: { } selected }
+            ? selected
+            : null;
+        if (anchor is null)
+        {
+            foreach (var descriptor in _scene.Snapshot.Actors)
+            {
+                anchor = descriptor.Id;
+                break;
+            }
+        }
+        if (anchor is not { } actorId)
             return null;
         if (_viewport.GetModelTransform(
                 TransformTargetId.ForActor(actorId)) is not { } transform)
