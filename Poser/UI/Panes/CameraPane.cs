@@ -9,6 +9,7 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Services;
 
@@ -116,12 +117,11 @@ public sealed class CameraPane
     /// <summary>The library tile's import: placed by the shared mode,
     /// recorded for undo, selected once bound. Outcomes post here so every
     /// caller reads the same.</summary>
-    public bool ImportFromLibrary(string path)
+    public bool ImportFromLibrary(string path, ObjectPlacementMode mode)
     {
         string name = System.IO.Path.GetFileNameWithoutExtension(path);
         if (!_anchors.TryCurrentFor(
-                _placement.Mode, out var position, out var yaw,
-                out var refusal))
+                mode, out var position, out var yaw, out var refusal))
         {
             _notices.Refused(refusal!);
             return false;
@@ -129,7 +129,7 @@ public sealed class CameraPane
         var imported = _lifecycle.RecordSpawnedCamera(
             $"Add camera '{name}' from the library",
             _cameraFiles.ImportCamera(
-                path, _placement.Mode, position, yaw, out refusal));
+                path, mode, position, yaw, out refusal));
         if (imported == null)
         {
             _notices.Refused(refusal ?? "The camera file could not be read.");

@@ -202,24 +202,25 @@ public sealed class LightPane
 
     /// <summary>One placed import: resolves the current anchor the shared
     /// placement mode asks for, refusing by name when it cannot.</summary>
-    private ILight? ImportPlaced(string path, out string? refusal)
+    private ILight? ImportPlaced(
+        string path, ObjectPlacementMode mode, out string? refusal)
     {
         if (!_anchors.TryCurrentFor(
-                _placement.Mode, out var position, out var yaw, out refusal))
+                mode, out var position, out var yaw, out refusal))
             return null;
         return _lightFiles.ImportLight(
-            path, _placement.Mode, position, yaw, out refusal);
+            path, mode, position, yaw, out refusal);
     }
 
     /// <summary>The library tile's import: placed by the shared mode,
     /// recorded for undo, selected once bound. Outcomes are posted here so
     /// every caller reads the same.</summary>
-    public bool ImportFromLibrary(string path)
+    public bool ImportFromLibrary(string path, ObjectPlacementMode mode)
     {
         string name = System.IO.Path.GetFileNameWithoutExtension(path);
         var imported = _lifecycle.RecordSpawnedLight(
             $"Add light '{name}' from the library",
-            ImportPlaced(path, out var refusal));
+            ImportPlaced(path, mode, out var refusal));
         if (imported == null)
         {
             _notices.Refused(refusal ?? "The light file could not be read.");
@@ -242,7 +243,7 @@ public sealed class LightPane
             // light the user added, and undo has to know it.
             var imported = _lifecycle.RecordSpawnedLight(
                 $"Add light from {System.IO.Path.GetFileNameWithoutExtension(path)}",
-                ImportPlaced(path, out var refusal));
+                ImportPlaced(path, _placement.Mode, out var refusal));
             if (imported == null)
             {
                 _notices.Failed(
