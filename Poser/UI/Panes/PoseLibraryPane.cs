@@ -137,6 +137,8 @@ public sealed class PoseLibraryPane
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
     private readonly LightPane _lightPane;
+    private readonly CameraPane _cameraPane;
+    private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly ObjectPlacementPreferences _placement;
     private readonly IEnvironmentService _environment;
 
@@ -394,6 +396,8 @@ public sealed class PoseLibraryPane
         SceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
         LightPane lightPane,
+        CameraPane cameraPane,
+        Game.Scene.PlacementAnchorSource anchors,
         ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,
@@ -408,6 +412,8 @@ public sealed class PoseLibraryPane
         _spawnService = spawnService;
         _scenes = scenes;
         _lightPane = lightPane;
+        _cameraPane = cameraPane;
+        _anchors = anchors;
         _cameraFiles = cameraFiles;
         _placement = placement;
         _environment = environment;
@@ -954,7 +960,19 @@ public sealed class PoseLibraryPane
         switch (_tileKinds[index])
         {
             case PoseLibraryEntryKind.Actor:
-                var started = _scenes.BeginLoad(path, new SceneLoadOptions());
+                if (!_anchors.TryCurrentFor(
+                        _placement.Mode, out var anchorPosition,
+                        out var anchorYaw, out var anchorRefusal))
+                {
+                    _notices.Refused(anchorRefusal!);
+                    break;
+                }
+                var started = _scenes.BeginLoad(path, new SceneLoadOptions
+                {
+                    Placement = _placement.Mode,
+                    PlacementPosition = anchorPosition,
+                    PlacementYaw = anchorYaw,
+                });
                 if (!started.Success)
                     _notices.Failed(
                         started.Detail ?? "The actor could not be spawned.");
@@ -981,13 +999,9 @@ public sealed class PoseLibraryPane
                 _lightPane.ImportFromLibrary(path);
                 break;
             case PoseLibraryEntryKind.Camera:
-                if (_lifecycle.RecordSpawnedCamera(
-                        $"Add camera '{name}' from the library",
-                        _cameraFiles.ImportCamera(path)) is null)
-                    _notices.Failed(
-                        $"'{name}' could not be loaded as a camera.");
-                else
-                    _notices.Done($"Created camera from '{name}'.");
+                // The camera pane owns the whole placed import, exactly as
+                // the light pane owns its own.
+                _cameraPane.ImportFromLibrary(path);
                 break;
         }
     }

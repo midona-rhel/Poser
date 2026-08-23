@@ -49,6 +49,12 @@ public class SceneFile
     /// </summary>
     public const string ActorEntryExtension = ".xiva";
 
+    /// <summary>Placement anchors: where the camera and the anchor actor
+    /// stood at capture, yaw-flattened. Stamped on every capture (they cost
+    /// nothing); an actor ENTRY load is what reads them.</summary>
+    public PlacementAnchorData? CameraAnchor { get; set; }
+    public PlacementAnchorData? ActorAnchor { get; set; }
+
     /// <summary>
     /// An environment library entry: the scene container restricted to the
     /// environment configuration — weather, sky, atmosphere, world rendering

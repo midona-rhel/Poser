@@ -26,6 +26,13 @@ public class CameraFile
     public CameraKind Kind { get; set; }
 
     // Orbit state.
+    /// <summary>Placement anchors, exactly as the light file records them.
+    /// Only a FREE camera places relatively — an orbit camera follows its
+    /// target — but the anchors are recorded for every kind so a later kind
+    /// switch does not orphan them.</summary>
+    public PlacementAnchorData? CameraAnchor { get; set; }
+    public PlacementAnchorData? ActorAnchor { get; set; }
+
     public Vector2 Angle { get; set; }
     public Vector2 Pan { get; set; }
     public float Roll { get; set; }

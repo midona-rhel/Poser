@@ -717,6 +717,7 @@ public sealed class SceneWorkflow : IDisposable
                     return;
                 }
                 notes.Add("Placed relative to where you are standing.");
+
                 // The rebase moved everything Poser places. It did NOT move the
                 // map's own objects, because it cannot: they are matched by the
                 // point the map stands them at.
@@ -725,6 +726,38 @@ public sealed class SceneWorkflow : IDisposable
                         $"The {worldObjects.Count} borrowed map " +
                         $"{(worldObjects.Count == 1 ? "object stays" : "objects stay")} " +
                         "where the map has them; only what Poser placed moved.");
+            }
+
+            // The object-entry placement: the caller resolved the CURRENT
+            // anchor; the document carries the SAVED one. A mode whose saved
+            // anchor the file does not record refuses before anything is
+            // touched.
+            if (options.Placement != Poser.Files.ObjectPlacementMode.AsSaved)
+            {
+                var savedAnchor = options.Placement ==
+                    Poser.Files.ObjectPlacementMode.RelativeToCamera
+                        ? scene.CameraAnchor
+                        : scene.ActorAnchor;
+                if (savedAnchor is null)
+                {
+                    Finish(
+                        OperationReceiptState.Failed,
+                        "This entry records no anchor for that placement. " +
+                        "Load it as saved instead.");
+                    return;
+                }
+                if (ScenePlacementRebase.Rebase(
+                        scene, savedAnchor,
+                        options.PlacementPosition, options.PlacementYaw)
+                    is { } placementRefusal)
+                {
+                    Finish(OperationReceiptState.Failed, placementRefusal);
+                    return;
+                }
+                notes.Add(options.Placement ==
+                    Poser.Files.ObjectPlacementMode.RelativeToCamera
+                        ? "Placed relative to the camera."
+                        : "Placed relative to the actor.");
             }
 
             total = actors.Count + props.Count +
