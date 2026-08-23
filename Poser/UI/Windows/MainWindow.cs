@@ -3809,10 +3809,11 @@ public class MainWindow : Window
                 if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
-            () => _scenePane.SaveActorEntry(
-                actorId.LogicalId,
+            () => OpenEntityRename(
+                "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
-                    actorId.LogicalId, DisplayName(actor.Name))),
+                    actorId.LogicalId, DisplayName(actor.Name)),
+                name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
             null, // separator
             () =>
             {
@@ -4312,6 +4313,7 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
+            new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
         };
         var actions = new List<Action?>
@@ -4321,6 +4323,11 @@ public class MainWindow : Window
                 "Rename light", light.Name, next => light.Name = next),
             () => _lifecycle.CloneLight(light),
             () => _lightPane.OpenSave(light),
+            // The library save asks for the entry's NAME first — the same
+            // modal renames use, with the light's name as the start.
+            () => OpenEntityRename(
+                "Save light to library", light.Name,
+                name => _lightPane.SaveToLibrary(light, name)),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -4453,6 +4460,7 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
+            new("Save to library", TablerIcon.Library),
             new("Reset transform", TablerIcon.Refresh,
                 disabled: camera.IsLocked || !_cameraService.IsAvailable),
             new("Reset properties", TablerIcon.Refresh,
@@ -4486,6 +4494,9 @@ public class MainWindow : Window
                     _cameraPane.SelectWhenBound(clone);
             },
             () => _cameraPane.OpenSave(camera),
+            () => OpenEntityRename(
+                "Save camera to library", camera.Name,
+                name => _cameraPane.SaveToLibrary(camera, name)),
             () => _cameraPane.ResetCameraTransform(cameraId),
             () => camera.ResetProperties(),
         };
@@ -4549,17 +4560,22 @@ public class MainWindow : Window
     {
         if (!_entityRenameOpen || _entityRenameApply is not { } apply)
             return;
+        // Footer idiom, not body buttons: the footer bar right-aligns its
+        // children, and the height fits one input with no dead band.
         Crystarium.Modal(
             "##rename-entity",
             _entityRenameOpen,
             next => _entityRenameOpen = next,
             _entityRenameTitle,
-            () =>
-        {
-            Crystarium.TextInput(
+            height: NamePromptHeight,
+            body: () => Crystarium.TextInput(
                 "##rename-entity-input", _entityRenameValue,
-                next => _entityRenameValue = next);
-            ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
+                next => _entityRenameValue = next),
+            footer: () =>
+        {
+            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
+                _entityRenameOpen = false;
+            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
@@ -4569,11 +4585,12 @@ public class MainWindow : Window
                     apply(trimmed);
                 _entityRenameOpen = false;
             }
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
-                _entityRenameOpen = false;
         });
     }
+
+    /// <summary>One text input between the two bars: header 44 + padded
+    /// input row + footer 44.</summary>
+    private const float NamePromptHeight = 152f;
 
     private void DrawRenameModal()
     {
@@ -4583,24 +4600,24 @@ public class MainWindow : Window
             _renameOpen,
             next => _renameOpen = next,
             "Rename actor",
-            () =>
+            height: NamePromptHeight,
+            body: () => Crystarium.TextInput(
+                "##rename-input", _renameValue, next => _renameValue = next),
+            footer: () =>
         {
-            Crystarium.TextInput(
-                "##rename-input", _renameValue, next => _renameValue = next);
-            ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
+            if (Crystarium.Button("Clear", id: "rename-clear",
+                help: "Remove the nickname and show the real name"))
+            {
+                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
+                _renameOpen = false;
+            }
+            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
                     id: "rename-save"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
-                _renameOpen = false;
-            }
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button("Clear", id: "rename-clear",
-                help: "Remove the nickname and show the real name"))
-            {
-                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
                 _renameOpen = false;
             }
         });

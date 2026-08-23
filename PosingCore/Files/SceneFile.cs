@@ -49,6 +49,14 @@ public class SceneFile
     /// </summary>
     public const string ActorEntryExtension = ".xiva";
 
+    /// <summary>
+    /// An environment library entry: the scene container restricted to the
+    /// environment configuration — weather, sky, atmosphere, world rendering
+    /// — and nothing else. Same codec, own extension so the library tabs it
+    /// without opening it.
+    /// </summary>
+    public const string EnvironmentEntryExtension = ".xive";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 

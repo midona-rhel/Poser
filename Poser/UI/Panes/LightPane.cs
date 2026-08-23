@@ -662,7 +662,7 @@ public sealed class LightPane
 
     /// <summary>One click, no dialog: the light lands in the objects home,
     /// which is exactly what the library's Objects tab scans.</summary>
-    private void SaveToLibrary(ILight light)
+    public void SaveToLibrary(ILight light, string? name = null)
     {
         if (!light.IsValid)
         {
@@ -671,10 +671,11 @@ public sealed class LightPane
         }
         var root = Config.ConfigurationService.Instance.Config.Library
             .EnsureObjectsRootExists();
+        var entryName = string.IsNullOrWhiteSpace(name) ? light.Name : name!;
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
-            root, light.Name, ".xivl");
+            root, entryName, ".xivl");
         if (_lightFiles.ExportLight(light, path))
-            _notices.Done($"Saved '{light.Name}' to the library.");
+            _notices.Done($"Saved '{entryName}' to the library.");
         else
             _notices.Failed("The light file could not be written.");
     }

@@ -31,6 +31,11 @@ public enum PoseLibraryEntryKind : byte
 
     /// <summary>An <c>.xivc</c> camera document.</summary>
     Camera,
+
+    /// <summary>An <c>.xive</c> environment entry: the scene container
+    /// restricted to the environment configuration. Read through the same
+    /// codec as a scene.</summary>
+    Environment,
 }
 
 /// <summary>
