@@ -3,7 +3,7 @@ using Poser.Entities;
 namespace Poser.Services;
 
 /// <summary>
-/// .poserlight import/export for a single scene light. Import always spawns a
+/// .xivl import/export for a single scene light. Import always spawns a
 /// NEW light — a light file describes a light, not an edit to one.
 /// </summary>
 public interface ILightFileService

@@ -435,6 +435,28 @@ public sealed class SceneWorkflow : IDisposable
 
             var notes = captured.Notes.ToList();
 
+            // The actor-entry save narrows to its one actor BEFORE sealing:
+            // sealing reads and packages appearance per actor, and an entry
+            // save must pay for exactly one.
+            var actorIdentities = captured.ActorIdentities;
+            if (options.OnlyActorLogicalId is { } only)
+            {
+                var keep = new HashSet<Guid>(actorIdentities
+                    .Where(pair => pair.Value.LogicalId == only)
+                    .Select(pair => pair.Key));
+                scene.Actors.RemoveAll(entry => !keep.Contains(entry.Key));
+                if (scene.Actors.Count != 1)
+                {
+                    Finish(false,
+                        "The actor was not in the capture; it may have just " +
+                        "been removed. Nothing was saved.");
+                    return;
+                }
+                actorIdentities = actorIdentities
+                    .Where(pair => keep.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+            }
+
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
@@ -446,7 +468,7 @@ public sealed class SceneWorkflow : IDisposable
                     SceneOperationKind.Save, operation.FileName,
                     ScenePhase.ApplyingAppearance, 0, 0, false, null));
                 var sealed_ = await _runtime.SealAppearance(
-                    scene, captured.ActorIdentities, AppearanceSealTimeout,
+                    scene, actorIdentities, AppearanceSealTimeout,
                     cancellation);
                 notes.AddRange(sealed_.Notes);
                 sealTemporaries = sealed_.TemporaryFiles;

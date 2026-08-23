@@ -21,6 +21,16 @@ public enum PoseLibraryEntryKind : byte
     /// through the scene codec, so a listing can never advertise a scene the
     /// load would reject.</summary>
     Scene,
+
+    /// <summary>An <c>.xiva</c> actor entry: the scene container restricted
+    /// to one actor. Read through the same codec as a scene.</summary>
+    Actor,
+
+    /// <summary>An <c>.xivl</c> light document.</summary>
+    Light,
+
+    /// <summary>An <c>.xivc</c> camera document.</summary>
+    Camera,
 }
 
 /// <summary>
@@ -174,6 +184,11 @@ public sealed class PoseLibraryFolder
     /// <summary>Recursive <see cref="PoseLibraryEntryKind.Scene"/> count at
     /// and below this folder, on the same recursive contract.</summary>
     public int SceneCount { get; init; }
+
+    /// <summary>Recursive object-entry count — actors, lights and cameras
+    /// together, because they share one browser tab — on the same recursive
+    /// contract.</summary>
+    public int ObjectsCount { get; init; }
 }
 
 /// <summary>

@@ -9,7 +9,7 @@ using Poser.Entities;
 namespace Poser.Files;
 
 /// <summary>
-/// Poser light file format (.poserlight). Carries EVERY property an
+/// Poser light file format (.xivl). Carries EVERY property an
 /// <see cref="ILight"/> owns, including the absolute transform and the flag
 /// set — Ktisis' .ktlight and Brio's light DTO each drop part of that, and a
 /// light that comes back missing its shadow flags or its falloff type is not

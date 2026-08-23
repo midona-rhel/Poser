@@ -6,7 +6,7 @@ using Poser.Services;
 namespace Poser.Files;
 
 /// <summary>
-/// .posercam import/export. Export snapshots the live camera state; import
+/// .xivc import/export. Export snapshots the live camera state; import
 /// creates a camera of the file's kind and writes the file's every property
 /// onto it.
 /// </summary>
@@ -71,7 +71,7 @@ public class CameraFileService : ICameraFileService
     }
 
     /// <summary>The ONE IVirtualCamera → CameraFile mapping; scene capture
-    /// reuses it so a scene camera and a .posercam are the same document.</summary>
+    /// reuses it so a scene camera and a .xivc are the same document.</summary>
     internal static CameraFile CreateCameraFile(IVirtualCamera camera) => new()
     {
         Name = camera.Name,

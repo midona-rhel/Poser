@@ -123,6 +123,11 @@ public sealed class PoseLibraryPane
         AutoSaves,
         Mcdf,
         Scenes,
+
+        /// <summary>Everything that is not a pose, a scene or a character
+        /// file: actor, light and camera entries, one tab because they share
+        /// the one Objects home.</summary>
+        Objects,
     }
 
     private readonly ConfigurationService _config;
@@ -131,6 +136,9 @@ public sealed class PoseLibraryPane
     private readonly CleanPoseFacade _poseFacade;
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
+    private readonly ILightFileService _lightFiles;
+    private readonly ICameraFileService _cameraFiles;
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
     /// <summary>The standing load options, so a scene started from a TILE is
     /// the same load the scene workspace's dialog would have run.</summary>
@@ -219,6 +227,10 @@ public sealed class PoseLibraryPane
     /// <summary>Typed metadata status per TILE. The context menu reads it to
     /// decide which recovery verbs an entry qualifies for.</summary>
     private readonly List<PoseLibraryMetadataStatus> _tileStatus = [];
+
+    /// <summary>Each tile's entry kind, parallel to the tiles — the Objects
+    /// tab holds three kinds and its activation dispatches on this.</summary>
+    private readonly List<PoseLibraryEntryKind> _tileKinds = [];
 
     /// <summary>The snapshot revision the rows were built from. A type switch
     /// resets it: each type builds its own rail and tiles from the same
@@ -375,14 +387,20 @@ public sealed class PoseLibraryPane
         PosePreviewService preview,
         SceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
+        ILightFileService lightFiles,
+        ICameraFileService cameraFiles,
+        Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices)
     {
+        _lifecycle = lifecycle;
         _config = config;
         _library = library;
         _thumbs = thumbs;
         _poseFacade = poseFacade;
         _spawnService = spawnService;
         _scenes = scenes;
+        _lightFiles = lightFiles;
+        _cameraFiles = cameraFiles;
         _sceneOptions = sceneOptions;
         _selection = selection;
         _bindings = bindings;
@@ -727,8 +745,59 @@ public sealed class PoseLibraryPane
             LoadScene(index);
             return;
         }
+        if (_type == LibraryType.Objects)
+        {
+            ActivateObject(index);
+            return;
+        }
         _applyMenuAnchor = ImGui.GetMousePos();
         _applyMenuRequested = true;
+    }
+
+    /// <summary>
+    /// An object tile's one action, by what the file is. An actor entry
+    /// SPAWNS its actor — through the same scene workflow a scene load uses,
+    /// with fresh additive options so a clear-first preference set for
+    /// scenes can never fire from a library tile. Lights and cameras import
+    /// through their own services, which spawn a new light and create a new
+    /// camera respectively.
+    /// </summary>
+    private void ActivateObject(int index)
+    {
+        if (index < 0 || index >= _vm.Tiles.Count ||
+            index >= _tileKinds.Count)
+            return;
+        var path = _vm.Tiles[index].ThumbKey;
+        var name = _vm.Tiles[index].Label;
+        switch (_tileKinds[index])
+        {
+            case PoseLibraryEntryKind.Actor:
+                var started = _scenes.BeginLoad(path, new SceneLoadOptions());
+                if (!started.Success)
+                    _notices.Failed(
+                        started.Detail ?? "The actor could not be spawned.");
+                break;
+            case PoseLibraryEntryKind.Light:
+                // Recorded through the lifecycle, exactly as the light
+                // pane's own load dialog records it — a light from a tile is
+                // still a light the user added, and undo has to know it.
+                if (_lifecycle.RecordSpawnedLight(
+                        $"Add light '{name}' from the library",
+                        _lightFiles.ImportLight(path)) is null)
+                    _notices.Failed($"'{name}' could not be loaded as a light.");
+                else
+                    _notices.Done($"Spawned light from '{name}'.");
+                break;
+            case PoseLibraryEntryKind.Camera:
+                if (_lifecycle.RecordSpawnedCamera(
+                        $"Add camera '{name}' from the library",
+                        _cameraFiles.ImportCamera(path)) is null)
+                    _notices.Failed(
+                        $"'{name}' could not be loaded as a camera.");
+                else
+                    _notices.Done($"Created camera from '{name}'.");
+                break;
+        }
     }
 
     /// <summary>Restores a highlighted scene through the ONE scene workflow —
@@ -1384,6 +1453,7 @@ public sealed class PoseLibraryPane
         {
             LibraryType.Mcdf => PoseLibraryEntryKind.Mcdf,
             LibraryType.Scenes => PoseLibraryEntryKind.Scene,
+            LibraryType.Objects => PoseLibraryEntryKind.Actor,
             _ => PoseLibraryEntryKind.Pose,
         };
 
@@ -1391,7 +1461,7 @@ public sealed class PoseLibraryPane
         int favored = 0;
         for (int i = 0; i < entries.Count; i++)
         {
-            if (entries[i].Kind != kind)
+            if (!InTab(entries[i].Kind, kind))
                 continue;
             total++;
             if (favorites.Contains(entries[i].FilePath))
@@ -1432,10 +1502,11 @@ public sealed class PoseLibraryPane
         for (int i = 0; i < scanned.Count; i++)
         {
             var folder = scanned[i];
-            int count = kind switch
+            int count = _type switch
             {
-                PoseLibraryEntryKind.Mcdf => folder.McdfCount,
-                PoseLibraryEntryKind.Scene => folder.SceneCount,
+                LibraryType.Mcdf => folder.McdfCount,
+                LibraryType.Scenes => folder.SceneCount,
+                LibraryType.Objects => folder.ObjectsCount,
                 _ => folder.PoseCount,
             };
             // A subfolder with none of this kind has no descendant of it
@@ -1464,6 +1535,7 @@ public sealed class PoseLibraryPane
         _tileTags.Clear();
         _tileAuthors.Clear();
         _tileStatus.Clear();
+        _tileKinds.Clear();
         // Labels are minted with or without the extension HERE; the search
         // keeps matching the bare name either way.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
@@ -1472,6 +1544,7 @@ public sealed class PoseLibraryPane
             _tileTags.Add(entry.TagsLower);
             _tileAuthors.Add(entry.AuthorLower);
             _tileStatus.Add(entry.MetadataStatus);
+            _tileKinds.Add(entry.Kind);
             bool flagged =
                 entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
             // Minted ONCE. A scene's key and its heading are the same run —
@@ -1500,6 +1573,9 @@ public sealed class PoseLibraryPane
                 {
                     PoseLibraryEntryKind.Mcdf => TablerIcon.UserCircle,
                     PoseLibraryEntryKind.Scene => TablerIcon.Movie,
+                    PoseLibraryEntryKind.Actor => TablerIcon.User,
+                    PoseLibraryEntryKind.Light => TablerIcon.Bulb,
+                    PoseLibraryEntryKind.Camera => TablerIcon.Camera,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -1619,6 +1695,7 @@ public sealed class PoseLibraryPane
             _tileTags.Clear();
             _tileAuthors.Clear();
             _tileStatus.Clear();
+            _tileKinds.Clear();
             _vm.Selected = -1;
             _vm.EmptyText = ScanningText;
             _refilter = true;
@@ -1980,10 +2057,21 @@ public sealed class PoseLibraryPane
     /// inside a place. Ordering here rather than in the grid is what keeps the
     /// section break a single key comparison.
     /// </summary>
+    /// <summary>Whether an entry kind belongs to the current tab. The
+    /// Objects tab is the one MANY-kind tab; every other tab is one kind.
+    /// </summary>
+    private static bool InTab(
+        PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
+        primary == PoseLibraryEntryKind.Actor
+            ? entryKind is PoseLibraryEntryKind.Actor
+                or PoseLibraryEntryKind.Light
+                or PoseLibraryEntryKind.Camera
+            : entryKind == primary;
+
     private static IEnumerable<PoseLibraryEntry> Ordered(
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
     {
-        var matching = entries.Where(entry => entry.Kind == kind);
+        var matching = entries.Where(entry => InTab(entry.Kind, kind));
         return kind == PoseLibraryEntryKind.Scene
             ? matching
                 .OrderByDescending(entry => SceneDay(entry).Date)

@@ -18,6 +18,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private const string LegacyExtension = ".cmp";
     private const string McdfExtension = ".mcdf";
     private static readonly string SceneExtension = SceneFile.Extension;
+    private static readonly string ActorExtension = SceneFile.ActorEntryExtension;
+    private const string LightExtension = ".xivl";
+    private const string CameraExtension = ".xivc";
 
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
@@ -273,6 +276,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         public int PoseCount { get; set; }
         public int McdfCount { get; set; }
         public int SceneCount { get; set; }
+        public int ObjectsCount { get; set; }
     }
 
     private readonly record struct SourceSpec(string Name, string Path, bool Enabled);
@@ -388,6 +392,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Scene:
                     node.SceneCount++;
                     break;
+                case PoseLibraryEntryKind.Actor:
+                case PoseLibraryEntryKind.Light:
+                case PoseLibraryEntryKind.Camera:
+                    node.ObjectsCount++;
+                    break;
                 default:
                     node.PoseCount++;
                     break;
@@ -400,6 +409,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             node.PoseCount += child.PoseCount;
             node.McdfCount += child.McdfCount;
             node.SceneCount += child.SceneCount;
+            node.ObjectsCount += child.ObjectsCount;
         }
 
         return !isRoot && node.Count == 0 ? null : node;
@@ -422,7 +432,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Count = node.Count,
             PoseCount = node.PoseCount,
             McdfCount = node.McdfCount,
-            SceneCount = node.SceneCount
+            SceneCount = node.SceneCount,
+            ObjectsCount = node.ObjectsCount
         });
 
         foreach (var file in node.Files)
@@ -466,8 +477,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
         // A scene is probed through its OWN codec, which validates the whole
         // bounded document — so an entry the browser offers is an entry the
         // load will accept, and a corrupt or future file says so in the row
-        // instead of only when it is clicked.
-        if (kind == PoseLibraryEntryKind.Scene)
+        // instead of only when it is clicked. An ACTOR entry is the same
+        // container and takes the same probe.
+        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -478,8 +490,12 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 // matches, and a scene must not answer an author search with
                 // words from its description.
                 author = metadata.Author;
-                sceneContents = DescribeScene(metadata);
-                scenePlace = metadata.PlaceName ?? string.Empty;
+                sceneContents = kind == PoseLibraryEntryKind.Actor
+                    ? string.Empty
+                    : DescribeScene(metadata);
+                scenePlace = kind == PoseLibraryEntryKind.Actor
+                    ? string.Empty
+                    : metadata.PlaceName ?? string.Empty;
                 sceneCapturedAt = metadata.SavedAt;
             }
             // The ONE mapping — shared with the retry probe, exactly as the
@@ -549,7 +565,10 @@ public sealed class PoseLibraryService : IPoseLibraryService
         return extension.Equals(PoseExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LegacyExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(ActorExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PoseLibraryEntryKind KindOf(string path)
@@ -557,9 +576,15 @@ public sealed class PoseLibraryService : IPoseLibraryService
         var extension = Path.GetExtension(path);
         if (extension.Equals(McdfExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Mcdf;
-        return extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase)
-            ? PoseLibraryEntryKind.Scene
-            : PoseLibraryEntryKind.Pose;
+        if (extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Scene;
+        if (extension.Equals(ActorExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Actor;
+        if (extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Light;
+        if (extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Camera;
+        return PoseLibraryEntryKind.Pose;
     }
 
     private bool ObserveDirectory(string path)

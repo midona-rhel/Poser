@@ -30,6 +30,29 @@ public sealed record SceneSaveOptions
     /// default; consent is per save.</summary>
     public bool IncludeModdedAppearance { get; init; }
 
+    /// <summary>
+    /// Restricts the save to the one actor with this logical identity — the
+    /// actor-library entry (.xiva) save. The capture still runs whole so it
+    /// reads the same caches every save reads; the document is narrowed to
+    /// this actor before appearance sealing, so only its package is read and
+    /// embedded. A save that names an actor the capture did not contain
+    /// refuses by name.
+    /// </summary>
+    public Guid? OnlyActorLogicalId { get; init; }
+
+    /// <summary>The actor-entry save: one actor, its appearance embedded,
+    /// nothing else.</summary>
+    public static SceneSaveOptions ActorEntry(Guid logicalId) => new()
+    {
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeModdedAppearance = true,
+        OnlyActorLogicalId = logicalId,
+    };
+
     public static SceneSaveOptions Default { get; } = new();
 }
 

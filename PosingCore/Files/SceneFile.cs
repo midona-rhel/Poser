@@ -22,7 +22,7 @@ namespace Poser.Files;
 /// Entity payloads deliberately embed the EXISTING codecs rather than
 /// restating their fields: there is one codec per entity kind, and a light
 /// that round-trips through a scene is bit-for-bit the light that round-trips
-/// through a .poserlight — including that codec's own FileVersion semantics.
+/// through a .xivl — including that codec's own FileVersion semantics.
 ///
 /// <see cref="SceneId"/> is the document's stable logical identity. It
 /// persists across saves of the same scene and is the exact identity a scene
@@ -40,6 +40,14 @@ public class SceneFile
     /// <summary>The one extension every scene reader, writer and listing
     /// filters on.</summary>
     public const string Extension = ".xivs";
+
+    /// <summary>
+    /// An actor library entry: the SAME container and document as a scene,
+    /// restricted to exactly one actor and nothing else. It gets its own
+    /// extension so the library can tab it without opening it; every codec,
+    /// store and restore path treats it as the scene it is.
+    /// </summary>
+    public const string ActorEntryExtension = ".xiva";
 
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
@@ -482,7 +490,7 @@ public class SceneLight
 }
 
 /// <summary>One virtual camera: the complete existing camera document plus
-/// the session facts a .posercam deliberately omits — liveness, whether it is
+/// the session facts a .xivc deliberately omits — liveness, whether it is
 /// the session default, and the explicit target-actor relationship.</summary>
 [Serializable]
 public class SceneCamera

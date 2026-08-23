@@ -93,9 +93,9 @@ public sealed class LightPane
         BoneId Id, string BoneName, string ActorName);
 
     private readonly Crystarium.FileDialog _saveBrowser =
-        new("Save Light", new[] { ".poserlight" }, isSaveMode: true);
+        new("Save Light", new[] { ".xivl" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
-        new("Load Light", new[] { ".poserlight" });
+        new("Load Light", new[] { ".xivl" });
     private string _lastPath =
         Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
 
@@ -653,9 +653,30 @@ public sealed class LightPane
         {
             actions.Button("Save", () => OpenSave(light),
                 help: "Write this light and all of its settings to a file");
+            actions.Button("To library", () => SaveToLibrary(light),
+                help: "Save this light into the library's Objects tab");
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
         });
+    }
+
+    /// <summary>One click, no dialog: the light lands in the objects home,
+    /// which is exactly what the library's Objects tab scans.</summary>
+    private void SaveToLibrary(ILight light)
+    {
+        if (!light.IsValid)
+        {
+            _notices.Refused("The light no longer exists.");
+            return;
+        }
+        var root = Config.ConfigurationService.Instance.Config.Library
+            .EnsureObjectsRootExists();
+        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
+            root, light.Name, ".xivl");
+        if (_lightFiles.ExportLight(light, path))
+            _notices.Done($"Saved '{light.Name}' to the library.");
+        else
+            _notices.Failed("The light file could not be written.");
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.

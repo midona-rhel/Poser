@@ -31,9 +31,9 @@ public sealed class PoseLibraryServiceTests
 
         Assert.Equal(@"D:\Poses", config.ResolvePoseRoot());
         Assert.Equal(LibraryConfiguration.DefaultSceneRoot, config.ResolveSceneRoot());
-        Assert.Equal(3, config.Sources.Count);
+        Assert.Equal(4, config.Sources.Count);
         config.EnsureDefaults();
-        Assert.Equal(3, config.Sources.Count);
+        Assert.Equal(4, config.Sources.Count);
     }
 
     [Fact]
