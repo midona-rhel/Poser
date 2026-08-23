@@ -945,6 +945,7 @@ public sealed class PoseLibraryPane
                     break;
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
+                case PoseLibraryEntryKind.Overlay:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
@@ -1031,6 +1032,23 @@ public sealed class PoseLibraryPane
                 if (!started.Success)
                     _notices.Failed(
                         started.Detail ?? "The actor could not be spawned.");
+                break;
+            case PoseLibraryEntryKind.Overlay:
+                // Screen-space: placement modes do not apply; the stored
+                // centre-relative position re-attaches at the current
+                // centre inside the load.
+                var overlayLoad = _scenes.BeginLoad(path, new SceneLoadOptions
+                {
+                    IncludeActors = false,
+                    IncludeProps = false,
+                    IncludeLights = false,
+                    IncludeCameras = false,
+                    IncludeEnvironment = false,
+                });
+                if (!overlayLoad.Success)
+                    _notices.Failed(
+                        overlayLoad.Detail ??
+                        "The overlay could not be staged.");
                 break;
             case PoseLibraryEntryKind.Environment:
                 // The load applies only what the file states; an environment
@@ -1837,6 +1855,7 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Light => TablerIcon.Bulb,
                     PoseLibraryEntryKind.Camera => TablerIcon.Camera,
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
+                    PoseLibraryEntryKind.Overlay => TablerIcon.Message,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2328,6 +2347,7 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Light
                 or PoseLibraryEntryKind.Camera
                 or PoseLibraryEntryKind.Environment
+                or PoseLibraryEntryKind.Overlay
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

@@ -63,6 +63,12 @@ public class SceneFile
     /// </summary>
     public const string EnvironmentEntryExtension = ".xive";
 
+    /// <summary>
+    /// An overlay library entry: the scene container restricted to one
+    /// overlay node.
+    /// </summary>
+    public const string OverlayEntryExtension = ".xivo";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
@@ -446,6 +452,13 @@ public class SceneOverlay
     /// <summary>The node's whole state. Required — an overlay entry without
     /// one names nothing.</summary>
     public OverlayNodeState? Node { get; set; }
+
+    /// <summary>True when the node's stored position is an offset from the
+    /// SCREEN CENTRE rather than absolute pixels — how an overlay survives a
+    /// different resolution or aspect ratio. The restore re-attaches it at
+    /// the current centre; a file from before the convention reads as the
+    /// absolute pixels it was.</summary>
+    public bool CenterRelative { get; set; }
 }
 
 /// <summary>

@@ -529,6 +529,15 @@ public sealed class SceneCaptureService
     /// </summary>
     private void CaptureOverlays(SceneFile scene)
     {
+        // Positions are stored relative to the screen CENTRE so an overlay
+        // lands sensibly on another resolution or aspect ratio. A centre
+        // that cannot be read keeps absolute pixels and says so on the
+        // entry.
+        var display = Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
+        bool centred = display.X > 0f && display.Y > 0f;
+        var center = centred
+            ? new System.Numerics.Vector2(display.X / 2f, display.Y / 2f)
+            : default;
         foreach (var overlay in _overlays.Nodes)
         {
             if (!overlay.IsValid)
@@ -538,9 +547,13 @@ public sealed class SceneCaptureService
             {
                 Key = _bindings.GetOverlayId(overlay)?.LogicalId
                     ?? Guid.NewGuid(),
+                CenterRelative = centred,
                 Node = overlay.State with
                 {
                     Name = Bounded(overlay.State.Name, "Overlay"),
+                    Position = centred
+                        ? overlay.State.Position - center
+                        : overlay.State.Position,
                 },
             });
         }

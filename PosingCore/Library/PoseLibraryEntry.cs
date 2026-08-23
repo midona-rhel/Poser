@@ -36,6 +36,10 @@ public enum PoseLibraryEntryKind : byte
     /// restricted to the environment configuration. Read through the same
     /// codec as a scene.</summary>
     Environment,
+
+    /// <summary>An <c>.xivo</c> overlay entry: the scene container
+    /// restricted to one overlay node.</summary>
+    Overlay,
 }
 
 /// <summary>

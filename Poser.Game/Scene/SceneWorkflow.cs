@@ -457,6 +457,18 @@ public sealed class SceneWorkflow : IDisposable
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
             }
 
+            if (options.OnlyOverlayKey is { } onlyOverlay)
+            {
+                scene.Overlays?.RemoveAll(entry => entry.Key != onlyOverlay);
+                if ((scene.Overlays?.Count ?? 0) != 1)
+                {
+                    Finish(false,
+                        "The overlay was not in the capture; it may have " +
+                        "just been removed. Nothing was saved.");
+                    return;
+                }
+            }
+
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
@@ -837,7 +849,8 @@ public sealed class SceneWorkflow : IDisposable
                         continue;
                     }
                     operation.StagedOverlays.Add(token);
-                    entities.Add(new SceneEntityOutcome("Overlay", name, true));
+                    entities.Add(new SceneEntityOutcome(
+                        "Overlay", name, true, detail));
                 }
 
                 // Borrowing back the map's own objects. A refusal here is

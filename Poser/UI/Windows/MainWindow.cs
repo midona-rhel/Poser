@@ -786,6 +786,12 @@ public class MainWindow : Window
                 _ctxPropId = ctxProp;
                 _propCtxOpenRequested = true;
             }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Overlay, Overlay: { } ctxOverlayNode })
+            {
+                _ctxOverlayNodeId = ctxOverlayNode;
+                _overlayNodeCtxOpenRequested = true;
+            }
             else if (row.Tag is ReferenceImageInstance ctxImage)
             {
                 _ctxReferenceImage = ctxImage;
@@ -1196,6 +1202,7 @@ public class MainWindow : Window
         _animationPane.DrawExpressionPicker();
         DrawBoneContextMenu();
         DrawOverlayContextMenu();
+        DrawOverlayNodeContextMenu();
         DrawReferenceImageContextMenu();
         DrawLightContextMenu();
         DrawCameraContextMenu();
@@ -4221,6 +4228,44 @@ public class MainWindow : Window
                 break;
         }
         _ctxReferenceImage = null;
+    }
+
+    private OverlayId? _ctxOverlayNodeId;
+    private bool _overlayNodeCtxOpenRequested;
+
+    /// <summary>Right-click menu for a staged overlay NODE (balloon, talk,
+    /// status) — distinct from the bone-category overlay menu below. Thin on
+    /// purpose until the #73 audit fills it: the library save is the verb
+    /// that exists nowhere else.</summary>
+    private void DrawOverlayNodeContextMenu()
+    {
+        if (_ctxOverlayNodeId is not { } overlayId)
+            return;
+        var resolved = _bindings.Resolve(overlayId);
+        if (!resolved.Success || resolved.Value is not { } node)
+        {
+            _ctxOverlayNodeId = null;
+            Crystarium.FloatingMenu.Dismiss("##overlay-node-ctx");
+            return;
+        }
+        var items = new[]
+        {
+            new ContextMenuItem("Save to library", TablerIcon.Library),
+        };
+        if (_overlayNodeCtxOpenRequested)
+        {
+            _overlayNodeCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##overlay-node-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
+        if (clicked == 0)
+        {
+            OpenEntityRename(
+                "Save overlay to library", node.State.Name,
+                name => _scenePane.SaveOverlayEntry(
+                    overlayId.LogicalId, name));
+        }
     }
 
     private void DrawOverlayContextMenu()

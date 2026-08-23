@@ -141,6 +141,22 @@ public sealed class ScenePane
     /// open after the first fits its rows exactly.</summary>
     private float _optionsBandHeight = 92f;
 
+    /// <summary>The overlay context menu's "Save to library": one overlay
+    /// node, written into the objects home as a .xivo.</summary>
+    public bool SaveOverlayEntry(Guid logicalKey, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.OverlayEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.OverlayEntry(logicalKey));
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The overlay could not be saved to the library.");
+        return result.Success;
+    }
+
     /// <summary>
     /// The actor context menu's "Save to library": one actor with its
     /// appearance embedded, written into the objects home as a .xiva.

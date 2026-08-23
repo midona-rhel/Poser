@@ -23,6 +23,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private const string CameraExtension = ".xivc";
     private static readonly string EnvironmentExtension =
         SceneFile.EnvironmentEntryExtension;
+    private static readonly string OverlayExtension =
+        SceneFile.OverlayEntryExtension;
 
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
@@ -398,6 +400,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Light:
                 case PoseLibraryEntryKind.Camera:
                 case PoseLibraryEntryKind.Environment:
+                case PoseLibraryEntryKind.Overlay:
                     node.ObjectsCount++;
                     break;
                 default:
@@ -483,7 +486,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         // instead of only when it is clicked. An ACTOR entry is the same
         // container and takes the same probe.
         if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
-            or PoseLibraryEntryKind.Environment)
+            or PoseLibraryEntryKind.Environment
+            or PoseLibraryEntryKind.Overlay)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -573,7 +577,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(ActorExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PoseLibraryEntryKind KindOf(string path)
@@ -591,6 +596,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             return PoseLibraryEntryKind.Camera;
         if (extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Environment;
+        if (extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Overlay;
         return PoseLibraryEntryKind.Pose;
     }
 
