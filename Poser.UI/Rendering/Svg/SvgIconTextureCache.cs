@@ -277,6 +277,37 @@ internal static class SvgIconTextureCache
         QueueStartup(
             Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, false,
             1.5f, 0.2f, Vector4.Zero, styleAlpha);
+        // The first-open miss list, measured in game (issue #31): every key
+        // below showed as a warm miss on a fresh session's first pass over
+        // the burger menu, the library tabs and a context menu. Exact
+        // parameters, because the cache keys exactly.
+        foreach (var name in new[] { "menu-2" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, 1.5f,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "settings", "library" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "search", "selector" })
+            QueueStartup(
+                Tabler.Get(name), 14f * scale, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("chevron-right"), 13f * scale, theme.Text, false,
+            null, 1f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "plus", "x" })
+            QueueStartup(
+                Tabler.Get(name),
+                name == "plus" ? 14f * scale : shellSide,
+                theme.Text, false, 1.5f, 0.8f, Vector4.Zero, styleAlpha);
+        foreach (var name in new[] { "refresh", "lock-open" })
+            QueueStartup(
+                Tabler.Get(name), shellSide, theme.Text, false, 1.5f,
+                0.2f, Vector4.Zero, styleAlpha);
+        QueueStartup(
+            Tabler.Get("bulb"), 32f * scale, theme.Text, false, null,
+            1f, Vector4.Zero, styleAlpha);
         QueueStartup(
             Tabler.Get(TablerIcon.ArrowBackUp), shellSide, theme.Text, true,
             1.5f, 0.2f, Vector4.Zero, styleAlpha);
