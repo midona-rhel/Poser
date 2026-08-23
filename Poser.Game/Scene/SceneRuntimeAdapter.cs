@@ -1033,13 +1033,35 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             detail = "The overlay entry carries no node document.";
             return null;
         }
+        detail = null;
+        var display = Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
+        if (data.CenterRelative && display.X > 0f && display.Y > 0f)
+        {
+            document = document with
+            {
+                Position = document.Position + new System.Numerics.Vector2(
+                    display.X / 2f, display.Y / 2f),
+            };
+        }
+        // An overlay entirely outside the screen exists but shows nothing —
+        // the restore says so instead of leaving the user hunting for it.
+        var size = Poser.Domain.Presentation.OverlayNodeGeometry
+            .DesignSize(document.Kind) * document.Scale;
+        if (display.X > 0f && display.Y > 0f &&
+            (document.Position.X + size.X < 0f ||
+             document.Position.Y + size.Y < 0f ||
+             document.Position.X > display.X ||
+             document.Position.Y > display.Y))
+        {
+            detail = $"'{document.Name}' sits entirely off screen at this " +
+                "resolution, so it will not be visible.";
+        }
         var handle = _overlays.Create(document);
         if (handle is null)
         {
             detail = "The overlay node could not be staged.";
             return null;
         }
-        detail = null;
         return handle;
     }
 

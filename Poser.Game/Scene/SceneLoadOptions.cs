@@ -53,6 +53,22 @@ public sealed record SceneSaveOptions
         OnlyActorLogicalId = logicalId,
     };
 
+    /// <summary>Restricts the save to one overlay — the overlay-entry
+    /// (.xivo) save. Same contract as the actor filter.</summary>
+    public Guid? OnlyOverlayKey { get; init; }
+
+    /// <summary>The overlay-entry save: one overlay node, nothing else.
+    /// </summary>
+    public static SceneSaveOptions OverlayEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        OnlyOverlayKey = key,
+    };
+
     /// <summary>The environment-entry save: the environment configuration
     /// and nothing else.</summary>
     public static SceneSaveOptions EnvironmentEntry { get; } = new()
