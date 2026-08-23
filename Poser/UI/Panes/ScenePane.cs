@@ -204,6 +204,121 @@ public sealed class ScenePane
     /// frame a pane is still using.</summary>
     public void RequestSave() => _saveRequested = true;
 
+    /// <summary>The library's inspector rail on the scenes and auto-saves
+    /// tabs: the SAME load options the workspace states, mounted where the
+    /// tiles that start those loads live.</summary>
+    public void DrawLibraryRail(Vector2 origin, Vector2 size)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * scale;
+        float width = size.X - inset * 2f;
+        var cursor = origin + new Vector2(inset, inset);
+
+        Crystarium.TextAt(cursor, "Load options", new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.FormHint,
+        });
+        cursor.Y += (theme.Typography.CaptionSize + 8f) * scale;
+
+        // One table: both groups share the section label column, so the
+        // rows align whatever group they sit in.
+        cursor.Y += DrawLoadSceneOptions(cursor, width);
+        DrawLoadIncludeOptions(cursor, width);
+    }
+
+    private bool _librarySaveOpen;
+    private string _librarySaveName = string.Empty;
+
+    /// <summary>The library's save flow: one modal — the name and the one
+    /// choice that changes what the file contains — then the save lands in
+    /// the scenes home the tab is already scanning. No file dialog detour.
+    /// </summary>
+    public void RequestLibrarySave()
+    {
+        _librarySaveName = string.Empty;
+        _librarySaveOpen = true;
+    }
+
+    private void DrawLibrarySaveModal()
+    {
+        if (!_librarySaveOpen)
+            return;
+        Crystarium.Modal(
+            "##scene-library-save",
+            _librarySaveOpen,
+            next => _librarySaveOpen = next,
+            "Save scene to library",
+            height: 196f,
+            body: () =>
+        {
+            Crystarium.TextInput(
+                "##scene-library-save-name", _librarySaveName,
+                next => _librarySaveName = next,
+                placeholder: "Scene name");
+            ImGui.Dummy(new Vector2(0f, 8f *
+                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
+            // Label first, control after — the form convention, even in a
+            // modal: the label owns the left, the switch sits at the row's
+            // right edge.
+            float rowScale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            var rowStart = ImGui.GetCursorScreenPos();
+            float rowWidth = ImGui.GetContentRegionAvail().X;
+            float switchWidth =
+                Crystarium.ActiveTheme.Controls.SwitchWidth * rowScale;
+            float switchHeight =
+                Crystarium.ActiveTheme.Controls.SwitchHeight * rowScale;
+            Crystarium.TextAt(
+                rowStart + new Vector2(0f, (switchHeight -
+                    Crystarium.ActiveTheme.Typography.LabelSize * rowScale)
+                    * 0.5f),
+                "Include appearance files",
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                    Color = Crystarium.ActiveTheme.Text,
+                });
+            ImGui.SetCursorScreenPos(
+                rowStart + new Vector2(rowWidth - switchWidth, 0f));
+            Crystarium.Switch(
+                "##scene-library-save-appearance",
+                SaveOptions.IncludeModdedAppearance,
+                next => SaveOptions = SaveOptions with
+                {
+                    IncludeModdedAppearance = next,
+                },
+                help: AppearanceHelp);
+        },
+            footer: () =>
+        {
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
+            if (Crystarium.Button("Cancel", id: "scene-library-save-cancel"))
+                _librarySaveOpen = false;
+            ImGui.SameLine(0f, 8f *
+                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+            if (Crystarium.Button(
+                    "Save",
+                    variant: ButtonVariant.Primary,
+                    id: "scene-library-save-confirm") || submit)
+            {
+                var name = _librarySaveName.Trim();
+                if (name.Length == 0)
+                    name = "Scene";
+                var root = _libraryConfig.EnsureSceneRootExists();
+                var path = LibraryConfiguration.NewEntryPath(
+                    root, name, SceneFile.Extension);
+                var begun = _workflow.BeginSave(path, null, SaveOptions);
+                if (!begun.Success)
+                    _notices.Refused(
+                        begun.Detail ?? "The scene save could not start.");
+                _librarySaveOpen = false;
+            }
+        });
+    }
+
     private bool _saveRequested;
 
     /// <summary>Pumped every frame by the window: a dialog must survive the
@@ -218,6 +333,7 @@ public sealed class ScenePane
             OpenSave();
         }
         _saveBrowser.Draw();
+        DrawLibrarySaveModal();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
 

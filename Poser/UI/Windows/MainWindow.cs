@@ -600,7 +600,9 @@ public class MainWindow : Window
         // Saving from the scenes tab is the scene workspace's own dialog: one
         // destination browser and one description field, wherever it is asked
         // for.
-        _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestSave();
+        // The library saves through the MODAL — name plus the appearance
+        // choice — never the file-dialog detour.
+        _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestLibrarySave();
         _poseFileSection = poseFileSection;
         // The import menus resolve their target actor through the same
         // binding registry the context menus use.
@@ -1300,8 +1302,22 @@ public class MainWindow : Window
         // The delegate is stated even while collapsed: the shell's own
         // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
+        // The inspector is PER TAB: pose-import options where poses apply
+        // (auto-saves are poses — they snapshot through the pose file
+        // service); scene options where scenes load;
+        // the entry inspector on objects; and NO rail on MCDFs — a
+        // character file has nothing to configure, so the grid takes the
+        // width.
         _vm.DrawRail = _libraryMode
-            ? _poseFileSection.DrawOptionsRail
+            ? (PoseLibraryPane.LibraryType)_libraryPane.SelectedType switch
+            {
+                PoseLibraryPane.LibraryType.Objects =>
+                    _libraryPane.DrawObjectsRail,
+                PoseLibraryPane.LibraryType.Scenes =>
+                    _scenePane.DrawLibraryRail,
+                PoseLibraryPane.LibraryType.Mcdf => null,
+                _ => _poseFileSection.DrawOptionsRail,
+            }
             : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
@@ -3566,6 +3582,7 @@ public class MainWindow : Window
         SpawnActor,
         ImportPose,
         ExportPose,
+        SaveScene,
         AutoSaves,
         LayoutSeparator,
         PopOutContent,
@@ -3640,6 +3657,8 @@ public class MainWindow : Window
         items[(int)ShellCommand.ExportPose] =
             new ContextMenuItem(
                 "Export pose", TablerIcon.Upload, disabled: !poseTarget);
+        items[(int)ShellCommand.SaveScene] =
+            new ContextMenuItem("Save scene", TablerIcon.Movie);
         items[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
                 "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
@@ -3698,6 +3717,9 @@ public class MainWindow : Window
             case ShellCommand.ExportPose:
                 if (SelectedSkeleton() != null)
                     _poseFileSection.RequestExportMenu();
+                break;
+            case ShellCommand.SaveScene:
+                _scenePane.RequestLibrarySave();
                 break;
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
@@ -4573,13 +4595,18 @@ public class MainWindow : Window
                 next => _entityRenameValue = next),
             footer: () =>
         {
+            // Enter is the blue button: the modal is one input, and done is
+            // done.
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
             if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
                 _entityRenameOpen = false;
             ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
-                    id: "rename-entity-save"))
+                    id: "rename-entity-save") || submit)
             {
                 if (_entityRenameValue.Trim() is { Length: > 0 } trimmed)
                     apply(trimmed);
@@ -4605,6 +4632,9 @@ public class MainWindow : Window
                 "##rename-input", _renameValue, next => _renameValue = next),
             footer: () =>
         {
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
             if (Crystarium.Button("Clear", id: "rename-clear",
                 help: "Remove the nickname and show the real name"))
             {
@@ -4615,7 +4645,7 @@ public class MainWindow : Window
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
-                    id: "rename-save"))
+                    id: "rename-save") || submit)
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
                 _renameOpen = false;

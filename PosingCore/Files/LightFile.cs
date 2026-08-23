@@ -33,6 +33,17 @@ public class LightFile
 
     public TransformData Transform { get; set; } = TransformData.Identity;
 
+    /// <summary>Where the camera stood at save, for
+    /// <see cref="ObjectPlacementMode.RelativeToCamera"/> loads. Absent in a
+    /// file saved before anchors existed; a relative load then refuses by
+    /// name rather than guessing.</summary>
+    public PlacementAnchorData? CameraAnchor { get; set; }
+
+    /// <summary>Where the selected actor stood at save, for
+    /// <see cref="ObjectPlacementMode.RelativeToSelectedActor"/> loads.
+    /// Absent when nothing was selected at save.</summary>
+    public PlacementAnchorData? ActorAnchor { get; set; }
+
     public Vector3 Color { get; set; }
     public float Intensity { get; set; }
     public float Range { get; set; }

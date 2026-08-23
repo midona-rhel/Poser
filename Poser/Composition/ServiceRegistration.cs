@@ -295,6 +295,7 @@ internal static class ServiceRegistration
         this IServiceCollection services)
     {
         services.AddSingleton<CleanSceneLifecycle>();
+        services.AddSingleton<global::Poser.Files.ObjectPlacementPreferences>();
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;

@@ -11,6 +11,7 @@ using Poser.Core;
 using Poser.Domain.Identity;
 using Poser.Domain.Scene;
 using Poser.Entities;
+using Poser.Files;
 using Poser.Game.Bindings;
 using Poser.Game.Transforms;
 using Poser.Services;
@@ -43,6 +44,7 @@ public sealed class LightPane
     /// so both land in the shell's undo history.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
+    private readonly ObjectPlacementPreferences _placement;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ICameraService _camera;
@@ -118,6 +120,7 @@ public sealed class LightPane
         ILightingService lighting,
         Game.Scene.SceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
+        ObjectPlacementPreferences placement,
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
         ICameraService camera,
@@ -130,7 +133,12 @@ public sealed class LightPane
         _lighting = lighting;
         _lifecycle = lifecycle;
         _lightFiles = lightFiles;
+        _placement = placement;
         _cleanTransforms = cleanTransforms;
+        // The load dialog carries the ONE choice that changes where the
+        // light lands, decided beside the file it applies to.
+        _loadBrowser.BottomPanel =
+            new FileSidePanel(PlacementBandHeight, DrawPlacementBand);
         _viewport = viewport;
         _camera = camera;
         _textures = textures;
@@ -163,6 +171,126 @@ public sealed class LightPane
         }
     }
 
+    /// <summary>The placement band's labels, positional against
+    /// <see cref="ObjectPlacementMode"/>.</summary>
+    private static readonly string[] PlacementModeLabels =
+        ["As saved", "Relative to camera", "Relative to actor"];
+
+    private const float PlacementBandHeight = 56f;
+
+    private void DrawPlacementBand(Vector2 origin, Vector2 size, string? path)
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        float inset = Crystarium.ActiveTheme.Page.Inset * scale;
+        ImGui.SetCursorScreenPos(
+            new Vector2(origin.X + inset, origin.Y + inset));
+        Crystarium.SegmentedControl(
+            "##light-placement-mode",
+            PlacementModeLabels,
+            (int)_placement.Mode,
+            next => _placement.Mode = (ObjectPlacementMode)next,
+            itemHelp: index => index switch
+            {
+                1 => "Keeps the saved offset from the camera",
+                2 => "Keeps the saved offset from the selected actor",
+                _ => "Exactly where it was saved",
+            });
+    }
+
+    /// <summary>Where the camera stands right now, yaw-flattened; null when
+    /// the camera cannot be read.</summary>
+    private PlacementAnchorData? CameraAnchorNow()
+    {
+        var forward = _camera.GetLookDirection();
+        if (forward == Vector3.Zero)
+            return null;
+        return new PlacementAnchorData
+        {
+            Position = _camera.GetCameraPosition(),
+            Yaw = ObjectPlacement.YawOf(forward),
+        };
+    }
+
+    /// <summary>Where the anchor actor stands right now, yaw-flattened: the
+    /// selected actor, else the scene's first — a save always carries an
+    /// actor anchor when any actor exists (user rule: both anchors, always).
+    /// Null only in an actorless scene or when nothing can be read.</summary>
+    private PlacementAnchorData? ActorAnchorNow()
+    {
+        ActorId? anchor = _scene.Selection.Primary is
+            { Kind: SceneEntityKind.Actor, Actor: { } selected }
+            ? selected
+            : null;
+        if (anchor is null)
+        {
+            foreach (var descriptor in _scene.Snapshot.Actors)
+            {
+                anchor = descriptor.Id;
+                break;
+            }
+        }
+        if (anchor is not { } actorId)
+            return null;
+        if (_viewport.GetModelTransform(
+                TransformTargetId.ForActor(actorId)) is not { } transform)
+            return null;
+        return new PlacementAnchorData
+        {
+            Position = transform.Position,
+            Yaw = ObjectPlacement.YawOf(transform.Rotation),
+        };
+    }
+
+    /// <summary>One placed import: resolves the current anchor the shared
+    /// placement mode asks for, refusing by name when it cannot.</summary>
+    private ILight? ImportPlaced(string path, out string? refusal)
+    {
+        refusal = null;
+        var mode = _placement.Mode;
+        Vector3 position = default;
+        float yaw = 0f;
+        if (mode == ObjectPlacementMode.RelativeToCamera)
+        {
+            if (CameraAnchorNow() is not { } camera)
+            {
+                refusal = "The camera could not be read for relative placement.";
+                return null;
+            }
+            position = camera.Position;
+            yaw = camera.Yaw;
+        }
+        else if (mode == ObjectPlacementMode.RelativeToSelectedActor)
+        {
+            if (ActorAnchorNow() is not { } anchor)
+            {
+                refusal = "Select an actor to place the light relative to.";
+                return null;
+            }
+            position = anchor.Position;
+            yaw = anchor.Yaw;
+        }
+        return _lightFiles.ImportLight(path, mode, position, yaw, out refusal);
+    }
+
+    /// <summary>The library tile's import: placed by the shared mode,
+    /// recorded for undo, selected once bound. Outcomes are posted here so
+    /// every caller reads the same.</summary>
+    public bool ImportFromLibrary(string path)
+    {
+        string name = System.IO.Path.GetFileNameWithoutExtension(path);
+        var imported = _lifecycle.RecordSpawnedLight(
+            $"Add light '{name}' from the library",
+            ImportPlaced(path, out var refusal));
+        if (imported == null)
+        {
+            _notices.Refused(refusal ?? "The light file could not be read.");
+            return false;
+        }
+        _pendingSelect = imported;
+        _notices.Done($"Spawned light from '{name}'.");
+        return true;
+    }
+
     /// <summary>Opens the load dialog from outside the pane — the add-entity
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
@@ -175,10 +303,11 @@ public sealed class LightPane
             // light the user added, and undo has to know it.
             var imported = _lifecycle.RecordSpawnedLight(
                 $"Add light from {System.IO.Path.GetFileNameWithoutExtension(path)}",
-                _lightFiles.ImportLight(path));
+                ImportPlaced(path, out var refusal));
             if (imported == null)
             {
-                _notices.Failed("Load: the light file could not be read.");
+                _notices.Failed(
+                    refusal ?? "Load: the light file could not be read.");
                 return;
             }
             _pendingSelect = imported;
@@ -674,7 +803,8 @@ public sealed class LightPane
         var entryName = string.IsNullOrWhiteSpace(name) ? light.Name : name!;
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
             root, entryName, ".xivl");
-        if (_lightFiles.ExportLight(light, path))
+        if (_lightFiles.ExportLight(
+                light, path, CameraAnchorNow(), ActorAnchorNow()))
             _notices.Done($"Saved '{entryName}' to the library.");
         else
             _notices.Failed("The light file could not be written.");
@@ -694,7 +824,8 @@ public sealed class LightPane
                 _notices.Refused("Export: the light no longer exists.");
                 return;
             }
-            if (_lightFiles.ExportLight(light, path))
+            if (_lightFiles.ExportLight(
+                    light, path, CameraAnchorNow(), ActorAnchorNow()))
                 _notices.Done($"Light saved to {path}.");
             else
                 _notices.Failed(

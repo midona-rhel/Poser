@@ -136,7 +136,13 @@ public sealed class PoseLibraryPane
     private readonly CleanPoseFacade _poseFacade;
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
-    private readonly ILightFileService _lightFiles;
+    private readonly LightPane _lightPane;
+    private readonly ObjectPlacementPreferences _placement;
+    private readonly IEnvironmentService _environment;
+
+    /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
+    private static readonly string[] PlacementModeLabels =
+        ["As saved", "Relative to camera", "Relative to actor"];
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
@@ -387,8 +393,10 @@ public sealed class PoseLibraryPane
         PosePreviewService preview,
         SceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
-        ILightFileService lightFiles,
+        LightPane lightPane,
         ICameraFileService cameraFiles,
+        ObjectPlacementPreferences placement,
+        IEnvironmentService environment,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices)
     {
@@ -399,8 +407,10 @@ public sealed class PoseLibraryPane
         _poseFacade = poseFacade;
         _spawnService = spawnService;
         _scenes = scenes;
-        _lightFiles = lightFiles;
+        _lightPane = lightPane;
         _cameraFiles = cameraFiles;
+        _placement = placement;
+        _environment = environment;
         _sceneOptions = sceneOptions;
         _selection = selection;
         _bindings = bindings;
@@ -419,6 +429,7 @@ public sealed class PoseLibraryPane
         // workflow, the target always explicit (a lone eligible actor skips
         // the menu). A scene has no target and loads outright.
         _vm.OnApplyTile = ActivateTile;
+        _vm.Footer = DrawFooterLead;
         _vm.OnSpawnTile = Spawn;
         _vm.OnToggleFavorite = ToggleFavorite;
         _vm.OnTagFilter = TagFilter;
@@ -762,6 +773,169 @@ public sealed class PoseLibraryPane
         _applyMenuRequested = true;
     }
 
+    /// <summary>The footer's LEFT cluster: configuring sources belongs on
+    /// every tab (left-aligned, user rule), the Objects tab's placement
+    /// choice sits at the bottom where the spawn happens, and the status
+    /// stays last.</summary>
+    private void DrawFooterLead(Crystarium.ActionBarScope scope)
+    {
+        scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
+        scope.Label(_vm.Status);
+    }
+
+    // ── the objects inspector rail ───────────────────────────────────────
+
+    /// <summary>The probed path the details rows were read from; a selection
+    /// change re-probes. Object entry files are small (a light or camera is a
+    /// page of JSON; a container answers through its bounded metadata read),
+    /// so the probe runs inline on the click.</summary>
+    private string? _detailsPath;
+    private readonly List<(string Label, string Value)> _detailsRows = [];
+    private Vector3? _detailsColor;
+
+    /// <summary>
+    /// The Objects tab's INSPECTOR rail — the same right column every other
+    /// library tab fills. One plain run of rows: where a load lands, then
+    /// what the selected entry IS — the properties a person recognizes it
+    /// by, never raw coordinates.
+    /// </summary>
+    public void DrawObjectsRail(Vector2 origin, Vector2 size)
+    {
+        int selected = _vm.Selected;
+        if (selected < 0 || selected >= _vm.Tiles.Count ||
+            selected >= _tileKinds.Count)
+            return;
+        ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
+
+        float scale = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * scale;
+        var cursor = origin + new Vector2(inset, inset);
+
+        // The entry's NAME leads, then one plain "Properties" heading — no
+        // separators anywhere on this rail.
+        Crystarium.TextAt(cursor, _vm.Tiles[selected].Label, new TextStyle
+        {
+            Size = theme.Typography.SurfaceTitleSize,
+            Weight = FontWeight.Medium,
+            Color = theme.Text,
+        });
+        cursor.Y += (theme.Typography.SurfaceTitleSize + 10f) * scale;
+        Crystarium.TextAt(cursor, "Properties", new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.FormHint,
+        });
+        cursor.Y += (theme.Typography.CaptionSize + 6f) * scale;
+
+        Crystarium.Section(
+            "##objects-inspector", string.Empty,
+            new Vector2(origin.X, cursor.Y), size.X, true, null,
+            form =>
+            {
+                if (_detailsColor is { } color)
+                {
+                    form.Custom("Color", 20f, row =>
+                    {
+                        float radius = 8f * ImGuiHelpers.GlobalScale;
+                        var center = row.CenterControl(16f)
+                            + new Vector2(radius, radius);
+                        var clamped = Vector3.Clamp(
+                            color, Vector3.Zero, Vector3.One);
+                        ImGui.GetWindowDrawList().AddCircleFilled(
+                            center, radius,
+                            ImGui.ColorConvertFloat4ToU32(
+                                new Vector4(clamped, 1f)));
+                    });
+                }
+                foreach (var (label, value) in _detailsRows)
+                    form.ReadOnly(label, value);
+            },
+            divider: false, dense: true);
+    }
+
+    private void ProbeDetails(string path, PoseLibraryEntryKind kind)
+    {
+        if (string.Equals(path, _detailsPath, StringComparison.Ordinal))
+            return;
+        _detailsPath = path;
+        _detailsRows.Clear();
+        _detailsColor = null;
+        try
+        {
+            switch (kind)
+            {
+                case PoseLibraryEntryKind.Light:
+                    if (LightFile.Load(path) is { } light)
+                    {
+                        _detailsRows.Add(("Kind", light.Kind.ToString()));
+                        _detailsRows.Add(("Intensity", light.Intensity
+                            .ToString("0.##", CultureInfo.InvariantCulture)));
+                        _detailsRows.Add(("Range", light.Range
+                            .ToString("0.##", CultureInfo.InvariantCulture)));
+                        _detailsRows.Add(("Anchors", Anchors(
+                            light.CameraAnchor, light.ActorAnchor)));
+                        _detailsColor = light.Color;
+                    }
+                    break;
+                case PoseLibraryEntryKind.Camera:
+                    if (CameraFile.Load(path) is { } camera)
+                    {
+                        _detailsRows.Add(("Kind", camera.Kind.ToString()));
+                        _detailsRows.Add(("Zoom", camera.Zoom
+                            .ToString("0.##", CultureInfo.InvariantCulture)));
+                        _detailsRows.Add(("FoV", camera.FoV
+                            .ToString("0.##", CultureInfo.InvariantCulture)));
+                    }
+                    break;
+                case PoseLibraryEntryKind.Actor:
+                case PoseLibraryEntryKind.Environment:
+                    var metadata = SceneFileStore.Default.ReadMetadata(path);
+                    if (metadata.Succeeded)
+                    {
+                        if (!string.IsNullOrEmpty(metadata.PlaceName))
+                            _detailsRows.Add(("Place", metadata.PlaceName!));
+                        if (kind == PoseLibraryEntryKind.Environment)
+                        {
+                            // The name travels in the file when the capture
+                            // recorded it; an older file resolves through the
+                            // live weather sheet by id.
+                            string weather = metadata.WeatherName.Length > 0
+                                ? metadata.WeatherName
+                                : metadata.WeatherId != 0 &&
+                                  _environment.GetWeatherInfo(
+                                      metadata.WeatherId) is { } known
+                                    ? known.Name
+                                    : string.Empty;
+                            if (weather.Length > 0)
+                                _detailsRows.Add(("Weather", weather));
+                        }
+                        if (metadata.SavedAt is { } saved)
+                            _detailsRows.Add(("Saved", saved.ToLocalTime()
+                                .ToString(LibraryStamp.DateTimeFormat,
+                                    CultureInfo.InvariantCulture)));
+                    }
+                    break;
+            }
+        }
+        catch (Exception)
+        {
+            _detailsRows.Add(("Details", "could not be read"));
+        }
+        if (_detailsRows.Count == 0 && _detailsColor is null)
+            _detailsRows.Add(("Details", "none recorded"));
+    }
+
+    private static string Anchors(
+        PlacementAnchorData? camera, PlacementAnchorData? actor) =>
+        (camera, actor) switch
+        {
+            (not null, not null) => "camera and actor",
+            (not null, null) => "camera",
+            (null, not null) => "actor",
+            _ => "none",
+        };
+
     /// <summary>
     /// An object tile's one action, by what the file is. An actor entry
     /// SPAWNS its actor — through the same scene workflow a scene load uses,
@@ -802,15 +976,9 @@ public sealed class PoseLibraryPane
                         "The environment could not be applied.");
                 break;
             case PoseLibraryEntryKind.Light:
-                // Recorded through the lifecycle, exactly as the light
-                // pane's own load dialog records it — a light from a tile is
-                // still a light the user added, and undo has to know it.
-                if (_lifecycle.RecordSpawnedLight(
-                        $"Add light '{name}' from the library",
-                        _lightFiles.ImportLight(path)) is null)
-                    _notices.Failed($"'{name}' could not be loaded as a light.");
-                else
-                    _notices.Done($"Spawned light from '{name}'.");
+                // The light pane owns the whole placed import: the shared
+                // placement mode, the undo recording, the outcome notices.
+                _lightPane.ImportFromLibrary(path);
                 break;
             case PoseLibraryEntryKind.Camera:
                 if (_lifecycle.RecordSpawnedCamera(
@@ -2501,6 +2669,15 @@ public sealed class PoseLibraryPane
             return;
         }
 
+        // An object entry has ONE verb — it spawns what it is. No picker,
+        // no apply, no second spawn button.
+        if (_type == LibraryType.Objects)
+        {
+            _vm.CanApply = true;
+            _vm.ApplyLabel = "Spawn";
+            return;
+        }
+
         // The primary opens the actor picker; its caption is constant.
         _vm.ApplyLabel = "Apply to";
     }
@@ -2708,7 +2885,13 @@ public sealed class PoseLibraryPane
         _vm.CanFavorite = _type == LibraryType.Poses;
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.
-        _vm.ShowSpawn = _type != LibraryType.Scenes;
+        _vm.ShowSpawn =
+            _type is not LibraryType.Scenes and not LibraryType.Objects;
+        _vm.PlacementOptions =
+            _type == LibraryType.Objects ? PlacementModeLabels : null;
+        _vm.PlacementSelected = (int)_placement.Mode;
+        _vm.OnPlacement ??=
+            next => _placement.Mode = (ObjectPlacementMode)next;
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
         _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;

@@ -707,6 +707,8 @@ public sealed class SceneCaptureService
             DayOfMonth = Math.Clamp(_environment.DayOfMonth, 1, 31),
             IsTimeFrozen = _environment.IsTimeFrozen,
             WeatherId = _environment.CurrentWeatherId,
+            WeatherName = _environment.GetWeatherInfo(
+                _environment.CurrentWeatherId)?.Name ?? string.Empty,
             IsWeatherOverrideEnabled = _environment.IsWeatherOverrideEnabled,
             TransitionTime = float.IsFinite(_environment.TransitionTime) &&
                 _environment.TransitionTime >= 0
