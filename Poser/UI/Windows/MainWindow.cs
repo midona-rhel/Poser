@@ -1302,8 +1302,9 @@ public class MainWindow : Window
         // The delegate is stated even while collapsed: the shell's own
         // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
-        // The inspector is PER TAB: pose-import options only where poses
-        // apply; scene options where scenes load (auto-saves are scenes);
+        // The inspector is PER TAB: pose-import options where poses apply
+        // (auto-saves are poses — they snapshot through the pose file
+        // service); scene options where scenes load;
         // the entry inspector on objects; and NO rail on MCDFs — a
         // character file has nothing to configure, so the grid takes the
         // width.
@@ -1312,8 +1313,7 @@ public class MainWindow : Window
             {
                 PoseLibraryPane.LibraryType.Objects =>
                     _libraryPane.DrawObjectsRail,
-                PoseLibraryPane.LibraryType.Scenes or
-                PoseLibraryPane.LibraryType.AutoSaves =>
+                PoseLibraryPane.LibraryType.Scenes =>
                     _scenePane.DrawLibraryRail,
                 PoseLibraryPane.LibraryType.Mcdf => null,
                 _ => _poseFileSection.DrawOptionsRail,
