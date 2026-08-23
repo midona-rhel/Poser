@@ -184,6 +184,11 @@ public sealed class PoseLibraryFolder
     /// <summary>Recursive <see cref="PoseLibraryEntryKind.Scene"/> count at
     /// and below this folder, on the same recursive contract.</summary>
     public int SceneCount { get; init; }
+
+    /// <summary>Recursive object-entry count — actors, lights and cameras
+    /// together, because they share one browser tab — on the same recursive
+    /// contract.</summary>
+    public int ObjectsCount { get; init; }
 }
 
 /// <summary>

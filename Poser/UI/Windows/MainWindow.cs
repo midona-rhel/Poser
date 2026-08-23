@@ -354,6 +354,7 @@ public class MainWindow : Window
         new() { Label = "Auto-saves" },
         new() { Label = "MCDF" },
         new() { Label = "Scenes" },
+        new() { Label = "Objects" },
     ];
 
     /// <summary>The scene workspace's one tab, retained like every other

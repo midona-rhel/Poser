@@ -276,6 +276,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
         public int PoseCount { get; set; }
         public int McdfCount { get; set; }
         public int SceneCount { get; set; }
+        public int ObjectsCount { get; set; }
     }
 
     private readonly record struct SourceSpec(string Name, string Path, bool Enabled);
@@ -391,6 +392,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Scene:
                     node.SceneCount++;
                     break;
+                case PoseLibraryEntryKind.Actor:
+                case PoseLibraryEntryKind.Light:
+                case PoseLibraryEntryKind.Camera:
+                    node.ObjectsCount++;
+                    break;
                 default:
                     node.PoseCount++;
                     break;
@@ -403,6 +409,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
             node.PoseCount += child.PoseCount;
             node.McdfCount += child.McdfCount;
             node.SceneCount += child.SceneCount;
+            node.ObjectsCount += child.ObjectsCount;
         }
 
         return !isRoot && node.Count == 0 ? null : node;
@@ -425,7 +432,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             Count = node.Count,
             PoseCount = node.PoseCount,
             McdfCount = node.McdfCount,
-            SceneCount = node.SceneCount
+            SceneCount = node.SceneCount,
+            ObjectsCount = node.ObjectsCount
         });
 
         foreach (var file in node.Files)

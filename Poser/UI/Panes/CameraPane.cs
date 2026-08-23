@@ -686,9 +686,25 @@ public sealed class CameraPane
         {
             actions.Button("Save", () => OpenSave(camera),
                 help: "Write this camera and all of its settings to a file");
+            actions.Button("To library", () => SaveToLibrary(camera),
+                help: "Save this camera into the library's Objects tab");
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene");
         });
+    }
+
+    /// <summary>One click, no dialog: the camera lands in the objects home,
+    /// which is exactly what the library's Objects tab scans.</summary>
+    private void SaveToLibrary(IVirtualCamera camera)
+    {
+        var root = Config.ConfigurationService.Instance.Config.Library
+            .EnsureObjectsRootExists();
+        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
+            root, camera.Name, ".xivc");
+        if (_cameraFiles.ExportCamera(camera, path))
+            _notices.Done($"Saved '{camera.Name}' to the library.");
+        else
+            _notices.Failed("The camera file could not be written.");
     }
 
     private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)

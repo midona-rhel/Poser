@@ -150,32 +150,14 @@ public sealed class ScenePane
     public bool SaveActorEntry(Guid logicalId, string displayName)
     {
         var root = _libraryConfig.EnsureObjectsRootExists();
-        var name = SafeEntryName(displayName);
-        var path = System.IO.Path.Combine(
-            root, name + SceneFile.ActorEntryExtension);
-        // A same-named entry is kept, never overwritten: the new save takes a
-        // four-digit stamp (an on-disk name is parsed forever).
-        if (System.IO.File.Exists(path))
-            path = System.IO.Path.Combine(
-                root,
-                $"{name} {DateTime.Now:yyyy-MM-dd HH.mm.ss}" +
-                SceneFile.ActorEntryExtension);
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.ActorEntryExtension);
         var result = _workflow.BeginSave(
             path, null, SceneSaveOptions.ActorEntry(logicalId));
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "The actor could not be saved to the library.");
         return result.Success;
-    }
-
-    private static string SafeEntryName(string name)
-    {
-        var invalid = System.IO.Path.GetInvalidFileNameChars();
-        var builder = new System.Text.StringBuilder(name.Length);
-        foreach (var ch in name)
-            builder.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
-        var cleaned = builder.ToString().Trim();
-        return string.IsNullOrWhiteSpace(cleaned) ? "Actor" : cleaned;
     }
 
     public ScenePane(

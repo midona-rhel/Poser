@@ -223,6 +223,29 @@ public class LibraryConfiguration
         EnsureHomeRootExists(ObjectsSourceName, DefaultObjectsRoot);
 
     /// <summary>
+    /// A collision-safe path for a new library entry: the cleaned name as
+    /// is, or with a four-digit timestamp when that file already exists — a
+    /// save never overwrites, and an on-disk name is parsed forever so the
+    /// stamp keeps its century.
+    /// </summary>
+    public static string NewEntryPath(string root, string name, string extension)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new System.Text.StringBuilder(name.Length);
+        foreach (var ch in name)
+            builder.Append(Array.IndexOf(invalid, ch) >= 0 ? '_' : ch);
+        var cleaned = builder.ToString().Trim();
+        if (string.IsNullOrWhiteSpace(cleaned))
+            cleaned = "Entry";
+        var path = Path.Combine(root, cleaned + extension);
+        if (File.Exists(path))
+            path = Path.Combine(
+                root,
+                $"{cleaned} {DateTime.Now:yyyy-MM-dd HH.mm.ss}{extension}");
+        return path;
+    }
+
+    /// <summary>
     /// Creates every home before the library service is constructed. The scan
     /// aborts on the FIRST configured root it cannot observe, so one missing
     /// home is every tab missing.
