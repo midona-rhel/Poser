@@ -137,6 +137,8 @@ public sealed class PoseLibraryPane
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
     private readonly LightPane _lightPane;
+    private readonly CameraPane _cameraPane;
+    private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly ObjectPlacementPreferences _placement;
     private readonly IEnvironmentService _environment;
 
@@ -394,6 +396,8 @@ public sealed class PoseLibraryPane
         SceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
         LightPane lightPane,
+        CameraPane cameraPane,
+        Game.Scene.PlacementAnchorSource anchors,
         ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,
@@ -408,6 +412,8 @@ public sealed class PoseLibraryPane
         _spawnService = spawnService;
         _scenes = scenes;
         _lightPane = lightPane;
+        _cameraPane = cameraPane;
+        _anchors = anchors;
         _cameraFiles = cameraFiles;
         _placement = placement;
         _environment = environment;
@@ -793,6 +799,44 @@ public sealed class PoseLibraryPane
     private readonly List<(string Label, string Value)> _detailsRows = [];
     private Vector3? _detailsColor;
 
+    /// <summary>Which anchors the probed entry records — what gates the
+    /// placement choices offered for it.</summary>
+    private bool _detailsHasCameraAnchor;
+    private bool _detailsHasActorAnchor;
+
+    /// <summary>The modes the SELECTED entry can honour, positional against
+    /// the dropdown. As-saved always; a relative mode only when the entry
+    /// records its anchor.</summary>
+    private readonly List<ObjectPlacementMode> _placementChoices = [];
+    private readonly List<string> _placementChoiceLabels = [];
+
+    private void BuildPlacementChoices()
+    {
+        _placementChoices.Clear();
+        _placementChoiceLabels.Clear();
+        _placementChoices.Add(ObjectPlacementMode.AsSaved);
+        _placementChoiceLabels.Add(PlacementModeLabels[0]);
+        if (_detailsHasCameraAnchor)
+        {
+            _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
+            _placementChoiceLabels.Add(PlacementModeLabels[1]);
+        }
+        if (_detailsHasActorAnchor)
+        {
+            _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
+            _placementChoiceLabels.Add(PlacementModeLabels[2]);
+        }
+    }
+
+    /// <summary>What this spawn actually uses: the preference when the
+    /// entry can honour it, else as-saved — the same fallback the dropdown
+    /// displays, so the shown choice and the spawn can never disagree.
+    /// </summary>
+    private ObjectPlacementMode EffectiveMode() =>
+        _placementChoices.Contains(_placement.Mode)
+            ? _placement.Mode
+            : ObjectPlacementMode.AsSaved;
+
     /// <summary>
     /// The Objects tab's INSPECTOR rail — the same right column every other
     /// library tab fills. One plain run of rows: where a load lands, then
@@ -861,6 +905,8 @@ public sealed class PoseLibraryPane
         _detailsPath = path;
         _detailsRows.Clear();
         _detailsColor = null;
+        _detailsHasCameraAnchor = false;
+        _detailsHasActorAnchor = false;
         try
         {
             switch (kind)
@@ -876,6 +922,8 @@ public sealed class PoseLibraryPane
                         _detailsRows.Add(("Anchors", Anchors(
                             light.CameraAnchor, light.ActorAnchor)));
                         _detailsColor = light.Color;
+                        _detailsHasCameraAnchor = light.CameraAnchor is not null;
+                        _detailsHasActorAnchor = light.ActorAnchor is not null;
                     }
                     break;
                 case PoseLibraryEntryKind.Camera:
@@ -886,6 +934,13 @@ public sealed class PoseLibraryPane
                             .ToString("0.##", CultureInfo.InvariantCulture)));
                         _detailsRows.Add(("FoV", camera.FoV
                             .ToString("0.##", CultureInfo.InvariantCulture)));
+                        // Only a FREE camera places relatively at all.
+                        bool freeCamera = camera.Kind ==
+                            global::Poser.Domain.Scene.CameraKind.Free;
+                        _detailsHasCameraAnchor =
+                            freeCamera && camera.CameraAnchor is not null;
+                        _detailsHasActorAnchor =
+                            freeCamera && camera.ActorAnchor is not null;
                     }
                     break;
                 case PoseLibraryEntryKind.Actor:
@@ -914,6 +969,11 @@ public sealed class PoseLibraryPane
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
                                     CultureInfo.InvariantCulture)));
+                        if (kind == PoseLibraryEntryKind.Actor)
+                        {
+                            _detailsHasCameraAnchor = metadata.HasCameraAnchor;
+                            _detailsHasActorAnchor = metadata.HasActorAnchor;
+                        }
                     }
                     break;
             }
@@ -954,7 +1014,20 @@ public sealed class PoseLibraryPane
         switch (_tileKinds[index])
         {
             case PoseLibraryEntryKind.Actor:
-                var started = _scenes.BeginLoad(path, new SceneLoadOptions());
+                var actorMode = EffectiveMode();
+                if (!_anchors.TryCurrentFor(
+                        actorMode, out var anchorPosition,
+                        out var anchorYaw, out var anchorRefusal))
+                {
+                    _notices.Refused(anchorRefusal!);
+                    break;
+                }
+                var started = _scenes.BeginLoad(path, new SceneLoadOptions
+                {
+                    Placement = actorMode,
+                    PlacementPosition = anchorPosition,
+                    PlacementYaw = anchorYaw,
+                });
                 if (!started.Success)
                     _notices.Failed(
                         started.Detail ?? "The actor could not be spawned.");
@@ -976,18 +1049,13 @@ public sealed class PoseLibraryPane
                         "The environment could not be applied.");
                 break;
             case PoseLibraryEntryKind.Light:
-                // The light pane owns the whole placed import: the shared
-                // placement mode, the undo recording, the outcome notices.
-                _lightPane.ImportFromLibrary(path);
+                // The light pane owns the whole placed import: the undo
+                // recording and the outcome notices; the mode is the one
+                // the dropdown showed for THIS entry.
+                _lightPane.ImportFromLibrary(path, EffectiveMode());
                 break;
             case PoseLibraryEntryKind.Camera:
-                if (_lifecycle.RecordSpawnedCamera(
-                        $"Add camera '{name}' from the library",
-                        _cameraFiles.ImportCamera(path)) is null)
-                    _notices.Failed(
-                        $"'{name}' could not be loaded as a camera.");
-                else
-                    _notices.Done($"Created camera from '{name}'.");
+                _cameraPane.ImportFromLibrary(path, EffectiveMode());
                 break;
         }
     }
@@ -2887,11 +2955,30 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
             _type is not LibraryType.Scenes and not LibraryType.Objects;
-        _vm.PlacementOptions =
-            _type == LibraryType.Objects ? PlacementModeLabels : null;
-        _vm.PlacementSelected = (int)_placement.Mode;
-        _vm.OnPlacement ??=
-            next => _placement.Mode = (ObjectPlacementMode)next;
+        if (_type == LibraryType.Objects)
+        {
+            // The choices follow the SELECTED entry: an option whose anchor
+            // the file does not record is not offered.
+            int selectedTile = _vm.Selected;
+            if (selectedTile >= 0 && selectedTile < _vm.Tiles.Count &&
+                selectedTile < _tileKinds.Count)
+                ProbeDetails(
+                    _vm.Tiles[selectedTile].ThumbKey,
+                    _tileKinds[selectedTile]);
+            BuildPlacementChoices();
+            _vm.PlacementOptions = _placementChoiceLabels.ToArray();
+            _vm.PlacementSelected =
+                _placementChoices.IndexOf(EffectiveMode());
+            _vm.OnPlacement = next =>
+            {
+                if (next >= 0 && next < _placementChoices.Count)
+                    _placement.Mode = _placementChoices[next];
+            };
+        }
+        else
+        {
+            _vm.PlacementOptions = null;
+        }
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
         _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;

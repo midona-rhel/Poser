@@ -1,5 +1,6 @@
 using System;
 using Dalamud.Plugin.Services;
+using Poser.Domain.Scene;
 using Poser.Entities;
 using Poser.Services;
 
@@ -23,11 +24,20 @@ public class CameraFileService : ICameraFileService
         _cameras = cameras;
     }
 
-    public bool ExportCamera(IVirtualCamera camera, string path)
+    public bool ExportCamera(IVirtualCamera camera, string path) =>
+        ExportCamera(camera, path, null, null);
+
+    public bool ExportCamera(
+        IVirtualCamera camera,
+        string path,
+        PlacementAnchorData? cameraAnchor,
+        PlacementAnchorData? actorAnchor)
     {
         try
         {
             var file = CreateCameraFile(camera);
+            file.CameraAnchor = cameraAnchor;
+            file.ActorAnchor = actorAnchor;
             if (file.Save(path))
             {
                 _log.Debug($"Exported camera '{camera.Name}' to {path}");
@@ -42,15 +52,52 @@ public class CameraFileService : ICameraFileService
         }
     }
 
-    public IVirtualCamera? ImportCamera(string path)
+    public IVirtualCamera? ImportCamera(string path) =>
+        ImportCamera(path, ObjectPlacementMode.AsSaved, default, 0f, out _);
+
+    public IVirtualCamera? ImportCamera(
+        string path,
+        ObjectPlacementMode mode,
+        System.Numerics.Vector3 currentPosition,
+        float currentYaw,
+        out string? refusal)
     {
+        refusal = null;
         try
         {
             var file = CameraFile.Load(path);
             if (file == null)
             {
                 _log.Error($"Failed to load camera file from {path}");
+                refusal = "The camera file could not be read.";
                 return null;
+            }
+
+            if (mode != ObjectPlacementMode.AsSaved)
+            {
+                if (file.Kind != CameraKind.Free)
+                {
+                    refusal = "An orbit camera follows its target, so it " +
+                        "cannot be placed relatively. Load it as saved.";
+                    return null;
+                }
+                var anchor = mode == ObjectPlacementMode.RelativeToCamera
+                    ? file.CameraAnchor
+                    : file.ActorAnchor;
+                if (anchor is null)
+                {
+                    refusal = "This entry records no anchor for that " +
+                        "placement. Load it as saved instead.";
+                    return null;
+                }
+                float yawDelta = currentYaw - anchor.Yaw;
+                var turn = System.Numerics.Quaternion.CreateFromAxisAngle(
+                    System.Numerics.Vector3.UnitY, yawDelta);
+                file.Position = currentPosition +
+                    System.Numerics.Vector3.Transform(
+                        file.Position - anchor.Position, turn);
+                // The free camera's heading is its Angle.X; the pitch keeps.
+                file.Angle = file.Angle with { X = file.Angle.X + yawDelta };
             }
 
             var camera = _cameras.CreateCamera(file.Kind);

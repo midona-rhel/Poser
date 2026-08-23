@@ -117,6 +117,11 @@ public sealed class SceneMetadataReadOutcome
     /// name above is empty.</summary>
     public uint WeatherId { get; }
 
+    /// <summary>Which placement anchors the document records — what decides
+    /// the placement choices a viewer may offer for it.</summary>
+    public bool HasCameraAnchor { get; }
+    public bool HasActorAnchor { get; }
+
     public int ActorCount { get; }
     public int PropCount { get; }
     public int LightCount { get; }
@@ -149,6 +154,8 @@ public sealed class SceneMetadataReadOutcome
         TerritoryId = scene.TerritoryId;
         WeatherName = scene.Environment?.WeatherName ?? string.Empty;
         WeatherId = scene.Environment?.WeatherId ?? 0;
+        HasCameraAnchor = scene.CameraAnchor is not null;
+        HasActorAnchor = scene.ActorAnchor is not null;
         ActorCount = scene.Actors.Count;
         PropCount = scene.Props.Count;
         LightCount = scene.Lights.Count;

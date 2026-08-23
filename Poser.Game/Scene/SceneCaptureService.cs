@@ -105,6 +105,7 @@ public sealed class SceneCaptureService
     private readonly Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly IWorldRenderingService _rendering;
     private readonly WorldObjects.WorldObjectService _worldObjects;
+    private readonly PlacementAnchorSource _anchors;
 
     public SceneCaptureService(
         IFramework framework,
@@ -127,8 +128,10 @@ public sealed class SceneCaptureService
         PoseExportCapture exports,
         Poser.Application.Integration.ActorIntegrationSession integration,
         IWorldRenderingService rendering,
-        WorldObjects.WorldObjectService worldObjects)
+        WorldObjects.WorldObjectService worldObjects,
+        PlacementAnchorSource anchors)
     {
+        _anchors = anchors;
         _worldObjects = worldObjects;
         _rendering = rendering;
         _integration = integration;
@@ -240,6 +243,10 @@ public sealed class SceneCaptureService
                 SavedAt = DateTimeOffset.UtcNow,
             };
             CaptureTerritory(scene);
+            // Anchors cost nothing at capture and make every container entry
+            // placeable later.
+            scene.CameraAnchor = _anchors.CameraAnchorNow();
+            scene.ActorAnchor = _anchors.ActorAnchorNow();
 
             var identities = new Dictionary<Guid, Poser.Domain.Identity.ActorId>();
             var actorKeys = CaptureActors(scene, notes, identities);

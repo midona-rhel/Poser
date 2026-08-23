@@ -120,6 +120,16 @@ public sealed record SceneLoadOptions
     /// </summary>
     public bool PlaceRelativeToCurrentOrigin { get; init; }
 
+    /// <summary>Where the loaded content lands: the object-entry placement
+    /// (a library actor tile), resolved by the CALLER against the live
+    /// session. AsSaved is every ordinary load.</summary>
+    public ObjectPlacementMode Placement { get; init; }
+
+    /// <summary>The current anchor pose the placement measures against,
+    /// resolved by the caller at load start.</summary>
+    public System.Numerics.Vector3 PlacementPosition { get; init; }
+    public float PlacementYaw { get; init; }
+
     /// <summary>Today's load, stated once.</summary>
     public static SceneLoadOptions Default { get; } = new();
 
@@ -223,6 +233,85 @@ public static class SceneRelativePlacement
                 document.Position += offset;
         }
 
+        return null;
+    }
+}
+
+/// <summary>
+/// The object-entry placement rebase: the origin rebase's sibling, with the
+/// turn the origin rebase deliberately lacks. Everything whose position is a
+/// point IN the document moves to the current anchor and turns by the yaw
+/// difference; rotations turn with it, keeping their own pitch and roll.
+/// Borrowed map objects do not move, for the origin rebase's own reason.
+/// </summary>
+public static class ScenePlacementRebase
+{
+    public static string? Rebase(
+        SceneFile scene,
+        Poser.Files.PlacementAnchorData saved,
+        Vector3 currentPosition,
+        float currentYaw)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!float.IsFinite(currentPosition.X) ||
+            !float.IsFinite(currentPosition.Y) ||
+            !float.IsFinite(currentPosition.Z) ||
+            !float.IsFinite(currentYaw))
+            return "The current anchor could not be read, so the entry " +
+                "cannot be placed relative to it.";
+
+        float yawDelta = currentYaw - saved.Yaw;
+        var turn = System.Numerics.Quaternion.CreateFromAxisAngle(
+            Vector3.UnitY, yawDelta);
+        Vector3 Move(Vector3 point) => currentPosition +
+            Vector3.Transform(point - saved.Position, turn);
+
+        foreach (var actor in scene.Actors)
+        {
+            if (actor.ModelTransform is { } placement)
+            {
+                placement.Position = Move(placement.Position);
+                placement.Rotation = System.Numerics.Quaternion.Normalize(
+                    turn * placement.Rotation);
+            }
+            if (actor.Gaze is { } gaze)
+            {
+                gaze.Position = Move(gaze.Position);
+                gaze.EyesPosition = Move(gaze.EyesPosition);
+                gaze.HeadPosition = Move(gaze.HeadPosition);
+                gaze.BodyPosition = Move(gaze.BodyPosition);
+            }
+        }
+        foreach (var prop in scene.Props)
+        {
+            prop.Transform.Position = Move(prop.Transform.Position);
+            prop.Transform.Rotation = System.Numerics.Quaternion.Normalize(
+                turn * prop.Transform.Rotation);
+        }
+        foreach (var light in scene.Lights)
+        {
+            if (light.Attachment is not null)
+                continue;
+            if (light.Light is { } document)
+            {
+                document.Transform.Position =
+                    Move(document.Transform.Position);
+                document.Transform.Rotation =
+                    System.Numerics.Quaternion.Normalize(
+                        turn * document.Transform.Rotation);
+            }
+        }
+        foreach (var camera in scene.Cameras)
+        {
+            if (camera.Camera is { Kind: CameraKind.Free } document)
+            {
+                document.Position = Move(document.Position);
+                document.Angle = document.Angle with
+                {
+                    X = document.Angle.X + yawDelta,
+                };
+            }
+        }
         return null;
     }
 }

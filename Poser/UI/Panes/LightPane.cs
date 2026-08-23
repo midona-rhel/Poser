@@ -45,6 +45,7 @@ public sealed class LightPane
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
+    private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly CleanTransformFacade _cleanTransforms;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ICameraService _camera;
@@ -121,6 +122,7 @@ public sealed class LightPane
         Game.Scene.SceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
+        Game.Scene.PlacementAnchorSource anchors,
         CleanTransformFacade cleanTransforms,
         Game.Viewport.ViewportProjection viewport,
         ICameraService camera,
@@ -134,6 +136,7 @@ public sealed class LightPane
         _lifecycle = lifecycle;
         _lightFiles = lightFiles;
         _placement = placement;
+        _anchors = anchors;
         _cleanTransforms = cleanTransforms;
         // The load dialog carries the ONE choice that changes where the
         // light lands, decided beside the file it applies to.
@@ -197,90 +200,27 @@ public sealed class LightPane
             });
     }
 
-    /// <summary>Where the camera stands right now, yaw-flattened; null when
-    /// the camera cannot be read.</summary>
-    private PlacementAnchorData? CameraAnchorNow()
-    {
-        var forward = _camera.GetLookDirection();
-        if (forward == Vector3.Zero)
-            return null;
-        return new PlacementAnchorData
-        {
-            Position = _camera.GetCameraPosition(),
-            Yaw = ObjectPlacement.YawOf(forward),
-        };
-    }
-
-    /// <summary>Where the anchor actor stands right now, yaw-flattened: the
-    /// selected actor, else the scene's first — a save always carries an
-    /// actor anchor when any actor exists (user rule: both anchors, always).
-    /// Null only in an actorless scene or when nothing can be read.</summary>
-    private PlacementAnchorData? ActorAnchorNow()
-    {
-        ActorId? anchor = _scene.Selection.Primary is
-            { Kind: SceneEntityKind.Actor, Actor: { } selected }
-            ? selected
-            : null;
-        if (anchor is null)
-        {
-            foreach (var descriptor in _scene.Snapshot.Actors)
-            {
-                anchor = descriptor.Id;
-                break;
-            }
-        }
-        if (anchor is not { } actorId)
-            return null;
-        if (_viewport.GetModelTransform(
-                TransformTargetId.ForActor(actorId)) is not { } transform)
-            return null;
-        return new PlacementAnchorData
-        {
-            Position = transform.Position,
-            Yaw = ObjectPlacement.YawOf(transform.Rotation),
-        };
-    }
-
     /// <summary>One placed import: resolves the current anchor the shared
     /// placement mode asks for, refusing by name when it cannot.</summary>
-    private ILight? ImportPlaced(string path, out string? refusal)
+    private ILight? ImportPlaced(
+        string path, ObjectPlacementMode mode, out string? refusal)
     {
-        refusal = null;
-        var mode = _placement.Mode;
-        Vector3 position = default;
-        float yaw = 0f;
-        if (mode == ObjectPlacementMode.RelativeToCamera)
-        {
-            if (CameraAnchorNow() is not { } camera)
-            {
-                refusal = "The camera could not be read for relative placement.";
-                return null;
-            }
-            position = camera.Position;
-            yaw = camera.Yaw;
-        }
-        else if (mode == ObjectPlacementMode.RelativeToSelectedActor)
-        {
-            if (ActorAnchorNow() is not { } anchor)
-            {
-                refusal = "Select an actor to place the light relative to.";
-                return null;
-            }
-            position = anchor.Position;
-            yaw = anchor.Yaw;
-        }
-        return _lightFiles.ImportLight(path, mode, position, yaw, out refusal);
+        if (!_anchors.TryCurrentFor(
+                mode, out var position, out var yaw, out refusal))
+            return null;
+        return _lightFiles.ImportLight(
+            path, mode, position, yaw, out refusal);
     }
 
     /// <summary>The library tile's import: placed by the shared mode,
     /// recorded for undo, selected once bound. Outcomes are posted here so
     /// every caller reads the same.</summary>
-    public bool ImportFromLibrary(string path)
+    public bool ImportFromLibrary(string path, ObjectPlacementMode mode)
     {
         string name = System.IO.Path.GetFileNameWithoutExtension(path);
         var imported = _lifecycle.RecordSpawnedLight(
             $"Add light '{name}' from the library",
-            ImportPlaced(path, out var refusal));
+            ImportPlaced(path, mode, out var refusal));
         if (imported == null)
         {
             _notices.Refused(refusal ?? "The light file could not be read.");
@@ -303,7 +243,7 @@ public sealed class LightPane
             // light the user added, and undo has to know it.
             var imported = _lifecycle.RecordSpawnedLight(
                 $"Add light from {System.IO.Path.GetFileNameWithoutExtension(path)}",
-                ImportPlaced(path, out var refusal));
+                ImportPlaced(path, _placement.Mode, out var refusal));
             if (imported == null)
             {
                 _notices.Failed(
@@ -804,7 +744,8 @@ public sealed class LightPane
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
             root, entryName, ".xivl");
         if (_lightFiles.ExportLight(
-                light, path, CameraAnchorNow(), ActorAnchorNow()))
+                light, path,
+                _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
             _notices.Done($"Saved '{entryName}' to the library.");
         else
             _notices.Failed("The light file could not be written.");
@@ -825,7 +766,8 @@ public sealed class LightPane
                 return;
             }
             if (_lightFiles.ExportLight(
-                    light, path, CameraAnchorNow(), ActorAnchorNow()))
+                    light, path,
+                    _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
                 _notices.Done($"Light saved to {path}.");
             else
                 _notices.Failed(
