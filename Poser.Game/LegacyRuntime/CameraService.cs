@@ -174,7 +174,7 @@ public class CameraService : ICameraService
         return Vector3.Distance(cameraPos, worldPos);
     }
 
-    public Vector3 GetLookDirection()
+    public unsafe Vector3 GetLookDirection()
     {
         // The centre-screen ray IS the look direction, and unprojection is
         // convention-free: near-to-far in clip space is toward positive w,
@@ -182,12 +182,29 @@ public class CameraService : ICameraService
         var io = Dalamud.Bindings.ImGui.ImGui.GetIO();
         var center = new Vector2(io.DisplaySize.X / 2f, io.DisplaySize.Y / 2f);
         var probe = ScreenToWorld(center, 1f);
-        if (probe == Vector3.Zero)
+        if (probe != Vector3.Zero)
+        {
+            var direction = probe - GetCameraPosition();
+            float length = direction.Length();
+            if (length >= 0.0001f && float.IsFinite(length))
+                return direction / length;
+        }
+
+        // Fallback: the scene camera's own look-at, equally convention-free.
+        // The unprojection above needs an invertible view-projection, which
+        // a live free-camera override does not always leave readable — and a
+        // zero here silently cost every camera anchor of that session.
+        var cameraManager = CameraManager.Instance();
+        if (cameraManager == null)
             return Vector3.Zero;
-        var direction = probe - GetCameraPosition();
-        float length = direction.Length();
-        return length < 0.0001f || !float.IsFinite(length)
+        var camera = cameraManager->GetActiveCamera();
+        if (camera == null)
+            return Vector3.Zero;
+        Vector3 lookAt = camera->CameraBase.SceneCamera.LookAtVector;
+        var forward = lookAt - GetCameraPosition();
+        float fallbackLength = forward.Length();
+        return fallbackLength < 0.0001f || !float.IsFinite(fallbackLength)
             ? Vector3.Zero
-            : direction / length;
+            : forward / fallbackLength;
     }
 }

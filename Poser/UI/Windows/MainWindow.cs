@@ -4578,13 +4578,18 @@ public class MainWindow : Window
                 next => _entityRenameValue = next),
             footer: () =>
         {
+            // Enter is the blue button: the modal is one input, and done is
+            // done.
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
             if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
                 _entityRenameOpen = false;
             ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
-                    id: "rename-entity-save"))
+                    id: "rename-entity-save") || submit)
             {
                 if (_entityRenameValue.Trim() is { Length: > 0 } trimmed)
                     apply(trimmed);
@@ -4610,6 +4615,9 @@ public class MainWindow : Window
                 "##rename-input", _renameValue, next => _renameValue = next),
             footer: () =>
         {
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
             if (Crystarium.Button("Clear", id: "rename-clear",
                 help: "Remove the nickname and show the real name"))
             {
@@ -4620,7 +4628,7 @@ public class MainWindow : Window
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
-                    id: "rename-save"))
+                    id: "rename-save") || submit)
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
                 _renameOpen = false;
