@@ -4560,17 +4560,22 @@ public class MainWindow : Window
     {
         if (!_entityRenameOpen || _entityRenameApply is not { } apply)
             return;
+        // Footer idiom, not body buttons: the footer bar right-aligns its
+        // children, and the height fits one input with no dead band.
         Crystarium.Modal(
             "##rename-entity",
             _entityRenameOpen,
             next => _entityRenameOpen = next,
             _entityRenameTitle,
-            () =>
-        {
-            Crystarium.TextInput(
+            height: NamePromptHeight,
+            body: () => Crystarium.TextInput(
                 "##rename-entity-input", _entityRenameValue,
-                next => _entityRenameValue = next);
-            ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
+                next => _entityRenameValue = next),
+            footer: () =>
+        {
+            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
+                _entityRenameOpen = false;
+            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
@@ -4580,11 +4585,12 @@ public class MainWindow : Window
                     apply(trimmed);
                 _entityRenameOpen = false;
             }
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
-                _entityRenameOpen = false;
         });
     }
+
+    /// <summary>One text input between the two bars: header 44 + padded
+    /// input row + footer 44.</summary>
+    private const float NamePromptHeight = 152f;
 
     private void DrawRenameModal()
     {
@@ -4594,24 +4600,24 @@ public class MainWindow : Window
             _renameOpen,
             next => _renameOpen = next,
             "Rename actor",
-            () =>
+            height: NamePromptHeight,
+            body: () => Crystarium.TextInput(
+                "##rename-input", _renameValue, next => _renameValue = next),
+            footer: () =>
         {
-            Crystarium.TextInput(
-                "##rename-input", _renameValue, next => _renameValue = next);
-            ImGui.Dummy(new Vector2(0f, 8f * ImGuiHelpers.GlobalScale));
+            if (Crystarium.Button("Clear", id: "rename-clear",
+                help: "Remove the nickname and show the real name"))
+            {
+                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
+                _renameOpen = false;
+            }
+            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
             if (Crystarium.Button(
                     "Save",
                     variant: ButtonVariant.Primary,
                     id: "rename-save"))
             {
                 Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
-                _renameOpen = false;
-            }
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button("Clear", id: "rename-clear",
-                help: "Remove the nickname and show the real name"))
-            {
-                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
                 _renameOpen = false;
             }
         });
