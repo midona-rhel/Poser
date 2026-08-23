@@ -206,9 +206,10 @@ public static partial class Crystarium
             style.Family, style.Weight ?? FontWeight.Regular, size);
         if (besideIcon)
             rise += IconAdjacentInkBias;
+        RollTextFrame();
         return InkSnapY(
             bandMinY + (bandHeight - measuredHeight) * 0.5f
-            + rise * ImGuiHelpers.GlobalScale);
+            + rise * _frameScale);
     }
 
     /// <summary>
@@ -253,10 +254,25 @@ public static partial class Crystarium
     /// <summary>Measures the run at its intrinsic size.</summary>
     public static Vector2 MeasureText(string text, in TextStyle style)
     {
+        RollTextFrame();
+        float size = style.Size ?? ActiveThemeRef.Typography.BodySize;
+        var cacheFont = FontRegistry.Resolve(
+            style.Family, style.Weight ?? FontWeight.Regular, size);
+        if (cacheFont is not null &&
+            _measureCache.TryGetValue((cacheFont, text), out var cached))
+            return cached;
+
         var (font, pushed, _, _) = ResolveStyle(style);
         try
         {
-            return ImGui.CalcTextSize(Presentation(text));
+            var measured = ImGui.CalcTextSize(Presentation(text));
+            if (pushed && font is not null)
+            {
+                if (_measureCache.Count >= MeasureCacheCap)
+                    _measureCache.Clear();
+                _measureCache[(font, text)] = measured;
+            }
+            return measured;
         }
         finally
         {
@@ -286,7 +302,7 @@ public static partial class Crystarium
             if (constraint.Mode == TextConstraint.FitMode.Truncate)
                 return new Vector2(constraint.Width, natural);
             float advance = constraint.LineHeight is { } multiplier
-                ? size * multiplier * ImGuiHelpers.GlobalScale
+                ? size * multiplier * _frameScale
                 : natural;
             int lines = 0;
             foreach (var _ in WrapResolved(
@@ -381,6 +397,72 @@ public static partial class Crystarium
             : text.Normalize(NormalizationForm.FormC);
     }
 
+    /// <summary>Per-frame cache of <see cref="IFontHandle.Available"/> —
+    /// the getter takes a lock inside Dalamud, and availability cannot
+    /// change mid-frame, yet every text primitive asked it per call: the
+    /// single largest draw-pass cost in the profile.</summary>
+    private static readonly Dictionary<IFontHandle, bool> _fontAvailable = new();
+    private static int _fontAvailableFrame = -1;
+
+    /// <summary>The frame's <see cref="ImGuiHelpers.GlobalScale"/>.
+    /// Dalamud resolves that property expensively per call, and it cannot
+    /// change mid-frame — sampled once per frame here, alongside the
+    /// availability reset. Every text-path scale read goes through this.</summary>
+    private static float _frameScale = 1f;
+
+    private static bool _explicitTextFrame;
+
+    /// <summary>The host's once-per-frame announcement. The fallback asks
+    /// ImGui for the frame number on every text call, and that binding call
+    /// alone cost 3.6s of a 45s trace — a host that draws every frame calls
+    /// this instead and the per-call roll collapses to one branch.</summary>
+    public static void BeginTextFrame()
+    {
+        _explicitTextFrame = true;
+        Roll();
+    }
+
+    private static void RollTextFrame()
+    {
+        if (_explicitTextFrame)
+            return;
+        int frame = ImGui.GetFrameCount();
+        if (frame == _fontAvailableFrame)
+            return;
+        _fontAvailableFrame = frame;
+        Roll();
+    }
+
+    private static void Roll()
+    {
+        _fontAvailable.Clear();
+        _frameScale = ImGuiHelpers.GlobalScale;
+        if (_frameScale != _measureScale)
+        {
+            _measureScale = _frameScale;
+            _measureCache.Clear();
+        }
+    }
+
+    private static bool FontAvailable(IFontHandle font)
+    {
+        RollTextFrame();
+        if (_fontAvailable.TryGetValue(font, out bool available))
+            return available;
+        return _fontAvailable[font] = font.Available;
+    }
+
+    /// <summary>Intrinsic sizes by (handle, run). A run's size changes only
+    /// when its font atlas does, yet rows re-measured the same labels every
+    /// frame through a native call. Entries are cached only when the run was
+    /// measured under its OWN font (a not-yet-available handle measures
+    /// under the ambient font and would poison the key). Cleared on scale
+    /// change; the cap bounds a pathological label stream.</summary>
+    private static readonly Dictionary<(IFontHandle, string), Vector2>
+        _measureCache = new();
+    private static float _measureScale;
+    private const int MeasureCacheCap = 8192;
+
     private static (IFontHandle? Font, bool Pushed, float Size, Vector4 Color)
         ResolveStyle(in TextStyle style)
     {
@@ -394,7 +476,7 @@ public static partial class Crystarium
         if (style.Disabled)
             color = color.Fade(theme.Chrome.DisabledOpacity);
         var font = FontRegistry.Resolve(style.Family, weight, size);
-        bool pushed = font is { Available: true };
+        bool pushed = font is not null && FontAvailable(font);
         if (pushed)
             font!.Push();
         return (font, pushed, size, color);
@@ -464,7 +546,7 @@ public static partial class Crystarium
                     // occupies the constraint width.
                     float natural = ImGui.GetTextLineHeight();
                     float advance = constraint.LineHeight is { } multiplier
-                        ? size * multiplier * ImGuiHelpers.GlobalScale
+                        ? size * multiplier * _frameScale
                         : natural;
                     float halfLeading = (advance - natural) * 0.5f;
                     float y = origin.Y;
@@ -546,10 +628,32 @@ public static partial class Crystarium
     /// even the ellipsis alone cannot fit, the ORIGINAL run is returned —
     /// Blink drops the ellipsis and clips the raw text, and the canonical
     /// renderer's clip rectangle does the same here.</summary>
-    private static string TruncateResolved(string text, float width)
+    /// <summary>Fitted truncations by (font, size, run, width). Fitting is
+    /// a binary search of per-glyph advance sums through the bindings, and
+    /// every truncated cell re-fitted the same unchanged label every frame.
+    /// Keyed on the CURRENT ImGui font so an ambient-font fit cannot serve
+    /// a styled one; cleared past the cap, which only a pathological label
+    /// stream (or live column resize) ever reaches.</summary>
+    private static readonly Dictionary<(nint Font, float Size, string Text, float Width), string>
+        _truncateCache = new();
+    private const int TruncateCacheCap = 4096;
+
+    private static unsafe string TruncateResolved(string text, float width)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
+        var key = ((nint)ImGui.GetFont().Handle, ImGui.GetFontSize(), text, width);
+        if (_truncateCache.TryGetValue(key, out var known))
+            return known;
+        string fitted = FitTruncation(text, width);
+        if (_truncateCache.Count >= TruncateCacheCap)
+            _truncateCache.Clear();
+        _truncateCache[key] = fitted;
+        return fitted;
+    }
+
+    private static string FitTruncation(string text, float width)
+    {
         if (FractionalTextWidth(text) <= width)
             return text;
         float ellipsis = FractionalTextWidth("…");

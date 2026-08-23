@@ -89,6 +89,7 @@ public class SettingsWindow : Window
             FollowGameTarget = c.GPoseTargetChangesSelection,
             TargetFollowsSelection = c.SelectionChangesGPoseTarget,
             UndoDepth = c.UndoDepth,
+            ShowFrameProfiler = c.UI.ShowFrameProfiler,
 
             AutoSaveEnabled = c.AutoSave.Enabled,
             AutoSaveIntervalSeconds = c.AutoSave.IntervalSeconds,
@@ -356,6 +357,10 @@ public class SettingsWindow : Window
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
         c.UI.SwapRotationXY = _vm.SwapRotationXY;
+        c.UI.ShowFrameProfiler = _vm.ShowFrameProfiler;
+
+        // Replaced whole, never merged: an action dropped from the registry
+        // has no row to clear it from, and a stale entry would keep firing.
         c.UI.Bindings.Clear();
         foreach (var (action, slots) in _vm.Bindings)
             c.UI.Bindings[action] = slots.Copy();

@@ -37,6 +37,18 @@ public class UIConfiguration
     public bool ShowInCutscene { get; set; } = true;
     public bool ShowWhenGameUiHidden { get; set; }
     public bool SwapRotationXY { get; set; }
+
+    /// <summary>The frame profiler window (Settings, General, DIAGNOSTICS):
+    /// per-draw-unit frame costs. Off by default — measuring costs a little,
+    /// and the ledger only records while somebody is asking.</summary>
+    public bool ShowFrameProfiler { get; set; }
+
+    /// <summary>
+    /// The pre-dual-slot single binding per action. Kept so a config written
+    /// before the second slot existed still deserializes; emptied by
+    /// <see cref="MigrateKeybindsToSlots"/> the first time such a config
+    /// loads, and never written again — one live home for a binding.
+    /// </summary>
     public System.Collections.Generic.Dictionary<string, string> Keybinds { get; set; } = new();
     public System.Collections.Generic.Dictionary<string, KeybindSlots> Bindings { get; set; } = new();
     public void MigrateKeybindsToSlots()

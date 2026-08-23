@@ -85,6 +85,15 @@ public static class BoneMatrixView
         float trackW = (logicalWidth
             - metrics.ColumnGap * (columns - 1)) / columns;
 
+        // The matrix lives inside a scroll child: rows above or below the
+        // child's window are clipped by ImGui anyway, so drawing them only
+        // burned text shaping on invisible cells. Layout still walks every
+        // row — the surface's reported height must stay exact.
+        float clipTop = ImGui.GetWindowPos().Y
+            - metrics.RowHeight * s;
+        float clipBottom = clipTop + ImGui.GetWindowSize().Y
+            + 2f * metrics.RowHeight * s;
+
         float y = origin.Y;
         int sectionIndex = 0;
         foreach (var section in vm.Sections)
@@ -136,9 +145,10 @@ public static class BoneMatrixView
                 float cellW = (trackW * span
                     + metrics.ColumnGap * (span - 1)) * s;
 
-                DrawRow(
-                    vm, row, dl, new Vector2(cellX, cellY), cellW,
-                    s, $"{idPrefix}-{sectionIndex}-{slot}");
+                if (cellY <= clipBottom && cellY >= clipTop)
+                    DrawRow(
+                        vm, row, dl, new Vector2(cellX, cellY), cellW,
+                        s, $"{idPrefix}-{sectionIndex}-{slot}");
 
                 slot += span;
                 gridRows = Math.Max(gridRows, gridRow + 1);

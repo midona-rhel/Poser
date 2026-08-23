@@ -93,17 +93,38 @@ public sealed class UIManager : IUIManager
         if (!Crystarium.AdvanceTheme())
             return;
 
-        // Cache warming runs before primary windows can draw.
-        Crystarium.PumpStartupIcons(_configService.Config.Library.IconSize);
-        bool previewBackingReady = !_windows.IsPrimaryOpen
-            || _poseFileSection.PrewarmPreviewBacking();
+        // Cache warming runs before primary windows can draw. Scoped so the
+        // ledger can see it: the un-attributed spikes lived exactly here.
+        using (FrameProfiler.Scope("Shell · icon pump"))
+            Crystarium.PumpStartupIcons(_configService.Config.Library.IconSize);
+        bool previewBackingReady;
+        using (FrameProfiler.Scope("Shell · preview backing"))
+            previewBackingReady = !_windows.IsPrimaryOpen
+                || _poseFileSection.PrewarmPreviewBacking();
         _windows.AdvancePrimaryOpen(previewBackingReady);
-        Interactive.BeginFrame();
-        _windows.System.Draw();
-        _windows.PumpReferenceImages();
-        Crystarium.FloatingMenu.EndFrame();
-        Crystarium.HoverHelp.Render();
-        Interactive.EndFrame();
+        // THE frame boundary for the draw-cost ledger: everything Poser draws
+        // is drawn from here, so this is the only place that can answer for a
+        // whole frame. The close is unconditional — a window that threw must
+        // not leave the ledger open across frames.
+        FrameProfiler.BeginFrame();
+        global::Poser.UI.Crystarium.BeginTextFrame();
+        try
+        {
+            Interactive.BeginFrame();
+            _windows.System.Draw();
+            using (FrameProfiler.Scope("Shell · reference images"))
+                _windows.PumpReferenceImages();
+            using (FrameProfiler.Scope("Shell · floating menus"))
+                Crystarium.FloatingMenu.EndFrame();
+            using (FrameProfiler.Scope("Shell · hover help"))
+                Crystarium.HoverHelp.Render();
+            using (FrameProfiler.Scope("Shell · interactive end"))
+                Interactive.EndFrame();
+        }
+        finally
+        {
+            FrameProfiler.EndFrame();
+        }
         HandleKeybinds();
     }
 

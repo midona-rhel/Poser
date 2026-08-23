@@ -121,6 +121,14 @@ public static partial class Crystarium
         private readonly bool _dense;
         private float _y;
 
+        // The host window's visible band, cached once per page. Rows fully
+        // outside it skip their drawing (labels, controls, readouts) while
+        // still advancing layout, so a long form costs what its visible
+        // slice costs. The slack above absorbs multi-line rows whose true
+        // height is only known after drawing.
+        private readonly float _clipTop;
+        private readonly float _clipBottom;
+
         internal PageScope(string id, Vector2 origin, float width, float scale,
             float? labelColumnWidth = null, bool dense = false)
         {
@@ -131,6 +139,10 @@ public static partial class Crystarium
             _labelWidth = labelColumnWidth
                 ?? ActiveTheme.Form.LabelColumnWidth;
             _dense = dense;
+            float top = ImGui.GetWindowPos().Y;
+            _clipTop = top - ActiveTheme.Controls.FormRowHeight * 6f * scale;
+            _clipBottom = top + ImGui.GetWindowSize().Y
+                + ActiveTheme.Controls.FormRowHeight * scale;
         }
 
         /// <summary>Logical row height for this page.</summary>
@@ -239,11 +251,12 @@ public static partial class Crystarium
         internal FormRowScope BeginRow(string label)
         {
             float top = _origin.Y + _y * _scale;
+            bool visible = top <= _clipBottom && top >= _clipTop;
             float column = LabelColumn(label, _width, _scale, _labelWidth);
             var row = new FormRowScope(
                 new(_origin.X, top), _width, _scale, column / _scale,
-                RowHeight);
-            if (!string.IsNullOrEmpty(label))
+                RowHeight, visible);
+            if (visible && !string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
                     row.LabelWidth,
@@ -305,7 +318,8 @@ public static partial class Crystarium
             Action<FormRowScope> draw, string? help = null)
         {
             var row = _page.BeginRow(label);
-            draw(row);
+            if (row.Visible)
+                draw(row);
             _page.EndRow(row, Id(label), help, logicalHeight);
         }
 
@@ -327,6 +341,11 @@ public static partial class Crystarium
         {
             string controlId = Id(id ?? label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, controlId, help);
+                return;
+            }
             float displayedValue = value;
             ActionScope? actionScope = null;
             float actionWidth = 0f;
@@ -412,6 +431,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -431,6 +455,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var actionScope = new ActionScope();
             actions(actionScope);
             float actionWidth = MeasureActions(
@@ -457,6 +486,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -552,6 +586,11 @@ public static partial class Crystarium
         {
             string id = Id(Ids.Join("check-", caption));
             var row = _page.BeginRow(string.Empty);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help, ActiveTheme.Controls.ListRowHeight);
+                return;
+            }
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float boxSide = ActiveTheme.Controls.CheckboxSize * row.Scale;
             // Checklists use the compact row height.
@@ -589,6 +628,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: true);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -604,6 +648,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var controlStyle =
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -625,6 +674,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var controlStyle =
                 WorkspaceInRegion(style, row.ControlWidth / row.Scale);
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
@@ -654,6 +708,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var actionScope = new ActionScope();
             actions?.Invoke(actionScope);
             float gap = actionScope.Items.Count == 0
@@ -706,6 +765,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             var resetStyle = Workspace(style) with { Width = UiWidth.Content };
             float resetWidth = MeasureButton("Reset", resetStyle).X;
@@ -748,6 +812,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float readoutWidth = MeasureText(readout,
                 ActiveTheme.Typography.CaptionSize, FontWeight.Regular,
@@ -796,6 +865,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             ImGui.SetCursorScreenPos(row.CenterControl(
                 ActiveTheme.Controls.WorkspaceHeight));
             Crystarium.AxisWell(
@@ -831,6 +905,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             float wellWidth = ActiveTheme.Form.ValueColumnWidth;
             float gap = ActiveTheme.Page.ActionGap * row.Scale;
             float sliderWidth = MathF.Max(
@@ -941,6 +1020,11 @@ public static partial class Crystarium
                 ? UnlabelledId("actions", ref _actionRows)
                 : Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var actions = new ActionScope();
             content(actions);
             DrawActions(actions.Items,
@@ -974,6 +1058,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
             Crystarium.SwatchPalette(
                 id, colors, selected, onChange, names);
@@ -990,6 +1079,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             ImGui.SetCursorScreenPos(row.CenterControl(PaletteMinHeight));
             ColorPalette(choices.Count, index =>
             {
@@ -1021,6 +1115,11 @@ public static partial class Crystarium
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             float band = ActiveTheme.Controls.FormRowHeight * row.Scale;
             float left = row.ControlOrigin.X;
             float width = row.ControlWidth;
@@ -1064,6 +1163,11 @@ public static partial class Crystarium
                 ? UnlabelledId("readonly-actions", ref _readOnlyActionRows)
                 : Id(label);
             var row = _page.BeginRow(label);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, controlId, help);
+                return;
+            }
             var actions = new ActionScope();
             content(actions);
             float actionWidth = MeasureActions(
@@ -1093,6 +1197,11 @@ public static partial class Crystarium
         {
             string id = UnlabelledId("status", ref _statusRows);
             var row = _page.BeginRow(string.Empty);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             LabelInBand(
                 row.Origin,
                 new(row.Width, ActiveTheme.Controls.FormRowHeight * row.Scale),
@@ -1142,6 +1251,11 @@ public static partial class Crystarium
         {
             string id = Id(text);
             var row = _page.BeginRow(text);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             _page.EndRow(row, id, help);
         }
 
@@ -1151,6 +1265,11 @@ public static partial class Crystarium
         {
             string id = Id(text);
             var row = _page.BeginRow(string.Empty);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             var style = new TextStyle
             {
                 Size = ActiveTheme.Typography.LabelSize,
@@ -1204,6 +1323,11 @@ public static partial class Crystarium
             ArgumentNullException.ThrowIfNull(drawRight);
             string id = Id(Ids.Join(leftLabel, "-", rightLabel));
             var row = _page.BeginRow(string.Empty);
+            if (!row.Visible)
+            {
+                _page.EndRow(row, id, help);
+                return;
+            }
             float half = row.Width * 0.5f;
             DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
             DrawHalf(in row, row.Origin.X + half, half, rightLabel, drawRight);
@@ -1406,6 +1530,12 @@ public static partial class Crystarium
                     : $"{label} {axes[i]}";
                 string rowId = Id(rowLabel);
                 var row = _page.BeginRow(rowLabel);
+                if (!row.Visible)
+                {
+                    _page.EndRow(
+                        row, rowId, i == axes.Length - 1 ? help : null);
+                    continue;
+                }
                 var actionScope = new ActionScope();
                 if (i == 0)
                     actions?.Invoke(actionScope);
@@ -1810,9 +1940,14 @@ public static partial class Crystarium
         /// <summary>Logical row height.</summary>
         public float RowHeight { get; }
 
+        /// <summary>False when the row lies outside the host window's
+        /// visible band — controls skip their drawing and interaction for
+        /// such rows while layout still advances.</summary>
+        public bool Visible { get; }
+
         internal FormRowScope(
             Vector2 origin, float width, float scale, float labelWidth,
-            float rowHeight)
+            float rowHeight, bool visible = true)
         {
             Origin = origin;
             Width = width;
@@ -1821,6 +1956,7 @@ public static partial class Crystarium
             ControlOrigin = origin + new Vector2(LabelWidth, 0f);
             ControlWidth = width - LabelWidth;
             RowHeight = rowHeight;
+            Visible = visible;
         }
 
         public Vector2 CenterControl(float controlHeight) => new(

@@ -16,6 +16,10 @@ public sealed class UiWindowSet : IDisposable
     public SpawnBrowserWindow SpawnBrowser { get; }
     public SidebarPartWindow SidebarPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
+
+    /// <summary>The PERF panel. Up exactly while its setting is on — the
+    /// switch IS the window, so nothing else opens or closes it.</summary>
+    public FrameProfilerWindow FrameProfilerPanel { get; }
     private readonly SkeletonOverlayPresentation _overlayPresentation;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly ConfigurationService _configService;
@@ -78,12 +82,31 @@ public sealed class UiWindowSet : IDisposable
         SpawnBrowser = spawnBrowser;
         System.AddWindow(SpawnBrowser);
 
+        // Last in draw order, and deliberately: it reports on every window
+        // registered above it, and a panel that drew first would be reporting
+        // on a frame that had not happened yet.
+        FrameProfilerPanel = new FrameProfilerWindow(configService);
+        System.AddWindow(FrameProfilerPanel);
+
         Main.OnPopOutRequested += CreatePopOut;
 
         _configService.OnConfigurationChanged += SyncSplitWindows;
+        _configService.OnConfigurationChanged += SyncFrameProfiler;
+        SyncFrameProfiler();
 
         SetPrimaryOpen(
             gPoseService.IsGPosing && configService.Config.OpenOnGPoseEnter);
+    }
+
+    /// <summary>The profiler's panel and its recording are ONE state, and the
+    /// setting is that state. Nothing else may flip either half — a panel that
+    /// could be closed while the scopes kept measuring would leave a session
+    /// paying for a tool nobody is reading.</summary>
+    private void SyncFrameProfiler()
+    {
+        bool showing = _configService.Config.UI.ShowFrameProfiler;
+        FrameProfilerPanel.IsOpen = showing;
+        FrameProfiler.SetEnabled(showing);
     }
 
     public void SetPrimaryOpen(bool isOpen)
@@ -239,6 +262,7 @@ public sealed class UiWindowSet : IDisposable
         _referenceWindows.Clear();
         _dismissedReference.Clear();
         _configService.OnConfigurationChanged -= SyncSplitWindows;
+        _configService.OnConfigurationChanged -= SyncFrameProfiler;
         Main.OnPopOutRequested -= CreatePopOut;
         Main.OnDetachToggleRequested -= ToggleDetached;
         Main.OnSceneWindowToggleRequested -= ToggleSceneWindow;

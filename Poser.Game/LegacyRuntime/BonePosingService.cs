@@ -656,6 +656,13 @@ public unsafe class BonePosingService : IBonePosingService
     /// never saw, a resized bone array — falls back to marshaling the native
     /// name and asking <see cref="Skeleton.GetBoneByName"/>, exactly as before.
     /// </summary>
+    private readonly HashSet<(long, int)> _mapFallbackLogged = new();
+
+    /// <summary>Which skeleton build each slot last seeded a FULL snapshot
+    /// for. One full pass per build fills every bone once; after that the
+    /// finalize walk copies only bones a reader touched recently.</summary>
+    private readonly Dictionary<SkeletonKey, long> _snapshotSeededRevision = new();
+
     private static Bone? ResolveNativeBone(
         Skeleton skeleton,
         Skeleton.NativeBoneMap map,
@@ -685,6 +692,18 @@ public unsafe class BonePosingService : IBonePosingService
                 continue;
 
             var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
+            // The fallback path resolves EVERY bone BY NAME, allocating a
+            // managed copy of the native name per bone per frame — the
+            // third-of-a-core in the profile if it is what actually runs.
+            // One line per build says which path this partial is on.
+            if (!boneMap.IsValid && _mapFallbackLogged.Add(
+                    (skeleton.BuildRevision, partialIdx)))
+                _log.Debug(
+                    $"Bone snapshot FALLBACK for {skeleton.Actor.Name} " +
+                    $"{skeleton.Slot} partial {partialIdx} rev " +
+                    $"{skeleton.BuildRevision}: the native map failed " +
+                    "validation; resolving " +
+                    $"{pose->Skeleton->Bones.Length} bones by name each frame.");
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
@@ -1275,6 +1294,12 @@ public unsafe class BonePosingService : IBonePosingService
             return;
         }
 
+        // The snapshot exists FOR its readers: the overlay, the inspector,
+        // the matrix. No fresh reader, no walk — a hidden UI stops paying a
+        // third of a core for transforms nobody looks at.
+        if (!BoneSnapshotDemand.Wanted())
+            return;
+
         // STEP 5: Final update for ALL modified skeletons (like Brio line 263)
         // This takes a final snapshot now the engine is done touching skeletons.
         // Both sets are snapshotted FIRST: UpdateSkeletonCache → GetSkeleton
@@ -1347,6 +1372,14 @@ public unsafe class BonePosingService : IBonePosingService
         if (gameSkeleton == null)
             return;
 
+        // The walk is pull-driven: only bones whose transform something READ
+        // in the last couple of frames are copied — an overlay mask shows
+        // dozens of a skeleton's hundreds. A new build seeds one full pass.
+        bool seedAll = !_snapshotSeededRevision.TryGetValue(slotKey, out var seededRev)
+            || seededRev != skeleton.BuildRevision;
+        if (seedAll)
+            _snapshotSeededRevision[slotKey] = skeleton.BuildRevision;
+
         for (int partialIdx = 0; partialIdx < gameSkeleton->PartialSkeletonCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
@@ -1355,11 +1388,24 @@ public unsafe class BonePosingService : IBonePosingService
                 continue;
 
             var boneMap = skeleton.GetNativeBoneMap(partialIdx, pose);
+            // The fallback resolves EVERY bone BY NAME, allocating a managed
+            // copy of the native name per bone per frame — the
+            // third-of-a-core in the profile if it is what actually runs.
+            if (!boneMap.IsValid && _mapFallbackLogged.Add(
+                    (skeleton.BuildRevision, partialIdx)))
+                _log.Debug(
+                    $"Bone snapshot FALLBACK for {skeleton.Actor.Name} " +
+                    $"{skeleton.Slot} partial {partialIdx} rev " +
+                    $"{skeleton.BuildRevision}: the native map failed " +
+                    "validation; resolving " +
+                    $"{pose->Skeleton->Bones.Length} bones by name each frame.");
             var boneCount = pose->Skeleton->Bones.Length;
             for (int boneIdx = 0; boneIdx < boneCount; boneIdx++)
             {
                 var bone = ResolveNativeBone(skeleton, boneMap, pose, partialIdx, boneIdx);
                 if (bone == null)
+                    continue;
+                if (!seedAll && !bone.TransformWanted)
                     continue;
 
                 var modelSpace = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
