@@ -695,7 +695,7 @@ public sealed class CameraPane
 
     /// <summary>One click, no dialog: the camera lands in the objects home,
     /// which is exactly what the library's Objects tab scans.</summary>
-    private void SaveToLibrary(IVirtualCamera camera)
+    public void SaveToLibrary(IVirtualCamera camera)
     {
         var root = Config.ConfigurationService.Instance.Config.Library
             .EnsureObjectsRootExists();

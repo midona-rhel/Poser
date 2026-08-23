@@ -1413,7 +1413,7 @@ public sealed class PoseLibraryPane
     /// the new type starts on its whole library.</summary>
     public void SelectType(int index)
     {
-        if (index < 0 || index > (int)LibraryType.Scenes
+        if (index < 0 || index > (int)LibraryType.Objects
             || index == (int)_type)
             return;
         _type = (LibraryType)index;

@@ -4312,6 +4312,7 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
+            new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
         };
         var actions = new List<Action?>
@@ -4321,6 +4322,7 @@ public class MainWindow : Window
                 "Rename light", light.Name, next => light.Name = next),
             () => _lifecycle.CloneLight(light),
             () => _lightPane.OpenSave(light),
+            () => _lightPane.SaveToLibrary(light),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -4453,6 +4455,7 @@ public class MainWindow : Window
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
+            new("Save to library", TablerIcon.Library),
             new("Reset transform", TablerIcon.Refresh,
                 disabled: camera.IsLocked || !_cameraService.IsAvailable),
             new("Reset properties", TablerIcon.Refresh,
@@ -4486,6 +4489,7 @@ public class MainWindow : Window
                     _cameraPane.SelectWhenBound(clone);
             },
             () => _cameraPane.OpenSave(camera),
+            () => _cameraPane.SaveToLibrary(camera),
             () => _cameraPane.ResetCameraTransform(cameraId),
             () => camera.ResetProperties(),
         };

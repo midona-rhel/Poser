@@ -662,7 +662,7 @@ public sealed class LightPane
 
     /// <summary>One click, no dialog: the light lands in the objects home,
     /// which is exactly what the library's Objects tab scans.</summary>
-    private void SaveToLibrary(ILight light)
+    public void SaveToLibrary(ILight light)
     {
         if (!light.IsValid)
         {
