@@ -1300,8 +1300,13 @@ public class MainWindow : Window
         // The delegate is stated even while collapsed: the shell's own
         // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
+        // The Objects tab's inspector shows placement and the selected
+        // entry's identity; every other library tab keeps the import options.
         _vm.DrawRail = _libraryMode
-            ? _poseFileSection.DrawOptionsRail
+            ? _libraryPane.SelectedType ==
+                (int)PoseLibraryPane.LibraryType.Objects
+                ? _libraryPane.DrawObjectsRail
+                : _poseFileSection.DrawOptionsRail
             : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;

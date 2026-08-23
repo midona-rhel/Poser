@@ -426,7 +426,6 @@ public sealed class PoseLibraryPane
         // workflow, the target always explicit (a lone eligible actor skips
         // the menu). A scene has no target and loads outright.
         _vm.OnApplyTile = ActivateTile;
-        _vm.RailDetails = DrawObjectRailDetails;
         _vm.OnSpawnTile = Spawn;
         _vm.OnToggleFavorite = ToggleFavorite;
         _vm.OnTagFilter = TagFilter;
@@ -770,7 +769,7 @@ public sealed class PoseLibraryPane
         _applyMenuRequested = true;
     }
 
-    // ── the objects rail inspector ───────────────────────────────────────
+    // ── the objects inspector rail ───────────────────────────────────────
 
     /// <summary>The probed path the details rows were read from; a selection
     /// change re-probes. Object entry files are small (a light or camera is a
@@ -778,93 +777,40 @@ public sealed class PoseLibraryPane
     /// so the probe runs inline on the click.</summary>
     private string? _detailsPath;
     private readonly List<(string Label, string Value)> _detailsRows = [];
-    private Vector3? _detailsColor;
 
     /// <summary>
-    /// The Objects tab's rail inspector: where a load LANDS (the shared
-    /// placement mode), then what the selected entry IS — the properties a
-    /// person recognizes it by, never raw coordinates.
+    /// The Objects tab's INSPECTOR rail — the same right column every other
+    /// library tab fills with its import options. Placement first (where a
+    /// load lands), then what the selected entry IS: the properties a person
+    /// recognizes it by, never raw coordinates.
     /// </summary>
-    private void DrawObjectRailDetails(Crystarium.ScrollRegionScope region)
+    public void DrawObjectsRail(Vector2 origin, Vector2 size)
     {
-        if (_type != LibraryType.Objects)
-            return;
-        float scale = ImGuiHelpers.GlobalScale;
-        var theme = Crystarium.ActiveTheme;
-        float inset = theme.Page.Inset * scale;
-        float width = MathF.Max(1f, region.ContentWidth) * scale - inset;
-
-        ImGui.Dummy(new Vector2(1f, 10f * scale));
-        var cursor = ImGui.GetCursorScreenPos() + new Vector2(inset, 0f);
-
-        var captionStyle = new TextStyle
-        {
-            Size = theme.Typography.CaptionSize,
-            Color = theme.FormHint,
-        };
-        var valueStyle = new TextStyle
-        {
-            Size = theme.Typography.LabelSize,
-            Color = theme.Text,
-        };
-        float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
-        float rowAdvance = (theme.Typography.LabelSize + 6f) * scale;
-
-        Crystarium.TextAt(cursor, "Load placement", captionStyle);
-        cursor.Y += captionAdvance;
-        ImGui.SetCursorScreenPos(cursor);
-        Crystarium.SegmentedControl(
-            "##objects-placement",
-            PlacementModeLabels,
-            (int)_placement.Mode,
-            next => _placement.Mode = (ObjectPlacementMode)next,
-            itemHelp: index => index switch
-            {
-                1 => "Keeps the saved offset from the camera",
-                2 => "Keeps the saved offset from the selected actor",
-                _ => "Exactly where it was saved",
-            });
-        cursor.Y += Crystarium.ActiveTheme.Controls.NavigationHeight * scale
-            + 8f * scale;
+        float y = origin.Y;
+        y += Crystarium.Section(
+            "##objects-placement", "Placement",
+            new Vector2(origin.X, y), size.X, true, null,
+            form => form.Segmented(
+                "Load at", PlacementModeLabels, (int)_placement.Mode,
+                next => _placement.Mode = (ObjectPlacementMode)next,
+                help: "Where a loaded entry lands"),
+            divider: true, dense: true);
 
         int selected = _vm.Selected;
         if (selected < 0 || selected >= _vm.Tiles.Count ||
             selected >= _tileKinds.Count)
-        {
-            ImGui.SetCursorScreenPos(cursor);
-            ImGui.Dummy(new Vector2(1f, 1f));
             return;
-        }
         ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
 
-        Crystarium.TextAt(cursor, "Details", captionStyle);
-        cursor.Y += captionAdvance;
-        if (_detailsColor is { } color)
-        {
-            var dl = ImGui.GetWindowDrawList();
-            float swatch = 14f * scale;
-            var clamped = Vector3.Clamp(color, Vector3.Zero, Vector3.One);
-            dl.AddRectFilled(
-                cursor,
-                cursor + new Vector2(swatch, swatch),
-                ImGui.ColorConvertFloat4ToU32(new Vector4(clamped, 1f)),
-                3f * scale);
-            Crystarium.TextAt(
-                cursor + new Vector2(swatch + 6f * scale, 0f),
-                "Color", valueStyle);
-            cursor.Y += rowAdvance;
-        }
-        foreach (var (label, value) in _detailsRows)
-        {
-            Crystarium.TextAt(cursor, label, captionStyle);
-            var size = Crystarium.MeasureText(label, captionStyle);
-            Crystarium.TextAt(
-                cursor + new Vector2(size.X + 6f * scale, 0f),
-                value, valueStyle);
-            cursor.Y += rowAdvance;
-        }
-        ImGui.SetCursorScreenPos(cursor);
-        ImGui.Dummy(new Vector2(1f, 1f));
+        Crystarium.Section(
+            "##objects-details", "Details",
+            new Vector2(origin.X, y), size.X, true, null,
+            form =>
+            {
+                foreach (var (label, value) in _detailsRows)
+                    form.ReadOnly(label, value);
+            },
+            divider: false, dense: true);
     }
 
     private void ProbeDetails(string path, PoseLibraryEntryKind kind)
@@ -873,7 +819,6 @@ public sealed class PoseLibraryPane
             return;
         _detailsPath = path;
         _detailsRows.Clear();
-        _detailsColor = null;
         try
         {
             switch (kind)
@@ -882,13 +827,13 @@ public sealed class PoseLibraryPane
                     if (LightFile.Load(path) is { } light)
                     {
                         _detailsRows.Add(("Kind", light.Kind.ToString()));
+                        _detailsRows.Add(("Color", ColorText(light.Color)));
                         _detailsRows.Add(("Intensity", light.Intensity
                             .ToString("0.##", CultureInfo.InvariantCulture)));
                         _detailsRows.Add(("Range", light.Range
                             .ToString("0.##", CultureInfo.InvariantCulture)));
                         _detailsRows.Add(("Anchors", Anchors(
                             light.CameraAnchor, light.ActorAnchor)));
-                        _detailsColor = light.Color;
                     }
                     break;
                 case PoseLibraryEntryKind.Camera:
@@ -920,8 +865,15 @@ public sealed class PoseLibraryPane
         {
             _detailsRows.Add(("Details", "could not be read"));
         }
-        if (_detailsRows.Count == 0 && _detailsColor is null)
+        if (_detailsRows.Count == 0)
             _detailsRows.Add(("Details", "none recorded"));
+    }
+
+    /// <summary>An sRGB-ish read of an HDR light colour, for a glance.</summary>
+    private static string ColorText(Vector3 color)
+    {
+        var c = Vector3.Clamp(color, Vector3.Zero, Vector3.One);
+        return $"#{(int)(c.X * 255):X2}{(int)(c.Y * 255):X2}{(int)(c.Z * 255):X2}";
     }
 
     private static string Anchors(

@@ -366,11 +366,6 @@ public sealed class PoseLibraryViewModel
     internal Action<Crystarium.ActionBarScope>? Footer;
     internal Action<Crystarium.ActionBarScope>? FooterActions;
     internal Action<Crystarium.ScrollRegionScope>? Rail;
-
-    /// <summary>Drawn in the rail AFTER the folders: the pane's per-entry
-    /// inspector — what the selected entry IS, and where a load of it
-    /// lands. Public because the pane owns it, unlike the folders.</summary>
-    public Action<Crystarium.ScrollRegionScope>? RailDetails;
     internal Action<Crystarium.ScrollRegionScope>? Grid;
     internal Action? SpawnClick;
     internal Action? ApplyClick;
@@ -514,11 +509,7 @@ public static class PoseLibraryView
 
         vm.Footer ??= scope => scope.Label(vm.Status);
         vm.FooterActions ??= scope => Actions(vm, scope);
-        vm.Rail ??= region =>
-        {
-            DrawFolders(vm, region);
-            vm.RailDetails?.Invoke(region);
-        };
+        vm.Rail ??= region => DrawFolders(vm, region);
         vm.Grid ??= region => DrawGrid(vm, region);
         vm.SpawnClick ??= () =>
         {
