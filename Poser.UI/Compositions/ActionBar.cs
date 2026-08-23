@@ -56,6 +56,7 @@ public static partial class Crystarium
             Switch,
             Button,
             Icon,
+            Dropdown,
         }
 
         private readonly record struct Item(
@@ -68,7 +69,10 @@ public static partial class Crystarium
             bool Disabled,
             ControlStyle Style,
             TablerIcon Icon,
-            ButtonVariant Variant = ButtonVariant.Secondary);
+            ButtonVariant Variant = ButtonVariant.Secondary,
+            string[]? Options = null,
+            int Selected = 0,
+            Action<int>? OnSelect = null);
 
         private readonly string _id;
         private readonly List<Item> _items = new();
@@ -86,6 +90,30 @@ public static partial class Crystarium
                 false,
                 default,
                 TablerIcon.Circle));
+
+        /// <summary>An inline choice: the shared dropdown at the bar's
+        /// control height. The label is the item id.</summary>
+        public void Dropdown(
+            string label,
+            string[] options,
+            int selected,
+            Action<int> onChange,
+            string? help = null,
+            bool disabled = false,
+            ControlStyle style = default) =>
+            _items.Add(new(
+                ItemKind.Dropdown,
+                label,
+                false,
+                null,
+                null,
+                help,
+                disabled,
+                style,
+                TablerIcon.Circle,
+                Options: options,
+                Selected: selected,
+                OnSelect: onChange));
 
         public void Checkbox(
             string label,
@@ -227,6 +255,21 @@ public static partial class Crystarium
                             ActiveTheme.Typography.LabelSize,
                             item.Label);
                         break;
+                    case ItemKind.Dropdown:
+                        ImGui.SetCursorScreenPos(min);
+                        Crystarium.Dropdown(
+                            Ids.Join(_id, "-drop-", i),
+                            item.Options!,
+                            item.Selected,
+                            item.OnSelect!,
+                            item.Style with
+                            {
+                                Width = item.Style.Width == default
+                                    ? UiWidth.Fixed(width / scale)
+                                    : item.Style.Width,
+                            },
+                            item.Disabled);
+                        break;
                     case ItemKind.Checkbox:
                     {
                         float side = ActiveTheme.Controls.CheckboxSize
@@ -367,6 +410,18 @@ public static partial class Crystarium
                     min, band, label, style, TextConstraint.Truncate(band.X));
         }
 
+        private static float MeasureWidestOption(string[] options)
+        {
+            float widest = 0f;
+            foreach (var option in options)
+                widest = MathF.Max(widest, MeasureText(
+                    option,
+                    ActiveTheme.Typography.LabelSize,
+                    FontWeight.Regular,
+                    FontFamily.Default).X / ImGuiHelpers.GlobalScale);
+            return widest;
+        }
+
         private static float Measure(Item item, float scale) =>
             item.Kind switch
             {
@@ -375,6 +430,12 @@ public static partial class Crystarium
                     ActiveTheme.Typography.LabelSize,
                     FontWeight.Regular,
                     FontFamily.Default).X,
+                ItemKind.Dropdown =>
+                    item.Style.Width.Kind == UiWidthKind.Fixed
+                        ? item.Style.Width.Value * scale
+                        : MeasureWidestOption(item.Options!) * scale
+                          + ActiveTheme.Controls.WorkspaceHeight * scale
+                          + ActiveTheme.Spacing.Six * 2f * scale,
                 ItemKind.Checkbox =>
                     ActiveTheme.Controls.CheckboxSize * scale
                     + ActiveTheme.Spacing.Three * scale

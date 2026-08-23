@@ -429,6 +429,7 @@ public sealed class PoseLibraryPane
         // workflow, the target always explicit (a lone eligible actor skips
         // the menu). A scene has no target and loads outright.
         _vm.OnApplyTile = ActivateTile;
+        _vm.Footer = DrawFooterLead;
         _vm.OnSpawnTile = Spawn;
         _vm.OnToggleFavorite = ToggleFavorite;
         _vm.OnTagFilter = TagFilter;
@@ -772,6 +773,21 @@ public sealed class PoseLibraryPane
         _applyMenuRequested = true;
     }
 
+    /// <summary>The footer's LEFT cluster: configuring sources belongs on
+    /// every tab (left-aligned, user rule), the Objects tab's placement
+    /// choice sits at the bottom where the spawn happens, and the status
+    /// stays last.</summary>
+    private void DrawFooterLead(Crystarium.ActionBarScope scope)
+    {
+        scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
+        if (_type == LibraryType.Objects)
+            scope.Dropdown(
+                "load-placement", PlacementModeLabels, (int)_placement.Mode,
+                next => _placement.Mode = (ObjectPlacementMode)next,
+                help: "Where a spawned entry lands");
+        scope.Label(_vm.Status);
+    }
+
     // ── the objects inspector rail ───────────────────────────────────────
 
     /// <summary>The probed path the details rows were read from; a selection
@@ -791,28 +807,42 @@ public sealed class PoseLibraryPane
     public void DrawObjectsRail(Vector2 origin, Vector2 size)
     {
         int selected = _vm.Selected;
-        bool hasEntry = selected >= 0 && selected < _vm.Tiles.Count &&
-            selected < _tileKinds.Count;
-        if (hasEntry)
-            ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
+        if (selected < 0 || selected >= _vm.Tiles.Count ||
+            selected >= _tileKinds.Count)
+            return;
+        ProbeDetails(_vm.Tiles[selected].ThumbKey, _tileKinds[selected]);
+
+        float scale = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * scale;
+        var cursor = origin + new Vector2(inset, inset);
+
+        // The entry's NAME leads, then one plain "Properties" heading — no
+        // separators anywhere on this rail.
+        Crystarium.TextAt(cursor, _vm.Tiles[selected].Label, new TextStyle
+        {
+            Size = theme.Typography.SurfaceTitleSize,
+            Weight = FontWeight.Medium,
+            Color = theme.Text,
+        });
+        cursor.Y += (theme.Typography.SurfaceTitleSize + 10f) * scale;
+        Crystarium.TextAt(cursor, "Properties", new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.FormHint,
+        });
+        cursor.Y += (theme.Typography.CaptionSize + 6f) * scale;
 
         Crystarium.Section(
             "##objects-inspector", string.Empty,
-            origin, size.X, true, null,
+            new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>
             {
-                form.Dropdown(
-                    "Load at", PlacementModeLabels, (int)_placement.Mode,
-                    next => _placement.Mode = (ObjectPlacementMode)next,
-                    help: "Where a loaded entry lands");
-                if (!hasEntry)
-                    return;
                 if (_detailsColor is { } color)
                 {
                     form.Custom("Color", 20f, row =>
                     {
-                        float scale = ImGuiHelpers.GlobalScale;
-                        float radius = 8f * scale;
+                        float radius = 8f * ImGuiHelpers.GlobalScale;
                         var center = row.CenterControl(16f)
                             + new Vector2(radius, radius);
                         var clamped = Vector3.Clamp(
@@ -2644,6 +2674,15 @@ public sealed class PoseLibraryPane
             return;
         }
 
+        // An object entry has ONE verb — it spawns what it is. No picker,
+        // no apply, no second spawn button.
+        if (_type == LibraryType.Objects)
+        {
+            _vm.CanApply = true;
+            _vm.ApplyLabel = "Spawn";
+            return;
+        }
+
         // The primary opens the actor picker; its caption is constant.
         _vm.ApplyLabel = "Apply to";
     }
@@ -2851,7 +2890,8 @@ public sealed class PoseLibraryPane
         _vm.CanFavorite = _type == LibraryType.Poses;
         // A scene is not spawned as an actor, and saving one belongs where
         // scenes are found rather than behind a menu.
-        _vm.ShowSpawn = _type != LibraryType.Scenes;
+        _vm.ShowSpawn =
+            _type is not LibraryType.Scenes and not LibraryType.Objects;
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
         _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;

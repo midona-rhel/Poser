@@ -654,12 +654,6 @@ public static class PoseLibraryView
                     : "This phase cannot be cancelled",
                 disabled: !vm.CanCancelImport);
         bool none = vm.Selected < 0 || vm.Selected >= vm.Tiles.Count;
-        // Default control scale (user: Comfortable read oversized here).
-        // Configuring sources belongs where the library is, not only in the
-        // empty state a user with sources never sees.
-        scope.Button(
-            "Add source",
-            vm.SettingsClick!);
         if (vm.ShowSpawn)
             scope.Button(
                 "Spawn as new",
