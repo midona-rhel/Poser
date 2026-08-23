@@ -102,7 +102,7 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<SceneAutoSaveService>();
         log.Debug("Load stage: scene lifecycle");
         _ = _serviceProvider.GetRequiredService<CleanSceneLifecycle>();
-        Poser.UI.Crystarium.Log = message =>
+        global::Poser.UI.Crystarium.Log = message =>
             _serviceProvider.GetRequiredService<
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         log.Debug("Load stage: target sync");
