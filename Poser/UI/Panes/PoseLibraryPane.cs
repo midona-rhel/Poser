@@ -777,6 +777,22 @@ public sealed class PoseLibraryPane
                     _notices.Failed(
                         started.Detail ?? "The actor could not be spawned.");
                 break;
+            case PoseLibraryEntryKind.Environment:
+                // The load applies only what the file states; an environment
+                // entry states nothing but the environment.
+                var applied = _scenes.BeginLoad(path, new SceneLoadOptions
+                {
+                    IncludeActors = false,
+                    IncludeProps = false,
+                    IncludeLights = false,
+                    IncludeCameras = false,
+                    IncludeOverlays = false,
+                });
+                if (!applied.Success)
+                    _notices.Failed(
+                        applied.Detail ??
+                        "The environment could not be applied.");
+                break;
             case PoseLibraryEntryKind.Light:
                 // Recorded through the lifecycle, exactly as the light
                 // pane's own load dialog records it — a light from a tile is
@@ -1576,6 +1592,7 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Actor => TablerIcon.User,
                     PoseLibraryEntryKind.Light => TablerIcon.Bulb,
                     PoseLibraryEntryKind.Camera => TablerIcon.Camera,
+                    PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2066,6 +2083,7 @@ public sealed class PoseLibraryPane
             ? entryKind is PoseLibraryEntryKind.Actor
                 or PoseLibraryEntryKind.Light
                 or PoseLibraryEntryKind.Camera
+                or PoseLibraryEntryKind.Environment
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

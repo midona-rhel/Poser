@@ -53,6 +53,17 @@ public sealed record SceneSaveOptions
         OnlyActorLogicalId = logicalId,
     };
 
+    /// <summary>The environment-entry save: the environment configuration
+    /// and nothing else.</summary>
+    public static SceneSaveOptions EnvironmentEntry { get; } = new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeOverlays = false,
+    };
+
     public static SceneSaveOptions Default { get; } = new();
 }
 

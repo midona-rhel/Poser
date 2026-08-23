@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
+using Poser.Files;
+using Poser.Game.Scene;
 using Poser.Services;
 
 namespace Poser.UI;
@@ -59,6 +61,7 @@ public sealed class EnvironmentPane
     private readonly IWorldRenderingService _rendering;
     private readonly IFestivalService _festivals;
     private readonly ITextureProvider _textures;
+    private readonly SceneWorkflow _workflow;
 
     private const string TimeUnavailable =
         "Poser could not hook the game clock, so the time cannot be held";
@@ -170,8 +173,10 @@ public sealed class EnvironmentPane
         IWorldRenderingService rendering,
         IFestivalService festivals,
         ITextureProvider textures,
+        SceneWorkflow workflow,
         UserNotices notices)
     {
+        _workflow = workflow;
         _notices = notices;
         _environment = environment;
         _rendering = rendering;
@@ -1037,6 +1042,27 @@ public sealed class EnvironmentPane
                 help: "Hand every held section back to the game. The next "
                     + "environment update restores the zone's own values.");
         });
+        form.Actions("Environment file", actions =>
+        {
+            actions.Button("Save to library", SaveToLibrary,
+                help: "Save the whole environment into the library's Objects tab");
+        });
+    }
+
+    /// <summary>One click, no dialog: the environment lands in the objects
+    /// home as an .xive — a scene save restricted to the environment, so it
+    /// restores through the same load every scene uses.</summary>
+    private void SaveToLibrary()
+    {
+        var root = Config.ConfigurationService.Instance.Config.Library
+            .EnsureObjectsRootExists();
+        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
+            root, "Environment", SceneFile.EnvironmentEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.EnvironmentEntry);
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ?? "The environment could not be saved.");
     }
 
     // ── festivals ────────────────────────────────────────────────────────

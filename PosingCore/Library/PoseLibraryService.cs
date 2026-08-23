@@ -21,6 +21,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private static readonly string ActorExtension = SceneFile.ActorEntryExtension;
     private const string LightExtension = ".xivl";
     private const string CameraExtension = ".xivc";
+    private static readonly string EnvironmentExtension =
+        SceneFile.EnvironmentEntryExtension;
 
     private static readonly PoseLibrarySnapshot EmptySnapshot = new()
     {
@@ -395,6 +397,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Light:
                 case PoseLibraryEntryKind.Camera:
+                case PoseLibraryEntryKind.Environment:
                     node.ObjectsCount++;
                     break;
                 default:
@@ -479,7 +482,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         // load will accept, and a corrupt or future file says so in the row
         // instead of only when it is clicked. An ACTOR entry is the same
         // container and takes the same probe.
-        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor)
+        if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
+            or PoseLibraryEntryKind.Environment)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -490,12 +494,12 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 // matches, and a scene must not answer an author search with
                 // words from its description.
                 author = metadata.Author;
-                sceneContents = kind == PoseLibraryEntryKind.Actor
-                    ? string.Empty
-                    : DescribeScene(metadata);
-                scenePlace = kind == PoseLibraryEntryKind.Actor
-                    ? string.Empty
-                    : metadata.PlaceName ?? string.Empty;
+                sceneContents = kind == PoseLibraryEntryKind.Scene
+                    ? DescribeScene(metadata)
+                    : string.Empty;
+                scenePlace = kind == PoseLibraryEntryKind.Scene
+                    ? metadata.PlaceName ?? string.Empty
+                    : string.Empty;
                 sceneCapturedAt = metadata.SavedAt;
             }
             // The ONE mapping — shared with the retry probe, exactly as the
@@ -568,7 +572,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(SceneExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(ActorExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PoseLibraryEntryKind KindOf(string path)
@@ -584,6 +589,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             return PoseLibraryEntryKind.Light;
         if (extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Camera;
+        if (extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Environment;
         return PoseLibraryEntryKind.Pose;
     }
 
