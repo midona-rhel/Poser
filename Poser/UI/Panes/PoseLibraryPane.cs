@@ -780,14 +780,6 @@ public sealed class PoseLibraryPane
     private void DrawFooterLead(Crystarium.ActionBarScope scope)
     {
         scope.Button("Add source", () => _vm.SettingsClick?.Invoke());
-        if (_type == LibraryType.Objects)
-        {
-            scope.Label("Load at");
-            scope.Dropdown(
-                "load-placement", PlacementModeLabels, (int)_placement.Mode,
-                next => _placement.Mode = (ObjectPlacementMode)next,
-                help: "Where a spawned entry lands");
-        }
         scope.Label(_vm.Status);
     }
 
@@ -2895,6 +2887,11 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
             _type is not LibraryType.Scenes and not LibraryType.Objects;
+        _vm.PlacementOptions =
+            _type == LibraryType.Objects ? PlacementModeLabels : null;
+        _vm.PlacementSelected = (int)_placement.Mode;
+        _vm.OnPlacement ??=
+            next => _placement.Mode = (ObjectPlacementMode)next;
         _vm.ShowSaveScene = _type == LibraryType.Scenes;
         _vm.SceneBusy = _scenes.Busy;
         _vm.ShowEditMetadata = _type == LibraryType.Poses;

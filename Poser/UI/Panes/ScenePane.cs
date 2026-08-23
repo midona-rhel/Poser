@@ -204,6 +204,95 @@ public sealed class ScenePane
     /// frame a pane is still using.</summary>
     public void RequestSave() => _saveRequested = true;
 
+    /// <summary>The library's inspector rail on the scenes and auto-saves
+    /// tabs: the SAME load options the workspace states, mounted where the
+    /// tiles that start those loads live.</summary>
+    public void DrawLibraryRail(Vector2 origin, Vector2 size)
+    {
+        float y = origin.Y;
+        y += DrawLoadSceneOptions(new Vector2(origin.X, y), size.X /
+            Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+        DrawLoadIncludeOptions(new Vector2(origin.X, y), size.X /
+            Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+    }
+
+    private bool _librarySaveOpen;
+    private string _librarySaveName = string.Empty;
+
+    /// <summary>The library's save flow: one modal — the name and the one
+    /// choice that changes what the file contains — then the save lands in
+    /// the scenes home the tab is already scanning. No file dialog detour.
+    /// </summary>
+    public void RequestLibrarySave()
+    {
+        _librarySaveName = string.Empty;
+        _librarySaveOpen = true;
+    }
+
+    private void DrawLibrarySaveModal()
+    {
+        if (!_librarySaveOpen)
+            return;
+        Crystarium.Modal(
+            "##scene-library-save",
+            _librarySaveOpen,
+            next => _librarySaveOpen = next,
+            "Save scene to library",
+            height: 196f,
+            body: () =>
+        {
+            Crystarium.TextInput(
+                "##scene-library-save-name", _librarySaveName,
+                next => _librarySaveName = next,
+                placeholder: "Scene name");
+            ImGui.Dummy(new Vector2(0f, 8f *
+                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
+            Crystarium.Switch(
+                "##scene-library-save-appearance",
+                SaveOptions.IncludeModdedAppearance,
+                next => SaveOptions = SaveOptions with
+                {
+                    IncludeModdedAppearance = next,
+                });
+            ImGui.SameLine(0f, 8f *
+                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+            Crystarium.TextAt(
+                ImGui.GetCursorScreenPos(), AppearanceHelp,
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                    Color = Crystarium.ActiveTheme.Text,
+                });
+        },
+            footer: () =>
+        {
+            bool submit =
+                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
+                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
+            if (Crystarium.Button("Cancel", id: "scene-library-save-cancel"))
+                _librarySaveOpen = false;
+            ImGui.SameLine(0f, 8f *
+                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+            if (Crystarium.Button(
+                    "Save",
+                    variant: ButtonVariant.Primary,
+                    id: "scene-library-save-confirm") || submit)
+            {
+                var name = _librarySaveName.Trim();
+                if (name.Length == 0)
+                    name = "Scene";
+                var root = _libraryConfig.EnsureSceneRootExists();
+                var path = LibraryConfiguration.NewEntryPath(
+                    root, name, SceneFile.Extension);
+                var begun = _workflow.BeginSave(path, null, SaveOptions);
+                if (!begun.Success)
+                    _notices.Refused(
+                        begun.Detail ?? "The scene save could not start.");
+                _librarySaveOpen = false;
+            }
+        });
+    }
+
     private bool _saveRequested;
 
     /// <summary>Pumped every frame by the window: a dialog must survive the
@@ -218,6 +307,7 @@ public sealed class ScenePane
             OpenSave();
         }
         _saveBrowser.Draw();
+        DrawLibrarySaveModal();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
 

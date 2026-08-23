@@ -278,6 +278,12 @@ public sealed class PoseLibraryViewModel
     /// does not wear the verb greyed — it does not wear it.</summary>
     public bool ShowSpawn = true;
 
+    /// <summary>The placement choice beside the primary, when the tab has
+    /// one (the Objects tab). Null hides it.</summary>
+    public string[]? PlacementOptions;
+    public int PlacementSelected;
+    public Action<int>? OnPlacement;
+
     /// <summary>Whether the footer carries the metadata verb at all — only the
     /// tab whose files HAVE author and tags. Editing them was reachable by
     /// right-click alone, which is not a way anyone finds a feature.</summary>
@@ -674,6 +680,16 @@ public static class PoseLibraryView
                 "Edit metadata…",
                 vm.EditMetadataClick!,
                 disabled: none || !vm.CanEditMetadata);
+        // The placement rides NEXT TO the verb it changes (user rule): the
+        // label says what the box means, the box says where the load lands.
+        if (vm.PlacementOptions is { } placement)
+        {
+            scope.Label("Load at");
+            scope.Dropdown(
+                "placement", placement, vm.PlacementSelected,
+                vm.OnPlacement!,
+                help: "Where a spawned entry lands");
+        }
         // The primary opens the ACTOR PICKER — the pose applies to whoever
         // is chosen there, not silently to the selection.
         scope.Button(

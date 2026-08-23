@@ -600,7 +600,9 @@ public class MainWindow : Window
         // Saving from the scenes tab is the scene workspace's own dialog: one
         // destination browser and one description field, wherever it is asked
         // for.
-        _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestSave();
+        // The library saves through the MODAL — name plus the appearance
+        // choice — never the file-dialog detour.
+        _libraryPane.OnSaveSceneRequested += () => _scenePane.RequestLibrarySave();
         _poseFileSection = poseFileSection;
         // The import menus resolve their target actor through the same
         // binding registry the context menus use.
@@ -1300,13 +1302,22 @@ public class MainWindow : Window
         // The delegate is stated even while collapsed: the shell's own
         // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
-        // The Objects tab's inspector shows placement and the selected
-        // entry's identity; every other library tab keeps the import options.
+        // The inspector is PER TAB: pose-import options only where poses
+        // apply; scene options where scenes load (auto-saves are scenes);
+        // the entry inspector on objects; and NO rail on MCDFs — a
+        // character file has nothing to configure, so the grid takes the
+        // width.
         _vm.DrawRail = _libraryMode
-            ? _libraryPane.SelectedType ==
-                (int)PoseLibraryPane.LibraryType.Objects
-                ? _libraryPane.DrawObjectsRail
-                : _poseFileSection.DrawOptionsRail
+            ? (PoseLibraryPane.LibraryType)_libraryPane.SelectedType switch
+            {
+                PoseLibraryPane.LibraryType.Objects =>
+                    _libraryPane.DrawObjectsRail,
+                PoseLibraryPane.LibraryType.Scenes or
+                PoseLibraryPane.LibraryType.AutoSaves =>
+                    _scenePane.DrawLibraryRail,
+                PoseLibraryPane.LibraryType.Mcdf => null,
+                _ => _poseFileSection.DrawOptionsRail,
+            }
             : _poseRail.Draw;
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
