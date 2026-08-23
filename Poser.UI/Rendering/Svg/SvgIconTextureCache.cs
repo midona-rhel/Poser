@@ -24,6 +24,10 @@ public static partial class Crystarium
     /// <summary>Advances bounded startup icon warming on the UI thread.</summary>
     public static void PumpStartupIcons(float libraryIconSize) =>
         SvgIconTextureCache.PumpStartupIcons(libraryIconSize);
+
+    /// <summary>Diagnostics sink — the host wires it to its debug log.
+    /// Poser.UI stays free of Dalamud, so the seam is one delegate.</summary>
+    public static Action<string>? Log;
 }
 
 internal static class SvgIconTextureCache
@@ -654,6 +658,16 @@ internal static class SvgIconTextureCache
         {
             if (Repeated(key) && Pending.Add(key))
             {
+                // Post-startup misses ARE the pop-in: each unique one is a
+                // key the warm list does not cover. Logged once per key so a
+                // single first-open pass enumerates the whole gap.
+                if (_startupRemaining == 0 && _missLogged.Add(key))
+                    Crystarium.Log?.Invoke(
+                        $"Icon warm miss: {Tabler.NameOf(doc)} at " +
+                        $"{(max - min).Y:0}px tint {(tint.HasValue ? "themed" : "plain")}" +
+                        $"{(flipX ? " flipped" : string.Empty)}" +
+                        $" stroke {(strokeWidth is { } sw ? sw.ToString("0.#") : "default")}" +
+                        $" opacity {groupOpacity:0.#}");
                 Inbox.Enqueue(new RasterJob
                 {
                     Generation = _generation,
@@ -692,6 +706,8 @@ internal static class SvgIconTextureCache
         }
         return true;
     }
+
+    private static readonly HashSet<ulong> _missLogged = new();
 
     private static bool Repeated(ulong key)
     {

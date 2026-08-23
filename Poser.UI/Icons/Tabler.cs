@@ -115,6 +115,13 @@ public static class Tabler
     /// <summary>Get the parsed SVG document for a built-in icon, or null if it failed to parse.</summary>
     public static SvgDocument? Get(TablerIcon icon) => Get(NameFor(icon));
 
+    private static readonly Dictionary<int, string> _names = new();
+
+    /// <summary>The registered name behind a parsed document, for
+    /// diagnostics — the icon-cache miss log speaks names, not ids.</summary>
+    public static string NameOf(SvgDocument doc) =>
+        _names.TryGetValue(doc.CacheId, out var name) ? name : $"#{doc.CacheId}";
+
     /// <summary>Get a registered icon by name. Returns null if unknown.</summary>
     public static SvgDocument? Get(string name)
     {
@@ -128,6 +135,7 @@ public static class Tabler
         {
             var doc = SvgDocument.Parse(xml);
             _parsed[name] = doc;
+            _names[doc.CacheId] = name;
             return doc;
         }
         catch

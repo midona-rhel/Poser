@@ -130,7 +130,16 @@ public class ActorManager : IActorManager
         if (_pendingRefresh)
         {
             _pendingRefresh = false;
+            var entryWatch = System.Diagnostics.Stopwatch.StartNew();
             RefreshActors();
+            entryWatch.Stop();
+            // The GPose-entry freeze diagnostic (#31): this is the burst
+            // frame; the skeleton-created and bindings lines that follow
+            // carry their own timestamps.
+            Poser.UI.Crystarium.Log?.Invoke(
+                $"GPose entry: actor refresh took " +
+                $"{entryWatch.Elapsed.TotalMilliseconds:0.0}ms " +
+                $"({_actors.Count} actors)");
             return;
         }
 
