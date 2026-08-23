@@ -209,11 +209,23 @@ public sealed class ScenePane
     /// tiles that start those loads live.</summary>
     public void DrawLibraryRail(Vector2 origin, Vector2 size)
     {
-        float y = origin.Y;
-        y += DrawLoadSceneOptions(new Vector2(origin.X, y), size.X /
-            Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
-        DrawLoadIncludeOptions(new Vector2(origin.X, y), size.X /
-            Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * scale;
+        float width = size.X - inset * 2f;
+        var cursor = origin + new Vector2(inset, inset);
+
+        Crystarium.TextAt(cursor, "Load options", new TextStyle
+        {
+            Size = theme.Typography.CaptionSize,
+            Color = theme.FormHint,
+        });
+        cursor.Y += (theme.Typography.CaptionSize + 8f) * scale;
+
+        // One table: both groups share the section label column, so the
+        // rows align whatever group they sit in.
+        cursor.Y += DrawLoadSceneOptions(cursor, width);
+        DrawLoadIncludeOptions(cursor, width);
     }
 
     private bool _librarySaveOpen;
@@ -247,22 +259,36 @@ public sealed class ScenePane
                 placeholder: "Scene name");
             ImGui.Dummy(new Vector2(0f, 8f *
                 Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale));
+            // Label first, control after — the form convention, even in a
+            // modal: the label owns the left, the switch sits at the row's
+            // right edge.
+            float rowScale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            var rowStart = ImGui.GetCursorScreenPos();
+            float rowWidth = ImGui.GetContentRegionAvail().X;
+            float switchWidth =
+                Crystarium.ActiveTheme.Controls.SwitchWidth * rowScale;
+            float switchHeight =
+                Crystarium.ActiveTheme.Controls.SwitchHeight * rowScale;
+            Crystarium.TextAt(
+                rowStart + new Vector2(0f, (switchHeight -
+                    Crystarium.ActiveTheme.Typography.LabelSize * rowScale)
+                    * 0.5f),
+                "Include appearance files",
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                    Color = Crystarium.ActiveTheme.Text,
+                });
+            ImGui.SetCursorScreenPos(
+                rowStart + new Vector2(rowWidth - switchWidth, 0f));
             Crystarium.Switch(
                 "##scene-library-save-appearance",
                 SaveOptions.IncludeModdedAppearance,
                 next => SaveOptions = SaveOptions with
                 {
                     IncludeModdedAppearance = next,
-                });
-            ImGui.SameLine(0f, 8f *
-                Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale);
-            Crystarium.TextAt(
-                ImGui.GetCursorScreenPos(), AppearanceHelp,
-                new TextStyle
-                {
-                    Size = Crystarium.ActiveTheme.Typography.LabelSize,
-                    Color = Crystarium.ActiveTheme.Text,
-                });
+                },
+                help: AppearanceHelp);
         },
             footer: () =>
         {

@@ -3582,6 +3582,7 @@ public class MainWindow : Window
         SpawnActor,
         ImportPose,
         ExportPose,
+        SaveScene,
         AutoSaves,
         LayoutSeparator,
         PopOutContent,
@@ -3656,6 +3657,8 @@ public class MainWindow : Window
         items[(int)ShellCommand.ExportPose] =
             new ContextMenuItem(
                 "Export pose", TablerIcon.Upload, disabled: !poseTarget);
+        items[(int)ShellCommand.SaveScene] =
+            new ContextMenuItem("Save scene", TablerIcon.Movie);
         items[(int)ShellCommand.AutoSaves] =
             new ContextMenuItem(
                 "Auto-saves", TablerIcon.DeviceFloppy, disabled: !poseTarget);
@@ -3714,6 +3717,9 @@ public class MainWindow : Window
             case ShellCommand.ExportPose:
                 if (SelectedSkeleton() != null)
                     _poseFileSection.RequestExportMenu();
+                break;
+            case ShellCommand.SaveScene:
+                _scenePane.RequestLibrarySave();
                 break;
             case ShellCommand.AutoSaves:
                 if (SelectedSkeleton() is { } recoverSkeleton)
