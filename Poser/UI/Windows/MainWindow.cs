@@ -3809,10 +3809,11 @@ public class MainWindow : Window
                 if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
-            () => _scenePane.SaveActorEntry(
-                actorId.LogicalId,
+            () => OpenEntityRename(
+                "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
-                    actorId.LogicalId, DisplayName(actor.Name))),
+                    actorId.LogicalId, DisplayName(actor.Name)),
+                name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
             null, // separator
             () =>
             {
@@ -4322,7 +4323,11 @@ public class MainWindow : Window
                 "Rename light", light.Name, next => light.Name = next),
             () => _lifecycle.CloneLight(light),
             () => _lightPane.OpenSave(light),
-            () => _lightPane.SaveToLibrary(light),
+            // The library save asks for the entry's NAME first — the same
+            // modal renames use, with the light's name as the start.
+            () => OpenEntityRename(
+                "Save light to library", light.Name,
+                name => _lightPane.SaveToLibrary(light, name)),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -4489,7 +4494,9 @@ public class MainWindow : Window
                     _cameraPane.SelectWhenBound(clone);
             },
             () => _cameraPane.OpenSave(camera),
-            () => _cameraPane.SaveToLibrary(camera),
+            () => OpenEntityRename(
+                "Save camera to library", camera.Name,
+                name => _cameraPane.SaveToLibrary(camera, name)),
             () => _cameraPane.ResetCameraTransform(cameraId),
             () => camera.ResetProperties(),
         };
