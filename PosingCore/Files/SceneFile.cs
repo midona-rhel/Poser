@@ -555,6 +555,12 @@ public class SceneEnvironment
     public int DayOfMonth { get; set; } = 1;
     public bool IsTimeFrozen { get; set; }
     public uint WeatherId { get; set; }
+
+    /// <summary>The weather's display name at capture. Display-only — the
+    /// restore keys on the id — so a listing can say "Rain" without the
+    /// game's weather sheet in hand.</summary>
+    public string WeatherName { get; set; } = string.Empty;
+
     public bool IsWeatherOverrideEnabled { get; set; }
     public float TransitionTime { get; set; } = 0.5f;
 

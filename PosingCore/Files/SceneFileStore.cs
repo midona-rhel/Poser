@@ -107,6 +107,11 @@ public sealed class SceneMetadataReadOutcome
     /// </summary>
     public string? PlaceName { get; }
     public uint TerritoryId { get; }
+
+    /// <summary>The captured weather's display name; empty when the document
+    /// records no environment or predates the field.</summary>
+    public string WeatherName { get; } = string.Empty;
+
     public int ActorCount { get; }
     public int PropCount { get; }
     public int LightCount { get; }
@@ -137,6 +142,7 @@ public sealed class SceneMetadataReadOutcome
         SavedAt = scene.SavedAt;
         PlaceName = scene.PlaceName;
         TerritoryId = scene.TerritoryId;
+        WeatherName = scene.Environment?.WeatherName ?? string.Empty;
         ActorCount = scene.Actors.Count;
         PropCount = scene.Props.Count;
         LightCount = scene.Lights.Count;

@@ -853,6 +853,9 @@ public sealed class PoseLibraryPane
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
+                        if (kind == PoseLibraryEntryKind.Environment &&
+                            metadata.WeatherName.Length > 0)
+                            _detailsRows.Add(("Weather", metadata.WeatherName));
                         if (metadata.SavedAt is { } saved)
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
