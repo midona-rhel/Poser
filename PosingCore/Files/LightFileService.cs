@@ -22,11 +22,20 @@ public class LightFileService : ILightFileService
         _lighting = lighting;
     }
 
-    public bool ExportLight(ILight light, string path)
+    public bool ExportLight(ILight light, string path) =>
+        ExportLight(light, path, null, null);
+
+    public bool ExportLight(
+        ILight light,
+        string path,
+        PlacementAnchorData? cameraAnchor,
+        PlacementAnchorData? actorAnchor)
     {
         try
         {
             var lightFile = CreateLightFile(light);
+            lightFile.CameraAnchor = cameraAnchor;
+            lightFile.ActorAnchor = actorAnchor;
             if (lightFile.Save(path))
             {
                 _log.Debug($"Exported light '{light.Name}' to {path}");
@@ -41,15 +50,52 @@ public class LightFileService : ILightFileService
         }
     }
 
-    public ILight? ImportLight(string path)
+    public ILight? ImportLight(string path) =>
+        ImportLight(path, ObjectPlacementMode.AsSaved, default, 0f, out _);
+
+    /// <summary>
+    /// Import with a placement: the file's transform is rebased from its
+    /// saved anchor onto the caller's current one BEFORE the light exists,
+    /// so the spawn lands placed rather than jumping. A mode whose anchor
+    /// the file does not record refuses by name and spawns nothing.
+    /// </summary>
+    public ILight? ImportLight(
+        string path,
+        ObjectPlacementMode mode,
+        System.Numerics.Vector3 currentPosition,
+        float currentYaw,
+        out string? refusal)
     {
+        refusal = null;
         try
         {
             var lightFile = LightFile.Load(path);
             if (lightFile == null)
             {
                 _log.Error($"Failed to load light file from {path}");
+                refusal = "The light file could not be read.";
                 return null;
+            }
+
+            if (mode != ObjectPlacementMode.AsSaved)
+            {
+                var anchor = mode == ObjectPlacementMode.RelativeToCamera
+                    ? lightFile.CameraAnchor
+                    : lightFile.ActorAnchor;
+                if (anchor is null)
+                {
+                    refusal = mode == ObjectPlacementMode.RelativeToCamera
+                        ? "This entry records no camera anchor, so it " +
+                          "cannot be placed relative to the camera. Load " +
+                          "it as saved instead."
+                        : "This entry records no actor anchor (nothing was " +
+                          "selected when it was saved), so it cannot be " +
+                          "placed relative to an actor. Load it as saved " +
+                          "instead.";
+                    return null;
+                }
+                ObjectPlacement.Rebase(
+                    lightFile.Transform, anchor, currentPosition, currentYaw);
             }
 
             // Kind is set at spawn AND written again below: the spawn kind

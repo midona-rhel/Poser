@@ -136,7 +136,7 @@ public sealed class PoseLibraryPane
     private readonly CleanPoseFacade _poseFacade;
     private readonly IActorSpawnService _spawnService;
     private readonly SceneWorkflow _scenes;
-    private readonly ILightFileService _lightFiles;
+    private readonly LightPane _lightPane;
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
@@ -387,7 +387,7 @@ public sealed class PoseLibraryPane
         PosePreviewService preview,
         SceneWorkflow scenes,
         SceneLoadPreferences sceneOptions,
-        ILightFileService lightFiles,
+        LightPane lightPane,
         ICameraFileService cameraFiles,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices)
@@ -399,7 +399,7 @@ public sealed class PoseLibraryPane
         _poseFacade = poseFacade;
         _spawnService = spawnService;
         _scenes = scenes;
-        _lightFiles = lightFiles;
+        _lightPane = lightPane;
         _cameraFiles = cameraFiles;
         _sceneOptions = sceneOptions;
         _selection = selection;
@@ -802,15 +802,9 @@ public sealed class PoseLibraryPane
                         "The environment could not be applied.");
                 break;
             case PoseLibraryEntryKind.Light:
-                // Recorded through the lifecycle, exactly as the light
-                // pane's own load dialog records it — a light from a tile is
-                // still a light the user added, and undo has to know it.
-                if (_lifecycle.RecordSpawnedLight(
-                        $"Add light '{name}' from the library",
-                        _lightFiles.ImportLight(path)) is null)
-                    _notices.Failed($"'{name}' could not be loaded as a light.");
-                else
-                    _notices.Done($"Spawned light from '{name}'.");
+                // The light pane owns the whole placed import: the shared
+                // placement mode, the undo recording, the outcome notices.
+                _lightPane.ImportFromLibrary(path);
                 break;
             case PoseLibraryEntryKind.Camera:
                 if (_lifecycle.RecordSpawnedCamera(

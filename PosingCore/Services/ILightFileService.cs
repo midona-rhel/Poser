@@ -14,6 +14,14 @@ public interface ILightFileService
     /// </summary>
     bool ExportLight(ILight light, string path);
 
+    /// <summary>Export carrying the placement anchors a relative load needs;
+    /// either may be null when unavailable.</summary>
+    bool ExportLight(
+        ILight light,
+        string path,
+        Files.PlacementAnchorData? cameraAnchor,
+        Files.PlacementAnchorData? actorAnchor);
+
     /// <summary>
     /// Loads a light file, spawns a light of its kind and applies every
     /// property including the absolute transform. Framework thread only —
@@ -21,4 +29,13 @@ public interface ILightFileService
     /// cannot be read or the light cannot be spawned.
     /// </summary>
     ILight? ImportLight(string path);
+
+    /// <summary>Import placed by <paramref name="mode"/>; refuses by name
+    /// when the file records no anchor for it.</summary>
+    ILight? ImportLight(
+        string path,
+        Files.ObjectPlacementMode mode,
+        System.Numerics.Vector3 currentPosition,
+        float currentYaw,
+        out string? refusal);
 }
