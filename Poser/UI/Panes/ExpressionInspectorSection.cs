@@ -44,7 +44,7 @@ public sealed class ExpressionInspectorSection
         Crystarium.FormScope form,
         IActor actor,
         ActorId? actorId,
-        bool paired,
+        bool paired, // both hosts pair now; kept for call-site stability
         Action<Crystarium.FormScope, ActorId>? expressionRow = null)
     {
         using var profile = FrameProfiler.Scope(
@@ -59,10 +59,6 @@ public sealed class ExpressionInspectorSection
         // A unit consumed as the second half of a pair must not emit its own
         // row later in the catalog order.
         var consumed = new bool[units.Count];
-        // Rail rows group under a mini header per region: two "Brow …"
-        // rows become a Brow header with "Up L" and "Furrow L" under it —
-        // the prefix moves to the header instead of repeating per row.
-        string railGroup = "";
         for (int i = 0; i < units.Count; i++)
         {
             if (consumed[i])
@@ -76,18 +72,18 @@ public sealed class ExpressionInspectorSection
 
             // The pair lands at the FIRST member's catalog position; a unit
             // whose partner is unavailable is an ordinary single row.
-            if (paired &&
-                SplitSide(label) is { } side &&
+            if (SplitSide(label) is { } side &&
                 FindPartner(units, consumed, i, side, bidirectional)
                     is { } partner)
             {
                 consumed[partner] = true;
                 drawn++;
+                string sideBase = DisplayName(side.Base);
                 DrawPair(
                     form,
                     actor,
-                    side.Base + " L",
-                    side.Base + " R",
+                    sideBase + " L",
+                    sideBase + " R",
                     bidirectional,
                     side.Side == 'L' ? id : units[partner].Id,
                     side.Side == 'L' ? units[partner].Id : id,
@@ -97,40 +93,23 @@ public sealed class ExpressionInspectorSection
 
             // Upper/Lower halves pair the same way sides do: one row,
             // each half under its own label.
-            if (paired &&
-                SplitHalf(label) is { } half &&
+            if (SplitHalf(label) is { } half &&
                 FindHalfPartner(units, consumed, i, half, bidirectional)
                     is { } lower)
             {
                 consumed[lower] = true;
                 drawn++;
+                string halfBase =
+                    DisplayName(half.Base).ToLowerInvariant();
                 DrawPair(
                     form,
                     actor,
-                    "Upper",
-                    "Lower",
+                    "Upper " + halfBase,
+                    "Lower " + halfBase,
                     bidirectional,
                     half.IsUpper ? id : units[lower].Id,
                     half.IsUpper ? units[lower].Id : id,
                     half.Base + " — upper / lower");
-                continue;
-            }
-
-            if (!paired)
-            {
-                string display = DisplayName(label).Replace(" (L)", " L")
-                    .Replace(" (R)", " R");
-                int space = display.IndexOf(' ');
-                string word = space > 0 ? display[..space] : display;
-                bool grouped = space > 0 && CountFirstWord(units, word) >= 2;
-                if (grouped && railGroup != word)
-                {
-                    railGroup = word;
-                    form.Subgroup(word);
-                }
-                DrawUnit(form, actor, id,
-                    grouped ? display[(space + 1)..] : display,
-                    bidirectional);
                 continue;
             }
 
@@ -146,27 +125,17 @@ public sealed class ExpressionInspectorSection
         DrawReset(form, actor);
     }
 
-    /// <summary>How many available units share a first word — what
-    /// decides whether the word earns a rail mini header.</summary>
-    private static int CountFirstWord(
-        IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> units,
-        string word)
-    {
-        int count = 0;
-        foreach (var unit in units)
-            if (unit.Available &&
-                unit.Label.StartsWith(word + " ", StringComparison.Ordinal))
-                count++;
-        return count;
-    }
-
-    /// <summary>The slider names the TARGET; the axis is the motion. A
-    /// bidirectional "Jaw Open" runs closed-to-open, so it is "Jaw"; the
-    /// pucker slider is the lip's sideways axis, so it is "Lip".</summary>
+    /// <summary>A bidirectional slider IS the motion axis, so the motion
+    /// word leaves the name: "Jaw Open" runs closed-to-open and is "Jaw",
+    /// "Brow Up" is "Brow", pucker is the lip's own axis. Furrow keeps
+    /// its verb — it is the distinctive word.</summary>
     private static string DisplayName(string label) => label switch
     {
         "Jaw Open" => "Jaw",
         "Lip Pucker" => "Lip",
+        "Lip Open" => "Lip",
+        "Brow Up" => "Brow",
+        "Brow Furrow" => "Furrow",
         _ => label,
     };
 

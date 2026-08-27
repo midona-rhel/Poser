@@ -184,6 +184,16 @@ navigation, not a scrollbar — may shift anything.
 - A control's name states EXACTLY what it acts on: "Brow left" moves
   the LEFT brow alone; a control that moves both brows is named for
   both. A precise name on an imprecise control is a defect either way.
+- A BIDIRECTIONAL slider is its motion axis, so the motion word leaves
+  the name: "Jaw Open" (−1…1) is "Jaw", "Brow Up" is "Brow", the lip
+  halves are "Upper lip"/"Lower lip". A distinctive verb (Furrow)
+  survives as the name.
+- Expression rows pair L/R (and Upper/Lower) on one row in EVERY
+  host, the inspector included. Region mini headers in the inspector
+  were tried 2026-08-27 and rejected — do not reintroduce them.
+- The label's fixed column keeps a trailing margin (`Spacing.Three`)
+  inside it: text truncates into breathing room, never against its
+  control.
 - A fixed header over a scrolling surface (the bone filter over the
   matrix or the body/face maps) breathes one gap off the surface top
   and closes with a separator, so what stays put is legible.

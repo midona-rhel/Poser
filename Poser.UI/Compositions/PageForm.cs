@@ -2391,9 +2391,11 @@ public static partial class Crystarium
     private static void FormLabel(
         Vector2 origin, float columnWidth, float scale, string label,
         float? rowHeight = null) =>
+        // The text band stops a margin short of the column edge: a long
+        // label truncates into breathing room, never against its control.
         LabelInBand(
             origin,
-            new(columnWidth,
+            new(columnWidth - ActiveTheme.Spacing.Three * scale,
                 (rowHeight ?? ActiveTheme.Controls.FormRowHeight) * scale),
             label,
             new TextStyle
