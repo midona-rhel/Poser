@@ -279,7 +279,8 @@ public class PoseRailPane
                 var fraction = offset / discRadius;
                 float dt = ImGui.GetIO().DeltaTime;
                 float stepX = fraction.X * JoystickRadiansPerSecond * dt;
-                float stepY = fraction.Y * JoystickRadiansPerSecond * dt;
+                // Screen-down drags the view down: vertical inverts.
+                float stepY = -fraction.Y * JoystickRadiansPerSecond * dt;
                 if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
                     camera.Rotation = camera.Rotation with
                     {
