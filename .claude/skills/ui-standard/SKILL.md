@@ -121,6 +121,12 @@ construction, not prevented by minimum-size guardrails.
   A row that overflows there, or forces the inspector to be useless,
   is a placement error — it belongs on a tab instead.
 
+- The verb floor YIELDS: when a row cannot hold all its verbs at the
+  standard width, they compress together — never overflow, never wrap.
+- Changing ANY global width token re-runs the width math on every row
+  that inherits it, the inspector first. The verb floor once overflowed
+  the inspector's reset row exactly this way.
+
 ## No reflow, ever
 
 Reflow is the enemy. Layout may move for exactly two reasons: the
@@ -272,5 +278,7 @@ good narrow form, the surface is not done being designed.
 ## When touching any pane
 
 Check the pane against every rule above, not just the one you came to
-change. Compare click-paths with Ktisis/Brio for flow; the visual
+change. And when the in-game pass surfaces a refinement, write it into
+THIS skill the same session — the skill is only normative while it is
+current. Compare click-paths with Ktisis/Brio for flow; the visual
 standard is THIS document, not theirs.

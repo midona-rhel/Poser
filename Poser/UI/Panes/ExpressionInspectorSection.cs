@@ -59,6 +59,10 @@ public sealed class ExpressionInspectorSection
         // A unit consumed as the second half of a pair must not emit its own
         // row later in the catalog order.
         var consumed = new bool[units.Count];
+        // Rail rows group under a mini header per region: two "Brow …"
+        // rows become a Brow header with "Up L" and "Furrow L" under it —
+        // the prefix moves to the header instead of repeating per row.
+        string railGroup = "";
         for (int i = 0; i < units.Count; i++)
         {
             if (consumed[i])
@@ -82,14 +86,55 @@ public sealed class ExpressionInspectorSection
                 DrawPair(
                     form,
                     actor,
-                    side.Base,
+                    side.Base + " L",
+                    side.Base + " R",
                     bidirectional,
                     side.Side == 'L' ? id : units[partner].Id,
-                    side.Side == 'L' ? units[partner].Id : id);
+                    side.Side == 'L' ? units[partner].Id : id,
+                    side.Base + " — left / right");
                 continue;
             }
 
-            DrawUnit(form, actor, id, label, bidirectional);
+            // Upper/Lower halves pair the same way sides do: one row,
+            // each half under its own label.
+            if (paired &&
+                SplitHalf(label) is { } half &&
+                FindHalfPartner(units, consumed, i, half, bidirectional)
+                    is { } lower)
+            {
+                consumed[lower] = true;
+                drawn++;
+                DrawPair(
+                    form,
+                    actor,
+                    "Upper",
+                    "Lower",
+                    bidirectional,
+                    half.IsUpper ? id : units[lower].Id,
+                    half.IsUpper ? units[lower].Id : id,
+                    half.Base + " — upper / lower");
+                continue;
+            }
+
+            if (!paired)
+            {
+                string display = DisplayName(label).Replace(" (L)", " L")
+                    .Replace(" (R)", " R");
+                int space = display.IndexOf(' ');
+                string word = space > 0 ? display[..space] : display;
+                bool grouped = space > 0 && CountFirstWord(units, word) >= 2;
+                if (grouped && railGroup != word)
+                {
+                    railGroup = word;
+                    form.Subgroup(word);
+                }
+                DrawUnit(form, actor, id,
+                    grouped ? display[(space + 1)..] : display,
+                    bidirectional);
+                continue;
+            }
+
+            DrawUnit(form, actor, id, DisplayName(label), bidirectional);
         }
 
         if (drawn == 0)
@@ -99,6 +144,67 @@ public sealed class ExpressionInspectorSection
         }
 
         DrawReset(form, actor);
+    }
+
+    /// <summary>How many available units share a first word — what
+    /// decides whether the word earns a rail mini header.</summary>
+    private static int CountFirstWord(
+        IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> units,
+        string word)
+    {
+        int count = 0;
+        foreach (var unit in units)
+            if (unit.Available &&
+                unit.Label.StartsWith(word + " ", StringComparison.Ordinal))
+                count++;
+        return count;
+    }
+
+    /// <summary>The slider names the TARGET; the axis is the motion. A
+    /// bidirectional "Jaw Open" runs closed-to-open, so it is "Jaw"; the
+    /// pucker slider is the lip's sideways axis, so it is "Lip".</summary>
+    private static string DisplayName(string label) => label switch
+    {
+        "Jaw Open" => "Jaw",
+        "Lip Pucker" => "Lip",
+        _ => label,
+    };
+
+    /// <summary>The base label of an "Upper X"/"Lower X" unit; null for a
+    /// unit without a vertical half.</summary>
+    private static (string Base, bool IsUpper)? SplitHalf(string label)
+    {
+        if (label.StartsWith("Upper ", StringComparison.Ordinal))
+            return (label[6..], true);
+        if (label.StartsWith("Lower ", StringComparison.Ordinal))
+            return (label[6..], false);
+        return null;
+    }
+
+    /// <summary>The opposite vertical half, mirroring FindPartner.</summary>
+    private static int? FindHalfPartner(
+        IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> units,
+        bool[] consumed,
+        int index,
+        (string Base, bool IsUpper) half,
+        bool bidirectional)
+    {
+        for (int i = 0; i < units.Count; i++)
+        {
+            if (i == index || consumed[i])
+                continue;
+            var candidate = units[i];
+            if (!candidate.Available ||
+                candidate.Bidirectional != bidirectional)
+                continue;
+            if (SplitHalf(candidate.Label) is not { } candidateHalf ||
+                candidateHalf.IsUpper == half.IsUpper ||
+                !string.Equals(
+                    candidateHalf.Base, half.Base, StringComparison.Ordinal))
+                continue;
+            return i;
+        }
+        return null;
     }
 
     /// <summary>The base label and side of a "(L)"/"(R)" unit; null for a unit
@@ -161,18 +267,20 @@ public sealed class ExpressionInspectorSection
     private void DrawPair(
         Crystarium.FormScope form,
         IActor actor,
-        string baseLabel,
+        string leftLabel,
+        string rightLabel,
         bool bidirectional,
         string leftId,
-        string rightId)
+        string rightId,
+        string help)
     {
         float minimum = bidirectional ? -1f : 0f;
         form.Pair(
-            baseLabel + " L",
+            leftLabel,
             cell => DrawPairCell(cell, actor, leftId, minimum),
-            baseLabel + " R",
+            rightLabel,
             cell => DrawPairCell(cell, actor, rightId, minimum),
-            help: baseLabel + " — left / right");
+            help: help);
     }
 
     /// <summary>One half of a pair: the slider fills the cell — the cell's

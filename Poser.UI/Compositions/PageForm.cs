@@ -2107,6 +2107,50 @@ public static partial class Crystarium
             ActiveTheme.Form.VerbWidth,
             IntrinsicButtonWidth(label, style));
 
+    /// <summary>The floor YIELDS when the row cannot hold every verb at
+    /// it: the text buttons compress together so the cluster fits — the
+    /// global verb token once overflowed the inspector's reset row
+    /// because nothing re-ran the width math. Overflow is never an
+    /// acceptable outcome; equality of compression preserves alignment.
+    /// Measured and drawn with the SAME factor, so the two never
+    /// disagree.</summary>
+    private static float VerbYieldFactor(
+        IReadOnlyList<ActionItem> actions, float scale, float availableWidth)
+    {
+        if (availableWidth <= 0f)
+            return 1f;
+        float gap = ActiveTheme.Page.ActionGap * scale;
+        float fixedPart = gap * MathF.Max(0, actions.Count - 1);
+        float text = 0f;
+        for (int i = 0; i < actions.Count; i++)
+        {
+            var action = actions[i];
+            var style = Workspace(action.Style);
+            if (action.Icon != null)
+            {
+                fixedPart += ControlSizing.Height(
+                    style.Height,
+                    ActiveTheme.Controls.WorkspaceHeight) * scale;
+                continue;
+            }
+            switch (style.Width.Kind)
+            {
+                case UiWidthKind.Fill:
+                    return 1f; // fill rows absorb slack by construction
+                case UiWidthKind.Fixed:
+                    fixedPart += style.Width.Value * scale;
+                    break;
+                default:
+                    text += VerbFloor(action.Label, style) * scale;
+                    break;
+            }
+        }
+        if (text <= 0f)
+            return 1f;
+        float room = availableWidth - fixedPart;
+        return room >= text ? 1f : MathF.Max(0.4f, room / text);
+    }
+
     private static float MeasureActions(
         IReadOnlyList<ActionItem> actions,
         float scale,
@@ -2114,6 +2158,7 @@ public static partial class Crystarium
         out float fillWidth)
     {
         float gap = ActiveTheme.Page.ActionGap * scale;
+        float yield_ = VerbYieldFactor(actions, scale, availableWidth);
         float committed = gap * MathF.Max(0, actions.Count - 1);
         int fillCount = 0;
         for (int i = 0; i < actions.Count; i++)
@@ -2138,7 +2183,7 @@ public static partial class Crystarium
                     break;
                 default:
                     committed += VerbFloor(
-                        action.Label, style) * scale;
+                        action.Label, style) * scale * yield_;
                     break;
             }
         }
@@ -2164,6 +2209,7 @@ public static partial class Crystarium
         float gap = ActiveTheme.Page.ActionGap * scale;
         float total = MeasureActions(
             actions, scale, regionWidth, out float fillWidth);
+        float yield_ = VerbYieldFactor(actions, scale, regionWidth);
         float x = alignRight
             ? regionX + regionWidth - total
             : regionX;
@@ -2192,7 +2238,7 @@ public static partial class Crystarium
             {
                 UiWidthKind.Fill => fillWidth,
                 UiWidthKind.Fixed => style.Width.Value * scale,
-                _ => VerbFloor(action.Label, style) * scale,
+                _ => VerbFloor(action.Label, style) * scale * yield_,
             };
             ImGui.SetCursorScreenPos(new(
                 x,
