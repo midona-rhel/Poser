@@ -189,9 +189,15 @@ navigation, not a scrollbar — may shift anything.
   the name: "Jaw Open" (−1…1) is "Jaw", "Brow Up" is "Brow", the lip
   halves are "Upper lip"/"Lower lip". A distinctive verb (Furrow)
   survives as the name.
-- Expression rows pair L/R (and Upper/Lower) on one row in EVERY
-  host, the inspector included. Region mini headers in the inspector
-  were tried 2026-08-27 and rejected — do not reintroduce them.
+- The SURFACE and the INSPECTOR are different designed forms of the
+  same data, and a change to one must never splash into the other.
+  Surface expression rows pair L/R, Upper/Lower, and leftover singles
+  (Jaw | Lip), and EVERY surface slider shows its numeric value. The
+  inspector shows ONE BARE slider per row — no numeric wells, the
+  generic reset as its only verb. Region mini headers in the
+  inspector were tried 2026-08-27 and rejected — do not reintroduce
+  them.
+- The drag hover is "Drag · double-click to edit" — nothing longer.
 - MARGIN-FIRST: all spacing between sibling boxes is a margin owned
   by the LAYOUT — the control column starts `Spacing.Three` after the
   label column in every row, pair half, and cell. Padding exists only

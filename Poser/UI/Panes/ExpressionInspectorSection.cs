@@ -59,6 +59,7 @@ public sealed class ExpressionInspectorSection
         // A unit consumed as the second half of a pair must not emit its own
         // row later in the catalog order.
         var consumed = new bool[units.Count];
+        (string Id, string Label, bool Bidirectional)? pendingSingle = null;
         for (int i = 0; i < units.Count; i++)
         {
             if (consumed[i])
@@ -72,7 +73,8 @@ public sealed class ExpressionInspectorSection
 
             // The pair lands at the FIRST member's catalog position; a unit
             // whose partner is unavailable is an ordinary single row.
-            if (SplitSide(label) is { } side &&
+            if (paired &&
+                SplitSide(label) is { } side &&
                 FindPartner(units, consumed, i, side, bidirectional)
                     is { } partner)
             {
@@ -93,7 +95,8 @@ public sealed class ExpressionInspectorSection
 
             // Upper/Lower halves pair the same way sides do: one row,
             // each half under its own label.
-            if (SplitHalf(label) is { } half &&
+            if (paired &&
+                SplitHalf(label) is { } half &&
                 FindHalfPartner(units, consumed, i, half, bidirectional)
                     is { } lower)
             {
@@ -113,8 +116,30 @@ public sealed class ExpressionInspectorSection
                 continue;
             }
 
-            DrawUnit(form, actor, id, DisplayName(label), bidirectional);
+            if (paired)
+            {
+                // Leftover singles share rows too (Jaw | Lip): buffer one,
+                // pair it with the next. Order may shift by one row — a
+                // shared row beats strict catalog order on the surface.
+                if (pendingSingle is { } first)
+                {
+                    pendingSingle = null;
+                    DrawSinglePair(form, actor, first, (id, label, bidirectional));
+                    continue;
+                }
+                pendingSingle = (id, label, bidirectional);
+                continue;
+            }
+
+            // The INSPECTOR form: one bare slider per row, no numeric
+            // value — the generic reset below is its only verb.
+            DrawUnit(form, actor, id, DisplayName(label), bidirectional,
+                bare: true);
         }
+
+        if (pendingSingle is { } last)
+            DrawUnit(form, actor, last.Id, DisplayName(last.Label),
+                last.Bidirectional, bare: false);
 
         if (drawn == 0)
         {
@@ -214,20 +239,41 @@ public sealed class ExpressionInspectorSection
     }
 
     /// <summary>One unit's weight row. A bidirectional unit reads from -1, a
-    /// one-way unit from 0; both are shown as a percentage.</summary>
+    /// one-way unit from 0; both are shown as a percentage. The inspector's
+    /// rows are BARE — the slider is the whole row.</summary>
     private void DrawUnit(
         Crystarium.FormScope form,
         IActor actor,
         string id,
         string label,
-        bool bidirectional) =>
+        bool bidirectional,
+        bool bare = false) =>
         form.Slider(
             label,
             _expressions.GetWeight(actor, id),
             bidirectional ? -1f : 0f,
             1f,
             next => _expressions.SetWeight(actor, id, next),
-            format: "0%");
+            format: "0%",
+            bare: bare);
+
+    /// <summary>Two unrelated single units share one surface row, each
+    /// under its own label with its own value.</summary>
+    private void DrawSinglePair(
+        Crystarium.FormScope form,
+        IActor actor,
+        (string Id, string Label, bool Bidirectional) first,
+        (string Id, string Label, bool Bidirectional) second)
+    {
+        form.Pair(
+            DisplayName(first.Label),
+            cell => DrawPairCell(
+                cell, actor, first.Id, first.Bidirectional ? -1f : 0f),
+            DisplayName(second.Label),
+            cell => DrawPairCell(
+                cell, actor, second.Id, second.Bidirectional ? -1f : 0f),
+            help: DisplayName(first.Label) + " · " + DisplayName(second.Label));
+    }
 
     /// <summary>Both halves on one row, EACH under its own label — the
     /// precise-naming rule: the left slider says it is the left one.
@@ -252,27 +298,20 @@ public sealed class ExpressionInspectorSection
             help: help);
     }
 
-    /// <summary>One half of a pair: the slider fills the cell — the cell's
-    /// own label already says which half this is.</summary>
+    /// <summary>One half of a pair: the cell slider with its numeric
+    /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
         Crystarium.FormPairCell cell,
         IActor actor,
         string id,
-        float minimum)
-    {
-        var sliderTop = cell.Center(Crystarium.ActiveTheme.Controls.SliderHeight);
-        ImGui.SetCursorScreenPos(sliderTop);
-        Crystarium.Slider(
+        float minimum) =>
+        cell.Slider(
             $"##expr-{id}",
             _expressions.GetWeight(actor, id),
             minimum,
             1f,
             next => _expressions.SetWeight(actor, id, next),
-            new ControlStyle
-            {
-                Width = UiWidth.Fixed(MathF.Max(1f, cell.Width / cell.Scale)),
-            });
-    }
+            format: "0%");
 
     private void DrawReset(Crystarium.FormScope form, IActor actor)
     {

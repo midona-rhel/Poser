@@ -439,7 +439,8 @@ public static partial class Crystarium
             float logCurvature = 99f,
             Action<ActionScope>? actions = null,
             string? id = null,
-            bool well = false)
+            bool well = false,
+            bool bare = false)
         {
             string controlId = Id(id ?? label);
             var row = _page.BeginRow(label);
@@ -465,7 +466,7 @@ public static partial class Crystarium
             // that were DESIGNED for it (the pilot opts in per call) — a
             // blanket swap leaked it into expression grids nobody designed.
             bool valueWell = well && marks is null && readout is null;
-            float controlWidth = valueWell
+            float controlWidth = valueWell || bare
                 ? row.ControlWidth - actionWidth - actionGap
                 : row.ControlWidth -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale -
@@ -511,8 +512,9 @@ public static partial class Crystarium
                 logCurvature: logCurvature);
             }
             // Classic path only: custom readouts use text; numeric
-            // readouts use a value well beside the track.
-            if (!valueWell)
+            // readouts use a value well beside the track. A BARE slider
+            // presents no value at all — the inspector's form.
+            if (!valueWell && !bare)
             {
             var bandOrigin = new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - actionWidth - actionGap -

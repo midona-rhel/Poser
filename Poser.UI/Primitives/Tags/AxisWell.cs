@@ -104,7 +104,7 @@ public static partial class Crystarium
         {
             ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEw);
             HoverHelp.Explain(id, pos, pos + size,
-                "Drag or scroll to adjust · Ctrl fine ×0.1 · Shift coarse ×10 · Double-click to type");
+                "Drag · double-click to edit");
         }
         return changed;
     }
