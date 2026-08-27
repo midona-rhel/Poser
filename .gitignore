@@ -53,7 +53,8 @@ CodeCoverage/
 TestResult.xml
 nunit-*.xml
 /Brio/
-/.claude
+/.claude/*
+!/.claude/skills/
 /claude
 .claude/settings.local.json
 CLAUDE.md
