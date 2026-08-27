@@ -145,9 +145,14 @@ public static partial class Crystarium
         var max = pos + size;
         float radius = ActiveTheme.Radii.Small * uiScale;
         var well = ActiveTheme.Chrome.InputWell;
-        // The fill borrows the accent hue at a strength that reads as a
-        // gauge under the number, not as a selection.
-        var fill = ActiveTheme.Chrome.AccentFill with { W = 0.35f };
+        // The fill is an OPAQUE blend of well ground and accent — the
+        // approved mockup color — never a translucent wash.
+        var accent = ActiveTheme.Chrome.AccentFill;
+        var fill = new Vector4(
+            well.X + (accent.X - well.X) * 0.45f,
+            well.Y + (accent.Y - well.Y) * 0.45f,
+            well.Z + (accent.Z - well.Z) * 0.45f,
+            1f);
         var border = active
             ? ActiveTheme.FormValue with { W = 0.60f }
             : ActiveTheme.Chrome.ControlBorder;

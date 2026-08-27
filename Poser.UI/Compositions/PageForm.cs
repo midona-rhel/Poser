@@ -438,7 +438,8 @@ public static partial class Crystarium
             Func<float, string>? readout = null,
             float logCurvature = 99f,
             Action<ActionScope>? actions = null,
-            string? id = null)
+            string? id = null,
+            bool well = false)
         {
             string controlId = Id(id ?? label);
             var row = _page.BeginRow(label);
@@ -460,11 +461,10 @@ public static partial class Crystarium
                 if (actionWidth > 0f)
                     actionGap = ActiveTheme.Page.ActionGap * row.Scale;
             }
-            // THE slider is a value-well: fill and mono number inside one
-            // control, no separate readout beside it. Marked or
-            // custom-readout sliders keep the classic track until they get
-            // their own designed forms.
-            bool valueWell = marks is null && readout is null;
+            // The value-well replaces the classic track only on surfaces
+            // that were DESIGNED for it (the pilot opts in per call) — a
+            // blanket swap leaked it into expression grids nobody designed.
+            bool valueWell = well && marks is null && readout is null;
             float controlWidth = valueWell
                 ? row.ControlWidth - actionWidth - actionGap
                 : row.ControlWidth -

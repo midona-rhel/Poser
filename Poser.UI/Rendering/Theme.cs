@@ -144,7 +144,7 @@ public readonly record struct Theme
         },
         Form = new()
         {
-            LabelColumnWidth = 94f,
+            LabelColumnWidth = 72f,
             ValueColumnWidth = 44f,
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,

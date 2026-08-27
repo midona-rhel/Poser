@@ -139,6 +139,10 @@ navigation, not a scrollbar — may shift anything.
   buttons stacked across rows align to the pixel.
 - Rows in one section share the label column and the control column;
   a control never invents its own column split.
+- Labels are LEFT-ALIGNED everywhere — form labels, matrix cell
+  labels, all of them. Right-aligned labels are a defect.
+- Cell rows (Cells) spread N controls EQUIDISTANT across the row —
+  the tint row's Character/Main/Off is the reference.
 - Short rows PAIR two-up by design where it halves a section's height:
   Override|Weather, Swimming|Depth, Opacity|Tint. Pairing is a
   deliberate per-section choice at the design width, not a responsive
@@ -148,7 +152,9 @@ navigation, not a scrollbar — may shift anything.
 
 - THE slider is a value-well: the fill lives inside the well, the
   number (mono) sits inside at the right — AxisWell wearing the
-  slider's fill, no separate readout beside it.
+  slider's fill, no separate readout beside it. It replaces the
+  classic track ONLY on surfaces designed for it (`well: true` per
+  call) — never as a blanket swap into undesigned grids.
 - Travel must match what the value realistically represents. For
   ranges spanning magnitudes (0→1→10→100), use `SliderScale.Log` with
   curvature `10^decades − 1`: 9999 puts 1 at half travel, 10 at

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin.Services;
@@ -162,18 +163,26 @@ public sealed class AppearancePane
             bool creature = IsCreature(actor);
 
             // Model controls remain available for creature models.
-            page.Section("MODEL", _openModel, next => _openModel = next,
-                form => ModelRows(form, actor),
+            bool supported = _presentation.IsSupported(actor)
+                && _presentation.Read(actor) is not null;
+            page.Section("GENERAL", _openGeneral,
+                next => _openGeneral = next,
+                form =>
+                {
+                    ModelRows(form, actor);
+                    if (supported && _presentation.Read(actor) is { } r)
+                        GeneralRows(form, actor,
+                            _presentation.OverridesFor(actor), r);
+                },
                 divider: false);
             bool first = false;
 
-            if (_presentation.IsSupported(actor)
-                && _presentation.Read(actor) is { } reading)
+            if (supported && _presentation.Read(actor) is { } reading)
             {
                 var owned = _presentation.OverridesFor(actor);
-                page.Section("GENERAL", _openGeneral,
-                    next => _openGeneral = next,
-                    form => GeneralRows(form, actor, owned, reading),
+                page.Section("TINT", _openModel,
+                    next => _openModel = next,
+                    form => TintRow(form, actor, owned, reading),
                     divider: !first);
                 first = false;
                 page.Section("WET SURFACE", _openWetSurface,
@@ -213,43 +222,90 @@ public sealed class AppearancePane
             _modelText = ModelIdText(current);
         }
 
-        form.Selector(
-            "Model",
-            ModelDisplayName(current),
-            () => OpenModelPicker(id),
-            () => ReportModel(_model.Reset(id), "Reset model"),
-            available: true,
-            owned: _model.IsOwned(id),
-            help: "Search by name or model id");
+        form.Custom("Model", Crystarium.ActiveTheme.Controls.FormRowHeight,
+            row => DrawModelRow(row, id, current),
+            help: "Search by name or step the model id");
+    }
 
-        // The numeric field is applied explicitly.
-        form.TextInputActions(
-            "Model id",
+    /// <summary>The whole model on one row: the name, the id under its
+    /// steppers (the texture-selector shape), and the verbs. A step or a
+    /// committed edit applies immediately — one click, one change.</summary>
+    private void DrawModelRow(
+        Crystarium.FormRowScope row, ActorId id, int current)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float s = row.Scale;
+        float side = theme.Controls.WorkspaceHeight * s;
+        float gap = theme.Page.ActionGap * s;
+        float tight = theme.Spacing.One * s;
+        float verb = theme.Form.VerbWidth * s;
+        float wellW = theme.Form.AxisWellMinimumWidth * s;
+        float top = row.CenterControl(theme.Controls.WorkspaceHeight).Y;
+
+        float trailW = verb * 2f + gap;
+        float stepperW = side * 2f + wellW + tight * 2f;
+        float nameW = MathF.Max(
+            0f, row.ControlWidth - trailW - gap - stepperW - gap);
+        var square = ControlStyle.Square(theme.Controls.WorkspaceHeight);
+
+        Crystarium.TextInBand(
+            new Vector2(row.ControlOrigin.X, row.Origin.Y),
+            new Vector2(nameW, row.RowHeight * s),
+            ModelDisplayName(current),
+            new TextStyle { Size = theme.Typography.LabelSize },
+            TextConstraint.Truncate(nameW));
+
+        float x = row.ControlOrigin.X + nameW + gap;
+        ImGui.SetCursorScreenPos(new Vector2(x, top));
+        Crystarium.IconButton(
+            TablerIcon.Minus,
+            () => { StepModelId(-1); ApplyModelId(id); },
+            square, current <= 0, "Previous model id",
+            id: "appearance-model-down");
+        x += side + tight;
+
+        int draft = int.TryParse(
             _modelText,
-            next => _modelText = next,
-            actions =>
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var parsed) ? parsed : current;
+        ImGui.SetCursorScreenPos(new Vector2(x, top));
+        Crystarium.AxisWell(
+            "appearance-model-id",
+            string.Empty,
+            draft,
+            next => _modelText = ModelIdText(
+                Math.Max(0, (int)MathF.Round(next))),
+            () => ApplyModelId(id),
+            theme.FormValue,
+            0.25f,
+            "0",
+            ControlStyle.Workspace with
             {
-                actions.IconButton(
-                    TablerIcon.Minus,
-                    () => StepModelId(-1),
-                    help: "The row before this one");
-                actions.IconButton(
-                    TablerIcon.Plus,
-                    () => StepModelId(1),
-                    help: "The row after this one");
-                actions.Button(
-                    "Apply",
-                    () => ApplyModelId(id),
-                    help: "Write the model id and redraw the actor");
-            },
-            help: "The ModelChara row this actor draws as. 0 is the human "
-                + "base; the steppers walk the draft and Apply redraws the "
-                + "actor.",
-            style: new ControlStyle
-            {
-                Width = UiWidth.Fixed(
-                    Crystarium.ActiveTheme.Form.AxisWellMinimumWidth),
+                Width = UiWidth.Fixed(theme.Form.AxisWellMinimumWidth),
             });
+        x += wellW + tight;
+
+        ImGui.SetCursorScreenPos(new Vector2(x, top));
+        Crystarium.IconButton(
+            TablerIcon.Plus,
+            () => { StepModelId(1); ApplyModelId(id); },
+            square, false, "Next model id",
+            id: "appearance-model-up");
+
+        float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
+        ImGui.SetCursorScreenPos(new Vector2(tx, top));
+        Crystarium.Button("Select", () => OpenModelPicker(id),
+            style: ControlStyle.Workspace with
+            { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
+            help: "Search by name or id", id: "appearance-model-select");
+        ImGui.SetCursorScreenPos(new Vector2(tx + verb + gap, top));
+        Crystarium.Button("Reset",
+            () => ReportModel(_model.Reset(id), "Reset model"),
+            style: ControlStyle.Workspace with
+            { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
+            disabled: !_model.IsOwned(id),
+            help: "The model it came in with", id: "appearance-model-reset");
     }
 
     /// <summary>Changes the draft value without changing the actor.</summary>
@@ -445,30 +501,11 @@ public sealed class AppearancePane
         PresentationReading reading)
     {
         var glamourer = _integration.Glamourer;
-        form.PairRows();
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "0 invisible · 1 solid");
+            help: "0 invisible · 1 solid",
+            well: true);
 
-        form.ColorWells("Tint", wells =>
-        {
-            wells.Well("Character",
-                TintFor(owned, reading, PresentationModel.Character),
-                value => Report(_presentation.SetTint(
-                    actor, PresentationModel.Character, value), "Character"));
-            wells.Well("Main",
-                TintFor(owned, reading, PresentationModel.MainHand),
-                value => Report(_presentation.SetTint(
-                    actor, PresentationModel.MainHand, value), "Main"),
-                "No main hand weapon is equipped");
-            wells.Well("Off",
-                TintFor(owned, reading, PresentationModel.OffHand),
-                value => Report(_presentation.SetTint(
-                    actor, PresentationModel.OffHand, value), "Off"),
-                "No off hand weapon is equipped");
-        }, help: "White leaves a model unchanged");
-
-        form.EndPair();
         form.Actions("Appearance", actions =>
         {
             actions.Button("Open in Glamourer",
@@ -487,6 +524,38 @@ public sealed class AppearancePane
                 () => Report(_presentation.ResetActor(actor), "Reset appearance"),
                 help: "Undo opacity, tint, and wetness");
         });
+    }
+
+    /// <summary>One row of equidistant tint cells — character, main
+    /// hand, off hand — under their own header.</summary>
+    private void TintRow(
+        Crystarium.FormScope form,
+        ActorId actor,
+        PresentationOverrides owned,
+        PresentationReading reading)
+    {
+        void ColorCell(
+            Crystarium.FormPairCell cell, string what,
+            PresentationModel model)
+        {
+            ImGui.SetCursorScreenPos(cell.Center(
+                Crystarium.ActiveTheme.Controls.ColorWellSize));
+            Crystarium.ColorWell(
+                $"appearance-tint-{what}",
+                TintFor(owned, reading, model) ?? Vector4.One,
+                value => Report(
+                    _presentation.SetTint(actor, model, value), what));
+        }
+
+        form.Cells(cells =>
+        {
+            cells.Cell("Character", cell =>
+                ColorCell(cell, "Character", PresentationModel.Character));
+            cells.Cell("Main", cell =>
+                ColorCell(cell, "Main", PresentationModel.MainHand));
+            cells.Cell("Off", cell =>
+                ColorCell(cell, "Off", PresentationModel.OffHand));
+        }, help: "White leaves a model unchanged");
     }
 
     private void WetSurfaceRows(
@@ -510,17 +579,17 @@ public sealed class AppearancePane
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
             help: "0 dry · 1 soaked",
-            disabled: !wetOn);
+            disabled: !wetOn, well: true);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
             help: "0 dry · 1 soaked",
-            disabled: !wetOn);
+            disabled: !wetOn, well: true);
         form.Slider("Depth", wet.Depth, 0f, 3f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
             help: "How far up the body it reaches",
-            disabled: !wetOn);
+            disabled: !wetOn, well: true);
     }
 
     private void ExternalAppearanceRows(

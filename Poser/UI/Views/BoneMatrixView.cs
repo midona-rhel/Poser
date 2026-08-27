@@ -182,7 +182,7 @@ public static class BoneMatrixView
                 new Vector2(pos.X, pos.Y),
                 new Vector2(labelAvail, metrics.RowHeight * s),
                 row.Label, labelStyle,
-                TextConstraint.Truncate(labelAvail, TextAlign.End));
+                TextConstraint.Truncate(labelAvail));
 
         float x = pos.X + width - pillsW;
         int i = 0;
