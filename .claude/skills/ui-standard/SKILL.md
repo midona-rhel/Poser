@@ -140,6 +140,19 @@ selection, not navigation, not a scrollbar — may shift anything.
   (×10 / ×0.1) produces the rest. Integer-id wells may step coarser.
 - Double-click to type, always.
 
+## Row patterns
+
+- **Override switch**: a Switch row named "Override" leads; its
+  dependent rows follow immediately, DISABLED (never hidden) while
+  the override is off. The wet-surface section is the reference.
+- **Selector row** (external ownership): current value + a select
+  action + a reset action, with the owned state shown. One shape for
+  everything picked from elsewhere (model, glamour, customize).
+- **Explicit-apply field**: a raw id/text field applies on its action
+  button, never on keystroke.
+- **Status row**: one-line state ("This actor is no longer
+  available.") drawn as a form row, not ad-hoc text.
+
 ## Texture selection
 
 One shape only: the preview tile, then `[−] [id well] [+]` — the well
