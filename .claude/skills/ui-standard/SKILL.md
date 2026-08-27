@@ -266,7 +266,13 @@ are the axes, each wrapped in its color-coded rounded box (AxisX/Y/Z
 palette) that rises above the grid with extra-round top corners and
 carries its letter in a CUTOUT of the top border — a fieldset legend.
 The wells inside carry no letters; the column says it once.
-`Crystarium.TransformGrid` is the normative implementation.
+`Crystarium.TransformGrid` is the normative implementation. The grid
+explains itself — its section carries NO header, and the grid ends in
+its own bottom margin.
+
+Hover registrations gate on the pointer being inside the rect —
+unconditional HoverHelp.Explain calls fight each other and the last
+registration wins everywhere.
 
 ## Texture selection
 

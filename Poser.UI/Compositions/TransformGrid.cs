@@ -8,15 +8,17 @@ namespace Poser.UI;
 public static partial class Crystarium
 {
     private const float TransformLegendRise = 12f;
-    private const float TransformBoxPad = 4f;
-    private const float TransformRowGap = 4f;
+    private const float TransformBoxPad = 6f;
+    private const float TransformRowGap = 6f;
+    private const float TransformBottomMargin = 8f;
 
     /// <summary>The grid's logical row height, stated so the hosting form
-    /// row can reserve it exactly.</summary>
+    /// row can reserve it exactly — the bottom margin included, so the
+    /// next row breathes.</summary>
     public static float TransformGridHeight =>
         TransformLegendRise + TransformBoxPad * 2f
         + ActiveTheme.Controls.WorkspaceHeight * 3f
-        + TransformRowGap * 2f;
+        + TransformRowGap * 2f + TransformBottomMargin;
 
     /// <summary>
     /// The inspector's transform: rows are translate / rotate / scale
@@ -45,8 +47,8 @@ public static partial class Crystarium
         float pad = TransformBoxPad * s;
         float rise = TransformLegendRise * s;
         float iconSide = theme.Controls.WorkspaceHeight * s;
-        float margin = theme.Spacing.Three * s;
-        float boxGap = theme.Spacing.Three * s;
+        float margin = theme.Spacing.Four * s;
+        float boxGap = theme.Spacing.Four * s;
         float boxW = MathF.Max(
             1f, (width - iconSide - margin - boxGap * 2f) / 3f);
         float boxH = rise + pad * 2f + rowH * 3f + rowGap * 2f;
@@ -62,11 +64,14 @@ public static partial class Crystarium
                 theme.FormLabel,
                 contentScale: 0.72f,
                 disabled: disabled);
-            HoverHelp.Explain(
-                Ids.Join(id, "-row-", rows[r].Name),
-                new Vector2(origin.X, y),
-                new Vector2(origin.X + iconSide, y + rowH),
-                rows[r].Name);
+            if (ImGui.IsMouseHoveringRect(
+                    new Vector2(origin.X, y),
+                    new Vector2(origin.X + iconSide, y + rowH)))
+                HoverHelp.Explain(
+                    Ids.Join(id, "-row-", rows[r].Name),
+                    new Vector2(origin.X, y),
+                    new Vector2(origin.X + iconSide, y + rowH),
+                    rows[r].Name);
         }
 
         Span<Vector4> accents =

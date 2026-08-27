@@ -555,7 +555,7 @@ public class PoseInspectorPane
             {
                 stack.Section(
                     "translation",
-                    "TRANSLATION",
+                    "",
                     _openTranslation,
                     next => _openTranslation = next,
                     _cameraPane.DrawRailTranslation,
@@ -591,7 +591,7 @@ public class PoseInspectorPane
         if (_primary is not { Kind: SceneEntityKind.GazeTarget })
             stack.Section(
                 "translation",
-                "TRANSLATION",
+                "",
                 _openTranslation,
                 next => _openTranslation = next,
                 DrawTransform,
