@@ -14,27 +14,37 @@ Crystarium primitives — inventing a local layout is a defect.
 
 ## Shell roles (the Blender mapping)
 
-Four windows, each with ONE job. No mode may change what a window IS.
+Windows each have ONE job. No mode may change what a window IS.
 
+- **Selection means world-manipulable.** Only things you can grab in
+  the viewport — actors, bones, lights, cameras, props, overlays —
+  are ever "selected". Environment, scene, and library are NOT
+  selections; they are property pages and browsers. Treating them as
+  selections is a category error.
 - **Main window** — the scene editor, always: sidebar = outliner
-  (what exists, selection), tab strip = properties editor (aspect tabs
-  per selected type — Pose/Animation/Appearance for actors,
-  Light/Shadows, Weather/Sky/… for the environment), inspector =
-  N-panel. The environment is a selection like any other, never a
-  separate window.
-- **The inspector** (right column) carries ONLY the selection's
-  invariants: summary, reset verbs, rotation gizmo, TRANSLATION,
-  TRACKING, IK. It always corresponds to the active selection, is
-  user-toggled, and its column never appears or vanishes from
-  navigation. Aspect content (EXPRESSION, POSE) belongs to tabs, never
-  the inspector — nothing is drawn in two places.
-- **Library window** — the asset browser: Poses, Auto-saves, MCDFs,
-  Scenes, Objects, plus whole-scene save/load. It is its own window so
-  it can stand beside the viewport; it never hijacks the main window.
-  Its metadata panel follows the same reserved/toggle policy as the
+  (world things, selection), tab strip = properties editor. The strip
+  carries the active selection's aspect tabs (Pose/Animation/
+  Appearance, Light/Shadows, …) plus the environment's pages as FIXED
+  global tabs — always reachable, selection-independent. Opening an
+  environment page does not touch the selection, the gizmo, or the
   inspector.
-- **Toolbar** — permanently its own window with a remembered position;
-  never a band inside the main window.
+- **The inspector** (right column) carries ONLY the active world
+  selection's invariants: summary, reset verbs, rotation gizmo,
+  TRANSLATION, TRACKING, IK. Nothing selected → a plain empty state.
+  It is user-toggled; its column never appears or vanishes from
+  navigation. Aspect content (EXPRESSION, POSE) belongs to tabs,
+  never the inspector — nothing is drawn in two places.
+- **Library window** — the asset browser: Poses, Auto-saves, MCDFs,
+  Scenes, Objects, plus whole-scene save/load. Its own window so it
+  stands beside the viewport; it never hijacks the main window. Its
+  metadata panel follows the same reserved/toggle policy as the
+  inspector.
+- **Toolbar** — permanently its own window with a remembered
+  position, never a band inside the main window. It has a title bar
+  whose ONLY content is a copy of the burger menu; nothing else lives
+  there by default. New global buttons earn a place on this toolbar —
+  it is the one extensible home, so no other surface grows ad-hoc
+  buttons.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin that stops it following selection. Identical layout to
   the main tabs — a bespoke pop-out layout is a defect.
@@ -84,7 +94,10 @@ tokens live in Theme, never inline.
 
 ## No reflow, ever
 
-Nothing may shift when state changes around it:
+Reflow is the enemy. Layout may move for exactly one reason: the user
+opened or collapsed a section header. Nothing else — not state, not
+selection, not navigation, not a scrollbar — may shift anything.
+
 
 - Text never reflows a row: values change inside fixed-width wells,
   labels truncate rather than wrap, conditional text is drawn over
@@ -96,6 +109,16 @@ Nothing may shift when state changes around it:
   page's left inset.
 - Navigating (tab switches, selection changes) must not shift shared
   chrome — headers, footers, and section frames stay put.
+- A control that changes state (enabled, toggled, renamed value) keeps
+  its exact footprint.
+
+## Alignment
+
+- Trailing buttons across neighbouring rows align as a column: same
+  function → same width, same right edge. Each row sizing its own
+  button is a defect.
+- Rows in one section share the label column and the control column;
+  a control never invents its own column split.
 
 ## Sliders
 
