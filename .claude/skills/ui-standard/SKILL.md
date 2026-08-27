@@ -151,6 +151,10 @@ navigation, not a scrollbar — may shift anything.
   Ctrl = 0.01 — that is `perPixel: 0.1`, and the modifier ladder
   (×10 / ×0.1) produces the rest. Integer-id wells may step coarser.
 - Double-click to type, always.
+- Numbers render in the MONO family (Cascadia), never Segoe:
+  proportional digits make a changing value wiggle inside its well —
+  the no-reflow rule at glyph scale. Applies to every numeric readout,
+  well, and matrix cell.
 
 ## Row patterns
 
