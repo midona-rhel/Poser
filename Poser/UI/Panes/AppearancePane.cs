@@ -165,7 +165,7 @@ public sealed class AppearancePane
             // Model controls remain available for creature models.
             bool supported = _presentation.IsSupported(actor)
                 && _presentation.Read(actor) is not null;
-            page.Section("GENERAL", _openGeneral,
+            page.Section("General", _openGeneral,
                 next => _openGeneral = next,
                 form =>
                 {
@@ -180,12 +180,12 @@ public sealed class AppearancePane
             if (supported && _presentation.Read(actor) is { } reading)
             {
                 var owned = _presentation.OverridesFor(actor);
-                page.Section("TINT", _openModel,
+                page.Section("Tint", _openModel,
                     next => _openModel = next,
                     form => TintRow(form, actor, owned, reading),
                     divider: !first);
                 first = false;
-                page.Section("WET SURFACE", _openWetSurface,
+                page.Section("Wet surface", _openWetSurface,
                     next => _openWetSurface = next,
                     form => WetSurfaceRows(form, actor, owned, reading));
             }
@@ -195,12 +195,12 @@ public sealed class AppearancePane
                 RefreshReadouts(actor);
                 var external = _integration.OverridesFor(actor);
 
-                page.Section("EXTERNAL APPEARANCE", _openExternalAppearance,
+                page.Section("External appearance", _openExternalAppearance,
                     next => _openExternalAppearance = next,
                     form => ExternalAppearanceRows(form, actor, external),
                     divider: !first);
                 first = false;
-                page.Section("CHARACTER FILE (MCDF)", _openCharacterFile,
+                page.Section("Character file (MCDF)", _openCharacterFile,
                     next => _openCharacterFile = next,
                     form => CharacterFileRows(form, actor, external));
             }

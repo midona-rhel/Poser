@@ -58,7 +58,7 @@ public sealed class PropsPane
             // Transform lives on the inspector rail, exactly as a light's
             // does; this pane owns only what the rail cannot say.
             page.Section(
-                "OBJECT",
+                "Object",
                 _openProp,
                 next => _openProp = next,
                 form => PropRows(form, prop),

@@ -272,40 +272,40 @@ public sealed class EnvironmentPane
 
     private void WeatherPage(Crystarium.PageScope page)
     {
-        page.Section("TIME", _openTime, next => _openTime = next,
+        page.Section("Time", _openTime, next => _openTime = next,
             TimeRows, divider: false);
-        page.Section("WEATHER", _openWeather, next => _openWeather = next,
+        page.Section("Weather", _openWeather, next => _openWeather = next,
             WeatherRows);
     }
 
     private void SkyPage(Crystarium.PageScope page)
     {
-        page.Section("SKY", _openSky, next => _openSky = next, SkyRows,
+        page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
             divider: false);
-        page.Section("STARS", _openStars, next => _openStars = next, StarRows);
+        page.Section("Stars", _openStars, next => _openStars = next, StarRows);
     }
 
     private void LightPage(Crystarium.PageScope page)
     {
-        page.Section("LIGHTING", _openLighting,
+        page.Section("Lighting", _openLighting,
             next => _openLighting = next, LightingRows, divider: false);
     }
 
     private void AtmospherePage(Crystarium.PageScope page)
     {
-        page.Section("FOG", _openFog, next => _openFog = next, FogRows,
+        page.Section("Fog", _openFog, next => _openFog = next, FogRows,
             divider: false);
-        page.Section("RAIN", _openRain, next => _openRain = next, RainRows);
-        page.Section("PARTICLES", _openParticles,
+        page.Section("Rain", _openRain, next => _openRain = next, RainRows);
+        page.Section("Particles", _openParticles,
             next => _openParticles = next, ParticleRows);
-        page.Section("WIND", _openWind, next => _openWind = next, WindRows);
+        page.Section("Wind", _openWind, next => _openWind = next, WindRows);
     }
 
     private void WorldPage(Crystarium.PageScope page)
     {
-        page.Section("RENDERING", _openRendering,
+        page.Section("Rendering", _openRendering,
             next => _openRendering = next, RenderingRows, divider: false);
-        page.Section("FESTIVALS", _openFestivals,
+        page.Section("Festivals", _openFestivals,
             next => _openFestivals = next, FestivalRows);
     }
 

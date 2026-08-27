@@ -264,16 +264,16 @@ public sealed class LightPane
         {
             // The rule is a divider BETWEEN sections, so the page's first
             // section draws neither the rule nor the margin above it.
-            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
+            page.Section("General", _openGeneral, next => _openGeneral = next,
                 form => GeneralRows(form, light),
                 divider: false);
-            page.Section("LIGHT", _openLight, next => _openLight = next,
+            page.Section("Light", _openLight, next => _openLight = next,
                 form => LightRows(form, light));
-            page.Section("ATTACH", _openAttach, next => _openAttach = next,
+            page.Section("Attach", _openAttach, next => _openAttach = next,
                 form => AttachRows(form, light));
-            page.Section("FILE", _openFile, next => _openFile = next,
+            page.Section("File", _openFile, next => _openFile = next,
                 form => FileRows(form, light));
-            page.Section("ACTIONS", _openActions, next => _openActions = next,
+            page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
         });
 
@@ -282,7 +282,7 @@ public sealed class LightPane
     public void DrawShadows(Vector2 origin, Vector2 size) =>
         DrawTab("light-shadows", origin, size, (page, _, light) =>
         {
-            page.Section("SHADOWS", _openShadows, next => _openShadows = next,
+            page.Section("Shadows", _openShadows, next => _openShadows = next,
                 form => ShadowRows(form, light),
                 divider: false);
         });

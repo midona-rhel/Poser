@@ -232,29 +232,29 @@ public sealed class CameraPane
     public void DrawCamera(Vector2 origin, Vector2 size) =>
         DrawTab("camera", origin, size, (page, _, camera) =>
         {
-            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
+            page.Section("General", _openGeneral, next => _openGeneral = next,
                 form => GeneralRows(form, camera),
                 divider: false);
             if (camera.Kind == CameraKind.Free)
             {
-                page.Section("MOVEMENT", _openMovement,
+                page.Section("Movement", _openMovement,
                     next => _openMovement = next,
                     form => MovementRows(form, camera));
-                page.Section("CAMERA", _openCamera, next => _openCamera = next,
+                page.Section("Camera", _openCamera, next => _openCamera = next,
                     form => FreeCameraRows(form, camera));
             }
             else
             {
-                page.Section("CAMERA", _openCamera, next => _openCamera = next,
+                page.Section("Camera", _openCamera, next => _openCamera = next,
                     form => OrbitRows(form, camera));
-                page.Section("TARGET", _openTarget, next => _openTarget = next,
+                page.Section("Target", _openTarget, next => _openTarget = next,
                     form => TargetRows(form, camera));
             }
-            page.Section("LIMITS", _openLimits, next => _openLimits = next,
+            page.Section("Limits", _openLimits, next => _openLimits = next,
                 form => LimitRows(form, camera));
-            page.Section("FILE", _openFile, next => _openFile = next,
+            page.Section("File", _openFile, next => _openFile = next,
                 form => FileRows(form, camera));
-            page.Section("ACTIONS", _openActions, next => _openActions = next,
+            page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, camera));
         });
 
@@ -298,7 +298,7 @@ public sealed class CameraPane
             onCommit: null,
             perPixel: perPixel,
             format: "0.00",
-            help: "World-space offset added to the camera every frame",
+            help: "Offset the camera every frame",
             disabled: locked);
         WorldPositionRow(form, camera, locked, perPixel);
     }
@@ -319,7 +319,7 @@ public sealed class CameraPane
                 onCommit: null,
                 perPixel: perPixel,
                 format: "0.00",
-                help: "The world point this camera is pinned to; it stays "
+                help: "The pinned world point"
                     + "here however the subject moves",
                 disabled: locked || !_cameras.IsAvailable);
         }
@@ -329,7 +329,7 @@ public sealed class CameraPane
             form.AxisVector(
                 "World position", world, _ => { }, onCommit: null,
                 perPixel: perPixel, format: "0.00",
-                help: "Where this camera is in the world right now",
+                help: "The camera's world position",
                 disabled: true);
         }
         form.Switch(
@@ -341,7 +341,7 @@ public sealed class CameraPane
                 camera.FixedPosition = value ? camera.WorldPosition : null;
             },
             disabled: locked || !_cameras.IsAvailable,
-            help: "Keep this camera at its current world position");
+            help: "Hold this world position");
     }
 
     /// <summary>Draws camera tracking controls on the inspector rail.</summary>
@@ -388,12 +388,12 @@ public sealed class CameraPane
                 "Live",
                 cell => cell.Switch("##camera-live", camera.IsLive,
                     value => SetLive(camera, value)),
-                help: "Look through this camera; exactly one camera is live");
+                help: "Look through this camera");
             cells.Cell(
                 "Portrait",
                 cell => cell.Switch("##camera-portrait", camera.IsPortraitMode,
                     _ => camera.TogglePortraitMode(), disabled: locked),
-                help: "Roll the view a quarter turn for portrait framing");
+                help: "Quarter-turn for portrait framing");
         });
         form.Cells(cells =>
         {
@@ -401,7 +401,7 @@ public sealed class CameraPane
                 "Name",
                 cell => cell.TextInput("##camera-name", camera.Name,
                     value => camera.Name = value, disabled: locked),
-                help: "The name this camera carries in the sidebar");
+                help: "Name it in the sidebar");
             cells.Cell(
                 "Type",
                 cell => cell.Text(
@@ -410,7 +410,7 @@ public sealed class CameraPane
                         : camera.Kind == CameraKind.Free
                             ? "Free camera"
                             : "Game camera"),
-                help: "Fixed at creation: a game camera orbits, a free "
+                help: "Set at creation"
                     + "camera flies");
         });
     }
@@ -426,7 +426,7 @@ public sealed class CameraPane
             value => camera.Zoom = value,
             disabled: locked,
             scale: SliderScale.Log,
-            help: "How far the camera orbits from its pivot");
+            help: "Distance from the pivot");
         FovRollRow(form, camera, locked);
 
         // Angle and pan are wrap-around headings, not bounded travels — a
@@ -448,7 +448,7 @@ public sealed class CameraPane
                     value => camera.Angle =
                         camera.Angle with { Y = value * Deg2Rad },
                     perPixel: 0.25f, format: "0.0", disabled: locked),
-                help: "Orbit above or below the pivot, in degrees; the game "
+                help: "Orbit above or below, degrees"
                     + "clamps this unless the camera is delimited");
         });
         var pan = camera.Pan;
@@ -460,7 +460,7 @@ public sealed class CameraPane
                     value => camera.Pan =
                         camera.Pan with { X = value * Deg2Rad },
                     perPixel: 0.25f, format: "0.0", disabled: locked),
-                help: "Swing the view sideways without moving the pivot, in "
+                help: "Swing the view, degrees"
                     + "degrees");
             cells.Cell(
                 "Tilt",
@@ -468,7 +468,7 @@ public sealed class CameraPane
                     value => camera.Pan =
                         camera.Pan with { Y = value * Deg2Rad },
                     perPixel: 0.25f, format: "0.0", disabled: locked),
-                help: "Tip the view up or down without moving the pivot, in "
+                help: "Tip the view, degrees"
                     + "degrees");
         });
     }
@@ -543,7 +543,7 @@ public sealed class CameraPane
                         },
                         disabled: locked || camera.IsTracking ||
                             camera.IsTargetLocked,
-                        help: "Seat the orbit pivot on an actor's drawn body");
+                        help: "Seat the pivot on an actor");
                 }
                 else
                 {
@@ -565,7 +565,7 @@ public sealed class CameraPane
                     () => Recenter(camera),
                     style: buttonStyle,
                     disabled: locked,
-                    help: "Center the exact followed actor without changing "
+                    help: "Center the followed actor"
                         + "view orientation; free cameras refuse",
                     id: "##camera-recenter");
                 if (!camera.IsTracking && !camera.IsTargetLocked &&
@@ -593,13 +593,13 @@ public sealed class CameraPane
                 cell => cell.Switch("##camera-move", camera.MovementEnabled,
                     value => camera.MovementEnabled = value,
                     disabled: locked),
-                help: "Fly while this camera is live: WASD moves, Q or Space "
+                help: "Fly with WASD while live"
                     + "rises, E or Shift drops");
             cells.Cell(
                 "Lateral",
                 cell => cell.Switch("##camera-move2d", camera.Move2D,
                     value => camera.Move2D = value, disabled: locked),
-                help: "Keep movement in the horizontal plane instead of "
+                help: "Stay in the horizontal plane"
                     + "along the view");
         });
         // The slider ends are the wheel's clamp: the row and the notch read
@@ -610,7 +610,7 @@ public sealed class CameraPane
             value => camera.MovementSpeed = value,
             format: "0.000",
             disabled: locked,
-            help: "How fast the camera flies; the mouse wheel steps it while "
+            help: "Flight speed; the wheel adjusts it"
                 + "flying, Ctrl speeds up, Alt slows down");
         form.Slider("Sensitivity", camera.MouseSensitivity, 0.001f, 0.2f,
             value => camera.MouseSensitivity = value,
@@ -620,7 +620,7 @@ public sealed class CameraPane
         form.Switch("Delimit angle", camera.DelimitAngle,
             value => camera.DelimitAngle = value,
             disabled: locked,
-            help: "Let the view pitch wrap past straight up and down");
+            help: "Let pitch wrap past vertical");
     }
 
     /// <summary>FoV and roll share one row for both camera kinds: the two
@@ -638,7 +638,7 @@ public sealed class CameraPane
                     -44f, 120f,
                     value => camera.FoV = value * Deg2Rad,
                     format: "0.0", disabled: locked),
-                help: "Field-of-view offset around the game's own lens, in "
+                help: "Lens offset, degrees"
                     + "degrees");
             cells.Cell(
                 "Roll",
@@ -672,7 +672,7 @@ public sealed class CameraPane
                     value => camera.Rotation =
                         camera.Rotation with { Y = value * Deg2Rad },
                     perPixel: 0.25f, format: "0.0", disabled: locked),
-                help: "How far the camera looks up or down, in degrees");
+                help: "Look up or down, degrees");
         });
     }
 
@@ -689,7 +689,7 @@ public sealed class CameraPane
                         !camera.DisableCollision,
                         value => camera.DisableCollision = !value,
                         disabled: locked),
-                    help: "Let walls and floors push the camera; off clips "
+                    help: "Let walls push the camera"
                         + "through them");
                 cells.Cell(
                     "Delimit",
@@ -697,7 +697,7 @@ public sealed class CameraPane
                         camera.DelimitCamera,
                         value => camera.DelimitCamera = value,
                         disabled: locked),
-                    help: "Lift the game's zoom range and vertical clamp");
+                    help: "Lift zoom and pitch limits");
             });
         }
         form.Switch("Orthographic", camera.Orthographic,
@@ -714,7 +714,7 @@ public sealed class CameraPane
                     camera.Orthographic = true;
             },
             disabled: locked || !camera.Orthographic,
-            help: "How much of the world the flat projection spans");
+            help: "Width of the flat view");
     }
 
     private void FileRows(Crystarium.FormScope form, IVirtualCamera camera)
@@ -722,9 +722,9 @@ public sealed class CameraPane
         form.Actions("Camera file", actions =>
         {
             actions.Button("Save", () => OpenSave(camera),
-                help: "Write this camera and all of its settings to a file");
+                help: "Save this camera to a file");
             actions.Button("To library", () => SaveToLibrary(camera),
-                help: "Save this camera into the library's Objects tab");
+                help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene");
         });
@@ -763,7 +763,7 @@ public sealed class CameraPane
                     }
                     _pendingSelect = clone;
                 },
-                help: "Create a second camera with every setting of this one");
+                help: "Duplicate this camera");
             if (!camera.IsDefault)
                 actions.Button("Destroy",
                     () =>

@@ -193,13 +193,13 @@ public sealed class AnimationPane : IDisposable
             var owned = _animation.OverridesFor(actor);
             bool advanced = _advancedActors.Contains(actor);
             page.Section(
-                "GENERAL",
+                "General",
                 _openGeneral,
                 next => _openGeneral = next,
                 form => DrawGeneral(form, actor, reading, advanced),
                 divider: false);
             page.Section(
-                "ANIMATION LAYERS",
+                "Animation layers",
                 _openAnimationLayers,
                 next => _openAnimationLayers = next,
                 form => DrawAnimationLayers(

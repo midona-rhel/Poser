@@ -61,7 +61,7 @@ public sealed class WorldObjectsPane
             // Transform lives on the inspector rail, exactly as a prop's does;
             // this pane owns only what the rail cannot say.
             page.Section(
-                "WORLD OBJECT",
+                "World object",
                 _openObject,
                 next => _openObject = next,
                 form => ObjectRows(form, worldObject),

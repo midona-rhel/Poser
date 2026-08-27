@@ -325,7 +325,8 @@ public static partial class Crystarium
             float column = LabelColumn(label, _trackWidth, _scale, _labelWidth);
             var row = new FormRowScope(
                 new(x, top), _trackWidth, _scale, column / _scale,
-                RowHeight, visible);
+                RowHeight, visible)
+            { HasLabel = !string.IsNullOrEmpty(label) };
             if (visible && !string.IsNullOrEmpty(label))
                 FormLabel(
                     row.Origin,
@@ -344,8 +345,11 @@ public static partial class Crystarium
             float? logicalHeight = null)
         {
             float height = logicalHeight ?? RowHeight;
+            // The help anchors on the LABEL band — a full-row rect would
+            // shadow the controls' own hovers.
+            float helpWidth = row.HasLabel ? row.LabelWidth : row.Width;
             RegisterHelp(Ids.Join(id, "-row"), row.Origin,
-                row.Origin + new Vector2(row.Width,
+                row.Origin + new Vector2(helpWidth,
                     height * row.Scale), help);
             if (_twoTrack && !_pendingFullLine)
             {
@@ -1475,7 +1479,22 @@ public static partial class Crystarium
             DrawHalf(
                 in row, row.Origin.X + half + cellMargin, half,
                 rightLabel, drawRight);
-            _page.EndRow(row, id, help);
+            // The pair's help anchors on the LABEL bands, so each cell's
+            // control keeps its own hover.
+            if (help is not null)
+            {
+                float column = LabelColumn(
+                    leftLabel, half, row.Scale, row.LabelWidth / row.Scale);
+                var band = new Vector2(
+                    column, ActiveTheme.Controls.FormRowHeight * row.Scale);
+                RegisterHelp(Ids.Join(id, "-left"),
+                    row.Origin, row.Origin + band, help);
+                var rightOrigin = new Vector2(
+                    row.Origin.X + half + cellMargin, row.Origin.Y);
+                RegisterHelp(Ids.Join(id, "-right"),
+                    rightOrigin, rightOrigin + band, help);
+            }
+            _page.EndRow(row, id, null);
         }
 
         /// <summary>Draws multiple controls on one row.</summary>
@@ -2090,6 +2109,10 @@ public static partial class Crystarium
         /// visible band — controls skip their drawing and interaction for
         /// such rows while layout still advances.</summary>
         public bool Visible { get; }
+
+        /// <summary>Whether the row carries a label — what decides where
+        /// its help anchors: the label band, never the whole row.</summary>
+        public bool HasLabel { get; internal init; }
 
         internal FormRowScope(
             Vector2 origin, float width, float scale, float labelWidth,

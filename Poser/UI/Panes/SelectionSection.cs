@@ -82,7 +82,7 @@ public sealed class SelectionSection
 
         float height = Crystarium.Section(
             "selection-group",
-            "SELECTION",
+            "Selection",
             origin,
             width,
             true,

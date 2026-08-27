@@ -275,7 +275,10 @@ thousandths.
 
 Hover registrations gate on the pointer being inside the rect —
 unconditional HoverHelp.Explain calls fight each other and the last
-registration wins everywhere.
+registration wins everywhere. And a row's help anchors on its LABEL
+band, never the whole row — a bigger hover region must never hide a
+control's own hover. The label explains the row; each control
+explains itself.
 
 ## Texture selection
 
@@ -286,6 +289,9 @@ texture id.
 
 ## Sections and headers
 
+- Headers are SENTENCE CASE — "Wet surface", never "WET SURFACE".
+  Only the first letter capitalizes; acronyms (MCDF, IK, 3D) keep
+  their caps.
 - The FIRST header on any page draws no leading separator. Use
   `SectionStack` (`divider: stack.Any`) or pass `divider: false` on
   the first `Section` explicitly.
@@ -296,7 +302,8 @@ texture id.
 
 A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
 "Reset the face bones", "Fade the whole actor" — a few words, verb
-first. Explanations live in the UI-contract docs and the future
+first. Every labelled control HAS one; a value's units belong in it
+("Orbit above or below, degrees"). Explanations live in the UI-contract docs and the future
 tutorial, never in a tooltip. A sentence-long tooltip is a defect
 unless truly exceptional.
 

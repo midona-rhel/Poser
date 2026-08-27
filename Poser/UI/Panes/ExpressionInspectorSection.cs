@@ -269,10 +269,12 @@ public sealed class ExpressionInspectorSection
         form.Pair(
             DisplayName(first.Label),
             cell => DrawPairCell(
-                cell, actor, first.Id, first.Bidirectional ? -1f : 0f),
+                cell, actor, first.Id, first.Bidirectional ? -1f : 0f,
+                DisplayName(first.Label)),
             DisplayName(second.Label),
             cell => DrawPairCell(
-                cell, actor, second.Id, second.Bidirectional ? -1f : 0f),
+                cell, actor, second.Id, second.Bidirectional ? -1f : 0f,
+                DisplayName(second.Label)),
             help: DisplayName(first.Label) + " · " + DisplayName(second.Label));
     }
 
@@ -293,9 +295,11 @@ public sealed class ExpressionInspectorSection
         float minimum = bidirectional ? -1f : 0f;
         form.Pair(
             leftLabel,
-            cell => DrawPairCell(cell, actor, leftId, minimum),
+            cell => DrawPairCell(
+                cell, actor, leftId, minimum, SpokenSide(leftLabel)),
             rightLabel,
-            cell => DrawPairCell(cell, actor, rightId, minimum),
+            cell => DrawPairCell(
+                cell, actor, rightId, minimum, SpokenSide(rightLabel)),
             help: help);
     }
 
@@ -305,14 +309,25 @@ public sealed class ExpressionInspectorSection
         Crystarium.FormPairCell cell,
         IActor actor,
         string id,
-        float minimum) =>
+        float minimum,
+        string help) =>
         cell.Slider(
             $"##expr-{id}",
             _expressions.GetWeight(actor, id),
             minimum,
             1f,
             next => _expressions.SetWeight(actor, id, next),
-            format: "0%");
+            format: "0%",
+            help: help);
+
+    /// <summary>The cell label spoken in full for its hover: "Furrow L"
+    /// hovers as "Furrow left".</summary>
+    private static string SpokenSide(string label) =>
+        label.EndsWith(" L", StringComparison.Ordinal)
+            ? label[..^2] + " left"
+            : label.EndsWith(" R", StringComparison.Ordinal)
+                ? label[..^2] + " right"
+                : label;
 
     private void DrawReset(Crystarium.FormScope form, IActor actor)
     {

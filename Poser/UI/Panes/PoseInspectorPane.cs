@@ -563,7 +563,7 @@ public class PoseInspectorPane
                 if (_cameraPane.RailHasTracking)
                     stack.Section(
                         "camera-tracking",
-                        "TRACKING",
+                        "Tracking",
                         _openCameraTracking,
                         next => _openCameraTracking = next,
                         _cameraPane.DrawRailTracking);
@@ -578,7 +578,7 @@ public class PoseInspectorPane
             if (_overlayPane.HasRailNode)
                 stack.Section(
                     "overlay-placement",
-                    "PLACEMENT",
+                    "Placement",
                     _openTranslation,
                     next => _openTranslation = next,
                     _overlayPane.DrawRailPlacement,
@@ -616,7 +616,7 @@ public class PoseInspectorPane
             if (actor != null && humanoid)
                 stack.Section(
                     "gaze",
-                    "GAZE",
+                    "Gaze",
                     _openGaze,
                     next => _openGaze = next,
                     form => DrawGaze(form, actor, wide: false));
@@ -624,7 +624,7 @@ public class PoseInspectorPane
             if (actor != null && humanoid && _expressionSection.CanDraw)
                 stack.Section(
                     "expression",
-                    "EXPRESSION",
+                    "Expression",
                     _openExpression,
                     next => _openExpression = next,
                     form => _expressionSection.Draw(
@@ -632,7 +632,7 @@ public class PoseInspectorPane
             if (skeleton != null)
                 stack.Section(
                     "pose",
-                    "POSE",
+                    "Pose",
                     _openPose,
                     next => _openPose = next,
                     form => DrawPoseActions(form, skeleton, wide: false));
@@ -875,7 +875,7 @@ public class PoseInspectorPane
                 }
                 return Crystarium.Section(
                     "pose-surface-expression",
-                    "EXPRESSION",
+                    "Expression",
                     origin,
                     contentWidth,
                     _openSurfaceExpression,
@@ -921,7 +921,7 @@ public class PoseInspectorPane
                 if (actor != null && OwningActorId() is { } actorId)
                     stack.Section(
                         "camera",
-                        "CAMERA",
+                        "Camera",
                         open: true,
                         _ => { },
                         form => form.Actions("Frame", actions =>
@@ -933,7 +933,7 @@ public class PoseInspectorPane
                 if (actor != null && !IsCreature(actor))
                     stack.Section(
                         "gaze",
-                        "GAZE",
+                        "Gaze",
                         _openSurfaceGaze,
                         next => _openSurfaceGaze = next,
                         form => DrawGaze(form, actor, wide: true),
@@ -942,14 +942,14 @@ public class PoseInspectorPane
                 {
                     stack.Section(
                         "pose",
-                        "POSE",
+                        "Pose",
                         _openSurfacePose,
                         next => _openSurfacePose = next,
                         form => DrawPoseActions(form, skeleton, wide: true),
                         divider: stack.Any);
                     stack.Section(
                         "files",
-                        "FILES",
+                        "Files",
                         _openSurfaceFiles,
                         next => _openSurfaceFiles = next,
                         form => _poseFileSection.Draw(form, skeleton),

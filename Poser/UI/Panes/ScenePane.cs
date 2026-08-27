@@ -389,7 +389,7 @@ public sealed class ScenePane
 
         Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("SCENE", form =>
+            page.Section("Scene", form =>
             {
                 form.TextInput(
                     "Description",
@@ -435,7 +435,7 @@ public sealed class ScenePane
             },
             divider: false);
 
-            page.Section("LOAD", form =>
+            page.Section("Load", form =>
             {
                 DrawSessionOptions(form, busy);
                 DrawIncludeOptions(form, busy);
@@ -504,7 +504,7 @@ public sealed class ScenePane
 
     private void DrawProgress(Crystarium.PageScope page, SceneProgress progress)
     {
-        page.Section("IN PROGRESS", form =>
+        page.Section("In progress", form =>
         {
             float fraction = progress.EntitiesTotal > 0
                 ? Math.Clamp(
@@ -563,7 +563,7 @@ public sealed class ScenePane
         OperationReceipt? receipt)
     {
         var refusals = outcome.Entities.Where(entity => !entity.Restored).ToList();
-        page.Section("LAST RESULT", form =>
+        page.Section("Last result", form =>
         {
             form.ReadOnly(
                 "Outcome",
