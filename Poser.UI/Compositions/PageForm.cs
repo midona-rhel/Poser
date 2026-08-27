@@ -1463,9 +1463,14 @@ public static partial class Crystarium
                 _page.EndRow(row, id, help);
                 return;
             }
-            float half = row.Width * 0.5f;
+            // The same inter-cell MARGIN Cells uses — two columns never
+            // sit pixel-adjacent.
+            float cellMargin = ActiveTheme.Spacing.Six * row.Scale;
+            float half = (row.Width - cellMargin) * 0.5f;
             DrawHalf(in row, row.Origin.X, half, leftLabel, drawLeft);
-            DrawHalf(in row, row.Origin.X + half, half, rightLabel, drawRight);
+            DrawHalf(
+                in row, row.Origin.X + half + cellMargin, half,
+                rightLabel, drawRight);
             _page.EndRow(row, id, help);
         }
 
@@ -2370,18 +2375,16 @@ public static partial class Crystarium
     }
 
     /// <summary>Calculates the scaled label-column width.</summary>
+    /// <summary>The label column is FIXED: every label reserves the same
+    /// space regardless of its text, so controls align down the page —
+    /// text-measured growth made slider starts wander row to row. A label
+    /// too long for the column truncates; that is a naming problem, not a
+    /// layout one.</summary>
     private static float LabelColumn(
         string label, float width, float scale, float baseColumn)
     {
-        float column = baseColumn * scale;
-        if (string.IsNullOrEmpty(label))
-            return column;
-        float needed = MeasureText(
-            label, ActiveTheme.Typography.LabelSize, FontWeight.Regular).X;
-        if (needed <= column)
-            return column;
-        return MathF.Min(
-            needed + ActiveTheme.Page.ActionGap * scale, width * 0.5f);
+        _ = label;
+        return MathF.Min(baseColumn * scale, width * 0.5f);
     }
 
     /// <summary>Draws a form label.</summary>

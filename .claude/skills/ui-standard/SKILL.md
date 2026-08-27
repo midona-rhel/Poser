@@ -165,6 +165,17 @@ navigation, not a scrollbar — may shift anything.
   a control never invents its own column split.
 - Labels are LEFT-ALIGNED everywhere — form labels, matrix cell
   labels, all of them. Right-aligned labels are a defect.
+- Label columns are FIXED WIDTH: every label reserves the same space
+  regardless of its text, so control edges align down the page. A
+  label the column cannot hold truncates — that is a naming problem.
+- Vocabulary: PADDING is space inside a control's own box; MARGIN is
+  space between neighbouring boxes. Columns and cells are separated
+  by MARGIN (`Spacing.Six`), and two controls are never
+  pixel-adjacent unless one is a stepper hugging its well.
+- Layout primitives (Pair, Cells, Actions) are audited ONCE, as
+  primitives — every consumer inherits their defects. The pair row
+  shipped with no inter-cell margin and text-sized label columns, and
+  every paired surface inherited both.
 - Cell rows (Cells) spread N controls EQUIDISTANT across the row —
   the tint row's Character/Main/Off is the reference.
 - FREE CONTROLS — buttons or chips sharing a row with no label column
