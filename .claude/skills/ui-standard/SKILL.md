@@ -68,7 +68,8 @@ Windows each have ONE job. No mode may change what a window IS.
   views or modes — which surface, which tab. It is not a value editor.
   (This is already its de-facto role: 18 of 19 current uses.)
 - **Switch** for a single boolean value; label in the label column,
-  switch in the control column.
+  and the toggle RIGHT-ALIGNS in its cell — every switch site (plain
+  rows, pair cells, action rows) seats the toggle at the right edge.
 - **Checkboxes grid** for a set of related booleans, aligned on a
   shared column pitch — label-first, always.
 - **Dropdown** for one-of-N with known, nameable options (roughly 2–15).
@@ -208,7 +209,8 @@ navigation, not a scrollbar — may shift anything.
   matrix or the body/face maps) breathes one gap off the surface top
   and closes with a separator, so what stays put is legible.
 - Short rows PAIR two-up by design where it halves a section's height:
-  Override|Weather, Swimming|Depth, Opacity|Tint. Pairing is a
+  Override|Weather, Swimming|Depth, Opacity|Tint, Speed|Sensitivity,
+  Orthographic|Ortho zoom, Follow|Lock. Pairing is a
   deliberate per-section choice at the design width, not a responsive
   behavior; selector rows and field rows keep full rows.
 
@@ -243,6 +245,10 @@ navigation, not a scrollbar — may shift anything.
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
   well, and matrix cell.
+
+- A destructive whole-set verb (Destroy all) requires an armed
+  confirmation — the first press arms ("Confirm destroy all"), the
+  second executes. Camera's Destroy all is the reference.
 
 ## Row patterns
 
@@ -279,6 +285,16 @@ registration wins everywhere. And a row's help anchors on its LABEL
 band, never the whole row — a bigger hover region must never hide a
 control's own hover. The label explains the row; each control
 explains itself.
+
+## The rotation ball
+
+Every world selection with an orientation — bones, actors, AND
+cameras — shows the inspector's rotation ball, so navigating between
+them never reflows the rail. A camera's ball projects from a FIXED
+vantage (yaw 45°, isometric downward pitch: the axes rest as an
+equilateral triangle pointing up) because camera-relative rings on
+the camera itself are self-referential; its rings write yaw (Y),
+pitch (X), and roll (Z) directly.
 
 ## Texture selection
 

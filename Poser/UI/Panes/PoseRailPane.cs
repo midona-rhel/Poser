@@ -178,7 +178,7 @@ public class PoseRailPane
         // angle/pan, owned by the Camera tab — so the gizmo stands down
         // rather than drawing an inert widget. An overlay node has none
         // either: it is flat on the screen, not placed in the world.
-        if (!_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
+        if (!_inspector.IsOverlaySelection)
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
@@ -197,6 +197,15 @@ public class PoseRailPane
     /// camera-roll ring. No cursor circle and no drag-origin dot are
     /// drawn. Returns consumed height.
     /// </summary>
+    /// <summary>The ball's fixed vantage: yaw 45° and the isometric
+    /// downward pitch, so the three axes rest as an equilateral triangle
+    /// pointing up.</summary>
+    private static readonly Quaternion FixedBallView =
+        Quaternion.CreateFromYawPitchRoll(
+            MathF.PI * 0.25f, -0.61547971f, 0f);
+
+    private (Vector3 Rotation, float Roll) _ballStart;
+
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
         float d = 158f * s;
@@ -211,8 +220,26 @@ public class PoseRailPane
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
 
-        var (frameWorld, axisConversion, canEdit) =
-            _inspector.GizmoWorldContext();
+        // A camera gets the ball from a FIXED vantage — camera-relative
+        // rings on the camera itself are self-referential nonsense — with
+        // drags writing yaw, pitch, and roll directly.
+        var ballCamera = _inspector.BallCamera();
+        Quaternion frameWorld;
+        Quaternion axisConversion;
+        bool canEdit;
+        if (ballCamera != null)
+        {
+            var rot = ballCamera.Rotation;
+            frameWorld = Quaternion.CreateFromYawPitchRoll(
+                rot.X, rot.Y, ballCamera.Roll);
+            axisConversion = Quaternion.Identity;
+            canEdit = !ballCamera.IsLocked;
+        }
+        else
+        {
+            (frameWorld, axisConversion, canEdit) =
+                _inspector.GizmoWorldContext();
+        }
         if (active && _dragAxis >= 0)
         {
             frameWorld = Quaternion.Normalize(
@@ -228,8 +255,11 @@ public class PoseRailPane
         // fixed widget centre — no perspective and no recentring, so the
         // widget's shape and size never depend on where the actor stands
         // on screen. The world overlay deliberately does the opposite.
-        var rings = RotationGizmoRings.Project(
-            _camera, center, frameWorld, widgetRadius);
+        var rings = ballCamera != null
+            ? RotationGizmoRings.Project(
+                FixedBallView, center, frameWorld, widgetRadius)
+            : RotationGizmoRings.Project(
+                _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)
             return d + 8f * s;
 
@@ -274,6 +304,8 @@ public class PoseRailPane
             _dragAngle = 0f;
             _dragFrame = frameWorld;
             _dragAxisWorld = axisWorld;
+            if (ballCamera != null)
+                _ballStart = (ballCamera.Rotation, ballCamera.Roll);
         }
 
         if (active && _dragAxis >= 0)
@@ -286,14 +318,33 @@ public class PoseRailPane
             if (delta != 0f)
             {
                 _dragAngle += delta / RotationGizmoRings.PixelsPerRadian;
-                _inspector.RotateSelectionGizmo(
-                    Quaternion.CreateFromAxisAngle(_dragAxisModel, _dragAngle));
+                if (ballCamera != null)
+                {
+                    // X ring pitches, Y ring yaws, Z ring rolls — the axis
+                    // rings mean on a camera what they mean on a bone.
+                    var (startRotation, startRoll) = _ballStart;
+                    if (_dragAxis == 0)
+                        ballCamera.Rotation = startRotation with
+                        { Y = startRotation.Y + _dragAngle };
+                    else if (_dragAxis == 1)
+                        ballCamera.Rotation = startRotation with
+                        { X = startRotation.X + _dragAngle };
+                    else
+                        ballCamera.Roll = startRoll + _dragAngle;
+                }
+                else
+                {
+                    _inspector.RotateSelectionGizmo(
+                        Quaternion.CreateFromAxisAngle(
+                            _dragAxisModel, _dragAngle));
+                }
             }
         }
 
         if (ImGui.IsItemDeactivated())
         {
-            _inspector.CommitRotation();
+            if (ballCamera == null)
+                _inspector.CommitRotation();
             _dragAxis = -1;
             _dragAngle = 0f;
             _dragDistance = 0f;

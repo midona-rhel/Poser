@@ -101,12 +101,24 @@ public static class RotationGizmoRings
         Quaternion frame,
         float radiusPixels)
     {
-        var rings = new ProjectedRings { Frame = frame, Center = center };
         var view = camera.GetViewMatrix();
         view.M44 = 1f;
         if (!Matrix4x4.Decompose(view, out _, out var viewRotation, out _))
-            return rings;
+            return new ProjectedRings { Frame = frame, Center = center };
+        return Project(viewRotation, center, frame, radiusPixels);
+    }
 
+    /// <summary>Projection from an EXPLICIT view — the camera ball uses a
+    /// fixed vantage (45° yaw, looking down the isometric diagonal) so its
+    /// axes rest as an equilateral triangle, top up, whatever the live
+    /// camera does.</summary>
+    public static ProjectedRings Project(
+        Quaternion viewRotation,
+        Vector2 center,
+        Quaternion frame,
+        float radiusPixels)
+    {
+        var rings = new ProjectedRings { Frame = frame, Center = center };
         rings.Valid = true;
         rings.ViewRotation = viewRotation;
         rings.ScreenRadius = radiusPixels;

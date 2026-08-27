@@ -581,8 +581,15 @@ public static partial class Crystarium
             }
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
-            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
-                controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
+            float switchHeight = ControlSizing.Height(
+                controlStyle.Height, ActiveTheme.Controls.SwitchHeight);
+            // Toggles RIGHT-ALIGN in their cell (the standard).
+            float switchWidth = ActiveTheme.Controls.SwitchWidth
+                * (switchHeight / ActiveTheme.Controls.SwitchHeight)
+                * row.Scale;
+            ImGui.SetCursorScreenPos(new Vector2(
+                row.ControlOrigin.X + row.ControlWidth - switchWidth,
+                row.CenterControl(switchHeight).Y));
             Crystarium.Switch(id, value, onChange, controlStyle, disabled);
             _page.EndRow(row, id, help);
         }
@@ -609,8 +616,22 @@ public static partial class Crystarium
                 actionScope.Items, row.Scale, row.ControlWidth);
             var controlStyle = InRegion(
                 style, row.ControlWidth / row.Scale, fillByDefault: false);
-            ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
-                controlStyle.Height, ActiveTheme.Controls.SwitchHeight)));
+            {
+                float switchHeight = ControlSizing.Height(
+                    controlStyle.Height,
+                    ActiveTheme.Controls.SwitchHeight);
+                float switchWidth = ActiveTheme.Controls.SwitchWidth
+                    * (switchHeight / ActiveTheme.Controls.SwitchHeight)
+                    * row.Scale;
+                float actionGap = actionWidth > 0f
+                    ? ActiveTheme.Page.ActionGap * row.Scale
+                    : 0f;
+                // The toggle right-aligns against the trailing verbs.
+                ImGui.SetCursorScreenPos(new Vector2(
+                    row.ControlOrigin.X + row.ControlWidth
+                        - actionWidth - actionGap - switchWidth,
+                    row.CenterControl(switchHeight).Y));
+            }
             Crystarium.Switch(id, value, onChange, controlStyle, disabled);
             DrawActions(
                 actionScope.Items,
@@ -1531,10 +1552,12 @@ public static partial class Crystarium
                 if (string.IsNullOrEmpty(item.Help))
                     continue;
                 perCellHelp = true;
+                // The cell's help anchors on its LABEL band — the full
+                // cell rect shadowed the control's own hover.
                 RegisterHelp(
                     Ids.Join(id, "-", item.Label),
                     new Vector2(x, row.Origin.Y),
-                    new Vector2(x + track, row.Origin.Y + bandHeight),
+                    new Vector2(x + column, row.Origin.Y + bandHeight),
                     item.Help);
             }
             _page.EndRow(row, id, perCellHelp ? null : help);
@@ -1978,8 +2001,12 @@ public static partial class Crystarium
             string id, bool value, Action<bool> onChange,
             bool disabled = false, string? help = null)
         {
-            ImGui.SetCursorScreenPos(
-                Center(ActiveTheme.Controls.SwitchHeight));
+            // Toggles RIGHT-ALIGN in their cell (the standard).
+            float switchWidth =
+                ActiveTheme.Controls.SwitchWidth * Scale;
+            var seat = Center(ActiveTheme.Controls.SwitchHeight);
+            ImGui.SetCursorScreenPos(new Vector2(
+                Origin.X + Width - switchWidth, seat.Y));
             Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
         }
 
