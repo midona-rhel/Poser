@@ -587,8 +587,10 @@ public static partial class Crystarium
             float switchWidth = ActiveTheme.Controls.SwitchWidth
                 * (switchHeight / ActiveTheme.Controls.SwitchHeight)
                 * row.Scale;
+            // One toggle-width of right MARGIN: the switch sits its own
+            // width in from the edge.
             ImGui.SetCursorScreenPos(new Vector2(
-                row.ControlOrigin.X + row.ControlWidth - switchWidth,
+                row.ControlOrigin.X + row.ControlWidth - switchWidth * 2f,
                 row.CenterControl(switchHeight).Y));
             Crystarium.Switch(id, value, onChange, controlStyle, disabled);
             _page.EndRow(row, id, help);
@@ -629,7 +631,7 @@ public static partial class Crystarium
                 // The toggle right-aligns against the trailing verbs.
                 ImGui.SetCursorScreenPos(new Vector2(
                     row.ControlOrigin.X + row.ControlWidth
-                        - actionWidth - actionGap - switchWidth,
+                        - actionWidth - actionGap - switchWidth * 2f,
                     row.CenterControl(switchHeight).Y));
             }
             Crystarium.Switch(id, value, onChange, controlStyle, disabled);
@@ -2006,7 +2008,7 @@ public static partial class Crystarium
                 ActiveTheme.Controls.SwitchWidth * Scale;
             var seat = Center(ActiveTheme.Controls.SwitchHeight);
             ImGui.SetCursorScreenPos(new Vector2(
-                Origin.X + Width - switchWidth, seat.Y));
+                Origin.X + Width - switchWidth * 2f, seat.Y));
             Crystarium.Switch(id, value, onChange, Constrain(), disabled, help);
         }
 

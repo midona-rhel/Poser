@@ -229,9 +229,11 @@ public class PoseRailPane
         bool canEdit;
         if (ballCamera != null)
         {
-            var rot = ballCamera.Rotation;
-            frameWorld = Quaternion.CreateFromYawPitchRoll(
-                rot.X, rot.Y, ballCamera.Roll);
+            // The ball RESTS in the fixed symmetric pose — identity in the
+            // fixed vantage — whatever the camera's rotation is. A drag
+            // rotates it live for feedback, and because the rest pose is
+            // recomputed every frame it springs back on release.
+            frameWorld = Quaternion.Identity;
             axisConversion = Quaternion.Identity;
             canEdit = !ballCamera.IsLocked;
         }

@@ -68,8 +68,9 @@ Windows each have ONE job. No mode may change what a window IS.
   views or modes — which surface, which tab. It is not a value editor.
   (This is already its de-facto role: 18 of 19 current uses.)
 - **Switch** for a single boolean value; label in the label column,
-  and the toggle RIGHT-ALIGNS in its cell — every switch site (plain
-  rows, pair cells, action rows) seats the toggle at the right edge.
+  and the toggle RIGHT-ALIGNS in its cell with ONE TOGGLE-WIDTH of
+  right margin — every switch site (plain rows, pair cells, action
+  rows) seats it there.
 - **Checkboxes grid** for a set of related booleans, aligned on a
   shared column pitch — label-first, always.
 - **Dropdown** for one-of-N with known, nameable options (roughly 2–15).
@@ -294,7 +295,9 @@ them never reflows the rail. A camera's ball projects from a FIXED
 vantage (yaw 45°, isometric downward pitch: the axes rest as an
 equilateral triangle pointing up) because camera-relative rings on
 the camera itself are self-referential; its rings write yaw (Y),
-pitch (X), and roll (Z) directly.
+pitch (X), and roll (Z) directly. The ball RESTS at identity in that
+vantage — the symmetric orb — rotates live under a drag, and springs
+back to rest on release.
 
 ## Texture selection
 

@@ -568,7 +568,7 @@ public sealed class CameraPane
                 float lockWidth = Crystarium.ActiveTheme.Controls.SwitchWidth
                     * row.Scale;
                 ImGui.SetCursorScreenPos(new Vector2(
-                    row.ControlOrigin.X + row.ControlWidth - lockWidth,
+                    row.ControlOrigin.X + row.ControlWidth - lockWidth * 2f,
                     row.CenterControl(
                         Crystarium.ActiveTheme.Controls.SwitchHeight).Y));
                 Crystarium.Switch(
