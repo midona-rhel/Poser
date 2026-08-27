@@ -123,17 +123,32 @@ navigation, not a scrollbar — may shift anything.
   chrome — headers, footers, and section frames stay put.
 - A control that changes state (enabled, toggled, renamed value) keeps
   its exact footprint.
+- NO ONE-FRAME SETTLE: a view renders its FINAL layout on the first
+  frame after navigation. A provisional layout that shifts a frame
+  later (measure-then-settle) is a reflow defect even though it is
+  fast. Cache or precompute whatever the first frame needs.
+- Surfaces that keep their existing design (matrix, actor, 3D) are
+  still bound to this contract plus the gutter and the shared page
+  padding on all four edges.
 
 ## Alignment
 
-- Trailing buttons across neighbouring rows align as a column: same
-  function → same width, same right edge. Each row sizing its own
-  button is a defect.
+- Every verb button on a page has the SAME EXACT width (a fixed verb
+  width, not a minimum — "Redraw" and "Reset" render identically), and
+  trailing verbs live in one shared right-aligned column page-wide, so
+  buttons stacked across rows align to the pixel.
 - Rows in one section share the label column and the control column;
   a control never invents its own column split.
+- Short rows PAIR two-up by design where it halves a section's height:
+  Override|Weather, Swimming|Depth, Opacity|Tint. Pairing is a
+  deliberate per-section choice at the design width, not a responsive
+  behavior; selector rows and field rows keep full rows.
 
 ## Sliders
 
+- THE slider is a value-well: the fill lives inside the well, the
+  number (mono) sits inside at the right — AxisWell wearing the
+  slider's fill, no separate readout beside it.
 - Travel must match what the value realistically represents. For
   ranges spanning magnitudes (0→1→10→100), use `SliderScale.Log` with
   curvature `10^decades − 1`: 9999 puts 1 at half travel, 10 at
