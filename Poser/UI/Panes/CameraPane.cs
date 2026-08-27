@@ -514,8 +514,12 @@ public sealed class CameraPane
                     { Width = UiWidth.Content };
                 float buttonWidth = Crystarium.MeasureButton(
                     "Recenter", buttonStyle).X;
-                float dropdownWidth = MathF.Max(
-                    1f, row.ControlWidth - buttonWidth - gap);
+                // Sized to a probable actor name, not to what is left —
+                // a dropdown spanning a wide row reads wrong (skill:
+                // width honesty). Air beside it is correct.
+                float dropdownWidth = MathF.Min(
+                    160f * row.Scale,
+                    MathF.Max(1f, row.ControlWidth - buttonWidth - gap));
                 float controlHeight = Crystarium.ActiveTheme.Controls
                     .WorkspaceHeight;
                 ImGui.SetCursorScreenPos(row.CenterControl(controlHeight));

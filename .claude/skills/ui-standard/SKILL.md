@@ -105,6 +105,22 @@ construction, not prevented by minimum-size guardrails.
   window-size problem. A cluster that does not fit the narrow width
   gets its own designed band there; it does not get squeezed.
 
+## Width honesty — do the math, it is not optional
+
+- A control is sized to its PROBABLE VALUES, never stretched to fill
+  the row. A two-option dropdown does not span 400px; an actor-name
+  dropdown needs ~160 logical, not everything left over. Super-wide
+  dropdowns and buttons are defects; a shorter control with air
+  beside it is correct.
+- Freed space CONSOLIDATES: if a right-sized control leaves room,
+  pull the next control(s) onto the same line (selector + its verb +
+  its lock switch) instead of spending rows.
+- Before placing ANY row in the inspector, prove it fits: the
+  inspector is 280 logical wide; minus the page insets (12 + 12) and
+  the label column (72) the control cell is ~184 at 100% scale.
+  A row that overflows there, or forces the inspector to be useless,
+  is a placement error — it belongs on a tab instead.
+
 ## No reflow, ever
 
 Reflow is the enemy. Layout may move for exactly two reasons: the
