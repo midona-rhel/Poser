@@ -411,7 +411,6 @@ public class MainWindow : Window
     private readonly ShellTab[] _lightTabs =
     [
         new() { Label = "Light" },
-        new() { Label = "Shadows" },
     ];
 
     /// <summary>An overlay's tab strip, the prop strip's sibling: while a
@@ -3354,7 +3353,6 @@ public class MainWindow : Window
         // time on top of the Page's own.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Object" or "Light"
-                or "Shadows"
                 or "Camera"
                 or "Scene"
                 or "Weather" or "Sky" or "Atmosphere" or "World";
@@ -3530,12 +3528,6 @@ public class MainWindow : Window
         if (_activeTab == "Light")
         {
             _lightPane.DrawLight(origin, size);
-            return;
-        }
-
-        if (_activeTab == "Shadows")
-        {
-            _lightPane.DrawShadows(origin, size);
             return;
         }
 

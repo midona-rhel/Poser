@@ -269,22 +269,14 @@ public sealed class LightPane
                 divider: false);
             page.Section("Light", _openLight, next => _openLight = next,
                 form => LightRows(form, light));
+            page.Section("Shadows", _openShadows, next => _openShadows = next,
+                form => ShadowRows(form, light));
             page.Section("Attach", _openAttach, next => _openAttach = next,
                 form => AttachRows(form, light));
             page.Section("File", _openFile, next => _openFile = next,
                 form => FileRows(form, light));
             page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
-        });
-
-    /// <summary>The Shadows tab: everything the light casts, and nothing
-    /// else.</summary>
-    public void DrawShadows(Vector2 origin, Vector2 size) =>
-        DrawTab("light-shadows", origin, size, (page, _, light) =>
-        {
-            page.Section("Shadows", _openShadows, next => _openShadows = next,
-                form => ShadowRows(form, light),
-                divider: false);
         });
 
     /// <summary>The two tabs' shared frame: the target lookup and the empty
@@ -774,14 +766,11 @@ public sealed class LightPane
     private void ActionRows(
         Crystarium.FormScope form, LightId lightId, ILight light)
     {
-        form.Actions("Placement", actions =>
+        form.Actions("Light", actions =>
         {
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
                 help: "Move to the camera's spot");
-        });
-        form.Actions("Light", actions =>
-        {
             actions.Button("Clone",
                 () =>
                 {
@@ -820,9 +809,7 @@ public sealed class LightPane
                 () => DestroyAllLights(count),
                 disabled: count == 0,
                 help: "Destroy spawned, hand back captured",
-                variant: _destroyAllArmed
-                    ? ButtonVariant.Danger
-                    : ButtonVariant.Secondary);
+                variant: ButtonVariant.Danger);
         });
         if (_destroyAllArmed)
             form.Status(

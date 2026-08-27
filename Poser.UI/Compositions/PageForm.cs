@@ -2020,6 +2020,8 @@ public static partial class Crystarium
         {
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
+            // The well FILLS its cell: the CELL is the honestly-sized
+            // unit, and a 52px well adrift in it reads as broken.
             Crystarium.AxisWell(
                 Ids.Join(id, "-value"),
                 "",
@@ -2031,7 +2033,7 @@ public static partial class Crystarium
                 format,
                 Constrain(ControlStyle.Workspace with
                 {
-                    Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
+                    Width = UiWidth.Fixed(Width / Scale),
                 }),
                 disabled);
         }

@@ -117,6 +117,11 @@ construction, not prevented by minimum-size guardrails.
 - Freed space CONSOLIDATES: if a right-sized control leaves room,
   pull the next control(s) onto the same line (selector + its verb +
   its lock switch) instead of spending rows.
+- Inside a CELL, the control FILLS the cell: the cell is the
+  honestly-sized unit, and a minimum-width well adrift in a wide cell
+  reads as broken. Width honesty sizes the cell; the control takes it.
+- A destructive whole-set verb is ALWAYS the danger color, armed or
+  not — red is the warning, arming is the guard.
 - Before placing ANY row in the inspector, prove it fits: the
   inspector is 280 logical wide; minus the page insets (12 + 12) and
   the label column (72) the control cell is ~184 at 100% scale.

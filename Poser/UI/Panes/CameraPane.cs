@@ -797,9 +797,7 @@ public sealed class CameraPane
                 () => DestroyAllCameras(spare),
                 disabled: spare == 0,
                 help: "Remove every camera except the main one",
-                variant: _destroyAllArmed
-                    ? ButtonVariant.Danger
-                    : ButtonVariant.Secondary);
+                variant: ButtonVariant.Danger);
         });
         if (_destroyAllArmed)
             form.Status(
