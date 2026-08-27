@@ -236,6 +236,9 @@ navigation, not a scrollbar — may shift anything.
   Ctrl = 0.01 — that is `perPixel: 0.1`, and the modifier ladder
   (×10 / ×0.1) produces the rest. Integer-id wells may step coarser.
 - Double-click to type, always.
+- Alt-click resets a slider to its stated default (`altReset`) — one
+  gesture, one undo step. Wire it wherever a row has a meaningful
+  default (expressions reset to zero).
 - Numbers render in the MONO family (Cascadia), never Segoe:
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
@@ -253,6 +256,17 @@ navigation, not a scrollbar — may shift anything.
   button, never on keystroke.
 - **Status row**: one-line state ("This actor is no longer
   available.") drawn as a form row, not ad-hoc text.
+
+## The transform grid (inspector)
+
+The inspector's transform is a 3×3 GRID, not three labelled rows:
+rows are translate / rotate / scale wearing the TOOLBAR'S icons (the
+same glyphs, so the tool and its numbers read as one thing); columns
+are the axes, each wrapped in its color-coded rounded box (AxisX/Y/Z
+palette) that rises above the grid with extra-round top corners and
+carries its letter in a CUTOUT of the top border — a fieldset legend.
+The wells inside carry no letters; the column says it once.
+`Crystarium.TransformGrid` is the normative implementation.
 
 ## Texture selection
 

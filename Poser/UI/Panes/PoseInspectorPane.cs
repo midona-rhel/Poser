@@ -1369,34 +1369,56 @@ public class PoseInspectorPane
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
-        form.AxisVector(
-            "Translation",
-            pos,
-            next => Apply(next, DomainOperation.Translate),
-            Commit,
-            dragSpeed,
-            "0.000",
-            disabled: !canEdit);
-        form.AxisVector(
-            "Rotation",
-            swap ? SwapXY(euler) : euler,
-            next => Apply(swap ? SwapXY(next) : next, DomainOperation.Rotate),
-            () =>
-            {
-                Commit();
-                _dragEuler = null;
-            },
-            0.5f,
-            "0.000",
-            disabled: !canEdit);
-        form.AxisVector(
-            "Scale",
-            scale,
-            next => Apply(next, DomainOperation.Scale),
-            Commit,
-            dragSpeed,
-            "0.000",
-            disabled: !canEdit);
+        // The transform grid: toolbar icons name the rows, the axis
+        // columns wear their colors and letters — the inspector's designed
+        // form of the transform (skill: shell roles).
+        static float Axis(Vector3 v, int axis) =>
+            axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
+        static Vector3 WithAxis(Vector3 v, int axis, float next) => axis switch
+        {
+            0 => v with { X = next },
+            1 => v with { Y = next },
+            _ => v with { Z = next },
+        };
+        var displayEuler = swap ? SwapXY(euler) : euler;
+        form.Custom(
+            string.Empty,
+            Crystarium.TransformGridHeight,
+            row => Crystarium.TransformGrid(
+                "rail-transform",
+                row.Origin,
+                row.Width,
+                [
+                    (TablerIcon.ArrowsMove, "Translation"),
+                    (TablerIcon.Rotate, "Rotation"),
+                    (TablerIcon.ArrowsMaximize, "Scale"),
+                ],
+                (r, a) => r == 0
+                    ? Axis(pos, a)
+                    : r == 1 ? Axis(displayEuler, a) : Axis(scale, a),
+                (r, a, next) =>
+                {
+                    if (r == 0)
+                        Apply(WithAxis(pos, a, next), DomainOperation.Translate);
+                    else if (r == 1)
+                    {
+                        var display = WithAxis(displayEuler, a, next);
+                        Apply(
+                            swap ? SwapXY(display) : display,
+                            DomainOperation.Rotate);
+                    }
+                    else
+                        Apply(WithAxis(scale, a, next), DomainOperation.Scale);
+                },
+                r =>
+                {
+                    Commit();
+                    if (r == 1)
+                        _dragEuler = null;
+                },
+                r => r == 1 ? 0.5f : dragSpeed,
+                "0.000",
+                !canEdit));
 
         // If Alt is released between well callbacks, return immediately to
         // the active axis from the same frozen scale baseline.

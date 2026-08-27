@@ -440,7 +440,8 @@ public static partial class Crystarium
             Action<ActionScope>? actions = null,
             string? id = null,
             bool well = false,
-            bool bare = false)
+            bool bare = false,
+            float? altReset = null)
         {
             string controlId = Id(id ?? label);
             var row = _page.BeginRow(label);
@@ -509,7 +510,8 @@ public static partial class Crystarium
                 onBegin: onBegin,
                 onCommit: onCommit,
                 scale: scale,
-                logCurvature: logCurvature);
+                logCurvature: logCurvature,
+                altReset: altReset);
             }
             // Classic path only: custom readouts use text; numeric
             // readouts use a value well beside the track. A BARE slider

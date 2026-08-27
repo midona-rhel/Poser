@@ -224,7 +224,8 @@ public static partial class Crystarium
         Action? onBegin = null,
         Action? onCommit = null,
         SliderScale scale = SliderScale.Linear,
-        float logCurvature = SliderLogCurvature)
+        float logCurvature = SliderLogCurvature,
+        float? altReset = null)
     {
         float frameScale = ImGuiHelpers.GlobalScale;
         var metrics = ControlSizing.Resolve(
@@ -243,8 +244,18 @@ public static partial class Crystarium
         if (hit.DragBegan)
             onBegin?.Invoke();
 
+        // Alt-click restores the stated default — one gesture, one undo
+        // step, no travel. It owns the click: the drag update stands down
+        // so the value cannot jump to the pointer first.
+        bool altResetHit = altReset is { } fallback && hit.Clicked
+            && ImGui.GetIO().KeyAlt && !disabled;
         bool changed = false;
-        if (hit.Active && !disabled)
+        if (altResetHit && value != altReset!.Value)
+        {
+            value = altReset.Value;
+            changed = true;
+        }
+        if (hit.Active && !disabled && !altResetHit)
         {
             float next = SliderValueAt(
                 ImGui.GetIO().MousePos.X, hit.ScreenMin, hit.ScreenMax,

@@ -255,7 +255,8 @@ public sealed class ExpressionInspectorSection
             1f,
             next => _expressions.SetWeight(actor, id, next),
             format: "0%",
-            bare: bare);
+            bare: bare,
+            altReset: 0f);
 
     /// <summary>Two unrelated single units share one surface row, each
     /// under its own label with its own value.</summary>
