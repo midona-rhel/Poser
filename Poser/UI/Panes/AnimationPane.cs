@@ -714,13 +714,13 @@ public sealed class AnimationPane : IDisposable
                         "Expression"),
                     style: poseSurface ? default : actionStyle,
                     disabled: disabled || selected == 0 || pending,
-                    help: "Preview the selected expression and hold its facial frame");
+                    help: "Preview the expression");
                 actions.Button(
                     "Reset",
                     () => ResetExpression(actor),
                     style: poseSurface ? default : actionStyle,
                     disabled: disabled || (held == 0 && selected == 0),
-                    help: "Restore the facial state captured before Poser's first choice");
+                    help: "Reset the face bones");
                 if (poseSurface)
                 {
                     actions.Button(

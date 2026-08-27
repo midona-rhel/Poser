@@ -224,7 +224,7 @@ public sealed class AppearancePane
 
         form.Custom("Model", Crystarium.ActiveTheme.Controls.FormRowHeight,
             row => DrawModelRow(row, id, current),
-            help: "Search by name or step the model id");
+            help: "What this actor draws as");
     }
 
     /// <summary>The whole model on one row: the name, the id under its
@@ -242,18 +242,21 @@ public sealed class AppearancePane
         float wellW = theme.Form.AxisWellMinimumWidth * s;
         float top = row.CenterControl(theme.Controls.WorkspaceHeight).Y;
 
-        float trailW = verb * 2f + gap;
+        float trailW = verb;
         float stepperW = side * 2f + wellW + tight * 2f;
         float nameW = MathF.Max(
             0f, row.ControlWidth - trailW - gap - stepperW - gap);
         var square = ControlStyle.Square(theme.Controls.WorkspaceHeight);
 
-        Crystarium.TextInBand(
-            new Vector2(row.ControlOrigin.X, row.Origin.Y),
-            new Vector2(nameW, row.RowHeight * s),
+        // The picker IS the value display: the name opens the search.
+        ImGui.SetCursorScreenPos(new Vector2(row.ControlOrigin.X, top));
+        Crystarium.Button(
             ModelDisplayName(current),
-            new TextStyle { Size = theme.Typography.LabelSize },
-            TextConstraint.Truncate(nameW));
+            () => OpenModelPicker(id),
+            style: ControlStyle.Workspace with
+            { Width = UiWidth.Fixed(nameW / s) },
+            help: "Choose a model",
+            id: "appearance-model-pick");
 
         float x = row.ControlOrigin.X + nameW + gap;
         ImGui.SetCursorScreenPos(new Vector2(x, top));
@@ -295,17 +298,12 @@ public sealed class AppearancePane
 
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
-        Crystarium.Button("Select", () => OpenModelPicker(id),
-            style: ControlStyle.Workspace with
-            { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
-            help: "Search by name or id", id: "appearance-model-select");
-        ImGui.SetCursorScreenPos(new Vector2(tx + verb + gap, top));
         Crystarium.Button("Reset",
             () => ReportModel(_model.Reset(id), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
             disabled: !_model.IsOwned(id),
-            help: "The model it came in with", id: "appearance-model-reset");
+            help: "Back to its own model", id: "appearance-model-reset");
     }
 
     /// <summary>Changes the draft value without changing the actor.</summary>
@@ -503,8 +501,7 @@ public sealed class AppearancePane
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "0 invisible · 1 solid",
-            well: true);
+            help: "Fade the whole actor");
 
         form.Actions("Appearance", actions =>
         {
@@ -578,18 +575,18 @@ public sealed class AppearancePane
         form.Slider("Weather", wet.Weather, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
-            help: "0 dry · 1 soaked",
-            disabled: !wetOn, well: true);
+            help: "Rain wetness",
+            disabled: !wetOn);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
-            help: "0 dry · 1 soaked",
-            disabled: !wetOn, well: true);
+            help: "Water soaking",
+            disabled: !wetOn);
         form.Slider("Depth", wet.Depth, 0f, 3f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
             help: "How far up the body it reaches",
-            disabled: !wetOn, well: true);
+            disabled: !wetOn);
     }
 
     private void ExternalAppearanceRows(

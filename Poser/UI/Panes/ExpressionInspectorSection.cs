@@ -224,6 +224,6 @@ public sealed class ExpressionInspectorSection
             "Reset",
             () => _expressions.ResetExpression(actor),
             disabled: !active,
-            help: "Reset every expression slider to zero"));
+            help: "Zero every expression slider"));
     }
 }

@@ -73,7 +73,9 @@ Windows each have ONE job. No mode may change what a window IS.
   shared column pitch — label-first, always.
 - **Dropdown** for one-of-N with known, nameable options (roughly 2–15).
 - **SearchPicker** when the option set is large, dynamic, or needs
-  search.
+  search. A picker SHOWS its current value — the picker control is
+  the value display and the opener in one; a separate text echoing
+  the value beside a picker is a defect.
 - **Visual grid picker** (TexturePicker, Swatches) whenever the choice
   has a visual identity — textures, colors, poses. A name list for a
   visual thing is a defect.
@@ -150,11 +152,10 @@ navigation, not a scrollbar — may shift anything.
 
 ## Sliders
 
-- THE slider is a value-well: the fill lives inside the well, the
-  number (mono) sits inside at the right — AxisWell wearing the
-  slider's fill, no separate readout beside it. It replaces the
-  classic track ONLY on surfaces designed for it (`well: true` per
-  call) — never as a blanket swap into undesigned grids.
+- The classic track + readout well IS the slider. The value-well
+  slider (fill inside a well) was tried in-game 2026-08-27 and
+  REJECTED — the web mockup approved it, the real render did not.
+  Do not reintroduce it without a new in-game verdict.
 - Travel must match what the value realistically represents. For
   ranges spanning magnitudes (0→1→10→100), use `SliderScale.Log` with
   curvature `10^decades − 1`: 9999 puts 1 at half travel, 10 at
@@ -207,8 +208,9 @@ texture id.
 
 ## Tooltips
 
-A hover is a label: a few words at most ("Step down one id", "Ctrl
-fine ×0.1"). Explanations live in the UI-contract docs and the future
+A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
+"Reset the face bones", "Fade the whole actor" — a few words, verb
+first. Explanations live in the UI-contract docs and the future
 tutorial, never in a tooltip. A sentence-long tooltip is a defect
 unless truly exceptional.
 
