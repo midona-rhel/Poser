@@ -333,7 +333,7 @@ public sealed class LightPane
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
                     value => light.IsOn = value),
-                help: "Turn the light off without losing any of its settings");
+                help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
@@ -352,7 +352,7 @@ public sealed class LightPane
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
                     selected => light.Kind = (LightKind)selected),
-                help: "How the light emits: a sun, a bulb, a cone, or a panel");
+                help: "Sun, bulb, cone, or panel");
         });
     }
 
@@ -363,7 +363,7 @@ public sealed class LightPane
             wells.Well("Color", ToDisplayColor(light.Color),
                 value => light.Color = ToRawColor(value),
                 hdr: true);
-        }, help: "The light's color; the native value is HDR and reaches past white");
+        }, help: "HDR color; reaches past white");
 
         // Intensity carries Ktisis/Brio's full 0–100 native range on log
         // tiers like the environment's light-distance slider — but three
@@ -393,13 +393,13 @@ public sealed class LightPane
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
                     selected => light.FalloffType = (LightFalloffType)selected),
-                help: "The curve the light dims along over its range");
+                help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
                     0f, 1000f, value => light.Falloff = value,
                     scale: SliderScale.Log, logCurvature: 9999f),
-                help: "How sharply the light dims toward the edge of its "
+                help: "Dimming toward the cone edge"
                     + "range");
         });
 
@@ -620,9 +620,9 @@ public sealed class LightPane
                         _attachLabel = null;
                     },
                     disabled: attached is null,
-                    help: "Leave the light where it is and stop following");
+                    help: "Stop following");
             },
-            help: "Make the light follow a bone, one transform copy per frame");
+            help: "Follow a bone");
     }
 
     /// <summary>"Actor · bone" for the attached bone, memoized on the scene
@@ -721,9 +721,9 @@ public sealed class LightPane
         form.Actions("Light file", actions =>
         {
             actions.Button("Save", () => OpenSave(light),
-                help: "Write this light and all of its settings to a file");
+                help: "Save this light to a file");
             actions.Button("To library", () => SaveToLibrary(light),
-                help: "Save this light into the library's Objects tab");
+                help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
         });
@@ -782,7 +782,7 @@ public sealed class LightPane
         {
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
-                help: "Put the light where the camera is, facing the same way");
+                help: "Move to the camera's spot");
         });
         form.Actions("Light", actions =>
         {
@@ -793,7 +793,7 @@ public sealed class LightPane
                         _notices.Failed(
                             "Clone: the light could not be created.");
                 },
-                help: "Create a second light with every setting of this one");
+                help: "Duplicate this light");
             // A borrowed native is never destructed: a captured light is given
             // back to the game instead, which is a different promise and reads
             // as a different button.
@@ -811,7 +811,7 @@ public sealed class LightPane
                     {
                         _lighting.ReleaseLight(light);
                     },
-                    help: "Give this light back to the game and stop editing it");
+                    help: "Hand it back to the game");
         });
 
         // Brio's "Destroy All… → Lights → Confirm", armed rather than held:
@@ -823,15 +823,14 @@ public sealed class LightPane
                 _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
                 () => DestroyAllLights(count),
                 disabled: count == 0,
-                help: "Remove every spawned light and hand every captured one back",
+                help: "Destroy spawned, hand back captured",
                 variant: _destroyAllArmed
                     ? ButtonVariant.Danger
                     : ButtonVariant.Secondary);
         });
         if (_destroyAllArmed)
             form.Status(
-                $"{count} light{(count == 1 ? string.Empty : "s")} will go. "
-                + "Captured world lights are handed back, not destroyed.",
+                $"{count} light{(count == 1 ? string.Empty : "s")} will go. ",
                 warning: true);
     }
 
