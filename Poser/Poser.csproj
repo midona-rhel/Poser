@@ -17,6 +17,10 @@
 		<Version>0.9.0.0</Version>
 	</PropertyGroup>
 
+
+  <ItemGroup>
+    <Content Include="Data\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 	<!-- Branch identity is captured by the build, never discovered by the
 	     plugin at runtime. CI may provide any of the conventional branch
 	     variables; local builds fall back to the checked-out build branch. -->

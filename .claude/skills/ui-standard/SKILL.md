@@ -239,7 +239,7 @@ navigation, not a scrollbar — may shift anything.
 - Alt-click resets a slider to its stated default (`altReset`) — one
   gesture, one undo step. Wire it wherever a row has a meaningful
   default (expressions reset to zero).
-- Numbers render in the MONO family (Cascadia), never Segoe:
+- Numbers render in the MONO family (Roboto Mono), never the text face:
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
   well, and matrix cell.
