@@ -268,7 +268,10 @@ carries its letter in a CUTOUT of the top border — a fieldset legend.
 The wells inside carry no letters; the column says it once.
 `Crystarium.TransformGrid` is the normative implementation. The grid
 explains itself — its section carries NO header, and the grid ends in
-its own bottom margin.
+its own bottom margin. The icon column is small (18 logical) so every
+well FULLY fits six digits and a dot; rotation shows one decimal
+(degrees — four digits say everything), the metric rows keep
+thousandths.
 
 Hover registrations gate on the pointer being inside the rect —
 unconditional HoverHelp.Explain calls fight each other and the last

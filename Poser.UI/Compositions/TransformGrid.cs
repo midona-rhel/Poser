@@ -37,7 +37,7 @@ public static partial class Crystarium
         Action<int, int, float> onChange,
         Action<int> onCommit,
         Func<int, float> perPixel,
-        string format,
+        Func<int, string> format,
         bool disabled)
     {
         var theme = ActiveTheme;
@@ -46,9 +46,9 @@ public static partial class Crystarium
         float rowGap = TransformRowGap * s;
         float pad = TransformBoxPad * s;
         float rise = TransformLegendRise * s;
-        float iconSide = theme.Controls.WorkspaceHeight * s;
-        float margin = theme.Spacing.Four * s;
-        float boxGap = theme.Spacing.Four * s;
+        float iconSide = 18f * s;
+        float margin = theme.Spacing.Three * s;
+        float boxGap = theme.Spacing.Three * s;
         float boxW = MathF.Max(
             1f, (width - iconSide - margin - boxGap * 2f) / 3f);
         float boxH = rise + pad * 2f + rowH * 3f + rowGap * 2f;
@@ -62,7 +62,7 @@ public static partial class Crystarium
                 new Vector2(origin.X + iconSide, y + rowH),
                 rows[r].Icon,
                 theme.FormLabel,
-                contentScale: 0.72f,
+                contentScale: 0.9f,
                 disabled: disabled);
             if (ImGui.IsMouseHoveringRect(
                     new Vector2(origin.X, y),
@@ -105,7 +105,7 @@ public static partial class Crystarium
                     () => onCommit(row),
                     accents[axis],
                     perPixel(row),
-                    format,
+                    format(row),
                     ControlStyle.Workspace with
                     {
                         Width = UiWidth.Fixed((boxW - pad * 2f) / s),

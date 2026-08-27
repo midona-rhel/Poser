@@ -1417,7 +1417,9 @@ public class PoseInspectorPane
                         _dragEuler = null;
                 },
                 r => r == 1 ? 0.5f : dragSpeed,
-                "0.000",
+                // Rotation is degrees: four digits say everything. The
+                // metric rows keep their thousandths.
+                r => r == 1 ? "0.0" : "0.000",
                 !canEdit));
 
         // If Alt is released between well callbacks, return immediately to
