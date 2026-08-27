@@ -154,9 +154,10 @@ public sealed class ExpressionInspectorSection
             next => _expressions.SetWeight(actor, id, next),
             format: "0%");
 
-    /// <summary>Both halves on one row: the base label once, then the left and
-    /// right weights. The pair cells carry no percentage readout — the row has
-    /// no width for two of them.</summary>
+    /// <summary>Both halves on one row, EACH under its own label — the
+    /// precise-naming rule: the left slider says it is the left one.
+    /// The pair cells carry no percentage readout — the row has no width
+    /// for two of them.</summary>
     private void DrawPair(
         Crystarium.FormScope form,
         IActor actor,
@@ -167,43 +168,23 @@ public sealed class ExpressionInspectorSection
     {
         float minimum = bidirectional ? -1f : 0f;
         form.Pair(
-            baseLabel,
-            cell => DrawPairCell(cell, actor, "L", leftId, minimum),
-            "",
-            cell => DrawPairCell(cell, actor, "R", rightId, minimum),
+            baseLabel + " L",
+            cell => DrawPairCell(cell, actor, leftId, minimum),
+            baseLabel + " R",
+            cell => DrawPairCell(cell, actor, rightId, minimum),
             help: baseLabel + " — left / right");
     }
 
-    /// <summary>One half of a pair: the side caption, then the slider in the
-    /// remaining cell width — losing the caption loses which half is which.
-    /// </summary>
+    /// <summary>One half of a pair: the slider fills the cell — the cell's
+    /// own label already says which half this is.</summary>
     private void DrawPairCell(
         Crystarium.FormPairCell cell,
         IActor actor,
-        string sideCaption,
         string id,
         float minimum)
     {
-        var theme = Crystarium.ActiveTheme;
-        var captionStyle = new TextStyle
-        {
-            Size = theme.Typography.CaptionSize,
-            Color = theme.FormLabel,
-        };
-        var captionSize = Crystarium.MeasureText(sideCaption, captionStyle);
-        Crystarium.TextAt(
-            new Vector2(
-                cell.Origin.X,
-                cell.Origin.Y
-                    + (theme.Controls.FormRowHeight * cell.Scale
-                        - captionSize.Y) * 0.5f),
-            sideCaption,
-            captionStyle);
-        float indent =
-            captionSize.X + theme.Page.ActionGap * cell.Scale;
-        var sliderTop = cell.Center(theme.Controls.SliderHeight);
-        ImGui.SetCursorScreenPos(
-            new Vector2(sliderTop.X + indent, sliderTop.Y));
+        var sliderTop = cell.Center(Crystarium.ActiveTheme.Controls.SliderHeight);
+        ImGui.SetCursorScreenPos(sliderTop);
         Crystarium.Slider(
             $"##expr-{id}",
             _expressions.GetWeight(actor, id),
@@ -212,8 +193,7 @@ public sealed class ExpressionInspectorSection
             next => _expressions.SetWeight(actor, id, next),
             new ControlStyle
             {
-                Width = UiWidth.Fixed(MathF.Max(
-                    1f, (cell.Width - indent) / cell.Scale)),
+                Width = UiWidth.Fixed(MathF.Max(1f, cell.Width / cell.Scale)),
             });
     }
 
