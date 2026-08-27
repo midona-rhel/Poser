@@ -118,11 +118,17 @@ public sealed class GraphicalBonePane : IDisposable
         if (skeleton == null)
             return false;
 
-        var bandOrigin = ImGui.GetCursorScreenPos();
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
-        float bandHeight =
-            theme.Controls.WorkspaceHeight * scale + theme.Page.ActionGap * scale;
+        // The filter is a FIXED HEADER over the map: it breathes off the
+        // surface top and closes with a separator, exactly as the matrix's
+        // does — the two surfaces had drifted apart here.
+        float bandPad = theme.Page.ActionGap * scale;
+        var bandOrigin = ImGui.GetCursorScreenPos()
+            + new Vector2(0f, bandPad);
+        float bandHeight = bandPad
+            + theme.Controls.WorkspaceHeight * scale
+            + theme.Page.ActionGap * scale;
         ImGui.SetCursorScreenPos(bandOrigin);
         Crystarium.FilterPill(
             "##graphical-bone-filter",
@@ -134,8 +140,17 @@ public sealed class GraphicalBonePane : IDisposable
                 Width = UiWidth.Region(MathF.Min(
                     theme.Matrix.FilterWidth, contentArea.X / scale)),
             });
+        float ruleY = bandOrigin.Y
+            + theme.Controls.WorkspaceHeight * scale
+            + theme.Page.ActionGap * scale - 1f * scale;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            new Vector2(bandOrigin.X, ruleY),
+            new Vector2(bandOrigin.X + contentArea.X, ruleY + 1f * scale),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.FormSeparator)));
 
-        var origin = bandOrigin + new Vector2(0f, bandHeight);
+        var origin = bandOrigin + new Vector2(
+            0f, bandHeight - bandPad + 1f * scale);
         var mapArea = new Vector2(
             contentArea.X, MathF.Max(1f, contentArea.Y - bandHeight));
         ImGui.SetCursorScreenPos(origin);

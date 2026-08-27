@@ -145,7 +145,7 @@ public readonly record struct Theme
         Form = new()
         {
             LabelColumnWidth = 72f,
-            ValueColumnWidth = 44f,
+            ValueColumnWidth = 52f,
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,
             AxisWellHorizontalPadding = 6f,

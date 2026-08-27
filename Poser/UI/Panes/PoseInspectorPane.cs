@@ -989,9 +989,18 @@ public class PoseInspectorPane
                     (max.X - min.X) / s)),
             });
 
+        // The fixed filter header closes with a separator, so what stays
+        // put and what scrolls is legible (the graphical panes match).
+        float matrixRuleY = min.Y + toolbarHeight
+            + theme.Page.ActionGap * s - 1f * s;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            new Vector2(min.X, matrixRuleY),
+            new Vector2(max.X, matrixRuleY + 1f * s),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.FormSeparator)));
         var viewMin = new Vector2(
             min.X,
-            min.Y + toolbarHeight + theme.Page.ActionGap * s);
+            min.Y + toolbarHeight + theme.Page.ActionGap * s + 1f * s);
         var viewMax = max;
         if (viewMax.Y <= viewMin.Y)
             return viewportHeight;
@@ -1750,9 +1759,13 @@ public class PoseInspectorPane
                 {
                     var flag = part;
                     bool enabled = !off && state.TargetType.HasFlag(flag);
+                    // Free controls on one row spread EQUALLY — no label
+                    // column to align to, so the spacing is the alignment.
                     actions.Button(
                         label,
                         () => SetPart(flag, !enabled),
+                        style: ControlStyle.Workspace with
+                        { Width = UiWidth.Fill },
                         disabled: off,
                         variant: enabled
                             ? ButtonVariant.Primary

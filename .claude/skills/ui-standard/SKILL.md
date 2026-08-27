@@ -161,6 +161,15 @@ navigation, not a scrollbar — may shift anything.
   labels, all of them. Right-aligned labels are a defect.
 - Cell rows (Cells) spread N controls EQUIDISTANT across the row —
   the tint row's Character/Main/Off is the reference.
+- FREE CONTROLS — buttons or chips sharing a row with no label column
+  (the gaze Eyes/Head parts) — also distribute equally. No label does
+  not mean no alignment: the spacing IS the alignment.
+- A control's name states EXACTLY what it acts on: "Brow left" moves
+  the LEFT brow alone; a control that moves both brows is named for
+  both. A precise name on an imprecise control is a defect either way.
+- A fixed header over a scrolling surface (the bone filter over the
+  matrix or the body/face maps) breathes one gap off the surface top
+  and closes with a separator, so what stays put is legible.
 - Short rows PAIR two-up by design where it halves a section's height:
   Override|Weather, Swimming|Depth, Opacity|Tint. Pairing is a
   deliberate per-section choice at the design width, not a responsive
@@ -183,8 +192,9 @@ navigation, not a scrollbar — may shift anything.
 
 ## Numeric wells (drag-to-change numbers)
 
-- Resting label shows four significant digits (`AdaptiveValueText`):
-  one decimal from 100 up, two through the tens, three below ten.
+- Resting label shows four significant digits (`AdaptiveValueText`),
+  and the generic well (`Form.ValueColumnWidth`) is sized to fit them
+  — widen the token, never per-pane.
 - Drag steps for real-valued wells: 0.1 per unit of drag, Shift = 1,
   Ctrl = 0.01 — that is `perPixel: 0.1`, and the modifier ladder
   (×10 / ×0.1) produces the rest. Integer-id wells may step coarser.
