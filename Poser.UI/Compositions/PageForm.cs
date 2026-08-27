@@ -1496,13 +1496,14 @@ public static partial class Crystarium
             {
                 var item = items[i];
                 float x = row.Origin.X + i * (track + gap);
+                float cellMargin = ActiveTheme.Spacing.Three * row.Scale;
                 if (!string.IsNullOrEmpty(item.Label))
                     FormLabel(
                         new Vector2(x, row.Origin.Y), column, row.Scale,
                         item.Label);
                 item.Draw(new FormPairCell(
-                    new Vector2(x + column, row.Origin.Y),
-                    MathF.Max(0f, track - column),
+                    new Vector2(x + column + cellMargin, row.Origin.Y),
+                    MathF.Max(0f, track - column - cellMargin),
                     row.Scale));
                 if (string.IsNullOrEmpty(item.Help))
                     continue;
@@ -1522,11 +1523,12 @@ public static partial class Crystarium
         {
             float column = LabelColumn(
                 label, span, row.Scale, row.LabelWidth / row.Scale);
+            float margin = ActiveTheme.Spacing.Three * row.Scale;
             if (!string.IsNullOrEmpty(label))
                 FormLabel(new Vector2(x, row.Origin.Y), column, row.Scale, label);
             draw(new FormPairCell(
-                new Vector2(x + column, row.Origin.Y),
-                MathF.Max(0f, span - column),
+                new Vector2(x + column + margin, row.Origin.Y),
+                MathF.Max(0f, span - column - margin),
                 row.Scale));
         }
 
@@ -2093,8 +2095,12 @@ public static partial class Crystarium
             Width = width;
             Scale = scale;
             LabelWidth = labelWidth * scale;
-            ControlOrigin = origin + new Vector2(LabelWidth, 0f);
-            ControlWidth = width - LabelWidth;
+            // MARGIN standard: the space between the label column and the
+            // control belongs to the LAYOUT, between the boxes — never
+            // carved out of the label's own band.
+            float labelMargin = ActiveTheme.Spacing.Three * scale;
+            ControlOrigin = origin + new Vector2(LabelWidth + labelMargin, 0f);
+            ControlWidth = MathF.Max(0f, width - LabelWidth - labelMargin);
             RowHeight = rowHeight;
             Visible = visible;
         }
@@ -2391,11 +2397,9 @@ public static partial class Crystarium
     private static void FormLabel(
         Vector2 origin, float columnWidth, float scale, string label,
         float? rowHeight = null) =>
-        // The text band stops a margin short of the column edge: a long
-        // label truncates into breathing room, never against its control.
         LabelInBand(
             origin,
-            new(columnWidth - ActiveTheme.Spacing.Three * scale,
+            new(columnWidth,
                 (rowHeight ?? ActiveTheme.Controls.FormRowHeight) * scale),
             label,
             new TextStyle

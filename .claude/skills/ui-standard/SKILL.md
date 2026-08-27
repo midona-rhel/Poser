@@ -169,9 +169,10 @@ navigation, not a scrollbar — may shift anything.
   regardless of its text, so control edges align down the page. A
   label the column cannot hold truncates — that is a naming problem.
 - Vocabulary: PADDING is space inside a control's own box; MARGIN is
-  space between neighbouring boxes. Columns and cells are separated
-  by MARGIN (`Spacing.Six`), and two controls are never
-  pixel-adjacent unless one is a stepper hugging its well.
+  space between neighbouring boxes. The UI standardizes on MARGIN for
+  everything inter-box: columns and cells (`Spacing.Six`), label to
+  control (`Spacing.Three`). Two controls are never pixel-adjacent
+  unless one is a stepper hugging its well.
 - Layout primitives (Pair, Cells, Actions) are audited ONCE, as
   primitives — every consumer inherits their defects. The pair row
   shipped with no inter-cell margin and text-sized label columns, and
@@ -191,9 +192,12 @@ navigation, not a scrollbar — may shift anything.
 - Expression rows pair L/R (and Upper/Lower) on one row in EVERY
   host, the inspector included. Region mini headers in the inspector
   were tried 2026-08-27 and rejected — do not reintroduce them.
-- The label's fixed column keeps a trailing margin (`Spacing.Three`)
-  inside it: text truncates into breathing room, never against its
-  control.
+- MARGIN-FIRST: all spacing between sibling boxes is a margin owned
+  by the LAYOUT — the control column starts `Spacing.Three` after the
+  label column in every row, pair half, and cell. Padding exists only
+  between a box's border and its own content (a well's text inset, a
+  button's label inset). Space is never carved out of a neighbour's
+  band.
 - A fixed header over a scrolling surface (the bone filter over the
   matrix or the body/face maps) breathes one gap off the surface top
   and closes with a separator, so what stays put is legible.
