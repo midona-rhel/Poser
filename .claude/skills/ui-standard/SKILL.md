@@ -78,25 +78,37 @@ Windows each have ONE job. No mode may change what a window IS.
   has a visual identity — textures, colors, poses. A name list for a
   visual thing is a defect.
 
-## Width scale
+## Two widths, nothing between
 
-Controls come in exactly two widths. W1 is half of today's effective
-minimum control width; W2 = 2 × W1. Every interaction must still WORK
-at W1 — readable value, draggable, clickable — and should RESERVE W2
-when the cell allows. No third width; no per-pane constants. The
-tokens live in Theme, never inline.
+A content window exists at exactly TWO widths: narrow (one track) and
+wide (two tracks, twice the narrow content). A title-bar button
+toggles between them — instantly, no animation, no free horizontal
+resize. Height stays free; content scrolls.
 
-- Two elements in a grid or cell always have padding between them
+This is the whole answer to "what happens when the window shrinks":
+nothing shrinks. Every band and every row is DESIGNED twice — once
+per width — so overlap and crushed controls are impossible by
+construction, not prevented by minimum-size guardrails.
+
+- The track is the design unit: W1 = one track's control width, and a
+  control never renders below it. Wide = two tracks side by side; a
+  full-line row reserves its line and paints one track.
+- Two elements in a cell always have padding between them
   (`Page.ActionGap`); zero-gap adjacency is reserved for a stepper
-  hugging the well it steps (`Spacing.One`).
-- Two short related controls may share a row (Pair/Cells) only when
-  both keep W1.
+  hugging its well (`Spacing.One`).
+- Two short related controls share a line only when both keep W1.
+- **One band, one layout**: a band's left and right clusters are laid
+  out and measured TOGETHER. Two independently-positioned layers may
+  never share a band — overlap is a layout defect, never a
+  window-size problem. A cluster that does not fit the narrow width
+  gets its own designed band there; it does not get squeezed.
 
 ## No reflow, ever
 
-Reflow is the enemy. Layout may move for exactly one reason: the user
-opened or collapsed a section header. Nothing else — not state, not
-selection, not navigation, not a scrollbar — may shift anything.
+Reflow is the enemy. Layout may move for exactly two reasons: the
+user opened or collapsed a section header, or the user pressed the
+width toggle. Nothing else — not state, not selection, not
+navigation, not a scrollbar — may shift anything.
 
 
 - Text never reflows a row: values change inside fixed-width wells,
@@ -174,6 +186,35 @@ A hover is a label: a few words at most ("Step down one id", "Ctrl
 fine ×0.1"). Explanations live in the UI-contract docs and the future
 tutorial, never in a tooltip. A sentence-long tooltip is a defect
 unless truly exceptional.
+
+## How to design a surface
+
+Rules alone do not produce a good page. Before building or changing
+any surface, sit with it and answer these, in writing, for BOTH
+widths:
+
+1. **Inventory.** List every band and every control the surface
+   needs. Nothing gets placed before everything is listed.
+2. **Does this need its label?** If the section header or the
+   neighbouring control already says what it is, the label is noise —
+   drop it. A well under a "Tint" header does not need "Color".
+3. **What carries the row at narrow?** For each band: does it fit one
+   track? If not, what is the designed narrow form — its own band, a
+   dropdown instead of segments, icons instead of words? "It
+   truncates" is not a design.
+4. **Where is the empty space at wide?** Point at every blank region
+   and say whether it is deliberate reservation (a full-line row's
+   empty track) or waste (a lone half-row that should share its
+   line). Waste means re-pair the rows.
+5. **What changes state, and does its footprint hold?** Walk every
+   toggle, override, and selection change; the layout must not move.
+6. **Same function, same width.** Trailing buttons across rows form
+   one equal-width column; reset verbs look the same everywhere.
+7. **What would Blender do?** Check the analogous editor; deviate on
+   purpose or not at all.
+
+Write the two designs down before writing code. If a control has no
+good narrow form, the surface is not done being designed.
 
 ## When touching any pane
 
