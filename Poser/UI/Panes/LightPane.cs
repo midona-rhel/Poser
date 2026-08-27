@@ -399,8 +399,7 @@ public sealed class LightPane
                 cell => cell.Slider("##light-falloff", light.Falloff,
                     0f, 1000f, value => light.Falloff = value,
                     scale: SliderScale.Log, logCurvature: 9999f),
-                help: "Dimming toward the cone edge"
-                    + "range");
+                help: "Dimming toward the cone edge");
         });
 
         switch (light.Kind)
@@ -431,16 +430,14 @@ public sealed class LightPane
                             -90f, 90f,
                             value => light.AreaAngle =
                                 light.AreaAngle with { X = value }),
-                        help: "How far the panel skews horizontally, in "
-                            + "degrees");
+                        help: "Skew horizontally, degrees");
                     cells.Cell(
                         "Angle Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
                             value => light.AreaAngle =
                                 light.AreaAngle with { Y = value }),
-                        help: "How far the panel skews vertically, in "
-                            + "degrees");
+                        help: "Skew vertically, degrees");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
                     value => light.FalloffAngle = value,
@@ -462,8 +459,7 @@ public sealed class LightPane
                     next => ApplyGoboIndex(next),
                     disabled: !goboSupported),
                 help: goboSupported
-                    ? "Project a texture through the light, like a window's "
-                        + "shadow"
+                    ? "Project a texture through the light"
                     : "Spot and area lights only.");
             cells.Cell(
                 string.Empty,
