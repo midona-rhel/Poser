@@ -12,6 +12,33 @@ gaze wells, the overlay) are exempt from the width scale but still
 follow the reflow, gutter, header, and grouping rules. Compose from
 Crystarium primitives — inventing a local layout is a defect.
 
+## Shell roles (the Blender mapping)
+
+Four windows, each with ONE job. No mode may change what a window IS.
+
+- **Main window** — the scene editor, always: sidebar = outliner
+  (what exists, selection), tab strip = properties editor (aspect tabs
+  per selected type — Pose/Animation/Appearance for actors,
+  Light/Shadows, Weather/Sky/… for the environment), inspector =
+  N-panel. The environment is a selection like any other, never a
+  separate window.
+- **The inspector** (right column) carries ONLY the selection's
+  invariants: summary, reset verbs, rotation gizmo, TRANSLATION,
+  TRACKING, IK. It always corresponds to the active selection, is
+  user-toggled, and its column never appears or vanishes from
+  navigation. Aspect content (EXPRESSION, POSE) belongs to tabs, never
+  the inspector — nothing is drawn in two places.
+- **Library window** — the asset browser: Poses, Auto-saves, MCDFs,
+  Scenes, Objects, plus whole-scene save/load. It is its own window so
+  it can stand beside the viewport; it never hijacks the main window.
+  Its metadata panel follows the same reserved/toggle policy as the
+  inspector.
+- **Toolbar** — permanently its own window with a remembered position;
+  never a band inside the main window.
+- **Pop-outs** are pinned properties: the standard tab-content view
+  with a pin that stops it following selection. Identical layout to
+  the main tabs — a bespoke pop-out layout is a defect.
+
 ## Page composition
 
 - One scrolling page per surface. Sections in PIPELINE ORDER, the same
