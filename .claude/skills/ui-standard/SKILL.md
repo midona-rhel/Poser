@@ -266,6 +266,12 @@ navigation, not a scrollbar — may shift anything.
 
 ## The transform grid (inspector)
 
+Transform presentation is UNIVERSAL: every inspector that shows
+position-like vectors uses the SAME grid composition — the actor's
+translate/rotate/scale, the camera's Position or Offset/World
+position — with its own row set and icons. AxisVector word-label rows
+in an inspector are a defect.
+
 The inspector's transform is a 3×3 GRID, not three labelled rows:
 rows are translate / rotate / scale wearing the TOOLBAR'S icons (the
 same glyphs, so the tool and its numbers read as one thing); columns
@@ -289,15 +295,14 @@ explains itself.
 
 ## The rotation ball
 
-Every world selection with an orientation — bones, actors, AND
-cameras — shows the inspector's rotation ball, so navigating between
-them never reflows the rail. A camera's ball projects from a FIXED
-vantage (yaw 45°, isometric downward pitch: the axes rest as an
-equilateral triangle pointing up) because camera-relative rings on
-the camera itself are self-referential; its rings write yaw (Y),
-pitch (X), and roll (Z) directly. The ball RESTS at identity in that
-vantage — the symmetric orb — rotates live under a drag, and springs
-back to rest on release.
+Every world selection with an orientation shows an orientation
+control of the SAME footprint in the inspector, so navigating between
+them never reflows the rail. Bones and actors get the rotation-ring
+ball. A camera gets the JOYSTICK ORB instead — ring semantics were
+tried on the camera 2026-08-28 and rejected: the DISC is a joystick
+(grab anywhere inside, leniency by design; deflection pans the camera
+at a deliberate rate; the knob springs home on release), and the
+WHITE RING drags camera roll directly.
 
 ## Texture selection
 

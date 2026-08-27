@@ -1425,7 +1425,7 @@ public class PoseInspectorPane
                 // Rotation is degrees: four digits say everything. The
                 // metric rows keep their thousandths.
                 r => r == 1 ? "0.0" : "0.000",
-                !canEdit));
+                _ => !canEdit));
 
         // If Alt is released between well callbacks, return immediately to
         // the active axis from the same frozen scale baseline.

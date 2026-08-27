@@ -178,7 +178,9 @@ public class PoseRailPane
         // angle/pan, owned by the Camera tab — so the gizmo stands down
         // rather than drawing an inert widget. An overlay node has none
         // either: it is flat on the screen, not placed in the world.
-        if (!_inspector.IsOverlaySelection)
+        if (_inspector.IsCameraSelection)
+            cursor.Y += DrawCameraJoystick(dl, cursor, width, s);
+        else if (!_inspector.IsOverlaySelection)
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
@@ -197,14 +199,117 @@ public class PoseRailPane
     /// camera-roll ring. No cursor circle and no drag-origin dot are
     /// drawn. Returns consumed height.
     /// </summary>
-    /// <summary>The ball's fixed vantage: yaw 45° and the isometric
-    /// downward pitch, so the three axes rest as an equilateral triangle
-    /// pointing up.</summary>
-    private static readonly Quaternion FixedBallView =
-        Quaternion.CreateFromYawPitchRoll(
-            MathF.PI * 0.25f, -0.61547971f, 0f);
+    // ── The camera joystick ──────────────────────────────────────────
+    // Same footprint as the rotation ball, so actor ↔ camera navigation
+    // never reflows the rail. The DISC is a joystick: grab anywhere
+    // (leniency by design), deflection pans the camera at a deliberate
+    // rate, and the knob springs home on release. The WHITE RING rolls
+    // the camera directly.
 
-    private (Vector3 Rotation, float Roll) _ballStart;
+    /// <summary>Full-deflection pan rate — a bit slowish on purpose.</summary>
+    private const float JoystickRadiansPerSecond = 1.1f;
+
+    private bool _joyRolling;
+    private float _joyRollStartAngle;
+    private float _joyRollStartValue;
+
+    private float DrawCameraJoystick(
+        ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    {
+        float d = 158f * s;
+        var center = new Vector2(cursor.X + width / 2f, cursor.Y + d / 2f);
+        float ringRadius = d / 2f - 6f * s;
+        float discRadius = ringRadius - 10f * s;
+
+        var camera = _inspector.BallCamera();
+        bool canEdit = camera is { IsLocked: false };
+
+        ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
+        ImGui.InvisibleButton("##rail-camera-joystick", new Vector2(d, d));
+        bool active = ImGui.IsItemActive() && canEdit;
+        bool hovered = ImGui.IsItemHovered();
+        var mouse = ImGui.GetMousePos();
+        float mouseDistance = (mouse - center).Length();
+
+        if (ImGui.IsItemActivated() && canEdit)
+        {
+            // Grab the ring only near the ring; everything inside is the
+            // stick — the leniency is the design.
+            _joyRolling = mouseDistance > discRadius + 2f * s;
+            if (_joyRolling && camera != null)
+            {
+                _joyRollStartAngle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                _joyRollStartValue = camera.Roll;
+            }
+        }
+
+        var theme = Crystarium.ActiveTheme;
+        dl.AddCircleFilled(center, ringRadius + 4f * s,
+            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+
+        Vector2 knob = center;
+        if (active && camera != null)
+        {
+            GizmoPointerOwnership.Hold();
+            if (_joyRolling)
+            {
+                float angle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                float delta = angle - _joyRollStartAngle;
+                if (delta > MathF.PI) delta -= MathF.Tau;
+                if (delta < -MathF.PI) delta += MathF.Tau;
+                camera.Roll = _joyRollStartValue + delta;
+            }
+            else
+            {
+                var offset = mouse - center;
+                float length = offset.Length();
+                if (length > discRadius)
+                    offset *= discRadius / length;
+                knob = center + offset;
+                // Deflection is a VELOCITY: pan at the deliberate rate.
+                var fraction = offset / discRadius;
+                float dt = ImGui.GetIO().DeltaTime;
+                camera.Rotation = camera.Rotation with
+                {
+                    X = camera.Rotation.X
+                        + fraction.X * JoystickRadiansPerSecond * dt,
+                    Y = camera.Rotation.Y
+                        + fraction.Y * JoystickRadiansPerSecond * dt,
+                };
+            }
+        }
+
+        // The white roll ring, brightening under the pointer or a roll drag.
+        bool ringHot = (active && _joyRolling) ||
+            (hovered && !active && mouseDistance > discRadius + 2f * s &&
+             mouseDistance < ringRadius + 8f * s);
+        dl.AddCircle(center, ringRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = ringHot ? 0.9f : 0.45f })),
+            0, (ringHot ? 2.5f : 1.5f) * s);
+
+        // The stick: a faint travel boundary and the knob.
+        dl.AddCircle(center, discRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = 0.12f })), 0, 1f * s);
+        var knobColor = canEdit
+            ? theme.Text with { W = active && !_joyRolling ? 1f : 0.8f }
+            : theme.Text.Fade(theme.Chrome.DisabledOpacity);
+        dl.AddCircleFilled(knob, 7f * s,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)));
+
+        if (hovered && !active)
+        {
+            bool overRing = mouseDistance > discRadius + 2f * s;
+            Crystarium.HoverHelp.Explain("rail-camera-joystick",
+                mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
+                overRing ? "Roll the camera" : "Pan the camera");
+        }
+
+        return d + 8f * s;
+    }
 
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
@@ -220,28 +325,8 @@ public class PoseRailPane
         var io = ImGui.GetIO();
         var mouse = ImGui.GetMousePos();
 
-        // A camera gets the ball from a FIXED vantage — camera-relative
-        // rings on the camera itself are self-referential nonsense — with
-        // drags writing yaw, pitch, and roll directly.
-        var ballCamera = _inspector.BallCamera();
-        Quaternion frameWorld;
-        Quaternion axisConversion;
-        bool canEdit;
-        if (ballCamera != null)
-        {
-            // The ball RESTS in the fixed symmetric pose — identity in the
-            // fixed vantage — whatever the camera's rotation is. A drag
-            // rotates it live for feedback, and because the rest pose is
-            // recomputed every frame it springs back on release.
-            frameWorld = Quaternion.Identity;
-            axisConversion = Quaternion.Identity;
-            canEdit = !ballCamera.IsLocked;
-        }
-        else
-        {
-            (frameWorld, axisConversion, canEdit) =
-                _inspector.GizmoWorldContext();
-        }
+        var (frameWorld, axisConversion, canEdit) =
+            _inspector.GizmoWorldContext();
         if (active && _dragAxis >= 0)
         {
             frameWorld = Quaternion.Normalize(
@@ -257,11 +342,8 @@ public class PoseRailPane
         // fixed widget centre — no perspective and no recentring, so the
         // widget's shape and size never depend on where the actor stands
         // on screen. The world overlay deliberately does the opposite.
-        var rings = ballCamera != null
-            ? RotationGizmoRings.Project(
-                FixedBallView, center, frameWorld, widgetRadius)
-            : RotationGizmoRings.Project(
-                _camera, center, frameWorld, widgetRadius);
+        var rings = RotationGizmoRings.Project(
+            _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)
             return d + 8f * s;
 
@@ -306,8 +388,6 @@ public class PoseRailPane
             _dragAngle = 0f;
             _dragFrame = frameWorld;
             _dragAxisWorld = axisWorld;
-            if (ballCamera != null)
-                _ballStart = (ballCamera.Rotation, ballCamera.Roll);
         }
 
         if (active && _dragAxis >= 0)
@@ -320,33 +400,15 @@ public class PoseRailPane
             if (delta != 0f)
             {
                 _dragAngle += delta / RotationGizmoRings.PixelsPerRadian;
-                if (ballCamera != null)
-                {
-                    // X ring pitches, Y ring yaws, Z ring rolls — the axis
-                    // rings mean on a camera what they mean on a bone.
-                    var (startRotation, startRoll) = _ballStart;
-                    if (_dragAxis == 0)
-                        ballCamera.Rotation = startRotation with
-                        { Y = startRotation.Y + _dragAngle };
-                    else if (_dragAxis == 1)
-                        ballCamera.Rotation = startRotation with
-                        { X = startRotation.X + _dragAngle };
-                    else
-                        ballCamera.Roll = startRoll + _dragAngle;
-                }
-                else
-                {
-                    _inspector.RotateSelectionGizmo(
-                        Quaternion.CreateFromAxisAngle(
-                            _dragAxisModel, _dragAngle));
-                }
+                _inspector.RotateSelectionGizmo(
+                    Quaternion.CreateFromAxisAngle(
+                        _dragAxisModel, _dragAngle));
             }
         }
 
         if (ImGui.IsItemDeactivated())
         {
-            if (ballCamera == null)
-                _inspector.CommitRotation();
+            _inspector.CommitRotation();
             _dragAxis = -1;
             _dragAngle = 0f;
             _dragDistance = 0f;

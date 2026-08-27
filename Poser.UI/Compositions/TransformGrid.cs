@@ -15,10 +15,16 @@ public static partial class Crystarium
     /// <summary>The grid's logical row height, stated so the hosting form
     /// row can reserve it exactly — the bottom margin included, so the
     /// next row breathes.</summary>
-    public static float TransformGridHeight =>
+    public static float TransformGridHeight => TransformGridHeightFor(3);
+
+    /// <summary>The logical height for a grid of the given row count —
+    /// the transform presentation is UNIVERSAL across inspectors, and a
+    /// camera's grid carries different rows than an actor's.</summary>
+    public static float TransformGridHeightFor(int rowCount) =>
         TransformLegendRise + TransformBoxPad * 2f
-        + ActiveTheme.Controls.WorkspaceHeight * 3f
-        + TransformRowGap * 2f + TransformBottomMargin;
+        + ActiveTheme.Controls.WorkspaceHeight * rowCount
+        + TransformRowGap * MathF.Max(0, rowCount - 1)
+        + TransformBottomMargin;
 
     /// <summary>
     /// The inspector's transform: rows are translate / rotate / scale
@@ -38,7 +44,7 @@ public static partial class Crystarium
         Action<int> onCommit,
         Func<int, float> perPixel,
         Func<int, string> format,
-        bool disabled)
+        Func<int, bool> disabled)
     {
         var theme = ActiveTheme;
         float s = ImGuiHelpers.GlobalScale;
@@ -51,7 +57,12 @@ public static partial class Crystarium
         float boxGap = theme.Spacing.Three * s;
         float boxW = MathF.Max(
             1f, (width - iconSide - margin - boxGap * 2f) / 3f);
-        float boxH = rise + pad * 2f + rowH * 3f + rowGap * 2f;
+        float boxH = rise + pad * 2f + rowH * rows.Length
+            + rowGap * MathF.Max(0, rows.Length - 1);
+        bool allDisabled = true;
+        for (int r = 0; r < rows.Length; r++)
+            if (!disabled(r))
+                allDisabled = false;
         float gridTop = origin.Y + rise;
 
         for (int r = 0; r < rows.Length; r++)
@@ -63,7 +74,7 @@ public static partial class Crystarium
                 rows[r].Icon,
                 theme.FormLabel,
                 contentScale: 0.9f,
-                disabled: disabled);
+                disabled: disabled(r));
             if (ImGui.IsMouseHoveringRect(
                     new Vector2(origin.X, y),
                     new Vector2(origin.X + iconSide, y + rowH)))
@@ -90,7 +101,7 @@ public static partial class Crystarium
                 letters[a],
                 accents[a],
                 s,
-                disabled);
+                allDisabled);
             for (int r = 0; r < rows.Length; r++)
             {
                 float y = gridTop + pad + r * (rowH + rowGap);
@@ -110,7 +121,7 @@ public static partial class Crystarium
                     {
                         Width = UiWidth.Fixed((boxW - pad * 2f) / s),
                     },
-                    disabled);
+                    disabled(row));
             }
         }
     }

@@ -281,56 +281,66 @@ public sealed class CameraPane
         // settings page sets — the same one an actor or a light is moved at.
         float perPixel = ConfigurationService.Instance.Config
             .Transform.For(isBone: false);
+        static float Axis(Vector3 v, int axis) =>
+            axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
+        static Vector3 WithAxis(Vector3 v, int axis, float next) => axis switch
+        {
+            0 => v with { X = next },
+            1 => v with { Y = next },
+            _ => v with { Z = next },
+        };
+
+        // The universal transform grid — the same presentation an actor's
+        // inspector wears, with the camera's own rows.
         if (camera.Kind == CameraKind.Free)
         {
-            form.AxisVector("Position", camera.Position,
-                value => camera.Position = value,
-                onCommit: null,
-                perPixel: perPixel,
-                format: "0.00",
-                help: "The camera's world position",
-                disabled: locked || !_cameras.IsAvailable);
+            form.Custom(
+                string.Empty,
+                Crystarium.TransformGridHeightFor(1),
+                row => Crystarium.TransformGrid(
+                    "rail-camera-transform",
+                    row.Origin,
+                    row.Width,
+                    [(TablerIcon.ArrowsMove, "Position")],
+                    (_, a) => Axis(camera.Position, a),
+                    (_, a, next) => camera.Position =
+                        WithAxis(camera.Position, a, next),
+                    _ => { },
+                    _ => perPixel,
+                    _ => "0.00",
+                    _ => locked || !_cameras.IsAvailable));
             return;
         }
 
-        form.AxisVector("Offset", camera.PositionOffset,
-            value => camera.PositionOffset = value,
-            onCommit: null,
-            perPixel: perPixel,
-            format: "0.00",
-            help: "Offset the camera every frame",
-            disabled: locked);
-        WorldPositionRow(form, camera, locked, perPixel);
-    }
+        bool pinned = camera.FixedPosition is not null;
+        form.Custom(
+            string.Empty,
+            Crystarium.TransformGridHeightFor(2),
+            row => Crystarium.TransformGrid(
+                "rail-camera-transform",
+                row.Origin,
+                row.Width,
+                [
+                    (TablerIcon.ArrowsDiagonal, "Offset"),
+                    (TablerIcon.Crosshair, "World position"),
+                ],
+                (r, a) => r == 0
+                    ? Axis(camera.PositionOffset, a)
+                    : Axis(camera.FixedPosition ?? camera.WorldPosition, a),
+                (r, a, next) =>
+                {
+                    if (r == 0)
+                        camera.PositionOffset =
+                            WithAxis(camera.PositionOffset, a, next);
+                    else if (camera.FixedPosition is { } point)
+                        camera.FixedPosition = WithAxis(point, a, next);
+                },
+                _ => { },
+                _ => perPixel,
+                _ => "0.00",
+                r => locked ||
+                    (r == 1 && (!pinned || !_cameras.IsAvailable))));
 
-    /// <summary>
-    /// Shows the current orbit position and its optional fixed world point.
-    /// </summary>
-    private void WorldPositionRow(
-        Crystarium.FormScope form,
-        IVirtualCamera camera,
-        bool locked,
-        float perPixel)
-    {
-        if (camera.FixedPosition is { } pinned)
-        {
-            form.AxisVector("World position", pinned,
-                value => camera.FixedPosition = value,
-                onCommit: null,
-                perPixel: perPixel,
-                format: "0.00",
-                help: "The pinned world point",
-                disabled: locked || !_cameras.IsAvailable);
-        }
-        else
-        {
-            var world = camera.WorldPosition;
-            form.AxisVector(
-                "World position", world, _ => { }, onCommit: null,
-                perPixel: perPixel, format: "0.00",
-                help: "The camera's world position",
-                disabled: true);
-        }
         form.Switch(
             "Pin position", camera.FixedPosition is not null,
             value =>
@@ -342,6 +352,7 @@ public sealed class CameraPane
             disabled: locked || !_cameras.IsAvailable,
             help: "Hold this world position");
     }
+
 
     /// <summary>Draws camera tracking controls on the inspector rail.</summary>
     public void DrawRailTracking(Crystarium.FormScope form)
