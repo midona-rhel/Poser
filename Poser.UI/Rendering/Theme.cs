@@ -149,6 +149,7 @@ public readonly record struct Theme
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,
             AxisWellHorizontalPadding = 6f,
+            VerbWidth = 63f,
             AxisLabelGap = 3f,
         },
         Matrix = new()
@@ -583,6 +584,12 @@ public readonly record struct Theme
         public float AxisGap { get; init; }
         public float AxisWellMinimumWidth { get; init; }
         public float AxisWellHorizontalPadding { get; init; }
+
+        /// <summary>The standard action-button width. Every text verb is at
+        /// least this wide, so verbs stacked across rows (Reset over Redraw,
+        /// Apply under Reset) render identically and align; a longer label
+        /// widens only as far as its text demands.</summary>
+        public float VerbWidth { get; init; }
         public float AxisLabelGap { get; init; }
     }
 

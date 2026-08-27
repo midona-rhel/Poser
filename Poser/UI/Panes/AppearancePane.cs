@@ -220,9 +220,7 @@ public sealed class AppearancePane
             () => ReportModel(_model.Reset(id), "Reset model"),
             available: true,
             owned: _model.IsOwned(id),
-            help: "What this actor draws as. Search NPCs, minions, mounts "
-                + "and ornaments by name or model id; Reset restores the "
-                + "model it came in with.");
+            help: "Search by name or model id");
 
         // The numeric field is applied explicitly.
         form.TextInputActions(
@@ -447,31 +445,10 @@ public sealed class AppearancePane
         PresentationReading reading)
     {
         var glamourer = _integration.Glamourer;
-        form.Actions("Appearance", actions =>
-        {
-            actions.Button("Open in Glamourer",
-                () =>
-                {
-                    var opened = _integration.OpenGlamourer(actor);
-                    if (!opened.Success)
-                        _notices.Failed(
-                            $"Open in Glamourer: {opened.Detail}");
-                },
-                disabled: !glamourer.Available,
-                help: glamourer.Available
-                    ? "Open this actor in the Glamourer window"
-                    : glamourer.Detail);
-            actions.Button("Reset appearance",
-                () => Report(_presentation.ResetActor(actor), "Reset appearance"),
-                help: "Undo this actor's opacity, tint, and wetness changes. "
-                    + "Penumbra, Glamourer, and Customize+ are not touched.");
-        });
-
+        form.PairRows();
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
             value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "Fade the whole actor, 0 invisible to 1 solid. "
-                + "Hiding it in the actor list is this same fade at its two "
-                + "ends, so either control moves the other.");
+            help: "0 invisible · 1 solid");
 
         form.ColorWells("Tint", wells =>
         {
@@ -489,8 +466,27 @@ public sealed class AppearancePane
                 value => Report(_presentation.SetTint(
                     actor, PresentationModel.OffHand, value), "Off"),
                 "No off hand weapon is equipped");
-        }, help: "Tint the character and weapon models. "
-            + "White leaves a model unchanged.");
+        }, help: "White leaves a model unchanged");
+
+        form.EndPair();
+        form.Actions("Appearance", actions =>
+        {
+            actions.Button("Open in Glamourer",
+                () =>
+                {
+                    var opened = _integration.OpenGlamourer(actor);
+                    if (!opened.Success)
+                        _notices.Failed(
+                            $"Open in Glamourer: {opened.Detail}");
+                },
+                disabled: !glamourer.Available,
+                help: glamourer.Available
+                    ? "Open this actor in Glamourer"
+                    : glamourer.Detail);
+            actions.Button("Reset appearance",
+                () => Report(_presentation.ResetActor(actor), "Reset appearance"),
+                help: "Undo opacity, tint, and wetness");
+        });
     }
 
     private void WetSurfaceRows(
@@ -499,11 +495,11 @@ public sealed class AppearancePane
         PresentationOverrides owned,
         PresentationReading reading)
     {
+        form.PairRows();
         form.Switch("Override", owned.Wetness != null,
             value => Report(
                 _presentation.SetWetnessEnabled(actor, value), "Wetness override"),
-            help: "Take over this actor's wetness so weather and water stop "
-                + "changing it. Turning it off restores the game's values.");
+            help: "Hold wetness against weather and water");
 
         // Read the latest override after the switch callback.
         var refreshed = _presentation.OverridesFor(actor);
@@ -513,17 +509,17 @@ public sealed class AppearancePane
         form.Slider("Weather", wet.Weather, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
-            help: "Set how rain-wet the character looks, 0 dry to 1 soaked",
+            help: "0 dry · 1 soaked",
             disabled: !wetOn);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
-            help: "Set how water-soaked the character looks, 0 dry to 1 soaked",
+            help: "0 dry · 1 soaked",
             disabled: !wetOn);
         form.Slider("Depth", wet.Depth, 0f, 3f,
             value => Report(_presentation.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
-            help: "Set how far up the body the wetness reaches",
+            help: "How far up the body it reaches",
             disabled: !wetOn);
     }
 

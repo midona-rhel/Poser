@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -51,6 +52,155 @@ public static partial class Crystarium
                 / curvature
             : travel;
         return minimum + fraction * (maximum - minimum);
+    }
+
+    /// <summary>
+    /// THE standard slider: a value-well with the fill inside and the mono
+    /// number at the right — AxisWell wearing the slider's fill. Dragging
+    /// sets the value by absolute position along the well (through the
+    /// same travel mapping the classic slider uses, log included);
+    /// double-click types the exact value through the shared well editor.
+    /// </summary>
+    public static bool SliderWell(
+        string id,
+        float value,
+        float minimum,
+        float maximum,
+        Action<float> onChange,
+        Action? onBegin = null,
+        Action? onCommit = null,
+        string? format = null,
+        SliderScale scale = SliderScale.Linear,
+        float logCurvature = SliderLogCurvature,
+        ControlStyle style = default,
+        bool disabled = false)
+    {
+        float uiScale = ImGuiHelpers.GlobalScale;
+        var metrics = ControlSizing.Resolve(
+            style,
+            ActiveTheme.Form.ValueColumnWidth,
+            ActiveTheme.Controls.WorkspaceHeight);
+        var pos = ImGui.GetCursorScreenPos();
+        var size = metrics.Size;
+
+        void Clamped(float next) =>
+            onChange(Math.Clamp(next, minimum, maximum));
+
+        if (_axisEditId == id && !disabled)
+            return EditAxisWell(
+                id, string.Empty, value, Clamped, onCommit,
+                ActiveTheme.FormValue, format ?? "0.###", pos, size, uiScale);
+
+        var hit = Interactive.Reserve(id, size, disabled);
+        bool changed = false;
+        if (hit.DoubleClicked)
+        {
+            _axisEditId = id;
+            _axisEditValue = value;
+            _axisEditNeedsFocus = true;
+        }
+        else if (hit.Active)
+        {
+            if (hit.Clicked)
+                onBegin?.Invoke();
+            float fraction = size.X > 0f
+                ? (ImGui.GetIO().MousePos.X - pos.X) / size.X
+                : 0f;
+            float next = SliderValueOf(
+                fraction, minimum, maximum, scale, logCurvature);
+            next = Math.Clamp(next, minimum, maximum);
+            if (next != value)
+            {
+                onChange(next);
+                value = next;
+                changed = true;
+            }
+        }
+        if (hit.DragEnded)
+            onCommit?.Invoke();
+
+        DrawSliderWell(
+            pos, size, value, minimum, maximum, scale, logCurvature,
+            format, hit.Active, disabled, uiScale);
+        if (hit.Hovered && _axisEditId == null)
+            HoverHelp.Explain(id, pos, pos + size,
+                "Drag to set · Double-click to type");
+        return changed;
+    }
+
+    private static void DrawSliderWell(
+        Vector2 pos,
+        Vector2 size,
+        float value,
+        float minimum,
+        float maximum,
+        SliderScale scale,
+        float logCurvature,
+        string? format,
+        bool active,
+        bool disabled,
+        float uiScale)
+    {
+        var draw = ImGui.GetWindowDrawList();
+        var max = pos + size;
+        float radius = ActiveTheme.Radii.Small * uiScale;
+        var well = ActiveTheme.Chrome.InputWell;
+        // The fill borrows the accent hue at a strength that reads as a
+        // gauge under the number, not as a selection.
+        var fill = ActiveTheme.Chrome.AccentFill with { W = 0.35f };
+        var border = active
+            ? ActiveTheme.FormValue with { W = 0.60f }
+            : ActiveTheme.Chrome.ControlBorder;
+        if (disabled)
+        {
+            well = well.Fade(ActiveTheme.Chrome.DisabledOpacity);
+            fill = ActiveTheme.Chrome.ControlBorder
+                .Fade(ActiveTheme.Chrome.DisabledOpacity);
+            border = border.Fade(ActiveTheme.Chrome.DisabledOpacity);
+        }
+        draw.AddRectFilled(
+            pos, max,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(well)),
+            radius);
+        float fraction = SliderPositionOf(
+            value, minimum, maximum, scale, logCurvature);
+        if (fraction > 0f)
+        {
+            // The fill clips against the well's rounded silhouette.
+            draw.PushClipRect(
+                pos, new Vector2(pos.X + size.X * fraction, max.Y), true);
+            draw.AddRectFilled(
+                pos, max,
+                ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(fill)),
+                radius);
+            draw.PopClipRect();
+        }
+        float inset = 0.5f * uiScale;
+        draw.AddRect(
+            pos + new Vector2(inset),
+            max - new Vector2(inset),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(border)),
+            MathF.Max(0f, radius - inset),
+            ImDrawFlags.None,
+            uiScale);
+
+        string text = format is { } fixedFormat
+            ? value.ToString(fixedFormat, CultureInfo.InvariantCulture)
+            : AdaptiveValueText(value);
+        var wellStyle = new TextStyle
+        {
+            Size = ActiveTheme.Typography.LabelSize,
+            Family = FontFamily.Mono,
+            Color = ActiveTheme.FormValue,
+            Disabled = disabled,
+        };
+        float pad = ActiveTheme.Form.AxisWellHorizontalPadding * uiScale;
+        float textWidth = MeasureText(text, wellStyle).X;
+        TextInBand(
+            new Vector2(max.X - pad - textWidth, pos.Y),
+            new Vector2(textWidth, size.Y),
+            text,
+            wellStyle);
     }
 
     /// <summary>

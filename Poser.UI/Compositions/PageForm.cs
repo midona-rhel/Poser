@@ -31,9 +31,18 @@ public static partial class Crystarium
     private static Vector4 FormValueColor => ActiveTheme.FormValue;
     private static Vector4 FormSeparatorColor => ActiveTheme.FormSeparator;
 
+    /// <summary>Two half-width tracks fit above this logical content
+    /// width; below it the tracks stack into one column. Chosen so a
+    /// track keeps the label column plus a workable control.</summary>
+    private const float TwoTrackMinimum = 480f;
+
     /// <param name="labelColumnWidth">Optional logical label-column width.</param>
+    /// <param name="halfRows">Rows flow into two half-width tracks; a
+    /// full-line row reserves its whole line but paints only the left
+    /// track. Below <see cref="TwoTrackMinimum"/> everything stacks into
+    /// one half-width column — the small-monitor layout under test.</param>
     public static void Page(string id, Vector2 origin, Vector2 size, Action<PageScope> content,
-        float? labelColumnWidth = null)
+        float? labelColumnWidth = null, bool halfRows = false)
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
@@ -44,7 +53,8 @@ public static partial class Crystarium
             origin + new Vector2(inset, 0f),
             width,
             scale,
-            labelColumnWidth);
+            labelColumnWidth,
+            halfRows: halfRows);
         content(page);
         page.Complete(origin, size.X);
     }
@@ -129,8 +139,25 @@ public static partial class Crystarium
         private readonly float _clipTop;
         private readonly float _clipBottom;
 
+        // Deliberate pairing: a section opts its rows into two-track flow
+        // (left, then right, on one line); a full-line row or a section
+        // boundary closes the line. This is a per-section DESIGN choice at
+        // the fixed width, not responsive behavior.
+        private bool _twoTrack;
+        private float _trackWidth;
+        private int _track;
+        private float _lineStartY;
+        private float _lineHeight;
+        private bool _pendingFullLine;
+
+        /// <summary>The NEXT row reserves its whole line, painting only
+        /// the left track. Set through <see cref="FormScope.FullLine"/>;
+        /// consumed by the row that follows.</summary>
+        internal bool NextFullLine;
+
         internal PageScope(string id, Vector2 origin, float width, float scale,
-            float? labelColumnWidth = null, bool dense = false)
+            float? labelColumnWidth = null, bool dense = false,
+            bool halfRows = false)
         {
             _id = id;
             _origin = origin;
@@ -138,6 +165,9 @@ public static partial class Crystarium
             _scale = scale;
             _labelWidth = labelColumnWidth
                 ?? ActiveTheme.Form.LabelColumnWidth;
+            _twoTrack = false;
+            _trackWidth = width;
+            _ = halfRows;
             _dense = dense;
             float top = ImGui.GetWindowPos().Y;
             _clipTop = top - ActiveTheme.Controls.FormRowHeight * 6f * scale;
@@ -188,6 +218,7 @@ public static partial class Crystarium
             Action<bool>? onOpenChanged, Action<FormScope> content,
             bool divider = true)
         {
+            EndPairedRows();
             var page = ActiveTheme.Page;
             if (divider)
             {
@@ -238,6 +269,7 @@ public static partial class Crystarium
         /// <summary>Draws an inline section separator.</summary>
         internal void DrawInlineRule()
         {
+            CloseLine();
             var page = ActiveTheme.Page;
             _y += page.ActionGap;
             PaintSectionRule(
@@ -248,13 +280,51 @@ public static partial class Crystarium
             _y += SectionRuleThickness + page.ActionGap;
         }
 
+        /// <summary>Closes a half-filled line: the flow returns to the
+        /// left track below the line's tallest row. Section boundaries and
+        /// full-line rows call this.</summary>
+        internal void CloseLine()
+        {
+            if (_track == 1)
+            {
+                _y = _lineStartY + _lineHeight;
+                _track = 0;
+            }
+        }
+
+        /// <summary>Rows from here to the section's end flow two per line.
+        /// The tracks only form when the page genuinely fits two.</summary>
+        internal void BeginPairedRows()
+        {
+            CloseLine();
+            if (_width / _scale < TwoTrackMinimum)
+                return;
+            _twoTrack = true;
+            _trackWidth =
+                (_width - ActiveTheme.Page.ActionGap * _scale) * 0.5f;
+        }
+
+        internal void EndPairedRows()
+        {
+            CloseLine();
+            _twoTrack = false;
+            _trackWidth = _width;
+        }
+
         internal FormRowScope BeginRow(string label)
         {
+            bool fullLine = NextFullLine;
+            NextFullLine = false;
+            if (!_twoTrack || fullLine)
+                CloseLine();
+            float x = _origin.X;
+            if (_twoTrack && _track == 1)
+                x += _trackWidth + ActiveTheme.Page.ActionGap * _scale;
             float top = _origin.Y + _y * _scale;
             bool visible = top <= _clipBottom && top >= _clipTop;
-            float column = LabelColumn(label, _width, _scale, _labelWidth);
+            float column = LabelColumn(label, _trackWidth, _scale, _labelWidth);
             var row = new FormRowScope(
-                new(_origin.X, top), _width, _scale, column / _scale,
+                new(x, top), _trackWidth, _scale, column / _scale,
                 RowHeight, visible);
             if (visible && !string.IsNullOrEmpty(label))
                 FormLabel(
@@ -263,6 +333,7 @@ public static partial class Crystarium
                     _scale,
                     label,
                     RowHeight);
+            _pendingFullLine = fullLine;
             return row;
         }
 
@@ -276,6 +347,22 @@ public static partial class Crystarium
             RegisterHelp(Ids.Join(id, "-row"), row.Origin,
                 row.Origin + new Vector2(row.Width,
                     height * row.Scale), help);
+            if (_twoTrack && !_pendingFullLine)
+            {
+                if (_track == 0)
+                {
+                    // Left track filled: the line stays open for a right
+                    // neighbour. _y holds the LINE TOP while it is open.
+                    _lineStartY = _y;
+                    _lineHeight = height;
+                    _track = 1;
+                    return;
+                }
+                // Right track filled: the line closes at its taller row.
+                _y = _lineStartY + MathF.Max(_lineHeight, height);
+                _track = 0;
+                return;
+            }
             _y += height;
         }
 
@@ -294,6 +381,7 @@ public static partial class Crystarium
 
         internal void Complete(Vector2 pageOrigin, float pageWidth)
         {
+            EndPairedRows();
             ImGui.SetCursorScreenPos(pageOrigin);
             ImGui.Dummy(new(pageWidth,
                 (_y + ActiveTheme.Page.Inset) * _scale));
@@ -310,6 +398,19 @@ public static partial class Crystarium
             _page = page;
             _section = section;
         }
+
+        /// <summary>The NEXT row reserves its whole line inside a paired
+        /// stretch — nothing flows beside it.</summary>
+        public void FullLine() => _page.NextFullLine = true;
+
+        /// <summary>Rows from here to the section's end (or
+        /// <see cref="EndPair"/>) flow two per line — the deliberate
+        /// pairing the standard calls for on short rows
+        /// (Override|Weather, Opacity|Tint).</summary>
+        public void PairRows() => _page.BeginPairedRows();
+
+        /// <summary>Ends a paired stretch early.</summary>
+        public void EndPair() => _page.EndPairedRows();
 
         /// <summary>Places a shared primitive or read-model view in one form
         /// row. The caller owns only the content; page spacing and help remain
@@ -359,11 +460,40 @@ public static partial class Crystarium
                 if (actionWidth > 0f)
                     actionGap = ActiveTheme.Page.ActionGap * row.Scale;
             }
-            // Keep a gap between track and value well.
-            float controlWidth = row.ControlWidth -
-                ActiveTheme.Form.ValueColumnWidth * row.Scale -
-                ActiveTheme.Page.ActionGap * row.Scale -
-                actionWidth - actionGap;
+            // THE slider is a value-well: fill and mono number inside one
+            // control, no separate readout beside it. Marked or
+            // custom-readout sliders keep the classic track until they get
+            // their own designed forms.
+            bool valueWell = marks is null && readout is null;
+            float controlWidth = valueWell
+                ? row.ControlWidth - actionWidth - actionGap
+                : row.ControlWidth -
+                    ActiveTheme.Form.ValueColumnWidth * row.Scale -
+                    ActiveTheme.Page.ActionGap * row.Scale -
+                    actionWidth - actionGap;
+            if (valueWell)
+            {
+                ImGui.SetCursorScreenPos(row.CenterControl(
+                    ActiveTheme.Controls.WorkspaceHeight));
+                Crystarium.SliderWell(
+                    controlId, value, minimum, maximum,
+                    next =>
+                    {
+                        displayedValue = next;
+                        onChange(next);
+                    },
+                    onBegin: onBegin,
+                    onCommit: onCommit,
+                    format: format,
+                    scale: scale,
+                    logCurvature: logCurvature,
+                    style: InRegion(
+                        style, controlWidth / row.Scale,
+                        fillByDefault: true),
+                    disabled: disabled);
+            }
+            else
+            {
             ImGui.SetCursorScreenPos(row.CenterControl(ControlSizing.Height(
                 style.Height, ActiveTheme.Controls.SliderHeight)));
             Crystarium.Slider(
@@ -379,7 +509,11 @@ public static partial class Crystarium
                 onCommit: onCommit,
                 scale: scale,
                 logCurvature: logCurvature);
-            // Custom readouts use text; numeric readouts use a value well.
+            }
+            // Classic path only: custom readouts use text; numeric
+            // readouts use a value well beside the track.
+            if (!valueWell)
+            {
             var bandOrigin = new Vector2(
                 row.ControlOrigin.X + row.ControlWidth - actionWidth - actionGap -
                     ActiveTheme.Form.ValueColumnWidth * row.Scale,
@@ -417,6 +551,7 @@ public static partial class Crystarium
                     },
                     disabled,
                     adaptiveDisplay: format is null);
+            }
             }
             if (actionScope != null && actionWidth > 0f)
                 DrawActions(actionScope.Items,
@@ -1964,6 +2099,14 @@ public static partial class Crystarium
             Origin.Y + (RowHeight - controlHeight) * 0.5f * Scale);
     }
 
+    /// <summary>A text verb is at least the standard verb width — equal
+    /// buttons render equally and align across rows — and grows only when
+    /// its label genuinely needs more.</summary>
+    private static float VerbFloor(string label, ControlStyle style) =>
+        MathF.Max(
+            ActiveTheme.Form.VerbWidth,
+            IntrinsicButtonWidth(label, style));
+
     private static float MeasureActions(
         IReadOnlyList<ActionItem> actions,
         float scale,
@@ -1994,7 +2137,7 @@ public static partial class Crystarium
                     committed += style.Width.Value * scale;
                     break;
                 default:
-                    committed += IntrinsicButtonWidth(
+                    committed += VerbFloor(
                         action.Label, style) * scale;
                     break;
             }
@@ -2049,7 +2192,7 @@ public static partial class Crystarium
             {
                 UiWidthKind.Fill => fillWidth,
                 UiWidthKind.Fixed => style.Width.Value * scale,
-                _ => IntrinsicButtonWidth(action.Label, style) * scale,
+                _ => VerbFloor(action.Label, style) * scale,
             };
             ImGui.SetCursorScreenPos(new(
                 x,
