@@ -743,7 +743,7 @@ public sealed class AnimationPane : IDisposable
                         },
                         disabled: disabled || selected == 0 || pending ||
                             _facialCapture.IsPending,
-                        help: "Write the held face into the pose as one undoable edit");
+                        help: "Bake the face into the pose");
                 }
             },
             disabled: disabled,
