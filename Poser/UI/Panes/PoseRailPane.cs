@@ -210,6 +210,7 @@ public class PoseRailPane
     private const float JoystickRadiansPerSecond = 1.1f;
 
     private bool _joyRolling;
+    private Vector2 _joyOrigin;
     private float _joyRollStartAngle;
     private float _joyRollStartValue;
 
@@ -234,8 +235,10 @@ public class PoseRailPane
         if (ImGui.IsItemActivated() && canEdit)
         {
             // Grab the ring only near the ring; everything inside is the
-            // stick — the leniency is the design.
+            // stick — and the CLICK POINT is the stick's origin, so the
+            // gesture is relative from wherever the hand landed.
             _joyRolling = mouseDistance > discRadius + 2f * s;
+            _joyOrigin = mouse;
             if (_joyRolling && camera != null)
             {
                 _joyRollStartAngle = MathF.Atan2(
@@ -263,21 +266,32 @@ public class PoseRailPane
             }
             else
             {
-                var offset = mouse - center;
+                // Deflection measures from the CLICK POINT, and dragging
+                // past the disc just holds full deflection.
+                var offset = mouse - _joyOrigin;
                 float length = offset.Length();
                 if (length > discRadius)
                     offset *= discRadius / length;
                 knob = center + offset;
-                // Deflection is a VELOCITY: pan at the deliberate rate.
+                // Deflection is a VELOCITY: pan at the deliberate rate,
+                // through the property that actually drives this camera
+                // kind — Pan for an orbit camera, Rotation for a free one.
                 var fraction = offset / discRadius;
                 float dt = ImGui.GetIO().DeltaTime;
-                camera.Rotation = camera.Rotation with
-                {
-                    X = camera.Rotation.X
-                        + fraction.X * JoystickRadiansPerSecond * dt,
-                    Y = camera.Rotation.Y
-                        + fraction.Y * JoystickRadiansPerSecond * dt,
-                };
+                float stepX = fraction.X * JoystickRadiansPerSecond * dt;
+                float stepY = fraction.Y * JoystickRadiansPerSecond * dt;
+                if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
+                    camera.Rotation = camera.Rotation with
+                    {
+                        X = camera.Rotation.X + stepX,
+                        Y = camera.Rotation.Y + stepY,
+                    };
+                else
+                    camera.Pan = camera.Pan with
+                    {
+                        X = camera.Pan.X + stepX,
+                        Y = camera.Pan.Y + stepY,
+                    };
             }
         }
 
