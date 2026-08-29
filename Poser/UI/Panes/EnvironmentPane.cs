@@ -35,6 +35,29 @@ namespace Poser.UI;
 /// which is the service's hold turned off. Every inversion happens at the call
 /// site that needs it and nowhere else.</para>
 /// </summary>
+/// <summary>
+/// One page of <see cref="EnvironmentPane"/>. The environment's eleven sections
+/// do not fit one scroll, so the shell gives it a five-tab strip and hands the
+/// pane the tab it is drawing. Positional against the shell's environment strip.
+/// </summary>
+public enum EnvironmentTab
+{
+    /// <summary>TIME, WEATHER, and LIGHTING: how the scene is lit — the
+    /// controls a pose touches most, one mental act, first tab.</summary>
+    Lighting,
+
+    /// <summary>SKY (skybox and clouds) and STARS: what the sky IS.</summary>
+    Sky,
+
+    /// <summary>FOG, RAIN, PARTICLES and WIND: what fills the air between
+    /// the camera and the sky.</summary>
+    Atmosphere,
+
+    /// <summary>RENDERING and FESTIVALS: the ground the scene stands on
+    /// rather than the air above it.</summary>
+    World,
+}
+
 public sealed class EnvironmentPane
 {
     private readonly IEnvironmentService _environment;
@@ -219,34 +242,67 @@ public sealed class EnvironmentPane
     /// the tab's own, so the row ids on two tabs are distinct even where the row
     /// LABELS repeat — "Colour alpha" appears on four of the eleven sections.
     /// </summary>
-    /// <summary>The Environment page: every section on ONE scrolling
-    /// page — time and weather open, the rest closed until wanted. Shown
-    /// in the CONTENT area by the workspace-band selector; the inspector
-    /// stays the selected object's.</summary>
-    public void DrawPage(Vector2 origin, Vector2 size)
+    public void Draw(Vector2 origin, Vector2 size, EnvironmentTab tab)
     {
         DrainPickers();
-        Crystarium.Page("environment-rail", origin, size, page =>
+
+        switch (tab)
         {
-            page.Section("Time", _openTime, next => _openTime = next,
-                TimeRows, divider: false);
-            page.Section("Weather", _openWeather, next => _openWeather = next,
-                WeatherRows);
-            page.Section("Sky", _openSky, next => _openSky = next, SkyRows);
-            page.Section("Stars", _openStars, next => _openStars = next,
-                StarRows);
-            page.Section("Lighting", _openLighting,
-                next => _openLighting = next, LightingRows);
-            page.Section("Fog", _openFog, next => _openFog = next, FogRows);
-            page.Section("Rain", _openRain, next => _openRain = next,
-                RainRows);
-            page.Section("Particles", _openParticles,
-                next => _openParticles = next, ParticleRows);
-            page.Section("Rendering", _openRendering,
-                next => _openRendering = next, RenderingRows);
-            page.Section("Festivals", _openFestivals,
-                next => _openFestivals = next, FestivalRows);
-        });
+            case EnvironmentTab.Sky:
+                Crystarium.Page("environment-sky", origin, size, SkyPage);
+                break;
+            case EnvironmentTab.Atmosphere:
+                Crystarium.Page(
+                    "environment-atmosphere", origin, size, AtmospherePage);
+                break;
+            case EnvironmentTab.World:
+                Crystarium.Page("environment-world", origin, size, WorldPage);
+                break;
+            default:
+                Crystarium.Page(
+                    "environment-lighting", origin, size, LightingPage);
+                break;
+        }
+    }
+
+    // ── the four pages ───────────────────────────────────────────────────
+    //
+    // The rule is a divider BETWEEN sections, so EVERY page's first section
+    // states divider: false and draws neither the rule nor the margin above it.
+
+    private void LightingPage(Crystarium.PageScope page)
+    {
+        page.Section("Time", _openTime, next => _openTime = next,
+            TimeRows, divider: false);
+        page.Section("Weather", _openWeather, next => _openWeather = next,
+            WeatherRows);
+        page.Section("Lighting", _openLighting,
+            next => _openLighting = next, LightingRows);
+    }
+
+    private void SkyPage(Crystarium.PageScope page)
+    {
+        page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
+            divider: false);
+        page.Section("Stars", _openStars, next => _openStars = next, StarRows);
+    }
+
+    private void AtmospherePage(Crystarium.PageScope page)
+    {
+        page.Section("Fog", _openFog, next => _openFog = next, FogRows,
+            divider: false);
+        page.Section("Rain", _openRain, next => _openRain = next, RainRows);
+        page.Section("Particles", _openParticles,
+            next => _openParticles = next, ParticleRows);
+        page.Section("Wind", _openWind, next => _openWind = next, WindRows);
+    }
+
+    private void WorldPage(Crystarium.PageScope page)
+    {
+        page.Section("Rendering", _openRendering,
+            next => _openRendering = next, RenderingRows, divider: false);
+        page.Section("Festivals", _openFestivals,
+            next => _openFestivals = next, FestivalRows);
     }
 
 

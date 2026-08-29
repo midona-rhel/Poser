@@ -1010,6 +1010,16 @@ public class MainWindow : Window
     /// selection snaps the inspector back to the Target panel.</summary>
     private Domain.Identity.SelectionId? _lastPrimaryForMode;
 
+    /// <summary>The environment strip: five pages under the Environment
+    /// content mode. Positional against EnvironmentTabFor.</summary>
+    private readonly ShellTab[] _environmentTabs =
+    [
+        new() { Label = "Lighting" },
+        new() { Label = "Sky" },
+        new() { Label = "Atmosphere" },
+        new() { Label = "World" },
+    ];
+
     /// <summary>This frame's content-mode SNAPSHOT: the selector writes
     /// config only, and tabs, layout, and content all read this value —
     /// one coherent frame, no one-frame settle when the mode flips
@@ -1109,6 +1119,16 @@ public class MainWindow : Window
             _ => "",
         };
     }
+
+    /// <summary>The environment strip's label as the pane's page.
+    /// Positional against <see cref="_environmentTabs"/>.</summary>
+    private static EnvironmentTab EnvironmentTabFor(string tab) => tab switch
+    {
+        "Sky" => EnvironmentTab.Sky,
+        "Atmosphere" => EnvironmentTab.Atmosphere,
+        "World" => EnvironmentTab.World,
+        _ => EnvironmentTab.Lighting,
+    };
 
     private string TitleEntity(SelectionId? primary)
     {
@@ -1388,7 +1408,7 @@ public class MainWindow : Window
         ApplyTabLayout(
             _libraryMode ? "Library"
             : _contentMode
-                switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
+                switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
         BuildStatus(primary);
     }
 
@@ -3102,12 +3122,29 @@ public class MainWindow : Window
             return;
         }
         int contentMode = _contentMode;
-        if (contentMode != 0)
+        if (contentMode == 1)
         {
-            // The content side shows the chosen page with NO tabs — the
-            // band's identity label says what it is, and the selection's
-            // strip returns with Target.
-            _activeStrip = contentMode == 1 ? "environment" : "scene";
+            // The environment is big enough to earn its strip: five
+            // pages, exactly the split it had as a selection.
+            _activeStrip = "environment";
+            bool held = false;
+            for (int i = 0; i < _environmentTabs.Length; i++)
+                held |= _environmentTabs[i].Label == _activeTab;
+            if (!held)
+                _activeTab = "Lighting";
+            for (int i = 0; i < _environmentTabs.Length; i++)
+            {
+                _environmentTabs[i].Active =
+                    _environmentTabs[i].Label == _activeTab;
+                _vm.Tabs.Add(_environmentTabs[i]);
+            }
+            return;
+        }
+        if (contentMode == 2)
+        {
+            // The scene page is one page: no tabs, the selector's own
+            // Scene segment is its identity.
+            _activeStrip = "scene";
             return;
         }
         var tabs = SyncStripAndTab(primary);
@@ -3169,7 +3206,7 @@ public class MainWindow : Window
         ApplyTabLayout(
             _libraryMode ? "Library"
             : _contentMode
-                switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
+                switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
     }
 
     /// <summary>The two mode strips. A mode is a strip like an entity type is
@@ -3343,6 +3380,7 @@ public class MainWindow : Window
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Object" or "Light"
                 or "Environment" or "Scene"
+                or "Lighting" or "Sky" or "Atmosphere" or "World"
                 or "Camera"
                 or "Scene"
 ;
@@ -3452,7 +3490,7 @@ public class MainWindow : Window
         int pageMode = _contentMode;
         if (pageMode == 1)
         {
-            _environmentPane.DrawPage(origin, size);
+            _environmentPane.Draw(origin, size, EnvironmentTabFor(_activeTab));
             return;
         }
         if (pageMode == 2)

@@ -32,14 +32,19 @@ Windows each have ONE job. No mode may change what a window IS.
   Scene selector (text segments, in the TITLEBAR, docked on
   the CONTENT side of the content/inspector divider — it stands over
   what it swaps) chooses
-  between the selection's tabs, the whole environment (every section
-  on one page — Time and Weather open, the rest closed), and the
+  between the selection's tabs, the environment under ITS OWN four-tab
+  strip — Lighting (Time, Weather, Lighting: how the scene is lit,
+  the most-used controls first), Sky (Sky, Stars), Atmosphere (Fog,
+  Rain, Particles, Wind), World (Rendering, Festivals). Big surfaces
+  split into tabs by SUBJECT, no one-section orphan tabs, most-used
+  first — the old scattered five-way split was rejected. And the
   whole scene workspace (save/load, options, progress, plus the way
   into the library). Selecting ANY entity snaps the content back to
   Target. The mode persists in config. The selector HIDES while the
-  window is collapsed. An IDENTITY LABEL leads the tab band — Actor,
-  Object, Camera, Light, Overlay, Environment, Scene — so a tabless
-  page still says what it is.
+  window is collapsed, and its FIRST SEGMENT IS the selection's kind
+  — Actor, Object, Camera, Light, Overlay, or Target when nothing is
+  selected — in a FIXED slot sized to the widest kind name, so a
+  selection change never moves a pixel of the band.
 - **Library** — the full-width workspace: the outliner stands down
   while it is open and returns with the scene editor. Reached from
   the Scene panel's "Open library…" verb and the burger menu; its

@@ -15,7 +15,8 @@ public static partial class Crystarium
         ControlStyle style = default,
         bool alignFirstTabToCursor = false,
         Func<int, bool>? itemDisabled = null,
-        Func<int, string?>? itemHelp = null)
+        Func<int, string?>? itemHelp = null,
+        Func<int, float>? itemWidth = null)
     {
         var font = FontRegistry.Resolve(
             FontFamily.Default,
@@ -34,8 +35,8 @@ public static partial class Crystarium
             alignFirstTabToCursor,
             itemDisabled,
             itemHelp,
-            index => ImGui.CalcTextSize(items[index]).X
-                + padding * 2f,
+            index => itemWidth?.Invoke(index)
+                ?? ImGui.CalcTextSize(items[index]).X + padding * 2f,
             (drawList, index, min, max, active, hovered, disabled) =>
             {
                 var color = active || hovered
