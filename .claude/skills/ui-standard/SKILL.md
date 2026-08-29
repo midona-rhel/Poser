@@ -257,8 +257,13 @@ navigation, not a scrollbar — may shift anything.
   everything picked from elsewhere (model, glamour, customize).
 - **Explicit-apply field**: a raw id/text field applies on its action
   button, never on keystroke.
-- **Status row**: one-line state ("This actor is no longer
-  available.") drawn as a form row, not ad-hoc text.
+- **Status row**: one-line STATE ("This actor is no longer
+  available.", "3 objects will go.") drawn as a form row, not ad-hoc
+  text. A standing explainer sentence that is always true ("objects
+  last for this session") is tutorial content and never lives in the
+  UI — the contract docs and the future tutorial own it. An armed
+  destroy-all's warning ENUMERATES what goes ("3 objects will go."),
+  never speaks in the abstract.
 
 ## The transform grid (inspector)
 

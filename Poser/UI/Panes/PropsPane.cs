@@ -112,12 +112,14 @@ public sealed class PropsPane
                 help: "Destroy every spawned object");
         });
         if (_destroyAllArmed)
+        {
+            int count = 0;
+            foreach (var _ in _scene.Snapshot.Props)
+                count++;
             form.Status(
-                "Every object spawned this session will go.",
+                $"{count} object{(count == 1 ? string.Empty : "s")} will go.",
                 warning: true);
-        form.Status(
-            "Objects spawned here last for this GPose session and are destroyed "
-            + "when it ends.");
+        }
     }
 
     // ── state ────────────────────────────────────────────────────────────
