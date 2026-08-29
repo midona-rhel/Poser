@@ -1084,21 +1084,21 @@ public class PoseInspectorPane
             {
                 bar.Label(
                     "Parenting",
-                    "Choose what child bones follow when you move a bone on this actor");
+                    "What children follow a moved bone");
                 foreach (var (label, component, help) in new[]
                 {
                     (
                         "Pos",
                         TransformComponents.Position,
-                        "Carry child bones along when a bone is moved"),
+                        "Move children too"),
                     (
                         "Rot",
                         TransformComponents.Rotation,
-                        "Turn child bones along when a bone is rotated"),
+                        "Rotate children too"),
                     (
                         "Scale",
                         TransformComponents.Scale,
-                        "Resize child bones along when a bone is scaled"),
+                        "Scale children too"),
                 })
                 {
                     bool propagates =
@@ -1114,10 +1114,13 @@ public class PoseInspectorPane
                         },
                         help);
                 }
+                // Precise naming: this clears the SELECTION, and it sits
+                // in the parenting bar — the bare "Clear" read as clearing
+                // the parenting flags.
                 bar.Button(
-                    "Clear",
+                    "Clear selection",
                     _selection.Clear,
-                    "Clear the selection");
+                    "Deselect everything");
             },
             separator: ActionBarSeparator.None);
     }
@@ -1425,7 +1428,10 @@ public class PoseInspectorPane
                 // Rotation is degrees: four digits say everything. The
                 // metric rows keep their thousandths.
                 r => r == 1 ? "0.0" : "0.000",
-                _ => !canEdit));
+                _ => !canEdit,
+                _ => _entity is IActor
+                    ? "Freeze the animation to move"
+                    : null));
 
         // If Alt is released between well callbacks, return immediately to
         // the active axis from the same frozen scale baseline.
@@ -1445,9 +1451,6 @@ public class PoseInspectorPane
         }
 
         DrawTransformClipboard(form, transform, canEdit);
-
-        if (!canEdit && _entity is IActor)
-            form.Status("Freeze the actor's animation to move it.");
     }
 
     private void DrawTransformClipboard(

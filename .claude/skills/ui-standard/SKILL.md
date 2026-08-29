@@ -85,32 +85,12 @@ Windows each have ONE job. No mode may change what a window IS.
   has a visual identity — textures, colors, poses. A name list for a
   visual thing is a defect.
 
-## Two widths, nothing between
-
-A content window exists at exactly TWO widths: narrow (one track) and
-wide (two tracks, twice the narrow content). A title-bar button
-toggles between them — instantly, no animation, no free horizontal
-resize. Height stays free; content scrolls.
-
-This is the whole answer to "what happens when the window shrinks":
-nothing shrinks. Every band and every row is DESIGNED twice — once
-per width — so overlap and crushed controls are impossible by
-construction, not prevented by minimum-size guardrails.
-
-- The track is the design unit: W1 = one track's control width, and a
-  control never renders below it. Wide = two tracks side by side; a
-  full-line row reserves its line and paints one track.
-- Two elements in a cell always have padding between them
-  (`Page.ActionGap`); zero-gap adjacency is reserved for a stepper
-  hugging its well (`Spacing.One`).
-- Two short related controls share a line only when both keep W1.
-- **One band, one layout**: a band's left and right clusters are laid
-  out and measured TOGETHER. Two independently-positioned layers may
-  never share a band — overlap is a layout defect, never a
-  window-size problem. A cluster that does not fit the narrow width
-  gets its own designed band there; it does not get squeezed.
-
 ## Width honesty — do the math, it is not optional
+
+(The fixed two-widths doctrine was proposed and REJECTED 2026-08-27:
+windows resize freely; overflow is made impossible by honest control
+widths and the yielding verb floor, never by pinning window sizes.
+Narrow-form designs are parked for a future effort.)
 
 - A control is sized to its PROBABLE VALUES, never stretched to fill
   the row. A two-option dropdown does not span 400px; an actor-name
@@ -130,6 +110,10 @@ construction, not prevented by minimum-size guardrails.
   the label column (72) the control cell is ~184 at 100% scale.
   A row that overflows there, or forces the inspector to be useless,
   is a placement error — it belongs on a tab instead.
+- The math also VETOES pairing: a rail pair cell is ~55 logical of
+  control after its label — sliders cannot live there, so the IK
+  sliders stay single rows in the rail. Pair on the wide surface,
+  single on the rail (gaze Mode|At is the reference).
 
 - The verb floor YIELDS: when a row cannot hold all its verbs at the
   standard width, they compress together — never overflow, never wrap.

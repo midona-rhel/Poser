@@ -44,7 +44,8 @@ public static partial class Crystarium
         Action<int> onCommit,
         Func<int, float> perPixel,
         Func<int, string> format,
-        Func<int, bool> disabled)
+        Func<int, bool> disabled,
+        Func<int, string?>? disabledHelp = null)
     {
         var theme = ActiveTheme;
         float s = ImGuiHelpers.GlobalScale;
@@ -122,6 +123,17 @@ public static partial class Crystarium
                         Width = UiWidth.Fixed((boxW - pad * 2f) / s),
                     },
                     disabled(row));
+                // Disable-in-place: the WHY lives on the hover, never in a
+                // status row that pops in and reflows the rail.
+                if (disabled(row) && disabledHelp?.Invoke(row) is { } why &&
+                    ImGui.IsMouseHoveringRect(
+                        new Vector2(x + pad, y),
+                        new Vector2(x + boxW - pad, y + rowH)))
+                    HoverHelp.Explain(
+                        Ids.Join(Ids.Join(id, "-why", row), "-", axis),
+                        new Vector2(x + pad, y),
+                        new Vector2(x + boxW - pad, y + rowH),
+                        why);
             }
         }
     }

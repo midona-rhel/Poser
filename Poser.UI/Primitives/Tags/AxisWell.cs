@@ -156,17 +156,13 @@ public static partial class Crystarium
                 - ImGui.CalcTextSize(editText).X
                 - horizontalPaddingPx * 2f);
 
-        // The edit shares the well's band with a TextInBand-seated axis
-        // label, so the native value takes the same metric ink seat.
-        // FramePadding cannot reseat text inside a fixed box (the frame's
-        // height derives from it), so the padding keeps the line-box
-        // value that makes the frame exactly the well's height, the FILL
-        // is painted at the intended rect here, and the widget itself is
-        // submitted risen with a transparent frame — value, caret, and
-        // selection lift together while the visible box stays put.
-        float rise = FontRegistry.InkRise(
-            FontFamily.Mono, FontWeight.Regular,
-            ActiveTheme.Typography.LabelSize) * scale;
+        // The EDIT centres by ImGui's own line height, with no metric
+        // rise and no caret scissor: the selection highlight and caret
+        // then exactly hug the text, which is what a focused input looks
+        // like. The file-metric seating bought sub-pixel alignment with
+        // the resting label and cost a visibly misplaced highlight after
+        // the Roboto switch (its cap dead band is 4.4px, Cascadia's was
+        // 3.0).
         ImGui.GetWindowDrawList().AddRectFilled(
             pos + new Vector2(inputLeft, 0f),
             pos + new Vector2(size.X, size.Y),
@@ -174,7 +170,7 @@ public static partial class Crystarium
                 ColorEx.ApplyAlpha(ActiveTheme.Chrome.InputWell)),
             ActiveTheme.Radii.Small * scale);
         ImGui.SetCursorScreenPos(
-            pos + new Vector2(inputLeft, rise));
+            pos + new Vector2(inputLeft, 0f));
         ImGui.SetNextItemWidth(MathF.Max(
             1f, size.X - inputLeft));
         if (_axisEditNeedsFocus)
@@ -183,21 +179,6 @@ public static partial class Crystarium
         float verticalPadding = MathF.Max(
             0f,
             (size.Y - ImGui.GetTextLineHeight()) * 0.5f);
-        // Same caret trim as TextInput: the native caret spans the line
-        // box, and the dead band above the cap is scissored off so it
-        // reads as the value's own height.
-        float caretTrim = (FontRegistry.AscentOverCap(
-                FontFamily.Mono, FontWeight.Regular,
-                ActiveTheme.Typography.LabelSize)
-            - CaretHeadroom) * scale;
-        bool caretClipped = caretTrim > 0f;
-        if (caretClipped)
-            ImGui.GetWindowDrawList().PushClipRect(
-                new Vector2(
-                    pos.X + inputLeft,
-                    pos.Y + rise + verticalPadding + caretTrim),
-                pos + new Vector2(size.X, size.Y),
-                true);
         ImGui.PushStyleVar(
             ImGuiStyleVar.FramePadding,
             new Vector2(
@@ -221,8 +202,6 @@ public static partial class Crystarium
             InputFloatFormat(format),
             ImGuiInputTextFlags.AutoSelectAll
                 | ImGuiInputTextFlags.EnterReturnsTrue);
-        if (caretClipped)
-            ImGui.GetWindowDrawList().PopClipRect();
         bool editedOnDeactivate = ImGui.IsItemDeactivatedAfterEdit();
         bool deactivated = ImGui.IsItemDeactivated();
         bool cancelled = ImGui.IsKeyPressed(ImGuiKey.Escape);
@@ -268,7 +247,7 @@ public static partial class Crystarium
         float radius = ActiveTheme.Radii.Small * scale;
         var fill = ActiveTheme.Chrome.InputWell;
         var border = focused
-            ? accent with { W = 0.60f }
+            ? accent with { W = 0.85f }
             : ActiveTheme.Chrome.ControlBorder;
         if (disabled)
         {
