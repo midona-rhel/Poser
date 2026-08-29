@@ -1103,10 +1103,8 @@ public class MainWindow : Window
     {
         if (_libraryMode)
             return "";
-        if (_contentMode == 1)
-            return "Environment";
-        if (_contentMode == 2)
-            return "Scene";
+        // ALWAYS the selected object's kind — the segment names what
+        // Target would show, whichever panel is active.
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.Bone

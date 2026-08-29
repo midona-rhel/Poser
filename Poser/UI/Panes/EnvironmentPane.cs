@@ -471,16 +471,13 @@ public sealed class EnvironmentPane
                 help: "Widen the list from this territory's own weathers to "
                     + "every weather in the game");
         });
+        // The slider keeps at least half the row; three-way cells choked
+        // it to a third. The two lifetime switches pair below it.
+        form.Slider("Transition", _environment.TransitionTime, 0f, 10f,
+            value => _environment.TransitionTime = value,
+            help: "Blend time into a picked weather, seconds");
         form.Cells(cells =>
         {
-            cells.Cell(
-                "Transition",
-                cell => cell.Slider(
-                    "##env-weather-transition", _environment.TransitionTime,
-                    0f, 10f,
-                    value => _environment.TransitionTime = value),
-                help: "How long the game blends into a picked weather, in "
-                    + "seconds");
             cells.Cell(
                 "Hold weather",
                 cell => cell.Switch(
@@ -489,8 +486,7 @@ public sealed class EnvironmentPane
                     value => _environment.IsWeatherOverrideEnabled = value,
                     disabled: !available),
                 help: available
-                    ? "Keep the current weather by suppressing the game's own "
-                        + "territory weather update"
+                    ? "Keep this weather against the game's updates"
                     : WeatherUnavailable);
             cells.Cell(
                 "Restore on exit",
@@ -498,7 +494,7 @@ public sealed class EnvironmentPane
                     "##env-weather-restore",
                     _environment.ResetWeatherOnGPoseExit,
                     value => _environment.ResetWeatherOnGPoseExit = value),
-                help: "Hand the weather back to the game when GPose ends");
+                help: "Hand the weather back when GPose ends");
         });
     }
 
@@ -733,14 +729,17 @@ public sealed class EnvironmentPane
         var fog = _environment.Fog;
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Fog", fog.Color with { W = 1f },
+            // No caption: the row label and the section already say fog.
+            wells.Well("", fog.Color with { W = 1f },
                 value => _environment.Fog = _environment.Fog with
                 {
                     Color = Rgb(value, _environment.Fog.Color.W),
                 });
         }, help: "The colour the fog washes the distance with");
         // The colour well edits RGB only, so the fog colour's own alpha — which
-        // both references edit — takes the row beside it.
+        // both references edit — takes the row beside it. The six sliders
+        // pair two-up: small values never span the page.
+        form.PairRows();
         form.Slider("Colour alpha", fog.Color.W, 0f, 1f,
             value => _environment.Fog = _environment.Fog with
             {
@@ -779,8 +778,10 @@ public sealed class EnvironmentPane
             value => _environment.Fog =
                 _environment.Fog with { SkyOpacity = value },
             help: "How much of the fog reaches the sky");
-        // A sky depth like Distance, and mapped like it.
-        form.Slider("Sky smoothness", fog.SkySmoothness, 0f, 1000f,
+        // A sky depth like Distance, and mapped like it. "Sky blend"
+        // because "Sky smoothness" truncated — a truncated label never
+        // ships.
+        form.Slider("Sky blend", fog.SkySmoothness, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { SkySmoothness = value },
             help: "How gradually the fog blends into the sky",
@@ -792,6 +793,7 @@ public sealed class EnvironmentPane
 
     private void RainRows(Crystarium.FormScope form)
     {
+        form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Rain,
             "Let the game run the rain. Changing any value below holds it for "
                 + "Poser.");
@@ -835,6 +837,7 @@ public sealed class EnvironmentPane
 
     private void ParticleRows(Crystarium.FormScope form)
     {
+        form.PairRows();
         SectionSwitch(form, "Natural particles", EnvSection.Particles,
             "Let the game run the particles — dust, snow and leaves all come "
                 + "from this one block. Changing any value below holds it for "
@@ -905,6 +908,7 @@ public sealed class EnvironmentPane
 
     private void StarRows(Crystarium.FormScope form)
     {
+        form.PairRows();
         SectionSwitch(form, "Natural stars", EnvSection.Stars,
             "Let the game run the night sky. Changing any value below holds "
                 + "it for Poser.");
@@ -995,6 +999,7 @@ public sealed class EnvironmentPane
 
     private void WindRows(Crystarium.FormScope form)
     {
+        form.PairRows();
         SectionSwitch(form, "Natural wind", EnvSection.Wind,
             "Let the game run the wind. Changing any value below holds it for "
                 + "Poser.");

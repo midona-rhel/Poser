@@ -44,7 +44,9 @@ Windows each have ONE job. No mode may change what a window IS.
   window is collapsed, and its FIRST SEGMENT IS the selection's kind
   — Actor, Object, Camera, Light, Overlay, or Target when nothing is
   selected — in a FIXED slot sized to the widest kind name, so a
-  selection change never moves a pixel of the band.
+  selection change never moves a pixel of the band. The kind follows
+  the SELECTED OBJECT always, whichever panel is active — it names
+  what Target would show, never the active panel.
 - **Library** — the full-width workspace: the outliner stands down
   while it is open and returns with the scene editor. Reached from
   the Scene panel's "Open library…" verb and the burger menu; its
