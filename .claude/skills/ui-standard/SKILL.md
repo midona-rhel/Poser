@@ -157,8 +157,13 @@ navigation, not a scrollbar — may shift anything.
 - Labels are LEFT-ALIGNED everywhere — form labels, matrix cell
   labels, all of them. Right-aligned labels are a defect.
 - Label columns are FIXED WIDTH: every label reserves the same space
-  regardless of its text, so control edges align down the page. A
-  label the column cannot hold truncates — that is a naming problem.
+  regardless of its text, so control edges align down the page.
+- A TRUNCATED LABEL NEVER SHIPS. Truncation is a safety net, not a
+  state: when a label ellipsizes, fix it on sight — rename it to fit,
+  merge the row (a "Sections" label beside a "Release all sections"
+  button is saying it twice), or re-size the column token. The column
+  is sized so the app's REAL labels fit, and re-measured whenever the
+  font changes (Roboto runs wider than Segoe; 72 became 84).
 - Vocabulary: PADDING is space inside a control's own box; MARGIN is
   space between neighbouring boxes. The UI standardizes on MARGIN for
   everything inter-box: columns and cells (`Spacing.Six`), label to

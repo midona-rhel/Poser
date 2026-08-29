@@ -962,32 +962,25 @@ public sealed class EnvironmentPane
         form.Switch("Freeze water", _rendering.IsWaterFrozen,
             value => _rendering.IsWaterFrozen = value,
             help: water
-                ? "Stop the water renderer, freezing every surface where it "
-                    + "stands"
+                ? "Freeze every water surface"
                 : WaterUnavailable,
             disabled: !water);
-        // Both lifetime labels are cut to what the label column holds; the
-        // subject rides the noun rather than the sentence.
         form.Switch("Restore water", _rendering.ResetWaterOnGPoseExit,
             value => _rendering.ResetWaterOnGPoseExit = value,
-            help: "Hand the water back to the game when GPose ends");
-        // The environment sections' own lifetime rows live here rather than in
-        // eight copies, one per section.
-        form.Switch("Restore sections",
+            help: "Hand the water back when GPose ends");
+        // One Sections row: the lifetime switch and the release verb are
+        // the same subject — and neither label truncates.
+        form.SwitchActions("Sections",
             _environment.ResetSectionsOnGPoseExit,
             value => _environment.ResetSectionsOnGPoseExit = value,
-            help: "Release every held environment section when GPose ends");
-        form.Actions("Sections", actions =>
-        {
-            actions.Button("Release all sections",
+            actions => actions.Button("Release all",
                 _environment.ReleaseAllSections,
-                help: "Hand every held section back to the game. The next "
-                    + "environment update restores the zone's own values.");
-        });
-        form.Actions("Environment file", actions =>
+                help: "Hand every held section back"),
+            help: "Release held sections when GPose ends");
+        form.Actions("File", actions =>
         {
             actions.Button("Save to library", SaveToLibrary,
-                help: "Save the whole environment into the library's Objects tab");
+                help: "Save the environment into the library");
         });
     }
 

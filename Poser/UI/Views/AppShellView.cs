@@ -613,6 +613,37 @@ public static class AppShellView
             DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
         }
         DrawTitleActions(vm, max.X, min.Y, height, s);
+
+        // The CONTENT selector lives in the TITLEBAR, beside the window
+        // action icons and measured against their cluster: Target shows
+        // the selection's tabs; Environment and Scene swap the content
+        // side. The inspector below never swaps — it is only ever the
+        // selected object.
+        if (vm.OnInspectorMode is { } onMode)
+        {
+            string[] modes = ["Target", "Environment", "Scene"];
+            var segSize = Crystarium.MeasureSegmentedControl(modes);
+            float side = theme.Controls.ShellIconAction;
+            int icons = 3 + (vm.ShowPopOut ? 1 : 0);
+            float cluster = ClusterInset * s
+                + icons * side * s
+                + (icons - 1) * theme.Page.ActionGap * s;
+            ImGui.SetCursorScreenPos(new Vector2(
+                max.X - cluster - theme.Spacing.Eight * s - segSize.X,
+                min.Y + (height - segSize.Y) * 0.5f));
+            Crystarium.SegmentedControl(
+                "##content-mode",
+                modes,
+                vm.InspectorMode,
+                onMode,
+                itemHelp: index => index switch
+                {
+                    0 => "The selection's own tabs",
+                    1 => "Edit the environment",
+                    2 => "Save and load the scene",
+                    _ => null,
+                });
+        }
     }
 
     /// <summary>The sidebar's title cell owns the brand and its GPose pill
@@ -1069,43 +1100,6 @@ public static class AppShellView
             vm.WorkspaceRightActions,
             ActionBarSeparator.None);
 
-        // The CONTENT selector: Target shows the selection's tabs;
-        // Environment and Scene swap the content side. The INSPECTOR is
-        // only ever the selected object, so this lives here, sized
-        // against the toggle cluster it shares the band with.
-        if (vm.OnInspectorMode is { } onMode)
-        {
-            var theme = Crystarium.ActiveTheme;
-            string[] modes = ["Target", "Environment", "Scene"];
-            var segSize = Crystarium.MeasureSegmentedControl(modes);
-            float switchWidth = theme.Controls.SwitchWidth * s;
-            var captionStyle = new TextStyle
-            { Size = theme.Typography.CaptionSize };
-            float cluster = Crystarium.MeasureText(
-                    "Physics", captionStyle).X
-                + theme.Spacing.Three * s + switchWidth;
-            if (vm.AnimationAvailable)
-                cluster += Crystarium.MeasureText(
-                        "Animation", captionStyle).X
-                    + theme.Spacing.Three * s + switchWidth
-                    + theme.Page.ActionGap * s;
-            ImGui.SetCursorScreenPos(new Vector2(
-                max.X - inset - cluster - theme.Spacing.Eight * s
-                    - segSize.X,
-                min.Y + (ToolbarHeight * s - segSize.Y) * 0.5f));
-            Crystarium.SegmentedControl(
-                "##content-mode",
-                modes,
-                vm.InspectorMode,
-                onMode,
-                itemHelp: index => index switch
-                {
-                    0 => "The selection's own tabs",
-                    1 => "Edit the environment",
-                    2 => "Save and load the scene",
-                    _ => null,
-                });
-        }
 
         DrawContentViewport(vm, min, max, s);
     }

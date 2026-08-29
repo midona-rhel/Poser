@@ -144,7 +144,9 @@ public readonly record struct Theme
         },
         Form = new()
         {
-            LabelColumnWidth = 72f,
+            // Sized so the app's real labels FIT — re-measured for
+            // Roboto, which runs wider than Segoe did at 72.
+            LabelColumnWidth = 84f,
             ValueColumnWidth = 52f,
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,
