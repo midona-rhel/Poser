@@ -1551,18 +1551,25 @@ public static partial class Crystarium
                     new Vector2(x + column + cellMargin, row.Origin.Y),
                     MathF.Max(0f, track - column - cellMargin),
                     row.Scale));
-                if (string.IsNullOrEmpty(item.Help))
+                // The hover answers for exactly what the pointer is on:
+                // a cell's own help, else the row's shared help — either
+                // way anchored on THAT cell's label band, never the whole
+                // row (a Cells row has no row label, and the shared help
+                // once spanned the row and shadowed every cell).
+                string? cellHelp = string.IsNullOrEmpty(item.Help)
+                    ? help
+                    : item.Help;
+                if (!string.IsNullOrEmpty(item.Help))
+                    perCellHelp = true;
+                if (cellHelp is null || string.IsNullOrEmpty(item.Label))
                     continue;
-                perCellHelp = true;
-                // The cell's help anchors on its LABEL band — the full
-                // cell rect shadowed the control's own hover.
                 RegisterHelp(
                     Ids.Join(id, "-", item.Label),
                     new Vector2(x, row.Origin.Y),
                     new Vector2(x + column, row.Origin.Y + bandHeight),
-                    item.Help);
+                    cellHelp);
             }
-            _page.EndRow(row, id, perCellHelp ? null : help);
+            _page.EndRow(row, id, null);
         }
 
         private static void DrawHalf(

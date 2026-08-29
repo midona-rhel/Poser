@@ -286,7 +286,10 @@ unconditional HoverHelp.Explain calls fight each other and the last
 registration wins everywhere. And a row's help anchors on its LABEL
 band, never the whole row — a bigger hover region must never hide a
 control's own hover. The label explains the row; each control
-explains itself.
+explains itself. On a CELLS row the shared help anchors on EACH
+cell's label band (the row has no label of its own) — the hover is
+always tied to exactly what the pointer is on, and one wide hover
+spanning several controls is a defect wherever it appears.
 
 ## The rotation ball
 
