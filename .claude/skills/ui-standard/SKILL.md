@@ -29,8 +29,9 @@ Windows each have ONE job. No mode may change what a window IS.
   it — not modes, not pages. (The selector was first put on the rail
   and corrected 2026-08-28: it swaps the LEFT side.)
 - **The CONTENT side is a three-panel area**: a Target | Environment |
-  Scene selector (text segments, in the workspace band beside the
-  Animation/Physics toggles, measured with them as one band) chooses
+  Scene selector (text segments, in the TITLEBAR's right, one
+  ActionGap from the window action icons and measured against their
+  cluster) chooses
   between the selection's tabs, the whole environment (every section
   on one page — Time and Weather open, the rest closed), and the
   whole scene workspace (save/load, options, progress, plus the way
@@ -141,7 +142,11 @@ navigation, not a scrollbar — may shift anything.
 - NO ONE-FRAME SETTLE: a view renders its FINAL layout on the first
   frame after navigation. A provisional layout that shifts a frame
   later (measure-then-settle) is a reflow defect even though it is
-  fast. Cache or precompute whatever the first frame needs.
+  fast. Cache or precompute whatever the first frame needs. Mode and
+  navigation STATE reads take one SNAPSHOT per frame: a control that
+  writes state mid-draw (the titlebar selector) must not have later
+  draw code read the new value in the same frame — everything flips
+  together next frame.
 - Surfaces that keep their existing design (matrix, actor, 3D) are
   still bound to this contract plus the gutter and the shared page
   padding on all four edges.
@@ -232,6 +237,9 @@ navigation, not a scrollbar — may shift anything.
 - Drag steps for real-valued wells: 0.1 per unit of drag, Shift = 1,
   Ctrl = 0.01 — that is `perPixel: 0.1`, and the modifier ladder
   (×10 / ×0.1) produces the rest. Integer-id wells may step coarser.
+  SLIDER READOUT WELLS obey the same ladder: their rate caps at 0.1
+  (only a tighter range drags finer) — a range-derived rate like
+  (max−min)/300 is a unique scaling and a defect.
 - Double-click to type, always.
 - Alt-click resets a slider to its stated default (`altReset`) — one
   gesture, one undo step. Wire it wherever a row has a meaningful

@@ -638,7 +638,8 @@ public sealed class EnvironmentPane
                 _environment.Lighting with { LightDistance = value },
             help: "How far the zone's lighting reaches",
             marks: DistanceMarks,
-            scale: SliderScale.Log);
+            scale: SliderScale.Log,
+            logCurvature: 9999f);
         // The reference UIs draw these three unidentified members rather than
         // hide them; they keep their reference names until someone names them.
         form.Cells(cells =>

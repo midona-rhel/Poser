@@ -629,7 +629,7 @@ public static class AppShellView
                 + icons * side * s
                 + (icons - 1) * theme.Page.ActionGap * s;
             ImGui.SetCursorScreenPos(new Vector2(
-                max.X - cluster - theme.Spacing.Eight * s - segSize.X,
+                max.X - cluster - theme.Page.ActionGap * s - segSize.X,
                 min.Y + (height - segSize.Y) * 0.5f));
             Crystarium.SegmentedControl(
                 "##content-mode",

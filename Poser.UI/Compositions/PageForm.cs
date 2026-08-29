@@ -551,7 +551,10 @@ public static partial class Crystarium
                     },
                     onCommit,
                     ActiveTheme.FormValue,
-                    (maximum - minimum) / 300f,
+                    // The standard drag ladder caps the rate: 0.1 per
+                    // pixel (Shift 1, Ctrl 0.01); only tighter ranges
+                    // drag finer.
+                    MathF.Min(0.1f, (maximum - minimum) / 300f),
                     format ?? "0.00",
                     ControlStyle.Workspace with
                     {

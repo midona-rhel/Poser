@@ -1010,6 +1010,12 @@ public class MainWindow : Window
     /// selection snaps the inspector back to the Target panel.</summary>
     private Domain.Identity.SelectionId? _lastPrimaryForMode;
 
+    /// <summary>This frame's content-mode SNAPSHOT: the selector writes
+    /// config only, and tabs, layout, and content all read this value —
+    /// one coherent frame, no one-frame settle when the mode flips
+    /// mid-draw.</summary>
+    private int _contentMode;
+
     /// <summary>The content-mode identity tabs, retained like every
     /// other strip's.</summary>
     private readonly ShellTab _environmentModeTab = new() { Label = "Environment" };
@@ -1296,7 +1302,8 @@ public class MainWindow : Window
             // The INSPECTOR is only ever the selected object. The mode
             // selector swaps the CONTENT side: the selection's tabs, the
             // environment page, or the scene page.
-            _vm.InspectorMode = railConfig.InspectorMode;
+            _contentMode = railConfig.InspectorMode;
+            _vm.InspectorMode = _contentMode;
             _vm.OnInspectorMode = next =>
             {
                 Config.ConfigurationService.Instance.Config
@@ -1360,7 +1367,7 @@ public class MainWindow : Window
         BuildTabs(primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : Config.ConfigurationService.Instance.Config.UI.InspectorMode
+            : _contentMode
                 switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
         BuildStatus(primary);
     }
@@ -3074,8 +3081,7 @@ public class MainWindow : Window
             }
             return;
         }
-        int contentMode =
-            Config.ConfigurationService.Instance.Config.UI.InspectorMode;
+        int contentMode = _contentMode;
         if (contentMode != 0)
         {
             // The content side shows the chosen page under a single
@@ -3144,7 +3150,7 @@ public class MainWindow : Window
         BuildTabs(_selection.Primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : Config.ConfigurationService.Instance.Config.UI.InspectorMode
+            : _contentMode
                 switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
     }
 
@@ -3425,8 +3431,7 @@ public class MainWindow : Window
             return;
         }
 
-        int pageMode =
-            Config.ConfigurationService.Instance.Config.UI.InspectorMode;
+        int pageMode = _contentMode;
         if (pageMode == 1)
         {
             _environmentPane.DrawPage(origin, size);
