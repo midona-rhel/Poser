@@ -1069,6 +1069,44 @@ public static class AppShellView
             vm.WorkspaceRightActions,
             ActionBarSeparator.None);
 
+        // The CONTENT selector: Target shows the selection's tabs;
+        // Environment and Scene swap the content side. The INSPECTOR is
+        // only ever the selected object, so this lives here, sized
+        // against the toggle cluster it shares the band with.
+        if (vm.OnInspectorMode is { } onMode)
+        {
+            var theme = Crystarium.ActiveTheme;
+            string[] modes = ["Target", "Environment", "Scene"];
+            var segSize = Crystarium.MeasureSegmentedControl(modes);
+            float switchWidth = theme.Controls.SwitchWidth * s;
+            var captionStyle = new TextStyle
+            { Size = theme.Typography.CaptionSize };
+            float cluster = Crystarium.MeasureText(
+                    "Physics", captionStyle).X
+                + theme.Spacing.Three * s + switchWidth;
+            if (vm.AnimationAvailable)
+                cluster += Crystarium.MeasureText(
+                        "Animation", captionStyle).X
+                    + theme.Spacing.Three * s + switchWidth
+                    + theme.Page.ActionGap * s;
+            ImGui.SetCursorScreenPos(new Vector2(
+                max.X - inset - cluster - theme.Spacing.Eight * s
+                    - segSize.X,
+                min.Y + (ToolbarHeight * s - segSize.Y) * 0.5f));
+            Crystarium.SegmentedControl(
+                "##content-mode",
+                modes,
+                vm.InspectorMode,
+                onMode,
+                itemHelp: index => index switch
+                {
+                    0 => "The selection's own tabs",
+                    1 => "Edit the environment",
+                    2 => "Save and load the scene",
+                    _ => null,
+                });
+        }
+
         DrawContentViewport(vm, min, max, s);
     }
 
@@ -1196,47 +1234,16 @@ public static class AppShellView
     /// <summary>The rail's scroll seam and content invocation, shared by the
     /// attached rail and the floating inspector window. The chassis around it
     /// is each host's own.</summary>
-    /// <summary>The selector band's logical height — the inspector-mode
-    /// segments' own designed band at the top of the rail column.</summary>
-    private const float InspectorModeBandHeight = 34f;
-
     private static void RailScrollSeam(
         AppShellViewModel vm, Vector2 railMin, Vector2 max,
         float railWidth, float s)
     {
         var theme = Crystarium.ActiveTheme;
-        float bandOffset = 0f;
-        if (vm.OnInspectorMode is { } onMode)
-        {
-            // The mode selector: Target, Environment, Scene — the whole
-            // band is its layout, right-aligned on the page inset.
-            string[] modes = ["Target", "Environment", "Scene"];
-            var segSize = Crystarium.MeasureSegmentedControl(modes);
-            float bandTop = railMin.Y + 8f * s;
-            ImGui.SetCursorScreenPos(new Vector2(
-                railMin.X + railWidth - theme.Page.Inset * s - segSize.X,
-                bandTop + (InspectorModeBandHeight * s - 8f * s - segSize.Y)
-                    * 0.5f));
-            Crystarium.SegmentedControl(
-                "##inspector-mode",
-                modes,
-                vm.InspectorMode,
-                onMode,
-                itemHelp: index => index switch
-                {
-                    0 => "Inspect the selection",
-                    1 => "Edit the environment",
-                    2 => "Save and load the scene",
-                    _ => null,
-                });
-            bandOffset = InspectorModeBandHeight * s;
-        }
-        ImGui.SetCursorScreenPos(
-            railMin + new Vector2(0f, 12f * s + bandOffset));
+        ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f * s));
         Crystarium.ScrollRegion(
             "##shell-rail",
             railWidth / s - 1f,
-            (max.Y - railMin.Y - bandOffset) / s - 24f,
+            (max.Y - railMin.Y) / s - 24f,
             region =>
             {
                 var contentOrigin = ImGui.GetCursorScreenPos()
@@ -1246,11 +1253,7 @@ public static class AppShellView
                     contentOrigin,
                     new Vector2(
                         region.ContentWidth * s - theme.Page.Inset * s,
-                        max.Y - railMin.Y
-                            - (vm.OnInspectorMode is null
-                                ? 0f
-                                : InspectorModeBandHeight * s)
-                            - 24f * s));
+                        max.Y - railMin.Y - 24f * s));
             });
     }
 

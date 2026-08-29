@@ -25,14 +25,17 @@ Windows each have ONE job. No mode may change what a window IS.
   (world things only — the library, scene, and environment section
   headers left it), tab strip = the selection's aspect tabs and
   nothing else.
-- **The inspector is a THREE-PANEL column**: a Target | Environment |
-  Scene selector (text segments, its own band at the rail's top)
-  chooses between the selection's invariants, the whole environment
-  (every section on one page — Time and Weather open, the rest
-  closed), and the whole scene workspace (save/load, options,
-  progress, plus the way into the library). Selecting ANY entity
-  snaps the inspector back to Target — you selected it to inspect
-  it. The mode persists in config.
+- **The INSPECTOR is only ever the selected object.** Nothing swaps
+  it — not modes, not pages. (The selector was first put on the rail
+  and corrected 2026-08-28: it swaps the LEFT side.)
+- **The CONTENT side is a three-panel area**: a Target | Environment |
+  Scene selector (text segments, in the workspace band beside the
+  Animation/Physics toggles, measured with them as one band) chooses
+  between the selection's tabs, the whole environment (every section
+  on one page — Time and Weather open, the rest closed), and the
+  whole scene workspace (save/load, options, progress, plus the way
+  into the library). Selecting ANY entity snaps the content back to
+  Target. The mode persists in config.
 - **Library** — the full-width workspace: the outliner stands down
   while it is open and returns with the scene editor. Reached from
   the Scene panel's "Open library…" verb and the burger menu; its

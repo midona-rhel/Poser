@@ -219,11 +219,11 @@ public sealed class EnvironmentPane
     /// the tab's own, so the row ids on two tabs are distinct even where the row
     /// LABELS repeat — "Colour alpha" appears on four of the eleven sections.
     /// </summary>
-    /// <summary>The inspector's Environment panel: every section on ONE
-    /// scrolling page — time and weather open, the rest closed until
-    /// wanted. The five-tab layout died with the environment-as-selection
-    /// model (the inspector-mode redesign).</summary>
-    public void DrawRail(Vector2 origin, Vector2 size)
+    /// <summary>The Environment page: every section on ONE scrolling
+    /// page — time and weather open, the rest closed until wanted. Shown
+    /// in the CONTENT area by the workspace-band selector; the inspector
+    /// stays the selected object's.</summary>
+    public void DrawPage(Vector2 origin, Vector2 size)
     {
         DrainPickers();
         Crystarium.Page("environment-rail", origin, size, page =>

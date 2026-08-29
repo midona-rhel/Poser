@@ -1009,6 +1009,11 @@ public class MainWindow : Window
     /// <summary>The last primary the inspector-mode snap saw — a NEW
     /// selection snaps the inspector back to the Target panel.</summary>
     private Domain.Identity.SelectionId? _lastPrimaryForMode;
+
+    /// <summary>The content-mode identity tabs, retained like every
+    /// other strip's.</summary>
+    private readonly ShellTab _environmentModeTab = new() { Label = "Environment" };
+    private readonly ShellTab _sceneModeTab = new() { Label = "Scene" };
     private float _lastHeight = DefaultHeight;
 
     private static WindowSizeConstraints ExpandedSizeConstraints(float minimumWidth)
@@ -1288,6 +1293,9 @@ public class MainWindow : Window
         }
         else
         {
+            // The INSPECTOR is only ever the selected object. The mode
+            // selector swaps the CONTENT side: the selection's tabs, the
+            // environment page, or the scene page.
             _vm.InspectorMode = railConfig.InspectorMode;
             _vm.OnInspectorMode = next =>
             {
@@ -1295,12 +1303,7 @@ public class MainWindow : Window
                     .UI.InspectorMode = next;
                 Config.ConfigurationService.Instance.Save();
             };
-            _vm.DrawRail = railConfig.InspectorMode switch
-            {
-                1 => _environmentPane.DrawRail,
-                2 => _scenePane.DrawRail,
-                _ => _poseRail.Draw,
-            };
+            _vm.DrawRail = _poseRail.Draw;
         }
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
@@ -1357,7 +1360,8 @@ public class MainWindow : Window
         BuildTabs(primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : _activeTab);
+            : Config.ConfigurationService.Instance.Config.UI.InspectorMode
+                switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
         BuildStatus(primary);
     }
 
@@ -3070,6 +3074,18 @@ public class MainWindow : Window
             }
             return;
         }
+        int contentMode =
+            Config.ConfigurationService.Instance.Config.UI.InspectorMode;
+        if (contentMode != 0)
+        {
+            // The content side shows the chosen page under a single
+            // identity tab — the selection's strip returns with Target.
+            _activeStrip = contentMode == 1 ? "environment" : "scene";
+            var modeTab = contentMode == 1 ? _environmentModeTab : _sceneModeTab;
+            modeTab.Active = true;
+            _vm.Tabs.Add(modeTab);
+            return;
+        }
         var tabs = SyncStripAndTab(primary);
         for (int i = 0; i < tabs.Length; i++)
         {
@@ -3128,7 +3144,8 @@ public class MainWindow : Window
         BuildTabs(_selection.Primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : _activeTab);
+            : Config.ConfigurationService.Instance.Config.UI.InspectorMode
+                switch { 1 => "Environment", 2 => "Scene", _ => _activeTab });
     }
 
     /// <summary>The two mode strips. A mode is a strip like an entity type is
@@ -3301,6 +3318,7 @@ public class MainWindow : Window
         // time on top of the Page's own.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Object" or "Light"
+                or "Environment" or "Scene"
                 or "Camera"
                 or "Scene"
 ;
@@ -3404,6 +3422,21 @@ public class MainWindow : Window
         if (_libraryMode)
         {
             _libraryPane.Draw(origin, size);
+            return;
+        }
+
+        int pageMode =
+            Config.ConfigurationService.Instance.Config.UI.InspectorMode;
+        if (pageMode == 1)
+        {
+            _environmentPane.DrawPage(origin, size);
+            return;
+        }
+        if (pageMode == 2)
+        {
+            // Scene recovery is browsable out of GPose; the workflow
+            // itself refuses what needs a live session.
+            _scenePane.DrawPage(origin, size);
             return;
         }
 

@@ -387,7 +387,10 @@ public sealed class ScenePane
     /// library workspace.</summary>
     public Action? OpenLibrary;
 
-    public void DrawRail(Vector2 origin, Vector2 size)
+    /// <summary>The Scene page — the whole scene workspace plus the way
+    /// into the library. Shown in the CONTENT area by the workspace-band
+    /// selector; the inspector stays the selected object.</summary>
+    public void DrawPage(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
         var receipt = _workflow.Receipt;
