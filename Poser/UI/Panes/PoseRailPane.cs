@@ -119,49 +119,48 @@ public class PoseRailPane
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
 
-            // A light takes no action row: neither actor overrides nor bone
-            // resets address anything it has, and its own actions live on
-            // the Light tab. A gaze point takes none either — its buttons
-            // would act on the owning actor while claiming to act on it.
-            // Camera framing lives on the Camera tab; its reset transform
-            // deliberately stays here beside the actor and bone resets.
-            // An overlay node stands down for the same reason a light does:
-            // it has no bones to reset and no actor override to clear, and its
-            // own actions live on the Overlay tab.
-            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsOverlaySelection)
+            // The verbs band is CONSTANT: every selection reserves the
+            // same two-verb row, and a verb that does not apply renders
+            // disabled with its reason — navigating between selection
+            // kinds must not reflow the rail (the standard).
+            ImGui.SetCursorScreenPos(cursor);
+            bool bone = !_inspector.IsCameraSelection &&
+                !_inspector.IsActorSelection &&
+                !_inspector.IsLightSelection &&
+                !_inspector.IsGazeSelection &&
+                !_inspector.IsOverlaySelection;
+            bool resetApplies = _inspector.IsCameraSelection ||
+                _inspector.IsActorSelection || bone;
+            string resetLabel = bone ? "Reset bone" : "Reset transform";
+            string resetHelp = _inspector.IsCameraSelection
+                ? "Restore the camera's framing"
+                : _inspector.IsActorSelection
+                    ? "Restore position, rotation, and scale"
+                    : bone
+                        ? "Reset every selected bone"
+                        : "Nothing to reset here";
+            if (Crystarium.Button(resetLabel,
+                    id: "rail-reset",
+                    help: resetHelp,
+                    style: ControlStyle.Workspace,
+                    disabled: !resetApplies))
             {
-                ImGui.SetCursorScreenPos(cursor);
                 if (_inspector.IsCameraSelection)
-                {
-                    if (Crystarium.Button("Reset transform",
-                            id: "rail-camera-reset",
-                            help: "Restore the selected camera's framing",
-                            style: ControlStyle.Workspace))
-                        _inspector.ResetCameraTransform();
-                }
+                    _inspector.ResetCameraTransform();
                 else if (_inspector.IsActorSelection)
-                {
-                    // Always clickable: clearing overrides is a safe no-op when
-                    // none exist.
-                    if (Crystarium.Button("Reset transform",
-                            id: "rail-actor-reset",
-                            help: "Restore every selected actor's original position, rotation, and scale",
-                            style: ControlStyle.Workspace))
-                        _inspector.ResetActorTransform();
-                }
-                else
-                {
-                    if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                        help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
-                        _inspector.ResetSelectedBones();
-                    ImGui.SameLine(0f, 6f * s);
-                    if (Crystarium.Button("Select children", id: "rail-children",
-                        help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
-                        _inspector.SelectChildren();
-                }
-                cursor.Y += 36f * s;
+                    _inspector.ResetActorTransform();
+                else if (bone)
+                    _inspector.ResetSelectedBones();
             }
+            ImGui.SameLine(0f, 6f * s);
+            if (Crystarium.Button("Select children", id: "rail-children",
+                    help: bone
+                        ? "Add descendant bones to the selection"
+                        : "Bones only",
+                    style: ControlStyle.Workspace,
+                    disabled: !bone))
+                _inspector.SelectChildren();
+            cursor.Y += 36f * s;
         }
         else
         {

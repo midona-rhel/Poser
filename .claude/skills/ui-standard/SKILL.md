@@ -60,7 +60,10 @@ Windows each have ONE job. No mode may change what a window IS.
   sessions (persisted, not per-session fields).
 - Unavailable controls DISABLE IN PLACE with a hover saying why. They
   never vanish. Sections and rows do not appear/disappear with state —
-  content changes inside a stable frame.
+  content changes inside a stable frame. The inspector's verbs band is
+  the reference: every selection reserves the same two-verb row
+  (reset + Select children), disabled where inapplicable, so
+  navigating between selection kinds never reflows the rail.
 
 ## Choosing a control
 
