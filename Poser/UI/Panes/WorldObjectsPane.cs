@@ -103,9 +103,6 @@ public sealed class WorldObjectsPane
                 },
                 help: "Give every borrowed object back");
         });
-        form.Status(
-            "This object belongs to the map. Releasing it — and ending the "
-            + "GPose session — puts it back exactly where it stood.");
     }
 
     // ── state ────────────────────────────────────────────────────────────
