@@ -210,6 +210,11 @@ public sealed class AppShellViewModel
     public int InspectorMode;
     public Action<int>? OnInspectorMode;
 
+    /// <summary>What the content side is showing — "Actor", "Object",
+    /// "Camera", "Environment", "Scene" — the identity label leading the
+    /// tab band, so a tabless page still says what it is.</summary>
+    public string ContentKind = "";
+
     /// <summary>Collapse-to-titlebar: only the 48px strip renders.</summary>
     public bool Collapsed;
     public Action<bool>? OnCollapse;
@@ -619,7 +624,7 @@ public static class AppShellView
         // the selection's tabs; Environment and Scene swap the content
         // side. The inspector below never swaps — it is only ever the
         // selected object.
-        if (vm.OnInspectorMode is { } onMode)
+        if (!vm.Collapsed && vm.OnInspectorMode is { } onMode)
         {
             string[] modes = ["Target", "Environment", "Scene"];
             var segSize = Crystarium.MeasureSegmentedControl(modes);
@@ -1072,6 +1077,28 @@ public static class AppShellView
             U32(BorderSecondary));
 
         SyncTabs(vm);
+        // The identity label leads the band: the KIND of what the content
+        // shows, so a tabless page (Environment, Scene) still says what
+        // it is and a tabbed one says whose tabs these are.
+        float tabsLeft = min.X + inset;
+        if (vm.ContentKind.Length > 0)
+        {
+            var theme = Crystarium.ActiveTheme;
+            var kindStyle = new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.FormLabel,
+            };
+            float kindWidth = Crystarium.MeasureText(
+                vm.ContentKind, kindStyle).X;
+            Crystarium.TextInBand(
+                new Vector2(tabsLeft, min.Y),
+                new Vector2(kindWidth, ToolbarHeight * s),
+                vm.ContentKind,
+                kindStyle);
+            tabsLeft += kindWidth + theme.Spacing.Six * s;
+        }
         if (_tabLabels.Length > 0)
         {
             // The tab strip uses the shared segmented pill every other mode
@@ -1080,7 +1107,7 @@ public static class AppShellView
             // pill's dark chrome is decoration and not padding.
             var size = Crystarium.MeasureSegmentedControl(_tabLabels);
             ImGui.SetCursorScreenPos(new Vector2(
-                min.X + inset,
+                tabsLeft,
                 min.Y + (ToolbarHeight * s - size.Y) * 0.5f));
             Crystarium.SegmentedControl(
                 "##shell-tabs",

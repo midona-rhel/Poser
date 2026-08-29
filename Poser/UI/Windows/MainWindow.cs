@@ -1016,10 +1016,6 @@ public class MainWindow : Window
     /// mid-draw.</summary>
     private int _contentMode;
 
-    /// <summary>The content-mode identity tabs, retained like every
-    /// other strip's.</summary>
-    private readonly ShellTab _environmentModeTab = new() { Label = "Environment" };
-    private readonly ShellTab _sceneModeTab = new() { Label = "Scene" };
     private float _lastHeight = DefaultHeight;
 
     private static WindowSizeConstraints ExpandedSizeConstraints(float minimumWidth)
@@ -1091,6 +1087,29 @@ public class MainWindow : Window
     /// <summary>The title cell's subject: the library mode, else the selected
     /// entity by kind, else the plain product name. Actor names travel the
     /// masked display route like every other surface.</summary>
+    /// <summary>The KIND label leading the tab band: what the content
+    /// side is showing.</summary>
+    private string ContentKind(SelectionId? primary)
+    {
+        if (_libraryMode)
+            return "";
+        if (_contentMode == 1)
+            return "Environment";
+        if (_contentMode == 2)
+            return "Scene";
+        return primary switch
+        {
+            { Kind: SceneEntityKind.Actor or SceneEntityKind.Bone
+                or SceneEntityKind.GazeTarget } => "Actor",
+            { Kind: SceneEntityKind.Prop or SceneEntityKind.WorldObject }
+                => "Object",
+            { Kind: SceneEntityKind.Camera } => "Camera",
+            { Kind: SceneEntityKind.Light } => "Light",
+            { Kind: SceneEntityKind.Overlay } => "Overlay",
+            _ => "",
+        };
+    }
+
     private string TitleEntity(SelectionId? primary)
     {
         if (_libraryMode)
@@ -1246,6 +1265,7 @@ public class MainWindow : Window
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
+        _vm.ContentKind = ContentKind(primary);
         // The shell's retained per-row state is swept on structural change
         // only: an identical rescan publishes no new revision, so hover and
         // interaction identity survive every refresh that changed nothing.
@@ -3084,12 +3104,10 @@ public class MainWindow : Window
         int contentMode = _contentMode;
         if (contentMode != 0)
         {
-            // The content side shows the chosen page under a single
-            // identity tab — the selection's strip returns with Target.
+            // The content side shows the chosen page with NO tabs — the
+            // band's identity label says what it is, and the selection's
+            // strip returns with Target.
             _activeStrip = contentMode == 1 ? "environment" : "scene";
-            var modeTab = contentMode == 1 ? _environmentModeTab : _sceneModeTab;
-            modeTab.Active = true;
-            _vm.Tabs.Add(modeTab);
             return;
         }
         var tabs = SyncStripAndTab(primary);

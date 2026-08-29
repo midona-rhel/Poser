@@ -36,7 +36,10 @@ Windows each have ONE job. No mode may change what a window IS.
   on one page — Time and Weather open, the rest closed), and the
   whole scene workspace (save/load, options, progress, plus the way
   into the library). Selecting ANY entity snaps the content back to
-  Target. The mode persists in config.
+  Target. The mode persists in config. The selector HIDES while the
+  window is collapsed. An IDENTITY LABEL leads the tab band — Actor,
+  Object, Camera, Light, Overlay, Environment, Scene — so a tabless
+  page still says what it is.
 - **Library** — the full-width workspace: the outliner stands down
   while it is open and returns with the scene editor. Reached from
   the Scene panel's "Open library…" verb and the burger menu; its
