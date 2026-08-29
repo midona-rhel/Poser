@@ -29,9 +29,9 @@ Windows each have ONE job. No mode may change what a window IS.
   it — not modes, not pages. (The selector was first put on the rail
   and corrected 2026-08-28: it swaps the LEFT side.)
 - **The CONTENT side is a three-panel area**: a Target | Environment |
-  Scene selector (text segments, in the TITLEBAR's right, one
-  ActionGap from the window action icons and measured against their
-  cluster) chooses
+  Scene selector (text segments, in the TITLEBAR, docked on
+  the CONTENT side of the content/inspector divider — it stands over
+  what it swaps) chooses
   between the selection's tabs, the whole environment (every section
   on one page — Time and Weather open, the rest closed), and the
   whole scene workspace (save/load, options, progress, plus the way
@@ -210,7 +210,8 @@ navigation, not a scrollbar — may shift anything.
   and closes with a separator, so what stays put is legible.
 - Short rows PAIR two-up by design where it halves a section's height:
   Override|Weather, Swimming|Depth, Opacity|Tint, Speed|Sensitivity,
-  Orthographic|Ortho zoom, Follow|Lock. Pairing is a
+  Orthographic|Ortho zoom, Follow|Lock, Freeze water|Restore water,
+  Sections|File. Pairing is a
   deliberate per-section choice at the design width, not a responsive
   behavior; selector rows and field rows keep full rows.
 
@@ -221,11 +222,14 @@ navigation, not a scrollbar — may shift anything.
   REJECTED — the web mockup approved it, the real render did not.
   Do not reintroduce it without a new in-game verdict.
 - Travel must match what the value realistically represents. For
-  ranges spanning magnitudes (0→1→10→100), use `SliderScale.Log` with
-  curvature `10^decades − 1`: 9999 puts 1 at half travel, 10 at
-  three-quarters, 100 at the end of a 0–100 range; the default 99
-  spends half the travel on the first tenth. No visual indication —
-  the mapping is the design.
+  ranges spanning magnitudes (0→1→10→100), use `SliderScale.Decades`
+  (curvature = the decade count): LINEAR from the minimum to
+  max/10^decades across the FIRST HALF of the travel, then one decade
+  per equal remaining segment — 0→1 to the middle, 10 at
+  three-quarters, 100 at the end. (Corrected 2026-08-28: the pure
+  exponential Log-9999 reading of this spec was wrong — the first
+  segment is linear.) No visual indication — the mapping is the
+  design.
 - The log mapping affects TRAVEL only. Typing and number-dragging stay
   linear.
 

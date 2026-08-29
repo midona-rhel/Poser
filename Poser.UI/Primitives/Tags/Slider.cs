@@ -17,6 +17,13 @@ public enum SliderScale
 
     /// <summary>Position follows an exponential value fraction.</summary>
     Log,
+
+    /// <summary>The measured multi-decade mapping: LINEAR from the
+    /// minimum to max/10^decades across the FIRST HALF of the travel,
+    /// then one decade per equal remaining segment — 0→1 to the middle,
+    /// 10 at three-quarters, 100 at the end of a 0–100 range. The
+    /// curvature parameter carries the decade count for this scale.</summary>
+    Decades,
 }
 
 public static partial class Crystarium
@@ -35,6 +42,15 @@ public static partial class Crystarium
             return 0f;
         float fraction = Math.Clamp(
             (value - minimum) / (maximum - minimum), 0f, 1f);
+        if (scale == SliderScale.Decades)
+        {
+            float decades = MathF.Max(1f, MathF.Round(curvature));
+            float linearTop = MathF.Pow(10f, -decades);
+            if (fraction <= linearTop)
+                return fraction / linearTop * 0.5f;
+            return 0.5f + MathF.Log10(fraction / linearTop)
+                / decades * 0.5f;
+        }
         return scale == SliderScale.Log
             ? MathF.Log(1f + curvature * fraction)
                 / MathF.Log(1f + curvature)
@@ -47,10 +63,23 @@ public static partial class Crystarium
         float curvature = SliderLogCurvature)
     {
         float travel = Math.Clamp(position, 0f, 1f);
-        float fraction = scale == SliderScale.Log
-            ? (MathF.Pow(1f + curvature, travel) - 1f)
-                / curvature
-            : travel;
+        float fraction;
+        if (scale == SliderScale.Decades)
+        {
+            float decades = MathF.Max(1f, MathF.Round(curvature));
+            float linearTop = MathF.Pow(10f, -decades);
+            fraction = travel <= 0.5f
+                ? travel / 0.5f * linearTop
+                : linearTop * MathF.Pow(
+                    10f, (travel - 0.5f) / 0.5f * decades);
+        }
+        else
+        {
+            fraction = scale == SliderScale.Log
+                ? (MathF.Pow(1f + curvature, travel) - 1f)
+                    / curvature
+                : travel;
+        }
         return minimum + fraction * (maximum - minimum);
     }
 

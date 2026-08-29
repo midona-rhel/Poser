@@ -623,13 +623,14 @@ public static class AppShellView
         {
             string[] modes = ["Target", "Environment", "Scene"];
             var segSize = Crystarium.MeasureSegmentedControl(modes);
-            float side = theme.Controls.ShellIconAction;
-            int icons = 3 + (vm.ShowPopOut ? 1 : 0);
-            float cluster = ClusterInset * s
-                + icons * side * s
-                + (icons - 1) * theme.Page.ActionGap * s;
+            // The selector docks on the CONTENT side of the divider
+            // between the content and the inspector — it swaps the
+            // content, so it stands over what it governs.
+            float railEdge = vm.DrawRail != null && !vm.Collapsed
+                ? RailWidth * s
+                : 0f;
             ImGui.SetCursorScreenPos(new Vector2(
-                max.X - cluster - theme.Page.ActionGap * s - segSize.X,
+                max.X - railEdge - theme.Page.ActionGap * s - segSize.X,
                 min.Y + (height - segSize.Y) * 0.5f));
             Crystarium.SegmentedControl(
                 "##content-mode",

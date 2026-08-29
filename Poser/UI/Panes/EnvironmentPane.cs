@@ -506,7 +506,7 @@ public sealed class EnvironmentPane
 
     private void SkyRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural sky", EnvSection.Sky,
+        SectionSwitch(form, "Natural", EnvSection.Sky,
             "Let the game run the skybox. Changing any sky value below holds "
                 + "it for Poser.");
         var sky = _environment.Sky;
@@ -533,7 +533,7 @@ public sealed class EnvironmentPane
                 help: "How much of the sun disc shows through the sky");
         });
 
-        SectionSwitch(form, "Natural clouds", EnvSection.Clouds,
+        SectionSwitch(form, "Natural", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
                 + "holds them for Poser.");
         var clouds = _environment.Clouds;
@@ -590,7 +590,7 @@ public sealed class EnvironmentPane
 
     private void LightingRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural lighting", EnvSection.Lighting,
+        SectionSwitch(form, "Natural", EnvSection.Lighting,
             "Let the game run the ambient lighting. Changing any value below "
                 + "holds it for Poser.");
         var lighting = _environment.Lighting;
@@ -638,8 +638,8 @@ public sealed class EnvironmentPane
                 _environment.Lighting with { LightDistance = value },
             help: "How far the zone's lighting reaches",
             marks: DistanceMarks,
-            scale: SliderScale.Log,
-            logCurvature: 9999f);
+            scale: SliderScale.Decades,
+            logCurvature: 2f);
         // The reference UIs draw these three unidentified members rather than
         // hide them; they keep their reference names until someone names them.
         form.Cells(cells =>
@@ -671,7 +671,7 @@ public sealed class EnvironmentPane
 
     private void FogRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural fog", EnvSection.Fog,
+        SectionSwitch(form, "Natural", EnvSection.Fog,
             "Let the game run the fog. Changing any value below holds it for "
                 + "Poser.");
         var fog = _environment.Fog;
@@ -736,7 +736,7 @@ public sealed class EnvironmentPane
 
     private void RainRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural rain", EnvSection.Rain,
+        SectionSwitch(form, "Natural", EnvSection.Rain,
             "Let the game run the rain. Changing any value below holds it for "
                 + "Poser.");
         var rain = _environment.Rain;
@@ -960,6 +960,8 @@ public sealed class EnvironmentPane
     private void RenderingRows(Crystarium.FormScope form)
     {
         bool water = _rendering.IsWaterFreezeAvailable;
+        // Two rows, not four: the water pair, then the lifetime pair.
+        form.PairRows();
         form.Switch("Freeze water", _rendering.IsWaterFrozen,
             value => _rendering.IsWaterFrozen = value,
             help: water
