@@ -150,7 +150,9 @@ public sealed class UiWindowSet : IDisposable
     {
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
         SidebarPart.IsOpen = detached;
-        ToolbarPart.IsOpen = detached;
+        // The toolbar is ALWAYS its own window — merging windows never
+        // merges the toolbar (the standard's shell roles).
+        ToolbarPart.IsOpen = Main.IsOpen;
         if (!detached)
             Main.ContentHidden = false;
     }

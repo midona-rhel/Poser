@@ -615,7 +615,8 @@ public static class AppShellView
                 min.Y,
                 height,
                 s);
-            DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
+            // The gizmo cluster lives on the TOOLBAR window — always its
+            // own window — never in this titlebar.
         }
         DrawTitleActions(vm, max.X, min.Y, height, s);
 
@@ -811,24 +812,6 @@ public static class AppShellView
         }
     }
 
-    private static void DrawTitleCenter(
-        AppShellViewModel vm, float left, float top, float height, float s)
-    {
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float gap = theme.Page.ActionGap * s;
-        float x = left + CenterInset * s;
-        if (vm.ShowProject)
-        {
-            IconAt(
-                new Vector2(x, top + (height - side * s) * 0.5f),
-                TablerIcon.Folder, side, vm.OnProject, "##shell-project",
-                help: "Open the scene project browser");
-            x += side * s + gap;
-        }
-
-        DrawGizmoCluster(vm, x, top, height, s);
-    }
 
     /// <summary>The four segment groups — gizmo operation, space, pivot,
     /// symmetry — drawn once per frame from exactly one host: the titlebar
@@ -1526,6 +1509,14 @@ public static class AppShellView
             }
             x += step;
         }
+        if (vm.ShowProject)
+        {
+            IconAt(
+                new Vector2(x, y), TablerIcon.Folder, side, vm.OnProject,
+                "##shell-project",
+                help: "Open the scene project browser");
+            x += step;
+        }
         x += CenterInset * s - theme.Spacing.Two * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
@@ -1539,8 +1530,10 @@ public static class AppShellView
         float gap = theme.Page.ActionGap * s;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        // Burger, undo, redo, spawn, then the two window toggles at the end.
-        float icons = step * (vm.ShowSpawn ? 4f : 3f);
+        // Burger, undo, redo, then spawn and project when shown.
+        float icons = step * (3f
+            + (vm.ShowSpawn ? 1f : 0f)
+            + (vm.ShowProject ? 1f : 0f));
         return MeasureBrandPill(vm, s)
             + CenterInset * s
             + icons

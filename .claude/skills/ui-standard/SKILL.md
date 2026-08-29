@@ -50,7 +50,10 @@ Windows each have ONE job. No mode may change what a window IS.
   the Scene panel's "Open library…" verb and the burger menu; its
   type strip and per-type metadata rails stay.
 - **Toolbar** — permanently its own window with a remembered
-  position; its title bar carries only the burger-menu copy, and new
+  position, IMPLEMENTED 2026-08-28: always open with the shell,
+  attached or detached, no reattach affordance, and the main
+  titlebar never hosts the gizmo cluster. It carries the brand,
+  burger, undo/redo, spawn, project, and the gizmo clusters; new
   global buttons earn a place there.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
