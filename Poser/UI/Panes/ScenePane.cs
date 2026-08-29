@@ -381,7 +381,13 @@ public sealed class ScenePane
     /// reachable through a file browser is an option the user has to open a
     /// browser to find out about.</para>
     /// </summary>
-    public void Draw(Vector2 origin, Vector2 size)
+    /// <summary>The inspector's Scene panel — the whole scene workspace
+    /// in rail form, plus the way into the library.</summary>
+    /// <summary>Set by the shell: the Scene panel's way into the
+    /// library workspace.</summary>
+    public Action? OpenLibrary;
+
+    public void DrawRail(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
         var receipt = _workflow.Receipt;
@@ -407,6 +413,11 @@ public sealed class ScenePane
                     help: AppearanceHelp,
                     disabled: busy);
                 form.ReadOnly("Size", SaveSizeText());
+                form.Actions("Library", actions =>
+                    actions.Button(
+                        "Open library…",
+                        () => OpenLibrary?.Invoke(),
+                        help: "Browse poses, scenes, and objects"));
                 form.Actions("File", actions =>
                 {
                     actions.Button(

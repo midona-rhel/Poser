@@ -164,39 +164,21 @@ public class MainWindow : Window
     /// and recovery — instead of the selection's tabs. A mode exactly like the
     /// library's, and its alternative: a scene is not a property of whatever
     /// happens to be selected.</summary>
-    private bool _sceneMode => _workspace.IsScene;
 
     /// <summary>The library's sidebar section and its one tab, both retained:
     /// they carry no per-frame data, so a warm frame restates them rather than
     /// minting them.</summary>
-    private readonly ShellSidebarSection _librarySection = new()
-    {
-        Title = "LIBRARY",
-        Selectable = true,
-    };
 
     /// <summary>The scene as a whole, seated at the very top of the tree: the
     /// thing everything below it belongs to. Like the library's and the
     /// environment's, its header is the affordance — there is one scene and
     /// nothing creates or destroys it — and it carries no rows.</summary>
-    private readonly ShellSidebarSection _sceneSection = new()
-    {
-        Title = "SCENE",
-        ShowPlus = false,
-        Selectable = true,
-    };
 
     /// <summary>The scene's environment, seated above the actors. It is the one
     /// scene entity that is always there and there is only ever one of it, so
     /// the header is the affordance — exactly like the library's — rather than a
     /// header naming a lone row beneath it. Nothing creates or destroys it, so
     /// the section shows no plus and carries no rows.</summary>
-    private readonly ShellSidebarSection _environmentSection = new()
-    {
-        Title = "ENVIRONMENT",
-        ShowPlus = false,
-        Selectable = true,
-    };
 
     /// <summary>The one environment selection, minted once: it carries no
     /// per-scene data, so every frame's row and flag refresh restate it.
@@ -357,18 +339,6 @@ public class MainWindow : Window
         new() { Label = "Objects" },
     ];
 
-    /// <summary>The scene workspace's one tab, retained like every other
-    /// strip. Whole-scene save/load is a mode, not a property of a selection,
-    /// so it has its own strip rather than a tab on someone else's.</summary>
-    private readonly ShellTab[] _sceneTabs =
-    [
-        new() { Label = SceneTabLabel },
-    ];
-
-    /// <summary>The scene strip's one label, and the tab-layout identity that
-    /// goes with it.</summary>
-    private const string SceneTabLabel = "Scene";
-
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
     private readonly ShellTab[] _selectionTabs =
@@ -387,19 +357,6 @@ public class MainWindow : Window
         new() { Label = "Object" },
     ];
 
-    /// <summary>The environment's own tab strip: selecting the environment
-    /// swaps the whole strip, because none of the actor tabs mean anything for
-    /// it. The environment carries eleven sections — one tab holding all of them
-    /// was a scroll, not a workspace — so the strip splits them five ways.
-    /// Positional against <see cref="EnvironmentTab"/>.</summary>
-    private readonly ShellTab[] _environmentTabs =
-    [
-        new() { Label = "Weather" },
-        new() { Label = "Sky" },
-        new() { Label = "Light" },
-        new() { Label = "Atmosphere" },
-        new() { Label = "World" },
-    ];
 
     /// <summary>A light's whole tab strip, the environment strip's sibling:
     /// a light has no pose, animation or appearance, so while one is selected
@@ -439,40 +396,29 @@ public class MainWindow : Window
         new() { Label = "Camera" },
     ];
 
-    /// <summary>The library section is stated first, so its index is fixed.
-    /// </summary>
-    private const int LibrarySectionIndex = 0;
-
-    /// <summary>The whole scene stands second — above the environment, which is
-    /// one of the things it contains.</summary>
-    private const int SceneSectionIndex = 1;
-
-    /// <summary>The environment stands third, under the scene it belongs to.
-    /// </summary>
-    private const int EnvironmentSectionIndex = 2;
 
     /// <summary>The sections are stated in a fixed order — library, scene,
     /// environment, actors, objects, lights, cameras, overlays — so the actors
     /// section is index 3. Its header and the lights header are the only two
     /// whose plus creates anything; neither the scene nor the environment is
     /// ever created or destroyed.</summary>
-    private const int ActorsSectionIndex = 3;
+    private const int ActorsSectionIndex = 0;
 
     /// <summary>Objects stand between the actors and the lights: scene
     /// furniture, spawned or borrowed.</summary>
-    private const int PropsSectionIndex = 4;
+    private const int PropsSectionIndex = 1;
 
     /// <summary>Lights stand under the actors they light.</summary>
-    private const int LightsSectionIndex = 5;
+    private const int LightsSectionIndex = 2;
 
     /// <summary>Cameras stand above the overlays: they look at everything in
     /// the world, and an overlay is not in the world.</summary>
-    private const int CamerasSectionIndex = 6;
+    private const int CamerasSectionIndex = 3;
 
     /// <summary>Overlays close the scene's own list. They are the one entity
     /// that lives on the screen rather than in the scene, so they sit outside
     /// everything the camera can see.</summary>
-    private const int OverlaysSectionIndex = 7;
+    private const int OverlaysSectionIndex = 4;
 
     // Overlay settings live in their own rows; the keybind registry owns the
     // overlay window flag.
@@ -593,6 +539,8 @@ public class MainWindow : Window
         _environmentPane = environmentPane;
         _libraryPane = libraryPane;
         _scenePane = scenePane;
+        // The Scene panel's way into the library workspace.
+        _scenePane.OpenLibrary = ShowLibrary;
         // The library's "Add source…" and its empty state both mean the same
         // thing the titlebar gear does, so they travel the one settings route.
         _libraryPane.OnSettingsRequested += () => OnSettingsRequested?.Invoke();
@@ -726,21 +674,6 @@ public class MainWindow : Window
         // theirs — and it carries the one resync those exits do not make.
         _vm.OnSectionSelected = index =>
         {
-            if (index == LibrarySectionIndex)
-                ShowLibrary();
-            else if (index == SceneSectionIndex)
-                ShowSceneFiles();
-            else if (index == EnvironmentSectionIndex)
-            {
-                // There is exactly one environment, so range and toggle mean
-                // nothing here: the header is a plain Select, never a modified
-                // one. Selecting is leaving whichever mode was showing — one
-                // selection; the resync below handles the layout transition.
-                _selection.Select(EnvironmentSelection);
-                // Same frame, same reason as a row click: the environment's
-                // strip is not the strip this frame was laid out for.
-                ResyncTabLayout();
-            }
         };
         _vm.OnSpawn = anchor =>
             OnSpawnBrowserRequested?.Invoke(anchor, SpawnBrowserTab.All);
@@ -1072,6 +1005,10 @@ public class MainWindow : Window
 
     private bool _restorePending;
     private float _lastWidth = DefaultWidth;
+
+    /// <summary>The last primary the inspector-mode snap saw — a NEW
+    /// selection snaps the inspector back to the Target panel.</summary>
+    private Domain.Identity.SelectionId? _lastPrimaryForMode;
     private float _lastHeight = DefaultHeight;
 
     private static WindowSizeConstraints ExpandedSizeConstraints(float minimumWidth)
@@ -1147,8 +1084,6 @@ public class MainWindow : Window
     {
         if (_libraryMode)
             return "Library";
-        if (_sceneMode)
-            return "Scene";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -1163,6 +1098,9 @@ public class MainWindow : Window
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
             { Kind: SceneEntityKind.Camera } => "Camera",
+            { Kind: SceneEntityKind.Prop } => "Object",
+            { Kind: SceneEntityKind.WorldObject } => "Object",
+            { Kind: SceneEntityKind.Overlay } => "Overlay",
             _ => "Poser",
         };
     }
@@ -1248,7 +1186,13 @@ public class MainWindow : Window
     /// two modes and the entity selection are one track.</summary>
     public void ShowSceneFiles()
     {
-        _workspace.Enter(ShellWorkspace.Scene);
+        // The scene workspace died in the inspector-mode redesign: the
+        // whole panel lives in the inspector's Scene mode now, so opening
+        // it is a mode switch — leaving the library if it was showing.
+        if (_libraryMode)
+            _workspace.Leave();
+        Config.ConfigurationService.Instance.Config.UI.InspectorMode = 2;
+        Config.ConfigurationService.Instance.Save();
         _scenePane.OnShown();
         ResyncTabLayout();
     }
@@ -1284,6 +1228,9 @@ public class MainWindow : Window
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
+        // The library is the full-width workspace: the outliner stands
+        // down while it is open and returns with the scene editor.
+        _vm.SidebarHidden = _libraryMode;
         _vm.Collapsed = _collapsed;
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
@@ -1308,23 +1255,53 @@ public class MainWindow : Window
         // The delegate is stated even while collapsed: the shell's own
         // titlebar guard ignores it then, but a split inspector window keeps
         // hosting the rail through a collapse of the main window.
-        // The inspector is PER TAB: pose-import options where poses apply
-        // (auto-saves are poses — they snapshot through the pose file
-        // service); scene options where scenes load;
-        // the entry inspector on objects; and NO rail on MCDFs — a
-        // character file has nothing to configure, so the grid takes the
-        // width.
-        _vm.DrawRail = _libraryMode
-            ? (PoseLibraryPane.LibraryType)_libraryPane.SelectedType switch
+        // The inspector is PER TAB in the library: pose-import options
+        // where poses apply; scene options where scenes load; the entry
+        // inspector on objects; and NO rail on MCDFs. Everywhere else the
+        // inspector is a THREE-PANEL column — the selected target, the
+        // environment, or the scene, chosen by the selector band — and
+        // selecting any entity snaps back to the target panel (you
+        // selected it to inspect it).
+        var railConfig = Config.ConfigurationService.Instance.Config.UI;
+        if (primary is { } primaryNow && primaryNow != _lastPrimaryForMode)
+        {
+            if (_lastPrimaryForMode is not null && railConfig.InspectorMode != 0)
             {
-                PoseLibraryPane.LibraryType.Objects =>
-                    _libraryPane.DrawObjectsRail,
-                PoseLibraryPane.LibraryType.Scenes =>
-                    _scenePane.DrawLibraryRail,
-                PoseLibraryPane.LibraryType.Mcdf => null,
-                _ => _poseFileSection.DrawOptionsRail,
+                railConfig.InspectorMode = 0;
+                Config.ConfigurationService.Instance.Save();
             }
-            : _poseRail.Draw;
+            _lastPrimaryForMode = primaryNow;
+        }
+        if (_libraryMode)
+        {
+            _vm.OnInspectorMode = null;
+            _vm.DrawRail =
+                (PoseLibraryPane.LibraryType)_libraryPane.SelectedType switch
+                {
+                    PoseLibraryPane.LibraryType.Objects =>
+                        _libraryPane.DrawObjectsRail,
+                    PoseLibraryPane.LibraryType.Scenes =>
+                        _scenePane.DrawLibraryRail,
+                    PoseLibraryPane.LibraryType.Mcdf => null,
+                    _ => _poseFileSection.DrawOptionsRail,
+                };
+        }
+        else
+        {
+            _vm.InspectorMode = railConfig.InspectorMode;
+            _vm.OnInspectorMode = next =>
+            {
+                Config.ConfigurationService.Instance.Config
+                    .UI.InspectorMode = next;
+                Config.ConfigurationService.Instance.Save();
+            };
+            _vm.DrawRail = railConfig.InspectorMode switch
+            {
+                1 => _environmentPane.DrawRail,
+                2 => _scenePane.DrawRail,
+                _ => _poseRail.Draw,
+            };
+        }
 
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
@@ -1366,7 +1343,7 @@ public class MainWindow : Window
         _vm.RedoDescription = _cleanTransforms.RedoDescription;
         // Pop-out follows the toolbar actor: any selection that resolves to
         // an actor can be frozen into its own content window.
-        _vm.ShowPopOut = toolbarActor != null && !_libraryMode && !_sceneMode;
+        _vm.ShowPopOut = toolbarActor != null && !_libraryMode;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
         // the same surface, the spawn browser — the lights and cameras pluses
@@ -1380,7 +1357,6 @@ public class MainWindow : Window
         BuildTabs(primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : _sceneMode ? SceneTabLabel
             : _activeTab);
         BuildStatus(primary);
     }
@@ -1523,16 +1499,10 @@ public class MainWindow : Window
     private void RebuildSidebar(string filter)
     {
         _vm.Sections.Clear();
-        // The library is a place in the sidebar, not a window: its header is
-        // the affordance, and it stands above the scene it poses.
-        _vm.Sections.Add(_librarySection);
-        // The whole scene stands above everything it contains — it reads
-        // the tree top down as scene, then environment, then the entities.
-        _vm.Sections.Add(_sceneSection);
-        // The environment stands above the actors: it is the one scene entity
-        // that is always there, and — being a singleton — its header is the
-        // affordance, so the section carries no rows at all.
-        _vm.Sections.Add(_environmentSection);
+        // The sidebar is the OUTLINER — world things only. The library,
+        // the scene, and the environment left it in the inspector-mode
+        // redesign: the first two are inspector panels, the library is
+        // its own workspace.
         _vm.Sections.Add(_actorsSection);
         // Lights stand under the actors they light; cameras close the list,
         // looking at everything above them.
@@ -1777,12 +1747,6 @@ public class MainWindow : Window
     /// </summary>
     private void RefreshSidebarFlags()
     {
-        _librarySection.Active = _libraryMode;
-        _sceneSection.Active = _sceneMode;
-        // The environment's header wears the selection, exactly as the row it
-        // replaced did: every selectable header states its own flag here — the
-        // two modes theirs, the environment its selection.
-        _environmentSection.Active = _selection.IsSelected(EnvironmentSelection);
         // Without the native lighting signatures a spawn is a silent no-op, so
         // the header's plus is absent rather than inert. The answer is a field
         // read, so it is restated here rather than gated.
@@ -3106,15 +3070,6 @@ public class MainWindow : Window
             }
             return;
         }
-        if (_sceneMode)
-        {
-            // One tab: the scene workspace is a single page, and the strip is
-            // what states the active mode.
-            _activeStrip = SceneStrip;
-            _sceneTabs[0].Active = true;
-            _vm.Tabs.Add(_sceneTabs[0]);
-            return;
-        }
         var tabs = SyncStripAndTab(primary);
         for (int i = 0; i < tabs.Length; i++)
         {
@@ -3138,7 +3093,6 @@ public class MainWindow : Window
         // either — neither entity has a pose, an animation or an appearance.
         var (tabs, strip) = primary switch
         {
-            { Kind: SceneEntityKind.Environment } => (_environmentTabs, "environment"),
             { Kind: SceneEntityKind.Light } => (_lightTabs, "light"),
             { Kind: SceneEntityKind.Camera } => (_cameraTabs, "camera"),
             { Kind: SceneEntityKind.Prop } => (_propTabs, "prop"),
@@ -3174,7 +3128,6 @@ public class MainWindow : Window
         BuildTabs(_selection.Primary);
         ApplyTabLayout(
             _libraryMode ? "Library"
-            : _sceneMode ? SceneTabLabel
             : _activeTab);
     }
 
@@ -3183,8 +3136,6 @@ public class MainWindow : Window
     /// the library from an actor and from a light must land on one library,
     /// not on two with separate scroll memories.</summary>
     private const string LibraryStrip = "library";
-
-    private const string SceneStrip = "scene";
 
     // ── status bar, restated only when its numbers move ─────────────────
     private int _statusActorCount = -1;
@@ -3300,9 +3251,6 @@ public class MainWindow : Window
             _libraryPane.SelectType(index);
             return;
         }
-        // The scene workspace has one tab: clicking it is already where it goes.
-        if (_sceneMode)
-            return;
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 
@@ -3355,7 +3303,7 @@ public class MainWindow : Window
             tab is "Animation" or "Appearance" or "Object" or "Light"
                 or "Camera"
                 or "Scene"
-                or "Weather" or "Sky" or "Atmosphere" or "World";
+;
     }
 
     /// <summary>
@@ -3459,15 +3407,6 @@ public class MainWindow : Window
             return;
         }
 
-        // The scene workspace precedes the GPose gate for the same reason the
-        // library does: recovering a scene file is browsable out of GPose, and
-        // the workflow itself refuses the operation without a live session.
-        if (_sceneMode)
-        {
-            _scenePane.Draw(origin, size);
-            return;
-        }
-
         if (!_gPoseService.IsGPosing)
         {
             Crystarium.TextAt(origin + new Vector2(0f, 8f) * ImGuiHelpers.GlobalScale, "Enter GPose to start posing.", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
@@ -3512,16 +3451,6 @@ public class MainWindow : Window
             return;
         }
 
-        // The environment is answered by the selection, not by the label: it
-        // and a light both name a "Light" tab, and only the selected entity
-        // says which pane that tab belongs to. Its strip is its own five tabs,
-        // so every one of them lands here.
-        if (_selection.Primary is { Kind: SceneEntityKind.Environment })
-        {
-            _environmentPane.Draw(origin, size, EnvironmentTabFor(_activeTab));
-            return;
-        }
-
         // The three light tabs only ever stand while a light is selected: the
         // strip that carries them is chosen by the selection kind, and a strip
         // that does not carry the active label drops back to its own first tab.
@@ -3543,18 +3472,6 @@ public class MainWindow : Window
         _poseInspector.Draw(origin, size);
     }
 
-    /// <summary>The environment strip's label as the pane's page identity.
-    /// Positional against <see cref="_environmentTabs"/>; an unrecognised label
-    /// falls to the strip's first tab, which is where BuildTabs would have put
-    /// the active tab.</summary>
-    private static EnvironmentTab EnvironmentTabFor(string tab) => tab switch
-    {
-        "Sky" => EnvironmentTab.Sky,
-        "Light" => EnvironmentTab.Light,
-        "Atmosphere" => EnvironmentTab.Atmosphere,
-        "World" => EnvironmentTab.World,
-        _ => EnvironmentTab.Weather,
-    };
 
     private ActorId? SelectedActorId() =>
         _selection.Primary switch

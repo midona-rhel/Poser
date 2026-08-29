@@ -194,11 +194,21 @@ public sealed class AppShellViewModel
 
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
+
+    /// <summary>The library workspace hides the outliner: content spans
+    /// the sidebar's column while this is set.</summary>
+    public bool SidebarHidden;
     public Action<float>? OnSidebarResize;
 
     /// <summary>Inspector rail: drawn when set — 280px right column,
     /// continuous surface from the titlebar's tb-right cell to the window bottom.</summary>
     public Action<Vector2, Vector2>? DrawRail;  // (origin, size)
+
+    /// <summary>The inspector's panel: 0 Target, 1 Environment, 2 Scene.
+    /// The selector band draws only while <see cref="OnInspectorMode"/>
+    /// is set — the library's per-type rails carry no selector.</summary>
+    public int InspectorMode;
+    public Action<int>? OnInspectorMode;
 
     /// <summary>Collapse-to-titlebar: only the 48px strip renders.</summary>
     public bool Collapsed;
@@ -453,7 +463,9 @@ public static class AppShellView
             }
             else
             {
-                float wellLeft = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+                float wellLeft = vm.Detached || vm.SidebarHidden
+                    ? 0f
+                    : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
                 // Only the window's own corners round; an edge that meets a
                 // panel is square. The radius is dropped along with them, so
@@ -487,9 +499,11 @@ public static class AppShellView
             float railW = vm.DrawRail != null ? RailWidth * s : 0f;
             // Detached mode: the sidebar is its own window; the content and
             // the inspector stay together here.
-            float sbw = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+            float sbw = vm.Detached || vm.SidebarHidden
+                ? 0f
+                : vm.SidebarWidthPx * s;
 
-            if (!vm.Detached)
+            if (!vm.Detached && !vm.SidebarHidden)
                 DrawSidebar(
                     vm, new Vector2(min.X, bodyTop),
                     new Vector2(min.X + sbw, max.Y), s, dl);
@@ -525,7 +539,9 @@ public static class AppShellView
         float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        float cellWidth = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+        float cellWidth = vm.Detached || vm.SidebarHidden
+            ? 0f
+            : vm.SidebarWidthPx * s;
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
@@ -1180,16 +1196,47 @@ public static class AppShellView
     /// <summary>The rail's scroll seam and content invocation, shared by the
     /// attached rail and the floating inspector window. The chassis around it
     /// is each host's own.</summary>
+    /// <summary>The selector band's logical height — the inspector-mode
+    /// segments' own designed band at the top of the rail column.</summary>
+    private const float InspectorModeBandHeight = 34f;
+
     private static void RailScrollSeam(
         AppShellViewModel vm, Vector2 railMin, Vector2 max,
         float railWidth, float s)
     {
         var theme = Crystarium.ActiveTheme;
-        ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f) * s);
+        float bandOffset = 0f;
+        if (vm.OnInspectorMode is { } onMode)
+        {
+            // The mode selector: Target, Environment, Scene — the whole
+            // band is its layout, right-aligned on the page inset.
+            string[] modes = ["Target", "Environment", "Scene"];
+            var segSize = Crystarium.MeasureSegmentedControl(modes);
+            float bandTop = railMin.Y + 8f * s;
+            ImGui.SetCursorScreenPos(new Vector2(
+                railMin.X + railWidth - theme.Page.Inset * s - segSize.X,
+                bandTop + (InspectorModeBandHeight * s - 8f * s - segSize.Y)
+                    * 0.5f));
+            Crystarium.SegmentedControl(
+                "##inspector-mode",
+                modes,
+                vm.InspectorMode,
+                onMode,
+                itemHelp: index => index switch
+                {
+                    0 => "Inspect the selection",
+                    1 => "Edit the environment",
+                    2 => "Save and load the scene",
+                    _ => null,
+                });
+            bandOffset = InspectorModeBandHeight * s;
+        }
+        ImGui.SetCursorScreenPos(
+            railMin + new Vector2(0f, 12f * s + bandOffset));
         Crystarium.ScrollRegion(
             "##shell-rail",
             railWidth / s - 1f,
-            (max.Y - railMin.Y) / s - 24f,
+            (max.Y - railMin.Y - bandOffset) / s - 24f,
             region =>
             {
                 var contentOrigin = ImGui.GetCursorScreenPos()
@@ -1199,7 +1246,11 @@ public static class AppShellView
                     contentOrigin,
                     new Vector2(
                         region.ContentWidth * s - theme.Page.Inset * s,
-                        max.Y - railMin.Y - 24f * s));
+                        max.Y - railMin.Y
+                            - (vm.OnInspectorMode is null
+                                ? 0f
+                                : InspectorModeBandHeight * s)
+                            - 24f * s));
             });
     }
 

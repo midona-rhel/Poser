@@ -15,39 +15,33 @@ Crystarium primitives — inventing a local layout is a defect.
 ## Shell roles (the Blender mapping)
 
 Windows each have ONE job. No mode may change what a window IS.
+(Settled 2026-08-28: the inspector-mode redesign.)
 
 - **Selection means world-manipulable.** Only things you can grab in
   the viewport — actors, bones, lights, cameras, props, overlays —
   are ever "selected". Environment, scene, and library are NOT
-  selections; they are property pages and browsers. Treating them as
-  selections is a category error.
-- **Main window** — the scene editor, always: sidebar = outliner
-  (world things, selection), tab strip = properties editor. The strip
-  carries the active selection's aspect tabs (Pose/Animation/
-  Appearance, Light/Shadows, …) plus the environment's pages as FIXED
-  global tabs — always reachable, selection-independent. Opening an
-  environment page does not touch the selection, the gizmo, or the
-  inspector.
-- **The inspector** (right column) carries ONLY the active world
-  selection's invariants: summary, reset verbs, rotation gizmo,
-  TRANSLATION, TRACKING, IK. Nothing selected → a plain empty state.
-  It is user-toggled; its column never appears or vanishes from
-  navigation. Aspect content (EXPRESSION, POSE) belongs to tabs,
-  never the inspector — nothing is drawn in two places.
-- **Library window** — the asset browser: Poses, Auto-saves, MCDFs,
-  Scenes, Objects, plus whole-scene save/load. Its own window so it
-  stands beside the viewport; it never hijacks the main window. Its
-  metadata panel follows the same reserved/toggle policy as the
-  inspector.
+  selections.
+- **Main window** — the scene editor, always: sidebar = OUTLINER
+  (world things only — the library, scene, and environment section
+  headers left it), tab strip = the selection's aspect tabs and
+  nothing else.
+- **The inspector is a THREE-PANEL column**: a Target | Environment |
+  Scene selector (text segments, its own band at the rail's top)
+  chooses between the selection's invariants, the whole environment
+  (every section on one page — Time and Weather open, the rest
+  closed), and the whole scene workspace (save/load, options,
+  progress, plus the way into the library). Selecting ANY entity
+  snaps the inspector back to Target — you selected it to inspect
+  it. The mode persists in config.
+- **Library** — the full-width workspace: the outliner stands down
+  while it is open and returns with the scene editor. Reached from
+  the Scene panel's "Open library…" verb and the burger menu; its
+  type strip and per-type metadata rails stay.
 - **Toolbar** — permanently its own window with a remembered
-  position, never a band inside the main window. It has a title bar
-  whose ONLY content is a copy of the burger menu; nothing else lives
-  there by default. New global buttons earn a place on this toolbar —
-  it is the one extensible home, so no other surface grows ad-hoc
-  buttons.
+  position; its title bar carries only the burger-menu copy, and new
+  global buttons earn a place there.
 - **Pop-outs** are pinned properties: the standard tab-content view
-  with a pin that stops it following selection. Identical layout to
-  the main tabs — a bespoke pop-out layout is a defect.
+  with a pin. A bespoke pop-out layout is a defect.
 
 ## Page composition
 

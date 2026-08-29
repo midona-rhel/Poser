@@ -15,26 +15,6 @@ namespace Poser.UI;
 /// do not fit one scroll, so the shell gives it a five-tab strip and hands the
 /// pane the tab it is drawing. Positional against the shell's environment strip.
 /// </summary>
-public enum EnvironmentTab
-{
-    /// <summary>TIME and WEATHER: what the sky is DOING.</summary>
-    Weather,
-
-    /// <summary>SKY (skybox and clouds) and STARS: what the sky IS.</summary>
-    Sky,
-
-    /// <summary>LIGHTING: the three lights the zone lights everything with.
-    /// </summary>
-    Light,
-
-    /// <summary>FOG, RAIN, PARTICLES and WIND: what fills the air between the
-    /// camera and the sky.</summary>
-    Atmosphere,
-
-    /// <summary>RENDERING and FESTIVALS: the ground the scene stands on rather
-    /// than the air above it.</summary>
-    World,
-}
 
 /// <summary>
 /// The scene's one environment: time, weather, the eight holdable environment
@@ -88,12 +68,12 @@ public sealed class EnvironmentPane
     // there to put a section away, not to make the user open it first.
     private bool _openTime = true;
     private bool _openWeather = true;
-    private bool _openSky = true;
-    private bool _openLighting = true;
-    private bool _openFog = true;
-    private bool _openRain = true;
-    private bool _openParticles = true;
-    private bool _openStars = true;
+    private bool _openSky;
+    private bool _openLighting;
+    private bool _openFog;
+    private bool _openRain;
+    private bool _openParticles;
+    private bool _openStars;
     private bool _openWind = true;
     private bool _openRendering = true;
     private bool _openFestivals = true;
@@ -239,75 +219,37 @@ public sealed class EnvironmentPane
     /// the tab's own, so the row ids on two tabs are distinct even where the row
     /// LABELS repeat — "Colour alpha" appears on four of the eleven sections.
     /// </summary>
-    public void Draw(Vector2 origin, Vector2 size, EnvironmentTab tab)
+    /// <summary>The inspector's Environment panel: every section on ONE
+    /// scrolling page — time and weather open, the rest closed until
+    /// wanted. The five-tab layout died with the environment-as-selection
+    /// model (the inspector-mode redesign).</summary>
+    public void DrawRail(Vector2 origin, Vector2 size)
     {
         DrainPickers();
-
-        switch (tab)
+        Crystarium.Page("environment-rail", origin, size, page =>
         {
-            case EnvironmentTab.Sky:
-                Crystarium.Page("environment-sky", origin, size, SkyPage);
-                break;
-            case EnvironmentTab.Light:
-                Crystarium.Page("environment-light", origin, size, LightPage);
-                break;
-            case EnvironmentTab.Atmosphere:
-                Crystarium.Page(
-                    "environment-atmosphere", origin, size, AtmospherePage);
-                break;
-            case EnvironmentTab.World:
-                Crystarium.Page("environment-world", origin, size, WorldPage);
-                break;
-            default:
-                Crystarium.Page(
-                    "environment-weather", origin, size, WeatherPage);
-                break;
-        }
+            page.Section("Time", _openTime, next => _openTime = next,
+                TimeRows, divider: false);
+            page.Section("Weather", _openWeather, next => _openWeather = next,
+                WeatherRows);
+            page.Section("Sky", _openSky, next => _openSky = next, SkyRows);
+            page.Section("Stars", _openStars, next => _openStars = next,
+                StarRows);
+            page.Section("Lighting", _openLighting,
+                next => _openLighting = next, LightingRows);
+            page.Section("Fog", _openFog, next => _openFog = next, FogRows);
+            page.Section("Rain", _openRain, next => _openRain = next,
+                RainRows);
+            page.Section("Particles", _openParticles,
+                next => _openParticles = next, ParticleRows);
+            page.Section("Rendering", _openRendering,
+                next => _openRendering = next, RenderingRows);
+            page.Section("Festivals", _openFestivals,
+                next => _openFestivals = next, FestivalRows);
+        });
     }
 
-    // ── the five pages ───────────────────────────────────────────────────
-    //
-    // The rule is a divider BETWEEN sections, so EVERY page's first section
-    // states divider: false and draws neither the rule nor the margin above it.
 
-    private void WeatherPage(Crystarium.PageScope page)
-    {
-        page.Section("Time", _openTime, next => _openTime = next,
-            TimeRows, divider: false);
-        page.Section("Weather", _openWeather, next => _openWeather = next,
-            WeatherRows);
-    }
-
-    private void SkyPage(Crystarium.PageScope page)
-    {
-        page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
-            divider: false);
-        page.Section("Stars", _openStars, next => _openStars = next, StarRows);
-    }
-
-    private void LightPage(Crystarium.PageScope page)
-    {
-        page.Section("Lighting", _openLighting,
-            next => _openLighting = next, LightingRows, divider: false);
-    }
-
-    private void AtmospherePage(Crystarium.PageScope page)
-    {
-        page.Section("Fog", _openFog, next => _openFog = next, FogRows,
-            divider: false);
-        page.Section("Rain", _openRain, next => _openRain = next, RainRows);
-        page.Section("Particles", _openParticles,
-            next => _openParticles = next, ParticleRows);
-        page.Section("Wind", _openWind, next => _openWind = next, WindRows);
-    }
-
-    private void WorldPage(Crystarium.PageScope page)
-    {
-        page.Section("Rendering", _openRendering,
-            next => _openRendering = next, RenderingRows, divider: false);
-        page.Section("Festivals", _openFestivals,
-            next => _openFestivals = next, FestivalRows);
-    }
 
     /// <summary>
     /// Both surfaces are drained at the top of the frame, exactly where the rows
