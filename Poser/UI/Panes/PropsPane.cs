@@ -81,8 +81,10 @@ public sealed class PropsPane
             help: "Hide this object without destroying it");
         form.Actions("Lifetime", actions =>
         {
+            // Destroy is THE destruction verb — Delete and Remove were
+            // invented synonyms for the same act.
             actions.Button(
-                "Delete",
+                "Destroy",
                 () => _pending = () =>
                 {
                     _lifecycle.DestroyProp(prop);
@@ -91,21 +93,36 @@ public sealed class PropsPane
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
             actions.Button(
-                "Remove all",
-                () => _pending = () =>
+                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
+                () =>
                 {
-                    _lifecycle.DestroyAllProps();
-                    _scene.Selection.Clear();
+                    if (!_destroyAllArmed)
+                    {
+                        _destroyAllArmed = true;
+                        return;
+                    }
+                    _destroyAllArmed = false;
+                    _pending = () =>
+                    {
+                        _lifecycle.DestroyAllProps();
+                        _scene.Selection.Clear();
+                    };
                 },
                 variant: ButtonVariant.Danger,
-                help: "Destroy every object spawned this session");
+                help: "Destroy every spawned object");
         });
+        if (_destroyAllArmed)
+            form.Status(
+                "Every object spawned this session will go.",
+                warning: true);
         form.Status(
             "Objects spawned here last for this GPose session and are destroyed "
             + "when it ends.");
     }
 
     // ── state ────────────────────────────────────────────────────────────
+
+    private bool _destroyAllArmed;
 
     private PropHandle? SelectedProp()
     {

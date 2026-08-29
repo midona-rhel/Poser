@@ -242,6 +242,10 @@ navigation, not a scrollbar — may shift anything.
 - A destructive whole-set verb (Destroy all) requires an armed
   confirmation — the first press arms ("Confirm destroy all"), the
   second executes. Camera's Destroy all is the reference.
+- DESTROY is the one destruction verb for spawned things (props,
+  lights, cameras) — Delete and Remove are invented synonyms.
+  RELEASE is for borrowed world things: releasing gives back and
+  loses nothing, so it neither arms nor wears the danger color.
 
 ## Row patterns
 
