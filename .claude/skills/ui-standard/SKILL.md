@@ -201,8 +201,13 @@ navigation, not a scrollbar — may shift anything.
   both. A precise name on an imprecise control is a defect either way.
 - A BIDIRECTIONAL slider is its motion axis, so the motion word leaves
   the name: "Jaw Open" (−1…1) is "Jaw", "Brow Up" is "Brow", the lip
-  halves are "Upper lip"/"Lower lip". A distinctive verb (Furrow)
-  survives as the name.
+  halves are "Upper lip"/"Lower lip". A DISTINCTIVE verb (Furrow,
+  Pucker) survives AS the name — the rule drops the generic word,
+  whichever position it sits in, never blindly the second one ("Lip
+  Pucker" is "Pucker", not "Lip"). And two controls may never
+  collapse to the same name — a collision proves the wrong word was
+  dropped ("Lip Pucker" and "Lip Open" both became "Lip",
+  2026-08-30).
 - The SURFACE and the INSPECTOR are different designed forms of the
   same data, and a change to one must never splash into the other.
   Surface expression rows pair L/R, Upper/Lower, and leftover singles

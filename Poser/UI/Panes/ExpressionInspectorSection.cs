@@ -152,12 +152,13 @@ public sealed class ExpressionInspectorSection
 
     /// <summary>A bidirectional slider IS the motion axis, so the motion
     /// word leaves the name: "Jaw Open" runs closed-to-open and is "Jaw",
-    /// "Brow Up" is "Brow", pucker is the lip's own axis. Furrow keeps
-    /// its verb — it is the distinctive word.</summary>
+    /// "Brow Up" is "Brow". A DISTINCTIVE verb survives as the name
+    /// (Furrow, Pucker) — and two labels must never collapse to one word:
+    /// "Lip" once named both the pucker and the open axis.</summary>
     private static string DisplayName(string label) => label switch
     {
         "Jaw Open" => "Jaw",
-        "Lip Pucker" => "Lip",
+        "Lip Pucker" => "Pucker",
         "Lip Open" => "Lip",
         "Brow Up" => "Brow",
         "Brow Furrow" => "Furrow",
