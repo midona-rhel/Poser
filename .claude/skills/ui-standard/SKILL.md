@@ -58,7 +58,16 @@ Windows each have ONE job. No mode may change what a window IS.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the
-  sidebar's titlebar cell, so it hides while the sidebar is gone.
+  sidebar's titlebar cell, so it hides while the sidebar is gone —
+  and the DETACHED sidebar window's bar carries it too: whatever
+  hosts the sidebar hosts its button (missed 2026-08-30).
+- **The cell never duplicates the toolbar.** The sidebar titlebar
+  cell carries the brand (no GPose pill), the chevron, the burger
+  and the library button — nothing else. Undo, redo, spawn, the
+  GPose pill and the gizmo clusters live on the toolbar window
+  alone; a second copy in the titlebar is a defect (shipped once,
+  overlapping, 2026-08-30). Detaching the shell never repositions
+  the toolbar — it is its own window with its own remembered place.
 - **Naming** — the detached selection window is the PROPERTIES
   window internally; the user just sees the name of what they have
   selected as its title. The right rail is the INSPECTOR.

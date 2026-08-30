@@ -619,8 +619,11 @@ public static class AppShellView
         }
         else
         {
+            // The pill stays on the toolbar window — the cell carries no
+            // duplicate of anything the toolbar already states.
             float brandEnd = DrawBrandPill(
-                vm, min.X + TitleInset * s, min.Y, height, s, dl);
+                vm, min.X + TitleInset * s, min.Y, height, s, dl,
+                pill: false);
             // The sidebar chevron sits by the brand so it never moves:
             // collapse takes the whole cell away, and the control that
             // brings it back must not go with it.
@@ -640,15 +643,14 @@ public static class AppShellView
             // the cluster by the rule's pixel. Without the cell the
             // cluster left-anchors after the chevron instead.
             if (cellWidth > 0f)
-                DrawHistory(
+                DrawCellActions(
                     vm,
                     min.X + cellWidth - rule - TitleActionInset * s,
                     min.Y,
                     height,
-                    s,
-                    showLibrary: true);
+                    s);
             else
-                DrawHistoryLeft(
+                DrawCellActionsLeft(
                     vm,
                     chevronX + (side + theme.Spacing.Four) * s,
                     min.Y,
@@ -708,20 +710,13 @@ public static class AppShellView
         }
     }
 
-    /// <summary>The sidebar's title cell owns the brand and its GPose pill
-    /// while attached; detached mode takes them to the floating toolbar
-    /// </summary>
-    private static void DrawBrand(
-        AppShellViewModel vm, Vector2 min, float height, float s, ImDrawListPtr dl)
-        => DrawBrandPill(vm, min.X + TitleInset * s, min.Y, height, s, dl);
-
     /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in
     /// a band of <paramref name="height"/>; returns the x past them. One
     /// renderer for the toolbar's two hosts — the titlebar centre and the
     /// floating toolbar window.</summary>
     private static float DrawBrandPill(
         AppShellViewModel vm, float x, float top, float height, float s,
-        ImDrawListPtr dl)
+        ImDrawListPtr dl, bool pill = true)
     {
         var theme = Crystarium.ActiveTheme;
         var nameStyle = new TextStyle
@@ -734,7 +729,7 @@ public static class AppShellView
         Crystarium.TextInBand(
             new Vector2(x, top), new Vector2(nameWidth, height),
             "Poser", nameStyle);
-        if (!vm.GPoseActive)
+        if (!pill || !vm.GPoseActive)
             return x + nameWidth;
 
         var success = theme.Success;
@@ -798,41 +793,41 @@ public static class AppShellView
             + text;
     }
 
-    /// <summary>Menu, undo, redo, spawn and the library, right-aligned in
-    /// the title cell. The library seat rides the CELL: it is the sidebar
-    /// titlebar's button, so it goes when the sidebar goes.</summary>
-    private static void DrawHistory(
-        AppShellViewModel vm, float right, float top, float height, float s,
-        bool showLibrary = false)
+    /// <summary>The burger and the library button, right-aligned in the
+    /// title cell. Nothing else: undo, redo, spawn and the GPose pill live
+    /// on the toolbar window, and the cell never duplicates the toolbar.
+    /// The library seat rides the CELL — it is the sidebar titlebar's
+    /// button, so it goes when the sidebar goes.</summary>
+    private static void DrawCellActions(
+        AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        bool library = showLibrary && vm.OnLibrary != null;
-        int count = (vm.ShowSpawn ? 4 : 3) + (library ? 1 : 0);
+        bool library = vm.OnLibrary != null;
+        int count = 1 + (library ? 1 : 0);
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
-        DrawHistoryRun(vm, x, y, side, step, s, library);
+        DrawCellActionsRun(vm, x, y, side, step, s, library);
     }
 
-    /// <summary>The same cluster left-anchored — the sidebar's cell is
-    /// gone (collapsed, or the library holds the workspace), so the run
-    /// starts after the chevron instead of ending at the divider.</summary>
-    private static void DrawHistoryLeft(
+    /// <summary>The same pair left-anchored — the sidebar's cell is gone
+    /// (collapsed, or the library holds the workspace), so the run starts
+    /// after the chevron and the library seat goes with the cell.</summary>
+    private static void DrawCellActionsLeft(
         AppShellViewModel vm, float left, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
         float y = top + (height - side * s) * 0.5f;
-        DrawHistoryRun(vm, left, y, side, step, s, library: false);
+        DrawCellActionsRun(vm, left, y, side, step, s, library: false);
     }
 
-    private static void DrawHistoryRun(
+    private static void DrawCellActionsRun(
         AppShellViewModel vm, float x, float y, float side, float step,
         float s, bool library)
     {
-
         // The command menu is anchored to its button. The static callback
         // records the press without allocating a frame closure.
         IconAt(
@@ -843,36 +838,6 @@ public static class AppShellView
         {
             _burgerPressed = false;
             vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
-        }
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
-            "##shell-undo",
-            disabled: !vm.CanUndo,
-            help: HistoryHelp(
-                vm.CanUndo, vm.UndoDescription, "Undo", _undoShortcut,
-                _undoHelp, _undoEmptyHelp));
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
-            "##shell-redo",
-            disabled: !vm.CanRedo,
-            flipX: true,
-            help: HistoryHelp(
-                vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
-                _redoHelp, _redoEmptyHelp));
-        if (vm.ShowSpawn)
-        {
-            x += step;
-            IconAt(
-                new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
-                "##shell-spawn",
-                help: "Add an actor or object to the scene");
-            if (_spawnPressed)
-            {
-                _spawnPressed = false;
-                vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
-            }
         }
         if (!library)
             return;

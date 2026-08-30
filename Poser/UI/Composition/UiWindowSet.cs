@@ -172,12 +172,9 @@ public sealed class UiWindowSet : IDisposable
                 Main.LastPosition,
                 new System.Numerics.Vector2(
                     Main.LastSidebarWidth, Main.LastHeight));
-            ToolbarPart.PlaceAt(new System.Numerics.Vector2(
-                Main.LastPosition.X,
-                MathF.Max(
-                    0f,
-                    Main.LastPosition.Y
-                        - (Views.AppShellView.CollapsedBarHeight + 8f) * gs)));
+            // The toolbar is ALWAYS its own window with its own remembered
+            // position — detaching the shell must not move it.
+            _ = gs;
             Main.ApplyDetachShift(+1);
         }
         else

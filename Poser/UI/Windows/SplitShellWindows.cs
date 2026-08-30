@@ -148,8 +148,9 @@ public sealed class SidebarPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
+        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
-            max.X - theme.Floating.CloseInset * s - closeSide * s,
+            closeX,
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
@@ -157,6 +158,20 @@ public sealed class SidebarPartWindow : Window
             ControlStyle.Square(closeSide),
             help: "Merge the shell back into one window",
             id: "##part-reattach-sidebar");
+        // The library button is the sidebar titlebar's — this window IS
+        // the sidebar's titlebar while the shell is split.
+        if (vm.OnLibrary is { } onLibrary)
+        {
+            ImGui.SetCursorScreenPos(new Vector2(
+                closeX - theme.Spacing.Two * s - closeSide * s,
+                min.Y + (height - closeSide * s) * 0.5f));
+            Crystarium.IconButton(
+                "book",
+                onLibrary,
+                ControlStyle.Square(closeSide),
+                help: "Open the library",
+                id: "##part-library-sidebar");
+        }
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
