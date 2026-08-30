@@ -142,6 +142,16 @@ public sealed class LibraryWindow : Window
         {
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
+            // The library stands on the WORKSPACE ground — the darker
+            // coat the main content well wears — not the panels' raised
+            // glass the chrome fills with.
+            var well = theme.Surface with
+            { W = Crystarium.FloatingSurface.FillColor.W };
+            dl.AddRectFilled(
+                min + new Vector2(1f, 1f) * s,
+                max - new Vector2(1f, 1f) * s,
+                ImGui.ColorConvertFloat4ToU32(well),
+                theme.Radii.Window * s);
             _lastWidth = (max.X - min.X) / s;
             float barBottom = DrawBar(min, max, s, dl);
             if (_collapsed)
@@ -226,20 +236,12 @@ public sealed class LibraryWindow : Window
             "Library",
             titleStyle);
 
+        // The shell's own order: collapse stands far right, close to
+        // its LEFT.
         float closeSide = theme.Floating.CloseActionSize;
-        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
-        ImGui.SetCursorScreenPos(new Vector2(
-            closeX,
-            min.Y + (height - closeSide * s) * 0.5f));
-        Crystarium.IconButton(
-            "x",
-            () => IsOpen = false,
-            ControlStyle.Square(closeSide),
-            help: "Close the library",
-            id: "##library-close");
-        ImGui.SetCursorScreenPos(new Vector2(
-            closeX - theme.Page.ActionGap * s - closeSide * s,
-            min.Y + (height - closeSide * s) * 0.5f));
+        float actionX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        float actionY = min.Y + (height - closeSide * s) * 0.5f;
+        ImGui.SetCursorScreenPos(new Vector2(actionX, actionY));
         Crystarium.IconButton(
             _collapsed ? "chevron-down" : "chevron-up",
             () =>
@@ -256,6 +258,14 @@ public sealed class LibraryWindow : Window
                 ? "Expand the window"
                 : "Collapse to the title bar",
             id: "##library-collapse");
+        ImGui.SetCursorScreenPos(new Vector2(
+            actionX - theme.Page.ActionGap * s - closeSide * s, actionY));
+        Crystarium.IconButton(
+            "x",
+            () => IsOpen = false,
+            ControlStyle.Square(closeSide),
+            help: "Close the library",
+            id: "##library-close");
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(

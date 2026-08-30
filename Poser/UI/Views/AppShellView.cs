@@ -195,14 +195,8 @@ public sealed class AppShellViewModel
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
 
-    /// <summary>The USER's sidebar collapse — the titlebar chevron. Kept
-    /// apart from <see cref="SidebarHidden"/> so leaving the library
-    /// restores whichever state the user chose.</summary>
-    public bool SidebarCollapsed;
-    public Action? OnSidebarToggle;
-
-    /// <summary>Opens the library workspace — the sidebar titlebar's own
-    /// button, hidden while the sidebar is collapsed.</summary>
+    /// <summary>Opens the library window — the sidebar titlebar's own
+    /// button.</summary>
     public Action? OnLibrary;
     public Action<float>? OnSidebarResize;
 
@@ -474,7 +468,7 @@ public static class AppShellView
             }
             else
             {
-                float wellLeft = vm.Detached || vm.SidebarCollapsed
+                float wellLeft = vm.Detached
                     ? 0f
                     : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
@@ -510,11 +504,9 @@ public static class AppShellView
             float railW = vm.DrawRail != null ? RailWidth * s : 0f;
             // Detached mode: the sidebar is its own window; the content and
             // the inspector stay together here.
-            float sbw = vm.Detached || vm.SidebarCollapsed
-                ? 0f
-                : vm.SidebarWidthPx * s;
+            float sbw = vm.Detached ? 0f : vm.SidebarWidthPx * s;
 
-            if (!vm.Detached && !vm.SidebarCollapsed)
+            if (!vm.Detached)
                 DrawSidebar(
                     vm, new Vector2(min.X, bodyTop),
                     new Vector2(min.X + sbw, max.Y), s, dl);
@@ -550,9 +542,7 @@ public static class AppShellView
         float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        float cellWidth = vm.Detached || vm.SidebarCollapsed
-            ? 0f
-            : vm.SidebarWidthPx * s;
+        float cellWidth = vm.Detached ? 0f : vm.SidebarWidthPx * s;
         float railWidth =
             vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
 
@@ -613,42 +603,20 @@ public static class AppShellView
         else
         {
             // The pill stays on the toolbar window — the cell carries no
-            // duplicate of anything the toolbar already states.
-            float brandEnd = DrawBrandPill(
+            // duplicate of anything the toolbar already states. The
+            // sidebar itself never hides: no chevron, no collapse.
+            DrawBrandPill(
                 vm, min.X + TitleInset * s, min.Y, height, s, dl,
                 pill: false);
-            // The sidebar chevron sits by the brand so it never moves:
-            // collapse takes the whole cell away, and the control that
-            // brings it back must not go with it.
-            float side = theme.Controls.ShellIconAction;
-            float chevronX = brandEnd + theme.Spacing.Four * s;
-            IconAt(
-                new Vector2(
-                    chevronX, min.Y + (height - side * s) * 0.5f),
-                TablerIcon.LayoutSidebarLeft, side,
-                vm.OnSidebarToggle,
-                "##shell-sidebar-toggle",
-                help: vm.SidebarCollapsed
-                    ? "Show the sidebar"
-                    : "Hide the sidebar");
             // The title cell's content stops at the divider's x whether or
             // not the divider paints this state: collapse must not shift
-            // the cluster by the rule's pixel. Without the cell the
-            // cluster left-anchors after the chevron instead.
-            if (cellWidth > 0f)
-                DrawCellActions(
-                    vm,
-                    min.X + cellWidth - rule - TitleActionInset * s,
-                    min.Y,
-                    height,
-                    s);
-            else
-                DrawCellActionsLeft(
-                    vm,
-                    chevronX + (side + theme.Spacing.Four) * s,
-                    min.Y,
-                    height,
-                    s);
+            // the cluster by the rule's pixel.
+            DrawCellActions(
+                vm,
+                min.X + cellWidth - rule - TitleActionInset * s,
+                min.Y,
+                height,
+                s);
             // The gizmo cluster lives on the TOOLBAR window — always its
             // own window — never in this titlebar.
         }
@@ -786,41 +754,36 @@ public static class AppShellView
             + text;
     }
 
-    /// <summary>The burger and the library button, right-aligned in the
-    /// title cell. Nothing else: undo, redo, spawn and the GPose pill live
-    /// on the toolbar window, and the cell never duplicates the toolbar.
-    /// The library seat rides the CELL — it is the sidebar titlebar's
-    /// button, so it goes when the sidebar goes.</summary>
+    /// <summary>The burger and the Library TEXT button, right-aligned in
+    /// the title cell. Nothing else: undo, redo, spawn and the GPose pill
+    /// live on the toolbar window, and the cell never duplicates the
+    /// toolbar.</summary>
     private static void DrawCellActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
-        bool library = vm.OnLibrary != null;
-        int count = 1 + (library ? 1 : 0);
         float y = top + (height - side * s) * 0.5f;
-        float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
-        DrawCellActionsRun(vm, x, y, side, step, s, library);
-    }
-
-    /// <summary>The same pair left-anchored — the sidebar's cell is gone
-    /// (collapsed), so the run starts after the chevron and the library
-    /// seat goes with the cell.</summary>
-    private static void DrawCellActionsLeft(
-        AppShellViewModel vm, float left, float top, float height, float s)
-    {
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
-        float y = top + (height - side * s) * 0.5f;
-        DrawCellActionsRun(vm, left, y, side, step, s, library: false);
-    }
-
-    private static void DrawCellActionsRun(
-        AppShellViewModel vm, float x, float y, float side, float step,
-        float s, bool library)
-    {
+        float x = right;
+        if (vm.OnLibrary is { } onLibrary)
+        {
+            var labelStyle = new TextStyle
+            { Size = theme.Typography.LabelSize };
+            float labelWidth = Crystarium.MeasureText(
+                "Library", labelStyle).X;
+            float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
+            x -= buttonWidth * s;
+            ImGui.SetCursorScreenPos(new Vector2(x, y));
+            Crystarium.Button(
+                "Library",
+                onLibrary,
+                style: ControlStyle.Square(side) with
+                { Width = UiWidth.Fixed(buttonWidth) },
+                help: "Open the library",
+                id: "##shell-library");
+            x -= theme.Spacing.Two * s;
+        }
+        x -= side * s;
         // The command menu is anchored to its button. The static callback
         // records the press without allocating a frame closure.
         IconAt(
@@ -832,13 +795,6 @@ public static class AppShellView
             _burgerPressed = false;
             vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
         }
-        if (!library)
-            return;
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.Book, side, vm.OnLibrary,
-            "##shell-library",
-            help: "Open the library");
     }
 
 
@@ -1020,8 +976,6 @@ public static class AppShellView
     private static void DrawWorldClasses(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
-        if (vm.WorldClasses.Count == 0)
-            return;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.SwitchHeight;
         float step = (side + theme.Page.ActionGap) * s;
@@ -1042,6 +996,18 @@ public static class AppShellView
                     dimmed: !entry.On))
                 vm.OnWorldClassToggle?.Invoke(index);
             x += step;
+        }
+        // The spawn plus closes the band at the right: the adopt glyphs
+        // bring the world's things in, the plus adds anything new.
+        float plusX = max.X - StatusInset * s - side * s;
+        IconAt(
+            new Vector2(plusX, y), TablerIcon.Plus, side, SpawnPressed,
+            "##sidebar-spawn",
+            help: "Add an actor or object to the scene");
+        if (_spawnPressed)
+        {
+            _spawnPressed = false;
+            vm.OnSpawn?.Invoke(new Vector2(plusX, y + side * s));
         }
     }
 

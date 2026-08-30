@@ -50,6 +50,10 @@ Windows each have ONE job. No mode may change what a window IS.
 - **Library** — its OWN window, never a mode of the main window:
   opening it replaces nothing (shipped once as a full-width main
   workspace with an inspector-styled rail; both rejected 2026-08-30).
+  It stands on the WORKSPACE ground — the darker coat the content
+  well wears — never the panels' raised glass, and its bar ends in
+  the shell's own order — the COLLAPSE chevron is ALWAYS the
+  rightmost button in any title bar, the close to its left.
   Reached from the sidebar titlebar's library button, the Scene
   panel's "Open library…" verb and the burger menu. A TITLEBAR
   carries a title and a close, nothing else — the type strip gets
@@ -74,15 +78,21 @@ Windows each have ONE job. No mode may change what a window IS.
   the options are worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
-- **Sidebar collapse** — the outliner collapses from a chevron by
-  the brand in the titlebar; the choice is remembered. The chevron
-  never moves with the cell it removes. The library button rides the
-  sidebar's titlebar cell, so it hides while the sidebar is gone —
-  and the DETACHED sidebar window's bar carries it too: whatever
-  hosts the sidebar hosts its button (missed 2026-08-30).
+- **The sidebar never hides.** No collapse, no chevron — the
+  hide-sidebar button shipped and was rejected the same day
+  (2026-08-30). The only window-management verbs are pop out,
+  detach and merge. The scene tree is ONE continuous list — the
+  ACTORS/OBJECTS/LIGHTS/CAMERAS/OVERLAYS headers are gone (kind
+  order retained: actors, objects, lights, cameras, overlays), and
+  the filter pill spans the SAME width as the rows below it. The
+  footer's adopt-glyph band carries the spawn PLUS right-aligned on
+  the same line: adopt brings the world's things in, the plus adds
+  anything new.
 - **The cell never duplicates the toolbar.** The sidebar titlebar
-  cell carries the brand (no GPose pill), the chevron, the burger
-  and the library button — nothing else. Undo, redo, spawn, the
+  cell carries the brand (no GPose pill), the burger and the
+  library button — a TEXT button reading "Library", right-aligned —
+  nothing else. The DETACHED sidebar window's bar carries the
+  library button too: whatever hosts the sidebar hosts its button. Undo, redo, spawn, the
   GPose pill and the gizmo clusters live on the toolbar window
   alone; a second copy in the titlebar is a defect (shipped once,
   overlapping, 2026-08-30). Detaching the shell never repositions

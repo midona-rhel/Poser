@@ -134,8 +134,9 @@ public sealed class ShellSidebar
         float inset = theme.Page.Inset;
         float width = size.X / scale;
 
-        // The search pill stops before the trailing rule.
-        float pillWidth = MathF.Max(1f, width - inset * 2f - 1f);
+        // The pill spans the SAME width the rows below it do — the
+        // gutter is the trailing inset, never a second right margin.
+        float pillWidth = MathF.Max(1f, width - inset - 1f);
         ImGui.SetCursorScreenPos(origin + new Vector2(inset, SearchTop) * scale);
         Crystarium.FilterPill(
             SearchId,
@@ -212,9 +213,12 @@ public sealed class ShellSidebar
         {
             var section = vm.Sections[s];
             _rowCounts.Add(section.Rows.Count);
-            _source.Add(new Entry(
-                EntryKind.Header, s, -1, HeaderId(s), string.Empty,
-                0, 0u, 0, 0f, headerHeight));
+            // A title-less section contributes ROWS only: the scene tree
+            // is ONE continuous list, not five kind buckets.
+            if (section.Title.Length > 0)
+                _source.Add(new Entry(
+                    EntryKind.Header, s, -1, HeaderId(s), string.Empty,
+                    0, 0u, 0, 0f, headerHeight));
             for (int r = 0; r < section.Rows.Count; r++)
             {
                 var row = section.Rows[r];

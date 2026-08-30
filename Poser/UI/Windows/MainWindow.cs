@@ -187,8 +187,8 @@ public class MainWindow : Window
     /// on every other frame.</summary>
     private readonly ShellSidebarSection _actorsSection = new()
     {
-        Title = "ACTORS",
-        ShowPlus = true,
+        Title = "",
+        ShowPlus = false,
     };
 
     /// <summary>
@@ -207,8 +207,8 @@ public class MainWindow : Window
     /// </summary>
     private readonly ShellSidebarSection _propsSection = new()
     {
-        Title = "OBJECTS",
-        ShowPlus = true,
+        Title = "",
+        ShowPlus = false,
     };
 
     /// <summary>The overlays section, the props section's sibling: flat rows,
@@ -217,8 +217,8 @@ public class MainWindow : Window
     /// flag-refreshed on warm frames.</summary>
     private readonly ShellSidebarSection _overlaysSection = new()
     {
-        Title = "OVERLAYS",
-        ShowPlus = true,
+        Title = "",
+        ShowPlus = false,
     };
 
     /// <summary>The lights section, retained like actors. Lights are flat — a
@@ -228,7 +228,7 @@ public class MainWindow : Window
     /// </summary>
     private readonly ShellSidebarSection _lightsSection = new()
     {
-        Title = "LIGHTS",
+        Title = "",
     };
 
     /// <summary>The cameras section, the lights section's twin: flat rows,
@@ -237,7 +237,7 @@ public class MainWindow : Window
     /// flag-refreshed on warm frames.</summary>
     private readonly ShellSidebarSection _camerasSection = new()
     {
-        Title = "CAMERAS",
+        Title = "",
     };
 
     /// <summary>Footer toggles for world-object adoption classes.</summary>
@@ -1251,14 +1251,6 @@ public class MainWindow : Window
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
-        _vm.SidebarCollapsed = Config.ConfigurationService.Instance
-            .Config.UI.SidebarCollapsed;
-        _vm.OnSidebarToggle = _toggleSidebar ??= () =>
-        {
-            var ui = Config.ConfigurationService.Instance.Config.UI;
-            ui.SidebarCollapsed = !ui.SidebarCollapsed;
-            Config.ConfigurationService.Instance.Save();
-        };
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;
         _vm.Detached =
@@ -3065,7 +3057,6 @@ public class MainWindow : Window
     internal static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
-    private Action? _toggleSidebar;
     private Action? _openLibrary;
 
     private void BuildTabs(SelectionId? primary)
