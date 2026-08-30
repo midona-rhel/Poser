@@ -160,6 +160,10 @@ public class MainWindow : Window
     private readonly HashSet<string> _knownCategoryNodes = new();
     private readonly HashSet<string> _knownActorNodes = new();
     private float _sidebarWidth = 280f;
+    // Session-local like the width: the folds are working posture, not
+    // configuration.
+    private bool _sidebarCollapsed;
+    private bool _inspectorCollapsed;
     private readonly AppShellViewModel _vm = new();
 
     /// <summary>The acceptance gate. A field initializer, not a dependency:
@@ -690,6 +694,8 @@ public class MainWindow : Window
                 _collapsedNodes.Remove(expandKey);
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
+        _vm.OnSidebarCollapse = v => _sidebarCollapsed = v;
+        _vm.OnInspectorCollapse = v => _inspectorCollapsed = v;
         _vm.OnRowContextMenu = row =>
         {
             // A right-click on a row that RIDES the multi-entity selection
@@ -1079,6 +1085,13 @@ public class MainWindow : Window
     internal Vector2 LastPosition => _lastPosition;
     internal float LastWidth => _lastWidth;
     internal float LastHeight => _lastHeight;
+
+    /// <summary>Where the rail's top-left stands on screen — the split
+    /// window's seat at the split moment.</summary>
+    internal Vector2 RailSeatScreen => new(
+        _lastPosition.X + (_lastWidth - Views.AppShellView.RailWidth)
+            * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale,
+        _lastPosition.Y);
     internal float LastSidebarWidth => _sidebarWidth;
 
     /// <summary>+1 detaching (shrink right past the departing sidebar), -1
@@ -1328,6 +1341,10 @@ public class MainWindow : Window
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;
+        _vm.SidebarCollapsed = _sidebarCollapsed;
+        _vm.InspectorCollapsed = _inspectorCollapsed;
+        _vm.InspectorSplit =
+            Config.ConfigurationService.Instance.Config.UI.SplitInspector;
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
@@ -4192,6 +4209,7 @@ public class MainWindow : Window
         PopOutContent,
         DetachSeparator,
         ToggleDetached,
+        SplitInspector,
         WindowsSeparator,
         SceneWindow,
         InspectorWindow,
@@ -4226,7 +4244,8 @@ public class MainWindow : Window
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
         int layoutState = (uiConfig.DetachedShell ? 1 : 0)
             | (sceneOpen ? 2 : 0)
-            | (_contentHidden ? 4 : 0);
+            | (_contentHidden ? 4 : 0)
+            | (uiConfig.SplitInspector ? 8 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -4240,7 +4259,8 @@ public class MainWindow : Window
             poseTarget,
             uiConfig.DetachedShell,
             sceneOpen,
-            _contentHidden);
+            _contentHidden,
+            uiConfig.SplitInspector);
     }
 
     /// <summary>Fills the shell menu rows for the current UI state.</summary>
@@ -4249,7 +4269,8 @@ public class MainWindow : Window
         bool poseTarget,
         bool detachedShell,
         bool sceneOpen,
-        bool contentHidden)
+        bool contentHidden,
+        bool splitInspector = false)
     {
         items[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Book);
@@ -4276,6 +4297,15 @@ public class MainWindow : Window
             new ContextMenuItem(
                 detachedShell ? "Merge the UI" : "Detach the UI",
                 detachedShell ? TablerIcon.WindowMinimize : TablerIcon.WindowMaximize);
+        items[(int)ShellCommand.SplitInspector] =
+            new ContextMenuItem(
+                splitInspector ? "Merge the inspector" : "Split the inspector",
+                splitInspector
+                    ? TablerIcon.WindowMinimize
+                    : TablerIcon.WindowMaximize,
+                help: splitInspector
+                    ? "Fold the inspector back into the shell"
+                    : "Give the inspector its own window");
         items[(int)ShellCommand.WindowsSeparator] = ContextMenuItem.Separator;
         // Detached windows can be opened and closed here.
         items[(int)ShellCommand.SceneWindow] =
@@ -4295,6 +4325,9 @@ public class MainWindow : Window
 
     /// <summary>Requests the shell layout toggle.</summary>
     public event Action? OnDetachToggleRequested;
+
+    /// <summary>Requests the inspector split toggle.</summary>
+    public event Action? OnInspectorSplitToggleRequested;
 
     internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
 
@@ -4335,6 +4368,9 @@ public class MainWindow : Window
                 break;
             case ShellCommand.ToggleDetached:
                 RequestDetachToggle();
+                break;
+            case ShellCommand.SplitInspector:
+                OnInspectorSplitToggleRequested?.Invoke();
                 break;
             case ShellCommand.SceneWindow:
                 OnSceneWindowToggleRequested?.Invoke();

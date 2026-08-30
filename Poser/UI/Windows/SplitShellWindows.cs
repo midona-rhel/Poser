@@ -280,3 +280,145 @@ public sealed class ToolbarPartWindow : Window
         }
     }
 }
+
+/// <summary>The split INSPECTOR window: the rail exactly as it lives in
+/// the shell — same content seam, same width — under its own bar. It
+/// exists while the inspector is split from the properties window; the
+/// bar's merge folds it back in.</summary>
+public sealed class InspectorPartWindow : Window
+{
+    private readonly MainWindow _main;
+    private Vector2? _pendingPos;
+    private Vector2? _pendingSize;
+
+    /// <summary>Merge clicked: the rail returns to the shell.</summary>
+    public event Action? OnMerge;
+
+    public InspectorPartWindow(MainWindow main)
+        : base($"Inspector###{PluginConstants.PluginName}_split_inspector",
+            ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
+            ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
+            ImGuiWindowFlags.NoBackground)
+    {
+        _main = main;
+        float width = AppShellView.RailWidth + 2f;
+        Size = new Vector2(width, 560f);
+        SizeCondition = ImGuiCond.FirstUseEver;
+        // The rail's width is a design constant: the window resizes in
+        // HEIGHT only, exactly as the attached rail does.
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(width, 320f),
+            MaximumSize = new Vector2(width, float.MaxValue),
+        };
+        RespectCloseHotkey = false;
+    }
+
+    /// <summary>Seats the window where the rail stood at the split moment,
+    /// so the toggle reads as a split, not a teleport.</summary>
+    public void PlaceAt(Vector2 position, Vector2 sizeLogical)
+    {
+        _pendingPos = position;
+        _pendingSize = sizeLogical;
+    }
+
+    public override void PreDraw()
+    {
+        base.PreDraw();
+        if (_pendingPos is { } pos)
+        {
+            Position = pos;
+            PositionCondition = ImGuiCond.Always;
+            _pendingPos = null;
+        }
+        else
+        {
+            Position = null;
+        }
+        if (_pendingSize is { } size)
+        {
+            Size = size;
+            SizeCondition = ImGuiCond.Always;
+            _pendingSize = null;
+        }
+        else
+        {
+            SizeCondition = ImGuiCond.FirstUseEver;
+        }
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+        ImGui.PushStyleVar(
+            ImGuiStyleVar.WindowRounding,
+            Crystarium.ActiveTheme.Radii.Window * ImGuiHelpers.GlobalScale);
+    }
+
+    public override void PostDraw()
+    {
+        ImGui.PopStyleVar(3);
+        base.PostDraw();
+    }
+
+    public override void Draw()
+    {
+        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
+            return;
+        using var manipulationFade = Controls.ManipulationHide.FadeScope();
+        float s = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        var min = ImGui.GetWindowPos();
+        var max = min + ImGui.GetWindowSize();
+        var dl = ImGui.GetWindowDrawList();
+        var owner = Interactive.BeginOwner(
+            "poser-part-inspector", InteractionLayer.Window, min, max);
+        try
+        {
+            Crystarium.FloatingSurface.DrawChrome(
+                dl, min, max, theme.Radii.Window);
+            float headerBottom = DrawBar(min, max, s, dl);
+            AppShellView.DrawRailContent(
+                _main.ShellVm, new Vector2(min.X, headerBottom), max);
+        }
+        finally
+        {
+            Interactive.EndOwner(owner);
+        }
+    }
+
+    private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float height = theme.Floating.ModalBarHeight * s;
+        float inset = theme.Page.Inset * s;
+
+        Crystarium.TextInBand(
+            new Vector2(min.X + inset, min.Y),
+            new Vector2(max.X - min.X - inset * 2f, height),
+            "Inspector",
+            new TextStyle
+            {
+                Size = theme.Typography.BodySize,
+                Weight = FontWeight.SemiBold,
+                Color = theme.Chrome.Text,
+            });
+
+        float closeSide = theme.Floating.CloseActionSize;
+        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        ImGui.SetCursorScreenPos(new Vector2(
+            closeX,
+            min.Y + (height - closeSide * s) * 0.5f));
+        Crystarium.IconButton(
+            "x",
+            () => OnMerge?.Invoke(),
+            ControlStyle.Square(closeSide),
+            help: "Merge the inspector back into the shell",
+            id: "##part-merge-inspector");
+
+        float rule = MathF.Max(1f, s);
+        dl.AddRectFilled(
+            new Vector2(min.X, MathF.Round(min.Y + height - rule)),
+            new Vector2(max.X, MathF.Round(min.Y + height)),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(theme.FormSeparator)));
+        return min.Y + height;
+    }
+}

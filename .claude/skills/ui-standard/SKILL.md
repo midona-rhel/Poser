@@ -78,10 +78,18 @@ Windows each have ONE job. No mode may change what a window IS.
   the options are worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
-- **The sidebar never hides.** No collapse, no chevron — the
-  hide-sidebar button shipped and was rejected the same day
-  (2026-08-30). The only window-management verbs are pop out,
-  detach and merge. The scene tree is ONE continuous list — the
+- **The columns FOLD** (ruled 2026-08-31, REVERSING the 2026-08-30
+  "sidebar never hides"): the sidebar column and the inspector rail
+  each fold away behind a chevron — the sidebar's in its titlebar
+  cell (the cell itself stays, so brand, burger and Library keep
+  their seats), the inspector's in the right cluster. Folds are
+  session posture, not configuration. The window-management verbs
+  are pop out, detach, merge — and SPLIT: the inspector can leave
+  the properties window for its own Inspector window (burger verb,
+  persisted, merged back from its bar), rail-width fixed, seated
+  where the rail stood. Double-clicking any titlebar's open band
+  collapses the window — the chevron's gesture twin; hovered
+  buttons keep their own clicks. The scene tree is ONE continuous list — the
   ACTORS/OBJECTS/LIGHTS/CAMERAS/OVERLAYS headers are gone (kind
   order retained: actors, objects, lights, cameras, overlays), and
   the filter pill spans the SAME width as the rows below it. The

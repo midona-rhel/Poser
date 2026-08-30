@@ -15,6 +15,7 @@ public sealed class UiWindowSet : IDisposable
     public SettingsWindow Settings { get; }
     public SpawnBrowserWindow SpawnBrowser { get; }
     public SidebarPartWindow SidebarPart { get; }
+    public InspectorPartWindow InspectorPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
     public LibraryWindow LibraryPart { get; }
 
@@ -69,6 +70,8 @@ public sealed class UiWindowSet : IDisposable
 
         SidebarPart = new SidebarPartWindow(main);
         System.AddWindow(SidebarPart);
+        InspectorPart = new InspectorPartWindow(main);
+        System.AddWindow(InspectorPart);
         LibraryPart = new LibraryWindow(main);
         System.AddWindow(LibraryPart);
         Main.OnLibraryWindowRequested += () =>
@@ -79,6 +82,8 @@ public sealed class UiWindowSet : IDisposable
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
         SidebarPart.OnReattach += ToggleDetached;
+        InspectorPart.OnMerge += ToggleSplitInspector;
+        Main.OnInspectorSplitToggleRequested += ToggleSplitInspector;
         ToolbarPart.OnReattach += ToggleDetached;
         Main.OnDetachToggleRequested += ToggleDetached;
         Main.GetSceneWindowOpen = () => SidebarPart.IsOpen;
@@ -158,6 +163,8 @@ public sealed class UiWindowSet : IDisposable
     {
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
         SidebarPart.IsOpen = detached;
+        InspectorPart.IsOpen =
+            Main.IsOpen && _configService.Config.UI.SplitInspector;
         // The toolbar is ALWAYS its own window — merging windows never
         // merges the toolbar (the standard's shell roles).
         ToolbarPart.IsOpen = Main.IsOpen;
@@ -169,6 +176,23 @@ public sealed class UiWindowSet : IDisposable
 
     public void ToggleSceneWindow() =>
         SidebarPart.IsOpen = !SidebarPart.IsOpen;
+
+    /// <summary>The inspector's own split: the rail leaves the shell for
+    /// its own window and comes back through the same toggle — the bar's
+    /// merge, or the burger.</summary>
+    private void ToggleSplitInspector()
+    {
+        var ui = _configService.Config.UI;
+        ui.SplitInspector = !ui.SplitInspector;
+        InspectorPart.IsOpen = Main.IsOpen && ui.SplitInspector;
+        if (ui.SplitInspector)
+            InspectorPart.PlaceAt(
+                Main.RailSeatScreen,
+                new System.Numerics.Vector2(
+                    global::Poser.UI.Views.AppShellView.RailWidth + 2f,
+                    Main.LastHeight));
+        _configService.ApplyChange();
+    }
 
     private void ToggleDetached()
     {
