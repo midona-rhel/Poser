@@ -125,6 +125,13 @@ public sealed class UIManager : IUIManager
         {
             FrameProfiler.EndFrame();
         }
+        // The focus rule, published once per frame: typing, an active
+        // ImGui item (a drag in the UI), or a live gizmo gesture owns the
+        // keyboard, and the free camera's flight keys stand down.
+        _cameras.SuppressFlightKeys =
+            ImGui.GetIO().WantTextInput
+            || ImGui.IsAnyItemActive()
+            || Controls.GizmoPointerOwnership.Owned;
         HandleKeybinds();
     }
 
@@ -252,6 +259,16 @@ public sealed class UIManager : IUIManager
             {
                 bind.Down = true;
                 bind.Run();
+                // A fired chord is CONSUMED: the key comes off the game's
+                // state so the game does not also act on it — our binds
+                // are ours (the setter only accepts false, which is
+                // exactly the suppression Dalamud offers).
+                var fired = ChordDown(bind.Primary)
+                    ? bind.Primary
+                    : bind.Secondary;
+                if (fired.IsBound
+                    && _keyState.IsVirtualKeyValid(fired.Key))
+                    _keyState[fired.Key] = false;
             }
             else if (!active)
             {

@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Bindings.ImGui;
 using System.Collections.Generic;
 using System.Globalization;
 using Dalamud.Plugin.Services;
@@ -110,7 +111,10 @@ public sealed class CompanionSection
             _entryKey,
             Known(current) is { } entry ? RowKey(entry) : null,
             _catalog.IsLoaded ? null : "Building minion catalog…",
-            Options());
+            Options(),
+            // Opened from a context menu: the click IS the initiating
+            // control, so the surface spawns where the user clicked.
+            anchor: ImGui.GetMousePos());
     }
 
     /// <summary>The strip is CONTROLLED — its selection lives here — so the

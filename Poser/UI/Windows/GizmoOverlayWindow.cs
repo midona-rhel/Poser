@@ -748,10 +748,10 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        // Occlusion and the configured modifier suppress new grabs only.
-        bool gizmoSuppressed = SkeletonOverlayWindow.HoldModifierDown(
-            GizmoConfig.DisableGizmoModifier);
-        if (gesture == null && layout != null && !occluded && !gizmoSuppressed)
+        // Occlusion suppresses new grabs only; the configured hold-modifier
+        // died with its setting — Alt is the ONE suspend and hides the
+        // gizmo outright.
+        if (gesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
         // Occlusion suppresses hover/ownership but not handle drawing.
@@ -1177,7 +1177,11 @@ public class GizmoOverlayWindow : Window
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
         // Ctrl enables hold-snap; Shift enables translate ray-snap.
         var gizmoConfig = GizmoConfig;
-        bool holdSnap = gizmoConfig.AllowHoldSnap && io.KeyCtrl;
+        // Z and X, not Ctrl and Shift: those are the step ladder during a
+        // world drag (the modifier contract), so snapping holds its own
+        // keys.
+        bool holdSnap = gizmoConfig.AllowHoldSnap
+            && ImGui.IsKeyDown(ImGuiKey.Z);
         float rotationStep = holdSnap
             ? GizmoSnap.Increment(gizmoConfig.SnapRotationDegrees, io.KeyShift)
             : 0f;
@@ -1185,7 +1189,8 @@ public class GizmoOverlayWindow : Window
             ? GizmoSnap.Increment(gizmoConfig.SnapLinearStep, io.KeyShift)
             : 0f;
         // Shift ray-snap takes precedence for translation.
-        bool raySnap = gizmoConfig.AllowRaySnap && io.KeyShift;
+        bool raySnap = gizmoConfig.AllowRaySnap
+            && ImGui.IsKeyDown(ImGuiKey.X);
 
         switch (gesture.Handle.Kind)
         {

@@ -322,6 +322,17 @@ internal sealed unsafe class VirtualCamera : IVirtualCamera
         Rotation = native->RotationAsVector3;
     }
 
+    public float DefaultFoV { get; private set; }
+    public float DefaultRoll { get; private set; }
+    public System.Numerics.Vector3 DefaultRotation { get; private set; }
+
+    public void CaptureOwnedDefaults()
+    {
+        DefaultFoV = FoV;
+        DefaultRoll = Roll;
+        DefaultRotation = Rotation;
+    }
+
     public void ResetProperties()
     {
         PositionOffset = Vector3.Zero;

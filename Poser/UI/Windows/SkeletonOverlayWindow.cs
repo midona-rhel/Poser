@@ -74,17 +74,6 @@ public class SkeletonOverlayWindow : Window
     private static GizmoConfiguration GizmoConfig =>
         ConfigurationService.Instance.Config.Gizmo;
 
-    /// <summary>Whether the configured hold modifier is down THIS frame. The
-    /// unbound state is never "down", so the shipped configuration answers
-    /// false without touching the IO flags.</summary>
-    internal static bool HoldModifierDown(OverlayHoldModifier modifier)
-    {
-        if (modifier == OverlayHoldModifier.None)
-            return false;
-        var io = ImGui.GetIO();
-        return modifier == OverlayHoldModifier.Ctrl ? io.KeyCtrl : io.KeyShift;
-    }
-
     // ── the per-frame display model ──────────────────────────────────────
     // One VALUE per drawn handle, held in buffers this window owns and
     // clears at the top of each frame. The rebuild itself is the design
@@ -563,7 +552,8 @@ public class SkeletonOverlayWindow : Window
         // so a gizmo handle underneath one can be grabbed — reads exactly like
         // an occluded pointer here, which is what makes it a one-line gate.
         bool dotsSuppressed =
-            HoldModifierDown(GizmoConfig.DisableDotsModifier);
+            false; // The configured hold-modifier died with its setting:
+                   // Alt is the ONE suspend, and it hides the dots outright.
         if (pointerBlocked || dotsSuppressed)
         {
             foreach (ref var bone in CollectionsMarshal.AsSpan(bones))

@@ -1431,7 +1431,8 @@ public class PoseInspectorPane
                 _ => !canEdit,
                 _ => _entity is IActor
                     ? "Freeze the animation to move"
-                    : null));
+                    : null,
+                altReset: r => r == 1 ? 0f : r == 2 ? 1f : null));
 
         // If Alt is released between well callbacks, return immediately to
         // the active axis from the same frozen scale baseline.

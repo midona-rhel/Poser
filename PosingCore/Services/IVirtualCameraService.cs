@@ -25,6 +25,11 @@ public readonly record struct CameraCenterResult(bool Success, string? Detail = 
 /// </summary>
 public interface IVirtualCameraService : IDisposable
 {
+    /// <summary>While the UI owns the keyboard (typing, an active ImGui
+    /// item, a gizmo gesture), free-camera flight keys stand down — the
+    /// modifier contract's focus rule. Written once per UI frame.</summary>
+    bool SuppressFlightKeys { get; set; }
+
     /// <summary>False when the native camera-update signature was not found;
     /// every operation is a silent no-op in that state.</summary>
     bool IsAvailable { get; }

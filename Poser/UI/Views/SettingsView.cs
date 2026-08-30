@@ -85,8 +85,6 @@ public sealed class SettingsViewModel
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
     public bool KeepGizmoWhenBonesHidden = true;
-    public int DisableDotsModifier;
-    public int DisableGizmoModifier;
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
@@ -117,6 +115,25 @@ public sealed class SettingsViewModel
         KeybindRegistry.Bindings(KeybindPreset.Poser);
     public string? RebindingAction;
     public int RebindingSlot;
+
+    /// <summary>The GAME's key state — the same source the runtime
+    /// matcher fires from. ImGui key events do not reach an unfocused
+    /// widget, which is what killed the old ImGui-based capture.</summary>
+    public Func<Dalamud.Game.ClientState.Keys.VirtualKey, bool> KeyDown =
+        static _ => false;
+
+    /// <summary>Keys already down when the capture armed (or held since):
+    /// a chord is the FIRST key that goes down after arming, never one
+    /// still travelling from before.</summary>
+    public readonly HashSet<Dalamud.Game.ClientState.Keys.VirtualKey>
+        RebindHeld = new();
+
+    /// <summary>Diagnostics for the capture: a per-frame probe of both key
+    /// sources shown live in the page, and a throttled log line — added
+    /// after three blind fixes; the probe reports, nobody theorizes.</summary>
+    public Action<string>? DebugLog;
+    public string RebindProbe = string.Empty;
+    public int RebindProbeFrame;
 
     public int PresetIndex;
     public bool PresetArmed;
@@ -375,7 +392,7 @@ public static class SettingsView
                 "Selecting a bone also selects its opposite-side counterpart, "
                     + "and keeps both eyes and the ear chains in step");
             form.Switch(
-                "Keep relative angles between bones",
+                "Keep relative bone angles",
                 vm.RelativeSecondaryBones,
                 next => vm.RelativeSecondaryBones = next,
                 "With several bones selected, turn the rest about the first "
@@ -679,12 +696,12 @@ public static class SettingsView
                 next => vm.SkeletonLineToCircle = next,
                 "Draw each connector to the edge of the bone circle instead of through its centre");
             form.Switch(
-                "Hide the skeleton while dragging",
+                "Hide bones while dragging",
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Take the dots and lines away for the length of a gizmo drag");
             form.Switch(
-                "Hide skeleton when only an actor is selected",
+                "Hide bones on actor selection",
                 vm.HideSkeletonOnActorSelection,
                 next => vm.HideSkeletonOnActorSelection = next,
                 "Keep actor selection from opening the whole armature; "
@@ -739,8 +756,6 @@ public static class SettingsView
         ["Ktisis", "Brio"];
     private static readonly string[] ActiveActorLabels =
         ["GPose target", "Selection", "Either"];
-    private static readonly string[] HoldModifierLabels =
-        ["Off", "Ctrl", "Shift"];
 
     private static void DrawGizmo(
         SettingsViewModel vm,
@@ -759,10 +774,10 @@ public static class SettingsView
         page.Section("Snapping", form =>
         {
             form.Switch(
-                "Hold Ctrl to snap",
+                "Hold Z to snap",
                 vm.AllowHoldSnap,
                 next => vm.AllowHoldSnap = next,
-                "Quantise a drag to fixed steps while Ctrl is held; add Shift for a tenth of the step");
+                "Quantise a drag to fixed steps while Z is held; add Shift for a tenth of the step");
             form.Slider(
                 "Rotation step",
                 vm.SnapRotationDegrees,
@@ -780,29 +795,14 @@ public static class SettingsView
                 format: "0.00",
                 disabled: !vm.AllowHoldSnap);
             form.Switch(
-                "Hold Shift to snap to the world",
+                "Hold X for surface snap",
                 vm.AllowRaySnap,
                 next => vm.AllowRaySnap = next,
                 "While moving, put the target wherever the pointer meets the scene");
         });
-        page.Section("Hold to suspend", form =>
-        {
-            form.Dropdown(
-                "Disable bone dots",
-                HoldModifierLabels,
-                vm.DisableDotsModifier,
-                next => vm.DisableDotsModifier = next,
-                "Hold this to make the dots and lines non-interactive, so a gizmo handle underneath them can be grabbed");
-            form.Dropdown(
-                "Disable the gizmo",
-                HoldModifierLabels,
-                vm.DisableGizmoModifier,
-                next => vm.DisableGizmoModifier = next,
-                "Hold this to let the pointer through the gizmo to the bone dot behind it");
-        });
         page.Section("Visibility", form =>
             form.Switch(
-                "Keep the gizmo when bones are hidden",
+                "Keep gizmo without bones",
                 vm.KeepGizmoWhenBonesHidden,
                 next => vm.KeepGizmoWhenBonesHidden = next,
                 "Off means hiding a bone from the overlay takes its gizmo with it"));
@@ -833,31 +833,31 @@ public static class SettingsView
         page.Section("Speed modifiers", form =>
         {
             form.Slider(
-                "Hold Ctrl",
+                "Hold Shift",
                 vm.CameraFastMultiplier,
                 1f,
                 10f,
                 next => vm.CameraFastMultiplier = next,
                 format: "0.0×",
-                help: "What holding Ctrl multiplies the fly speed by");
+                help: "What holding Shift multiplies the fly speed by");
             form.Slider(
-                "Hold Alt",
+                "Hold Ctrl",
                 vm.CameraSlowMultiplier,
                 0.05f,
                 1f,
                 next => vm.CameraSlowMultiplier = next,
                 format: "0.00×",
-                help: "What holding Alt multiplies the fly speed by");
+                help: "What holding Ctrl multiplies the fly speed by");
         });
         page.Section("Game input", form =>
         {
             form.Switch(
-                "Consume modifiers while flying",
+                "Reserve flight keys",
                 vm.CameraConsumeModifiers,
                 next => vm.CameraConsumeModifiers = next,
-                "Take Space, Shift, Ctrl and Alt off the game while a free camera flies; off lets your character still jump and sprint");
+                "While a free camera flies, the game never sees Space, C, Shift or Ctrl");
             form.Switch(
-                "Consume all game input in GPose",
+                "Consume all game input",
                 vm.CameraConsumeAllInput,
                 next => vm.CameraConsumeAllInput = next,
                 "Take every key off the game while in GPose, except Escape and Enter");
@@ -900,7 +900,7 @@ public static class SettingsView
                 next => vm.ShowInCutscene = next,
                 "Keep Poser on screen during cutscenes");
             form.Switch(
-                "Show when the game UI is hidden",
+                "Show with game UI hidden",
                 vm.ShowWhenGameUiHidden,
                 next => vm.ShowWhenGameUiHidden = next,
                 "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
@@ -951,10 +951,12 @@ public static class SettingsView
                         ? ButtonVariant.Primary
                         : ButtonVariant.Secondary));
             form.Status(
-                vm.PresetStatus.Length > 0
-                    ? vm.PresetStatus
-                    : "Click a slot below to rebind it. Escape cancels, "
-                        + "Backspace clears it.",
+                vm.RebindingAction != null
+                    ? vm.RebindProbe
+                    : vm.PresetStatus.Length > 0
+                        ? vm.PresetStatus
+                        : "Click a slot below to rebind it. Escape cancels, "
+                            + "Backspace clears it.",
                 warning: vm.PresetArmed);
         }, divider: false);
 
@@ -1053,6 +1055,10 @@ public static class SettingsView
                 vm.RebindingAction = capturing ? null : action.Id;
                 vm.RebindingSlot = slot;
                 vm.PresetArmed = false;
+                vm.RebindHeld.Clear();
+                foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
+                    if (vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey))
+                        vm.RebindHeld.Add(key);
             },
             style: ControlStyle.Workspace with
             {
@@ -1287,33 +1293,62 @@ public static class SettingsView
             || !vm.Bindings.TryGetValue(action, out var slots))
         {
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        // The capture reads the GAME's key state — the same source the
+        // runtime matcher fires from — because ImGui key events never
+        // reach an unfocused widget. Edge detection is manual: a key
+        // already down when the capture armed stays ignored until it has
+        // been released once.
+        var io = ImGui.GetIO();
+
+        // The probe found the stubbed key source (2026-08-30) and retired;
+        // the armed line states the plain instructions instead.
+        vm.RebindProbe =
+            $"Listening for {action}… press a chord. Escape cancels, "
+            + "Backspace clears the slot.";
+
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
+            || ImGui.IsKeyDown(ImGuiKey.Escape))
         {
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.Backspace))
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.BACK)
+            || ImGui.IsKeyDown(ImGuiKey.Backspace))
         {
             slots[vm.RebindingSlot] = string.Empty;
             vm.BindingRevision++;
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        var io = ImGui.GetIO();
-        foreach (var key in KeyChord.CapturableKeys())
+        foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
         {
-            if (!ImGui.IsKeyPressed(key)
-                || KeyChord.FromImGui(key) is not { } virtualKey)
+            bool down = vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey);
+            if (!down)
+            {
+                vm.RebindHeld.Remove(key);
+                continue;
+            }
+            if (vm.RebindHeld.Contains(key))
                 continue;
             slots[vm.RebindingSlot] = new KeyChord(
-                io.KeyCtrl, io.KeyShift, io.KeyAlt, virtualKey).ToString();
+                io.KeyCtrl || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL),
+                io.KeyShift || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT),
+                io.KeyAlt || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
+                key).ToString();
             vm.BindingRevision++;
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
     }

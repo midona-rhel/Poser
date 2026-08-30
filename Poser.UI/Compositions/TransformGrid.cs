@@ -45,7 +45,8 @@ public static partial class Crystarium
         Func<int, float> perPixel,
         Func<int, string> format,
         Func<int, bool> disabled,
-        Func<int, string?>? disabledHelp = null)
+        Func<int, string?>? disabledHelp = null,
+        Func<int, float?>? altReset = null)
     {
         var theme = ActiveTheme;
         float s = ImGuiHelpers.GlobalScale;
@@ -122,7 +123,8 @@ public static partial class Crystarium
                     {
                         Width = UiWidth.Fixed((boxW - pad * 2f) / s),
                     },
-                    disabled(row));
+                    disabled(row),
+                    altReset: altReset?.Invoke(row));
                 // Disable-in-place: the WHY lives on the hover, never in a
                 // status row that pops in and reflows the rail.
                 if (disabled(row) && disabledHelp?.Invoke(row) is { } why &&

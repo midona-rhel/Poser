@@ -107,6 +107,12 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     private Vector2 _freeMouseDelta;
     private float _freeMoveSpeed = DefaultMovementSpeed;
 
+    /// <summary>Set per UI frame: while typing or an active ImGui item
+    /// owns the keyboard, flight keys stand down (the modifier contract's
+    /// focus rule). Written from the draw side, read on the camera's
+    /// update — a one-frame lag is invisible.</summary>
+    public bool SuppressFlightKeys { get; set; }
+
     // The last fly-speed change the wheel made, for the overlay's readout.
     // Two scalar fields rather than one notice struct because the writer is
     // the game's input handler and the reader is the draw pass: each field is
@@ -270,6 +276,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         camera.SaveState();
         if (kind == CameraKind.Free)
             camera.SeedFreeCam();
+        camera.CaptureOwnedDefaults();
 
         _cameras.Add(camera);
         SetLive(camera);
@@ -319,6 +326,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         clone.TrackingMode = original.TrackingMode;
         foreach (var bone in original.TrackedBones)
             clone.TrackedBones.Add(bone);
+        clone.CaptureOwnedDefaults();
 
         _cameras.Add(clone);
         SetLive(clone);
@@ -835,7 +843,11 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             mouse->ScrollValue = 0;
         }
 
-        if (keyboard == null || !live.MovementEnabled)
+        // The UI owns the keyboard while anything is typing or an ImGui
+        // item is active: flight keys stand down entirely — pressed keys
+        // are neither moved on nor consumed (the modifier contract's
+        // focus rule).
+        if (keyboard == null || !live.MovementEnabled || SuppressFlightKeys)
             return;
 
         int forwardBack = 0;
@@ -846,24 +858,28 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         if (keyboard->KeyDown(VirtualKey.A)) leftRight -= 1;
         if (keyboard->KeyDown(VirtualKey.D)) leftRight += 1;
 
-        // Brio's vertical map, both pairs (InputManagerConfiguration): Q or
-        // Space rises, E or Shift falls. The axis travels with the input
-        // vector below, so it is the camera's up rather than the world's —
-        // pitched down, rising also carries you forward, exactly as Brio
-        // flies. Move2D is the switch that pins it to world vertical.
+        // The modifier contract's vertical map: Q or Space rises, E or C
+        // falls. Shift-descend (Brio's map) is DEAD — Shift is a speed
+        // modifier now, and a modifier must never be a motion key. The
+        // axis travels with the input vector below, so it is the camera's
+        // up rather than the world's — pitched down, rising also carries
+        // you forward. Move2D is the switch that pins it to world vertical.
         int upDown = 0;
         if (keyboard->KeyDown(VirtualKey.Q) ||
             keyboard->KeyDown(VirtualKey.SPACE))
             upDown += 1;
         if (keyboard->KeyDown(VirtualKey.E) ||
-            keyboard->KeyDown(VirtualKey.SHIFT))
+            keyboard->KeyDown(VirtualKey.C))
             upDown -= 1;
 
+        // Shift = faster, Ctrl = slower — increase and decrease, in that
+        // order. Alt carries NO camera role: it is the visibility peek,
+        // everywhere and exclusively.
         var settings = CameraSettings;
         _freeMoveSpeed = live.MovementSpeed;
-        if (keyboard->KeyDown(VirtualKey.CONTROL))
+        if (keyboard->KeyDown(VirtualKey.SHIFT))
             _freeMoveSpeed = live.MovementSpeed * settings.FastMultiplier;
-        else if (keyboard->KeyDown(VirtualKey.MENU))
+        else if (keyboard->KeyDown(VirtualKey.CONTROL))
             _freeMoveSpeed = live.MovementSpeed * settings.SlowMultiplier;
 
         keyboard->HandleKey(VirtualKey.W);
@@ -872,19 +888,19 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         keyboard->HandleKey(VirtualKey.D);
         keyboard->HandleKey(VirtualKey.Q);
         keyboard->HandleKey(VirtualKey.E);
+        keyboard->HandleKey(VirtualKey.C);
         // The modifiers this path reads are consumed with the letters
-        // (Brio's EnableKeyHandlingOnKeyMod block, on by default): Shift is
-        // the second descend key and Ctrl/Alt are the speed modifiers, so
-        // leaving them in the frame hands the game a held modifier for every
-        // second the camera is descending. Turning the setting off gives the
-        // game those four back — Space included, since Space is the other
-        // half of the same rise/fall pair.
+        // (Brio's EnableKeyHandlingOnKeyMod block, on by default): Shift
+        // and Ctrl are the speed modifiers, so leaving them in the frame
+        // hands the game a held modifier for every second the camera
+        // flies fast. Turning the setting off gives the game those back —
+        // Space included, since Space is half the rise/fall pair. Alt is
+        // NOT consumed: the camera no longer reads it.
         if (settings.ConsumeModifiersWhileFlying)
         {
             keyboard->HandleKey(VirtualKey.SPACE);
             keyboard->HandleKey(VirtualKey.SHIFT);
             keyboard->HandleKey(VirtualKey.CONTROL);
-            keyboard->HandleKey(VirtualKey.MENU);
         }
 
         if (live.IsLocked)

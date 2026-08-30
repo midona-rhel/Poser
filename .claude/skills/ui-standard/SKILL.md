@@ -340,9 +340,22 @@ navigation, not a scrollbar — may shift anything.
   (only a tighter range drags finer) — a range-derived rate like
   (max−min)/300 is a unique scaling and a defect.
 - Double-click to type, always.
-- Alt-click resets a slider to its stated default (`altReset`) — one
-  gesture, one undo step. Wire it wherever a row has a meaningful
-  default (expressions reset to zero).
+- Alt-click resets a VALUE to its stated default (`altReset`) — one
+  gesture, one undo step, sliders and wells alike: the track, its
+  readout well, bare number wells and the transform grid all speak
+  it (rotation resets to 0, scale to 1, camera lens facts to 0).
+  Wire it wherever a value has a meaningful default; a value with
+  none (a world position) stays inert rather than resetting
+  somewhere absurd. The default is the OWNERSHIP BASELINE, not a
+  constant: the values the entity carried when Poser took it —
+  spawn, clone, or a file/scene apply — re-captured at every
+  ownership moment and kept in memory (the camera's
+  CaptureOwnedDefaults is the reference).
+- NO control listens to the scroll wheel — the wheel belongs to the
+  page scroll, and a well that stepped its value on a notch hijacked
+  it (the Brio wheel-stepping was removed 2026-08-30). The pose
+  preview and the 3D canvas keep their wheel zoom: they are VIEWS,
+  not value controls.
 - Numbers render in the MONO family (Geist Mono), never the text face:
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
@@ -446,6 +459,27 @@ supersampled coverage mask strokes use: the direct triangulated fill
 had no anti-aliasing, which is why pin-filled and pause-filled read
 as the worst glyphs in the app until 2026-08-30. And a kind's glyph is stated ONCE: the spawn
 strip's Objects tab wears the same Diamond its object rows wear.
+
+## Spawned surfaces
+
+A click-spawned surface (menu, picker, popover) ANCHORS to what
+spawned it: its top-left edge aligns to the initiating control's
+bottom-left. When that does not fit, flip — the surface's bottom-left
+to the control's top-left — and when neither fits, fit it wherever it
+can. A surface spawned from a MENU row anchors the CLICK itself (the
+row is gone by the time it opens); the pickers' default last-item
+anchor covers everything opened from a form control.
+
+## Modifier roles
+
+Modifier roles belong to the CONTRACT, never to a setting: Shift and
+Ctrl are the drag ladder in the UI and the speed pair in flight, Alt
+is the visibility peek — exclusively and everywhere. A dropdown that
+let a user reassign a modifier's role shipped once (the Hold-to-
+suspend pair) and was removed 2026-08-30: configurable roles are how
+collisions come back. Gizmo snapping holds its OWN keys — Z for step
+snap, X for surface snap — because Ctrl and Shift are the step
+ladder during the very drags snapping applies to.
 
 ## Search fields
 
