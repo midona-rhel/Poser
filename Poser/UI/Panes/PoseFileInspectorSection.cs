@@ -167,6 +167,22 @@ public sealed class PoseFileInspectorSection
         _importMenuRequested = true;
     }
 
+    /// <summary>The library's OWN options menu — the same standing
+    /// settings the import flow reads (one state, retained), but options
+    /// only: none of the import dialog's actions belong in the library.
+    /// It opens to the LEFT of the seat so the preview stays visible
+    /// while the options are worked.</summary>
+    public void RequestLibraryOptionsMenu(Vector2 seat)
+    {
+        _libraryMenuSeat = seat;
+        _libraryMenuRequested = true;
+    }
+
+    private Vector2 _libraryMenuSeat;
+    private bool _libraryMenuRequested;
+    private float _libraryMenuHeight = 400f;
+    private const string LibraryOptionsMenuId = "##library-options-menu";
+
     public void RequestBoneFilterMenu()
     {
         _filterAnchor = ImGui.GetMousePos();
@@ -296,6 +312,28 @@ public sealed class PoseFileInspectorSection
                 ExportMenuId, _menuAnchor, BuildExportMenuItems(),
                 ExportMenuWidth);
         }
+        if (_libraryMenuRequested)
+        {
+            _libraryMenuRequested = false;
+            Crystarium.OpenPopover(LibraryOptionsMenuId);
+        }
+        {
+            float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            var anchor = _libraryMenuSeat - new Vector2(
+                (MenuWidth + MenuPadding) * scale, 0f);
+            Crystarium.FloatingSurface.Popup(
+                LibraryOptionsMenuId,
+                new FloatingSurfaceProps
+                {
+                    Width = MenuWidth,
+                    Height = _libraryMenuHeight,
+                    Padding = MenuPadding,
+                    AnchorMin = anchor,
+                    AnchorMax = anchor,
+                    Treatment = FloatingSurfaceTreatment.Glass,
+                },
+                DrawLibraryOptionsMenuBody);
+        }
         Crystarium.FloatingSurface.Popup(
             ImportMenuId,
             new FloatingSurfaceProps
@@ -345,6 +383,24 @@ public sealed class PoseFileInspectorSection
     private float _importMenuHeightPlain = 430f;
     private float _importMenuHeightPresets = 480f;
     private float _boneFilterHeight = 520f;
+
+    /// <summary>Options only, left-aligned in its own surface — the
+    /// import menu's actions stay in the import menu.</summary>
+    private void DrawLibraryOptionsMenuBody()
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var origin = ImGui.GetCursorScreenPos();
+        float width = ImGui.GetContentRegionAvail().X;
+        float top = origin.Y - MenuTitleOffset(scale);
+
+        float y = DrawOptionsSections(
+            new Vector2(origin.X, top), width,
+            withPresets: false, withActions: false);
+
+        _libraryMenuHeight = (y - origin.Y) / scale
+            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
+        DrawNestedBoneFilter();
+    }
 
     private void DrawImportMenuBody()
     {

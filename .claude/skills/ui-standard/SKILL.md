@@ -61,10 +61,14 @@ Windows each have ONE job. No mode may change what a window IS.
   for the types that can preview, and the file's metadata — as much
   as the entry knows — for the rest. There is NO footer (an
   options-band footer shipped and was rejected the same day,
-  2026-08-30): the import options hide behind the importer's own
-  menu, opened from a settings seat by the preview, and the seat
-  exists ONLY for the types that have import options — no options,
-  no button.
+  2026-08-30): the import options hide behind the library's OWN
+  options menu — the SAME standing settings the import flow reads
+  (one retained state), but options only: reusing the import menu
+  one-to-one shipped and was rejected the same day (its actions do
+  not belong in the library). The menu opens to the LEFT of its
+  settings seat so the preview stays visible while the options are
+  worked, and the seat exists ONLY for the types that have import
+  options — no options, no button.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the

@@ -145,8 +145,11 @@ public sealed class LibraryWindow : Window
             if (preview)
             {
                 _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
-                // The importer's own options menu, verbatim — copied, not
-                // rebuilt. Only the types with import options get the seat.
+                // The library's OWN options menu — the same standing
+                // settings the import flow reads, options only. It opens
+                // to the LEFT so the preview stays visible while the
+                // options are worked. Only the types with import options
+                // get the seat.
                 float side = theme.Controls.ShellIconAction;
                 var seat = new Vector2(
                     columnOrigin.X + columnSize.X - side * s,
@@ -154,9 +157,7 @@ public sealed class LibraryWindow : Window
                 ImGui.SetCursorScreenPos(seat);
                 Crystarium.IconButton(
                     "settings",
-                    () => _main.PoseFiles.RequestImportMenu(
-                        withPresets: false,
-                        seat + new Vector2(0f, side * s)),
+                    () => _main.PoseFiles.RequestLibraryOptionsMenu(seat),
                     ControlStyle.Square(side),
                     help: "Import options",
                     id: "##library-options");
