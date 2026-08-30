@@ -581,6 +581,12 @@ public class MainWindow : Window
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
         _vm.DragGhostText = DragGhostFor;
+        _vm.OnCameraRecenter = row =>
+        {
+            if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.Camera, Camera: { } recenterId })
+                RecenterCameraOnTrackedActor(recenterId);
+        };
         _vm.OnGroupLock = row =>
         {
             if (row.Tag is GroupRowTag lockTag
@@ -1977,6 +1983,7 @@ public class MainWindow : Window
             {
                 row.CameraLive = liveCamera.IsLive;
                 row.CameraLocked = liveCamera.IsLocked;
+                row.CameraCanRecenter = CanRecenterOnTracked(liveCamera);
             }
             else if (id.Overlay is { } overlayId &&
                 _bindings.Resolve(overlayId) is
@@ -5122,13 +5129,7 @@ public class MainWindow : Window
             return;
         }
 
-        var trackedActor = ResolveCameraTrackedActor(camera);
-        bool trackedActorVisible = trackedActor != null &&
-            TryResolveExactActor(trackedActor.Id, out var trackedExact) &&
-            _spawnService.IsVisible(trackedExact);
-        bool canRecenterTracked = trackedActorVisible &&
-            _cameraService.IsAvailable && !camera.IsLocked && camera.IsLive &&
-            camera.Kind != CameraKind.Free && camera.FixedPosition == null;
+        bool canRecenterTracked = CanRecenterOnTracked(camera);
         var items = new List<ContextMenuItem>
         {
             new(camera.IsLive
@@ -5594,6 +5595,19 @@ public class MainWindow : Window
                     break;
             }
         }
+    }
+
+    /// <summary>Whether the recenter verb has anything to do: the one
+    /// answer the camera row's seat, its context menu, and the recenter
+    /// itself all agree on.</summary>
+    private bool CanRecenterOnTracked(IVirtualCamera camera)
+    {
+        if (!_cameraService.IsAvailable || camera.IsLocked || !camera.IsLive
+            || camera.Kind == CameraKind.Free || camera.FixedPosition != null)
+            return false;
+        return ResolveCameraTrackedActor(camera) is { } tracked
+            && TryResolveExactActor(tracked.Id, out var exact)
+            && _spawnService.IsVisible(exact);
     }
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)

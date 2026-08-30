@@ -38,6 +38,9 @@ public sealed class ShellSidebarRow
     /// <summary>Camera rows: the kind letter between the live and lock
     /// seats — M main, F free, C camera. A marker, not a control.</summary>
     public string CameraMark = "";
+    /// <summary>Camera rows: whether the recenter-on-tracked-actor seat
+    /// has anything to do right now.</summary>
+    public bool CameraCanRecenter;
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
@@ -288,6 +291,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
     public Action<ShellSidebarRow>? OnGroupLock;
+    public Action<ShellSidebarRow>? OnCameraRecenter;
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;

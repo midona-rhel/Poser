@@ -354,11 +354,13 @@ public static partial class Crystarium
             bool shadow = true,
             bool blur = true,
             bool fill = true,
-            bool border = true)
+            bool border = true,
+            float fade = 1f)
         {
             float scale = ImGuiHelpers.GlobalScale;
             if (blur)
-                GlassChrome.PrependBlur(drawList, min, max, radius * scale);
+                GlassChrome.PrependBlur(
+                    drawList, min, max, radius * scale, fade);
             drawList.PushClipRect(Vector2.Zero, ImGui.GetIO().DisplaySize, false);
             BoxRenderer.Draw(
                 drawList,
