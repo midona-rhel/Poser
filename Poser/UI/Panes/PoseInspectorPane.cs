@@ -986,7 +986,7 @@ public class PoseInspectorPane
                 _matrixFilter = next;
                 _matrixVm = null;
             },
-            "Filter bones",
+            "Search",
             ControlStyle.Workspace with
             {
                 Width = UiWidth.Region(MathF.Min(

@@ -119,7 +119,7 @@ public sealed class SpawnBrowserViewModel
 /// </summary>
 public static class SpawnBrowserView
 {
-    public const float DesignHeight = 580f;
+    public const float DesignHeight = 520f;
 
     /// <summary>The window's width floor: room for the search row's field
     /// plus its two icons even if the tab strip ever narrows.</summary>
@@ -134,7 +134,8 @@ public static class SpawnBrowserView
         var theme = Crystarium.ActiveTheme;
         float scale = ImGuiHelpers.GlobalScale;
         float inset = theme.Scrollbar.GutterWidth * RowBarShare + RowPadding;
-        float tabs = Crystarium.MeasureSegmentedControl(TabLabels).X / scale;
+        float tabs = Crystarium.MeasureSegmentedControl(
+            TabIcons, TabText).X / scale;
         return MathF.Max(MinWidth, tabs + inset * 2f);
     }
 
@@ -153,13 +154,16 @@ public static class SpawnBrowserView
     /// the padding stays the padding whatever the pill's height becomes.
     /// </summary>
     private static float TabBandHeight =>
-        Crystarium.MeasureSegmentedControl(TabLabels).Y
+        Crystarium.MeasureSegmentedControl(TabIcons, TabText).Y
             / ImGuiHelpers.GlobalScale
         + Crystarium.ActiveTheme.Spacing.Three * 2f;
 
     /// <summary>The tab strip is the SAME segmented pill every other tab
-    /// strip uses (the shell's workspace tabs), not hand-drawn buttons.
-    /// Order matches <see cref="SpawnBrowserTab"/>.</summary>
+    /// strip uses — the MIXED variant: six text tabs made this window
+    /// super wide, so the kinds wear their icons and only "All" keeps its
+    /// word (short, and no glyph says it better). Order matches
+    /// <see cref="SpawnBrowserTab"/>; the labels survive as the icon
+    /// tabs' hovers.</summary>
     private static readonly string[] TabLabels =
     [
         "All",
@@ -169,6 +173,24 @@ public static class SpawnBrowserView
         "Objects",
         "Overlays",
     ];
+
+    /// <summary>Positional against <see cref="TabLabels"/>; index 0 is
+    /// covered by the text stand-in and never drawn.</summary>
+    private static readonly TablerIcon[] TabIcons =
+    [
+        TablerIcon.Circle,
+        TablerIcon.User,
+        TablerIcon.Bulb,
+        TablerIcon.Camera,
+        TablerIcon.Stack2,
+        TablerIcon.Message,
+    ];
+
+    private static readonly Func<int, string?> TabText =
+        static index => index == 0 ? "All" : null;
+
+    private static readonly Func<int, string?> TabHelp =
+        static index => index == 0 ? null : TabLabels[index];
 
     /// <summary>The freeze/pin/close side in the search row.</summary>
     private const float HeaderButtonSide = 26f;
@@ -279,16 +301,18 @@ public static class SpawnBrowserView
     {
         float inset =
             (theme.Scrollbar.GutterWidth * RowBarShare + RowPadding) * scale;
-        var size = Crystarium.MeasureSegmentedControl(TabLabels);
+        var size = Crystarium.MeasureSegmentedControl(TabIcons, TabText);
         ImGui.SetCursorScreenPos(new Vector2(
             rowMin.X + inset,
             rowMin.Y + (TabBandHeight * scale - size.Y) * 0.5f));
         Crystarium.SegmentedControl(
             "##spawn-browser-tabs",
-            TabLabels,
+            TabIcons,
+            TabText,
             vm.Tab,
             chosen => vm.OnTab?.Invoke(chosen),
-            alignFirstTabToCursor: true);
+            alignFirstTabToCursor: true,
+            itemHelp: TabHelp);
     }
 
     /// <summary>The title bar's content: the search field, sized to leave
@@ -313,7 +337,7 @@ public static class SpawnBrowserView
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
-            "Search everything spawnable",
+            "Search",
             new ControlStyle
             {
                 Width = UiWidth.Region(width - margin - cluster),

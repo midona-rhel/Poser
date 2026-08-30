@@ -767,7 +767,7 @@ public static class PoseLibraryView
             SearchId,
             vm.Query,
             vm.OnQuery ?? IgnoreQuery,
-            "Search poses",
+            "Search",
             new ControlStyle { Width = UiWidth.Fixed(width) });
     }
 

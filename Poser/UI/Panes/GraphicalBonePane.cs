@@ -134,7 +134,7 @@ public sealed class GraphicalBonePane : IDisposable
             "##graphical-bone-filter",
             _filter,
             next => _filter = next,
-            "Filter bones",
+            "Search",
             ControlStyle.Workspace with
             {
                 Width = UiWidth.Region(MathF.Min(

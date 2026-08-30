@@ -142,7 +142,7 @@ public sealed class ShellSidebar
             SearchId,
             vm.SidebarSearch,
             _setSearch,
-            "Filter scene...",
+            "Search",
             ControlStyle.Workspace with { Width = UiWidth.Fixed(pillWidth) });
 
         Sync(vm, theme);

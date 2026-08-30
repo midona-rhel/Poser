@@ -114,6 +114,12 @@ Windows each have ONE job. No mode may change what a window IS.
   titlebar never hosts the gizmo cluster. It carries the brand,
   burger, undo/redo, spawn, project, and the gizmo clusters; new
   global buttons earn a place there.
+- **Spawn browser (the portal)** — the add-to-scene window. Its kind
+  strip is the MIXED segmented variant: the kinds wear their icons
+  (six text tabs made the window super wide) and only "All" keeps
+  its word — short, and no glyph says it better; the kind names
+  survive as the icon tabs' hovers. The window is built around the
+  strip, so the icons are also what makes it compact.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
@@ -421,6 +427,13 @@ texture id.
   the first `Section` explicitly.
 - Section headers, dividers, footers come from PageForm — never
   hand-drawn rules.
+
+## Search fields
+
+Every search or filter field's placeholder is the one word "Search" —
+never "Search poses", "Filter bones", "Search everything spawnable".
+The field's surroundings already say what is being searched; naming it
+again is chrome talking to itself (swept 2026-08-30).
 
 ## Tooltips
 
