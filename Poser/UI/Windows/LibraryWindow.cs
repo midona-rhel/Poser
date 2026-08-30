@@ -140,11 +140,12 @@ public sealed class LibraryWindow : Window
             "poser-library", InteractionLayer.Window, min, max);
         try
         {
-            Crystarium.FloatingSurface.DrawChrome(
-                dl, min, max, theme.Radii.Window);
             // The library stands on the WORKSPACE ground — the darker
-            // coat the main content well wears — not the panels' raised
-            // glass the chrome fills with.
+            // coat the main content well wears. The chrome's own glass
+            // fill stands DOWN for it: two stacked translucent coats read
+            // as one opaque slab.
+            Crystarium.FloatingSurface.DrawChrome(
+                dl, min, max, theme.Radii.Window, fill: false);
             var well = theme.Surface with
             { W = Crystarium.FloatingSurface.FillColor.W };
             dl.AddRectFilled(

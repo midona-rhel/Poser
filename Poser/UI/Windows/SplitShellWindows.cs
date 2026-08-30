@@ -159,16 +159,23 @@ public sealed class SidebarPartWindow : Window
             help: "Merge the shell back into one window",
             id: "##part-reattach-sidebar");
         // The library button is the sidebar titlebar's — this window IS
-        // the sidebar's titlebar while the shell is split.
+        // the sidebar's titlebar while the shell is split. TWO sidebars,
+        // ONE contract: the same TEXT button the merged cell carries.
         if (vm.OnLibrary is { } onLibrary)
         {
+            var labelStyle = new TextStyle
+            { Size = theme.Typography.LabelSize };
+            float labelWidth = Crystarium.MeasureText(
+                "Library", labelStyle).X;
+            float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
             ImGui.SetCursorScreenPos(new Vector2(
-                closeX - theme.Spacing.Two * s - closeSide * s,
+                closeX - theme.Spacing.Two * s - buttonWidth * s,
                 min.Y + (height - closeSide * s) * 0.5f));
-            Crystarium.IconButton(
-                "book",
+            Crystarium.Button(
+                "Library",
                 onLibrary,
-                ControlStyle.Square(closeSide),
+                style: ControlStyle.Square(closeSide) with
+                { Width = UiWidth.Fixed(buttonWidth) },
                 help: "Open the library",
                 id: "##part-library-sidebar");
         }

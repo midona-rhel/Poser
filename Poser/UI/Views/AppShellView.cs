@@ -605,9 +605,25 @@ public static class AppShellView
             // The pill stays on the toolbar window — the cell carries no
             // duplicate of anything the toolbar already states. The
             // sidebar itself never hides: no chevron, no collapse.
-            DrawBrandPill(
+            float brandEnd = DrawBrandPill(
                 vm, min.X + TitleInset * s, min.Y, height, s, dl,
                 pill: false);
+            // The burger LEFT-aligns by the brand; the Library text
+            // button keeps the cell's right.
+            float burgerSide = theme.Controls.ShellIconAction;
+            float burgerX = brandEnd + theme.Spacing.Four * s;
+            float burgerY = min.Y + (height - burgerSide * s) * 0.5f;
+            IconAt(
+                new Vector2(burgerX, burgerY),
+                TablerIcon.Menu2, burgerSide, BurgerPressed,
+                "##shell-burger",
+                help: "Actions");
+            if (_burgerPressed)
+            {
+                _burgerPressed = false;
+                vm.OnBurger?.Invoke(
+                    new Vector2(burgerX, burgerY + burgerSide * s));
+            }
             // The title cell's content stops at the divider's x whether or
             // not the divider paints this state: collapse must not shift
             // the cluster by the rule's pixel.
@@ -754,47 +770,31 @@ public static class AppShellView
             + text;
     }
 
-    /// <summary>The burger and the Library TEXT button, right-aligned in
-    /// the title cell. Nothing else: undo, redo, spawn and the GPose pill
-    /// live on the toolbar window, and the cell never duplicates the
-    /// toolbar.</summary>
+    /// <summary>The Library TEXT button alone, right-aligned in the title
+    /// cell — the burger left-aligns by the brand. Nothing else: undo,
+    /// redo, spawn and the GPose pill live on the toolbar window, and the
+    /// cell never duplicates the toolbar.</summary>
     private static void DrawCellActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
+        if (vm.OnLibrary is not { } onLibrary)
+            return;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float y = top + (height - side * s) * 0.5f;
-        float x = right;
-        if (vm.OnLibrary is { } onLibrary)
-        {
-            var labelStyle = new TextStyle
-            { Size = theme.Typography.LabelSize };
-            float labelWidth = Crystarium.MeasureText(
-                "Library", labelStyle).X;
-            float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
-            x -= buttonWidth * s;
-            ImGui.SetCursorScreenPos(new Vector2(x, y));
-            Crystarium.Button(
-                "Library",
-                onLibrary,
-                style: ControlStyle.Square(side) with
-                { Width = UiWidth.Fixed(buttonWidth) },
-                help: "Open the library",
-                id: "##shell-library");
-            x -= theme.Spacing.Two * s;
-        }
-        x -= side * s;
-        // The command menu is anchored to its button. The static callback
-        // records the press without allocating a frame closure.
-        IconAt(
-            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
-            "##shell-burger",
-            help: "Actions");
-        if (_burgerPressed)
-        {
-            _burgerPressed = false;
-            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
-        }
+        var labelStyle = new TextStyle
+        { Size = theme.Typography.LabelSize };
+        float labelWidth = Crystarium.MeasureText(
+            "Library", labelStyle).X;
+        float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
+        ImGui.SetCursorScreenPos(new Vector2(right - buttonWidth * s, y));
+        Crystarium.Button(
+            "Library",
+            onLibrary,
+            style: ControlStyle.Square(side) with
+            { Width = UiWidth.Fixed(buttonWidth) },
+            help: "Open the library",
+            id: "##shell-library");
     }
 
 

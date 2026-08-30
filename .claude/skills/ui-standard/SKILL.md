@@ -89,10 +89,15 @@ Windows each have ONE job. No mode may change what a window IS.
   the same line: adopt brings the world's things in, the plus adds
   anything new.
 - **The cell never duplicates the toolbar.** The sidebar titlebar
-  cell carries the brand (no GPose pill), the burger and the
-  library button — a TEXT button reading "Library", right-aligned —
-  nothing else. The DETACHED sidebar window's bar carries the
-  library button too: whatever hosts the sidebar hosts its button. Undo, redo, spawn, the
+  cell carries the brand (no GPose pill), the burger LEFT-aligned
+  by the brand, and the library button — a TEXT button reading
+  "Library", right-aligned — nothing else.
+- **TWO SIDEBARS, ONE CONTRACT.** The sidebar exists in TWO hosts —
+  the merged shell's cell and the detached Scene window — and EVERY
+  sidebar-chrome change lands in BOTH in the same pass. This has
+  been missed twice (icon button 2026-08-30, text button the same
+  day): before finishing any sidebar change, open SplitShellWindows
+  and apply it there too. Undo, redo, spawn, the
   GPose pill and the gizmo clusters live on the toolbar window
   alone; a second copy in the titlebar is a defect (shipped once,
   overlapping, 2026-08-30). Detaching the shell never repositions
