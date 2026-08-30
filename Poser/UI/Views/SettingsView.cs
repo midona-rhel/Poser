@@ -100,6 +100,7 @@ public sealed class SettingsViewModel
     public bool SwapRotationXY;
     public bool ShowInGPose = true;
     public bool ShowInCutscene = true;
+    public bool HideWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
     public string PoseFolder = "";
@@ -134,6 +135,11 @@ public sealed class SettingsViewModel
     public Action<string>? DebugLog;
     public string RebindProbe = string.Empty;
     public int RebindProbeFrame;
+
+    /// <summary>A refused capture's standing answer — a chord already
+    /// bound elsewhere is never applied; the message stands until a new
+    /// chord lands or the capture disarms.</summary>
+    public string RebindRefusal = string.Empty;
 
     public int PresetIndex;
     public bool PresetArmed;
@@ -900,6 +906,16 @@ public static class SettingsView
                 next => vm.ShowInCutscene = next,
                 "Keep Poser on screen during cutscenes");
             form.Switch(
+                "Hide while manipulating",
+                vm.HideWhileManipulating,
+                next => vm.HideWhileManipulating = next,
+                "Hide the windows while a gizmo drag is held");
+            form.Switch(
+                "Hide while manipulating",
+                vm.HideWhileManipulating,
+                next => vm.HideWhileManipulating = next,
+                "Hide the windows while a gizmo drag is held");
+            form.Switch(
                 "Show with game UI hidden",
                 vm.ShowWhenGameUiHidden,
                 next => vm.ShowWhenGameUiHidden = next,
@@ -1055,6 +1071,7 @@ public static class SettingsView
                 vm.RebindingAction = capturing ? null : action.Id;
                 vm.RebindingSlot = slot;
                 vm.PresetArmed = false;
+                vm.RebindRefusal = string.Empty;
                 vm.RebindHeld.Clear();
                 foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
                     if (vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey))
@@ -1305,10 +1322,12 @@ public static class SettingsView
         var io = ImGui.GetIO();
 
         // The probe found the stubbed key source (2026-08-30) and retired;
-        // the armed line states the plain instructions instead.
-        vm.RebindProbe =
-            $"Listening for {action}… press a chord. Escape cancels, "
-            + "Backspace clears the slot.";
+        // the armed line states the plain instructions — or the refusal,
+        // which stands until another chord lands.
+        vm.RebindProbe = vm.RebindRefusal.Length > 0
+            ? vm.RebindRefusal
+            : $"Listening for {action}… press a chord. Escape cancels, "
+                + "Backspace clears the slot.";
 
         if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
             || ImGui.IsKeyDown(ImGuiKey.Escape))
@@ -1338,7 +1357,7 @@ public static class SettingsView
             }
             if (vm.RebindHeld.Contains(key))
                 continue;
-            slots[vm.RebindingSlot] = new KeyChord(
+            string chord = new KeyChord(
                 io.KeyCtrl || vm.KeyDown(
                     Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL),
                 io.KeyShift || vm.KeyDown(
@@ -1346,9 +1365,33 @@ public static class SettingsView
                 io.KeyAlt || vm.KeyDown(
                     Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
                 key).ToString();
+            // NO colliding binds: a chord already bound anywhere else is
+            // REFUSED — the capture stays armed and says who holds it.
+            string? holder = null;
+            foreach (var (otherAction, otherSlots) in vm.Bindings)
+                for (int otherSlot = 0; otherSlot < 2; otherSlot++)
+                {
+                    if (otherAction == action
+                        && otherSlot == vm.RebindingSlot)
+                        continue;
+                    if (string.Equals(
+                            otherSlots[otherSlot], chord,
+                            StringComparison.Ordinal))
+                        holder = otherAction;
+                }
+            if (holder != null)
+            {
+                vm.RebindRefusal =
+                    $"{chord} is bound to “{holder}” — press "
+                    + "another chord";
+                vm.RebindHeld.Add(key);
+                return;
+            }
+            slots[vm.RebindingSlot] = chord;
             vm.BindingRevision++;
             vm.RebindingAction = null;
             vm.RebindHeld.Clear();
+            vm.RebindRefusal = string.Empty;
             return;
         }
     }

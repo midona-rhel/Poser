@@ -427,6 +427,15 @@ public static class RotationGizmoRings
 /// or its release frame — owns the pointer, selection surfaces (skeleton
 /// overlay, 3D view) must not treat the click as a bone/actor pick.
 /// </summary>
+/// <summary>Whether the shell windows hide THIS frame because a world
+/// manipulation is held (#77): the setting AND a live gesture. Written
+/// once per frame by the UI root; the shell windows early-out on it.
+/// Reference images and the overlays deliberately stay visible.</summary>
+public static class ManipulationHide
+{
+    public static bool Active;
+}
+
 public static class GizmoPointerOwnership
 {
     private static int _ownedUntilFrame = -1;

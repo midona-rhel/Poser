@@ -1151,7 +1151,7 @@ public class MainWindow : Window
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
-        if (!_contentHidden)
+        if (!_contentHidden && !Controls.ManipulationHide.Active)
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
         DrawShellMenu();

@@ -173,6 +173,7 @@ public class SettingsWindow : Window
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
             ShowInGPose = c.UI.ShowInGPose,
+            HideWhileManipulating = c.UI.HideWhileManipulating,
             ShowInCutscene = c.UI.ShowInCutscene,
             ShowWhenGameUiHidden = c.UI.ShowWhenGameUiHidden,
             SwapRotationXY = c.UI.SwapRotationXY,
@@ -370,6 +371,7 @@ public class SettingsWindow : Window
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
         c.UI.ShowInGPose = _vm.ShowInGPose;
+        c.UI.HideWhileManipulating = _vm.HideWhileManipulating;
         c.UI.ShowInCutscene = _vm.ShowInCutscene;
         c.UI.ShowWhenGameUiHidden = _vm.ShowWhenGameUiHidden;
         c.UI.SwapRotationXY = _vm.SwapRotationXY;

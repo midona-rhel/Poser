@@ -99,7 +99,7 @@ public sealed class SidebarPartWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen)
+        if (!_main.IsOpen || Controls.ManipulationHide.Active)
             return;
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
@@ -253,7 +253,7 @@ public sealed class ToolbarPartWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen)
+        if (!_main.IsOpen || Controls.ManipulationHide.Active)
             return;
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
