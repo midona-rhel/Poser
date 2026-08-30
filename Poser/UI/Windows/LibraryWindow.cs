@@ -44,6 +44,12 @@ public sealed class LibraryWindow : Window
     /// options take the rest of the band.</summary>
     private const float SceneInfoColumnWidth = 320f;
 
+    /// <summary>The footer band's content width cap, logical — the grid
+    /// spreads its columns across whatever it is given, and the importer's
+    /// own window is about this wide. The cap is what LEFT-ALIGNS the
+    /// options in a wide library window.</summary>
+    private const float FooterContentWidth = 760f;
+
     public LibraryWindow(MainWindow main)
         : base($"Library###{PluginConstants.PluginName}_library",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -111,44 +117,54 @@ public sealed class LibraryWindow : Window
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float barBottom = DrawBar(min, max, s, dl);
+            float stripBottom = DrawTypeStrip(min, max, barBottom, s, dl);
 
             var pane = _main.LibraryPane;
             var type = (PoseLibraryPane.LibraryType)pane.SelectedType;
 
+            bool preview = type is PoseLibraryPane.LibraryType.Poses
+                or PoseLibraryPane.LibraryType.AutoSaves;
+            float inset = theme.Page.Inset * s;
+            float margin = theme.Spacing.Six * s;
+            float previewSpan = preview
+                ? (PreviewColumnWidth * s) + inset * 2f
+                : 0f;
+            float navigatorRight = max.X - previewSpan;
+
             // ONE footer height for every type — the band's content
             // changes, its frame does not, so the strip never reflows
-            // the window.
-            float footerHeight = _main.PoseFiles.OptionsBandHeight() * s;
+            // the window. It spans the NAVIGATOR only: the preview runs
+            // the entire height beside it, its left edge anchored to the
+            // window.
+            float footerHeight =
+                _main.PoseFiles.OptionsBandHeight() * s + margin * 2f;
             float rule = MathF.Max(1f, s);
             float footerTop = max.Y - footerHeight - rule;
             dl.AddRectFilled(
                 new Vector2(min.X, MathF.Round(footerTop)),
-                new Vector2(max.X, MathF.Round(footerTop + rule)),
+                new Vector2(navigatorRight, MathF.Round(footerTop + rule)),
                 ImGui.ColorConvertFloat4ToU32(
                     ColorEx.ApplyAlpha(theme.FormSeparator)));
 
-            bool preview = type is PoseLibraryPane.LibraryType.Poses
-                or PoseLibraryPane.LibraryType.AutoSaves;
-            float inset = theme.Page.Inset * s;
-            float previewSpan = preview
-                ? (PreviewColumnWidth * s) + inset * 2f
-                : 0f;
-
             pane.Draw(
-                new Vector2(min.X, barBottom),
+                new Vector2(min.X, stripBottom),
                 new Vector2(
-                    max.X - min.X - previewSpan,
-                    footerTop - barBottom));
+                    navigatorRight - min.X,
+                    footerTop - stripBottom));
             if (preview)
                 _main.PoseFiles.DrawPreviewColumn(
-                    new Vector2(
-                        max.X - previewSpan + inset, barBottom + inset),
+                    new Vector2(navigatorRight + inset, stripBottom + inset),
                     new Vector2(
                         PreviewColumnWidth * s,
-                        footerTop - barBottom - inset * 2f));
+                        max.Y - stripBottom - inset * 2f));
 
-            var footerOrigin = new Vector2(min.X, footerTop + rule);
-            var footerSize = new Vector2(max.X - min.X, footerHeight);
+            // The band's content left-aligns at a capped width and
+            // breathes off the rule and the window bottom.
+            var footerOrigin = new Vector2(min.X, footerTop + rule + margin);
+            var footerSize = new Vector2(
+                MathF.Min(
+                    navigatorRight - min.X, FooterContentWidth * s),
+                footerHeight - margin * 2f);
             switch (type)
             {
                 case PoseLibraryPane.LibraryType.Poses:
@@ -180,7 +196,8 @@ public sealed class LibraryWindow : Window
         }
     }
 
-    /// <summary>The bar: the title, the type strip, the close.</summary>
+    /// <summary>The bar: the title and the close — NOTHING else lives in
+    /// a titlebar. The type strip gets its own band below.</summary>
     private float DrawBar(Vector2 min, Vector2 max, float s, ImDrawListPtr dl)
     {
         var theme = Crystarium.ActiveTheme;
@@ -200,23 +217,6 @@ public sealed class LibraryWindow : Window
             "Library",
             titleStyle);
 
-        var pane = _main.LibraryPane;
-        int active = Array.IndexOf(
-            StripOrder, (PoseLibraryPane.LibraryType)pane.SelectedType);
-        var stripSize = Crystarium.MeasureSegmentedControl(StripLabels);
-        ImGui.SetCursorScreenPos(new Vector2(
-            min.X + inset + titleWidth + theme.Spacing.Six * s,
-            min.Y + (height - stripSize.Y) * 0.5f));
-        Crystarium.SegmentedControl(
-            "##library-type",
-            StripLabels,
-            active < 0 ? 0 : active,
-            index =>
-            {
-                if (index >= 0 && index < StripOrder.Length)
-                    pane.SelectType((int)StripOrder[index]);
-            });
-
         float closeSide = theme.Floating.CloseActionSize;
         ImGui.SetCursorScreenPos(new Vector2(
             max.X - theme.Floating.CloseInset * s - closeSide * s,
@@ -235,5 +235,40 @@ public sealed class LibraryWindow : Window
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
         return min.Y + height;
+    }
+
+    /// <summary>The type strip's own band, between the titlebar and the
+    /// navigator — a titlebar carries a title, not navigation.</summary>
+    private float DrawTypeStrip(
+        Vector2 min, Vector2 max, float top, float s, ImDrawListPtr dl)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float height = theme.Floating.ModalBarHeight * s;
+        float inset = theme.Page.Inset * s;
+
+        var pane = _main.LibraryPane;
+        int active = Array.IndexOf(
+            StripOrder, (PoseLibraryPane.LibraryType)pane.SelectedType);
+        var stripSize = Crystarium.MeasureSegmentedControl(StripLabels);
+        ImGui.SetCursorScreenPos(new Vector2(
+            min.X + inset,
+            top + (height - stripSize.Y) * 0.5f));
+        Crystarium.SegmentedControl(
+            "##library-type",
+            StripLabels,
+            active < 0 ? 0 : active,
+            index =>
+            {
+                if (index >= 0 && index < StripOrder.Length)
+                    pane.SelectType((int)StripOrder[index]);
+            });
+
+        float rule = MathF.Max(1f, s);
+        dl.AddRectFilled(
+            new Vector2(min.X, MathF.Round(top + height - rule)),
+            new Vector2(max.X, MathF.Round(top + height)),
+            ImGui.ColorConvertFloat4ToU32(
+                ColorEx.ApplyAlpha(theme.FormSeparator)));
+        return top + height;
     }
 }

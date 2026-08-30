@@ -51,17 +51,22 @@ Windows each have ONE job. No mode may change what a window IS.
   opening it replaces nothing (shipped once as a full-width main
   workspace with an inspector-styled rail; both rejected 2026-08-30).
   Reached from the sidebar titlebar's library button, the Scene
-  panel's "Open library…" verb and the burger menu. Its bar carries
-  the title, the type strip and the close; the strip leads with the
-  tabs that can PREVIEW (Poses, Auto-saves) and stands the file-info
-  tabs (MCDF, Scenes) at the far right. The types that preview get a
-  PLAIN preview column (the old rail width less a fifth, 224 — the
-  library has NO inspector and nothing styled as one); every other
-  type hands that width back to the navigator. The footer is the
-  importer-style options band at ONE height whatever the type —
-  switching tabs changes the band's content, never the frame: pose
-  apply options, scene file-info plus load options, MCDF file info,
-  object properties.
+  panel's "Open library…" verb and the burger menu. A TITLEBAR
+  carries a title and a close, nothing else — the type strip gets
+  its OWN band below it (corrected 2026-08-30), leading with the
+  tabs that can PREVIEW (Poses, Auto-saves) and standing the
+  file-info tabs (MCDF, Scenes) at the far right. The types that
+  preview get a PLAIN preview column (224 logical — the library has
+  NO inspector and nothing styled as one) running the ENTIRE height
+  beside the footer, its left edge anchored to the window; every
+  other type hands that width back to the navigator. The footer is
+  the importer-style options band under the navigator only, at ONE
+  height whatever the type — switching tabs changes the band's
+  content, never the frame — its content LEFT-ALIGNED at the
+  importer's own width (a grid handed the whole window spreads,
+  which is why the cap exists) and breathing a margin off the rule
+  and the window bottom: pose apply options, scene file-info plus
+  load options, MCDF file info, object properties.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the
