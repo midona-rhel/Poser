@@ -1323,27 +1323,11 @@ public static class SettingsView
         // been released once.
         var io = ImGui.GetIO();
 
-        // The live probe: what BOTH sources see this frame, shown in the
-        // page and logged (throttled). This line is the ground truth the
-        // three blind fixes never had.
-        int gameDown = 0;
-        int imguiDown = 0;
-        string first = "none";
-        foreach (var (probeKey, probeImGui) in KeyChord.CapturableTokens())
-        {
-            bool g = vm.KeyDown(probeKey);
-            bool m = ImGui.IsKeyDown(probeImGui);
-            if (g) gameDown++;
-            if (m) imguiDown++;
-            if ((g || m) && first == "none")
-                first = probeKey.ToString();
-        }
+        // The probe found the stubbed key source (2026-08-30) and retired;
+        // the armed line states the plain instructions instead.
         vm.RebindProbe =
-            $"Listening for {action}… game:{gameDown} imgui:{imguiDown} "
-            + $"first:{first} held:{vm.RebindHeld.Count} "
-            + $"capture:{io.WantCaptureKeyboard} text:{io.WantTextInput}";
-        if (++vm.RebindProbeFrame % 30 == 0 || first != "none")
-            vm.DebugLog?.Invoke($"[Rebind] {vm.RebindProbe}");
+            $"Listening for {action}… press a chord. Escape cancels, "
+            + "Backspace clears the slot.";
 
         if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
             || ImGui.IsKeyDown(ImGuiKey.Escape))
