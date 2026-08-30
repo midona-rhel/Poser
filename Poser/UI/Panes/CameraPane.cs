@@ -342,7 +342,8 @@ public sealed class CameraPane
                     (r == 1 && (!pinned || !_cameras.IsAvailable)),
                 r => r == 1 && !pinned
                     ? "Pin the position to edit it"
-                    : locked ? "The camera is locked" : null));
+                    : locked ? "The camera is locked" : null,
+                altReset: r => r == 0 ? 0f : null));
 
         form.Switch(
             "Pin position", camera.FixedPosition is not null,

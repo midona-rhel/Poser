@@ -139,9 +139,15 @@ public static partial class Crystarium
             Func<T, string>? key = null,
             string? selectedKey = null,
             string? loadError = null,
-            in PickerOptions<T> options = default)
+            in PickerOptions<T> options = default,
+            Vector2? anchor = null)
         {
             Arm(owner, null, items, label, key, loadError, in options);
+            if (anchor is { } at)
+            {
+                _anchorMin = at;
+                _anchorMax = at;
+            }
             _selectedKey = selectedKey;
             _selectedKeys = null;
             _onToggle = null;
@@ -258,6 +264,9 @@ public static partial class Crystarium
             string? loadError,
             in PickerOptions<T> options)
         {
+            // The DEFAULT anchor is the initiating control — the last item
+            // drawn before the open. A surface spawned from a MENU has no
+            // meaningful last item and passes the click instead.
             _anchorMin = ImGui.GetItemRectMin();
             _anchorMax = ImGui.GetItemRectMax();
             _owner = owner;

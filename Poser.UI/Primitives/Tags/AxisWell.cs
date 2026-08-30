@@ -29,7 +29,8 @@ public static partial class Crystarium
         string format,
         ControlStyle style = default,
         bool disabled = false,
-        bool adaptiveDisplay = false)
+        bool adaptiveDisplay = false,
+        float? altReset = null)
     {
         float scale = ImGuiHelpers.GlobalScale;
         var metrics = ControlSizing.Resolve(
@@ -54,7 +55,20 @@ public static partial class Crystarium
         // scrolls normally.
         ImGuiP.SetItemUsingMouseWheel();
         bool changed = false;
-        if (hit.DoubleClicked)
+        // Alt-click resets to the stated default — the slider's own
+        // gesture, spoken by every value control that HAS a default.
+        if (hit.Clicked && ImGui.GetIO().KeyAlt
+            && altReset is { } fallback && !disabled)
+        {
+            if (value != fallback)
+            {
+                onChange(fallback);
+                value = fallback;
+                changed = true;
+            }
+            onCommit?.Invoke();
+        }
+        else if (hit.DoubleClicked)
         {
             _axisEditId = id;
             _axisEditValue = value;
