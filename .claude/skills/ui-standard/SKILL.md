@@ -264,6 +264,10 @@ navigation, not a scrollbar — may shift anything.
 - FREE CONTROLS — buttons or chips sharing a row with no label column
   (the gaze Eyes/Head parts) — also distribute equally. No label does
   not mean no alignment: the spacing IS the alignment.
+- In a window that DOES one thing, the verb leaves the row: every
+  portal row adds, so "New spot light" is "Spot light" — half the
+  rows had already dropped the prefix, and a list that says "New"
+  five times is chrome talking to itself.
 - A control's name states EXACTLY what it acts on: "Brow left" moves
   the LEFT brow alone; a control that moves both brows is named for
   both. A precise name on an imprecise control is a defect either way.
@@ -430,6 +434,18 @@ texture id.
   the first `Section` explicitly.
 - Section headers, dividers, footers come from PageForm — never
   hand-drawn rules.
+
+## Icons
+
+A latched or emphasised glyph uses Tabler's OWN filled twin
+(<name>-filled in the sources), rendered through the one icon
+pipeline. Hand-rolling a filled shape under an outline shipped once
+(the favourite star, 2026-08-30) and read as nonsense — land the real
+filled source instead. And filled sources render through the SAME
+supersampled coverage mask strokes use: the direct triangulated fill
+had no anti-aliasing, which is why pin-filled and pause-filled read
+as the worst glyphs in the app until 2026-08-30. And a kind's glyph is stated ONCE: the spawn
+strip's Objects tab wears the same Diamond its object rows wear.
 
 ## Search fields
 

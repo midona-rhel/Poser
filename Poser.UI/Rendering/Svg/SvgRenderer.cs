@@ -26,8 +26,8 @@ internal static class SvgRenderer
             SvgStrokeMask.Draw(
                 drawList, paths, svgToScreen, scale, tint,
                 strokeWidthOverride, groupOpacity, groupBackground);
-            // The mask IS the whole icon here: every path is a stroke of one
-            // colour and none carries a fill, so the paint loop below has
+            // The mask IS the whole icon here: every path paints in the one
+            // composite colour, fills included, so the paint loop below has
             // nothing left to emit. Returning skips its per-sub-path point
             // buffers, which used to be built and thrown away every draw.
             return;
@@ -72,22 +72,27 @@ internal static class SvgRenderer
     }
 
     /// <summary>
-    /// Stroke-only single-color icons ALWAYS take the union mask — not just
-    /// composited ones. The polyline fallback overdraws: its round caps/joins
-    /// are filled circles blended ON TOP of the polyline body, so a
-    /// translucent tint alpha-stacks wherever they overlap (the seam where
-    /// Tabler's two circle arcs meet read ~35% heavier than the ring —
-    /// user-reported). The mask emits each pixel once from a supersampled
-    /// union, like the browser's analytic stroke. Filled/multicolor SVGs keep
-    /// the direct paint ordering.
+    /// SINGLE-COLOR icons ALWAYS take the union mask — stroked, filled
+    /// (Tabler's -filled twins) or both. The polyline fallback overdraws:
+    /// its round caps/joins are filled circles blended ON TOP of the
+    /// polyline body, so a translucent tint alpha-stacks wherever they
+    /// overlap. And the direct triangulated fill carries NO anti-aliasing
+    /// at all — pin-filled and player-pause-filled shipped as jagged
+    /// nonsense through it (user-reported 2026-08-30). The mask emits each
+    /// pixel once from a supersampled union, like the browser's analytic
+    /// rasterizer. Multicolor SVGs keep the direct paint ordering.
     /// </summary>
     internal static bool UsesStrokeMask(IReadOnlyList<SvgPath> paths)
     {
         Vector4? compositeColor = null;
         foreach (var path in paths)
         {
-            if (path.Fill.HasValue)
-                return false;
+            if (path.Fill is { } fill)
+            {
+                if (compositeColor.HasValue && compositeColor.Value != fill)
+                    return false;
+                compositeColor = fill;
+            }
             if (path.Stroke is { } stroke)
             {
                 if (compositeColor.HasValue && compositeColor.Value != stroke)

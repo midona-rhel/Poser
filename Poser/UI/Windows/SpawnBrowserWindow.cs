@@ -341,10 +341,10 @@ public sealed class SpawnBrowserWindow : Window
 
         var rows = _vm.Rows;
         rows.Add(ActionRow(
-            "##spawn-new-actor", "New actor", TablerIcon.UserPlus));
+            "##spawn-new-actor", "Actor", TablerIcon.UserPlus));
         rows.Add(ActionRow(
             "##spawn-new-actor-companion",
-            "New actor with companion slot",
+            "Actor with companion slot",
             TablerIcon.Paw));
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
@@ -370,19 +370,19 @@ public sealed class SpawnBrowserWindow : Window
         // doing nothing. Availability is fixed for the session.
         bool noLights = !_lightingService.IsAvailable;
         rows.Add(ActionRow(
-            "##spawn-light-spot", "New spot light", TablerIcon.Spotlight,
+            "##spawn-light-spot", "Spot light", TablerIcon.Spotlight,
             noLights));
         rows.Add(ActionRow(
-            "##spawn-light-point", "New point light", TablerIcon.Bulb,
+            "##spawn-light-point", "Point light", TablerIcon.Bulb,
             noLights));
         rows.Add(ActionRow(
-            "##spawn-light-area", "New area light", TablerIcon.LightPanel,
+            "##spawn-light-area", "Area light", TablerIcon.LightPanel,
             noLights));
         rows.Add(ActionRow(
-            "##spawn-light-directional", "New directional light",
+            "##spawn-light-directional", "Directional light",
             TablerIcon.Sun, noLights));
         rows.Add(ActionRow(
-            "##spawn-light-file", "New light from file", TablerIcon.File,
+            "##spawn-light-file", "Light from file", TablerIcon.File,
             noLights));
         // Capture takes a copy of a light the world itself placed and
         // suppresses the original; availability moves with the player, so this
@@ -395,15 +395,15 @@ public sealed class SpawnBrowserWindow : Window
         // signature a create is a silent no-op, so they read as disabled.
         bool noCameras = !_cameraService.IsAvailable;
         rows.Add(ActionRow(
-            "##spawn-camera", "New camera", TablerIcon.Camera, noCameras,
+            "##spawn-camera", "Camera", TablerIcon.Camera, noCameras,
             help: "A second view over the game camera, switchable any time"));
         rows.Add(ActionRow(
-            "##spawn-camera-free", "New free camera", TablerIcon.Video,
+            "##spawn-camera-free", "Free camera", TablerIcon.Video,
             noCameras,
             help: "A camera that flies free of the orbit, on WASD and "
                 + "right-drag"));
         rows.Add(ActionRow(
-            "##spawn-camera-file", "New camera from file", TablerIcon.File,
+            "##spawn-camera-file", "Camera from file", TablerIcon.File,
             noCameras));
         // A reference picture needs no native signature and no scene entity,
         // so it is never disabled.

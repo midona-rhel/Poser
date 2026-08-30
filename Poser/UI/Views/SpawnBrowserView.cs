@@ -182,7 +182,7 @@ public static class SpawnBrowserView
         TablerIcon.User,
         TablerIcon.Bulb,
         TablerIcon.Camera,
-        TablerIcon.Stack2,
+        TablerIcon.Diamond,
         TablerIcon.Message,
     ];
 

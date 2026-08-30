@@ -21,6 +21,12 @@ internal static class SvgStrokeMask
         bool RoundCaps,
         bool RoundJoins);
 
+    /// <summary>One PATH's filled region: all its rings together, so a
+    /// hole (an inner ring winding the other way) stays a hole.</summary>
+    private readonly record struct Fill(
+        List<List<Vector2>> Rings,
+        bool EvenOdd);
+
     // Internal rather than private only so <see cref="Baked"/> can surface an
     // array of them across the worker/main-thread boundary.
     internal readonly record struct Pixel(short X, short Y, byte Coverage);
@@ -203,6 +209,7 @@ internal static class SvgStrokeMask
         baseStroke = default;
 
         var strokes = new List<Stroke>();
+        var fills = new List<Fill>();
         Vector4? baseColor = null;
         float minX = float.MaxValue;
         float minY = float.MaxValue;
@@ -211,6 +218,34 @@ internal static class SvgStrokeMask
 
         foreach (var path in paths)
         {
+            if (path.Fill is { } fillColor)
+            {
+                baseColor ??= fillColor;
+                var rings = new List<List<Vector2>>();
+                foreach (var subPath in path.SubPaths)
+                {
+                    if (subPath.Points.Count < 3)
+                        continue;
+                    var ring = new List<Vector2>(subPath.Points.Count);
+                    foreach (var source in subPath.Points)
+                    {
+                        var point = svgToScreen(source);
+                        if (ring.Count > 0
+                            && Vector2.DistanceSquared(ring[^1], point)
+                                <= 0.0001f)
+                            continue;
+                        ring.Add(point);
+                        minX = MathF.Min(minX, point.X - 1f);
+                        minY = MathF.Min(minY, point.Y - 1f);
+                        maxX = MathF.Max(maxX, point.X + 1f);
+                        maxY = MathF.Max(maxY, point.Y + 1f);
+                    }
+                    if (ring.Count >= 3)
+                        rings.Add(ring);
+                }
+                if (rings.Count > 0)
+                    fills.Add(new(rings, path.EvenOddFill));
+            }
             float width = (strokeWidthOverride ?? path.StrokeWidth) * scale;
             if (path.Stroke is not { } strokeColor || width <= 0f)
                 continue;
@@ -247,14 +282,15 @@ internal static class SvgStrokeMask
             }
         }
 
-        if (strokes.Count == 0 || baseColor is not { } stroke)
+        if ((strokes.Count == 0 && fills.Count == 0)
+            || baseColor is not { } stroke)
             return false;
 
         baseStroke = stroke;
         origin = new Vector2(MathF.Floor(minX), MathF.Floor(minY));
         widthPixels = Math.Max(1, (int)MathF.Ceiling(maxX) - (int)origin.X);
         heightPixels = Math.Max(1, (int)MathF.Ceiling(maxY) - (int)origin.Y);
-        ulong key = Hash(strokes, origin, widthPixels, heightPixels);
+        ulong key = Hash(strokes, fills, origin, widthPixels, heightPixels);
         // The BUILD deliberately stays OUTSIDE the gate: it is the expensive
         // part (width x height x 16 coverage samples), and holding the lock
         // across it would let a background resolve stall the frame — the very
@@ -269,7 +305,7 @@ internal static class SvgStrokeMask
                 return true;
             }
         }
-        mask = Build(strokes, origin, widthPixels, heightPixels);
+        mask = Build(strokes, fills, origin, widthPixels, heightPixels);
         lock (CacheGate)
         {
             if (Cache.Count >= MaxCachedMasks)
@@ -331,6 +367,7 @@ internal static class SvgStrokeMask
 
     private static Mask Build(
         List<Stroke> strokes,
+        List<Fill> fills,
         Vector2 origin,
         int width,
         int height)
@@ -348,7 +385,7 @@ internal static class SvgStrokeMask
                         var point = origin + new Vector2(
                             x + (sx + 0.5f) / Subsamples,
                             y + (sy + 0.5f) / Subsamples);
-                        coverage += Coverage(strokes, point);
+                        coverage += Coverage(strokes, fills, point);
                     }
                 }
                 coverage /= Subsamples * Subsamples;
@@ -362,9 +399,12 @@ internal static class SvgStrokeMask
         return new Mask { Pixels = pixels.ToArray() };
     }
 
-    private static float Coverage(List<Stroke> strokes, Vector2 point)
+    private static float Coverage(
+        List<Stroke> strokes, List<Fill> fills, Vector2 point)
     {
-        float coverage = 0f;
+        float coverage = FillCoverage(fills, point);
+        if (coverage >= 1f)
+            return coverage;
         foreach (var stroke in strokes)
         {
             int segmentCount = stroke.Closed
@@ -412,6 +452,53 @@ internal static class SvgStrokeMask
         return coverage;
     }
 
+    /// <summary>Inside-the-region test per FILL: nonzero winding (or
+    /// even-odd where the source says so) across ALL the fill's rings at
+    /// once, so holes hole. Hard 0-or-1 — the build's 16 subsamples are
+    /// the anti-aliasing.</summary>
+    private static float FillCoverage(List<Fill> fills, Vector2 point)
+    {
+        foreach (var fill in fills)
+        {
+            int winding = 0;
+            int crossings = 0;
+            foreach (var ring in fill.Rings)
+            {
+                for (int i = 0; i < ring.Count; i++)
+                {
+                    var a = ring[i];
+                    var b = ring[(i + 1) % ring.Count];
+                    bool aBelow = a.Y <= point.Y;
+                    bool bBelow = b.Y <= point.Y;
+                    if (aBelow == bBelow)
+                        continue;
+                    float side =
+                        (b.X - a.X) * (point.Y - a.Y)
+                        - (point.X - a.X) * (b.Y - a.Y);
+                    if (aBelow)
+                    {
+                        if (side > 0f)
+                            winding++;
+                    }
+                    else if (side < 0f)
+                    {
+                        winding--;
+                    }
+                    float xCross = a.X
+                        + (point.Y - a.Y) / (b.Y - a.Y) * (b.X - a.X);
+                    if (xCross > point.X)
+                        crossings++;
+                }
+            }
+            bool inside = fill.EvenOdd
+                ? (crossings & 1) != 0
+                : winding != 0;
+            if (inside)
+                return 1f;
+        }
+        return 0f;
+    }
+
     private static float DistanceToStrip(
         Vector2 point, Vector2 a, Vector2 b)
     {
@@ -431,6 +518,7 @@ internal static class SvgStrokeMask
 
     private static ulong Hash(
         List<Stroke> strokes,
+        List<Fill> fills,
         Vector2 origin,
         int width,
         int height)
@@ -458,6 +546,20 @@ internal static class SvgStrokeMask
             {
                 Add(BitConverter.SingleToUInt32Bits(point.X - origin.X));
                 Add(BitConverter.SingleToUInt32Bits(point.Y - origin.Y));
+            }
+        }
+        foreach (var fill in fills)
+        {
+            Add(0xF111u);
+            Add(fill.EvenOdd ? 1u : 0u);
+            foreach (var ring in fill.Rings)
+            {
+                Add((uint)ring.Count);
+                foreach (var point in ring)
+                {
+                    Add(BitConverter.SingleToUInt32Bits(point.X - origin.X));
+                    Add(BitConverter.SingleToUInt32Bits(point.Y - origin.Y));
+                }
             }
         }
         return hash;

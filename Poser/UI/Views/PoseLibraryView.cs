@@ -1403,12 +1403,11 @@ public static class PoseLibraryView
 
             if (tile.Favorite && vm.CanFavorite)
             {
-                // A favorite is FILLED and warning-yellow; the stroked icon
-                // in the same color rides on top so the perimeter keeps the
-                // icon pipeline's anti-aliasing.
-                FilledStar(draw, starMin, starMax, Packed(theme.Warning));
+                // A favorite is FILLED and warning-yellow — Tabler's OWN
+                // filled twin, through the icon pipeline; a hand-rolled
+                // star polygon shipped once and read as nonsense.
                 Crystarium.IconIn(
-                    starMin, starMax, TablerIcon.Star, theme.Warning);
+                    starMin, starMax, "star-filled", theme.Warning);
             }
             else if (hovered && vm.CanFavorite)
                 Crystarium.IconIn(
@@ -1438,32 +1437,6 @@ public static class PoseLibraryView
         {
             ImGui.PopID();
         }
-    }
-
-    /// <summary>The filled favorite mark. The icon pipeline strokes SVG paths
-    /// and cannot fill, and the draw list fills only convex polygons — but a
-    /// star polygon is star-shaped from its centroid, so a triangle fan from
-    /// the centre fills it exactly. The SVG glyph's 24-grid star spans radius
-    /// ~9.75 of 12, so the fan uses the same fraction of the box.</summary>
-    private static void FilledStar(
-        ImDrawListPtr draw, Vector2 min, Vector2 max, uint color)
-    {
-        var centre = (min + max) * 0.5f
-            + new Vector2(0f, (max.Y - min.Y) * 0.02f);
-        float outer = (max.X - min.X) * 0.5f * 0.8125f;
-        float inner = outer * 0.475f;
-        Span<Vector2> points = stackalloc Vector2[10];
-        for (int i = 0; i < 10; i++)
-        {
-            float radius = (i & 1) == 0 ? outer : inner;
-            float angle = -MathF.PI / 2f + i * (MathF.PI / 5f);
-            points[i] = new Vector2(
-                centre.X + MathF.Cos(angle) * radius,
-                centre.Y + MathF.Sin(angle) * radius);
-        }
-        for (int i = 0; i < 10; i++)
-            draw.AddTriangleFilled(
-                centre, points[i], points[(i + 1) % 10], color);
     }
 
     /// <summary>The thumbnail square, aspect-fitted and centred exactly as the
