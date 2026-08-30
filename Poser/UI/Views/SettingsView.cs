@@ -130,6 +130,13 @@ public sealed class SettingsViewModel
     public readonly HashSet<Dalamud.Game.ClientState.Keys.VirtualKey>
         RebindHeld = new();
 
+    /// <summary>Diagnostics for the capture: a per-frame probe of both key
+    /// sources shown live in the page, and a throttled log line — added
+    /// after three blind fixes; the probe reports, nobody theorizes.</summary>
+    public Action<string>? DebugLog;
+    public string RebindProbe = string.Empty;
+    public int RebindProbeFrame;
+
     public int PresetIndex;
     public bool PresetArmed;
     public string PresetStatus = "";
@@ -963,10 +970,12 @@ public static class SettingsView
                         ? ButtonVariant.Primary
                         : ButtonVariant.Secondary));
             form.Status(
-                vm.PresetStatus.Length > 0
-                    ? vm.PresetStatus
-                    : "Click a slot below to rebind it. Escape cancels, "
-                        + "Backspace clears it.",
+                vm.RebindingAction != null
+                    ? vm.RebindProbe
+                    : vm.PresetStatus.Length > 0
+                        ? vm.PresetStatus
+                        : "Click a slot below to rebind it. Escape cancels, "
+                            + "Backspace clears it.",
                 warning: vm.PresetArmed);
         }, divider: false);
 
@@ -1313,6 +1322,29 @@ public static class SettingsView
         // already down when the capture armed stays ignored until it has
         // been released once.
         var io = ImGui.GetIO();
+
+        // The live probe: what BOTH sources see this frame, shown in the
+        // page and logged (throttled). This line is the ground truth the
+        // three blind fixes never had.
+        int gameDown = 0;
+        int imguiDown = 0;
+        string first = "none";
+        foreach (var (probeKey, probeImGui) in KeyChord.CapturableTokens())
+        {
+            bool g = vm.KeyDown(probeKey);
+            bool m = ImGui.IsKeyDown(probeImGui);
+            if (g) gameDown++;
+            if (m) imguiDown++;
+            if ((g || m) && first == "none")
+                first = probeKey.ToString();
+        }
+        vm.RebindProbe =
+            $"Listening for {action}… game:{gameDown} imgui:{imguiDown} "
+            + $"first:{first} held:{vm.RebindHeld.Count} "
+            + $"capture:{io.WantCaptureKeyboard} text:{io.WantTextInput}";
+        if (++vm.RebindProbeFrame % 30 == 0 || first != "none")
+            vm.DebugLog?.Invoke($"[Rebind] {vm.RebindProbe}");
+
         if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
             || ImGui.IsKeyDown(ImGuiKey.Escape))
         {

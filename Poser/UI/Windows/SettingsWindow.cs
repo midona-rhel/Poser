@@ -23,6 +23,7 @@ public class SettingsWindow : Window
     public SettingsWindow(
         IAutoSaveService autoSave,
         Dalamud.Plugin.Services.IKeyState keyState,
+        Dalamud.Plugin.Services.IPluginLog log,
         IIntegrationRuntimePort integrations)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
@@ -36,6 +37,7 @@ public class SettingsWindow : Window
         // kill the whole capture loop with an exception per frame.
         _vm.KeyDown = key =>
             keyState.IsVirtualKeyValid(key) && keyState[key];
+        _vm.DebugLog = message => log.Debug(message);
         RespectCloseHotkey = false;
     }
 
