@@ -112,7 +112,7 @@ public sealed class OverlayPane
             }
 
             page.Section(
-                "PLACEMENT",
+                "Placement",
                 _openPlacement,
                 next => _openPlacement = next,
                 form => PlacementRows(form, node),
@@ -126,7 +126,7 @@ public sealed class OverlayPane
                 next => _openContent = next,
                 form => ContentRows(form, node));
             page.Section(
-                "LIFETIME",
+                "Lifetime",
                 _openActions,
                 next => _openActions = next,
                 form => LifetimeRows(form, node),

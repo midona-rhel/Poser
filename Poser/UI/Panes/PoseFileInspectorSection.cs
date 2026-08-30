@@ -167,6 +167,22 @@ public sealed class PoseFileInspectorSection
         _importMenuRequested = true;
     }
 
+    /// <summary>The library's OWN options menu — the same standing
+    /// settings the import flow reads (one state, retained), but options
+    /// only: none of the import dialog's actions belong in the library.
+    /// It opens to the LEFT of the seat so the preview stays visible
+    /// while the options are worked.</summary>
+    public void RequestLibraryOptionsMenu(Vector2 seat)
+    {
+        _libraryMenuSeat = seat;
+        _libraryMenuRequested = true;
+    }
+
+    private Vector2 _libraryMenuSeat;
+    private bool _libraryMenuRequested;
+    private float _libraryMenuHeight = 400f;
+    private const string LibraryOptionsMenuId = "##library-options-menu";
+
     public void RequestBoneFilterMenu()
     {
         _filterAnchor = ImGui.GetMousePos();
@@ -296,6 +312,28 @@ public sealed class PoseFileInspectorSection
                 ExportMenuId, _menuAnchor, BuildExportMenuItems(),
                 ExportMenuWidth);
         }
+        if (_libraryMenuRequested)
+        {
+            _libraryMenuRequested = false;
+            Crystarium.OpenPopover(LibraryOptionsMenuId);
+        }
+        {
+            float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+            var anchor = _libraryMenuSeat - new Vector2(
+                (MenuWidth + MenuPadding) * scale, 0f);
+            Crystarium.FloatingSurface.Popup(
+                LibraryOptionsMenuId,
+                new FloatingSurfaceProps
+                {
+                    Width = MenuWidth,
+                    Height = _libraryMenuHeight,
+                    Padding = MenuPadding,
+                    AnchorMin = anchor,
+                    AnchorMax = anchor,
+                    Treatment = FloatingSurfaceTreatment.Glass,
+                },
+                DrawLibraryOptionsMenuBody);
+        }
         Crystarium.FloatingSurface.Popup(
             ImportMenuId,
             new FloatingSurfaceProps
@@ -345,6 +383,24 @@ public sealed class PoseFileInspectorSection
     private float _importMenuHeightPlain = 430f;
     private float _importMenuHeightPresets = 480f;
     private float _boneFilterHeight = 520f;
+
+    /// <summary>Options only, left-aligned in its own surface — the
+    /// import menu's actions stay in the import menu.</summary>
+    private void DrawLibraryOptionsMenuBody()
+    {
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var origin = ImGui.GetCursorScreenPos();
+        float width = ImGui.GetContentRegionAvail().X;
+        float top = origin.Y - MenuTitleOffset(scale);
+
+        float y = DrawOptionsSections(
+            new Vector2(origin.X, top), width,
+            withPresets: false, withActions: false);
+
+        _libraryMenuHeight = (y - origin.Y) / scale
+            + Crystarium.ActiveTheme.Page.Inset + MenuPadding * 2f;
+        DrawNestedBoneFilter();
+    }
 
     private void DrawImportMenuBody()
     {
@@ -796,6 +852,51 @@ public sealed class PoseFileInspectorSection
             labelColumnWidth: labelColumnWidth
                 ?? (dense ? DenseLabelColumn : MenuLabelColumn),
             dense: dense);
+
+    /// <summary>The preview alone — the library window's plain right
+    /// column. Not a rail and not styled as one. With the seat, the
+    /// container lays out its OWN header: the options button at the
+    /// left, the Preview title moved right beside it.</summary>
+    public void DrawPreviewColumn(
+        Vector2 origin, Vector2 size, bool optionsSeat = false)
+    {
+        if (!optionsSeat)
+        {
+            MenuSection("##library-preview", "Preview",
+                origin, size.X,
+                form => DrawPreviewBody(form, size.X, size.Y),
+                divider: false);
+            return;
+        }
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
+        ImGui.SetCursorScreenPos(origin);
+        Crystarium.IconButton(
+            "settings",
+            () => RequestLibraryOptionsMenu(origin),
+            ControlStyle.Square(side),
+            help: "Import options",
+            id: "##library-options");
+        Crystarium.TextInBand(
+            origin + new Vector2((side + theme.Spacing.Three) * scale, 0f),
+            new Vector2(
+                MathF.Max(
+                    1f, size.X - (side + theme.Spacing.Three) * scale),
+                side * scale),
+            "Preview",
+            new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Weight = FontWeight.Medium,
+                Color = theme.FormLabel,
+            });
+        float used = (side + theme.Spacing.Two) * scale;
+        MenuSection("##library-preview", "Preview",
+            origin + new Vector2(0f, used), size.X,
+            form => DrawPreviewBody(form, size.X, size.Y - used),
+            divider: false, dense: true);
+    }
 
     private float DrawOptionsSections(
         Vector2 origin, float width, bool withPresets, float previewCap = 0f,

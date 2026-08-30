@@ -340,7 +340,7 @@ public static partial class Crystarium
                 _filterId,
                 _query,
                 _onQuery,
-                "Search by name",
+                "Search",
                 new ControlStyle
                 {
                     Width = UiWidth.Region(

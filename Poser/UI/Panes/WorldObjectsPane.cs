@@ -61,7 +61,7 @@ public sealed class WorldObjectsPane
             // Transform lives on the inspector rail, exactly as a prop's does;
             // this pane owns only what the rail cannot say.
             page.Section(
-                "WORLD OBJECT",
+                "World object",
                 _openObject,
                 next => _openObject = next,
                 form => ObjectRows(form, worldObject),
@@ -103,9 +103,6 @@ public sealed class WorldObjectsPane
                 },
                 help: "Give every borrowed object back");
         });
-        form.Status(
-            "This object belongs to the map. Releasing it — and ending the "
-            + "GPose session — puts it back exactly where it stood.");
     }
 
     // ── state ────────────────────────────────────────────────────────────

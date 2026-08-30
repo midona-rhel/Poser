@@ -43,6 +43,11 @@ public class UIConfiguration
     /// and the ledger only records while somebody is asking.</summary>
     public bool ShowFrameProfiler { get; set; }
 
+    /// <summary>Which panel the inspector shows: 0 the selected target,
+    /// 1 the environment, 2 the scene. Selecting any entity snaps back
+    /// to the target panel.</summary>
+    public int InspectorMode { get; set; }
+
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by

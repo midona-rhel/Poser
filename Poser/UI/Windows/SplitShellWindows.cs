@@ -148,8 +148,9 @@ public sealed class SidebarPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
+        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
-            max.X - theme.Floating.CloseInset * s - closeSide * s,
+            closeX,
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
@@ -157,6 +158,27 @@ public sealed class SidebarPartWindow : Window
             ControlStyle.Square(closeSide),
             help: "Merge the shell back into one window",
             id: "##part-reattach-sidebar");
+        // The library button is the sidebar titlebar's — this window IS
+        // the sidebar's titlebar while the shell is split. TWO sidebars,
+        // ONE contract: the same TEXT button the merged cell carries.
+        if (vm.OnLibrary is { } onLibrary)
+        {
+            var labelStyle = new TextStyle
+            { Size = theme.Typography.LabelSize };
+            float labelWidth = Crystarium.MeasureText(
+                "Library", labelStyle).X;
+            float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
+            ImGui.SetCursorScreenPos(new Vector2(
+                closeX - theme.Spacing.Two * s - buttonWidth * s,
+                min.Y + (height - closeSide * s) * 0.5f));
+            Crystarium.Button(
+                "Library",
+                onLibrary,
+                style: ControlStyle.Square(closeSide) with
+                { Width = UiWidth.Fixed(buttonWidth) },
+                help: "Open the library",
+                id: "##part-library-sidebar");
+        }
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(
@@ -208,12 +230,12 @@ public sealed class ToolbarPartWindow : Window
         var theme = Crystarium.ActiveTheme;
         float inset = theme.Floating.HeaderInset;
         float side = theme.Floating.CloseActionSize;
-        // Self-sized: content, one action gap, the reattach square, insets.
+        // Self-sized: content and insets. The toolbar is permanently its
+        // own window, so it carries no reattach square.
+        _ = side;
         Size = new Vector2(
             AppShellView.MeasureToolbar(_main.ShellVm) / s
-                + inset * 2f
-                + theme.Page.ActionGap
-                + side,
+                + inset * 2f,
             AppShellView.CollapsedBarHeight);
         SizeCondition = ImGuiCond.Always;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
@@ -248,16 +270,7 @@ public sealed class ToolbarPartWindow : Window
             float inset = theme.Floating.HeaderInset * s;
             AppShellView.DrawToolbarContent(
                 _main.ShellVm, new Vector2(min.X + inset, min.Y), size.Y);
-            float side = theme.Floating.CloseActionSize;
-            ImGui.SetCursorScreenPos(new Vector2(
-                max.X - theme.Floating.CloseInset * s - side * s,
-                min.Y + (size.Y - side * s) * 0.5f));
-            Crystarium.IconButton(
-                "x",
-                () => OnReattach?.Invoke(),
-                ControlStyle.Square(side),
-                help: "Merge the shell back into one window",
-                id: "##part-reattach-toolbar");
+
         }
         finally
         {

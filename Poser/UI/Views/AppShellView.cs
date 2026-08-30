@@ -194,11 +194,26 @@ public sealed class AppShellViewModel
 
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
+
+    /// <summary>Opens the library window — the sidebar titlebar's own
+    /// button.</summary>
+    public Action? OnLibrary;
     public Action<float>? OnSidebarResize;
 
     /// <summary>Inspector rail: drawn when set — 280px right column,
     /// continuous surface from the titlebar's tb-right cell to the window bottom.</summary>
     public Action<Vector2, Vector2>? DrawRail;  // (origin, size)
+
+    /// <summary>The inspector's panel: 0 Target, 1 Environment, 2 Scene.
+    /// The selector band draws only while <see cref="OnInspectorMode"/>
+    /// is set — the library's per-type rails carry no selector.</summary>
+    public int InspectorMode;
+    public Action<int>? OnInspectorMode;
+
+    /// <summary>What the content side is showing — "Actor", "Object",
+    /// "Camera", "Environment", "Scene" — the identity label leading the
+    /// tab band, so a tabless page still says what it is.</summary>
+    public string ContentKind = "";
 
     /// <summary>Collapse-to-titlebar: only the 48px strip renders.</summary>
     public bool Collapsed;
@@ -453,7 +468,9 @@ public static class AppShellView
             }
             else
             {
-                float wellLeft = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+                float wellLeft = vm.Detached
+                    ? 0f
+                    : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
                 // Only the window's own corners round; an edge that meets a
                 // panel is square. The radius is dropped along with them, so
@@ -531,7 +548,7 @@ public static class AppShellView
 
         // Each column lays its panel ground once and stops at its own edge;
         // the workspace ground remains visible between columns.
-        if (!vm.Collapsed && !vm.Detached)
+        if (!vm.Collapsed && !vm.Detached && cellWidth > 0f)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
             dl.AddRectFilled(
@@ -560,11 +577,12 @@ public static class AppShellView
 
         if (vm.Detached)
         {
-            // The detached main window is the inspector's window: it names
-            // itself so the selected entity remains readable.
+            // The detached main window is the properties window — an
+            // INTERNAL name: the user just sees the name of whatever they
+            // have selected. The rail below is the inspector.
             string title = vm.TitleEntity == "Poser"
                 ? "Inspector"
-                : $"Inspector – {vm.TitleEntity}";
+                : vm.TitleEntity;
             // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
             // strips and content.
@@ -584,27 +602,90 @@ public static class AppShellView
         }
         else
         {
-            DrawBrand(vm, min, height, s, dl);
+            // The pill stays on the toolbar window — the cell carries no
+            // duplicate of anything the toolbar already states. The
+            // sidebar itself never hides: no chevron, no collapse.
+            float brandEnd = DrawBrandPill(
+                vm, min.X + TitleInset * s, min.Y, height, s, dl,
+                pill: false);
+            // The burger LEFT-aligns by the brand; the Library text
+            // button keeps the cell's right.
+            float burgerSide = theme.Controls.ShellIconAction;
+            float burgerX = brandEnd + theme.Spacing.Four * s;
+            float burgerY = min.Y + (height - burgerSide * s) * 0.5f;
+            IconAt(
+                new Vector2(burgerX, burgerY),
+                TablerIcon.Menu2, burgerSide, BurgerPressed,
+                "##shell-burger",
+                help: "Actions");
+            if (_burgerPressed)
+            {
+                _burgerPressed = false;
+                vm.OnBurger?.Invoke(
+                    new Vector2(burgerX, burgerY + burgerSide * s));
+            }
             // The title cell's content stops at the divider's x whether or
-            // not the divider paints this state: collapse must not shift the
-            // cluster by the rule's pixel.
-            DrawHistory(
+            // not the divider paints this state: collapse must not shift
+            // the cluster by the rule's pixel.
+            DrawCellActions(
                 vm,
                 min.X + cellWidth - rule - TitleActionInset * s,
                 min.Y,
                 height,
                 s);
-            DrawTitleCenter(vm, min.X + cellWidth, min.Y, height, s);
+            // The gizmo cluster lives on the TOOLBAR window — always its
+            // own window — never in this titlebar.
         }
         DrawTitleActions(vm, max.X, min.Y, height, s);
-    }
 
-    /// <summary>The sidebar's title cell owns the brand and its GPose pill
-    /// while attached; detached mode takes them to the floating toolbar
-    /// </summary>
-    private static void DrawBrand(
-        AppShellViewModel vm, Vector2 min, float height, float s, ImDrawListPtr dl)
-        => DrawBrandPill(vm, min.X + TitleInset * s, min.Y, height, s, dl);
+        // The CONTENT selector lives in the TITLEBAR, beside the window
+        // action icons and measured against their cluster: Target shows
+        // the selection's tabs; Environment and Scene swap the content
+        // side. The inspector below never swaps — it is only ever the
+        // selected object.
+        if (!vm.Collapsed && vm.OnInspectorMode is { } onMode)
+        {
+            // The first segment IS the selection's kind — Actor, Object,
+            // Camera… — at a FIXED width sized to the widest kind name,
+            // so a selection change never moves a pixel of this band.
+            string kind = vm.ContentKind.Length > 0
+                ? vm.ContentKind
+                : "Target";
+            string[] modes = [kind, "Environment", "Scene"];
+            float kindSlot = WidestKindWidth() ;
+            var segSize = Crystarium.MeasureSegmentedControl(modes);
+            float pillPadding = theme.Spacing.Six * s;
+            float fixedWidth = segSize.X
+                - (Crystarium.MeasureText(
+                        kind, KindMeasureStyle).X + pillPadding * 2f)
+                + kindSlot + pillPadding * 2f;
+            // The selector docks on the CONTENT side of the divider
+            // between the content and the inspector — it swaps the
+            // content, so it stands over what it governs.
+            float railEdge = vm.DrawRail != null && !vm.Collapsed
+                ? RailWidth * s
+                : 0f;
+            ImGui.SetCursorScreenPos(new Vector2(
+                max.X - railEdge - theme.Page.ActionGap * s - fixedWidth,
+                min.Y + (height - segSize.Y) * 0.5f));
+            Crystarium.SegmentedControl(
+                "##content-mode",
+                modes,
+                vm.InspectorMode,
+                onMode,
+                itemWidth: index => index == 0
+                    ? kindSlot + pillPadding * 2f
+                    : Crystarium.MeasureText(
+                        modes[index], KindMeasureStyle).X + pillPadding * 2f,
+                itemHelp: index => index switch
+                {
+                    0 => KindHelp(kind),
+                    1 => "Edit the environment",
+                    2 => "Save and load the scene",
+                    _ => null,
+                });
+        }
+    }
 
     /// <summary>"Poser" and the GPose pill, drawn at <paramref name="x"/> in
     /// a band of <paramref name="height"/>; returns the x past them. One
@@ -612,7 +693,7 @@ public static class AppShellView
     /// floating toolbar window.</summary>
     private static float DrawBrandPill(
         AppShellViewModel vm, float x, float top, float height, float s,
-        ImDrawListPtr dl)
+        ImDrawListPtr dl, bool pill = true)
     {
         var theme = Crystarium.ActiveTheme;
         var nameStyle = new TextStyle
@@ -625,7 +706,7 @@ public static class AppShellView
         Crystarium.TextInBand(
             new Vector2(x, top), new Vector2(nameWidth, height),
             "Poser", nameStyle);
-        if (!vm.GPoseActive)
+        if (!pill || !vm.GPoseActive)
             return x + nameWidth;
 
         var success = theme.Success;
@@ -689,77 +770,33 @@ public static class AppShellView
             + text;
     }
 
-    /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
-    private static void DrawHistory(
+    /// <summary>The Library TEXT button alone, right-aligned in the title
+    /// cell — the burger left-aligns by the brand. Nothing else: undo,
+    /// redo, spawn and the GPose pill live on the toolbar window, and the
+    /// cell never duplicates the toolbar.</summary>
+    private static void DrawCellActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
-        var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.ShellIconAction;
-        float step = (side + theme.Spacing.Two) * s;
-        int count = vm.ShowSpawn ? 4 : 3;
-        float y = top + (height - side * s) * 0.5f;
-        float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
-
-        // The command menu is anchored to its button. The static callback
-        // records the press without allocating a frame closure.
-        IconAt(
-            new Vector2(x, y), TablerIcon.Menu2, side, BurgerPressed,
-            "##shell-burger",
-            help: "Actions");
-        if (_burgerPressed)
-        {
-            _burgerPressed = false;
-            vm.OnBurger?.Invoke(new Vector2(x, y + side * s));
-        }
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnUndo,
-            "##shell-undo",
-            disabled: !vm.CanUndo,
-            help: HistoryHelp(
-                vm.CanUndo, vm.UndoDescription, "Undo", _undoShortcut,
-                _undoHelp, _undoEmptyHelp));
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.ArrowBackUp, side, vm.OnRedo,
-            "##shell-redo",
-            disabled: !vm.CanRedo,
-            flipX: true,
-            help: HistoryHelp(
-                vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
-                _redoHelp, _redoEmptyHelp));
-        if (!vm.ShowSpawn)
+        if (vm.OnLibrary is not { } onLibrary)
             return;
-        x += step;
-        IconAt(
-            new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
-            "##shell-spawn",
-            help: "Add an actor or object to the scene");
-        if (_spawnPressed)
-        {
-            _spawnPressed = false;
-            vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
-        }
-    }
-
-    private static void DrawTitleCenter(
-        AppShellViewModel vm, float left, float top, float height, float s)
-    {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
-        float gap = theme.Page.ActionGap * s;
-        float x = left + CenterInset * s;
-        if (vm.ShowProject)
-        {
-            IconAt(
-                new Vector2(x, top + (height - side * s) * 0.5f),
-                TablerIcon.Folder, side, vm.OnProject, "##shell-project",
-                help: "Open the scene project browser");
-            x += side * s + gap;
-        }
-
-        DrawGizmoCluster(vm, x, top, height, s);
+        float y = top + (height - side * s) * 0.5f;
+        var labelStyle = new TextStyle
+        { Size = theme.Typography.LabelSize };
+        float labelWidth = Crystarium.MeasureText(
+            "Library", labelStyle).X;
+        float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
+        ImGui.SetCursorScreenPos(new Vector2(right - buttonWidth * s, y));
+        Crystarium.Button(
+            "Library",
+            onLibrary,
+            style: ControlStyle.Square(side) with
+            { Width = UiWidth.Fixed(buttonWidth) },
+            help: "Open the library",
+            id: "##shell-library");
     }
+
 
     /// <summary>The four segment groups — gizmo operation, space, pivot,
     /// symmetry — drawn once per frame from exactly one host: the titlebar
@@ -822,6 +859,35 @@ public static class AppShellView
 
     /// <summary>Rightmost is the collapse chevron, then the close X.
     /// </summary>
+    /// <summary>The kind segment's hover — the same verb-first shape as
+    /// its siblings, minted per kind so no frame formats one.</summary>
+    private static string KindHelp(string kind) => kind switch
+    {
+        "Actor" => "Edit the actor",
+        "Object" => "Edit the object",
+        "Camera" => "Edit the camera",
+        "Light" => "Edit the light",
+        "Overlay" => "Edit the overlay",
+        _ => "Edit the selection",
+    };
+
+    /// <summary>The label style the selector's segments measure with —
+    /// the pill's own face.</summary>
+    private static TextStyle KindMeasureStyle => new()
+    { Size = Crystarium.ActiveTheme.Typography.LabelSize };
+
+    /// <summary>The widest kind name the selector's first segment can
+    /// carry — its FIXED slot, so selection changes never move it.</summary>
+    private static float WidestKindWidth()
+    {
+        float widest = 0f;
+        foreach (var kind in (ReadOnlySpan<string>)
+            ["Target", "Actor", "Object", "Camera", "Light", "Overlay"])
+            widest = MathF.Max(
+                widest, Crystarium.MeasureText(kind, KindMeasureStyle).X);
+        return widest;
+    }
+
     private static void DrawTitleActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
@@ -910,8 +976,6 @@ public static class AppShellView
     private static void DrawWorldClasses(
         AppShellViewModel vm, Vector2 min, Vector2 max, float s)
     {
-        if (vm.WorldClasses.Count == 0)
-            return;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.SwitchHeight;
         float step = (side + theme.Page.ActionGap) * s;
@@ -932,6 +996,18 @@ public static class AppShellView
                     dimmed: !entry.On))
                 vm.OnWorldClassToggle?.Invoke(index);
             x += step;
+        }
+        // The spawn plus closes the band at the right: the adopt glyphs
+        // bring the world's things in, the plus adds anything new.
+        float plusX = max.X - StatusInset * s - side * s;
+        IconAt(
+            new Vector2(plusX, y), TablerIcon.Plus, side, SpawnPressed,
+            "##sidebar-spawn",
+            help: "Add an actor or object to the scene");
+        if (_spawnPressed)
+        {
+            _spawnPressed = false;
+            vm.OnSpawn?.Invoke(new Vector2(plusX, y + side * s));
         }
     }
 
@@ -1052,6 +1128,7 @@ public static class AppShellView
             static _ => { },
             vm.WorkspaceRightActions,
             ActionBarSeparator.None);
+
 
         DrawContentViewport(vm, min, max, s);
     }
@@ -1185,7 +1262,7 @@ public static class AppShellView
         float railWidth, float s)
     {
         var theme = Crystarium.ActiveTheme;
-        ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f) * s);
+        ImGui.SetCursorScreenPos(railMin + new Vector2(0f, 12f * s));
         Crystarium.ScrollRegion(
             "##shell-rail",
             railWidth / s - 1f,
@@ -1439,6 +1516,14 @@ public static class AppShellView
             }
             x += step;
         }
+        if (vm.ShowProject)
+        {
+            IconAt(
+                new Vector2(x, y), TablerIcon.Folder, side, vm.OnProject,
+                "##shell-project",
+                help: "Open the scene project browser");
+            x += step;
+        }
         x += CenterInset * s - theme.Spacing.Two * s;
         DrawGizmoCluster(vm, x, origin.Y, height, s);
     }
@@ -1452,8 +1537,10 @@ public static class AppShellView
         float gap = theme.Page.ActionGap * s;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        // Burger, undo, redo, spawn, then the two window toggles at the end.
-        float icons = step * (vm.ShowSpawn ? 4f : 3f);
+        // Burger, undo, redo, then spawn and project when shown.
+        float icons = step * (3f
+            + (vm.ShowSpawn ? 1f : 0f)
+            + (vm.ShowProject ? 1f : 0f));
         return MeasureBrandPill(vm, s)
             + CenterInset * s
             + icons

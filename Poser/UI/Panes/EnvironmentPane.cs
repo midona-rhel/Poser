@@ -15,26 +15,6 @@ namespace Poser.UI;
 /// do not fit one scroll, so the shell gives it a five-tab strip and hands the
 /// pane the tab it is drawing. Positional against the shell's environment strip.
 /// </summary>
-public enum EnvironmentTab
-{
-    /// <summary>TIME and WEATHER: what the sky is DOING.</summary>
-    Weather,
-
-    /// <summary>SKY (skybox and clouds) and STARS: what the sky IS.</summary>
-    Sky,
-
-    /// <summary>LIGHTING: the three lights the zone lights everything with.
-    /// </summary>
-    Light,
-
-    /// <summary>FOG, RAIN, PARTICLES and WIND: what fills the air between the
-    /// camera and the sky.</summary>
-    Atmosphere,
-
-    /// <summary>RENDERING and FESTIVALS: the ground the scene stands on rather
-    /// than the air above it.</summary>
-    World,
-}
 
 /// <summary>
 /// The scene's one environment: time, weather, the eight holdable environment
@@ -55,6 +35,29 @@ public enum EnvironmentTab
 /// which is the service's hold turned off. Every inversion happens at the call
 /// site that needs it and nowhere else.</para>
 /// </summary>
+/// <summary>
+/// One page of <see cref="EnvironmentPane"/>. The environment's eleven sections
+/// do not fit one scroll, so the shell gives it a five-tab strip and hands the
+/// pane the tab it is drawing. Positional against the shell's environment strip.
+/// </summary>
+public enum EnvironmentTab
+{
+    /// <summary>TIME, WEATHER, and LIGHTING: how the scene is lit — the
+    /// controls a pose touches most, one mental act, first tab.</summary>
+    Lighting,
+
+    /// <summary>SKY (skybox and clouds) and STARS: what the sky IS.</summary>
+    Sky,
+
+    /// <summary>FOG, RAIN, PARTICLES and WIND: what fills the air between
+    /// the camera and the sky.</summary>
+    Atmosphere,
+
+    /// <summary>RENDERING and FESTIVALS: the ground the scene stands on
+    /// rather than the air above it.</summary>
+    World,
+}
+
 public sealed class EnvironmentPane
 {
     private readonly IEnvironmentService _environment;
@@ -88,12 +91,13 @@ public sealed class EnvironmentPane
     // there to put a section away, not to make the user open it first.
     private bool _openTime = true;
     private bool _openWeather = true;
-    private bool _openSky = true;
-    private bool _openLighting = true;
-    private bool _openFog = true;
-    private bool _openRain = true;
-    private bool _openParticles = true;
-    private bool _openStars = true;
+    private bool _openSky;
+    private bool _openClouds = true;
+    private bool _openLighting;
+    private bool _openFog;
+    private bool _openRain;
+    private bool _openParticles;
+    private bool _openStars;
     private bool _openWind = true;
     private bool _openRendering = true;
     private bool _openFestivals = true;
@@ -248,9 +252,6 @@ public sealed class EnvironmentPane
             case EnvironmentTab.Sky:
                 Crystarium.Page("environment-sky", origin, size, SkyPage);
                 break;
-            case EnvironmentTab.Light:
-                Crystarium.Page("environment-light", origin, size, LightPage);
-                break;
             case EnvironmentTab.Atmosphere:
                 Crystarium.Page(
                     "environment-atmosphere", origin, size, AtmospherePage);
@@ -260,54 +261,54 @@ public sealed class EnvironmentPane
                 break;
             default:
                 Crystarium.Page(
-                    "environment-weather", origin, size, WeatherPage);
+                    "environment-lighting", origin, size, LightingPage);
                 break;
         }
     }
 
-    // ── the five pages ───────────────────────────────────────────────────
+    // ── the four pages ───────────────────────────────────────────────────
     //
     // The rule is a divider BETWEEN sections, so EVERY page's first section
     // states divider: false and draws neither the rule nor the margin above it.
 
-    private void WeatherPage(Crystarium.PageScope page)
+    private void LightingPage(Crystarium.PageScope page)
     {
-        page.Section("TIME", _openTime, next => _openTime = next,
+        page.Section("Time", _openTime, next => _openTime = next,
             TimeRows, divider: false);
-        page.Section("WEATHER", _openWeather, next => _openWeather = next,
+        page.Section("Weather", _openWeather, next => _openWeather = next,
             WeatherRows);
+        page.Section("Lighting", _openLighting,
+            next => _openLighting = next, LightingRows);
     }
 
     private void SkyPage(Crystarium.PageScope page)
     {
-        page.Section("SKY", _openSky, next => _openSky = next, SkyRows,
+        page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
             divider: false);
-        page.Section("STARS", _openStars, next => _openStars = next, StarRows);
-    }
-
-    private void LightPage(Crystarium.PageScope page)
-    {
-        page.Section("LIGHTING", _openLighting,
-            next => _openLighting = next, LightingRows, divider: false);
+        page.Section("Clouds", _openClouds,
+            next => _openClouds = next, CloudRows);
+        page.Section("Stars", _openStars, next => _openStars = next, StarRows);
     }
 
     private void AtmospherePage(Crystarium.PageScope page)
     {
-        page.Section("FOG", _openFog, next => _openFog = next, FogRows,
+        page.Section("Fog", _openFog, next => _openFog = next, FogRows,
             divider: false);
-        page.Section("RAIN", _openRain, next => _openRain = next, RainRows);
-        page.Section("PARTICLES", _openParticles,
+        page.Section("Rain", _openRain, next => _openRain = next, RainRows);
+        page.Section("Particles", _openParticles,
             next => _openParticles = next, ParticleRows);
-        page.Section("WIND", _openWind, next => _openWind = next, WindRows);
+        page.Section("Wind", _openWind, next => _openWind = next, WindRows);
     }
 
     private void WorldPage(Crystarium.PageScope page)
     {
-        page.Section("RENDERING", _openRendering,
+        page.Section("Rendering", _openRendering,
             next => _openRendering = next, RenderingRows, divider: false);
-        page.Section("FESTIVALS", _openFestivals,
+        page.Section("Festivals", _openFestivals,
             next => _openFestivals = next, FestivalRows);
     }
+
+
 
     /// <summary>
     /// Both surfaces are drained at the top of the frame, exactly where the rows
@@ -473,16 +474,13 @@ public sealed class EnvironmentPane
                 help: "Widen the list from this territory's own weathers to "
                     + "every weather in the game");
         });
+        // The slider keeps at least half the row; three-way cells choked
+        // it to a third. The two lifetime switches pair below it.
+        form.Slider("Transition", _environment.TransitionTime, 0f, 10f,
+            value => _environment.TransitionTime = value,
+            help: "Blend time into a picked weather, seconds");
         form.Cells(cells =>
         {
-            cells.Cell(
-                "Transition",
-                cell => cell.Slider(
-                    "##env-weather-transition", _environment.TransitionTime,
-                    0f, 10f,
-                    value => _environment.TransitionTime = value),
-                help: "How long the game blends into a picked weather, in "
-                    + "seconds");
             cells.Cell(
                 "Hold weather",
                 cell => cell.Switch(
@@ -491,8 +489,7 @@ public sealed class EnvironmentPane
                     value => _environment.IsWeatherOverrideEnabled = value,
                     disabled: !available),
                 help: available
-                    ? "Keep the current weather by suppressing the game's own "
-                        + "territory weather update"
+                    ? "Keep this weather against the game's updates"
                     : WeatherUnavailable);
             cells.Cell(
                 "Restore on exit",
@@ -500,7 +497,7 @@ public sealed class EnvironmentPane
                     "##env-weather-restore",
                     _environment.ResetWeatherOnGPoseExit,
                     value => _environment.ResetWeatherOnGPoseExit = value),
-                help: "Hand the weather back to the game when GPose ends");
+                help: "Hand the weather back when GPose ends");
         });
     }
 
@@ -564,7 +561,7 @@ public sealed class EnvironmentPane
 
     private void SkyRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural sky", EnvSection.Sky,
+        SectionSwitch(form, "Natural", EnvSection.Sky,
             "Let the game run the skybox. Changing any sky value below holds "
                 + "it for Poser.");
         var sky = _environment.Sky;
@@ -590,8 +587,11 @@ public sealed class EnvironmentPane
                         _environment.Sky with { SunVisibility = value }),
                 help: "How much of the sun disc shows through the sky");
         });
+    }
 
-        SectionSwitch(form, "Natural clouds", EnvSection.Clouds,
+    private void CloudRows(Crystarium.FormScope form)
+    {
+        SectionSwitch(form, "Natural", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
                 + "holds them for Poser.");
         var clouds = _environment.Clouds;
@@ -648,7 +648,7 @@ public sealed class EnvironmentPane
 
     private void LightingRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural lighting", EnvSection.Lighting,
+        SectionSwitch(form, "Natural", EnvSection.Lighting,
             "Let the game run the ambient lighting. Changing any value below "
                 + "holds it for Poser.");
         var lighting = _environment.Lighting;
@@ -696,7 +696,8 @@ public sealed class EnvironmentPane
                 _environment.Lighting with { LightDistance = value },
             help: "How far the zone's lighting reaches",
             marks: DistanceMarks,
-            scale: SliderScale.Log);
+            scale: SliderScale.Decades,
+            logCurvature: 2f);
         // The reference UIs draw these three unidentified members rather than
         // hide them; they keep their reference names until someone names them.
         form.Cells(cells =>
@@ -728,20 +729,20 @@ public sealed class EnvironmentPane
 
     private void FogRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural fog", EnvSection.Fog,
+        form.PairRows();
+        SectionSwitch(form, "Natural", EnvSection.Fog,
             "Let the game run the fog. Changing any value below holds it for "
                 + "Poser.");
         var fog = _environment.Fog;
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Fog", fog.Color with { W = 1f },
+            // No caption: the row label and the section already say fog.
+            wells.Well("", fog.Color with { W = 1f },
                 value => _environment.Fog = _environment.Fog with
                 {
                     Color = Rgb(value, _environment.Fog.Color.W),
                 });
         }, help: "The colour the fog washes the distance with");
-        // The colour well edits RGB only, so the fog colour's own alpha — which
-        // both references edit — takes the row beside it.
         form.Slider("Colour alpha", fog.Color.W, 0f, 1f,
             value => _environment.Fog = _environment.Fog with
             {
@@ -780,8 +781,10 @@ public sealed class EnvironmentPane
             value => _environment.Fog =
                 _environment.Fog with { SkyOpacity = value },
             help: "How much of the fog reaches the sky");
-        // A sky depth like Distance, and mapped like it.
-        form.Slider("Sky smoothness", fog.SkySmoothness, 0f, 1000f,
+        // A sky depth like Distance, and mapped like it. "Sky blend"
+        // because "Sky smoothness" truncated — a truncated label never
+        // ships.
+        form.Slider("Sky blend", fog.SkySmoothness, 0f, 1000f,
             value => _environment.Fog =
                 _environment.Fog with { SkySmoothness = value },
             help: "How gradually the fog blends into the sky",
@@ -793,7 +796,8 @@ public sealed class EnvironmentPane
 
     private void RainRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural rain", EnvSection.Rain,
+        form.PairRows();
+        SectionSwitch(form, "Natural", EnvSection.Rain,
             "Let the game run the rain. Changing any value below holds it for "
                 + "Poser.");
         var rain = _environment.Rain;
@@ -806,7 +810,7 @@ public sealed class EnvironmentPane
             help: "How thick a single rain line draws");
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Rain", rain.Color with { W = 1f },
+            wells.Well("", rain.Color with { W = 1f },
                 value => _environment.Rain = _environment.Rain with
                 {
                     Color = Rgb(value, _environment.Rain.Color.W),
@@ -836,7 +840,8 @@ public sealed class EnvironmentPane
 
     private void ParticleRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural particles", EnvSection.Particles,
+        form.PairRows();
+        SectionSwitch(form, "Natural", EnvSection.Particles,
             "Let the game run the particles — dust, snow and leaves all come "
                 + "from this one block. Changing any value below holds it for "
                 + "Poser.");
@@ -855,7 +860,7 @@ public sealed class EnvironmentPane
             help: "How brightly the particles glow");
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Particles", particles.Color with { W = 1f },
+            wells.Well("", particles.Color with { W = 1f },
                 value => _environment.Particles = _environment.Particles with
                 {
                     Color = Rgb(value, _environment.Particles.Color.W),
@@ -906,7 +911,7 @@ public sealed class EnvironmentPane
 
     private void StarRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural stars", EnvSection.Stars,
+        SectionSwitch(form, "Natural", EnvSection.Stars,
             "Let the game run the night sky. Changing any value below holds "
                 + "it for Poser.");
         var stars = _environment.Stars;
@@ -954,10 +959,12 @@ public sealed class EnvironmentPane
                         }),
                 help: "How brightly the constellations burn");
         });
+        form.PairRows();
         form.Slider("Galaxy intensity", stars.GalaxyIntensity, 0f, 10f,
             value => _environment.Stars =
                 _environment.Stars with { GalaxyIntensity = value },
             help: "How brightly the galaxy band shows");
+        form.EndPair();
         form.Cells(cells =>
         {
             cells.Cell(
@@ -996,7 +1003,8 @@ public sealed class EnvironmentPane
 
     private void WindRows(Crystarium.FormScope form)
     {
-        SectionSwitch(form, "Natural wind", EnvSection.Wind,
+        form.PairRows();
+        SectionSwitch(form, "Natural", EnvSection.Wind,
             "Let the game run the wind. Changing any value below holds it for "
                 + "Poser.");
         var wind = _environment.Wind;
@@ -1017,35 +1025,30 @@ public sealed class EnvironmentPane
     private void RenderingRows(Crystarium.FormScope form)
     {
         bool water = _rendering.IsWaterFreezeAvailable;
+        // Two rows, not four: the water pair, then the lifetime pair.
+        form.PairRows();
         form.Switch("Freeze water", _rendering.IsWaterFrozen,
             value => _rendering.IsWaterFrozen = value,
             help: water
-                ? "Stop the water renderer, freezing every surface where it "
-                    + "stands"
+                ? "Freeze every water surface"
                 : WaterUnavailable,
             disabled: !water);
-        // Both lifetime labels are cut to what the label column holds; the
-        // subject rides the noun rather than the sentence.
         form.Switch("Restore water", _rendering.ResetWaterOnGPoseExit,
             value => _rendering.ResetWaterOnGPoseExit = value,
-            help: "Hand the water back to the game when GPose ends");
-        // The environment sections' own lifetime rows live here rather than in
-        // eight copies, one per section.
-        form.Switch("Restore sections",
+            help: "Hand the water back when GPose ends");
+        // One Sections row: the lifetime switch and the release verb are
+        // the same subject — and neither label truncates.
+        form.SwitchActions("Sections",
             _environment.ResetSectionsOnGPoseExit,
             value => _environment.ResetSectionsOnGPoseExit = value,
-            help: "Release every held environment section when GPose ends");
-        form.Actions("Sections", actions =>
-        {
-            actions.Button("Release all sections",
+            actions => actions.Button("Release all",
                 _environment.ReleaseAllSections,
-                help: "Hand every held section back to the game. The next "
-                    + "environment update restores the zone's own values.");
-        });
-        form.Actions("Environment file", actions =>
+                help: "Hand every held section back"),
+            help: "Release held sections when GPose ends");
+        form.Actions("File", actions =>
         {
             actions.Button("Save to library", SaveToLibrary,
-                help: "Save the whole environment into the library's Objects tab");
+                help: "Save the environment into the library");
         });
     }
 

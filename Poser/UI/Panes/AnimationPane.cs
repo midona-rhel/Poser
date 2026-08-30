@@ -193,13 +193,13 @@ public sealed class AnimationPane : IDisposable
             var owned = _animation.OverridesFor(actor);
             bool advanced = _advancedActors.Contains(actor);
             page.Section(
-                "GENERAL",
+                "General",
                 _openGeneral,
                 next => _openGeneral = next,
                 form => DrawGeneral(form, actor, reading, advanced),
                 divider: false);
             page.Section(
-                "ANIMATION LAYERS",
+                "Animation layers",
                 _openAnimationLayers,
                 next => _openAnimationLayers = next,
                 form => DrawAnimationLayers(
@@ -714,13 +714,13 @@ public sealed class AnimationPane : IDisposable
                         "Expression"),
                     style: poseSurface ? default : actionStyle,
                     disabled: disabled || selected == 0 || pending,
-                    help: "Preview the selected expression and hold its facial frame");
+                    help: "Preview the expression");
                 actions.Button(
                     "Reset",
                     () => ResetExpression(actor),
                     style: poseSurface ? default : actionStyle,
                     disabled: disabled || (held == 0 && selected == 0),
-                    help: "Restore the facial state captured before Poser's first choice");
+                    help: "Reset the face bones");
                 if (poseSurface)
                 {
                     actions.Button(
@@ -743,7 +743,7 @@ public sealed class AnimationPane : IDisposable
                         },
                         disabled: disabled || selected == 0 || pending ||
                             _facialCapture.IsPending,
-                        help: "Write the held face into the pose as one undoable edit");
+                        help: "Bake the face into the pose");
                 }
             },
             disabled: disabled,

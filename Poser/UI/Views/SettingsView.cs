@@ -356,7 +356,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("BEHAVIOR", form =>
+        page.Section("Behavior", form =>
         {
             form.Switch(
                 "Open with GPose",
@@ -403,7 +403,7 @@ public static class SettingsView
                 marks: UndoDepthMarks,
                 help: "How many edits Poser can undo; zero turns undo off");
         }, divider: false);
-        page.Section("AUTO-SAVE", form =>
+        page.Section("Auto-save", form =>
         {
             form.Switch(
                 "Auto-save poses",
@@ -442,7 +442,7 @@ public static class SettingsView
                 next => vm.AutoSaveCleanOnExit = next,
                 "Delete all auto-saves when leaving GPose normally; after a crash they remain for recovery");
         });
-        page.Section("TRANSFORM SPEED", form =>
+        page.Section("Transform speed", form =>
         {
             form.Slider(
                 "Entity drag speed",
@@ -464,7 +464,7 @@ public static class SettingsView
         // The one diagnostic surface a photographer is ever pointed at, on the
         // page they already open. It is a switch rather than a hidden command
         // because a feature reachable only from a console is not shipped.
-        page.Section("DIAGNOSTICS", form =>
+        page.Section("Diagnostics", form =>
         {
             form.Switch(
                 "Show frame profiler",
@@ -474,7 +474,7 @@ public static class SettingsView
                     + "frame, and list it worst first. Off, it records "
                     + "nothing.");
         });
-        page.Section("RESET", form =>
+        page.Section("Reset", form =>
         {
             if (vm.ConfigLoadFailure.Length > 0)
                 form.Status(vm.ConfigLoadFailure, warning: true);
@@ -519,7 +519,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("BONE OVERLAY", form =>
+        page.Section("Bone overlay", form =>
         {
             form.Slider(
                 "Bone dot radius",
@@ -552,7 +552,7 @@ public static class SettingsView
                     next => vm.OverlayMirrored = next);
             });
         }, divider: false);
-        page.Section("FILTERS & PRIVACY", form =>
+        page.Section("Filters & privacy", form =>
         {
             form.Switch(
                 "NSFW bones",
@@ -565,7 +565,7 @@ public static class SettingsView
                 next => vm.AnonymousMode = next,
                 "Mask character names throughout the UI");
         });
-        page.Section("THEME", form =>
+        page.Section("Theme", form =>
         {
             form.ThemeSwatches(
                 "Theme",
@@ -608,7 +608,7 @@ public static class SettingsView
                 },
                 "Blur window and popup backdrops; tooltips always stay unblurred");
         });
-        page.Section("RESET", form => ResetRow(
+        page.Section("Reset", form => ResetRow(
             vm,
             form,
             ConfigResetScope.Display,
@@ -620,7 +620,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("ARMATURE", form =>
+        page.Section("Armature", form =>
         {
             form.Dropdown(
                 "Bone shape",
@@ -643,7 +643,7 @@ public static class SettingsView
                     + "Ktisis moves the highlight and the click picks it, "
                     + "Brio selects each bone as the wheel reaches it");
         }, divider: false);
-        page.Section("SKELETON LINES", form =>
+        page.Section("Skeleton lines", form =>
         {
             form.Switch(
                 "Show lines",
@@ -690,7 +690,7 @@ public static class SettingsView
                 "Keep actor selection from opening the whole armature; "
                     + "select a bone to show its anchor");
         });
-        page.Section("INACTIVE ACTORS", form =>
+        page.Section("Inactive actors", form =>
         {
             form.Switch(
                 "Dim inactive actors",
@@ -713,7 +713,7 @@ public static class SettingsView
                 "Which actor counts as active: the game's GPose target, the current selection, or either",
                 disabled: !vm.DimInactiveActors);
         });
-        page.Section("BONE NAMES", form =>
+        page.Section("Bone names", form =>
         {
             form.Switch(
                 "Friendly bone names",
@@ -726,7 +726,7 @@ public static class SettingsView
                 next => vm.ShowAllVieraEars = next,
                 "Keep all four Viera ear sets, not only the pair the character wears");
         });
-        page.Section("RESET", form => ResetRow(
+        page.Section("Reset", form => ResetRow(
             vm,
             form,
             ConfigResetScope.Skeleton,
@@ -746,7 +746,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("SIZE", form =>
+        page.Section("Size", form =>
             form.Slider(
                 "Gizmo size",
                 vm.GizmoScale,
@@ -756,7 +756,7 @@ public static class SettingsView
                 format: "0.00×",
                 help: "Scales the handles; they keep the same size on screen at any distance"),
             divider: false);
-        page.Section("SNAPPING", form =>
+        page.Section("Snapping", form =>
         {
             form.Switch(
                 "Hold Ctrl to snap",
@@ -785,7 +785,7 @@ public static class SettingsView
                 next => vm.AllowRaySnap = next,
                 "While moving, put the target wherever the pointer meets the scene");
         });
-        page.Section("HOLD TO SUSPEND", form =>
+        page.Section("Hold to suspend", form =>
         {
             form.Dropdown(
                 "Disable bone dots",
@@ -800,7 +800,7 @@ public static class SettingsView
                 next => vm.DisableGizmoModifier = next,
                 "Hold this to let the pointer through the gizmo to the bone dot behind it");
         });
-        page.Section("VISIBILITY", form =>
+        page.Section("Visibility", form =>
             form.Switch(
                 "Keep the gizmo when bones are hidden",
                 vm.KeepGizmoWhenBonesHidden,
@@ -811,7 +811,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("NEW FREE CAMERAS", form =>
+        page.Section("New free cameras", form =>
         {
             form.Slider(
                 "Movement speed",
@@ -830,7 +830,7 @@ public static class SettingsView
                 format: "0.000",
                 help: "How far a right-drag turns a newly created free camera");
         }, divider: false);
-        page.Section("SPEED MODIFIERS", form =>
+        page.Section("Speed modifiers", form =>
         {
             form.Slider(
                 "Hold Ctrl",
@@ -849,7 +849,7 @@ public static class SettingsView
                 format: "0.00×",
                 help: "What holding Alt multiplies the fly speed by");
         });
-        page.Section("GAME INPUT", form =>
+        page.Section("Game input", form =>
         {
             form.Switch(
                 "Consume modifiers while flying",
@@ -873,7 +873,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("LAYOUT", form =>
+        page.Section("Layout", form =>
         {
             form.Switch(
                 "Detached UI",
@@ -881,13 +881,13 @@ public static class SettingsView
                 next => vm.DetachedShell = next,
                 "Float the toolbar and the scene sidebar as their own windows");
         }, divider: false);
-        page.Section("TREE", form =>
+        page.Section("Tree", form =>
             form.Switch(
                 "Tree guide lines",
                 vm.TreeGuides,
                 next => vm.TreeGuides = next,
                 "Show hierarchy connector lines"));
-        page.Section("VISIBILITY", form =>
+        page.Section("Visibility", form =>
         {
             form.Switch(
                 "Show in GPose",
@@ -905,14 +905,14 @@ public static class SettingsView
                 next => vm.ShowWhenGameUiHidden = next,
                 "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
         });
-        page.Section("TRANSFORM ROWS", form =>
+        page.Section("Transform rows", form =>
             form.Switch(
                 "Swap rotation X and Y",
                 vm.SwapRotationXY,
                 next => vm.SwapRotationXY = next,
                 "Show the rotation row's first two columns exchanged. "
                     + "The pose itself is unchanged"));
-        page.Section("RESET", form => ResetRow(
+        page.Section("Reset", form => ResetRow(
             vm,
             form,
             ConfigResetScope.UI,
@@ -929,7 +929,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("PRESET", form =>
+        page.Section("Preset", form =>
         {
             form.Segmented(
                 "Chords from",
@@ -1084,7 +1084,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("POSER FOLDERS", form =>
+        page.Section("Poser folders", form =>
         {
             HomeFolder(
                 form, vm, "Poses", vm.PoseFolder,
@@ -1117,7 +1117,7 @@ public static class SettingsView
                     + " until Poser is reloaded.");
             }
         }, divider: false);
-        page.Section("POSE LIBRARY", form =>
+        page.Section("Pose library", form =>
         {
             form.Switch(
                 "Use library for Import",
@@ -1130,7 +1130,7 @@ public static class SettingsView
                 next => vm.LibraryShowExtensions = next,
                 "Tile names carry .pose / .cmp");
         }, divider: false);
-        page.Section("SOURCE FOLDERS", form =>
+        page.Section("Source folders", form =>
         {
             int removing = -1;
             for (int i = 0; i < vm.LibrarySources.Count; i++)
@@ -1237,7 +1237,7 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
-        page.Section("ABOUT", form =>
+        page.Section("About", form =>
         {
             form.ReadOnly("Poser", vm.Version);
             form.ReadOnly("Stack", "Crystarium · PosingCore");
@@ -1247,7 +1247,7 @@ public static class SettingsView
             form.Status(
                 "Coded with the use of AI. Design system transcribed from Picto.");
         }, divider: false);
-        page.Section("DERIVED FROM", form =>
+        page.Section("Derived from", form =>
         {
             form.Actions("Repositories", actions =>
             {
@@ -1262,7 +1262,7 @@ public static class SettingsView
             form.Status(
                 "Poser is derivative of and heavily inspired by these projects.");
         });
-        page.Section("INTEGRATIONS", form =>
+        page.Section("Integrations", form =>
         {
             foreach (var integration in vm.Integrations)
                 form.ReadOnly(

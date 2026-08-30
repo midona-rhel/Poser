@@ -119,49 +119,48 @@ public class PoseRailPane
             }
             cursor.Y += (sub.Length > 0 ? 36f : 22f) * s;
 
-            // A light takes no action row: neither actor overrides nor bone
-            // resets address anything it has, and its own actions live on
-            // the Light tab. A gaze point takes none either — its buttons
-            // would act on the owning actor while claiming to act on it.
-            // Camera framing lives on the Camera tab; its reset transform
-            // deliberately stays here beside the actor and bone resets.
-            // An overlay node stands down for the same reason a light does:
-            // it has no bones to reset and no actor override to clear, and its
-            // own actions live on the Overlay tab.
-            if (!_inspector.IsLightSelection && !_inspector.IsGazeSelection &&
-                !_inspector.IsOverlaySelection)
+            // The verbs band is CONSTANT: every selection reserves the
+            // same two-verb row, and a verb that does not apply renders
+            // disabled with its reason — navigating between selection
+            // kinds must not reflow the rail (the standard).
+            ImGui.SetCursorScreenPos(cursor);
+            bool bone = !_inspector.IsCameraSelection &&
+                !_inspector.IsActorSelection &&
+                !_inspector.IsLightSelection &&
+                !_inspector.IsGazeSelection &&
+                !_inspector.IsOverlaySelection;
+            bool resetApplies = _inspector.IsCameraSelection ||
+                _inspector.IsActorSelection || bone;
+            string resetLabel = bone ? "Reset bone" : "Reset transform";
+            string resetHelp = _inspector.IsCameraSelection
+                ? "Restore the camera's framing"
+                : _inspector.IsActorSelection
+                    ? "Restore position, rotation, and scale"
+                    : bone
+                        ? "Reset every selected bone"
+                        : "Nothing to reset here";
+            if (Crystarium.Button(resetLabel,
+                    id: "rail-reset",
+                    help: resetHelp,
+                    style: ControlStyle.Workspace,
+                    disabled: !resetApplies))
             {
-                ImGui.SetCursorScreenPos(cursor);
                 if (_inspector.IsCameraSelection)
-                {
-                    if (Crystarium.Button("Reset transform",
-                            id: "rail-camera-reset",
-                            help: "Restore the selected camera's framing",
-                            style: ControlStyle.Workspace))
-                        _inspector.ResetCameraTransform();
-                }
+                    _inspector.ResetCameraTransform();
                 else if (_inspector.IsActorSelection)
-                {
-                    // Always clickable: clearing overrides is a safe no-op when
-                    // none exist.
-                    if (Crystarium.Button("Reset transform",
-                            id: "rail-actor-reset",
-                            help: "Restore every selected actor's original position, rotation, and scale",
-                            style: ControlStyle.Workspace))
-                        _inspector.ResetActorTransform();
-                }
-                else
-                {
-                    if (Crystarium.Button("Reset bone", id: "rail-bone-reset",
-                        help: "Reset the pose of every selected bone", style: ControlStyle.Workspace))
-                        _inspector.ResetSelectedBones();
-                    ImGui.SameLine(0f, 6f * s);
-                    if (Crystarium.Button("Select children", id: "rail-children",
-                        help: "Add descendant bones to the selection", style: ControlStyle.Workspace))
-                        _inspector.SelectChildren();
-                }
-                cursor.Y += 36f * s;
+                    _inspector.ResetActorTransform();
+                else if (bone)
+                    _inspector.ResetSelectedBones();
             }
+            ImGui.SameLine(0f, 6f * s);
+            if (Crystarium.Button("Select children", id: "rail-children",
+                    help: bone
+                        ? "Add descendant bones to the selection"
+                        : "Bones only",
+                    style: ControlStyle.Workspace,
+                    disabled: !bone))
+                _inspector.SelectChildren();
+            cursor.Y += 36f * s;
         }
         else
         {
@@ -178,7 +177,9 @@ public class PoseRailPane
         // angle/pan, owned by the Camera tab — so the gizmo stands down
         // rather than drawing an inert widget. An overlay node has none
         // either: it is flat on the screen, not placed in the world.
-        if (!_inspector.IsCameraSelection && !_inspector.IsOverlaySelection)
+        if (_inspector.IsCameraSelection)
+            cursor.Y += DrawCameraJoystick(dl, cursor, width, s);
+        else if (!_inspector.IsOverlaySelection)
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
@@ -197,6 +198,133 @@ public class PoseRailPane
     /// camera-roll ring. No cursor circle and no drag-origin dot are
     /// drawn. Returns consumed height.
     /// </summary>
+    // ── The camera joystick ──────────────────────────────────────────
+    // Same footprint as the rotation ball, so actor ↔ camera navigation
+    // never reflows the rail. The DISC is a joystick: grab anywhere
+    // (leniency by design), deflection pans the camera at a deliberate
+    // rate, and the knob springs home on release. The WHITE RING rolls
+    // the camera directly.
+
+    /// <summary>Full-deflection pan rate — a bit slowish on purpose.</summary>
+    private const float JoystickRadiansPerSecond = 1.1f;
+
+    private bool _joyRolling;
+    private Vector2 _joyOrigin;
+    private float _joyRollStartAngle;
+    private float _joyRollStartValue;
+
+    private float DrawCameraJoystick(
+        ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    {
+        float d = 158f * s;
+        var center = new Vector2(cursor.X + width / 2f, cursor.Y + d / 2f);
+        float ringRadius = d / 2f - 6f * s;
+        float discRadius = ringRadius - 10f * s;
+
+        var camera = _inspector.BallCamera();
+        bool canEdit = camera is { IsLocked: false };
+
+        ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
+        ImGui.InvisibleButton("##rail-camera-joystick", new Vector2(d, d));
+        bool active = ImGui.IsItemActive() && canEdit;
+        bool hovered = ImGui.IsItemHovered();
+        var mouse = ImGui.GetMousePos();
+        float mouseDistance = (mouse - center).Length();
+
+        if (ImGui.IsItemActivated() && canEdit)
+        {
+            // Grab the ring only near the ring; everything inside is the
+            // stick — and the CLICK POINT is the stick's origin, so the
+            // gesture is relative from wherever the hand landed.
+            _joyRolling = mouseDistance > discRadius + 2f * s;
+            _joyOrigin = mouse;
+            if (_joyRolling && camera != null)
+            {
+                _joyRollStartAngle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                _joyRollStartValue = camera.Roll;
+            }
+        }
+
+        var theme = Crystarium.ActiveTheme;
+        dl.AddCircleFilled(center, ringRadius + 4f * s,
+            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+
+        Vector2 knob = center;
+        if (active && camera != null)
+        {
+            GizmoPointerOwnership.Hold();
+            if (_joyRolling)
+            {
+                float angle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                float delta = angle - _joyRollStartAngle;
+                if (delta > MathF.PI) delta -= MathF.Tau;
+                if (delta < -MathF.PI) delta += MathF.Tau;
+                camera.Roll = _joyRollStartValue + delta;
+            }
+            else
+            {
+                // Deflection measures from the CLICK POINT, and dragging
+                // past the disc just holds full deflection.
+                var offset = mouse - _joyOrigin;
+                float length = offset.Length();
+                if (length > discRadius)
+                    offset *= discRadius / length;
+                knob = center + offset;
+                // Deflection is a VELOCITY: pan at the deliberate rate,
+                // through the property that actually drives this camera
+                // kind — Pan for an orbit camera, Rotation for a free one.
+                var fraction = offset / discRadius;
+                float dt = ImGui.GetIO().DeltaTime;
+                float stepX = fraction.X * JoystickRadiansPerSecond * dt;
+                // Screen-down drags the view down: vertical inverts.
+                float stepY = -fraction.Y * JoystickRadiansPerSecond * dt;
+                if (camera.Kind == global::Poser.Domain.Scene.CameraKind.Free)
+                    camera.Rotation = camera.Rotation with
+                    {
+                        X = camera.Rotation.X + stepX,
+                        Y = camera.Rotation.Y + stepY,
+                    };
+                else
+                    camera.Pan = camera.Pan with
+                    {
+                        X = camera.Pan.X + stepX,
+                        Y = camera.Pan.Y + stepY,
+                    };
+            }
+        }
+
+        // The white roll ring, brightening under the pointer or a roll drag.
+        bool ringHot = (active && _joyRolling) ||
+            (hovered && !active && mouseDistance > discRadius + 2f * s &&
+             mouseDistance < ringRadius + 8f * s);
+        dl.AddCircle(center, ringRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = ringHot ? 0.9f : 0.45f })),
+            0, (ringHot ? 2.5f : 1.5f) * s);
+
+        // The stick: a faint travel boundary and the knob.
+        dl.AddCircle(center, discRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = 0.12f })), 0, 1f * s);
+        var knobColor = canEdit
+            ? theme.Text with { W = active && !_joyRolling ? 1f : 0.8f }
+            : theme.Text.Fade(theme.Chrome.DisabledOpacity);
+        dl.AddCircleFilled(knob, 7f * s,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)));
+
+        if (hovered && !active)
+        {
+            bool overRing = mouseDistance > discRadius + 2f * s;
+            Crystarium.HoverHelp.Explain("rail-camera-joystick",
+                mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
+                overRing ? "Roll the camera" : "Pan the camera");
+        }
+
+        return d + 8f * s;
+    }
+
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
     {
         float d = 158f * s;
@@ -287,7 +415,8 @@ public class PoseRailPane
             {
                 _dragAngle += delta / RotationGizmoRings.PixelsPerRadian;
                 _inspector.RotateSelectionGizmo(
-                    Quaternion.CreateFromAxisAngle(_dragAxisModel, _dragAngle));
+                    Quaternion.CreateFromAxisAngle(
+                        _dragAxisModel, _dragAngle));
             }
         }
 

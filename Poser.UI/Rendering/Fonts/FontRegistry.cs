@@ -86,9 +86,15 @@ public static class FontRegistry
         0,
     ];
 
-    public static void Register(IFontAtlas atlas)
+    /// <summary>Directory holding the plugin's bundled font files; null
+    /// until the host registers, and every family then falls back to the
+    /// Dalamud default font.</summary>
+    private static string? _fontDirectory;
+
+    public static void Register(IFontAtlas atlas, string? fontDirectory = null)
     {
         _atlas = atlas;
+        _fontDirectory = fontDirectory;
         Activate(Crystarium.ActiveTheme);
     }
 
@@ -457,42 +463,31 @@ public static class FontRegistry
     /// <summary>
     /// Maps family+weight to a system font file. Cached; null means "not found, use Dalamud default".
     /// </summary>
+    /// <summary>Maps family + weight to a BUNDLED Geist file — the fonts
+    /// ship with the plugin (SIL OFL 1.1), so every machine renders the
+    /// same, Wine included. Geist Medium carries the semibold role: the
+    /// family's designed emphasis weight. Null (missing directory or
+    /// file) falls back to the Dalamud default font.</summary>
     private static string? ResolveFile(FontFamily family, FontWeight weight)
     {
         var mapKey = (family, weight);
         if (_files.TryGetValue(mapKey, out var cached)) return cached;
 
-        string fontsDir;
-        try
+        string name = family switch
         {
-            fontsDir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
-            if (string.IsNullOrEmpty(fontsDir))
-                fontsDir = @"C:\Windows\Fonts";
-        }
-        catch
-        {
-            fontsDir = @"C:\Windows\Fonts";
-        }
-
-        string[] candidates = family switch
-        {
-            // Medium approximated by Semibold: classic Segoe UI ships no static 500 weight.
-            FontFamily.Mono => new[] { "CascadiaMono.ttf", "consola.ttf" },
-            FontFamily.Italic => new[] { "segoeuii.ttf", "segoeui.ttf" },
-            _ => weight switch
-            {
-                FontWeight.Regular => new[] { "segoeui.ttf" },
-                _ => new[] { "seguisb.ttf", "segoeui.ttf" },
-            },
+            FontFamily.Mono => "GeistMono-Regular.ttf",
+            FontFamily.Italic => "Geist-Italic.ttf",
+            _ => weight == FontWeight.Regular
+                ? "Geist-Regular.ttf"
+                : "Geist-Medium.ttf",
         };
-
         string? result = null;
-        foreach (var name in candidates)
+        if (_fontDirectory is { } directory)
         {
-            var path = Path.Combine(fontsDir, name);
-            if (File.Exists(path)) { result = path; break; }
+            var path = Path.Combine(directory, name);
+            if (File.Exists(path))
+                result = path;
         }
-
         _files[mapKey] = result;
         return result;
     }

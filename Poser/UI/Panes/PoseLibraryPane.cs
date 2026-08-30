@@ -843,6 +843,61 @@ public sealed class PoseLibraryPane
     /// what the selected entry IS — the properties a person recognizes it
     /// by, never raw coordinates.
     /// </summary>
+    /// <summary>Per-tile stamps for the info rail, parallel to the tile
+    /// list like the tag and author lists above.</summary>
+    private readonly List<string> _tileModified = [];
+    private readonly List<string> _tileContents = [];
+
+    /// <summary>The rail for the tabs that cannot preview (MCDF, scenes):
+    /// the selected FILE, stated — name, stamp, author, contents, tags.
+    /// Returns the height consumed so a caller can stack below it.</summary>
+    public float DrawInfoRail(Vector2 origin, Vector2 size)
+    {
+        float scale = ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float inset = theme.Page.Inset * scale;
+        var cursor = origin + new Vector2(inset, inset);
+
+        int selected = _vm.Selected;
+        if (selected < 0 || selected >= _vm.Tiles.Count ||
+            selected >= _tileModified.Count)
+        {
+            Crystarium.TextAt(cursor, "Select a file", new TextStyle
+            {
+                Size = theme.Typography.CaptionSize,
+                Color = theme.FormHint,
+            });
+            return inset * 2f + theme.Typography.CaptionSize * scale;
+        }
+
+        var tile = _vm.Tiles[selected];
+        Crystarium.TextAt(cursor, tile.Label, new TextStyle
+        {
+            Size = theme.Typography.SurfaceTitleSize,
+            Weight = FontWeight.Medium,
+            Color = theme.Text,
+        });
+        cursor.Y += (theme.Typography.SurfaceTitleSize + 10f) * scale;
+
+        float body = Crystarium.Section(
+            "##library-file-info", string.Empty,
+            new Vector2(origin.X, cursor.Y), size.X, true, null,
+            form =>
+            {
+                form.ReadOnly("Saved", _tileModified[selected]);
+                if (!string.IsNullOrEmpty(tile.Author))
+                    form.ReadOnly("Author", tile.Author!);
+                if (_tileContents[selected].Length > 0)
+                    form.ReadOnly("Contents", _tileContents[selected]);
+                if (tile.Tags.Count > 0)
+                    form.ReadOnly("Tags", string.Join(", ", tile.Tags));
+                if (tile.Flagged)
+                    form.Status(tile.StatusText);
+            },
+            divider: false, dense: true);
+        return cursor.Y - origin.Y + body + theme.Spacing.Six * scale;
+    }
+
     public void DrawObjectsRail(Vector2 origin, Vector2 size)
     {
         int selected = _vm.Selected;
@@ -1687,6 +1742,13 @@ public sealed class PoseLibraryPane
     /// The shell's tab strip states it while the mode is on.</summary>
     public int SelectedType => (int)_type;
 
+    /// <summary>The selected tile's file path, or null — the library
+    /// window's footer and preview state their content off it.</summary>
+    public string? SelectedPath
+        => _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
+            ? _vm.Tiles[_vm.Selected].ThumbKey
+            : null;
+
     /// <summary>A shell tab. The filters are drafts of the view being left, so
     /// the new type starts on its whole library.</summary>
     public void SelectType(int index)
@@ -1814,6 +1876,8 @@ public sealed class PoseLibraryPane
         _tileAuthors.Clear();
         _tileStatus.Clear();
         _tileKinds.Clear();
+        _tileModified.Clear();
+        _tileContents.Clear();
         // Labels are minted with or without the extension HERE; the search
         // keeps matching the bare name either way.
         _builtExtensions = _config.Config.Library.ShowFileExtensions;
@@ -1823,6 +1887,8 @@ public sealed class PoseLibraryPane
             _tileAuthors.Add(entry.AuthorLower);
             _tileStatus.Add(entry.MetadataStatus);
             _tileKinds.Add(entry.Kind);
+            _tileModified.Add(entry.ModifiedText);
+            _tileContents.Add(entry.SceneContents);
             bool flagged =
                 entry.MetadataStatus != PoseLibraryMetadataStatus.Valid;
             // Minted ONCE. A scene's key and its heading are the same run —

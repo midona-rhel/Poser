@@ -15,7 +15,8 @@ public static partial class Crystarium
         ControlStyle style = default,
         bool alignFirstTabToCursor = false,
         Func<int, bool>? itemDisabled = null,
-        Func<int, string?>? itemHelp = null)
+        Func<int, string?>? itemHelp = null,
+        Func<int, float>? itemWidth = null)
     {
         var font = FontRegistry.Resolve(
             FontFamily.Default,
@@ -34,8 +35,8 @@ public static partial class Crystarium
             alignFirstTabToCursor,
             itemDisabled,
             itemHelp,
-            index => ImGui.CalcTextSize(items[index]).X
-                + padding * 2f,
+            index => itemWidth?.Invoke(index)
+                ?? ImGui.CalcTextSize(items[index]).X + padding * 2f,
             (drawList, index, min, max, active, hovered, disabled) =>
             {
                 var color = active || hovered
@@ -138,6 +139,102 @@ public static partial class Crystarium
         ControlStyle style = default)
     {
         var layout = IconSegmentLayout(items.Length, style);
+        return new(layout.TotalWidth, layout.TotalHeight);
+    }
+
+    /// <summary>The MIXED variant: icon tabs, except where
+    /// <paramref name="textFor"/> hands a label back — a short word that
+    /// no glyph says better (the spawn strip's "All"). A text tab is
+    /// measured like the label variant's, an icon tab is the icon
+    /// variant's square.</summary>
+    public static bool SegmentedControl(
+        string id,
+        TablerIcon[] items,
+        Func<int, string?> textFor,
+        int selected,
+        Action<int> onChange,
+        ControlStyle style = default,
+        bool alignFirstTabToCursor = false,
+        Func<int, string?>? itemHelp = null)
+    {
+        ArgumentNullException.ThrowIfNull(textFor);
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ActiveTheme.Typography.LabelSize);
+        bool fontPushed = font is { Available: true };
+        if (fontPushed)
+            font!.Push();
+        float scale = ImGuiHelpers.GlobalScale;
+        float padding = ActiveTheme.Spacing.Six * scale;
+        bool changed = SegmentedControlCore(
+            id,
+            items.Length,
+            selected,
+            onChange,
+            style,
+            alignFirstTabToCursor,
+            null,
+            itemHelp,
+            index => textFor(index) is { } text
+                ? ImGui.CalcTextSize(text).X + padding * 2f
+                : IconSegmentWidth(index),
+            (drawList, index, min, max, active, hovered, disabled) =>
+            {
+                var color = active || hovered
+                    ? ActiveTheme.Text
+                    : ActiveTheme.Text with { W = 0.72f };
+                if (disabled)
+                    color = color.Fade(ActiveTheme.Chrome.DisabledOpacity);
+                if (textFor(index) is { } text)
+                {
+                    drawList.PushClipRect(min, max, true);
+                    TextInBand(
+                        min,
+                        max - min,
+                        text,
+                        new TextStyle
+                        {
+                            Size = ActiveTheme.Typography.LabelSize,
+                            Color = color,
+                        },
+                        TextAlign.Center);
+                    drawList.PopClipRect();
+                    return;
+                }
+                float iconSize = ActiveTheme.Controls.SmallIconSize * scale;
+                var iconMin = min + (max - min - new Vector2(iconSize)) * 0.5f;
+                IconIn(
+                    iconMin, iconMin + new Vector2(iconSize), items[index],
+                    color, disabled: disabled);
+            });
+        if (fontPushed)
+            font!.Pop();
+        return changed;
+    }
+
+    /// <summary>Measures the mixed variant exactly the way it draws.</summary>
+    public static Vector2 MeasureSegmentedControl(
+        TablerIcon[] items,
+        Func<int, string?> textFor,
+        ControlStyle style = default)
+    {
+        ArgumentNullException.ThrowIfNull(textFor);
+        var font = FontRegistry.Resolve(
+            FontFamily.Default,
+            ActiveTheme.Typography.LabelSize);
+        bool fontPushed = font is { Available: true };
+        if (fontPushed)
+            font!.Push();
+        float scale = ImGuiHelpers.GlobalScale;
+        float padding = ActiveTheme.Spacing.Six * scale;
+        var layout = ResolveSegmentLayout(
+            items.Length,
+            style,
+            index => textFor(index) is { } text
+                ? ImGui.CalcTextSize(text).X + padding * 2f
+                : IconSegmentWidth(index));
+        if (fontPushed)
+            font!.Pop();
         return new(layout.TotalWidth, layout.TotalHeight);
     }
 

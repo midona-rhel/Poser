@@ -381,7 +381,16 @@ public sealed class ScenePane
     /// reachable through a file browser is an option the user has to open a
     /// browser to find out about.</para>
     /// </summary>
-    public void Draw(Vector2 origin, Vector2 size)
+    /// <summary>The inspector's Scene panel — the whole scene workspace
+    /// in rail form, plus the way into the library.</summary>
+    /// <summary>Set by the shell: the Scene panel's way into the
+    /// library workspace.</summary>
+    public Action? OpenLibrary;
+
+    /// <summary>The Scene page — the whole scene workspace plus the way
+    /// into the library. Shown in the CONTENT area by the workspace-band
+    /// selector; the inspector stays the selected object.</summary>
+    public void DrawPage(Vector2 origin, Vector2 size)
     {
         var progress = _workflow.Progress;
         var receipt = _workflow.Receipt;
@@ -389,7 +398,7 @@ public sealed class ScenePane
 
         Crystarium.Page("scene", origin, size, page =>
         {
-            page.Section("SCENE", form =>
+            page.Section("Scene", form =>
             {
                 form.TextInput(
                     "Description",
@@ -407,6 +416,11 @@ public sealed class ScenePane
                     help: AppearanceHelp,
                     disabled: busy);
                 form.ReadOnly("Size", SaveSizeText());
+                form.Actions("Library", actions =>
+                    actions.Button(
+                        "Open library…",
+                        () => OpenLibrary?.Invoke(),
+                        help: "Browse poses, scenes, and objects"));
                 form.Actions("File", actions =>
                 {
                     actions.Button(
@@ -435,7 +449,7 @@ public sealed class ScenePane
             },
             divider: false);
 
-            page.Section("LOAD", form =>
+            page.Section("Load", form =>
             {
                 DrawSessionOptions(form, busy);
                 DrawIncludeOptions(form, busy);
@@ -504,7 +518,7 @@ public sealed class ScenePane
 
     private void DrawProgress(Crystarium.PageScope page, SceneProgress progress)
     {
-        page.Section("IN PROGRESS", form =>
+        page.Section("In progress", form =>
         {
             float fraction = progress.EntitiesTotal > 0
                 ? Math.Clamp(
@@ -563,7 +577,7 @@ public sealed class ScenePane
         OperationReceipt? receipt)
     {
         var refusals = outcome.Entities.Where(entity => !entity.Restored).ToList();
-        page.Section("LAST RESULT", form =>
+        page.Section("Last result", form =>
         {
             form.ReadOnly(
                 "Outcome",

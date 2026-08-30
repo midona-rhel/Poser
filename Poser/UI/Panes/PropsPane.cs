@@ -58,7 +58,7 @@ public sealed class PropsPane
             // Transform lives on the inspector rail, exactly as a light's
             // does; this pane owns only what the rail cannot say.
             page.Section(
-                "OBJECT",
+                "Object",
                 _openProp,
                 next => _openProp = next,
                 form => PropRows(form, prop),
@@ -81,8 +81,10 @@ public sealed class PropsPane
             help: "Hide this object without destroying it");
         form.Actions("Lifetime", actions =>
         {
+            // Destroy is THE destruction verb — Delete and Remove were
+            // invented synonyms for the same act.
             actions.Button(
-                "Delete",
+                "Destroy",
                 () => _pending = () =>
                 {
                     _lifecycle.DestroyProp(prop);
@@ -91,21 +93,38 @@ public sealed class PropsPane
                 variant: ButtonVariant.Danger,
                 help: "Destroy this object");
             actions.Button(
-                "Remove all",
-                () => _pending = () =>
+                _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
+                () =>
                 {
-                    _lifecycle.DestroyAllProps();
-                    _scene.Selection.Clear();
+                    if (!_destroyAllArmed)
+                    {
+                        _destroyAllArmed = true;
+                        return;
+                    }
+                    _destroyAllArmed = false;
+                    _pending = () =>
+                    {
+                        _lifecycle.DestroyAllProps();
+                        _scene.Selection.Clear();
+                    };
                 },
                 variant: ButtonVariant.Danger,
-                help: "Destroy every object spawned this session");
+                help: "Destroy every spawned object");
         });
-        form.Status(
-            "Objects spawned here last for this GPose session and are destroyed "
-            + "when it ends.");
+        if (_destroyAllArmed)
+        {
+            int count = 0;
+            foreach (var _ in _scene.Snapshot.Props)
+                count++;
+            form.Status(
+                $"{count} object{(count == 1 ? string.Empty : "s")} will go.",
+                warning: true);
+        }
     }
 
     // ── state ────────────────────────────────────────────────────────────
+
+    private bool _destroyAllArmed;
 
     private PropHandle? SelectedProp()
     {

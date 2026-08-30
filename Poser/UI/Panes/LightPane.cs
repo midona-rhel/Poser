@@ -264,27 +264,19 @@ public sealed class LightPane
         {
             // The rule is a divider BETWEEN sections, so the page's first
             // section draws neither the rule nor the margin above it.
-            page.Section("GENERAL", _openGeneral, next => _openGeneral = next,
+            page.Section("General", _openGeneral, next => _openGeneral = next,
                 form => GeneralRows(form, light),
                 divider: false);
-            page.Section("LIGHT", _openLight, next => _openLight = next,
+            page.Section("Light", _openLight, next => _openLight = next,
                 form => LightRows(form, light));
-            page.Section("ATTACH", _openAttach, next => _openAttach = next,
+            page.Section("Shadows", _openShadows, next => _openShadows = next,
+                form => ShadowRows(form, light));
+            page.Section("Attach", _openAttach, next => _openAttach = next,
                 form => AttachRows(form, light));
-            page.Section("FILE", _openFile, next => _openFile = next,
+            page.Section("File", _openFile, next => _openFile = next,
                 form => FileRows(form, light));
-            page.Section("ACTIONS", _openActions, next => _openActions = next,
+            page.Section("Actions", _openActions, next => _openActions = next,
                 form => ActionRows(form, lightId, light));
-        });
-
-    /// <summary>The Shadows tab: everything the light casts, and nothing
-    /// else.</summary>
-    public void DrawShadows(Vector2 origin, Vector2 size) =>
-        DrawTab("light-shadows", origin, size, (page, _, light) =>
-        {
-            page.Section("SHADOWS", _openShadows, next => _openShadows = next,
-                form => ShadowRows(form, light),
-                divider: false);
         });
 
     /// <summary>The two tabs' shared frame: the target lookup and the empty
@@ -333,7 +325,7 @@ public sealed class LightPane
                 "Enabled",
                 cell => cell.Switch("##light-enabled", light.IsOn,
                     value => light.IsOn = value),
-                help: "Turn the light off without losing any of its settings");
+                help: "Switch off, settings kept");
             cells.Cell(
                 "Reflections",
                 cell => cell.Switch("##light-reflections", light.HasReflection,
@@ -352,7 +344,7 @@ public sealed class LightPane
                 cell => cell.Dropdown("##light-type", KindOptions,
                     (int)light.Kind,
                     selected => light.Kind = (LightKind)selected),
-                help: "How the light emits: a sun, a bulb, a cone, or a panel");
+                help: "Sun, bulb, cone, or panel");
         });
     }
 
@@ -363,7 +355,7 @@ public sealed class LightPane
             wells.Well("Color", ToDisplayColor(light.Color),
                 value => light.Color = ToRawColor(value),
                 hdr: true);
-        }, help: "The light's color; the native value is HDR and reaches past white");
+        }, help: "HDR color; reaches past white");
 
         // Intensity carries Ktisis/Brio's full 0–100 native range on log
         // tiers like the environment's light-distance slider — but three
@@ -393,14 +385,13 @@ public sealed class LightPane
                 cell => cell.Dropdown("##light-falloff-type", FalloffOptions,
                     (int)light.FalloffType,
                     selected => light.FalloffType = (LightFalloffType)selected),
-                help: "The curve the light dims along over its range");
+                help: "The dimming curve");
             cells.Cell(
                 "Falloff",
                 cell => cell.Slider("##light-falloff", light.Falloff,
                     0f, 1000f, value => light.Falloff = value,
                     scale: SliderScale.Log, logCurvature: 9999f),
-                help: "How sharply the light dims toward the edge of its "
-                    + "range");
+                help: "Dimming toward the cone edge");
         });
 
         switch (light.Kind)
@@ -431,16 +422,14 @@ public sealed class LightPane
                             -90f, 90f,
                             value => light.AreaAngle =
                                 light.AreaAngle with { X = value }),
-                        help: "How far the panel skews horizontally, in "
-                            + "degrees");
+                        help: "Skew horizontally, degrees");
                     cells.Cell(
                         "Angle Y",
                         cell => cell.Slider("##light-area-y", area.Y,
                             -90f, 90f,
                             value => light.AreaAngle =
                                 light.AreaAngle with { Y = value }),
-                        help: "How far the panel skews vertically, in "
-                            + "degrees");
+                        help: "Skew vertically, degrees");
                 });
                 form.Slider("Falloff angle", light.FalloffAngle, 0f, 180f,
                     value => light.FalloffAngle = value,
@@ -462,8 +451,7 @@ public sealed class LightPane
                     next => ApplyGoboIndex(next),
                     disabled: !goboSupported),
                 help: goboSupported
-                    ? "Project a texture through the light, like a window's "
-                        + "shadow"
+                    ? "Project a texture through the light"
                     : "Spot and area lights only.");
             cells.Cell(
                 string.Empty,
@@ -620,9 +608,9 @@ public sealed class LightPane
                         _attachLabel = null;
                     },
                     disabled: attached is null,
-                    help: "Leave the light where it is and stop following");
+                    help: "Stop following");
             },
-            help: "Make the light follow a bone, one transform copy per frame");
+            help: "Follow a bone");
     }
 
     /// <summary>"Actor · bone" for the attached bone, memoized on the scene
@@ -721,9 +709,9 @@ public sealed class LightPane
         form.Actions("Light file", actions =>
         {
             actions.Button("Save", () => OpenSave(light),
-                help: "Write this light and all of its settings to a file");
+                help: "Save this light to a file");
             actions.Button("To library", () => SaveToLibrary(light),
-                help: "Save this light into the library's Objects tab");
+                help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
         });
@@ -778,14 +766,11 @@ public sealed class LightPane
     private void ActionRows(
         Crystarium.FormScope form, LightId lightId, ILight light)
     {
-        form.Actions("Placement", actions =>
+        form.Actions("Light", actions =>
         {
             actions.Button("Move to camera",
                 () => MoveToCamera(lightId),
-                help: "Put the light where the camera is, facing the same way");
-        });
-        form.Actions("Light", actions =>
-        {
+                help: "Move to the camera's spot");
             actions.Button("Clone",
                 () =>
                 {
@@ -793,7 +778,7 @@ public sealed class LightPane
                         _notices.Failed(
                             "Clone: the light could not be created.");
                 },
-                help: "Create a second light with every setting of this one");
+                help: "Duplicate this light");
             // A borrowed native is never destructed: a captured light is given
             // back to the game instead, which is a different promise and reads
             // as a different button.
@@ -811,7 +796,7 @@ public sealed class LightPane
                     {
                         _lighting.ReleaseLight(light);
                     },
-                    help: "Give this light back to the game and stop editing it");
+                    help: "Hand it back to the game");
         });
 
         // Brio's "Destroy All… → Lights → Confirm", armed rather than held:
@@ -823,15 +808,12 @@ public sealed class LightPane
                 _destroyAllArmed ? "Confirm destroy all" : "Destroy all",
                 () => DestroyAllLights(count),
                 disabled: count == 0,
-                help: "Remove every spawned light and hand every captured one back",
-                variant: _destroyAllArmed
-                    ? ButtonVariant.Danger
-                    : ButtonVariant.Secondary);
+                help: "Destroy spawned, hand back captured",
+                variant: ButtonVariant.Danger);
         });
         if (_destroyAllArmed)
             form.Status(
-                $"{count} light{(count == 1 ? string.Empty : "s")} will go. "
-                + "Captured world lights are handed back, not destroyed.",
+                $"{count} light{(count == 1 ? string.Empty : "s")} will go. ",
                 warning: true);
     }
 

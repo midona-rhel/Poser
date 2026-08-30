@@ -44,7 +44,7 @@ public sealed class ExpressionInspectorSection
         Crystarium.FormScope form,
         IActor actor,
         ActorId? actorId,
-        bool paired,
+        bool paired, // both hosts pair now; kept for call-site stability
         Action<Crystarium.FormScope, ActorId>? expressionRow = null)
     {
         using var profile = FrameProfiler.Scope(
@@ -59,6 +59,7 @@ public sealed class ExpressionInspectorSection
         // A unit consumed as the second half of a pair must not emit its own
         // row later in the catalog order.
         var consumed = new bool[units.Count];
+        (string Id, string Label, bool Bidirectional)? pendingSingle = null;
         for (int i = 0; i < units.Count; i++)
         {
             if (consumed[i])
@@ -79,18 +80,66 @@ public sealed class ExpressionInspectorSection
             {
                 consumed[partner] = true;
                 drawn++;
+                string sideBase = DisplayName(side.Base);
                 DrawPair(
                     form,
                     actor,
-                    side.Base,
+                    sideBase + " L",
+                    sideBase + " R",
                     bidirectional,
                     side.Side == 'L' ? id : units[partner].Id,
-                    side.Side == 'L' ? units[partner].Id : id);
+                    side.Side == 'L' ? units[partner].Id : id,
+                    side.Base + " — left / right");
                 continue;
             }
 
-            DrawUnit(form, actor, id, label, bidirectional);
+            // Upper/Lower halves pair the same way sides do: one row,
+            // each half under its own label.
+            if (paired &&
+                SplitHalf(label) is { } half &&
+                FindHalfPartner(units, consumed, i, half, bidirectional)
+                    is { } lower)
+            {
+                consumed[lower] = true;
+                drawn++;
+                string halfBase =
+                    DisplayName(half.Base).ToLowerInvariant();
+                DrawPair(
+                    form,
+                    actor,
+                    "Upper " + halfBase,
+                    "Lower " + halfBase,
+                    bidirectional,
+                    half.IsUpper ? id : units[lower].Id,
+                    half.IsUpper ? units[lower].Id : id,
+                    half.Base + " — upper / lower");
+                continue;
+            }
+
+            if (paired)
+            {
+                // Leftover singles share rows too (Jaw | Lip): buffer one,
+                // pair it with the next. Order may shift by one row — a
+                // shared row beats strict catalog order on the surface.
+                if (pendingSingle is { } first)
+                {
+                    pendingSingle = null;
+                    DrawSinglePair(form, actor, first, (id, label, bidirectional));
+                    continue;
+                }
+                pendingSingle = (id, label, bidirectional);
+                continue;
+            }
+
+            // The INSPECTOR form: one bare slider per row, no numeric
+            // value — the generic reset below is its only verb.
+            DrawUnit(form, actor, id, DisplayName(label), bidirectional,
+                bare: true);
         }
+
+        if (pendingSingle is { } last)
+            DrawUnit(form, actor, last.Id, DisplayName(last.Label),
+                last.Bidirectional, bare: false);
 
         if (drawn == 0)
         {
@@ -99,6 +148,58 @@ public sealed class ExpressionInspectorSection
         }
 
         DrawReset(form, actor);
+    }
+
+    /// <summary>A bidirectional slider IS the motion axis, so the motion
+    /// word leaves the name: "Jaw Open" runs closed-to-open and is "Jaw",
+    /// "Brow Up" is "Brow". A DISTINCTIVE verb survives as the name
+    /// (Furrow, Pucker) — and two labels must never collapse to one word:
+    /// "Lip" once named both the pucker and the open axis.</summary>
+    private static string DisplayName(string label) => label switch
+    {
+        "Jaw Open" => "Jaw",
+        "Lip Pucker" => "Pucker",
+        "Lip Open" => "Lip",
+        "Brow Up" => "Brow",
+        "Brow Furrow" => "Furrow",
+        _ => label,
+    };
+
+    /// <summary>The base label of an "Upper X"/"Lower X" unit; null for a
+    /// unit without a vertical half.</summary>
+    private static (string Base, bool IsUpper)? SplitHalf(string label)
+    {
+        if (label.StartsWith("Upper ", StringComparison.Ordinal))
+            return (label[6..], true);
+        if (label.StartsWith("Lower ", StringComparison.Ordinal))
+            return (label[6..], false);
+        return null;
+    }
+
+    /// <summary>The opposite vertical half, mirroring FindPartner.</summary>
+    private static int? FindHalfPartner(
+        IReadOnlyList<(string Id, string Label, bool Bidirectional, bool Available)> units,
+        bool[] consumed,
+        int index,
+        (string Base, bool IsUpper) half,
+        bool bidirectional)
+    {
+        for (int i = 0; i < units.Count; i++)
+        {
+            if (i == index || consumed[i])
+                continue;
+            var candidate = units[i];
+            if (!candidate.Available ||
+                candidate.Bidirectional != bidirectional)
+                continue;
+            if (SplitHalf(candidate.Label) is not { } candidateHalf ||
+                candidateHalf.IsUpper == half.IsUpper ||
+                !string.Equals(
+                    candidateHalf.Base, half.Base, StringComparison.Ordinal))
+                continue;
+            return i;
+        }
+        return null;
     }
 
     /// <summary>The base label and side of a "(L)"/"(R)" unit; null for a unit
@@ -139,83 +240,95 @@ public sealed class ExpressionInspectorSection
     }
 
     /// <summary>One unit's weight row. A bidirectional unit reads from -1, a
-    /// one-way unit from 0; both are shown as a percentage.</summary>
+    /// one-way unit from 0; both are shown as a percentage. The inspector's
+    /// rows are BARE — the slider is the whole row.</summary>
     private void DrawUnit(
         Crystarium.FormScope form,
         IActor actor,
         string id,
         string label,
-        bool bidirectional) =>
+        bool bidirectional,
+        bool bare = false) =>
         form.Slider(
             label,
             _expressions.GetWeight(actor, id),
             bidirectional ? -1f : 0f,
             1f,
             next => _expressions.SetWeight(actor, id, next),
-            format: "0%");
+            format: "0%",
+            bare: bare,
+            altReset: 0f);
 
-    /// <summary>Both halves on one row: the base label once, then the left and
-    /// right weights. The pair cells carry no percentage readout — the row has
-    /// no width for two of them.</summary>
+    /// <summary>Two unrelated single units share one surface row, each
+    /// under its own label with its own value.</summary>
+    private void DrawSinglePair(
+        Crystarium.FormScope form,
+        IActor actor,
+        (string Id, string Label, bool Bidirectional) first,
+        (string Id, string Label, bool Bidirectional) second)
+    {
+        form.Pair(
+            DisplayName(first.Label),
+            cell => DrawPairCell(
+                cell, actor, first.Id, first.Bidirectional ? -1f : 0f,
+                DisplayName(first.Label)),
+            DisplayName(second.Label),
+            cell => DrawPairCell(
+                cell, actor, second.Id, second.Bidirectional ? -1f : 0f,
+                DisplayName(second.Label)),
+            help: DisplayName(first.Label) + " · " + DisplayName(second.Label));
+    }
+
+    /// <summary>Both halves on one row, EACH under its own label — the
+    /// precise-naming rule: the left slider says it is the left one.
+    /// The pair cells carry no percentage readout — the row has no width
+    /// for two of them.</summary>
     private void DrawPair(
         Crystarium.FormScope form,
         IActor actor,
-        string baseLabel,
+        string leftLabel,
+        string rightLabel,
         bool bidirectional,
         string leftId,
-        string rightId)
+        string rightId,
+        string help)
     {
         float minimum = bidirectional ? -1f : 0f;
         form.Pair(
-            baseLabel,
-            cell => DrawPairCell(cell, actor, "L", leftId, minimum),
-            "",
-            cell => DrawPairCell(cell, actor, "R", rightId, minimum),
-            help: baseLabel + " — left / right");
+            leftLabel,
+            cell => DrawPairCell(
+                cell, actor, leftId, minimum, SpokenSide(leftLabel)),
+            rightLabel,
+            cell => DrawPairCell(
+                cell, actor, rightId, minimum, SpokenSide(rightLabel)),
+            help: help);
     }
 
-    /// <summary>One half of a pair: the side caption, then the slider in the
-    /// remaining cell width — losing the caption loses which half is which.
-    /// </summary>
+    /// <summary>One half of a pair: the cell slider with its numeric
+    /// value — every surface slider states its number.</summary>
     private void DrawPairCell(
         Crystarium.FormPairCell cell,
         IActor actor,
-        string sideCaption,
         string id,
-        float minimum)
-    {
-        var theme = Crystarium.ActiveTheme;
-        var captionStyle = new TextStyle
-        {
-            Size = theme.Typography.CaptionSize,
-            Color = theme.FormLabel,
-        };
-        var captionSize = Crystarium.MeasureText(sideCaption, captionStyle);
-        Crystarium.TextAt(
-            new Vector2(
-                cell.Origin.X,
-                cell.Origin.Y
-                    + (theme.Controls.FormRowHeight * cell.Scale
-                        - captionSize.Y) * 0.5f),
-            sideCaption,
-            captionStyle);
-        float indent =
-            captionSize.X + theme.Page.ActionGap * cell.Scale;
-        var sliderTop = cell.Center(theme.Controls.SliderHeight);
-        ImGui.SetCursorScreenPos(
-            new Vector2(sliderTop.X + indent, sliderTop.Y));
-        Crystarium.Slider(
+        float minimum,
+        string help) =>
+        cell.Slider(
             $"##expr-{id}",
             _expressions.GetWeight(actor, id),
             minimum,
             1f,
             next => _expressions.SetWeight(actor, id, next),
-            new ControlStyle
-            {
-                Width = UiWidth.Fixed(MathF.Max(
-                    1f, (cell.Width - indent) / cell.Scale)),
-            });
-    }
+            format: "0%",
+            help: help);
+
+    /// <summary>The cell label spoken in full for its hover: "Furrow L"
+    /// hovers as "Furrow left".</summary>
+    private static string SpokenSide(string label) =>
+        label.EndsWith(" L", StringComparison.Ordinal)
+            ? label[..^2] + " left"
+            : label.EndsWith(" R", StringComparison.Ordinal)
+                ? label[..^2] + " right"
+                : label;
 
     private void DrawReset(Crystarium.FormScope form, IActor actor)
     {
@@ -224,6 +337,6 @@ public sealed class ExpressionInspectorSection
             "Reset",
             () => _expressions.ResetExpression(actor),
             disabled: !active,
-            help: "Reset every expression slider to zero"));
+            help: "Zero every expression slider"));
     }
 }

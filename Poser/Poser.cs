@@ -107,7 +107,11 @@ public class Poser : IDalamudPlugin
                 Dalamud.Plugin.Services.IPluginLog>().Debug(message);
         log.Debug("Load stage: target sync");
         _ = _serviceProvider.GetRequiredService<TargetSyncService>();
-        FontRegistry.Register(pluginInterface.UiBuilder.FontAtlas);
+        FontRegistry.Register(
+            pluginInterface.UiBuilder.FontAtlas,
+            System.IO.Path.Combine(
+                pluginInterface.AssemblyLocation.DirectoryName ?? ".",
+                "Data", "Fonts"));
         Func<byte[], int, int, (nint, IDisposable?)> textureUploader = (pixels, width, height) =>
         {
             var wrap = textureProvider.CreateFromRaw(

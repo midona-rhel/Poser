@@ -16,6 +16,7 @@ public sealed class UiWindowSet : IDisposable
     public SpawnBrowserWindow SpawnBrowser { get; }
     public SidebarPartWindow SidebarPart { get; }
     public ToolbarPartWindow ToolbarPart { get; }
+    public LibraryWindow LibraryPart { get; }
 
     /// <summary>The PERF panel. Up exactly while its setting is on — the
     /// switch IS the window, so nothing else opens or closes it.</summary>
@@ -68,6 +69,13 @@ public sealed class UiWindowSet : IDisposable
 
         SidebarPart = new SidebarPartWindow(main);
         System.AddWindow(SidebarPart);
+        LibraryPart = new LibraryWindow(main);
+        System.AddWindow(LibraryPart);
+        Main.OnLibraryWindowRequested += () =>
+        {
+            LibraryPart.IsOpen = true;
+            LibraryPart.BringToFront();
+        };
         ToolbarPart = new ToolbarPartWindow(main);
         System.AddWindow(ToolbarPart);
         SidebarPart.OnReattach += ToggleDetached;
@@ -150,7 +158,11 @@ public sealed class UiWindowSet : IDisposable
     {
         bool detached = Main.IsOpen && _configService.Config.UI.DetachedShell;
         SidebarPart.IsOpen = detached;
-        ToolbarPart.IsOpen = detached;
+        // The toolbar is ALWAYS its own window — merging windows never
+        // merges the toolbar (the standard's shell roles).
+        ToolbarPart.IsOpen = Main.IsOpen;
+        if (!Main.IsOpen)
+            LibraryPart.IsOpen = false;
         if (!detached)
             Main.ContentHidden = false;
     }
@@ -170,12 +182,9 @@ public sealed class UiWindowSet : IDisposable
                 Main.LastPosition,
                 new System.Numerics.Vector2(
                     Main.LastSidebarWidth, Main.LastHeight));
-            ToolbarPart.PlaceAt(new System.Numerics.Vector2(
-                Main.LastPosition.X,
-                MathF.Max(
-                    0f,
-                    Main.LastPosition.Y
-                        - (Views.AppShellView.CollapsedBarHeight + 8f) * gs)));
+            // The toolbar is ALWAYS its own window with its own remembered
+            // position — detaching the shell must not move it.
+            _ = gs;
             Main.ApplyDetachShift(+1);
         }
         else

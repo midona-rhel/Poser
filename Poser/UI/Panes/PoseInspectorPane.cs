@@ -428,6 +428,11 @@ public class PoseInspectorPane
     }
 
     // Rotation rings use the current presentation frame.
+    /// <summary>The camera the rail ball edits; null off camera
+    /// selections.</summary>
+    public IVirtualCamera? BallCamera() =>
+        IsCameraSelection ? _cameraPane.BallCamera() : null;
+
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
         var (transform, canEdit) = ReadTransform();
@@ -555,7 +560,7 @@ public class PoseInspectorPane
             {
                 stack.Section(
                     "translation",
-                    "TRANSLATION",
+                    "",
                     _openTranslation,
                     next => _openTranslation = next,
                     _cameraPane.DrawRailTranslation,
@@ -563,7 +568,7 @@ public class PoseInspectorPane
                 if (_cameraPane.RailHasTracking)
                     stack.Section(
                         "camera-tracking",
-                        "TRACKING",
+                        "Tracking",
                         _openCameraTracking,
                         next => _openCameraTracking = next,
                         _cameraPane.DrawRailTracking);
@@ -578,7 +583,7 @@ public class PoseInspectorPane
             if (_overlayPane.HasRailNode)
                 stack.Section(
                     "overlay-placement",
-                    "PLACEMENT",
+                    "Placement",
                     _openTranslation,
                     next => _openTranslation = next,
                     _overlayPane.DrawRailPlacement,
@@ -591,7 +596,7 @@ public class PoseInspectorPane
         if (_primary is not { Kind: SceneEntityKind.GazeTarget })
             stack.Section(
                 "translation",
-                "TRANSLATION",
+                "",
                 _openTranslation,
                 next => _openTranslation = next,
                 DrawTransform,
@@ -616,7 +621,7 @@ public class PoseInspectorPane
             if (actor != null && humanoid)
                 stack.Section(
                     "gaze",
-                    "GAZE",
+                    "Gaze",
                     _openGaze,
                     next => _openGaze = next,
                     form => DrawGaze(form, actor, wide: false));
@@ -624,7 +629,7 @@ public class PoseInspectorPane
             if (actor != null && humanoid && _expressionSection.CanDraw)
                 stack.Section(
                     "expression",
-                    "EXPRESSION",
+                    "Expression",
                     _openExpression,
                     next => _openExpression = next,
                     form => _expressionSection.Draw(
@@ -632,7 +637,7 @@ public class PoseInspectorPane
             if (skeleton != null)
                 stack.Section(
                     "pose",
-                    "POSE",
+                    "Pose",
                     _openPose,
                     next => _openPose = next,
                     form => DrawPoseActions(form, skeleton, wide: false));
@@ -875,7 +880,7 @@ public class PoseInspectorPane
                 }
                 return Crystarium.Section(
                     "pose-surface-expression",
-                    "EXPRESSION",
+                    "Expression",
                     origin,
                     contentWidth,
                     _openSurfaceExpression,
@@ -921,7 +926,7 @@ public class PoseInspectorPane
                 if (actor != null && OwningActorId() is { } actorId)
                     stack.Section(
                         "camera",
-                        "CAMERA",
+                        "Camera",
                         open: true,
                         _ => { },
                         form => form.Actions("Frame", actions =>
@@ -933,7 +938,7 @@ public class PoseInspectorPane
                 if (actor != null && !IsCreature(actor))
                     stack.Section(
                         "gaze",
-                        "GAZE",
+                        "Gaze",
                         _openSurfaceGaze,
                         next => _openSurfaceGaze = next,
                         form => DrawGaze(form, actor, wide: true),
@@ -942,14 +947,14 @@ public class PoseInspectorPane
                 {
                     stack.Section(
                         "pose",
-                        "POSE",
+                        "Pose",
                         _openSurfacePose,
                         next => _openSurfacePose = next,
                         form => DrawPoseActions(form, skeleton, wide: true),
                         divider: stack.Any);
                     stack.Section(
                         "files",
-                        "FILES",
+                        "Files",
                         _openSurfaceFiles,
                         next => _openSurfaceFiles = next,
                         form => _poseFileSection.Draw(form, skeleton),
@@ -981,7 +986,7 @@ public class PoseInspectorPane
                 _matrixFilter = next;
                 _matrixVm = null;
             },
-            "Filter bones",
+            "Search",
             ControlStyle.Workspace with
             {
                 Width = UiWidth.Region(MathF.Min(
@@ -989,9 +994,18 @@ public class PoseInspectorPane
                     (max.X - min.X) / s)),
             });
 
+        // The fixed filter header closes with a separator, so what stays
+        // put and what scrolls is legible (the graphical panes match).
+        float matrixRuleY = min.Y + toolbarHeight
+            + theme.Page.ActionGap * s - 1f * s;
+        ImGui.GetWindowDrawList().AddRectFilled(
+            new Vector2(min.X, matrixRuleY),
+            new Vector2(max.X, matrixRuleY + 1f * s),
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.FormSeparator)));
         var viewMin = new Vector2(
             min.X,
-            min.Y + toolbarHeight + theme.Page.ActionGap * s);
+            min.Y + toolbarHeight + theme.Page.ActionGap * s + 1f * s);
         var viewMax = max;
         if (viewMax.Y <= viewMin.Y)
             return viewportHeight;
@@ -1070,21 +1084,21 @@ public class PoseInspectorPane
             {
                 bar.Label(
                     "Parenting",
-                    "Choose what child bones follow when you move a bone on this actor");
+                    "What children follow a moved bone");
                 foreach (var (label, component, help) in new[]
                 {
                     (
                         "Pos",
                         TransformComponents.Position,
-                        "Carry child bones along when a bone is moved"),
+                        "Move children too"),
                     (
                         "Rot",
                         TransformComponents.Rotation,
-                        "Turn child bones along when a bone is rotated"),
+                        "Rotate children too"),
                     (
                         "Scale",
                         TransformComponents.Scale,
-                        "Resize child bones along when a bone is scaled"),
+                        "Scale children too"),
                 })
                 {
                     bool propagates =
@@ -1100,10 +1114,13 @@ public class PoseInspectorPane
                         },
                         help);
                 }
+                // Precise naming: this clears the SELECTION, and it sits
+                // in the parenting bar — the bare "Clear" read as clearing
+                // the parenting flags.
                 bar.Button(
-                    "Clear",
+                    "Clear selection",
                     _selection.Clear,
-                    "Clear the selection");
+                    "Deselect everything");
             },
             separator: ActionBarSeparator.None);
     }
@@ -1360,34 +1377,61 @@ public class PoseInspectorPane
         bool swap = GetSwapRotationXY?.Invoke() == true;
         static Vector3 SwapXY(Vector3 value) => new(value.Y, value.X, value.Z);
 
-        form.AxisVector(
-            "Translation",
-            pos,
-            next => Apply(next, DomainOperation.Translate),
-            Commit,
-            dragSpeed,
-            "0.000",
-            disabled: !canEdit);
-        form.AxisVector(
-            "Rotation",
-            swap ? SwapXY(euler) : euler,
-            next => Apply(swap ? SwapXY(next) : next, DomainOperation.Rotate),
-            () =>
-            {
-                Commit();
-                _dragEuler = null;
-            },
-            0.5f,
-            "0.000",
-            disabled: !canEdit);
-        form.AxisVector(
-            "Scale",
-            scale,
-            next => Apply(next, DomainOperation.Scale),
-            Commit,
-            dragSpeed,
-            "0.000",
-            disabled: !canEdit);
+        // The transform grid: toolbar icons name the rows, the axis
+        // columns wear their colors and letters — the inspector's designed
+        // form of the transform (skill: shell roles).
+        static float Axis(Vector3 v, int axis) =>
+            axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
+        static Vector3 WithAxis(Vector3 v, int axis, float next) => axis switch
+        {
+            0 => v with { X = next },
+            1 => v with { Y = next },
+            _ => v with { Z = next },
+        };
+        var displayEuler = swap ? SwapXY(euler) : euler;
+        form.Custom(
+            string.Empty,
+            Crystarium.TransformGridHeight,
+            row => Crystarium.TransformGrid(
+                "rail-transform",
+                row.Origin,
+                row.Width,
+                [
+                    (TablerIcon.ArrowsMove, "Translation"),
+                    (TablerIcon.Rotate, "Rotation"),
+                    (TablerIcon.ArrowsMaximize, "Scale"),
+                ],
+                (r, a) => r == 0
+                    ? Axis(pos, a)
+                    : r == 1 ? Axis(displayEuler, a) : Axis(scale, a),
+                (r, a, next) =>
+                {
+                    if (r == 0)
+                        Apply(WithAxis(pos, a, next), DomainOperation.Translate);
+                    else if (r == 1)
+                    {
+                        var display = WithAxis(displayEuler, a, next);
+                        Apply(
+                            swap ? SwapXY(display) : display,
+                            DomainOperation.Rotate);
+                    }
+                    else
+                        Apply(WithAxis(scale, a, next), DomainOperation.Scale);
+                },
+                r =>
+                {
+                    Commit();
+                    if (r == 1)
+                        _dragEuler = null;
+                },
+                r => r == 1 ? 0.5f : dragSpeed,
+                // Rotation is degrees: four digits say everything. The
+                // metric rows keep their thousandths.
+                r => r == 1 ? "0.0" : "0.000",
+                _ => !canEdit,
+                _ => _entity is IActor
+                    ? "Freeze the animation to move"
+                    : null));
 
         // If Alt is released between well callbacks, return immediately to
         // the active axis from the same frozen scale baseline.
@@ -1407,9 +1451,6 @@ public class PoseInspectorPane
         }
 
         DrawTransformClipboard(form, transform, canEdit);
-
-        if (!canEdit && _entity is IActor)
-            form.Status("Freeze the actor's animation to move it.");
     }
 
     private void DrawTransformClipboard(
@@ -1750,9 +1791,13 @@ public class PoseInspectorPane
                 {
                     var flag = part;
                     bool enabled = !off && state.TargetType.HasFlag(flag);
+                    // Free controls on one row spread EQUALLY — no label
+                    // column to align to, so the spacing is the alignment.
                     actions.Button(
                         label,
                         () => SetPart(flag, !enabled),
+                        style: ControlStyle.Workspace with
+                        { Width = UiWidth.Fill },
                         disabled: off,
                         variant: enabled
                             ? ButtonVariant.Primary
