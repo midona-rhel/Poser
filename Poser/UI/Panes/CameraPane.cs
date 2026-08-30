@@ -652,14 +652,16 @@ public sealed class CameraPane
                 cell => cell.Slider("##camera-fov", camera.FoV * Rad2Deg,
                     -44f, 120f,
                     value => camera.FoV = value * Deg2Rad,
-                    format: "0.0", disabled: locked),
+                    format: "0.0", disabled: locked,
+                    altReset: camera.DefaultFoV * Rad2Deg),
                 help: "Lens offset, degrees");
             cells.Cell(
                 "Roll",
                 cell => cell.Slider("##camera-roll", camera.Roll * Rad2Deg,
                     -180f, 180f,
                     value => camera.Roll = value * Deg2Rad,
-                    format: "0.0", disabled: locked),
+                    format: "0.0", disabled: locked,
+                    altReset: camera.DefaultRoll * Rad2Deg),
                 help: "Tilt around the view axis, in degrees");
         });
     }
@@ -678,14 +680,16 @@ public sealed class CameraPane
                 cell => cell.Number("##camera-yaw", rotation.X * Rad2Deg,
                     value => camera.Rotation =
                         camera.Rotation with { X = value * Deg2Rad },
-                    perPixel: 0.25f, format: "0.0", disabled: locked),
+                    perPixel: 0.25f, format: "0.0", disabled: locked,
+                    altReset: camera.DefaultRotation.X * Rad2Deg),
                 help: "Which way the camera faces, in degrees");
             cells.Cell(
                 "Pitch",
                 cell => cell.Number("##camera-pitch", rotation.Y * Rad2Deg,
                     value => camera.Rotation =
                         camera.Rotation with { Y = value * Deg2Rad },
-                    perPixel: 0.25f, format: "0.0", disabled: locked),
+                    perPixel: 0.25f, format: "0.0", disabled: locked,
+                    altReset: camera.DefaultRotation.Y * Rad2Deg),
                 help: "Look up or down, degrees");
         });
     }

@@ -341,10 +341,21 @@ navigation, not a scrollbar — may shift anything.
   (max−min)/300 is a unique scaling and a defect.
 - Double-click to type, always.
 - Alt-click resets a VALUE to its stated default (`altReset`) — one
-  gesture, one undo step, sliders and wells alike (the transform
-  grid's rotation resets to 0 and scale to 1). Wire it wherever a
-  value has a meaningful default; a value with none (a world
-  position) stays inert rather than resetting somewhere absurd.
+  gesture, one undo step, sliders and wells alike: the track, its
+  readout well, bare number wells and the transform grid all speak
+  it (rotation resets to 0, scale to 1, camera lens facts to 0).
+  Wire it wherever a value has a meaningful default; a value with
+  none (a world position) stays inert rather than resetting
+  somewhere absurd. The default is the OWNERSHIP BASELINE, not a
+  constant: the values the entity carried when Poser took it —
+  spawn, clone, or a file/scene apply — re-captured at every
+  ownership moment and kept in memory (the camera's
+  CaptureOwnedDefaults is the reference).
+- NO control listens to the scroll wheel — the wheel belongs to the
+  page scroll, and a well that stepped its value on a notch hijacked
+  it (the Brio wheel-stepping was removed 2026-08-30). The pose
+  preview and the 3D canvas keep their wheel zoom: they are VIEWS,
+  not value controls.
 - Numbers render in the MONO family (Geist Mono), never the text face:
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,

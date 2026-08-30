@@ -160,6 +160,18 @@ public interface IVirtualCamera
     /// <summary>Brio's reset-to-default: zoom, FoV, roll, pan, angle, offsets
     /// and the collision/delimit overrides back to spawn values.</summary>
     void ResetProperties();
+
+    /// <summary>The OWNERSHIP BASELINE: the values this camera carried when
+    /// Poser took it — spawn, clone, or a file/scene apply. Alt-click reset
+    /// restores THESE, never constants, so the default follows the entity.
+    /// Kept in memory only.</summary>
+    float DefaultFoV { get; }
+    float DefaultRoll { get; }
+    System.Numerics.Vector3 DefaultRotation { get; }
+
+    /// <summary>Re-captures the baseline from the current values — called at
+    /// every ownership moment.</summary>
+    void CaptureOwnedDefaults();
 }
 
 /// <summary>Ktisis's tracking modes: Follow keeps the pivot offset on the

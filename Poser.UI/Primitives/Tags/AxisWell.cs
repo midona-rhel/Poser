@@ -47,13 +47,6 @@ public static partial class Crystarium
                 pos, size, scale);
 
         var hit = Interactive.Reserve(id, size, disabled);
-        // The wheel has to be CLAIMED, not merely read: every well sits inside
-        // the shell's scrolling child, and an unclaimed notch would step the
-        // value AND scroll the page out from under the pointer.
-        // SetItemUsingMouseWheel is ImGui's own claim and it only takes hold
-        // while the item is the hovered one, so a notch anywhere else still
-        // scrolls normally.
-        ImGuiP.SetItemUsingMouseWheel();
         bool changed = false;
         // Alt-click resets to the stated default — the slider's own
         // gesture, spoken by every value control that HAS a default.
@@ -91,21 +84,10 @@ public static partial class Crystarium
         if (hit.DragEnded)
             onCommit?.Invoke();
 
-        // Wheel stepping (Brio ImBrio.Drag.cs:105-109, Ktisis
-        // TransformTable.cs:210-228) with THIS control's own modifiers, so a
-        // notch and a drag pixel scale by the same rule. A notch is a discrete
-        // edit with no release to wait for, so it commits itself — one notch
-        // is one undo step, which is what a stepper means.
-        float wheel = ImGui.GetIO().MouseWheel;
-        if (wheel != 0f && hit.Hovered && _axisEditId == null)
-        {
-            float next = value + wheel * perPixel * WheelStepPixels
-                * DragModifierMultiplier(ImGui.GetIO());
-            onChange(next);
-            value = next;
-            changed = true;
-            onCommit?.Invoke();
-        }
+        // NO wheel stepping: the wheel belongs to the page scroll, and a
+        // well that stepped on a notch hijacked it (the Brio behaviour was
+        // removed 2026-08-30 — only the pose preview and the viewports
+        // read the wheel).
 
         // The label follows the adaptive three-digit rule when asked; the
         // EDIT above always carries the full value — precision belongs to

@@ -565,7 +565,8 @@ public static partial class Crystarium
                         Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
                     },
                     disabled,
-                    adaptiveDisplay: format is null);
+                    adaptiveDisplay: format is null,
+                    altReset: altReset);
             }
             }
             if (actionScope != null && actionWidth > 0f)
@@ -1034,7 +1035,8 @@ public static partial class Crystarium
             string format = "0.00",
             string? help = null,
             bool disabled = false,
-            Action? onCommit = null)
+            Action? onCommit = null,
+            float? altReset = null)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -1058,7 +1060,8 @@ public static partial class Crystarium
                 {
                     Width = UiWidth.Fixed(ActiveTheme.Form.ValueColumnWidth),
                 },
-                disabled);
+                disabled,
+                altReset: altReset);
             _page.EndRow(row, id, help);
         }
 
@@ -1957,7 +1960,8 @@ public static partial class Crystarium
             Func<float, string>? readout = null,
             IReadOnlyList<float>? marks = null,
             string? help = null,
-            float logCurvature = 99f)
+            float logCurvature = 99f,
+            float? altReset = null)
         {
             float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
             float track = MathF.Max(
@@ -1978,7 +1982,8 @@ public static partial class Crystarium
                 disabled,
                 help,
                 scale: scale,
-                logCurvature: logCurvature);
+                logCurvature: logCurvature,
+                altReset: altReset);
             // Custom values use text; numeric values use the standard readout.
             var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
             if (readout is { } custom)
@@ -2013,7 +2018,8 @@ public static partial class Crystarium
                         Width = UiWidth.Fixed(readoutWidth / Scale),
                     },
                     disabled,
-                    adaptiveDisplay: format is null);
+                    adaptiveDisplay: format is null,
+                    altReset: altReset);
             }
         }
 
@@ -2034,7 +2040,8 @@ public static partial class Crystarium
         public void Number(
             string id, float value, Action<float> onChange,
             float perPixel, string format = "0.00",
-            bool disabled = false, Action? onCommit = null)
+            bool disabled = false, Action? onCommit = null,
+            float? altReset = null)
         {
             ImGui.SetCursorScreenPos(
                 Center(ActiveTheme.Controls.WorkspaceHeight));
@@ -2053,7 +2060,8 @@ public static partial class Crystarium
                 {
                     Width = UiWidth.Fixed(Width / Scale),
                 }),
-                disabled);
+                disabled,
+                altReset: altReset);
         }
 
         public void ColorWell(

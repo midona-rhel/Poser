@@ -276,6 +276,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         camera.SaveState();
         if (kind == CameraKind.Free)
             camera.SeedFreeCam();
+        camera.CaptureOwnedDefaults();
 
         _cameras.Add(camera);
         SetLive(camera);
@@ -325,6 +326,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         clone.TrackingMode = original.TrackingMode;
         foreach (var bone in original.TrackedBones)
             clone.TrackedBones.Add(bone);
+        clone.CaptureOwnedDefaults();
 
         _cameras.Add(clone);
         SetLive(clone);

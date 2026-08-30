@@ -356,6 +356,16 @@ public sealed class SceneLifecycleHistoryTests
 
     private sealed class FakeCamera(CameraKind kind) : IVirtualCamera
     {
+        public float DefaultFoV { get; private set; }
+        public float DefaultRoll { get; private set; }
+        public System.Numerics.Vector3 DefaultRotation { get; private set; }
+        public void CaptureOwnedDefaults()
+        {
+            DefaultFoV = FoV;
+            DefaultRoll = Roll;
+            DefaultRotation = Rotation;
+        }
+
         public bool IsValid { get; set; } = true;
         public string Name { get; set; } = "Camera";
         public CameraKind Kind { get; } = kind;

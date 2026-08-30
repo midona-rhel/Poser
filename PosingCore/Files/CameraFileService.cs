@@ -169,5 +169,8 @@ public class CameraFileService : ICameraFileService
         camera.DelimitAngle = file.DelimitAngle;
         camera.Orthographic = file.Orthographic;
         camera.OrthographicZoom = file.OrthographicZoom;
+        // A file apply is an ownership moment: what arrived becomes the
+        // reset baseline.
+        camera.CaptureOwnedDefaults();
     }
 }
