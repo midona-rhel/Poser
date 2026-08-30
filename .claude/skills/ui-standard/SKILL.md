@@ -136,8 +136,13 @@ Windows each have ONE job. No mode may change what a window IS.
   level in, and a group row's click selects the whole membership —
   the multiselect machinery does everything else. The Selection page
   and titles wear the group's name when the selection IS the group;
-  Group… / Rename / Ungroup live on that page, and Ungroup dissolves
-  without destroying.
+  its NAME is the page's first field, edited inline (the camera's
+  own pattern); Group… and Ungroup live on that page, and Ungroup
+  dissolves without destroying. PARENT AND CHILDREN NEVER SELECT
+  TOGETHER: members multiselect freely within a group, but the head
+  is only ever selected alone (it IS the whole membership), and only
+  one of the two levels wears the pill at a time — actor bones are
+  the ONE exception, keeping their dual actor-and-bones highlight.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
