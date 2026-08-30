@@ -200,9 +200,12 @@ public static partial class Crystarium
             ? TreeRowAction.Selected
             : TreeRowAction.None;
         // A held press that travels becomes a DRAG — reported every frame
-        // it persists; the host runs the drop state machine.
+        // it persists; the host runs the drop state machine. Travel is
+        // measured from the PRESS POINT (ImGui's accumulated drag), never
+        // per-frame: a per-frame delta gate only fires on a fast yank and
+        // made slow deliberate drags read as clicks.
         if (props.Draggable && hit.Active
-            && hit.DragDelta.LengthSquared() > 25f * scale * scale)
+            && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 5f * scale))
             action = TreeRowAction.Drag;
         // Context menus open on a hovered right-button press.
         if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
