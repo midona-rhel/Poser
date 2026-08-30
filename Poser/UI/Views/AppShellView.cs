@@ -882,7 +882,8 @@ public static class AppShellView
     {
         float widest = 0f;
         foreach (var kind in (ReadOnlySpan<string>)
-            ["Target", "Actor", "Object", "Camera", "Light", "Overlay"])
+            ["Target", "Actor", "Object", "Camera", "Light", "Overlay",
+                "Selection"])
             widest = MathF.Max(
                 widest, Crystarium.MeasureText(kind, KindMeasureStyle).X);
         return widest;

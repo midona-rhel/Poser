@@ -123,6 +123,13 @@ Windows each have ONE job. No mode may change what a window IS.
   SPANS its row at a fixed width, each tab taking an equal share of
   the slack: a natural-width icon strip left a small island in a
   wide band, which read as broken (2026-08-30).
+- **The anonymous group** — selecting two or more entities of ANY
+  kinds is a group that was never created: one Selection page (kind
+  counts, Move to camera, Deselect), one gizmo seated at the LIVE
+  centroid of the members with a world-aligned frame, rotation and
+  scale about that one point (Centroid pivot), translation carrying
+  it. Cameras and overlays ride along untargeted. Selecting a single
+  member edits it individually, exactly as in a named group.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 

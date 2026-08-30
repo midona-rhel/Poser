@@ -30,6 +30,86 @@ public static class TransformTargetResolver
         if (selected.Count == 0)
             return null;
 
+        // The ANONYMOUS GROUP: entities spanning kinds resolve together —
+        // each transformable member a target from its own baseline, in
+        // selection order. Cameras and overlays ride along untargeted
+        // (they carry no world transform target), and one stale
+        // transformable member unresolves the whole selection, the
+        // uniform branches' own rule.
+        if (Selection.EntitySelection.IsMixedEntities(selected))
+        {
+            var mixed = new List<TransformTargetId>();
+            foreach (var id in selected)
+            {
+                switch (id)
+                {
+                    case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    {
+                        bool exists = false;
+                        foreach (var actor in snapshot.Actors)
+                            if (actor.Id.Equals(actorId))
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            return null;
+                        mixed.Add(TransformTargetId.ForActor(actorId));
+                        break;
+                    }
+                    case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    {
+                        bool exists = false;
+                        foreach (var light in snapshot.Lights)
+                            if (light.Id.Equals(lightId))
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            return null;
+                        mixed.Add(TransformTargetId.ForLight(lightId));
+                        break;
+                    }
+                    case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    {
+                        bool exists = false;
+                        foreach (var prop in snapshot.Props)
+                            if (prop.Id.Equals(propId))
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            return null;
+                        mixed.Add(TransformTargetId.ForProp(propId));
+                        break;
+                    }
+                    case
+                    {
+                        Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } worldId
+                    }:
+                    {
+                        bool exists = false;
+                        foreach (var worldObject in snapshot.WorldObjects)
+                            if (worldObject.Id.Equals(worldId))
+                            {
+                                exists = true;
+                                break;
+                            }
+                        if (!exists)
+                            return null;
+                        mixed.Add(TransformTargetId.ForWorldObject(worldId));
+                        break;
+                    }
+                }
+            }
+            return mixed.Count == 0
+                ? null
+                : new EffectiveTransformSelection(mixed[0], mixed);
+        }
+
         if (selected[0].Kind == SceneEntityKind.Actor)
         {
             var actorTargets = new List<TransformTargetId>();

@@ -62,6 +62,8 @@ public class MainWindow : Window
     /// the act lands in the same history the transforms do.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly UserNotices _notices;
+    private readonly global::Poser.Services.ICameraService _gameCamera;
+    private readonly Game.Viewport.ViewportProjection _viewportProjection;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -322,6 +324,14 @@ public class MainWindow : Window
     /// </summary>
     private int _expandVersion;
 
+    /// <summary>The ANONYMOUS GROUP's strip: two or more entities selected
+    /// together get one Selection page — a group that was never created.
+    /// </summary>
+    private readonly ShellTab[] _multiselectTabs =
+    [
+        new() { Label = "Selection" },
+    ];
+
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
     private readonly ShellTab[] _selectionTabs =
@@ -463,6 +473,8 @@ public class MainWindow : Window
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices,
+        global::Poser.Services.ICameraService gameCamera,
+        Game.Viewport.ViewportProjection viewportProjection,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -548,6 +560,8 @@ public class MainWindow : Window
         _gazeService = gazeService;
         _lifecycle = lifecycle;
         _notices = notices;
+        _gameCamera = gameCamera;
+        _viewportProjection = viewportProjection;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
@@ -1085,7 +1099,11 @@ public class MainWindow : Window
     private string ContentKind(SelectionId? primary)
     {
         // ALWAYS the selected object's kind — the segment names what
-        // Target would show, whichever panel is active.
+        // Target would show, whichever panel is active. A multiselect IS
+        // its own kind: the anonymous group.
+        if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
+                _selection.Selected))
+            return "Selection";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.Bone
@@ -1109,8 +1127,22 @@ public class MainWindow : Window
         _ => EnvironmentTab.Lighting,
     };
 
+    private int _multiTitleCount;
+    private string _multiTitle = string.Empty;
+
     private string TitleEntity(SelectionId? primary)
     {
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities >= 2)
+        {
+            if (_multiTitleCount != entities)
+            {
+                _multiTitleCount = entities;
+                _multiTitle = $"{entities} selected";
+            }
+            return _multiTitle;
+        }
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -3112,6 +3144,16 @@ public class MainWindow : Window
     /// </summary>
     private ShellTab[] SyncStripAndTab(SelectionId? primary)
     {
+        // The ANONYMOUS GROUP first: two or more entities together answer
+        // with ONE Selection page, whatever their kinds — the multiselect
+        // is a group that was never created.
+        if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
+                _selection.Selected))
+        {
+            _activeStrip = "multi";
+            _activeTab = "Selection";
+            return _multiselectTabs;
+        }
         // The strip is a function of the selection type: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -3316,7 +3358,7 @@ public class MainWindow : Window
         // time on top of the Page's own.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Object" or "Light"
-                or "Environment" or "Scene"
+                or "Environment" or "Scene" or "Selection"
                 or "Lighting" or "Sky" or "Atmosphere" or "World"
                 or "Camera"
                 or "Scene"
@@ -3403,6 +3445,114 @@ public class MainWindow : Window
         }
     }
 
+    // ── the multiselect page: the anonymous group ────────────────────────
+
+    /// <summary>Per-kind counts, minted only when they change — a warm
+    /// frame restates the same strings.</summary>
+    private readonly int[] _multiCounts = new int[5];
+    private readonly string[] _multiCountText = new string[5];
+    private static readonly string[] MultiKindLabels =
+        ["Actors", "Objects", "Lights", "Cameras", "Overlays"];
+
+    private void DrawMultiselectPage(Vector2 origin, Vector2 size)
+    {
+        Span<int> counts = stackalloc int[5];
+        foreach (var id in _selection.Selected)
+        {
+            int slot = id.Kind switch
+            {
+                SceneEntityKind.Actor => 0,
+                SceneEntityKind.Prop or SceneEntityKind.WorldObject => 1,
+                SceneEntityKind.Light => 2,
+                SceneEntityKind.Camera => 3,
+                SceneEntityKind.Overlay => 4,
+                _ => -1,
+            };
+            if (slot >= 0)
+                counts[slot]++;
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            if (_multiCounts[i] == counts[i] && _multiCountText[i] != null)
+                continue;
+            _multiCounts[i] = counts[i];
+            _multiCountText[i] = counts[i].ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        Crystarium.Page("multiselect-page", origin, size, page =>
+        {
+            page.Section("Selection", form =>
+            {
+                for (int i = 0; i < 5; i++)
+                    if (_multiCounts[i] > 0)
+                        form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
+                form.Actions(string.Empty, actions =>
+                {
+                    actions.Button("Move to camera", MoveSelectionToCamera,
+                        help: "Place the selection in front of the camera");
+                    actions.Button("Deselect", () => _selection.Clear(),
+                        help: "Drop the whole selection");
+                });
+            }, divider: false);
+        });
+    }
+
+    /// <summary>One undoable translate: the whole selection moves so its
+    /// centroid lands in front of the camera, every member keeping its
+    /// offset from the others.</summary>
+    private void MoveSelectionToCamera()
+    {
+        var resolved = global::Poser.Application.Transforms.TransformTargetResolver
+            .Resolve(_selection.Selected, _scene.Snapshot);
+        if (resolved is not { } selection)
+        {
+            _notices.Failed("Nothing movable is selected.");
+            return;
+        }
+        var sum = System.Numerics.Vector3.Zero;
+        int counted = 0;
+        foreach (var target in selection.Targets)
+        {
+            var pose =
+                target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
+                    ? _viewportProjection.GetActorTransform(actor)
+                    : _viewportProjection.GetModelTransform(target);
+            if (pose is not { } position)
+                continue;
+            sum += position.Position;
+            counted++;
+        }
+        if (counted == 0)
+        {
+            _notices.Failed("Nothing movable is selected.");
+            return;
+        }
+        var centroid = sum / counted;
+        var look = _gameCamera.GetLookDirection();
+        if (look.LengthSquared() < 1e-6f)
+            look = System.Numerics.Vector3.UnitZ;
+        var goal = _gameCamera.GetCameraPosition()
+            + System.Numerics.Vector3.Normalize(look) * 2.5f;
+        var begin = _cleanTransforms.Begin(
+            selection.Targets,
+            global::Poser.Domain.Transforms.TransformOperation.Translate,
+            global::Poser.Domain.Transforms.TransformSpace.World,
+            description: "Move to camera");
+        if (!begin.Success || begin.GestureId is not { } gestureId)
+        {
+            _notices.Failed(
+                $"Move to camera: {begin.Detail ?? "refused"}.");
+            return;
+        }
+        _cleanTransforms.Update(gestureId,
+            new global::Poser.Domain.Transforms.TransformDelta(
+                goal - centroid,
+                System.Numerics.Quaternion.Identity,
+                System.Numerics.Vector3.One));
+        _cleanTransforms.Commit(gestureId);
+    }
+
     private IActor? ResolveActorRow(ShellSidebarRow row)
     {
         if (row.Tag is not SelectionId
@@ -3441,6 +3591,11 @@ public class MainWindow : Window
         // when another tab owns the centre pane.
         _poseInspector.SetSelection(_selection.Primary);
 
+        if (_activeTab == "Selection")
+        {
+            DrawMultiselectPage(origin, size);
+            return;
+        }
         if (_activeTab == "Animation")
         {
             _animationCatalog.EnsureLoaded();
