@@ -31,7 +31,11 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
-        _vm.KeyDown = key => keyState[key];
+        // Guarded: the indexer THROWS for virtual keys the game does not
+        // track (several OEM punctuation codes), and one bad key would
+        // kill the whole capture loop with an exception per frame.
+        _vm.KeyDown = key =>
+            keyState.IsVirtualKeyValid(key) && keyState[key];
         RespectCloseHotkey = false;
     }
 
