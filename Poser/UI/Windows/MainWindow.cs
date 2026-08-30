@@ -3725,7 +3725,11 @@ public class MainWindow : Window
         var matched = _groups.MatchSelection(_selection.Selected);
         Crystarium.Page("multiselect-page", origin, size, page =>
         {
-            page.Section(matched?.Name ?? "Selection", form =>
+            // The title is STABLE: the group's name lives in the field
+            // below, never in the section header — a header that renamed
+            // with each keystroke changed the field's identity and threw
+            // the keyboard back to the game after one character.
+            page.Section(matched != null ? "Group" : "Selection", form =>
             {
                 if (matched is { } named)
                     form.TextInput("Name", named.Name,

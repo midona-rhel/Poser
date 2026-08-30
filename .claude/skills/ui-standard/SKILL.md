@@ -459,6 +459,12 @@ texture id.
 
 ## Sections and headers
 
+- A section TITLE is part of every contained control's identity:
+  a title that changes while the user types in the section (a name
+  field renaming its own header) resets the field's focus after one
+  character and hands the keyboard to the game (group rename,
+  2026-08-30). Titles are STABLE; live values belong in fields.
+
 - Headers are SENTENCE CASE — "Wet surface", never "WET SURFACE".
   Only the first letter capitalizes; acronyms (MCDF, IK, 3D) keep
   their caps.
