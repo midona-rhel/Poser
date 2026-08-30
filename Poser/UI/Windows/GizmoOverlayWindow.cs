@@ -748,10 +748,10 @@ public class GizmoOverlayWindow : Window
         var io = ImGui.GetIO();
         var mouse = io.MousePos;
         WorldHandleHit? hover = null;
-        // Occlusion and the configured modifier suppress new grabs only.
-        bool gizmoSuppressed = SkeletonOverlayWindow.HoldModifierDown(
-            GizmoConfig.DisableGizmoModifier);
-        if (gesture == null && layout != null && !occluded && !gizmoSuppressed)
+        // Occlusion suppresses new grabs only; the configured hold-modifier
+        // died with its setting — Alt is the ONE suspend and hides the
+        // gizmo outright.
+        if (gesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
         // Occlusion suppresses hover/ownership but not handle drawing.

@@ -151,8 +151,6 @@ public class SettingsWindow : Window
             SnapLinearStep = c.Gizmo.SnapLinearStep,
             AllowRaySnap = c.Gizmo.AllowRaySnap,
             KeepGizmoWhenBonesHidden = c.Gizmo.KeepGizmoWhenBonesHidden,
-            DisableDotsModifier = (int)c.Gizmo.DisableDotsModifier,
-            DisableGizmoModifier = (int)c.Gizmo.DisableGizmoModifier,
 
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
@@ -343,10 +341,6 @@ public class SettingsWindow : Window
         c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
         c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
         c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
-        c.Gizmo.DisableDotsModifier =
-            (OverlayHoldModifier)Math.Clamp(_vm.DisableDotsModifier, 0, 2);
-        c.Gizmo.DisableGizmoModifier =
-            (OverlayHoldModifier)Math.Clamp(_vm.DisableGizmoModifier, 0, 2);
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;

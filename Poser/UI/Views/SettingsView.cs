@@ -85,8 +85,6 @@ public sealed class SettingsViewModel
     public float SnapLinearStep = 0.1f;
     public bool AllowRaySnap;
     public bool KeepGizmoWhenBonesHidden = true;
-    public int DisableDotsModifier;
-    public int DisableGizmoModifier;
     public float TransformEntitySpeed = 0.005f;
     public float TransformBoneSpeed = 0.005f;
     public float CameraDefaultSpeed = FreeCameraSpeed.Default;
@@ -758,8 +756,6 @@ public static class SettingsView
         ["Ktisis", "Brio"];
     private static readonly string[] ActiveActorLabels =
         ["GPose target", "Selection", "Either"];
-    private static readonly string[] HoldModifierLabels =
-        ["Off", "Ctrl", "Shift"];
 
     private static void DrawGizmo(
         SettingsViewModel vm,
@@ -803,21 +799,6 @@ public static class SettingsView
                 vm.AllowRaySnap,
                 next => vm.AllowRaySnap = next,
                 "While moving, put the target wherever the pointer meets the scene");
-        });
-        page.Section("Hold to suspend", form =>
-        {
-            form.Dropdown(
-                "Disable bone dots",
-                HoldModifierLabels,
-                vm.DisableDotsModifier,
-                next => vm.DisableDotsModifier = next,
-                "Hold this to make the dots and lines non-interactive, so a gizmo handle underneath them can be grabbed");
-            form.Dropdown(
-                "Disable the gizmo",
-                HoldModifierLabels,
-                vm.DisableGizmoModifier,
-                next => vm.DisableGizmoModifier = next,
-                "Hold this to let the pointer through the gizmo to the bone dot behind it");
         });
         page.Section("Visibility", form =>
             form.Switch(
@@ -874,9 +855,9 @@ public static class SettingsView
                 "Consume modifiers while flying",
                 vm.CameraConsumeModifiers,
                 next => vm.CameraConsumeModifiers = next,
-                "Take Space, Shift, Ctrl and Alt off the game while a free camera flies; off lets your character still jump and sprint");
+                "Take Space, C, Shift and Ctrl off the game while a free camera flies; off lets your character still jump and sprint");
             form.Switch(
-                "Consume all game input in GPose",
+                "Consume all game input",
                 vm.CameraConsumeAllInput,
                 next => vm.CameraConsumeAllInput = next,
                 "Take every key off the game while in GPose, except Escape and Enter");

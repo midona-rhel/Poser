@@ -470,6 +470,15 @@ can. A surface spawned from a MENU row anchors the CLICK itself (the
 row is gone by the time it opens); the pickers' default last-item
 anchor covers everything opened from a form control.
 
+## Modifier roles
+
+Modifier roles belong to the CONTRACT, never to a setting: Shift and
+Ctrl are the drag ladder in the UI and the speed pair in flight, Alt
+is the visibility peek — exclusively and everywhere. A dropdown that
+let a user reassign a modifier's role shipped once (the Hold-to-
+suspend pair) and was removed 2026-08-30: configurable roles are how
+collisions come back.
+
 ## Search fields
 
 Every search or filter field's placeholder is the one word "Search" —
