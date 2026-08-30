@@ -158,6 +158,17 @@ public readonly record struct KeyChord(
             yield return token.ImGuiKey;
     }
 
+    /// <summary>The same set in the alphabet the RUNTIME MATCHER reads
+    /// (<see cref="VirtualKey"/> via the game's key state). The rebind
+    /// capture reads this source too, so a chord it can capture is a
+    /// chord the matcher can fire — capture through ImGui broke the
+    /// moment key events stopped reaching an unfocused widget.</summary>
+    public static IEnumerable<VirtualKey> CapturableVirtualKeys()
+    {
+        foreach (var token in Tokens)
+            yield return token.Key;
+    }
+
     /// <summary>Unrecognised text is UNBOUND, never a partial chord: a
     /// half-understood binding that fires on the modifier alone is worse than
     /// one that does not fire.</summary>

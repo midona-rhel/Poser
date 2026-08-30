@@ -118,6 +118,18 @@ public sealed class SettingsViewModel
     public string? RebindingAction;
     public int RebindingSlot;
 
+    /// <summary>The GAME's key state — the same source the runtime
+    /// matcher fires from. ImGui key events do not reach an unfocused
+    /// widget, which is what killed the old ImGui-based capture.</summary>
+    public Func<Dalamud.Game.ClientState.Keys.VirtualKey, bool> KeyDown =
+        static _ => false;
+
+    /// <summary>Keys already down when the capture armed (or held since):
+    /// a chord is the FIRST key that goes down after arming, never one
+    /// still travelling from before.</summary>
+    public readonly HashSet<Dalamud.Game.ClientState.Keys.VirtualKey>
+        RebindHeld = new();
+
     public int PresetIndex;
     public bool PresetArmed;
     public string PresetStatus = "";
@@ -1053,6 +1065,10 @@ public static class SettingsView
                 vm.RebindingAction = capturing ? null : action.Id;
                 vm.RebindingSlot = slot;
                 vm.PresetArmed = false;
+                vm.RebindHeld.Clear();
+                foreach (var key in KeyChord.CapturableVirtualKeys())
+                    if (vm.KeyDown(key))
+                        vm.RebindHeld.Add(key);
             },
             style: ControlStyle.Workspace with
             {
@@ -1287,33 +1303,49 @@ public static class SettingsView
             || !vm.Bindings.TryGetValue(action, out var slots))
         {
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        // The capture reads the GAME's key state — the same source the
+        // runtime matcher fires from — because ImGui key events never
+        // reach an unfocused widget. Edge detection is manual: a key
+        // already down when the capture armed stays ignored until it has
+        // been released once.
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE))
         {
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.Backspace))
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.BACK))
         {
             slots[vm.RebindingSlot] = string.Empty;
             vm.BindingRevision++;
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
 
-        var io = ImGui.GetIO();
-        foreach (var key in KeyChord.CapturableKeys())
+        foreach (var key in KeyChord.CapturableVirtualKeys())
         {
-            if (!ImGui.IsKeyPressed(key)
-                || KeyChord.FromImGui(key) is not { } virtualKey)
+            bool down = vm.KeyDown(key);
+            if (!down)
+            {
+                vm.RebindHeld.Remove(key);
+                continue;
+            }
+            if (vm.RebindHeld.Contains(key))
                 continue;
             slots[vm.RebindingSlot] = new KeyChord(
-                io.KeyCtrl, io.KeyShift, io.KeyAlt, virtualKey).ToString();
+                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL),
+                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT),
+                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
+                key).ToString();
             vm.BindingRevision++;
             vm.RebindingAction = null;
+            vm.RebindHeld.Clear();
             return;
         }
     }

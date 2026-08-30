@@ -22,6 +22,7 @@ public class SettingsWindow : Window
 
     public SettingsWindow(
         IAutoSaveService autoSave,
+        Dalamud.Plugin.Services.IKeyState keyState,
         IIntegrationRuntimePort integrations)
         : base($"Settings###{PluginConstants.PluginName}_settings",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
@@ -30,6 +31,7 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
+        _vm.KeyDown = key => keyState[key];
         RespectCloseHotkey = false;
     }
 
