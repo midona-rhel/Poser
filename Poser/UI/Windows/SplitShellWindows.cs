@@ -29,7 +29,7 @@ public sealed class SidebarPartWindow : Window
     public event Action? OnReattach;
 
     public SidebarPartWindow(MainWindow main)
-        : base($"Scene###{PluginConstants.PluginName}_split_sidebar",
+        : base($"Sidebar###{PluginConstants.PluginName}_split_sidebar",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
             ImGuiWindowFlags.NoBackground)
@@ -163,7 +163,7 @@ public sealed class SidebarPartWindow : Window
         Crystarium.TextInBand(
             new Vector2(min.X + inset, min.Y),
             new Vector2(max.X - min.X - inset * 2f, height),
-            "Scene",
+            "Sidebar",
             new TextStyle
             {
                 Size = theme.Typography.BodySize,

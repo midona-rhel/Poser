@@ -624,11 +624,17 @@ public static partial class Crystarium
 
                 // Row help through the ONE hover-help renderer. Geometric
                 // rather than hit-driven: a disabled row — the shape that
-                // needs an explanation most — reserves no item at all.
+                // needs an explanation most — reserves no item at all. The
+                // card anchors under the WHOLE MENU: under the row it
+                // covered the rows below it and read as a stray band.
                 if (interactive
                     && item.Help is { Length: > 0 } rowHelp
                     && ImGui.IsMouseHoveringRect(rowMin, rowMax))
-                    HoverHelp.Explain($"##fm-help{i}", rowMin, rowMax, rowHelp);
+                    HoverHelp.Explain(
+                        $"##fm-help{i}",
+                        new Vector2(min.X, max.Y),
+                        max,
+                        rowHelp);
 
                 if (hovered)
                     dl.AddRectFilled(rowMin, rowMax,

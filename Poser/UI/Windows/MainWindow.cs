@@ -4356,12 +4356,14 @@ public class MainWindow : Window
         // Detached windows can be opened and closed here.
         items[(int)ShellCommand.SceneWindow] =
             new ContextMenuItem(
-                sceneOpen ? "Close Scene window" : "Open Scene window",
+                sceneOpen ? "Close the sidebar" : "Open the sidebar",
                 sceneOpen ? TablerIcon.DeviceIpadX : TablerIcon.LayoutPanel,
                 disabled: !detachedShell);
         items[(int)ShellCommand.InspectorWindow] =
             new ContextMenuItem(
-                contentHidden ? "Open Inspector window" : "Close Inspector window",
+                contentHidden
+                    ? "Open the properties panel"
+                    : "Close the properties panel",
                 contentHidden ? TablerIcon.LayoutSidebarLeft : TablerIcon.BrowserX,
                 disabled: !detachedShell);
         items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;

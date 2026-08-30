@@ -652,7 +652,7 @@ public static class AppShellView
             // INTERNAL name: the user just sees the name of whatever they
             // have selected. The rail below is the inspector.
             string title = vm.TitleEntity == "Poser"
-                ? "Inspector"
+                ? "Properties"
                 : vm.TitleEntity;
             // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
@@ -888,8 +888,8 @@ public static class AppShellView
                 "##shell-sidebar-fold",
                 flipX: !vm.SidebarCollapsed,
                 help: vm.SidebarCollapsed
-                    ? "Show the scene tree"
-                    : "Fold the scene tree away");
+                    ? "Show the sidebar"
+                    : "Fold the sidebar away");
         }
     }
 
