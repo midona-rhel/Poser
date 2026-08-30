@@ -119,7 +119,10 @@ Windows each have ONE job. No mode may change what a window IS.
   (six text tabs made the window super wide) and only "All" keeps
   its word — short, and no glyph says it better; the kind names
   survive as the icon tabs' hovers. The window is built around the
-  strip, so the icons are also what makes it compact.
+  strip, so the icons are also what makes it compact — and the strip
+  SPANS its row at a fixed width, each tab taking an equal share of
+  the slack: a natural-width icon strip left a small island in a
+  wide band, which read as broken (2026-08-30).
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 

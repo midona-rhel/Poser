@@ -286,31 +286,38 @@ public static class SpawnBrowserView
                 FooterLeft = vm.Footer,
             });
 
-        DrawTabs(vm, rects.Band.Min, scale, theme);
+        DrawTabs(vm, rects.Band, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
 
         if (submit)
             ActivateFirstEnabled(vm);
     }
 
-    /// <summary>The tab strip row, under the search. The first tab's label
-    /// lands on the same content inset the rows below pad to, exactly as the
-    /// shell strip aligns to its toolbar inset.</summary>
+    /// <summary>The tab strip row, under the search. The strip SPANS the
+    /// row on the rows' own insets — a natural-width icon strip left a
+    /// small island in a wide band, which read as broken — and the fixed
+    /// width hands each tab an equal share of the slack.</summary>
     private static void DrawTabs(
-        SpawnBrowserViewModel vm, Vector2 rowMin, float scale, Theme theme)
+        SpawnBrowserViewModel vm, WindowFrameRect band, float scale,
+        Theme theme)
     {
         float inset =
             (theme.Scrollbar.GutterWidth * RowBarShare + RowPadding) * scale;
-        var size = Crystarium.MeasureSegmentedControl(TabIcons, TabText);
+        float width = MathF.Max(1f, band.Size.X - inset * 2f);
+        var style = ControlStyle.Workspace with
+        { Width = UiWidth.Fixed(width / scale) };
+        var size = Crystarium.MeasureSegmentedControl(
+            TabIcons, TabText, style);
         ImGui.SetCursorScreenPos(new Vector2(
-            rowMin.X + inset,
-            rowMin.Y + (TabBandHeight * scale - size.Y) * 0.5f));
+            band.Min.X + inset,
+            band.Min.Y + (TabBandHeight * scale - size.Y) * 0.5f));
         Crystarium.SegmentedControl(
             "##spawn-browser-tabs",
             TabIcons,
             TabText,
             vm.Tab,
             chosen => vm.OnTab?.Invoke(chosen),
+            style: style,
             alignFirstTabToCursor: true,
             itemHelp: TabHelp);
     }
