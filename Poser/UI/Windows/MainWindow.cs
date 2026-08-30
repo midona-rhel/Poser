@@ -1611,8 +1611,10 @@ public class MainWindow : Window
             });
             if (!expanded)
                 continue;
-            foreach (var member in group.Members)
-                AddGroupMemberRow(member, snapshot, filter, filtering);
+            for (int m = 0; m < group.Members.Count; m++)
+                AddGroupMemberRow(
+                    group.Members[m], snapshot, filter, filtering,
+                    isLast: m == group.Members.Count - 1);
         }
 
         foreach (var actor in snapshot)
@@ -1907,13 +1909,18 @@ public class MainWindow : Window
             if (row.Tag is SelectionId id)
                 row.Active = _selection.IsSelected(id);
         }
+        // The head and its children never light together: while the
+        // selection IS the group, only the head row wears the pill — the
+        // one exception is actor bones, whose dual highlight is the
+        // posing tree's own rule and lives in the actor rows above.
         var matchedGroup = _groups.MatchSelection(_selection.Selected);
         var groupRows = _groupsSection.Rows;
         for (int i = 0; i < groupRows.Count; i++)
         {
             var row = groupRows[i];
             if (row.Tag is SelectionId memberId)
-                row.Active = _selection.IsSelected(memberId);
+                row.Active = matchedGroup == null
+                    && _selection.IsSelected(memberId);
             else if (row.Tag is GroupRowTag tag)
                 row.Active = matchedGroup?.Id == tag.Id;
         }
@@ -2380,7 +2387,8 @@ public class MainWindow : Window
         SelectionId member,
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter,
-        bool filtering)
+        bool filtering,
+        bool isLast)
     {
         switch (member)
         {
@@ -2390,7 +2398,7 @@ public class MainWindow : Window
                     {
                         AddActorRows(
                             _groupsSection, actor, snapshot, filter,
-                            filtering, 1, RootTreeLines, true);
+                            filtering, 1, RootTreeLines, isLast);
                         return;
                     }
                 return;
@@ -2398,7 +2406,10 @@ public class MainWindow : Window
                 foreach (var prop in _scene.Snapshot.Props)
                     if (prop.Id.Equals(propId))
                     {
-                        _groupsSection.Rows.Add(PropRow(prop, 1));
+                        var row = PropRow(prop, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _groupsSection.Rows.Add(row);
                         return;
                     }
                 return;
@@ -2406,7 +2417,10 @@ public class MainWindow : Window
                 foreach (var worldObject in _scene.Snapshot.WorldObjects)
                     if (worldObject.Id.Equals(worldId))
                     {
-                        _groupsSection.Rows.Add(WorldObjectRow(worldObject, 1));
+                        var row = WorldObjectRow(worldObject, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _groupsSection.Rows.Add(row);
                         return;
                     }
                 return;
@@ -2414,7 +2428,10 @@ public class MainWindow : Window
                 foreach (var light in _scene.Snapshot.Lights)
                     if (light.Id.Equals(lightId))
                     {
-                        _groupsSection.Rows.Add(LightRow(light, 1));
+                        var row = LightRow(light, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _groupsSection.Rows.Add(row);
                         return;
                     }
                 return;
@@ -2422,7 +2439,10 @@ public class MainWindow : Window
                 foreach (var camera in _scene.Snapshot.Cameras)
                     if (camera.Id.Equals(cameraId))
                     {
-                        _groupsSection.Rows.Add(CameraRow(camera, 1));
+                        var row = CameraRow(camera, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _groupsSection.Rows.Add(row);
                         return;
                     }
                 return;
@@ -2430,7 +2450,10 @@ public class MainWindow : Window
                 foreach (var overlay in _scene.Snapshot.Overlays)
                     if (overlay.Id.Equals(overlayId))
                     {
-                        _groupsSection.Rows.Add(OverlayRow(overlay, 1));
+                        var row = OverlayRow(overlay, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _groupsSection.Rows.Add(row);
                         return;
                     }
                 return;
@@ -3704,6 +3727,10 @@ public class MainWindow : Window
         {
             page.Section(matched?.Name ?? "Selection", form =>
             {
+                if (matched is { } named)
+                    form.TextInput("Name", named.Name,
+                        value => _groups.Rename(named.Id, value),
+                        help: "Rename the group");
                 for (int i = 0; i < 5; i++)
                     if (_multiCounts[i] > 0)
                         form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
@@ -3711,12 +3738,6 @@ public class MainWindow : Window
                 {
                     if (matched is { } group)
                     {
-                        actions.Button("Rename",
-                            () => OpenEntityRename(
-                                "Rename group",
-                                group.Name,
-                                name => _groups.Rename(group.Id, name)),
-                            help: "Rename this group");
                         actions.Button("Ungroup",
                             () => _groups.Dissolve(group.Id),
                             help: "Dissolve the group; nothing is destroyed");
