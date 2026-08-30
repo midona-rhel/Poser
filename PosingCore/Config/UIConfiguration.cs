@@ -53,6 +53,10 @@ public class UIConfiguration
     /// overlays stay, the scene clears. Off by default.</summary>
     public bool HideWhileManipulating { get; set; }
 
+    /// <summary>The dependent option: the world gizmo's chrome hides with
+    /// the shell — the drag's own sweep and readout never do.</summary>
+    public bool HideGizmoWhileManipulating { get; set; }
+
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by

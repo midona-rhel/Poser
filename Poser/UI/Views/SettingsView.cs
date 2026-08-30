@@ -101,6 +101,7 @@ public sealed class SettingsViewModel
     public bool ShowInGPose = true;
     public bool ShowInCutscene = true;
     public bool HideWhileManipulating;
+    public bool HideGizmoWhileManipulating;
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
     public string PoseFolder = "";
@@ -910,6 +911,13 @@ public static class SettingsView
                 vm.HideWhileManipulating,
                 next => vm.HideWhileManipulating = next,
                 "Hide the windows while a gizmo drag is held");
+            // The dependent row follows its override, disabled in place.
+            form.Switch(
+                "Also hide the gizmo",
+                vm.HideGizmoWhileManipulating,
+                next => vm.HideGizmoWhileManipulating = next,
+                "Hide the gizmo too; the drag's angle and distance stay",
+                disabled: !vm.HideWhileManipulating);
             form.Switch(
                 "Show with game UI hidden",
                 vm.ShowWhenGameUiHidden,

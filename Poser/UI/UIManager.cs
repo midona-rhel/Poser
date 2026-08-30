@@ -131,6 +131,8 @@ public sealed class UIManager : IUIManager
         Controls.ManipulationHide.Active =
             _configService.Config.UI.HideWhileManipulating
             && Controls.ManipulationDrag.Held;
+        Controls.ManipulationHide.HideGizmo =
+            _configService.Config.UI.HideGizmoWhileManipulating;
         Controls.ManipulationHide.Advance();
         // The focus rule, published once per frame: typing, an active
         // ImGui item (a drag in the UI), or a live gizmo gesture owns the

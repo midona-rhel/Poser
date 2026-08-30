@@ -437,6 +437,10 @@ public static class ManipulationHide
 {
     public static bool Active;
 
+    /// <summary>The dependent option: the world gizmo's CHROME rides the
+    /// same fade — the drag's own sweep and readout never do.</summary>
+    public static bool HideGizmo;
+
     /// <summary>The shell's eased opacity: 1 shown, 0 hidden.</summary>
     public static float Opacity { get; private set; } = 1f;
 
