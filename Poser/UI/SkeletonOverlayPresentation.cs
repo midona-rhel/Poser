@@ -30,6 +30,18 @@ public sealed class SkeletonOverlayPresentation
 
     public bool IsVisible(BoneId bone) => _shown.Contains(bone);
 
+    /// <summary>Whether any bone of the SAME ACTOR is shown — the gizmo's
+    /// armature gate asks per skeleton, because a hidden actor standing
+    /// beside a visible one must still lose its gizmo.</summary>
+    public bool AnyVisibleFor(BoneId bone)
+    {
+        var actor = bone.Skeleton.Actor.LogicalId;
+        foreach (var shown in _shown)
+            if (shown.Skeleton.Actor.LogicalId == actor)
+                return true;
+        return false;
+    }
+
     public bool AreVisible(IReadOnlyList<BoneId> bones) =>
         Resolve(bones) == OverlayVisibility.All;
 
