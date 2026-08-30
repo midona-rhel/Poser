@@ -328,9 +328,12 @@ public class SkeletonOverlayWindow : Window
         // light handles unconditionally. Alt still hides everything.
         bool drawArmature =
             (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor();
-        // Published for the gizmo's armature-visibility gate: one boolean,
-        // computed once, read wherever "are the bones on screen" matters.
-        ArmatureVisibility.Drawn = drawArmature;
+        // Published for the gizmo's armature-visibility gate: the
+        // ARMATURE alone — the selection-anchor dot that stays when the
+        // toggle is off does not count as bones being shown, and "only
+        // the dot shows" is exactly when the option hides the gizmo. The
+        // inspector's ball is untouched either way.
+        ArmatureVisibility.Drawn = UserVisible && _presentation.AnyVisible;
 
         var selectedIds = _selectedIds;
         selectedIds.Clear();

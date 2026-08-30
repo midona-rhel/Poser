@@ -4566,24 +4566,26 @@ public class MainWindow : Window
                 ? "Import, export or stash this actor's pose"
                 : "Needs a loaded skeleton",
             submenuItems: actor.HasSkeleton
-                ?
-                [
-                    new ContextMenuItem("Import", TablerIcon.Download),
-                    new ContextMenuItem("Import from file", TablerIcon.FileText,
-                        help: "Pick a pose file straight from disk"),
-                    new ContextMenuItem("Export", TablerIcon.Upload),
-                    new ContextMenuItem("Stash", TablerIcon.Stack2,
-                        help: "Save this actor's pose so you can apply it "
-                            + "to another actor. Replaces whatever was "
-                            + "stashed before."),
-                    new ContextMenuItem("Apply stashed", TablerIcon.ArrowBackUp,
-                        disabled: !hasStash,
-                        help: hasStash
-                            ? "Apply the stashed pose to this actor. Stashed "
-                                + $"from {_cleanPose.StashedFrom} at "
-                                + $"{_cleanPose.StashedAt:HH:mm:ss} UTC."
-                            : "Nothing stashed yet"),
-                ]
+                ? hasStash
+                    ?
+                    [
+                        new ContextMenuItem("Import", TablerIcon.Download),
+                        new ContextMenuItem(
+                            "Import from file", TablerIcon.FileText),
+                        new ContextMenuItem("Export", TablerIcon.Upload),
+                        new ContextMenuItem("Stash", TablerIcon.Stack2),
+                        new ContextMenuItem(
+                            "Apply stashed", TablerIcon.ArrowBackUp),
+                    ]
+                    :
+                    // No stash, no row: a menu never holds an empty seat.
+                    [
+                        new ContextMenuItem("Import", TablerIcon.Download),
+                        new ContextMenuItem(
+                            "Import from file", TablerIcon.FileText),
+                        new ContextMenuItem("Export", TablerIcon.Upload),
+                        new ContextMenuItem("Stash", TablerIcon.Stack2),
+                    ]
                 : null));
         actions.Add(null); // Pose — child clicks are read separately.
         var poseActions = new List<Action?>

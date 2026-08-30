@@ -615,6 +615,11 @@ again is chrome talking to itself (swept 2026-08-30).
 
 ## Tooltips
 
+CONTEXT MENUS carry no hovers at all (ruled 2026-08-31): a menu
+row's label is its whole explanation, and a row that would need a
+placeholder or an explanation is omitted, never seated disabled with
+a tooltip — a menu never holds an empty seat.
+
 A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
 "Reset the face bones", "Fade the whole actor" — a few words, verb
 first. Every labelled control HAS one; a value's units belong in it

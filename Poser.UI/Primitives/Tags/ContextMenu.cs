@@ -622,19 +622,9 @@ public static partial class Crystarium
                     _submenuSize = new Vector2(childWidth, childHeight);
                 }
 
-                // Row help through the ONE hover-help renderer. Geometric
-                // rather than hit-driven: a disabled row — the shape that
-                // needs an explanation most — reserves no item at all. The
-                // card anchors under the WHOLE MENU: under the row it
-                // covered the rows below it and read as a stray band.
-                if (interactive
-                    && item.Help is { Length: > 0 } rowHelp
-                    && ImGui.IsMouseHoveringRect(rowMin, rowMax))
-                    HoverHelp.Explain(
-                        $"##fm-help{i}",
-                        new Vector2(min.X, max.Y),
-                        max,
-                        rowHelp);
+                // Context menus carry NO hovers (ruled 2026-08-31): a
+                // row's label is its whole explanation, and the help card
+                // under the menu read as a stray band.
 
                 if (hovered)
                     dl.AddRectFilled(rowMin, rowMax,
