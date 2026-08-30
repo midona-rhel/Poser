@@ -146,12 +146,12 @@ public readonly record struct Theme
         {
             // Sized so the app's real labels FIT — re-measured for
             // Roboto, which runs wider than Segoe did at 72.
-            LabelColumnWidth = 84f,
+            LabelColumnWidth = 90f,
             ValueColumnWidth = 52f,
             AxisGap = 4f,
             AxisWellMinimumWidth = 82f,
             AxisWellHorizontalPadding = 6f,
-            VerbWidth = 63f,
+            VerbWidth = 69f,
             AxisLabelGap = 3f,
         },
         Matrix = new()

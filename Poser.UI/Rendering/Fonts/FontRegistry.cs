@@ -463,9 +463,9 @@ public static class FontRegistry
     /// <summary>
     /// Maps family+weight to a system font file. Cached; null means "not found, use Dalamud default".
     /// </summary>
-    /// <summary>Maps family + weight to a BUNDLED Roboto file — the fonts
-    /// ship with the plugin (Apache 2.0), so every machine renders the
-    /// same, Wine included. Roboto Medium carries the semibold role: the
+    /// <summary>Maps family + weight to a BUNDLED Geist file — the fonts
+    /// ship with the plugin (SIL OFL 1.1), so every machine renders the
+    /// same, Wine included. Geist Medium carries the semibold role: the
     /// family's designed emphasis weight. Null (missing directory or
     /// file) falls back to the Dalamud default font.</summary>
     private static string? ResolveFile(FontFamily family, FontWeight weight)
@@ -475,11 +475,11 @@ public static class FontRegistry
 
         string name = family switch
         {
-            FontFamily.Mono => "RobotoMono-Regular.ttf",
-            FontFamily.Italic => "Roboto-Italic.ttf",
+            FontFamily.Mono => "GeistMono-Regular.ttf",
+            FontFamily.Italic => "Geist-Italic.ttf",
             _ => weight == FontWeight.Regular
-                ? "Roboto-Regular.ttf"
-                : "Roboto-Medium.ttf",
+                ? "Geist-Regular.ttf"
+                : "Geist-Medium.ttf",
         };
         string? result = null;
         if (_fontDirectory is { } directory)

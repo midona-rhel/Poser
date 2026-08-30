@@ -49,8 +49,19 @@ Windows each have ONE job. No mode may change what a window IS.
   what Target would show, never the active panel.
 - **Library** — the full-width workspace: the outliner stands down
   while it is open and returns with the scene editor. Reached from
-  the Scene panel's "Open library…" verb and the burger menu; its
-  type strip and per-type metadata rails stay.
+  the sidebar titlebar's library button, the Scene panel's "Open
+  library…" verb and the burger menu. Its type strip leads with the
+  tabs that can PREVIEW (Poses, Auto-saves, Objects) and stands the
+  file-info tabs (MCDF, Scenes) at the far right: a tab that cannot
+  preview shows the selected FILE instead — name, stamp, author,
+  contents, tags — never a fake preview (decided 2026-08-30).
+- **Sidebar collapse** — the outliner collapses from a chevron by
+  the brand in the titlebar; the choice is remembered. The chevron
+  never moves with the cell it removes. The library button rides the
+  sidebar's titlebar cell, so it hides while the sidebar is gone.
+- **Naming** — the detached selection window is the PROPERTIES
+  window internally; the user just sees the name of what they have
+  selected as its title. The right rail is the INSPECTOR.
 - **Toolbar** — permanently its own window with a remembered
   position, IMPLEMENTED 2026-08-28: always open with the shell,
   attached or detached, no reattach affordance, and the main
@@ -118,7 +129,7 @@ Narrow-form designs are parked for a future effort.)
   not — red is the warning, arming is the guard.
 - Before placing ANY row in the inspector, prove it fits: the
   inspector is 280 logical wide; minus the page insets (12 + 12) and
-  the label column (72) the control cell is ~184 at 100% scale.
+  the label column (90) the control cell is ~166 at 100% scale.
   A row that overflows there, or forces the inspector to be useless,
   is a placement error — it belongs on a tab instead.
 - The math also VETOES pairing: a rail pair cell is ~55 logical of
@@ -181,7 +192,9 @@ navigation, not a scrollbar — may shift anything.
   merge the row (a "Sections" label beside a "Release all sections"
   button is saying it twice), or re-size the column token. The column
   is sized so the app's REAL labels fit, and re-measured whenever the
-  font changes (Roboto runs wider than Segoe; 72 became 84).
+  font changes (Roboto ran wider than Segoe, 72 became 84; Geist runs
+  wider than Roboto, 84 became 90 and the verb width 63 became 69,
+  2026-08-30).
 - Vocabulary: PADDING is space inside a control's own box; MARGIN is
   space between neighbouring boxes. The UI standardizes on MARGIN for
   everything inter-box: columns and cells (`Spacing.Six`), label to
@@ -271,7 +284,7 @@ navigation, not a scrollbar — may shift anything.
 - Alt-click resets a slider to its stated default (`altReset`) — one
   gesture, one undo step. Wire it wherever a row has a meaningful
   default (expressions reset to zero).
-- Numbers render in the MONO family (Roboto Mono), never the text face:
+- Numbers render in the MONO family (Geist Mono), never the text face:
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
   well, and matrix cell.

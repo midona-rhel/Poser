@@ -172,9 +172,9 @@ These staged files, their hashes, the online vulnerability audit, the SBOM,
 the canonical tree/history scan, and the final ZIP scan are release-time gates.
 They are not claimed to be present in an unpublished archive.
 
-## Roboto and Roboto Mono
+## Geist and Geist Mono
 
-Bundled font files (`Poser/Data/Fonts`): Roboto Regular / Medium /
-Italic and Roboto Mono Regular, by Christian Robertson and the Google
-Fonts team. Licensed under the Apache License, Version 2.0 —
-<https://www.apache.org/licenses/LICENSE-2.0>.
+Bundled font files (`Poser/Data/Fonts`): Geist Regular / Medium /
+Italic and Geist Mono Regular, by Vercel. Licensed under the SIL Open
+Font License, Version 1.1 —
+<https://github.com/vercel/geist-font/blob/main/LICENSE.TXT>.

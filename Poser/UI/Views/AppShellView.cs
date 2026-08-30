@@ -198,6 +198,16 @@ public sealed class AppShellViewModel
     /// <summary>The library workspace hides the outliner: content spans
     /// the sidebar's column while this is set.</summary>
     public bool SidebarHidden;
+
+    /// <summary>The USER's sidebar collapse — the titlebar chevron. Kept
+    /// apart from <see cref="SidebarHidden"/> so leaving the library
+    /// restores whichever state the user chose.</summary>
+    public bool SidebarCollapsed;
+    public Action? OnSidebarToggle;
+
+    /// <summary>Opens the library workspace — the sidebar titlebar's own
+    /// button, hidden while the sidebar is collapsed.</summary>
+    public Action? OnLibrary;
     public Action<float>? OnSidebarResize;
 
     /// <summary>Inspector rail: drawn when set — 280px right column,
@@ -469,6 +479,7 @@ public static class AppShellView
             else
             {
                 float wellLeft = vm.Detached || vm.SidebarHidden
+                        || vm.SidebarCollapsed
                     ? 0f
                     : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
@@ -505,10 +516,11 @@ public static class AppShellView
             // Detached mode: the sidebar is its own window; the content and
             // the inspector stay together here.
             float sbw = vm.Detached || vm.SidebarHidden
+                    || vm.SidebarCollapsed
                 ? 0f
                 : vm.SidebarWidthPx * s;
 
-            if (!vm.Detached && !vm.SidebarHidden)
+            if (!vm.Detached && !vm.SidebarHidden && !vm.SidebarCollapsed)
                 DrawSidebar(
                     vm, new Vector2(min.X, bodyTop),
                     new Vector2(min.X + sbw, max.Y), s, dl);
@@ -545,6 +557,7 @@ public static class AppShellView
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
         float cellWidth = vm.Detached || vm.SidebarHidden
+                || vm.SidebarCollapsed
             ? 0f
             : vm.SidebarWidthPx * s;
         float railWidth =
@@ -552,7 +565,7 @@ public static class AppShellView
 
         // Each column lays its panel ground once and stops at its own edge;
         // the workspace ground remains visible between columns.
-        if (!vm.Collapsed && !vm.Detached)
+        if (!vm.Collapsed && !vm.Detached && cellWidth > 0f)
         {
             var cellMax = new Vector2(min.X + cellWidth, min.Y + height);
             dl.AddRectFilled(
@@ -581,11 +594,12 @@ public static class AppShellView
 
         if (vm.Detached)
         {
-            // The detached main window is the inspector's window: it names
-            // itself so the selected entity remains readable.
+            // The detached main window is the properties window — an
+            // INTERNAL name: the user just sees the name of whatever they
+            // have selected. The rail below is the inspector.
             string title = vm.TitleEntity == "Poser"
                 ? "Inspector"
-                : $"Inspector – {vm.TitleEntity}";
+                : vm.TitleEntity;
             // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
             // strips and content.
@@ -605,16 +619,41 @@ public static class AppShellView
         }
         else
         {
-            DrawBrand(vm, min, height, s, dl);
+            float brandEnd = DrawBrandPill(
+                vm, min.X + TitleInset * s, min.Y, height, s, dl);
+            // The sidebar chevron sits by the brand so it never moves:
+            // collapse takes the whole cell away, and the control that
+            // brings it back must not go with it.
+            float side = theme.Controls.ShellIconAction;
+            float chevronX = brandEnd + theme.Spacing.Four * s;
+            IconAt(
+                new Vector2(
+                    chevronX, min.Y + (height - side * s) * 0.5f),
+                TablerIcon.LayoutSidebarLeft, side,
+                vm.OnSidebarToggle,
+                "##shell-sidebar-toggle",
+                help: vm.SidebarCollapsed
+                    ? "Show the sidebar"
+                    : "Hide the sidebar");
             // The title cell's content stops at the divider's x whether or
-            // not the divider paints this state: collapse must not shift the
-            // cluster by the rule's pixel.
-            DrawHistory(
-                vm,
-                min.X + cellWidth - rule - TitleActionInset * s,
-                min.Y,
-                height,
-                s);
+            // not the divider paints this state: collapse must not shift
+            // the cluster by the rule's pixel. Without the cell the
+            // cluster left-anchors after the chevron instead.
+            if (cellWidth > 0f)
+                DrawHistory(
+                    vm,
+                    min.X + cellWidth - rule - TitleActionInset * s,
+                    min.Y,
+                    height,
+                    s,
+                    showLibrary: true);
+            else
+                DrawHistoryLeft(
+                    vm,
+                    chevronX + (side + theme.Spacing.Four) * s,
+                    min.Y,
+                    height,
+                    s);
             // The gizmo cluster lives on the TOOLBAR window — always its
             // own window — never in this titlebar.
         }
@@ -661,7 +700,7 @@ public static class AppShellView
                         modes[index], KindMeasureStyle).X + pillPadding * 2f,
                 itemHelp: index => index switch
                 {
-                    0 => "The selection's own tabs",
+                    0 => KindHelp(kind),
                     1 => "Edit the environment",
                     2 => "Save and load the scene",
                     _ => null,
@@ -759,16 +798,40 @@ public static class AppShellView
             + text;
     }
 
-    /// <summary>Menu, undo, redo and spawn, right-aligned in the title cell.</summary>
+    /// <summary>Menu, undo, redo, spawn and the library, right-aligned in
+    /// the title cell. The library seat rides the CELL: it is the sidebar
+    /// titlebar's button, so it goes when the sidebar goes.</summary>
     private static void DrawHistory(
-        AppShellViewModel vm, float right, float top, float height, float s)
+        AppShellViewModel vm, float right, float top, float height, float s,
+        bool showLibrary = false)
     {
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float step = (side + theme.Spacing.Two) * s;
-        int count = vm.ShowSpawn ? 4 : 3;
+        bool library = showLibrary && vm.OnLibrary != null;
+        int count = (vm.ShowSpawn ? 4 : 3) + (library ? 1 : 0);
         float y = top + (height - side * s) * 0.5f;
         float x = right - count * side * s - (count - 1) * theme.Spacing.Two * s;
+        DrawHistoryRun(vm, x, y, side, step, s, library);
+    }
+
+    /// <summary>The same cluster left-anchored — the sidebar's cell is
+    /// gone (collapsed, or the library holds the workspace), so the run
+    /// starts after the chevron instead of ending at the divider.</summary>
+    private static void DrawHistoryLeft(
+        AppShellViewModel vm, float left, float top, float height, float s)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
+        float step = (side + theme.Spacing.Two) * s;
+        float y = top + (height - side * s) * 0.5f;
+        DrawHistoryRun(vm, left, y, side, step, s, library: false);
+    }
+
+    private static void DrawHistoryRun(
+        AppShellViewModel vm, float x, float y, float side, float step,
+        float s, bool library)
+    {
 
         // The command menu is anchored to its button. The static callback
         // records the press without allocating a frame closure.
@@ -798,18 +861,26 @@ public static class AppShellView
             help: HistoryHelp(
                 vm.CanRedo, vm.RedoDescription, "Redo", _redoShortcut,
                 _redoHelp, _redoEmptyHelp));
-        if (!vm.ShowSpawn)
+        if (vm.ShowSpawn)
+        {
+            x += step;
+            IconAt(
+                new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
+                "##shell-spawn",
+                help: "Add an actor or object to the scene");
+            if (_spawnPressed)
+            {
+                _spawnPressed = false;
+                vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
+            }
+        }
+        if (!library)
             return;
         x += step;
         IconAt(
-            new Vector2(x, y), TablerIcon.Plus, side, SpawnPressed,
-            "##shell-spawn",
-            help: "Add an actor or object to the scene");
-        if (_spawnPressed)
-        {
-            _spawnPressed = false;
-            vm.OnSpawn?.Invoke(new Vector2(x, y + side * s));
-        }
+            new Vector2(x, y), TablerIcon.Book, side, vm.OnLibrary,
+            "##shell-library",
+            help: "Open the library");
     }
 
 
@@ -874,6 +945,18 @@ public static class AppShellView
 
     /// <summary>Rightmost is the collapse chevron, then the close X.
     /// </summary>
+    /// <summary>The kind segment's hover — the same verb-first shape as
+    /// its siblings, minted per kind so no frame formats one.</summary>
+    private static string KindHelp(string kind) => kind switch
+    {
+        "Actor" => "Edit the actor",
+        "Object" => "Edit the object",
+        "Camera" => "Edit the camera",
+        "Light" => "Edit the light",
+        "Overlay" => "Edit the overlay",
+        _ => "Edit the selection",
+    };
+
     /// <summary>The label style the selector's segments measure with —
     /// the pill's own face.</summary>
     private static TextStyle KindMeasureStyle => new()

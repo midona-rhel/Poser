@@ -48,6 +48,10 @@ public class UIConfiguration
     /// to the target panel.</summary>
     public int InspectorMode { get; set; }
 
+    /// <summary>The outliner column's user collapse — the titlebar chevron
+    /// toggles it, and it is remembered across sessions.</summary>
+    public bool SidebarCollapsed { get; set; }
+
     /// <summary>
     /// The pre-dual-slot single binding per action. Kept so a config written
     /// before the second slot existed still deserializes; emptied by

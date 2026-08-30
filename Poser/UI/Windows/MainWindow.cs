@@ -334,9 +334,21 @@ public class MainWindow : Window
     [
         new() { Label = "Poses" },
         new() { Label = "Auto-saves" },
+        new() { Label = "Objects" },
         new() { Label = "MCDF" },
         new() { Label = "Scenes" },
-        new() { Label = "Objects" },
+    ];
+
+    /// <summary>The strip's display order as pane types: the tabs that can
+    /// PREVIEW lead, and the file-info tabs (MCDF, Scenes) stand at the far
+    /// right. Positional against <see cref="_libraryTabs"/>.</summary>
+    private static readonly PoseLibraryPane.LibraryType[] LibraryStripOrder =
+    [
+        PoseLibraryPane.LibraryType.Poses,
+        PoseLibraryPane.LibraryType.AutoSaves,
+        PoseLibraryPane.LibraryType.Objects,
+        PoseLibraryPane.LibraryType.Mcdf,
+        PoseLibraryPane.LibraryType.Scenes,
     ];
 
     /// <summary>The selection-typed tab strip, retained like the library's —
@@ -1279,6 +1291,15 @@ public class MainWindow : Window
         // The library is the full-width workspace: the outliner stands
         // down while it is open and returns with the scene editor.
         _vm.SidebarHidden = _libraryMode;
+        _vm.SidebarCollapsed = Config.ConfigurationService.Instance
+            .Config.UI.SidebarCollapsed;
+        _vm.OnSidebarToggle = _toggleSidebar ??= () =>
+        {
+            var ui = Config.ConfigurationService.Instance.Config.UI;
+            ui.SidebarCollapsed = !ui.SidebarCollapsed;
+            Config.ConfigurationService.Instance.Save();
+        };
+        _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
@@ -1329,9 +1350,11 @@ public class MainWindow : Window
                 {
                     PoseLibraryPane.LibraryType.Objects =>
                         _libraryPane.DrawObjectsRail,
-                    PoseLibraryPane.LibraryType.Scenes =>
-                        _scenePane.DrawLibraryRail,
-                    PoseLibraryPane.LibraryType.Mcdf => null,
+                    // The tabs that cannot PREVIEW show the FILE instead:
+                    // name, stamp, author, contents. Scenes keep their load
+                    // options below the file.
+                    PoseLibraryPane.LibraryType.Scenes => DrawSceneInfoRail,
+                    PoseLibraryPane.LibraryType.Mcdf => DrawMcdfInfoRail,
                     _ => _poseFileSection.DrawOptionsRail,
                 };
         }
@@ -3101,6 +3124,23 @@ public class MainWindow : Window
     internal static string DisplayName(string name)
         => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
+    private Action? _toggleSidebar;
+    private Action? _openLibrary;
+
+    /// <summary>The scenes tab's rail: the selected FILE leads, the load
+    /// options follow — the same options a tile's load runs.</summary>
+    private void DrawSceneInfoRail(Vector2 origin, Vector2 size)
+    {
+        float used = _libraryPane.DrawInfoRail(origin, size);
+        if (size.Y - used > 1f)
+            _scenePane.DrawLibraryRail(
+                origin + new Vector2(0f, used),
+                size - new Vector2(0f, used));
+    }
+
+    private void DrawMcdfInfoRail(Vector2 origin, Vector2 size)
+        => _libraryPane.DrawInfoRail(origin, size);
+
     private void BuildTabs(SelectionId? primary)
     {
         // Tabs are rebuilt each frame; the active one is preserved so a
@@ -3114,7 +3154,7 @@ public class MainWindow : Window
             int type = _libraryPane.SelectedType;
             for (int i = 0; i < _libraryTabs.Length; i++)
             {
-                _libraryTabs[i].Active = i == type;
+                _libraryTabs[i].Active = (int)LibraryStripOrder[i] == type;
                 _vm.Tabs.Add(_libraryTabs[i]);
             }
             return;
@@ -3324,7 +3364,8 @@ public class MainWindow : Window
         // tab set is untouched underneath.
         if (_libraryMode)
         {
-            _libraryPane.SelectType(index);
+            if (index >= 0 && index < LibraryStripOrder.Length)
+                _libraryPane.SelectType((int)LibraryStripOrder[index]);
             return;
         }
         if (index < 0 || index >= _vm.Tabs.Count) return;
