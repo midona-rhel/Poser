@@ -962,6 +962,17 @@ public class MainWindow : Window
             return;
         }
 
+        // The split toggle's one-frame reseat: the RIGHT edge sheds or
+        // regains the rail; the left edge holds.
+        if (_railShift != 0 && !_collapsed)
+        {
+            Size = new Vector2(
+                _lastWidth - _railShift * Views.AppShellView.RailWidth,
+                _lastHeight);
+            SizeCondition = ImGuiCond.Always;
+            _railShift = 0;
+        }
+
         // The detach toggle's one-frame reseat: width sheds or regains the
         // sidebar column while the left edge moves the same amount, so the
         // content and the inspector hold their screen position.
@@ -1072,8 +1083,12 @@ public class MainWindow : Window
     private float EffectiveMinimumWidth()
     {
         float minimum = MinimumWidth;
-        if (Config.ConfigurationService.Instance.Config.UI.DetachedShell)
+        var ui = Config.ConfigurationService.Instance.Config.UI;
+        if (ui.DetachedShell)
             minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+        // A split inspector hands the rail's column back too.
+        if (ui.SplitInspector)
+            minimum -= Views.AppShellView.RailWidth;
         return minimum;
     }
 
@@ -1097,6 +1112,15 @@ public class MainWindow : Window
     /// content and the inspector hold their screen position through the
     /// toggle.</summary>
     internal void ApplyDetachShift(int direction) => _detachShift = direction;
+
+    /// <summary>+1 splitting (the right edge sheds the departing rail),
+    /// -1 merging (it grows back). One frame, PreDraw, the detach shift's
+    /// twin — the left edge holds, so the content keeps its place.</summary>
+    internal void ApplyRailShift(int direction) => _railShift = direction;
+
+    private int _railShift;
+
+    private SelectionId? _lookThroughApplied;
 
     private int _detachShift;
     private bool _shiftApplied;
@@ -1336,6 +1360,25 @@ public class MainWindow : Window
         var primary = _selection.Primary;
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
+        // Look-through-on-select (option): a camera ARRIVING as the primary
+        // selection becomes the live camera — once per arrival, so live can
+        // still be switched away while the camera stays selected.
+        if (primary is { Kind: SceneEntityKind.Camera, Camera: { } lookId })
+        {
+            if (!Equals(_lookThroughApplied, primary)
+                && Config.ConfigurationService.Instance.Config.Camera
+                    .LookThroughSelectedCamera)
+            {
+                _lookThroughApplied = primary;
+                if (_bindings.Resolve(lookId) is
+                    { Success: true, Value: { IsValid: true, IsLive: false } cam })
+                    _cameraService.SetLive(cam);
+            }
+        }
+        else
+        {
+            _lookThroughApplied = null;
+        }
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;

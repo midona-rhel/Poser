@@ -170,6 +170,7 @@ public class SettingsWindow : Window
             CameraConsumeModifiers = c.Camera.ConsumeModifiersWhileFlying,
             CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
+            CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -370,6 +371,7 @@ public class SettingsWindow : Window
         c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
         c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
+        c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;

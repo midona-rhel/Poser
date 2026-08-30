@@ -21,6 +21,8 @@ public sealed class SidebarPartWindow : Window
     private Vector2? _pendingSize;
     // Collapse-to-titlebar, the shell contract every window keeps.
     private bool _collapsed;
+    private bool? _pendingCollapsed;
+    private Vector2 _lastLogicalSize = new(300f, 520f);
     private float _savedHeight = 520f;
 
     /// <summary>Reattach clicked: the window set merges the shell.</summary>
@@ -56,6 +58,15 @@ public sealed class SidebarPartWindow : Window
     {
         base.PreDraw();
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        if (_pendingCollapsed is { } next)
+        {
+            if (next)
+                _savedHeight = _lastLogicalSize.Y;
+            _collapsed = next;
+            _pendingCollapsed = null;
+            _pendingSize = new Vector2(
+                _lastLogicalSize.X, next ? barHeight : _savedHeight);
+        }
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(240f, _collapsed ? barHeight : 320f),
@@ -116,6 +127,7 @@ public sealed class SidebarPartWindow : Window
         var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
+        _lastLogicalSize = (max - min) / s;
         var dl = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
             "poser-part-sidebar", InteractionLayer.Window, min, max);
@@ -226,22 +238,10 @@ public sealed class SidebarPartWindow : Window
         return min.Y + height;
     }
 
-    private void ToggleCollapse()
-    {
-        float gs = ImGuiHelpers.GlobalScale;
-        float width = ImGui.GetWindowSize().X / gs;
-        if (!_collapsed)
-        {
-            _savedHeight = ImGui.GetWindowSize().Y / gs;
-            _pendingSize = new Vector2(
-                width, Crystarium.ActiveTheme.Floating.ModalBarHeight);
-        }
-        else
-        {
-            _pendingSize = new Vector2(width, _savedHeight);
-        }
-        _collapsed = !_collapsed;
-    }
+    /// <summary>Deferred to PreDraw: the state and the size must land in
+    /// the SAME frame, or the body draws one frame inside a bar-height
+    /// window — the one-frame settle the standard forbids.</summary>
+    private void ToggleCollapse() => _pendingCollapsed = !_collapsed;
 }
 
 /// <summary>Detached mode's TOOLBAR strip: the brand and its GPose pill,
@@ -344,6 +344,8 @@ public sealed class InspectorPartWindow : Window
     private Vector2? _pendingPos;
     private Vector2? _pendingSize;
     private bool _collapsed;
+    private bool? _pendingCollapsed;
+    private Vector2 _lastLogicalSize = new(282f, 560f);
     private float _savedHeight = 560f;
 
     /// <summary>Merge clicked: the rail returns to the shell.</summary>
@@ -382,6 +384,14 @@ public sealed class InspectorPartWindow : Window
         base.PreDraw();
         float width = AppShellView.RailWidth + 2f;
         float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        if (_pendingCollapsed is { } next)
+        {
+            if (next)
+                _savedHeight = _lastLogicalSize.Y;
+            _collapsed = next;
+            _pendingCollapsed = null;
+            _pendingSize = new Vector2(width, next ? barHeight : _savedHeight);
+        }
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(width, _collapsed ? barHeight : 320f),
@@ -430,6 +440,7 @@ public sealed class InspectorPartWindow : Window
         var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
+        _lastLogicalSize = (max - min) / s;
         var dl = ImGui.GetWindowDrawList();
         var owner = Interactive.BeginOwner(
             "poser-part-inspector", InteractionLayer.Window, min, max);
@@ -511,20 +522,8 @@ public sealed class InspectorPartWindow : Window
         return min.Y + height;
     }
 
-    private void ToggleCollapse()
-    {
-        float gs = ImGuiHelpers.GlobalScale;
-        float width = ImGui.GetWindowSize().X / gs;
-        if (!_collapsed)
-        {
-            _savedHeight = ImGui.GetWindowSize().Y / gs;
-            _pendingSize = new Vector2(
-                width, Crystarium.ActiveTheme.Floating.ModalBarHeight);
-        }
-        else
-        {
-            _pendingSize = new Vector2(width, _savedHeight);
-        }
-        _collapsed = !_collapsed;
-    }
+    /// <summary>Deferred to PreDraw: the state and the size must land in
+    /// the SAME frame, or the body draws one frame inside a bar-height
+    /// window — the one-frame settle the standard forbids.</summary>
+    private void ToggleCollapse() => _pendingCollapsed = !_collapsed;
 }

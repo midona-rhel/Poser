@@ -95,6 +95,7 @@ public sealed class SettingsViewModel
     public bool CameraConsumeModifiers = true;
     public bool CameraConsumeAllInput;
     public bool CameraFlipPastNinety;
+    public bool CameraLookThroughSelected;
 
     public bool DetachedShell;
     public bool TreeGuides = true;
@@ -845,6 +846,12 @@ public static class SettingsView
                 format: "0.000",
                 help: "How far a right-drag turns a newly created free camera");
         }, divider: false);
+        page.Section("Selection", form =>
+            form.Switch(
+                "Look through selected cameras",
+                vm.CameraLookThroughSelected,
+                next => vm.CameraLookThroughSelected = next,
+                "Selecting a camera switches the view to it"));
         page.Section("Speed modifiers", form =>
         {
             form.Slider(

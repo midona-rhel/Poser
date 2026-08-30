@@ -185,6 +185,9 @@ public sealed class UiWindowSet : IDisposable
         var ui = _configService.Config.UI;
         ui.SplitInspector = !ui.SplitInspector;
         InspectorPart.IsOpen = Main.IsOpen && ui.SplitInspector;
+        // The properties window sheds or regains the rail's width so the
+        // split reads as a split, not a widening.
+        Main.ApplyRailShift(ui.SplitInspector ? +1 : -1);
         if (ui.SplitInspector)
             InspectorPart.PlaceAt(
                 Main.RailSeatScreen,
