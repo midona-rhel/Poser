@@ -251,8 +251,9 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraActions ? 2
+                        : row.CameraActions ? 3
                         : row.LightActions ? 2
+                        : row.GroupActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -803,6 +804,25 @@ public sealed class ShellSidebar
             }
 
             // Camera rows keep live view and edit lock beside each other.
+            // A locked group's one seat: the lock itself.
+            if (row.GroupActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.GroupLocked
+                            ? "Unlock group"
+                            : "Lock group — nothing in it moves",
+                        id: "##group-lock",
+                        dimmed: !row.GroupLocked))
+                    _vm.OnGroupLock?.Invoke(row);
+                return;
+            }
+
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
@@ -817,7 +837,27 @@ public sealed class ShellSidebar
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
 
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                // The kind letter sits BETWEEN the seats — M main, F free,
+                // C camera. A marker, not a control: it explains the row,
+                // takes no click, and replaced the Default badge.
+                if (row.CameraMark.Length > 0)
+                {
+                    var markStyle = new TextStyle
+                    {
+                        Size = theme.Typography.LabelSize,
+                        Color = theme.TextMuted,
+                    };
+                    var markSize = Crystarium.MeasureText(
+                        row.CameraMark, markStyle);
+                    Crystarium.TextAt(
+                        origin + new Vector2(
+                            step + (side * scale - markSize.X) * 0.5f,
+                            (side * scale - markSize.Y) * 0.5f),
+                        row.CameraMark,
+                        markStyle);
+                }
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.CameraLocked
                             ? TablerIcon.Lock

@@ -32,6 +32,12 @@ public sealed class ShellSidebarRow
     /// <summary>Whether the row lives inside a named group's subtree —
     /// the head-vs-members highlight rule reads it.</summary>
     public bool GroupMember;
+    /// <summary>Group-head rows: the lock action seat.</summary>
+    public bool GroupActions;
+    public bool GroupLocked;
+    /// <summary>Camera rows: the kind letter between the live and lock
+    /// seats — M main, F free, C camera. A marker, not a control.</summary>
+    public string CameraMark = "";
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
@@ -281,6 +287,7 @@ public sealed class AppShellViewModel
     public Func<ShellSidebarRow, string>? DragGhostText;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
+    public Action<ShellSidebarRow>? OnGroupLock;
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;

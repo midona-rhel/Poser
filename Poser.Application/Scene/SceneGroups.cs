@@ -10,6 +10,13 @@ public sealed class SceneGroup
     public required Guid Id { get; init; }
     public required string Name { get; set; }
     public required List<SelectionId> Members { get; init; }
+
+    /// <summary>A locked group protects its PLACEMENT: members' world
+    /// transforms refuse, nothing drags in, out, or around, and the
+    /// structure verbs (rename, ungroup, destroy) wait for the unlock.
+    /// Visibility and animation stay free — the lock guards where things
+    /// stand, not what they do.</summary>
+    public bool Locked { get; set; }
 }
 
 /// <summary>One root slot of the outliner: an ungrouped entity or a
@@ -52,7 +59,10 @@ public sealed class SceneGroups
         var kept = new List<SelectionId>();
         foreach (var member in members)
             if (Selection.EntitySelection.IsEntity(member.Kind)
-                && !kept.Contains(member))
+                && !kept.Contains(member)
+                // A locked group keeps its members: a new group cannot
+                // steal them.
+                && !IsLockedMember(member))
                 kept.Add(member);
         if (kept.Count < 2)
             return null;
@@ -83,7 +93,8 @@ public sealed class SceneGroups
 
     public void Rename(Guid id, string name)
     {
-        if (Find(id) is not { } group || string.IsNullOrWhiteSpace(name))
+        if (Find(id) is not { Locked: false } group
+            || string.IsNullOrWhiteSpace(name))
             return;
         group.Name = name.Trim();
         Revision++;
@@ -91,7 +102,7 @@ public sealed class SceneGroups
 
     public void Dissolve(Guid id)
     {
-        if (Find(id) is not { } group)
+        if (Find(id) is not { Locked: false } group)
             return;
         // The members reclaim the group's seat in the root order, in
         // member order — ungrouping never scatters rows.
@@ -111,6 +122,10 @@ public sealed class SceneGroups
     /// </summary>
     public void RemoveMember(SelectionId member)
     {
+        // A locked group keeps its members; the scene's own prune is the
+        // one force that overrides (a despawned member is simply gone).
+        if (IsLockedMember(member))
+            return;
         if (RemoveMemberCore(member))
             Revision++;
     }
@@ -121,7 +136,8 @@ public sealed class SceneGroups
     public void AddMember(Guid groupId, SelectionId member, int index = -1)
     {
         if (!Selection.EntitySelection.IsEntity(member.Kind)
-            || Find(groupId) is not { } group)
+            || Find(groupId) is not { Locked: false } group
+            || IsLockedMember(member))
             return;
         int existing = group.Members.IndexOf(member);
         if (existing >= 0)
@@ -234,36 +250,56 @@ public sealed class SceneGroups
     public SceneGroup? GroupOf(SelectionId member) =>
         _groups.Find(group => group.Members.Contains(member));
 
-    /// <summary>The group whose member set EQUALS the selection's entity
-    /// set, if any — how the UI knows a multiselect IS a named group.</summary>
-    public SceneGroup? MatchSelection(IReadOnlyList<SelectionId> selected)
+    /// <summary>The group the user EXPLICITLY selected by clicking its
+    /// head. Set by the head click alone — hand-selecting every member
+    /// stays a member-level selection, never this. It survives only while
+    /// the selection still IS that group's membership.</summary>
+    public Guid? ActiveGroupId { get; set; }
+
+    /// <summary>The explicitly selected group, if the selection still
+    /// equals its membership — the ONLY way a multiselect counts as "the
+    /// group". A drifted selection clears the state.</summary>
+    public SceneGroup? ActiveSelection(IReadOnlyList<SelectionId> selected)
+    {
+        if (ActiveGroupId is not { } id)
+            return null;
+        if (Find(id) is { } group && SelectionEquals(group, selected))
+            return group;
+        ActiveGroupId = null;
+        return null;
+    }
+
+    /// <summary>Whether the selection's entity set equals the group's
+    /// member set.</summary>
+    private static bool SelectionEquals(
+        SceneGroup group, IReadOnlyList<SelectionId> selected)
     {
         int entities = 0;
         foreach (var id in selected)
-            if (Selection.EntitySelection.IsEntity(id.Kind))
-                entities++;
-        if (entities < 2)
-            return null;
-        foreach (var group in _groups)
         {
-            if (group.Members.Count != entities)
+            if (!Selection.EntitySelection.IsEntity(id.Kind))
                 continue;
-            bool all = true;
-            foreach (var id in selected)
-            {
-                if (!Selection.EntitySelection.IsEntity(id.Kind))
-                    continue;
-                if (!group.Members.Contains(id))
-                {
-                    all = false;
-                    break;
-                }
-            }
-            if (all)
-                return group;
+            entities++;
+            if (!group.Members.Contains(id))
+                return false;
         }
-        return null;
+        return entities >= 2 && entities == group.Members.Count;
     }
+
+    /// <summary>The lock, one verb: flipping it bumps the revision so the
+    /// rows restate their grips.</summary>
+    public void SetLocked(Guid id, bool locked)
+    {
+        if (Find(id) is not { } group || group.Locked == locked)
+            return;
+        group.Locked = locked;
+        Revision++;
+    }
+
+    /// <summary>Whether the entity belongs to a locked group — the
+    /// transform machinery's one question.</summary>
+    public bool IsLockedMember(SelectionId member) =>
+        GroupOf(member) is { Locked: true };
 
     /// <summary>Drops members the snapshot no longer contains. Returns
     /// whether anything changed (the caller already rebuilds).</summary>

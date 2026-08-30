@@ -996,6 +996,9 @@ public sealed class PoseLibraryPane
                             freeCamera && camera.CameraAnchor is not null;
                         _detailsHasActorAnchor =
                             freeCamera && camera.ActorAnchor is not null;
+                        if (freeCamera)
+                            _detailsRows.Add(("Anchors", Anchors(
+                                camera.CameraAnchor, camera.ActorAnchor)));
                     }
                     break;
                 case PoseLibraryEntryKind.Actor:
@@ -1007,6 +1010,14 @@ public sealed class PoseLibraryPane
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
+                        // A group entry says what it HOLDS — the one fact
+                        // its tile cannot.
+                        if (kind == PoseLibraryEntryKind.Group)
+                        {
+                            string contents = ContentsSummary(metadata);
+                            if (contents.Length > 0)
+                                _detailsRows.Add(("Contents", contents));
+                        }
                         if (kind == PoseLibraryEntryKind.Environment)
                         {
                             // The name travels in the file when the capture
@@ -1035,6 +1046,14 @@ public sealed class PoseLibraryPane
                     }
                     break;
             }
+            // Every entry answers "Saved": the document's own stamp when it
+            // records one, else the file's write time — a light or camera
+            // document carries no date of its own.
+            if (!_detailsRows.Exists(row => row.Label == "Saved"))
+                _detailsRows.Add(("Saved",
+                    System.IO.File.GetLastWriteTime(path).ToString(
+                        LibraryStamp.DateTimeFormat,
+                        CultureInfo.InvariantCulture)));
         }
         catch (Exception)
         {
@@ -1042,6 +1061,23 @@ public sealed class PoseLibraryPane
         }
         if (_detailsRows.Count == 0 && _detailsColor is null)
             _detailsRows.Add(("Details", "none recorded"));
+    }
+
+    private static string ContentsSummary(SceneMetadataReadOutcome metadata)
+    {
+        var parts = new List<string>();
+        void Part(int count, string one, string many)
+        {
+            if (count > 0)
+                parts.Add($"{count} {(count == 1 ? one : many)}");
+        }
+        Part(metadata.ActorCount, "actor", "actors");
+        Part(metadata.PropCount, "object", "objects");
+        Part(metadata.WorldObjectCount, "borrowed object", "borrowed objects");
+        Part(metadata.LightCount, "light", "lights");
+        Part(metadata.CameraCount, "camera", "cameras");
+        Part(metadata.OverlayCount, "overlay", "overlays");
+        return string.Join(" · ", parts);
     }
 
     private static string Anchors(

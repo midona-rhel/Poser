@@ -25,8 +25,20 @@ public static class TransformTargetResolver
 {
     public static EffectiveTransformSelection? Resolve(
         IReadOnlyList<SelectionId> selected,
-        SceneSnapshot snapshot)
+        SceneSnapshot snapshot,
+        Func<SelectionId, bool>? isLocked = null)
     {
+        // A locked group protects its placement: locked members leave the
+        // resolution entirely — no target, no gizmo seat — before any
+        // branch runs, so every selection shape honors the lock.
+        if (isLocked != null && AnyLocked(selected, isLocked))
+        {
+            var free = new List<SelectionId>();
+            foreach (var id in selected)
+                if (!isLocked(id))
+                    free.Add(id);
+            selected = free;
+        }
         if (selected.Count == 0)
             return null;
 
@@ -251,5 +263,14 @@ public static class TransformTargetResolver
         }
 
         return new EffectiveTransformSelection(targets[0], targets);
+    }
+
+    private static bool AnyLocked(
+        IReadOnlyList<SelectionId> selected, Func<SelectionId, bool> isLocked)
+    {
+        foreach (var id in selected)
+            if (isLocked(id))
+                return true;
+        return false;
     }
 }

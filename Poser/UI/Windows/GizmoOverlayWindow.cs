@@ -58,6 +58,7 @@ public class GizmoOverlayWindow : Window
     private readonly Game.Bindings.StableBindingRegistry _bindings;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly global::Poser.Application.Scene.SceneGroups _groups;
 
     private static Config.GizmoConfiguration GizmoConfig =>
         Config.ConfigurationService.Instance.Config.Gizmo;
@@ -182,6 +183,7 @@ public class GizmoOverlayWindow : Window
         Game.Bindings.StableBindingRegistry bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
+        global::Poser.Application.Scene.SceneGroups groups,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -205,6 +207,7 @@ public class GizmoOverlayWindow : Window
         _bindings = bindings;
         _virtualCameras = virtualCameras;
         _presentation = presentation;
+        _groups = groups;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -541,7 +544,8 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
-        TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
+        TransformTargetResolver.Resolve(
+            _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
 
     /// <summary>The live average of the targets' world positions — the
     /// group seat. Null when any member cannot answer, matching the

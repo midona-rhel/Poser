@@ -256,7 +256,8 @@ public class PoseInspectorPane
         _effectiveRevision = _scene.Revision;
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
-        _effective = TransformTargetResolver.Resolve(selected, _scene.Snapshot);
+        _effective = TransformTargetResolver.Resolve(
+            selected, _scene.Snapshot, _groups.IsLockedMember);
         return _effective;
     }
 
@@ -553,7 +554,7 @@ public class PoseInspectorPane
                 _multiHeadCounts[i] = counts[i];
                 changed = true;
             }
-        var namedGroup = _groups.MatchSelection(_selection.Selected);
+        var namedGroup = _groups.ActiveSelection(_selection.Selected);
         if (namedGroup is { } matched
             && !string.Equals(_multiHeadWho, matched.Name, StringComparison.Ordinal))
         {
@@ -583,7 +584,8 @@ public class PoseInspectorPane
         {
             var resolved = global::Poser.Application.Transforms
                 .TransformTargetResolver.Resolve(
-                    _selection.Selected, _scene.Snapshot);
+                    _selection.Selected, _scene.Snapshot,
+                    _groups.IsLockedMember);
             if (resolved is not { } selection)
                 return;
             var begin = _cleanTransforms.Begin(
@@ -609,7 +611,8 @@ public class PoseInspectorPane
     {
         var resolved = global::Poser.Application.Transforms
             .TransformTargetResolver.Resolve(
-                _selection.Selected, _scene.Snapshot);
+                _selection.Selected, _scene.Snapshot,
+                _groups.IsLockedMember);
         if (resolved is not { } selection)
             return;
         var sum = Vector3.Zero;

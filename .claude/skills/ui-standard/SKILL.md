@@ -143,6 +143,16 @@ Windows each have ONE job. No mode may change what a window IS.
   is only ever selected alone (it IS the whole membership), and only
   one of the two levels wears the pill at a time — actor bones are
   the ONE exception, keeping their dual actor-and-bones highlight.
+  "The selection IS the group" happens by EXPLICIT head click only
+  (ruled 2026-08-30): hand-selecting every member stays a
+  member-level selection — set-equality inference was rejected. A
+  group LOCKS (lock seat on its head row): locked protects
+  PLACEMENT — members' world transforms refuse, nothing drags in,
+  out, or around, and rename/ungroup/destroy disable in place;
+  visibility and animation stay free. The head menu carries the
+  full lifetime: Rename, Save to library, Lock/Unlock, Ungroup, and
+  Destroy — which destroys the members through their own seams and
+  lets the emptied group dissolve.
   Groups and the root order PERSIST: they ride whole-scene saves
   (never single-entity entries) and rebuild over the loaded
   entities; a member the load lost is skipped by name. "Save to
@@ -177,7 +187,10 @@ Windows each have ONE job. No mode may change what a window IS.
   the accent-SELECTED mark on its action-strip glyph PLUS the row's
   own leading ICON rendered in the accent at full strength, never a
   text badge. (A full-row accent outline was tried 2026-08-30 and
-  replaced by the accent icon the same day.) The "Live" camera badge was removed 2026-08-30
+  replaced by the accent icon the same day.) Camera rows carry a
+  KIND LETTER — M main, F free, C camera — as an inert marker
+  between the live and lock seats; it replaced the "Default" badge
+  (2026-08-30), so camera rows carry no text badge at all. The "Live" camera badge was removed 2026-08-30
   for exactly this; "Default" remains a badge because it is
   identity, not state.
 - **Context menus: one lifetime family, every kind** — every entity

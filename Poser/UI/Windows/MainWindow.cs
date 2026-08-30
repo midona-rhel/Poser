@@ -581,6 +581,12 @@ public class MainWindow : Window
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
         _vm.DragGhostText = DragGhostFor;
+        _vm.OnGroupLock = row =>
+        {
+            if (row.Tag is GroupRowTag lockTag
+                && _groups.Find(lockTag.Id) is { } lockGroup)
+                _groups.SetLocked(lockTag.Id, !lockGroup.Locked);
+        };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -1140,7 +1146,7 @@ public class MainWindow : Window
         if (entities >= 2)
         {
             // A selection that IS a named group wears the group's name.
-            if (_groups.MatchSelection(_selection.Selected) is { } group)
+            if (_groups.ActiveSelection(_selection.Selected) is { } group)
                 return group.Name;
             if (_multiTitleCount != entities)
             {
@@ -1440,7 +1446,7 @@ public class MainWindow : Window
         _pivotKey.AddRange(selected);
 
         var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot);
+            selected, _scene.Snapshot, _groups.IsLockedMember);
         _pivotPrimaryIsBone =
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
         _pivotParentAvailable = false;
@@ -1641,8 +1647,11 @@ public class MainWindow : Window
             {
                 Label = group.Name,
                 Icon = TablerIcon.Folder,
-                Draggable = true,
-                DropContainer = true,
+                // A locked group holds still: no grip, no drops into it.
+                Draggable = !group.Locked,
+                DropContainer = !group.Locked,
+                GroupActions = true,
+                GroupLocked = group.Locked,
                 HasChildren = group.Members.Count > 0,
                 ExpandKey = key,
                 Expanded = expanded,
@@ -1657,9 +1666,14 @@ public class MainWindow : Window
                     isLast: m == group.Members.Count - 1);
             // The head-vs-members highlight rule has to know which rows
             // are grouped; the sweep marks the subtree whole, a grouped
-            // actor's bones included.
+            // actor's bones included — and a locked group's members lose
+            // their grips with it.
             for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
+            {
                 _sceneSection.Rows[r].GroupMember = true;
+                if (group.Locked)
+                    _sceneSection.Rows[r].Draggable = false;
+            }
         }
 
         // A reference picture is an overlay by the same test the nodes are —
@@ -1725,6 +1739,7 @@ public class MainWindow : Window
                 && _groups.Create(entry.Name, members) is { } made)
             {
                 groupIds[entry.Key] = made.Id;
+                _groups.SetLocked(made.Id, entry.Locked);
                 anyResolved = true;
             }
         }
@@ -1831,15 +1846,6 @@ public class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// The camera row's badge. The LIVE camera is not a badge: it speaks the
-    /// same way the game's target actor does — the accent-selected mark in
-    /// the action strip. The badge only names the default camera, whose real
-    /// mark (it cannot be destroyed) is its absent destroy affordance.
-    /// </summary>
-    private static string CameraBadge(bool isDefault) =>
-        isDefault ? "Default" : "";
-
     /// <summary>The mark for one overlay kind. A dialogue panel, a bubble and
     /// a status line are three different things on screen, so they are three
     /// different marks in the tree.</summary>
@@ -1939,7 +1945,7 @@ public class MainWindow : Window
         // selection IS the group, only the head row wears the pill — the
         // one exception is actor bones, whose dual highlight is the
         // posing tree's own rule.
-        var matchedGroup = _groups.MatchSelection(_selection.Selected);
+        var matchedGroup = _groups.ActiveSelection(_selection.Selected);
         var rows = _sceneSection.Rows;
         for (int i = 0; i < rows.Count; i++)
         {
@@ -1968,7 +1974,6 @@ public class MainWindow : Window
             {
                 row.CameraLive = liveCamera.IsLive;
                 row.CameraLocked = liveCamera.IsLocked;
-                row.Count = CameraBadge(liveCamera.IsDefault);
             }
             else if (id.Overlay is { } overlayId &&
                 _bindings.Resolve(overlayId) is
@@ -2422,7 +2427,9 @@ public class MainWindow : Window
     {
         Label = camera.Name,
         Draggable = true,
-        Count = CameraBadge(camera.IsDefault),
+        CameraMark = camera.IsDefault
+            ? "M"
+            : camera.Kind == CameraKind.Free ? "F" : "C",
         Icon = camera.Kind == CameraKind.Free
             ? TablerIcon.Video
             : TablerIcon.Camera,
@@ -3714,6 +3721,9 @@ public class MainWindow : Window
                 _selection.Select(group.Members[0]);
                 for (int i = 1; i < group.Members.Count; i++)
                     _selection.Add(group.Members[i]);
+                // The HEAD click alone makes the selection "the group" —
+                // hand-selecting every member stays a member selection.
+                _groups.ActiveGroupId = group.Id;
             }
             return;
         }
@@ -3793,7 +3803,7 @@ public class MainWindow : Window
                 System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        var matched = _groups.MatchSelection(_selection.Selected);
+        var matched = _groups.ActiveSelection(_selection.Selected);
         Crystarium.Page("multiselect-page", origin, size, page =>
         {
             // The title is STABLE: the group's name lives in the field
@@ -3848,7 +3858,8 @@ public class MainWindow : Window
     private void MoveSelectionToCamera()
     {
         var resolved = global::Poser.Application.Transforms.TransformTargetResolver
-            .Resolve(_selection.Selected, _scene.Snapshot);
+            .Resolve(
+                _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
         if (resolved is not { } selection)
         {
             _notices.Failed("Nothing movable is selected.");
@@ -5259,13 +5270,24 @@ public class MainWindow : Window
             Crystarium.FloatingMenu.Dismiss("##group-ctx");
             return;
         }
+        bool locked = group.Locked;
         var items = new[]
         {
-            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Rename", TablerIcon.Edit,
+                disabled: locked),
             new ContextMenuItem("Save to library", TablerIcon.Library,
                 help: "Saves the group and its members as a library entry"),
+            new ContextMenuItem(locked ? "Unlock" : "Lock",
+                locked ? TablerIcon.LockOpen : TablerIcon.Lock,
+                help: locked ? null : "Nothing in a locked group moves"),
             new ContextMenuItem("Ungroup", TablerIcon.X,
+                disabled: locked,
                 help: "Dissolve the group; nothing is destroyed"),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash,
+                danger: true, disabled: locked,
+                help: "Destroy the group AND everything in it; borrowed "
+                    + "things are released instead"),
         };
         var actions = new Action?[]
         {
@@ -5275,7 +5297,12 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(group.Members, name)),
+            () => _groups.SetLocked(groupId, !group.Locked),
             () => _groups.Dissolve(groupId),
+            null, // separator
+            // The members go through each kind's own lifetime seam; the
+            // emptied group dissolves through the scene prune.
+            () => DestroyEntities(group.Members.ToArray()),
         };
         if (_groupCtxOpenRequested)
         {
@@ -5343,7 +5370,7 @@ public class MainWindow : Window
             }
         }
 
-        var matched = _groups.MatchSelection(_selection.Selected);
+        var matched = _groups.ActiveSelection(_selection.Selected);
         var items = new List<ContextMenuItem>
         {
             new("Duplicate", TablerIcon.Copy,
@@ -5374,6 +5401,7 @@ public class MainWindow : Window
                 "Save group to library", matched.Name,
                 name => _scenePane.SaveGroupEntry(matched.Members, name)));
             items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
+                disabled: matched.Locked,
                 help: "Dissolve the group; nothing is destroyed"));
             actions.Add(() => _groups.Dissolve(matched.Id));
         }
@@ -5392,6 +5420,7 @@ public class MainWindow : Window
         actions.Add(null);
         items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
             danger: true,
+            disabled: matched is { Locked: true },
             help: "Destroy what the scene owns; borrowed things are "
                 + "released instead"));
         actions.Add(DestroySelection);
@@ -5507,8 +5536,17 @@ public class MainWindow : Window
     /// stays, borrowed objects go back to the map.</summary>
     private void DestroySelection()
     {
-        foreach (var id in _selection.Selected.ToArray())
+        DestroyEntities(_selection.Selected.ToArray());
+        _selection.Clear();
+    }
+
+    private void DestroyEntities(IReadOnlyList<SelectionId> ids)
+    {
+        foreach (var id in ids)
         {
+            // A locked group keeps its members standing.
+            if (_groups.IsLockedMember(id))
+                continue;
             switch (id)
             {
                 case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
@@ -5553,7 +5591,6 @@ public class MainWindow : Window
                     break;
             }
         }
-        _selection.Clear();
     }
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)
