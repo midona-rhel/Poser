@@ -825,16 +825,16 @@ public sealed class ShellSidebar
 
             if (row.CameraActions)
             {
-                // The recenter seat leads: the crosshair aims the camera
-                // back at whoever it tracks.
+                // The recenter seat leads — Brio's Bullseye: retarget this
+                // camera's tracking onto the SELECTED actor.
                 ImGui.SetCursorScreenPos(origin);
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
                         selected: false,
                         style: square,
                         help: row.CameraCanRecenter
-                            ? "Recenter on the tracked actor"
-                            : "Nothing to recenter on right now",
+                            ? "Recenter on the selected actor"
+                            : "Select an actor to track first",
                         id: "##camera-recenter",
                         dimmed: !row.CameraCanRecenter))
                     _vm.OnCameraRecenter?.Invoke(row);
