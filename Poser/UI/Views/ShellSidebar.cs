@@ -140,7 +140,9 @@ public sealed class ShellSidebar
         // closes the band at the right, where the rows' span ends; the
         // pill takes what remains.
         float side = SearchBandHeight - SearchTop * 2f;
-        float pillLeft = inset - theme.Controls.InputPaddingX;
+        // Not the full leading pad: the glyph should sit with the row
+        // chevrons below it, a shade in from the raw page edge.
+        float pillLeft = inset - theme.Controls.InputPaddingX + 4f;
         // The plus is CONTENT: it stops a gutter early, exactly where the
         // rows' own action glyphs stop — only fills reach under the gutter.
         float plusX = width - theme.Scrollbar.GutterWidth - side;
