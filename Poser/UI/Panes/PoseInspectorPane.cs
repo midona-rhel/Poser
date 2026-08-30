@@ -40,6 +40,7 @@ public class PoseInspectorPane
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
+    private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
@@ -174,8 +175,10 @@ public class PoseInspectorPane
         Game.Posing.IkBakeCapture ikBake,
         IActorSpawnService spawnService,
         CameraPane cameraPane,
-        OverlayPane overlayPane)
+        OverlayPane overlayPane,
+        global::Poser.Application.Scene.SceneGroups groups)
     {
+        _groups = groups;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
@@ -550,9 +553,17 @@ public class PoseInspectorPane
                 _multiHeadCounts[i] = counts[i];
                 changed = true;
             }
+        var namedGroup = _groups.MatchSelection(_selection.Selected);
+        if (namedGroup is { } matched
+            && !string.Equals(_multiHeadWho, matched.Name, StringComparison.Ordinal))
+        {
+            _multiHeadWho = matched.Name;
+            changed = true;
+        }
         if (changed || _multiHeadWho.Length == 0)
         {
-            _multiHeadWho = $"{total} selected";
+            if (namedGroup == null)
+                _multiHeadWho = $"{total} selected";
             var parts = new List<string>(3);
             ReadOnlySpan<string> singular =
                 ["actor", "object", "light", "camera", "overlay"];

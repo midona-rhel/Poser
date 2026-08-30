@@ -130,6 +130,14 @@ Windows each have ONE job. No mode may change what a window IS.
   scale about that one point (Centroid pivot), translation carrying
   it. Cameras and overlays ride along untargeted. Selecting a single
   member edits it individually, exactly as in a named group.
+- **Named groups** are NAMING AND STRUCTURE over the anonymous
+  group: one depth only (a group never contains a group), one home
+  per entity, folder rows first in the tree with members nested one
+  level in, and a group row's click selects the whole membership —
+  the multiselect machinery does everything else. The Selection page
+  and titles wear the group's name when the selection IS the group;
+  Group… / Rename / Ungroup live on that page, and Ungroup dissolves
+  without destroying.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
