@@ -169,6 +169,17 @@ public readonly record struct KeyChord(
             yield return token.Key;
     }
 
+    /// <summary>Both alphabets of every capturable key. The capture polls
+    /// BOTH sources: with the settings window focused ImGui eats the key
+    /// before the game's state sees it, and unfocused the reverse — one
+    /// source alone is blind half the time.</summary>
+    public static IEnumerable<(VirtualKey Key, ImGuiKey ImGui)>
+        CapturableTokens()
+    {
+        foreach (var token in Tokens)
+            yield return (token.Key, token.ImGuiKey);
+    }
+
     /// <summary>Unrecognised text is UNBOUND, never a partial chord: a
     /// half-understood binding that fires on the modifier alone is worse than
     /// one that does not fire.</summary>

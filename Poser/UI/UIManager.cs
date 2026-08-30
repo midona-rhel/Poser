@@ -125,6 +125,13 @@ public sealed class UIManager : IUIManager
         {
             FrameProfiler.EndFrame();
         }
+        // The focus rule, published once per frame: typing, an active
+        // ImGui item (a drag in the UI), or a live gizmo gesture owns the
+        // keyboard, and the free camera's flight keys stand down.
+        _cameras.SuppressFlightKeys =
+            ImGui.GetIO().WantTextInput
+            || ImGui.IsAnyItemActive()
+            || Controls.GizmoPointerOwnership.Owned;
         HandleKeybinds();
     }
 

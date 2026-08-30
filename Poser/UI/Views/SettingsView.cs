@@ -1066,8 +1066,8 @@ public static class SettingsView
                 vm.RebindingSlot = slot;
                 vm.PresetArmed = false;
                 vm.RebindHeld.Clear();
-                foreach (var key in KeyChord.CapturableVirtualKeys())
-                    if (vm.KeyDown(key))
+                foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
+                    if (vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey))
                         vm.RebindHeld.Add(key);
             },
             style: ControlStyle.Workspace with
@@ -1312,14 +1312,17 @@ public static class SettingsView
         // reach an unfocused widget. Edge detection is manual: a key
         // already down when the capture armed stays ignored until it has
         // been released once.
-        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE))
+        var io = ImGui.GetIO();
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.ESCAPE)
+            || ImGui.IsKeyDown(ImGuiKey.Escape))
         {
             vm.RebindingAction = null;
             vm.RebindHeld.Clear();
             return;
         }
 
-        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.BACK))
+        if (vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.BACK)
+            || ImGui.IsKeyDown(ImGuiKey.Backspace))
         {
             slots[vm.RebindingSlot] = string.Empty;
             vm.BindingRevision++;
@@ -1328,9 +1331,9 @@ public static class SettingsView
             return;
         }
 
-        foreach (var key in KeyChord.CapturableVirtualKeys())
+        foreach (var (key, imguiKey) in KeyChord.CapturableTokens())
         {
-            bool down = vm.KeyDown(key);
+            bool down = vm.KeyDown(key) || ImGui.IsKeyDown(imguiKey);
             if (!down)
             {
                 vm.RebindHeld.Remove(key);
@@ -1339,9 +1342,12 @@ public static class SettingsView
             if (vm.RebindHeld.Contains(key))
                 continue;
             slots[vm.RebindingSlot] = new KeyChord(
-                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL),
-                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT),
-                vm.KeyDown(Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
+                io.KeyCtrl || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.CONTROL),
+                io.KeyShift || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.SHIFT),
+                io.KeyAlt || vm.KeyDown(
+                    Dalamud.Game.ClientState.Keys.VirtualKey.MENU),
                 key).ToString();
             vm.BindingRevision++;
             vm.RebindingAction = null;
