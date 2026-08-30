@@ -69,6 +69,14 @@ public class SceneFile
     /// </summary>
     public const string OverlayEntryExtension = ".xivo";
 
+    /// <summary>
+    /// A group library entry: the scene container restricted to one named
+    /// group's members, the group itself riding along so a load recreates
+    /// it whole. Same codec, own extension so the library tabs it without
+    /// opening it.
+    /// </summary>
+    public const string GroupEntryExtension = ".xivg";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
@@ -148,6 +156,22 @@ public class SceneFile
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public List<SceneWorldObject>? WorldObjects { get; set; }
+
+    /// <summary>The sidebar's named groups. ABSENT rather than empty when
+    /// the scene has none, so every older file reads back byte-identical.
+    /// Members reference entities by the SAME keys the entity lists above
+    /// carry; a member the load cannot restore is skipped by name, and a
+    /// group thinned below two members dissolves exactly as it does
+    /// live.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<SceneGroupEntry>? Groups { get; set; }
+
+    /// <summary>The sidebar's root order — the USER'S arrangement, kinds
+    /// interleaved, group heads included (Kind "group", keyed by the
+    /// group entry's key). ABSENT when unrecorded; a load without it
+    /// seats entities in kind order.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public List<SceneStructureRef>? RootOrder { get; set; }
 
     // The same wire style every Poser document uses — numerics as
     // comma-space strings, enums by name, PascalCase, pretty printing,
@@ -497,6 +521,28 @@ public class SceneWorldObject
 /// <summary>Exact bone identity inside a saved scene: the owning actor's
 /// in-document key plus the slot/partial/name triple that resolves the bone
 /// on the restored actor. Never a native index or pointer.</summary>
+/// <summary>One reference into the scene's structure: an entity of the
+/// named kind (actor, prop, worldObject, light, camera, overlay) by the
+/// key its entity list carries, or a group by its entry's key (Kind
+/// "group"). Kind is a string so an unknown future kind reads and skips
+/// rather than failing the file.</summary>
+[Serializable]
+public class SceneStructureRef
+{
+    public string Kind { get; set; } = string.Empty;
+    public Guid Key { get; set; }
+}
+
+/// <summary>One named sidebar group: naming and structure only — a group
+/// owns no transform, here exactly as it owns none live.</summary>
+[Serializable]
+public class SceneGroupEntry
+{
+    public Guid Key { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public List<SceneStructureRef> Members { get; set; } = new();
+}
+
 [Serializable]
 public class SceneBoneAttachment
 {

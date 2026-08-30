@@ -176,6 +176,25 @@ public sealed class SceneGroups
         return _order;
     }
 
+    /// <summary>A loaded document's order restored: each named slot moves
+    /// to the end in the given sequence, so a cleared-and-loaded scene
+    /// reads back in its saved order and a merge-load's entities arrive
+    /// at the bottom, still ordered among themselves. Unknown slots are
+    /// seated too — the next sync prunes any that never materialize.</summary>
+    public void RestoreOrder(IReadOnlyList<RootSlot> slots)
+    {
+        if (slots.Count == 0)
+            return;
+        foreach (var slot in slots)
+        {
+            int at = _order.IndexOf(slot);
+            if (at >= 0)
+                _order.RemoveAt(at);
+            _order.Add(slot);
+        }
+        Revision++;
+    }
+
     /// <summary>The open-space drop: <paramref name="moved"/> re-seats at
     /// the END of the root list.</summary>
     public void MoveRootToEnd(RootSlot moved)

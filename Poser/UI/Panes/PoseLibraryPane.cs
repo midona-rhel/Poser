@@ -1001,6 +1001,7 @@ public sealed class PoseLibraryPane
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
+                case PoseLibraryEntryKind.Group:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
@@ -1025,7 +1026,8 @@ public sealed class PoseLibraryPane
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
                                     CultureInfo.InvariantCulture)));
-                        if (kind == PoseLibraryEntryKind.Actor)
+                        if (kind is PoseLibraryEntryKind.Actor
+                            or PoseLibraryEntryKind.Group)
                         {
                             _detailsHasCameraAnchor = metadata.HasCameraAnchor;
                             _detailsHasActorAnchor = metadata.HasActorAnchor;
@@ -1069,7 +1071,10 @@ public sealed class PoseLibraryPane
         var name = _vm.Tiles[index].Label;
         switch (_tileKinds[index])
         {
+            // A group entry is the actor entry's plural: the same container,
+            // the same placement-anchored load, several entities at once.
             case PoseLibraryEntryKind.Actor:
+            case PoseLibraryEntryKind.Group:
                 var actorMode = EffectiveMode();
                 if (!_anchors.TryCurrentFor(
                         actorMode, out var anchorPosition,
@@ -1922,6 +1927,7 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Camera => TablerIcon.Camera,
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
+                    PoseLibraryEntryKind.Group => TablerIcon.Folder,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2414,6 +2420,7 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Camera
                 or PoseLibraryEntryKind.Environment
                 or PoseLibraryEntryKind.Overlay
+                or PoseLibraryEntryKind.Group
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

@@ -40,6 +40,11 @@ public enum PoseLibraryEntryKind : byte
     /// <summary>An <c>.xivo</c> overlay entry: the scene container
     /// restricted to one overlay node.</summary>
     Overlay,
+
+    /// <summary>An <c>.xivg</c> group entry: the scene container
+    /// restricted to one named group's members, the group riding along.
+    /// Read through the same codec as a scene.</summary>
+    Group,
 }
 
 /// <summary>

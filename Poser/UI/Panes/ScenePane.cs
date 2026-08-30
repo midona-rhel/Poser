@@ -163,6 +163,47 @@ public sealed class ScenePane
     /// Admission refusals are posted as notices here; completion reports
     /// through the same operation surface every scene save uses.
     /// </summary>
+    /// <summary>The group menus' "Save to library": the group's members
+    /// with their appearances, the group riding along, written into the
+    /// objects home as a .xivg.</summary>
+    public bool SaveGroupEntry(
+        IReadOnlyList<global::Poser.Domain.Identity.SelectionId> members,
+        string displayName)
+    {
+        var keys = new List<Guid>();
+        foreach (var member in members)
+        {
+            Guid? key = member switch
+            {
+                { Actor: { } actor } => actor.LogicalId,
+                { Prop: { } prop } => prop.LogicalId,
+                { WorldObject: { } worldObject } => worldObject.LogicalId,
+                { Light: { } light } => light.LogicalId,
+                { Camera: { } camera } => camera.LogicalId,
+                { Overlay: { } overlay } => overlay.LogicalId,
+                _ => null,
+            };
+            if (key is { } logical)
+                keys.Add(logical);
+        }
+        if (keys.Count < 2)
+        {
+            _notices.Refused(
+                "The group needs at least two members to save.");
+            return false;
+        }
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.GroupEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.GroupEntry(keys));
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The group could not be saved to the library.");
+        return result.Success;
+    }
+
     public bool SaveActorEntry(Guid logicalId, string displayName)
     {
         var root = _libraryConfig.EnsureObjectsRootExists();

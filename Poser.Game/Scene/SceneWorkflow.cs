@@ -125,22 +125,29 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Services.IPlaceService place,
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
+        Poser.Application.Scene.SceneGroups sceneGroups,
         Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection, log), log)
+            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups)
     {
     }
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
-        Dalamud.Plugin.Services.IPluginLog? log = null)
+        Dalamud.Plugin.Services.IPluginLog? log = null,
+        Poser.Application.Scene.SceneGroups? groups = null)
     {
         _runtime = runtime;
         _log = log;
+        _groups = groups;
     }
+
+    /// <summary>The sidebar's structure store — null only under the test
+    /// runtime, where saves simply carry no structure.</summary>
+    private readonly Poser.Application.Scene.SceneGroups? _groups;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -469,6 +476,52 @@ public sealed class SceneWorkflow : IDisposable
                 }
             }
 
+            // The sidebar's structure rides the document: named groups and
+            // the user's root order, referencing the entity lists by the
+            // keys they already carry.
+            if (options.IncludeStructure && _groups != null)
+                WriteStructure(scene, actorIdentities);
+
+            // The group-entry save narrows to the group's members, the
+            // actor-entry rule generalized: everything else leaves, and
+            // only groups every member of which survived ride along.
+            if (options.OnlyEntityKeys is { } onlyKeys)
+            {
+                var keep = new HashSet<Guid>(onlyKeys);
+                // Actor entries key by capture key, not logical id — admit
+                // the capture keys of every kept logical id.
+                foreach (var pair in actorIdentities)
+                    if (keep.Contains(pair.Value.LogicalId))
+                        keep.Add(pair.Key);
+                scene.Actors.RemoveAll(entry => !keep.Contains(entry.Key));
+                scene.Props.RemoveAll(entry => !keep.Contains(entry.Key));
+                scene.Lights.RemoveAll(entry => !keep.Contains(entry.Key));
+                scene.Cameras.RemoveAll(entry => !keep.Contains(entry.Key));
+                scene.Overlays?.RemoveAll(entry => !keep.Contains(entry.Key));
+                scene.WorldObjects?.RemoveAll(
+                    entry => !keep.Contains(entry.Key));
+                scene.Groups?.RemoveAll(group =>
+                    group.Members.Count == 0
+                    || !group.Members.All(member => keep.Contains(member.Key)));
+                // An entry has no sidebar order of its own: its entities
+                // seat where the load lands them.
+                scene.RootOrder = null;
+                if (scene.Actors.Count + scene.Props.Count
+                    + scene.Lights.Count + scene.Cameras.Count
+                    + (scene.Overlays?.Count ?? 0)
+                    + (scene.WorldObjects?.Count ?? 0) == 0)
+                {
+                    Finish(false,
+                        "None of the group's members were in the capture; "
+                        + "they may have just been removed. Nothing was "
+                        + "saved.");
+                    return;
+                }
+                actorIdentities = actorIdentities
+                    .Where(pair => keep.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+            }
+
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
@@ -788,6 +841,13 @@ public sealed class SceneWorkflow : IDisposable
             // no ledger can resurrect an actor the user asked to be rid of —
             // which is why the clear reports what it cost.
             var actorTokens = new Dictionary<Guid, object>();
+            // Per-kind key→token maps feed the structure restore: groups
+            // and the root order reference entities by these keys.
+            var propTokens = new Dictionary<Guid, object>();
+            var overlayTokens = new Dictionary<Guid, object>();
+            var worldObjectTokens = new Dictionary<Guid, object>();
+            var lightTokens = new Dictionary<Guid, object>();
+            var cameraTokens = new Dictionary<Guid, object>();
             Step(ScenePhase.SpawningEntities);
             var spawnFailure = await _runtime.OnFramework(() =>
             {
@@ -831,6 +891,7 @@ public sealed class SceneWorkflow : IDisposable
                         continue;
                     }
                     operation.SpawnedProps.Add(token);
+                    propTokens[prop.Key] = token;
                     entities.Add(new SceneEntityOutcome("Object", prop.Name, true));
                 }
 
@@ -849,6 +910,7 @@ public sealed class SceneWorkflow : IDisposable
                         continue;
                     }
                     operation.StagedOverlays.Add(token);
+                    overlayTokens[overlay.Key] = token;
                     entities.Add(new SceneEntityOutcome(
                         "Overlay", name, true, detail));
                 }
@@ -872,6 +934,7 @@ public sealed class SceneWorkflow : IDisposable
                         continue;
                     }
                     operation.BorrowedWorldObjects.Add(token);
+                    worldObjectTokens[worldObject.Key] = token;
                     entities.Add(
                         new SceneEntityOutcome("World object", name, true));
                 }
@@ -1110,7 +1173,10 @@ public sealed class SceneWorkflow : IDisposable
                     {
                         token = _runtime.CreateCamera(camera, out detail);
                         if (token != null)
+                        {
                             operation.CreatedCameras.Add(token);
+                            cameraTokens[camera.Key] = token;
+                        }
                     }
 
                     if (detail != null)
@@ -1213,6 +1279,7 @@ public sealed class SceneWorkflow : IDisposable
                     else
                     {
                         operation.SpawnedLights.Add(token);
+                        lightTokens[light.Key] = token;
                         // A non-null detail beside a token is a named
                         // degradation (a gobo the client no longer ships),
                         // reported without refusing the light.
@@ -1288,6 +1355,14 @@ public sealed class SceneWorkflow : IDisposable
                       "restored (everything that did restore was kept): " +
                       string.Join("; ", failures.Select(failure =>
                           $"{failure.Kind} '{failure.Name}': {failure.Detail}"));
+                // The document's structure is STAGED, not applied: the
+                // freshly spawned entities bind on the next snapshot
+                // publish, so the sidebar resolves the tokens and rebuilds
+                // groups and order then.
+                StageStructure(
+                    scene, actorTokens, propTokens, overlayTokens,
+                    worldObjectTokens, lightTokens, cameraTokens);
+
                 // Publishing inside the framework action orders the terminal
                 // before any subsequent framework-thread invalidation. Named
                 // refusals beside restored entities are typed partial
@@ -1318,6 +1393,133 @@ public sealed class SceneWorkflow : IDisposable
                     ? OperationReceiptState.Failed
                     : OperationReceiptState.RolledBack,
                 detail);
+        }
+    }
+
+    // ── sidebar structure: save-side write, load-side staging ───────────
+
+    /// <summary>A completed load's structure — the document's groups and
+    /// root order plus the file-key → runtime-token map — waiting for the
+    /// sidebar. The spawned entities bind on the next snapshot publish;
+    /// the sidebar resolves the tokens then and clears this.</summary>
+    public sealed class PendingStructure
+    {
+        public required IReadOnlyList<SceneGroupEntry> Groups { get; init; }
+        public required IReadOnlyList<SceneStructureRef>? RootOrder { get; init; }
+        public required IReadOnlyDictionary<Guid, object> Tokens { get; init; }
+    }
+
+    public PendingStructure? PendingSceneStructure { get; private set; }
+
+    public void ClearPendingStructure() => PendingSceneStructure = null;
+
+    private void StageStructure(
+        SceneFile scene, params Dictionary<Guid, object>[] tokenMaps)
+    {
+        if ((scene.Groups?.Count ?? 0) == 0
+            && (scene.RootOrder?.Count ?? 0) == 0)
+            return;
+        var tokens = new Dictionary<Guid, object>();
+        foreach (var map in tokenMaps)
+            foreach (var pair in map)
+                tokens.TryAdd(pair.Key, pair.Value);
+        PendingSceneStructure = new PendingStructure
+        {
+            Groups = scene.Groups
+                ?? (IReadOnlyList<SceneGroupEntry>)Array.Empty<SceneGroupEntry>(),
+            RootOrder = scene.RootOrder,
+            Tokens = tokens,
+        };
+    }
+
+    /// <summary>Writes the sidebar's structure into the document. Actor
+    /// members translate LOGICAL id → capture key through the identities
+    /// the capture reported; every other kind's key IS its logical id.
+    /// The store is read live off the save's worker thread, so a rare
+    /// concurrent structural edit skips the structure rather than failing
+    /// the save.</summary>
+    private void WriteStructure(
+        SceneFile scene,
+        IReadOnlyDictionary<Guid, Poser.Domain.Identity.ActorId> actorIdentities)
+    {
+        try
+        {
+            var actorKeys = new Dictionary<Guid, Guid>();
+            foreach (var pair in actorIdentities)
+                actorKeys[pair.Value.LogicalId] = pair.Key;
+
+            SceneStructureRef? RefOf(
+                global::Poser.Domain.Identity.SelectionId member)
+            {
+                string? kind = member.Kind switch
+                {
+                    global::Poser.Domain.Identity.SceneEntityKind.Actor => "actor",
+                    global::Poser.Domain.Identity.SceneEntityKind.Prop => "prop",
+                    global::Poser.Domain.Identity.SceneEntityKind.WorldObject =>
+                        "worldObject",
+                    global::Poser.Domain.Identity.SceneEntityKind.Light => "light",
+                    global::Poser.Domain.Identity.SceneEntityKind.Camera => "camera",
+                    global::Poser.Domain.Identity.SceneEntityKind.Overlay =>
+                        "overlay",
+                    _ => null,
+                };
+                if (kind == null)
+                    return null;
+                Guid? logical = member switch
+                {
+                    { Actor: { } actor } => actor.LogicalId,
+                    { Prop: { } prop } => prop.LogicalId,
+                    { WorldObject: { } worldObject } => worldObject.LogicalId,
+                    { Light: { } light } => light.LogicalId,
+                    { Camera: { } camera } => camera.LogicalId,
+                    { Overlay: { } overlay } => overlay.LogicalId,
+                    _ => null,
+                };
+                if (logical is not { } key)
+                    return null;
+                if (kind == "actor"
+                    && !actorKeys.TryGetValue(key, out key))
+                    return null;
+                return new SceneStructureRef { Kind = kind, Key = key };
+            }
+
+            var groups = new List<SceneGroupEntry>();
+            foreach (var group in _groups!.All)
+            {
+                var entry = new SceneGroupEntry
+                {
+                    Key = group.Id,
+                    Name = group.Name,
+                };
+                foreach (var member in group.Members)
+                    if (RefOf(member) is { } reference)
+                        entry.Members.Add(reference);
+                if (entry.Members.Count >= 2)
+                    groups.Add(entry);
+            }
+            if (groups.Count > 0)
+                scene.Groups = groups;
+
+            var order = new List<SceneStructureRef>();
+            foreach (var slot in _groups.RootOrder)
+            {
+                if (slot.IsGroup)
+                    order.Add(new SceneStructureRef
+                    {
+                        Kind = "group",
+                        Key = slot.GroupId,
+                    });
+                else if (slot.Entity is { } entity
+                    && RefOf(entity) is { } reference)
+                    order.Add(reference);
+            }
+            if (order.Count > 0)
+                scene.RootOrder = order;
+        }
+        catch (InvalidOperationException)
+        {
+            scene.Groups = null;
+            scene.RootOrder = null;
         }
     }
 

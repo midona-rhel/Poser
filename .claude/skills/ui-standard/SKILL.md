@@ -143,6 +143,13 @@ Windows each have ONE job. No mode may change what a window IS.
   is only ever selected alone (it IS the whole membership), and only
   one of the two levels wears the pill at a time — actor bones are
   the ONE exception, keeping their dual actor-and-bones highlight.
+  Groups and the root order PERSIST: they ride whole-scene saves
+  (never single-entity entries) and rebuild over the loaded
+  entities; a member the load lost is skipped by name. "Save to
+  library" on a group (head menu, selection menu, Selection page)
+  writes a .xivg group entry — the actor entry's plural, listed in
+  the library's Objects tab, spawning its members with the group
+  when activated.
 - **Tree drag-and-drop** — entity rows and group heads drag (never
   bones or categories); a held press that travels is the drag, the
   release is the drop, and the row under the pointer is the live

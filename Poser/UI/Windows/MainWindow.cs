@@ -84,6 +84,13 @@ public class MainWindow : Window
     /// <summary>Rebuild scratch: the root-eligible entities handed to the
     /// order sync, retained to keep the cold path allocation-flat.</summary>
     private readonly List<SelectionId> _rootEntities = new();
+
+    private readonly Game.Scene.SceneWorkflow _sceneWorkflow;
+
+    /// <summary>Rebuilds this pending structure has waited through: the
+    /// spawned entities bind within a publish or two, so a stage nothing
+    /// ever resolves against is dropped rather than held forever.</summary>
+    private int _pendingStructureAttempts;
     private readonly global::Poser.Services.ICameraService _gameCamera;
     private readonly Game.Viewport.ViewportProjection _viewportProjection;
 
@@ -439,6 +446,7 @@ public class MainWindow : Window
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
+        Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         Game.Viewport.ViewportProjection viewportProjection,
         IEventBus eventBus)
@@ -473,6 +481,7 @@ public class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
@@ -1559,6 +1568,12 @@ public class MainWindow : Window
         // draw inside their owner's subtree). The eligibility walk runs
         // UNFILTERED: the filter decides what renders, never what holds a
         // seat.
+        // A completed load staged the document's structure; the spawned
+        // entities bind on the snapshot publish this rebuild reads, so
+        // groups and order rebuild here — the stage clears once anything
+        // resolves, or after enough rebuilds that it never will.
+        RestorePendingStructure();
+
         _groups.Prune(id => SceneContains(id));
         _rootEntities.Clear();
         // The eligibility order seats what has no slot yet, so it IS the
@@ -1653,6 +1668,95 @@ public class MainWindow : Window
         // holds no seat in the order, and its Tag is the session instance
         // itself, which is what every verb below dispatches on.
         AppendReferenceImageRows(filter, filtering);
+    }
+
+    /// <summary>Rebuilds a loaded document's groups and root order over
+    /// the freshly spawned entities. Tokens resolve through the SAME
+    /// binding registry the snapshot published from, so whatever this
+    /// rebuild can see, this can name; members that never spawned are
+    /// skipped by omission, and a group thinned below two dissolves
+    /// exactly as it does live.</summary>
+    private void RestorePendingStructure()
+    {
+        if (_sceneWorkflow.PendingSceneStructure is not { } pending)
+            return;
+
+        SelectionId? Resolve(global::Poser.Files.SceneStructureRef reference)
+        {
+            if (!pending.Tokens.TryGetValue(reference.Key, out var token))
+                return null;
+            return token switch
+            {
+                IActor actor => _bindings.GetActorId(actor) is { } actorId
+                    ? SelectionId.ForActor(actorId)
+                    : null,
+                Game.PropHandle prop =>
+                    _bindings.GetPropId(prop) is { } propId
+                        ? SelectionId.ForProp(propId)
+                        : null,
+                Game.Overlays.OverlayNodeHandle node =>
+                    _bindings.GetOverlayId(node) is { } overlayId
+                        ? SelectionId.ForOverlay(overlayId)
+                        : null,
+                Game.WorldObjects.AdoptedWorldObject worldObject =>
+                    _bindings.GetWorldObjectId(worldObject) is { } worldId
+                        ? SelectionId.ForWorldObject(worldId)
+                        : null,
+                ILight light => _bindings.GetLightId(light) is { } lightId
+                    ? SelectionId.ForLight(lightId)
+                    : null,
+                IVirtualCamera camera =>
+                    _bindings.GetCameraId(camera) is { } cameraId
+                        ? SelectionId.ForCamera(cameraId)
+                        : null,
+                _ => null,
+            };
+        }
+
+        bool anyResolved = false;
+        var groupIds = new Dictionary<Guid, Guid>();
+        foreach (var entry in pending.Groups)
+        {
+            var members = new List<SelectionId>();
+            foreach (var member in entry.Members)
+                if (Resolve(member) is { } id)
+                    members.Add(id);
+            if (members.Count >= 2
+                && _groups.Create(entry.Name, members) is { } made)
+            {
+                groupIds[entry.Key] = made.Id;
+                anyResolved = true;
+            }
+        }
+        if (pending.RootOrder is { } orderRefs)
+        {
+            var slots =
+                new List<global::Poser.Application.Scene.RootSlot>();
+            foreach (var reference in orderRefs)
+            {
+                if (string.Equals(
+                        reference.Kind, "group", StringComparison.Ordinal))
+                {
+                    if (groupIds.TryGetValue(reference.Key, out var groupId))
+                        slots.Add(global::Poser.Application.Scene.RootSlot
+                            .ForGroup(groupId));
+                }
+                else if (Resolve(reference) is { } id)
+                    slots.Add(
+                        global::Poser.Application.Scene.RootSlot.For(id));
+            }
+            if (slots.Count > 0)
+            {
+                _groups.RestoreOrder(slots);
+                anyResolved = true;
+            }
+        }
+
+        if (anyResolved || ++_pendingStructureAttempts > 30)
+        {
+            _pendingStructureAttempts = 0;
+            _sceneWorkflow.ClearPendingStructure();
+        }
     }
 
     /// <summary>One root entity's row(s) at depth 0 — the kind dispatch
@@ -3709,6 +3813,12 @@ public class MainWindow : Window
                 {
                     if (matched is { } group)
                     {
+                        actions.Button("Save to library",
+                            () => OpenEntityRename(
+                                "Save group to library", group.Name,
+                                name => _scenePane.SaveGroupEntry(
+                                    group.Members, name)),
+                            help: "Save the group as a library entry");
                         actions.Button("Ungroup",
                             () => _groups.Dissolve(group.Id),
                             help: "Dissolve the group; nothing is destroyed");
@@ -5152,6 +5262,8 @@ public class MainWindow : Window
         var items = new[]
         {
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Save to library", TablerIcon.Library,
+                help: "Saves the group and its members as a library entry"),
             new ContextMenuItem("Ungroup", TablerIcon.X,
                 help: "Dissolve the group; nothing is destroyed"),
         };
@@ -5160,6 +5272,9 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename group", group.Name,
                 next => _groups.Rename(groupId, next)),
+            () => OpenEntityRename(
+                "Save group to library", group.Name,
+                name => _scenePane.SaveGroupEntry(group.Members, name)),
             () => _groups.Dissolve(groupId),
         };
         if (_groupCtxOpenRequested)
@@ -5241,34 +5356,45 @@ public class MainWindow : Window
                 help: anyActor ? null : "No actors in the selection"),
             new("Move to camera", TablerIcon.Crosshair),
             ContextMenuItem.Separator,
-            matched != null
-                ? new ContextMenuItem("Ungroup", TablerIcon.X,
-                    help: "Dissolve the group; nothing is destroyed")
-                : new ContextMenuItem("Group…", TablerIcon.Folder,
-                    help: "Make a named group of the selection"),
-            new("Deselect", TablerIcon.X),
-            ContextMenuItem.Separator,
-            new("Destroy", TablerIcon.Trash, danger: true,
-                help: "Destroy what the scene owns; borrowed things are "
-                    + "released instead"),
         };
-        var actions = new Action?[]
+        var actions = new List<Action?>
         {
             DuplicateSelection,
             () => SetSelectionVisible(!anyVisible),
             () => SetSelectionPaused(anyRunning),
             MoveSelectionToCamera,
             null, // separator
-            matched != null
-                ? () => _groups.Dissolve(matched.Id)
-                : () => OpenEntityRename(
-                    "Name the group",
-                    $"Group {_groups.All.Count + 1}",
-                    name => _groups.Create(name, _selection.Selected)),
-            () => _selection.Clear(),
-            null, // separator
-            DestroySelection,
         };
+        if (matched != null)
+        {
+            items.Add(new ContextMenuItem(
+                "Save to library", TablerIcon.Library,
+                help: "Saves the group and its members as a library entry"));
+            actions.Add(() => OpenEntityRename(
+                "Save group to library", matched.Name,
+                name => _scenePane.SaveGroupEntry(matched.Members, name)));
+            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
+                help: "Dissolve the group; nothing is destroyed"));
+            actions.Add(() => _groups.Dissolve(matched.Id));
+        }
+        else
+        {
+            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder,
+                help: "Make a named group of the selection"));
+            actions.Add(() => OpenEntityRename(
+                "Name the group",
+                $"Group {_groups.All.Count + 1}",
+                name => _groups.Create(name, _selection.Selected)));
+        }
+        items.Add(new ContextMenuItem("Deselect", TablerIcon.X));
+        actions.Add(() => _selection.Clear());
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
+            danger: true,
+            help: "Destroy what the scene owns; borrowed things are "
+                + "released instead"));
+        actions.Add(DestroySelection);
         if (_selectionCtxOpenRequested)
         {
             _selectionCtxOpenRequested = false;
@@ -5276,7 +5402,7 @@ public class MainWindow : Window
                 "##selection-ctx", ImGui.GetMousePos(), items.ToArray());
         }
         int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
-        if (clicked >= 0 && clicked < actions.Length)
+        if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
     }
 
