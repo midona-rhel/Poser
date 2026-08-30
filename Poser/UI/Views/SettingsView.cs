@@ -392,7 +392,7 @@ public static class SettingsView
                 "Selecting a bone also selects its opposite-side counterpart, "
                     + "and keeps both eyes and the ear chains in step");
             form.Switch(
-                "Keep relative angles between bones",
+                "Keep relative bone angles",
                 vm.RelativeSecondaryBones,
                 next => vm.RelativeSecondaryBones = next,
                 "With several bones selected, turn the rest about the first "
@@ -696,12 +696,12 @@ public static class SettingsView
                 next => vm.SkeletonLineToCircle = next,
                 "Draw each connector to the edge of the bone circle instead of through its centre");
             form.Switch(
-                "Hide the skeleton while dragging",
+                "Hide bones while dragging",
                 vm.HideSkeletonWhileDragging,
                 next => vm.HideSkeletonWhileDragging = next,
                 "Take the dots and lines away for the length of a gizmo drag");
             form.Switch(
-                "Hide skeleton when only an actor is selected",
+                "Hide bones on actor selection",
                 vm.HideSkeletonOnActorSelection,
                 next => vm.HideSkeletonOnActorSelection = next,
                 "Keep actor selection from opening the whole armature; "
@@ -795,14 +795,14 @@ public static class SettingsView
                 format: "0.00",
                 disabled: !vm.AllowHoldSnap);
             form.Switch(
-                "Hold Shift to snap to the world",
+                "Hold Shift for surface snap",
                 vm.AllowRaySnap,
                 next => vm.AllowRaySnap = next,
                 "While moving, put the target wherever the pointer meets the scene");
         });
         page.Section("Visibility", form =>
             form.Switch(
-                "Keep the gizmo when bones are hidden",
+                "Keep gizmo without bones",
                 vm.KeepGizmoWhenBonesHidden,
                 next => vm.KeepGizmoWhenBonesHidden = next,
                 "Off means hiding a bone from the overlay takes its gizmo with it"));
@@ -833,29 +833,29 @@ public static class SettingsView
         page.Section("Speed modifiers", form =>
         {
             form.Slider(
-                "Hold Ctrl",
+                "Hold Shift",
                 vm.CameraFastMultiplier,
                 1f,
                 10f,
                 next => vm.CameraFastMultiplier = next,
                 format: "0.0×",
-                help: "What holding Ctrl multiplies the fly speed by");
+                help: "What holding Shift multiplies the fly speed by");
             form.Slider(
-                "Hold Alt",
+                "Hold Ctrl",
                 vm.CameraSlowMultiplier,
                 0.05f,
                 1f,
                 next => vm.CameraSlowMultiplier = next,
                 format: "0.00×",
-                help: "What holding Alt multiplies the fly speed by");
+                help: "What holding Ctrl multiplies the fly speed by");
         });
         page.Section("Game input", form =>
         {
             form.Switch(
-                "Consume modifiers while flying",
+                "Reserve flight keys",
                 vm.CameraConsumeModifiers,
                 next => vm.CameraConsumeModifiers = next,
-                "Take Space, C, Shift and Ctrl off the game while a free camera flies; off lets your character still jump and sprint");
+                "While a free camera flies, the game never sees Space, C, Shift or Ctrl");
             form.Switch(
                 "Consume all game input",
                 vm.CameraConsumeAllInput,
@@ -900,7 +900,7 @@ public static class SettingsView
                 next => vm.ShowInCutscene = next,
                 "Keep Poser on screen during cutscenes");
             form.Switch(
-                "Show when the game UI is hidden",
+                "Show with game UI hidden",
                 vm.ShowWhenGameUiHidden,
                 next => vm.ShowWhenGameUiHidden = next,
                 "Keep Poser on screen after you hide the HUD yourself (Scroll Lock) or the game hides it for you");
