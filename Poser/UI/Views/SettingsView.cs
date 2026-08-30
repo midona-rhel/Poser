@@ -911,11 +911,6 @@ public static class SettingsView
                 next => vm.HideWhileManipulating = next,
                 "Hide the windows while a gizmo drag is held");
             form.Switch(
-                "Hide while manipulating",
-                vm.HideWhileManipulating,
-                next => vm.HideWhileManipulating = next,
-                "Hide the windows while a gizmo drag is held");
-            form.Switch(
                 "Show with game UI hidden",
                 vm.ShowWhenGameUiHidden,
                 next => vm.ShowWhenGameUiHidden = next,
