@@ -176,6 +176,18 @@ public sealed class SceneGroups
         return _order;
     }
 
+    /// <summary>The open-space drop: <paramref name="moved"/> re-seats at
+    /// the END of the root list.</summary>
+    public void MoveRootToEnd(RootSlot moved)
+    {
+        int from = _order.IndexOf(moved);
+        if (from < 0 || from == _order.Count - 1)
+            return;
+        _order.RemoveAt(from);
+        _order.Add(moved);
+        Revision++;
+    }
+
     /// <summary>Reorders the root list: <paramref name="moved"/> re-seats
     /// itself before or after <paramref name="target"/>. Unknown slots
     /// no-op — the sync owns membership, this owns order only.</summary>

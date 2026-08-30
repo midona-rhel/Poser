@@ -430,6 +430,28 @@ public sealed class ShellSidebar
         // The drag's ghost and its release, after every row painted.
         if (_dragSource is { } dragging)
         {
+            // No row is the candidate: the drop lands at the END of the
+            // root list, leaving any group — the caret at the tree's tail
+            // says so instead of saying nothing.
+            if (_paintDropTarget == null)
+            {
+                var tailDl = ImGui.GetWindowDrawList();
+                float tailY = origin.Y + _totalHeight * scale;
+                float x0 = origin.X + 6f * scale;
+                float x1 = origin.X + (width - gutter) * scale;
+                uint accent = ImGui.ColorConvertFloat4ToU32(theme.Accent);
+                tailDl.AddRectFilled(
+                    new Vector2(x0, tailY - 1f * scale),
+                    new Vector2(x1, tailY + 1f * scale),
+                    accent);
+                float tri = 4f * scale;
+                tailDl.AddTriangleFilled(
+                    new Vector2(x0 - tri, tailY - tri),
+                    new Vector2(x0 - tri, tailY + tri),
+                    new Vector2(x0 + tri * 0.5f, tailY),
+                    accent);
+            }
+
             var mouse = ImGui.GetMousePos();
             var ghostStyle = new TextStyle
             {

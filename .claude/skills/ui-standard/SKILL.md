@@ -156,10 +156,13 @@ Windows each have ONE job. No mode may change what a window IS.
   duration — during a drag only the drop indicators speak. Dragging
   a selected row carries the whole entity selection, and the ghost
   says so ("3 selected", not the one row's name). Open space
-  un-groups. The ROOT list is the USER'S order (ruled 2026-08-30,
-  overriding the earlier kind-order): entities and group heads
-  re-seat anywhere, kinds interleaved; a new spawn lands at the
-  bottom. ATTACHED rows never drag — a companion rides its owner, a
+  (no row under the pointer) drops to the END of the root list,
+  leaving any group — the caret at the tree's TAIL marks it; a drag
+  with no candidate must never show nothing. The ROOT list is the
+  USER'S order (ruled 2026-08-30, overriding the earlier
+  kind-order): entities and group heads re-seat anywhere, kinds
+  interleaved; a new spawn lands at the bottom, and the initial
+  seating order is cameras first, then actors, then the rest. ATTACHED rows never drag — a companion rides its owner, a
   bone-attached light rides its bone; their rows still stand as drop
   seams but hold no grip.
 - **State marks speak selected-accent** — a row's "this is the

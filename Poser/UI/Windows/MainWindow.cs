@@ -1561,6 +1561,14 @@ public class MainWindow : Window
         // seat.
         _groups.Prune(id => SceneContains(id));
         _rootEntities.Clear();
+        // The eligibility order seats what has no slot yet, so it IS the
+        // initial order: cameras first, then actors, then the rest.
+        foreach (var camera in _scene.Snapshot.Cameras)
+        {
+            var cameraId = SelectionId.ForCamera(camera.Id);
+            if (_groups.GroupOf(cameraId) == null)
+                _rootEntities.Add(cameraId);
+        }
         foreach (var actor in snapshot)
         {
             // An attached companion is drawn inside its owner's subtree; one
@@ -1586,12 +1594,6 @@ public class MainWindow : Window
         foreach (var light in _scene.Snapshot.Lights)
         {
             var id = SelectionId.ForLight(light.Id);
-            if (_groups.GroupOf(id) == null)
-                _rootEntities.Add(id);
-        }
-        foreach (var camera in _scene.Snapshot.Cameras)
-        {
-            var id = SelectionId.ForCamera(camera.Id);
             if (_groups.GroupOf(id) == null)
                 _rootEntities.Add(id);
         }
@@ -3795,11 +3797,13 @@ public class MainWindow : Window
         ShellSidebarRow? target,
         RowDropPosition position)
     {
-        // A group head re-seats among the root slots like anything else.
+        // A group head re-seats among the root slots like anything else;
+        // open space is the end of the list.
         if (dragged.Tag is GroupRowTag draggedGroup)
         {
-            if (target != null
-                && position is RowDropPosition.Before or RowDropPosition.After
+            if (target == null)
+                _groups.MoveRootToEnd(RootSlot.ForGroup(draggedGroup.Id));
+            else if (position is RowDropPosition.Before or RowDropPosition.After
                 && RootSlotOf(target) is { } groupAnchor)
                 _groups.MoveRoot(
                     RootSlot.ForGroup(draggedGroup.Id),
@@ -3864,9 +3868,13 @@ public class MainWindow : Window
             return;
         }
 
-        // Open space: leave the group, keep the seat beside it.
+        // Open space: the end of the root list, leaving any group — the
+        // caret at the tree's tail marks exactly this.
         foreach (var id in moved)
+        {
             _groups.RemoveMember(id);
+            _groups.MoveRootToEnd(RootSlot.For(id));
+        }
     }
 
     /// <summary>The root slot a drop row stands for: a group head or a
