@@ -195,6 +195,10 @@ public class LibraryConfiguration
     public string EnsureHomeRootExists(string sourceName, string shipped)
     {
         var root = ResolveHomeRoot(sourceName, shipped);
+        // A save must land where its tab can SEE: a home source that was
+        // dropped or disabled comes back, enabled, the moment a save
+        // needs it — the save itself is the consent.
+        EnsureHomeSourceListed(sourceName, root);
         try
         {
             System.IO.Directory.CreateDirectory(root);
@@ -272,6 +276,12 @@ public class LibraryConfiguration
             () => McdfRootSeeded = true);
         SeedHome(ObjectsSourceName, DefaultObjectsRoot, ObjectsRootSeeded,
             () => ObjectsRootSeeded = true);
+        // The settings save once rebuilt the source list without the
+        // objects home (it had no folder row there), deleting it on every
+        // save while the seed flag kept it from ever coming back. No UI
+        // can delete this home deliberately, so a missing objects home is
+        // always that bug's residue: it returns at startup.
+        EnsureHomeSourceListed(ObjectsSourceName, DefaultObjectsRoot);
 
         if (DefaultsSeeded)
             return;
@@ -289,6 +299,19 @@ public class LibraryConfiguration
         });
 
         DefaultsSeeded = true;
+    }
+
+    private void EnsureHomeSourceListed(string sourceName, string path)
+    {
+        foreach (var source in Sources)
+        {
+            if (!string.Equals(
+                    source.Name, sourceName, StringComparison.Ordinal))
+                continue;
+            source.Enabled = true;
+            return;
+        }
+        Sources.Add(new LibrarySourceConfig { Name = sourceName, Path = path });
     }
 
     private void SeedHome(
