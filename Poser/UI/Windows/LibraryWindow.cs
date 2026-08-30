@@ -144,16 +144,17 @@ public sealed class LibraryWindow : Window
                 max.Y - stripBottom - inset * 2f);
             if (preview)
             {
-                _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
-                // The library's OWN options menu — the same standing
-                // settings the import flow reads, options only. It opens
-                // to the LEFT so the preview stays visible while the
-                // options are worked. Only the types with import options
+                // The seat stands in its own gutter at the column's LEFT,
+                // the preview to its right — the menu opens leftward from
+                // the seat, so it stands over the navigator and never
+                // covers the preview. Only the types with import options
                 // get the seat.
                 float side = theme.Controls.ShellIconAction;
-                var seat = new Vector2(
-                    columnOrigin.X + columnSize.X - side * s,
-                    columnOrigin.Y);
+                float gutter = (side + theme.Spacing.Three) * s;
+                _main.PoseFiles.DrawPreviewColumn(
+                    columnOrigin + new Vector2(gutter, 0f),
+                    columnSize - new Vector2(gutter, 0f));
+                var seat = columnOrigin;
                 ImGui.SetCursorScreenPos(seat);
                 Crystarium.IconButton(
                     "settings",

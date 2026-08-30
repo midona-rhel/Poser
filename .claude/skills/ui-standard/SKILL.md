@@ -65,10 +65,12 @@ Windows each have ONE job. No mode may change what a window IS.
   options menu — the SAME standing settings the import flow reads
   (one retained state), but options only: reusing the import menu
   one-to-one shipped and was rejected the same day (its actions do
-  not belong in the library). The menu opens to the LEFT of its
-  settings seat so the preview stays visible while the options are
-  worked, and the seat exists ONLY for the types that have import
-  options — no options, no button.
+  not belong in the library). The seat stands in its own gutter at
+  the column's LEFT with the preview to its right, and the menu
+  opens leftward from it — over the navigator, never over the
+  preview, which stays visible while the options are worked. The
+  seat exists ONLY for the types that have import options — no
+  options, no button.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the
