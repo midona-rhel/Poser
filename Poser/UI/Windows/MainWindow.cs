@@ -62,6 +62,7 @@ public class MainWindow : Window
     /// the act lands in the same history the transforms do.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly UserNotices _notices;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
     private readonly global::Poser.Services.ICameraService _gameCamera;
     private readonly Game.Viewport.ViewportProjection _viewportProjection;
 
@@ -473,6 +474,7 @@ public class MainWindow : Window
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices,
+        Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Services.ICameraService gameCamera,
         Game.Viewport.ViewportProjection viewportProjection,
         IEventBus eventBus)
@@ -560,6 +562,7 @@ public class MainWindow : Window
         _gazeService = gazeService;
         _lifecycle = lifecycle;
         _notices = notices;
+        _log = log;
         _gameCamera = gameCamera;
         _viewportProjection = viewportProjection;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
@@ -3437,7 +3440,14 @@ public class MainWindow : Window
         }
         else if (io.KeyCtrl)
         {
+            int before = _selection.Selected.Count;
             _selection.Toggle(id);
+            // TEMPORARY diagnostics for the bone ctrl-toggle report: says
+            // whether the toggle added, removed, or REPLACED.
+            _log.Debug(
+                $"[Tree] ctrl-toggle {id.Kind} before={before} "
+                + $"after={_selection.Selected.Count} "
+                + $"first={(_selection.Selected.Count > 0 ? _selection.Selected[0].Kind.ToString() : "none")}");
         }
         else
         {
