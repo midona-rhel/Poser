@@ -1490,6 +1490,7 @@ public sealed class SceneWorkflow : IDisposable
                 {
                     Key = group.Id,
                     Name = group.Name,
+                    Locked = group.Locked,
                 };
                 foreach (var member in group.Members)
                     if (RefOf(member) is { } reference)
