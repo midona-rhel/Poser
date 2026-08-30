@@ -684,11 +684,13 @@ public sealed class ShellSidebar
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
 
-                // The crosshair marks the game's current target.
+                // The crosshair marks the game's current target — accent
+                // fill when this row IS it, the same voice the camera's
+                // live mark speaks in.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
-                        selected: false,
+                        selected: row.ActorTargeted,
                         style: square,
                         help: row.ActorTargeted
                             ? "The game's current target"
@@ -760,7 +762,7 @@ public sealed class ShellSidebar
                 ImGui.SetCursorScreenPos(origin);
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
-                        selected: false,
+                        selected: row.CameraLive,
                         style: square,
                         help: row.CameraLive
                             ? "The live camera — click to return to the main camera"

@@ -156,8 +156,18 @@ Windows each have ONE job. No mode may change what a window IS.
   duration — during a drag only the drop indicators speak. Dragging
   a selected row carries the whole entity selection, and the ghost
   says so ("3 selected", not the one row's name). Open space
-  un-groups; the ROOT list stays kind-ordered by design — only
-  groups and their members reorder.
+  un-groups. The ROOT list is the USER'S order (ruled 2026-08-30,
+  overriding the earlier kind-order): entities and group heads
+  re-seat anywhere, kinds interleaved; a new spawn lands at the
+  bottom. ATTACHED rows never drag — a companion rides its owner, a
+  bone-attached light rides its bone; their rows still stand as drop
+  seams but hold no grip.
+- **State marks speak selected-accent** — a row's "this is the
+  current one" fact (the game's target actor, the live camera) is
+  the accent-SELECTED mark on its action-strip glyph, never a text
+  badge. The "Live" camera badge was removed 2026-08-30 for exactly
+  this; "Default" remains a badge because it is identity, not
+  state.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 

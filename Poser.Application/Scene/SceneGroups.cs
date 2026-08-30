@@ -12,6 +12,15 @@ public sealed class SceneGroup
     public required List<SelectionId> Members { get; init; }
 }
 
+/// <summary>One root slot of the outliner: an ungrouped entity or a
+/// group head. Exactly one of the two is set.</summary>
+public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
+{
+    public static RootSlot For(SelectionId entity) => new(entity, Guid.Empty);
+    public static RootSlot ForGroup(Guid id) => new(null, id);
+    public bool IsGroup => GroupId != Guid.Empty;
+}
+
 /// <summary>
 /// The scene's named groups. A group is NAMING AND STRUCTURE over the
 /// anonymous group: selecting one selects its members, and every
@@ -24,6 +33,13 @@ public sealed class SceneGroup
 public sealed class SceneGroups
 {
     private readonly List<SceneGroup> _groups = new();
+
+    /// <summary>The root list in the USER'S order, kinds interleaved:
+    /// group heads and ungrouped entities, one slot each. Attached and
+    /// grouped entities hold no slot; <see cref="SyncRoot"/> reconciles
+    /// membership every rebuild while the structural verbs below keep
+    /// positions meaningful.</summary>
+    private readonly List<RootSlot> _order = new();
 
     /// <summary>Bumped on every structural change — the sidebar rebuild
     /// gates on it exactly as it gates on the scene revision.</summary>
@@ -50,6 +66,17 @@ public sealed class SceneGroups
             Members = kept,
         };
         _groups.Add(group);
+        // The group takes its first member's seat in the root order; the
+        // members' own slots fold into it.
+        int at = _order.Count;
+        for (int i = _order.Count - 1; i >= 0; i--)
+            if (_order[i] is { IsGroup: false, Entity: { } slotted }
+                && kept.Contains(slotted))
+            {
+                _order.RemoveAt(i);
+                at = i;
+            }
+        _order.Insert(Math.Min(at, _order.Count), RootSlot.ForGroup(group.Id));
         Revision++;
         return group;
     }
@@ -66,6 +93,15 @@ public sealed class SceneGroups
     {
         if (Find(id) is not { } group)
             return;
+        // The members reclaim the group's seat in the root order, in
+        // member order — ungrouping never scatters rows.
+        int at = RootIndexOfGroup(id);
+        if (at >= 0)
+            _order.RemoveAt(at);
+        else
+            at = _order.Count;
+        for (int m = 0; m < group.Members.Count; m++)
+            _order.Insert(at + m, RootSlot.For(group.Members[m]));
         _groups.Remove(group);
         Revision++;
     }
@@ -107,18 +143,57 @@ public sealed class SceneGroups
         Revision++;
     }
 
-    /// <summary>Reorders one group among the groups.</summary>
-    public void MoveGroup(Guid id, int index)
+    /// <summary>The root list in display order — valid after
+    /// <see cref="SyncRoot"/> ran for the current scene.</summary>
+    public IReadOnlyList<RootSlot> RootOrder => _order;
+
+    /// <summary>Reconciles the root order against the scene: the caller
+    /// hands every root-eligible ungrouped entity, in kind order. Stale
+    /// slots leave, missing ones append — a new spawn lands at the
+    /// bottom. Reconciliation never bumps <see cref="Revision"/>: it
+    /// runs inside the rebuild that already reflects it.</summary>
+    public IReadOnlyList<RootSlot> SyncRoot(
+        IReadOnlyList<SelectionId> rootEntities)
     {
-        if (Find(id) is not { } group)
+        for (int i = _order.Count - 1; i >= 0; i--)
+        {
+            var slot = _order[i];
+            bool keep = slot.IsGroup
+                ? Find(slot.GroupId) != null
+                : slot.Entity is { } id && ContainsEntity(rootEntities, id);
+            // A slot also leaves when an earlier copy already holds the
+            // seat — the structural verbs guess positions and this sweep
+            // is their garbage collector.
+            if (!keep || _order.IndexOf(slot) < i)
+                _order.RemoveAt(i);
+        }
+        foreach (var group in _groups)
+            if (RootIndexOfGroup(group.Id) < 0)
+                _order.Add(RootSlot.ForGroup(group.Id));
+        foreach (var id in rootEntities)
+            if (_order.IndexOf(RootSlot.For(id)) < 0)
+                _order.Add(RootSlot.For(id));
+        return _order;
+    }
+
+    /// <summary>Reorders the root list: <paramref name="moved"/> re-seats
+    /// itself before or after <paramref name="target"/>. Unknown slots
+    /// no-op — the sync owns membership, this owns order only.</summary>
+    public void MoveRoot(RootSlot moved, RootSlot target, bool after)
+    {
+        if (moved == target)
             return;
-        int existing = _groups.IndexOf(group);
-        _groups.RemoveAt(existing);
-        if (index > existing)
-            index--;
-        if (index < 0 || index > _groups.Count)
-            index = _groups.Count;
-        _groups.Insert(index, group);
+        int from = _order.IndexOf(moved);
+        if (from < 0)
+            return;
+        _order.RemoveAt(from);
+        int to = _order.IndexOf(target);
+        if (to < 0)
+        {
+            _order.Insert(from, moved);
+            return;
+        }
+        _order.Insert(after ? to + 1 : to, moved);
         Revision++;
     }
 
@@ -175,7 +250,7 @@ public sealed class SceneGroups
                 }
             if (group.Members.Count < 2)
             {
-                _groups.RemoveAt(i);
+                DissolveThinned(i);
                 changed = true;
             }
         }
@@ -191,10 +266,50 @@ public sealed class SceneGroups
             var group = _groups[i];
             if (!group.Members.Remove(member))
                 continue;
+            // The freed entity lands beside its old group. A member that
+            // is actually moving into ANOTHER group leaves a stray slot
+            // here; the next root sync collects it.
+            int at = RootIndexOfGroup(group.Id);
+            if (at >= 0)
+                _order.Insert(at + 1, RootSlot.For(member));
+            else
+                _order.Add(RootSlot.For(member));
             if (group.Members.Count < 2)
-                _groups.RemoveAt(i);
+                DissolveThinned(i);
             return true;
         }
+        return false;
+    }
+
+    /// <summary>A group thinned below two dissolves in place: the
+    /// survivor, if any, takes the group's seat in the root order.</summary>
+    private void DissolveThinned(int index)
+    {
+        var group = _groups[index];
+        int at = RootIndexOfGroup(group.Id);
+        if (at >= 0)
+        {
+            _order.RemoveAt(at);
+            if (group.Members.Count == 1)
+                _order.Insert(at, RootSlot.For(group.Members[0]));
+        }
+        _groups.RemoveAt(index);
+    }
+
+    private int RootIndexOfGroup(Guid id)
+    {
+        for (int i = 0; i < _order.Count; i++)
+            if (_order[i].IsGroup && _order[i].GroupId == id)
+                return i;
+        return -1;
+    }
+
+    private static bool ContainsEntity(
+        IReadOnlyList<SelectionId> entities, SelectionId id)
+    {
+        foreach (var candidate in entities)
+            if (candidate.Equals(id))
+                return true;
         return false;
     }
 }

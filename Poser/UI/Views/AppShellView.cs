@@ -29,6 +29,9 @@ public sealed class ShellSidebarRow
     /// only. An actor's disclosure is not a container: nothing else
     /// may highlight as one.</summary>
     public bool DropContainer;
+    /// <summary>Whether the row lives inside a named group's subtree —
+    /// the head-vs-members highlight rule reads it.</summary>
+    public bool GroupMember;
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
