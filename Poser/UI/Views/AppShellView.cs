@@ -1029,18 +1029,8 @@ public static class AppShellView
                 vm.OnWorldClassToggle?.Invoke(index);
             x += step;
         }
-        // The spawn plus closes the band at the right: the adopt glyphs
-        // bring the world's things in, the plus adds anything new.
-        float plusX = max.X - StatusInset * s - side * s;
-        IconAt(
-            new Vector2(plusX, y), TablerIcon.Plus, side, SpawnPressed,
-            "##sidebar-spawn",
-            help: "Add an actor or object to the scene");
-        if (_spawnPressed)
-        {
-            _spawnPressed = false;
-            vm.OnSpawn?.Invoke(new Vector2(plusX, y + side * s));
-        }
+        // The spawn plus lives beside the sidebar's search now — this band
+        // is the adopt glyphs' alone.
     }
 
     /// <summary>Status information only: actor count and frame rate.</summary>

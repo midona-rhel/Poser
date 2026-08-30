@@ -68,6 +68,11 @@ public record struct TreeRowProps
     /// only the drop indicators speak.</summary>
     public bool SuppressHover;
 
+    /// <summary>The CURRENT-one outline: the game's target actor and the
+    /// live camera wear an accent border around the whole row, so which
+    /// one is which reads at a glance without selecting anything.</summary>
+    public bool Marked;
+
     /// <summary>Right padding reserved for the scroll gutter.</summary>
     public float TrailingInset;
 
@@ -250,6 +255,29 @@ public static partial class Crystarium
                     BorderRightColor = border,
                     BorderBottomColor = border,
                     BorderLeftColor = border,
+                });
+        }
+
+        // The CURRENT-one outline stands on its own: an accent border in
+        // the pill's geometry, under any fill, whether or not one shows.
+        if (props.Marked)
+        {
+            float markInset = (depth == 0
+                ? TreeRootPillInset
+                : TreeTrunkX(depth) + TreePillClearance) * scale;
+            var markBorder = theme.Accent;
+            BoxRenderer.Draw(
+                dl,
+                new Vector2(hit.ScreenMin.X + markInset, hit.ScreenMin.Y),
+                new Vector2(contentRight, hit.ScreenMax.Y - scale),
+                new BoxStyle
+                {
+                    BorderRadius = TreePillRadius,
+                    BorderWidth = 1f,
+                    BorderTopColor = markBorder,
+                    BorderRightColor = markBorder,
+                    BorderBottomColor = markBorder,
+                    BorderLeftColor = markBorder,
                 });
         }
 

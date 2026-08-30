@@ -656,7 +656,31 @@ public class MainWindow : Window
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnRowContextMenu = row =>
         {
-            if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
+            // A right-click on a row that RIDES the multi-entity selection
+            // opens the selection's own menu — the verbs speak for the
+            // whole carry, exactly as a drag does. An unselected row keeps
+            // its single menu.
+            if (row.Tag is SelectionId ctxMember
+                && global::Poser.Application.Selection.EntitySelection
+                    .IsEntity(ctxMember.Kind)
+                && _selection.IsSelected(ctxMember)
+                && global::Poser.Application.Selection.EntitySelection
+                    .CountEntities(_selection.Selected) >= 2)
+            {
+                _selectionCtxOpenRequested = true;
+            }
+            else if (row.Tag is GroupRowTag ctxGroup)
+            {
+                _ctxGroupId = ctxGroup.Id;
+                _groupCtxOpenRequested = true;
+            }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } ctxWorld })
+            {
+                _ctxWorldObjectId = ctxWorld;
+                _worldObjectCtxOpenRequested = true;
+            }
+            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
             {
                 _ctxActorId = ctxActor;
                 _ctxOpenRequested = true;
@@ -1176,6 +1200,9 @@ public class MainWindow : Window
         DrawLightContextMenu();
         DrawCameraContextMenu();
         DrawPropContextMenu();
+        DrawWorldObjectContextMenu();
+        DrawGroupContextMenu();
+        DrawSelectionContextMenu();
         DrawRenameModal();
         DrawEntityRenameModal();
         DrawBonePresetManager();
@@ -4671,9 +4698,10 @@ public class MainWindow : Window
     private bool _overlayNodeCtxOpenRequested;
 
     /// <summary>Right-click menu for a staged overlay NODE (balloon, talk,
-    /// status) — distinct from the bone-category overlay menu below. Thin on
-    /// purpose until the #73 audit fills it: the library save is the verb
-    /// that exists nowhere else.</summary>
+    /// status) — distinct from the bone-category overlay menu below. The
+    /// same lifetime family the light menu speaks, in the overlay's
+    /// vocabulary; the pane's own Duplicate is reused so one duplication
+    /// rule answers everywhere.</summary>
     private void DrawOverlayNodeContextMenu()
     {
         if (_ctxOverlayNodeId is not { } overlayId)
@@ -4687,7 +4715,30 @@ public class MainWindow : Window
         }
         var items = new[]
         {
+            new ContextMenuItem(node.Visible ? "Hide" : "Show",
+                node.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Save to library", TablerIcon.Library),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
+        };
+        var actions = new Action?[]
+        {
+            () => node.Visible = !node.Visible,
+            () => OpenEntityRename(
+                "Rename overlay", node.Name, next => node.Name = next),
+            () => _overlayPane.Duplicate(node),
+            () => OpenEntityRename(
+                "Save overlay to library", node.State.Name,
+                name => _scenePane.SaveOverlayEntry(
+                    overlayId.LogicalId, name)),
+            null, // separator
+            () =>
+            {
+                _lifecycle.DestroyOverlay(node);
+                _selection.Clear();
+            },
         };
         if (_overlayNodeCtxOpenRequested)
         {
@@ -4696,13 +4747,8 @@ public class MainWindow : Window
                 "##overlay-node-ctx", ImGui.GetMousePos(), items);
         }
         int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
-        if (clicked == 0)
-        {
-            OpenEntityRename(
-                "Save overlay to library", node.State.Name,
-                name => _scenePane.SaveOverlayEntry(
-                    overlayId.LogicalId, name));
-        }
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
     }
 
     private void DrawOverlayContextMenu()
@@ -5026,6 +5072,354 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+    }
+
+    // ── world-object / group / selection context menus ──────────────────
+
+    private WorldObjectId? _ctxWorldObjectId;
+    private bool _worldObjectCtxOpenRequested;
+    private Guid? _ctxGroupId;
+    private bool _groupCtxOpenRequested;
+    private bool _selectionCtxOpenRequested;
+
+    /// <summary>Right-click borrowed-object menu: the eye, the user's own
+    /// name over the map's model, and Release — never Destroy, because the
+    /// map owns the thing and gets it back where it stood.</summary>
+    private void DrawWorldObjectContextMenu()
+    {
+        if (_ctxWorldObjectId is not { } worldObjectId)
+            return;
+        var resolved = _bindings.Resolve(worldObjectId);
+        if (!resolved.Success || resolved.Value is not { IsValid: true } worldObject)
+        {
+            _ctxWorldObjectId = null;
+            Crystarium.FloatingMenu.Dismiss("##world-object-ctx");
+            return;
+        }
+        var items = new[]
+        {
+            new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
+                worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Release", TablerIcon.X),
+        };
+        var actions = new Action?[]
+        {
+            () => worldObject.Visible = !worldObject.Visible,
+            () => OpenEntityRename(
+                "Rename object", worldObject.Name,
+                next => worldObject.Name = next),
+            null, // separator
+            () =>
+            {
+                _lifecycle.ReleaseWorldObject(worldObject);
+                _selection.Clear();
+            },
+        };
+        if (_worldObjectCtxOpenRequested)
+        {
+            _worldObjectCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##world-object-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##world-object-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Right-click group-head menu: the structure verbs. The
+    /// selection verbs live one click away — the head's left click IS the
+    /// member selection, whose own menu then answers.</summary>
+    private void DrawGroupContextMenu()
+    {
+        if (_ctxGroupId is not { } groupId)
+            return;
+        if (_groups.Find(groupId) is not { } group)
+        {
+            _ctxGroupId = null;
+            Crystarium.FloatingMenu.Dismiss("##group-ctx");
+            return;
+        }
+        var items = new[]
+        {
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Ungroup", TablerIcon.X,
+                help: "Dissolve the group; nothing is destroyed"),
+        };
+        var actions = new Action?[]
+        {
+            () => OpenEntityRename(
+                "Rename group", group.Name,
+                next => _groups.Rename(groupId, next)),
+            () => _groups.Dissolve(groupId),
+        };
+        if (_groupCtxOpenRequested)
+        {
+            _groupCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##group-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Right-click on any row of a multi-entity selection: one
+    /// menu for the WHOLE selection, every verb dispatching per kind
+    /// through the same plumbing the single menus use. A kind a verb
+    /// cannot reach is skipped, never refused; verbs no selected kind
+    /// answers disable in place.</summary>
+    private void DrawSelectionContextMenu()
+    {
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities < 2)
+        {
+            Crystarium.FloatingMenu.Dismiss("##selection-ctx");
+            return;
+        }
+
+        // Hide/Show and Pause/Resume drive the set to ONE state: any
+        // visible member means Hide, any running actor means Pause.
+        bool anyVisible = false, anyActor = false, anyRunning = false;
+        foreach (var id in _selection.Selected)
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    anyActor = true;
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor }
+                        && _spawnService.IsVisible(actor))
+                        anyVisible = true;
+                    if (!_animation.IsPaused(actorId))
+                        anyRunning = true;
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsOn: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+            }
+        }
+
+        var matched = _groups.MatchSelection(_selection.Selected);
+        var items = new List<ContextMenuItem>
+        {
+            new("Duplicate", TablerIcon.Copy,
+                help: "Clone every selected thing that can be cloned"),
+            new(anyVisible ? "Hide" : "Show",
+                anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new(anyRunning ? "Pause animation" : "Resume animation",
+                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
+                disabled: !anyActor,
+                help: anyActor ? null : "No actors in the selection"),
+            new("Move to camera", TablerIcon.Crosshair),
+            ContextMenuItem.Separator,
+            matched != null
+                ? new ContextMenuItem("Ungroup", TablerIcon.X,
+                    help: "Dissolve the group; nothing is destroyed")
+                : new ContextMenuItem("Group…", TablerIcon.Folder,
+                    help: "Make a named group of the selection"),
+            new("Deselect", TablerIcon.X),
+            ContextMenuItem.Separator,
+            new("Destroy", TablerIcon.Trash, danger: true,
+                help: "Destroy what the scene owns; borrowed things are "
+                    + "released instead"),
+        };
+        var actions = new Action?[]
+        {
+            DuplicateSelection,
+            () => SetSelectionVisible(!anyVisible),
+            () => SetSelectionPaused(anyRunning),
+            MoveSelectionToCamera,
+            null, // separator
+            matched != null
+                ? () => _groups.Dissolve(matched.Id)
+                : () => OpenEntityRename(
+                    "Name the group",
+                    $"Group {_groups.All.Count + 1}",
+                    name => _groups.Create(name, _selection.Selected)),
+            () => _selection.Clear(),
+            null, // separator
+            DestroySelection,
+        };
+        if (_selectionCtxOpenRequested)
+        {
+            _selectionCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##selection-ctx", ImGui.GetMousePos(), items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Clones every clonable selected entity through the same
+    /// history-seamed calls the single menus use. Borrowed objects have
+    /// no clone; the selection stays on the ORIGINALS — the clones' own
+    /// bindings land asynchronously per kind, so re-selecting them here
+    /// would be a guess.</summary>
+    private void DuplicateSelection()
+    {
+        foreach (var id in _selection.Selected.ToArray())
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor })
+                        _lifecycle.SpawnActor(
+                            $"Clone actor '{DisplayName(actor.Name)}'",
+                            () => _spawnService.CloneActor(actor));
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                        _lifecycle.CloneLight(light);
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        _lifecycle.CloneProp(prop);
+                    break;
+                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                    if (_bindings.Resolve(cameraId) is
+                            { Success: true, Value: { IsValid: true } camera })
+                        _lifecycle.CloneCamera(camera);
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        _overlayPane.Duplicate(node);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>One visibility for the whole selection — actors' draw,
+    /// objects' and overlays' eyes, lights' on-state. Cameras have no
+    /// visibility and skip.</summary>
+    private void SetSelectionVisible(bool visible)
+    {
+        foreach (var id in _selection.Selected)
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor })
+                        _spawnService.SetVisibility(actor, visible);
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                        light.IsOn = visible;
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        prop.Visible = visible;
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { IsValid: true } borrowed })
+                        borrowed.Visible = visible;
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        node.Visible = visible;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>One animation state for every selected actor.</summary>
+    private void SetSelectionPaused(bool paused)
+    {
+        foreach (var id in _selection.Selected)
+        {
+            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                continue;
+            if (paused)
+                _animation.Pause(actorId);
+            else
+                _animation.Resume(actorId);
+        }
+    }
+
+    /// <summary>Destroys the whole selection, each kind through its own
+    /// lifetime seam: actors despawn where the service admits it, spawned
+    /// lights destroy while borrowed ones release, the default camera
+    /// stays, borrowed objects go back to the map.</summary>
+    private void DestroySelection()
+    {
+        foreach (var id in _selection.Selected.ToArray())
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor }
+                        && (_spawnService.IsSpawnedActor(actor)
+                            || _spawnService.RemovalRefusal(actor) is null)
+                        && _lifecycle.DespawnActor(actor))
+                        _selection.RemoveActorLineage(actorId.LogicalId);
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                    {
+                        if (light.Ownership == LightOwnership.Spawned)
+                            _lifecycle.DestroyLight(light);
+                        else
+                            _lightingService.ReleaseLight(light);
+                    }
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        _lifecycle.DestroyProp(prop);
+                    break;
+                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                    if (_bindings.Resolve(cameraId) is
+                            { Success: true, Value: { IsValid: true } camera }
+                        && !camera.IsDefault)
+                        _lifecycle.DestroyCamera(camera);
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        _lifecycle.DestroyOverlay(node);
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { IsValid: true } borrowed })
+                        _lifecycle.ReleaseWorldObject(borrowed);
+                    break;
+            }
+        }
+        _selection.Clear();
     }
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)

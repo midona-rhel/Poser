@@ -134,16 +134,32 @@ public sealed class ShellSidebar
         float inset = theme.Page.Inset;
         float width = size.X / scale;
 
-        // The pill spans the SAME width the rows below it do — the
-        // gutter is the trailing inset, never a second right margin.
-        float pillWidth = MathF.Max(1f, width - inset - 1f);
-        ImGui.SetCursorScreenPos(origin + new Vector2(inset, SearchTop) * scale);
+        // The search ICON is the visual boundary: the pill's borderless box
+        // reaches left of the inset by its own leading pad, so the glyph —
+        // not invisible padding — lands on the page edge. The spawn plus
+        // closes the band at the right, where the rows' span ends; the
+        // pill takes what remains.
+        float side = SearchBandHeight - SearchTop * 2f;
+        float pillLeft = inset - theme.Controls.InputPaddingX;
+        float plusX = width - 1f - side;
+        float pillWidth = MathF.Max(
+            1f, plusX - theme.Page.ActionGap - pillLeft);
+        ImGui.SetCursorScreenPos(origin + new Vector2(pillLeft, SearchTop) * scale);
         Crystarium.FilterPill(
             SearchId,
             vm.SidebarSearch,
             _setSearch,
             "Search",
             ControlStyle.Workspace with { Width = UiWidth.Fixed(pillWidth) });
+        ImGui.SetCursorScreenPos(origin + new Vector2(plusX, SearchTop) * scale);
+        if (Crystarium.TemporaryIconToggle(
+                TablerIcon.Plus,
+                selected: false,
+                style: ControlStyle.Square(side),
+                help: "Add an actor or object to the scene",
+                id: "##sidebar-spawn"))
+            vm.OnSpawn?.Invoke(
+                origin + new Vector2(plusX, SearchTop + side) * scale);
 
         Sync(vm, theme);
 
@@ -512,6 +528,10 @@ public sealed class ShellSidebar
             DropTarget = ReferenceEquals(_paintDropTarget, row)
                 && _paintDropPosition == RowDropPosition.Into,
             SuppressHover = _dragSource != null,
+            // The game's target actor and the live camera wear the
+            // current-one outline; the flags are only ever set on their
+            // own row kinds.
+            Marked = row.ActorTargeted || row.CameraLive,
         };
 
         ImGui.SetCursorScreenPos(at);

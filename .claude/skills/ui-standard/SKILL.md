@@ -164,10 +164,34 @@ Windows each have ONE job. No mode may change what a window IS.
   seams but hold no grip.
 - **State marks speak selected-accent** — a row's "this is the
   current one" fact (the game's target actor, the live camera) is
-  the accent-SELECTED mark on its action-strip glyph, never a text
-  badge. The "Live" camera badge was removed 2026-08-30 for exactly
-  this; "Default" remains a badge because it is identity, not
-  state.
+  the accent-SELECTED mark on its action-strip glyph PLUS a full-row
+  accent OUTLINE (border only, the pill's geometry, under any fill),
+  never a text badge. The "Live" camera badge was removed 2026-08-30
+  for exactly this; "Default" remains a badge because it is
+  identity, not state.
+- **Context menus: one lifetime family, every kind** — every entity
+  row answers right-click with the actor menu's family spoken in its
+  own vocabulary: the visibility verb, Rename, Clone/Duplicate where
+  clonable, Save to library where a document kind exists, and the
+  ownership-aware ending (Destroy what the scene owns, Release what
+  the map owns — a borrowed thing never says Destroy). Group heads
+  answer with structure verbs (Rename, Ungroup). A row with no menu
+  at all is a defect (world objects shipped that way).
+- **The selection menu** — right-clicking a row that RIDES the
+  multi-entity selection opens the SELECTION's menu, not the row's:
+  Duplicate, Hide/Show, Pause/Resume, Move to camera, Group…/
+  Ungroup, Deselect, Destroy — each verb dispatching per kind
+  through the same plumbing the single menus use. A kind a verb
+  cannot reach is skipped, never refused; a verb no selected kind
+  answers disables in place. Hide and Pause drive the set to ONE
+  state (any visible → Hide). An unselected row keeps its single
+  menu.
+- **The sidebar search band** — the search ICON sits on the page
+  boundary: the pill's borderless box reaches left of the inset by
+  its own leading pad, so the glyph, not invisible padding, aligns
+  with the rows. The spawn plus closes the band at the right of the
+  search (moved from the adopt band 2026-08-30); the toolbar keeps
+  its own plus.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
