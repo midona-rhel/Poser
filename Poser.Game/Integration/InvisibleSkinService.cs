@@ -66,6 +66,11 @@ public sealed class InvisibleSkinService
             && characterBase->GetModelType() == CharacterBase.ModelType.Human;
     }
 
+    /// <inheritdoc cref="IsHuman(nint)"/>
+    public bool IsHuman(ActorId actor)
+        => _bindings.Value.Resolve(actor) is { Success: true, Value: { } legacy }
+            && IsHuman(legacy.Address);
+
     /// <summary>Runs the whole flow and reports the outcome to
     /// <paramref name="onFailure"/> (framework thread) when it fails.
     /// Redraw restores the actor; this verb has no other undo.</summary>

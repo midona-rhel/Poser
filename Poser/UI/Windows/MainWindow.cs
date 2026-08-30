@@ -62,7 +62,6 @@ public class MainWindow : Window
     /// the act lands in the same history the transforms do.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly UserNotices _notices;
-    private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -464,7 +463,6 @@ public class MainWindow : Window
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices,
-        Game.Integration.InvisibleSkinService invisibleSkin,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -550,7 +548,6 @@ public class MainWindow : Window
         _gazeService = gazeService;
         _lifecycle = lifecycle;
         _notices = notices;
-        _invisibleSkin = invisibleSkin;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
@@ -3728,11 +3725,6 @@ public class MainWindow : Window
                 help: actor.HasSkeleton
                     ? "Saves this actor with its appearance as a library entry"
                     : "Needs a loaded skeleton"),
-            new("Hide skin", TablerIcon.Body,
-                disabled: !_invisibleSkin.IsHuman(actor.Address),
-                help: _invisibleSkin.IsHuman(actor.Address)
-                    ? "Hide the skin, hair and eyes; Redraw restores"
-                    : "Only human actors can hide their skin"),
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
@@ -3779,7 +3771,6 @@ public class MainWindow : Window
                 Config.ConfigurationService.Instance.GetDisplayName(
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
-            () => _invisibleSkin.Request(actorId, _notices.Failed),
             null, // separator
             () =>
             {
