@@ -218,6 +218,11 @@ Windows each have ONE job. No mode may change what a window IS.
   its own plus.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
+- **Hide while manipulating** (Settings → UI → Visibility, off by
+  default) — the shell windows FADE over 250 ms while a world drag
+  is HELD, and only then: hovering a handle never hides (ruled
+  2026-08-30), overlays and reference images stay visible, and the
+  return fade is the same 250 ms. Nothing pops.
 
 ## Page composition
 
