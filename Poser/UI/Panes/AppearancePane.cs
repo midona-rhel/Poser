@@ -524,7 +524,7 @@ public sealed class AppearancePane
                 () => Report(_presentation.ResetActor(actor), "Reset appearance"),
                 help: "Undo opacity, tint, and wetness");
             bool human = _invisibleSkin.IsHuman(actor);
-            actions.Button("Hide everything but clothing",
+            actions.Button("Clothing only",
                 () => _invisibleSkin.Request(actor, _notices.Failed),
                 disabled: !human,
                 help: human
