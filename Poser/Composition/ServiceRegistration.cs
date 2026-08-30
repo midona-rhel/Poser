@@ -235,6 +235,7 @@ internal static class ServiceRegistration
         services.AddSingleton(sp => new System.Lazy<Game.Bindings.StableBindingRegistry>(
             sp.GetRequiredService<Game.Bindings.StableBindingRegistry>));
         services.AddSingleton<Game.Integration.IntegrationRuntimePort>();
+        services.AddSingleton<Game.Integration.InvisibleSkinService>();
         services.AddSingleton<Application.Integration.IIntegrationRuntimePort>(
             sp => sp.GetRequiredService<Game.Integration.IntegrationRuntimePort>());
         // The same port seen by address rather than by stable id: a clone has

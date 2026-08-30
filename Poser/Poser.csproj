@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Content Include="Data\Fonts\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Data\Integration\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 	<!-- Branch identity is captured by the build, never discovered by the
 	     plugin at runtime. CI may provide any of the conventional branch
