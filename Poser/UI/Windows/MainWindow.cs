@@ -1195,9 +1195,12 @@ public class MainWindow : Window
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
-        if (!_contentHidden && !Controls.ManipulationHide.Active)
+        if (!_contentHidden && !Controls.ManipulationHide.Hidden)
+        {
+            using var manipulationFade = Controls.ManipulationHide.FadeScope();
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        }
         DrawShellMenu();
         DrawActorContextMenu();
         // Window-level: the attach picker outlives the context menu that

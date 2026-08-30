@@ -129,8 +129,9 @@ public sealed class LibraryWindow : Window
 
     public override void Draw()
     {
-        if (!_main.IsOpen || Controls.ManipulationHide.Active)
+        if (!_main.IsOpen || Controls.ManipulationHide.Hidden)
             return;
+        using var manipulationFade = Controls.ManipulationHide.FadeScope();
         float s = ImGuiHelpers.GlobalScale;
         var theme = Crystarium.ActiveTheme;
         var min = ImGui.GetWindowPos();

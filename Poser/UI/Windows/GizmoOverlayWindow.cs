@@ -334,6 +334,9 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             GizmoPointerOwnership.Hold();
+            // Only the HELD gesture is a manipulation; hover is not.
+            if (_gazeGesture != null)
+                ManipulationDrag.Hold();
         }
 
         if (_gazeGesture == null && hover is { } grab && projection != null &&
@@ -818,6 +821,9 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             GizmoPointerOwnership.Hold();
+            // Only the HELD gesture is a manipulation; hover is not.
+            if (gesture != null)
+                ManipulationDrag.Hold();
         }
 
         if (gesture == null && hover is { } grab && layout != null &&
