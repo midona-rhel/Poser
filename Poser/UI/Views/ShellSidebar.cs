@@ -141,7 +141,9 @@ public sealed class ShellSidebar
         // pill takes what remains.
         float side = SearchBandHeight - SearchTop * 2f;
         float pillLeft = inset - theme.Controls.InputPaddingX;
-        float plusX = width - 1f - side;
+        // The plus is CONTENT: it stops a gutter early, exactly where the
+        // rows' own action glyphs stop — only fills reach under the gutter.
+        float plusX = width - theme.Scrollbar.GutterWidth - side;
         float pillWidth = MathF.Max(
             1f, plusX - theme.Page.ActionGap - pillLeft);
         ImGui.SetCursorScreenPos(origin + new Vector2(pillLeft, SearchTop) * scale);
