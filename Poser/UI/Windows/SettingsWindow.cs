@@ -19,6 +19,8 @@ public class SettingsWindow : Window
     private bool _saving;
     private readonly IAutoSaveService _autoSave;
     private readonly IIntegrationRuntimePort _integrations;
+    private readonly Dalamud.Plugin.Services.IKeyState _keyState;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     public SettingsWindow(
         IAutoSaveService autoSave,
@@ -32,19 +34,31 @@ public class SettingsWindow : Window
     {
         _autoSave = autoSave;
         _integrations = integrations;
+        _keyState = keyState;
+        _log = log;
+        WireRuntime();
+        RespectCloseHotkey = false;
+    }
+
+    /// <summary>Delegates the vm needs at RUNTIME — re-wired after every
+    /// vm rebuild, because LoadFromConfig REPLACES the whole vm and the
+    /// constructor's wiring silently died with it: the capture read a
+    /// stubbed key source through four fixes (2026-08-30).</summary>
+    private void WireRuntime()
+    {
         // Guarded: the indexer THROWS for virtual keys the game does not
         // track (several OEM punctuation codes), and one bad key would
         // kill the whole capture loop with an exception per frame.
         _vm.KeyDown = key =>
-            keyState.IsVirtualKeyValid(key) && keyState[key];
-        _vm.DebugLog = message => log.Debug(message);
-        RespectCloseHotkey = false;
+            _keyState.IsVirtualKeyValid(key) && _keyState[key];
+        _vm.DebugLog = message => _log.Debug(message);
     }
 
     public override void OnOpen()
     {
         _saving = false;
         LoadFromConfig();
+        WireRuntime();
     }
 
     public override void OnClose()
