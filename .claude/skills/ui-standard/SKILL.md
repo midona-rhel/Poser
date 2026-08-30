@@ -222,7 +222,14 @@ Windows each have ONE job. No mode may change what a window IS.
   default) — the shell windows FADE over 250 ms while a world drag
   is HELD, and only then: hovering a handle never hides (ruled
   2026-08-30), overlays and reference images stay visible, and the
-  return fade is the same 250 ms. Nothing pops.
+  return fade is the same 250 ms. Nothing pops. Two rules the fade
+  taught: the BACKDROP BLUR never lingers through ANY fade — it
+  leaves across the first ~15% and returns only across the last
+  ~15%, smooth-eased (40 ms of the shell's 250; context menus gate
+  the same way through their lifecycle alpha) — and STYLE ALPHA
+  never keys the icon bake cache: fades ride the quad tint at draw
+  time, because per-frame keys starve the paint budget and kill
+  icons outright while their bakes are pending.
 
 ## Page composition
 
