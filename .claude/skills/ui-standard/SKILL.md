@@ -65,10 +65,12 @@ Windows each have ONE job. No mode may change what a window IS.
   options menu — the SAME standing settings the import flow reads
   (one retained state), but options only: reusing the import menu
   one-to-one shipped and was rejected the same day (its actions do
-  not belong in the library). The seat stands in its own gutter at
-  the column's LEFT with the preview to its right, and the menu
-  opens leftward from it — over the navigator, never over the
-  preview, which stays visible while the options are worked. The
+  not belong in the library). The seat sits at the column's top-LEFT
+  corner — the column itself never moves or shrinks for it (a
+  carved gutter shipped and was rejected on sight, 2026-08-30) —
+  and the menu opens leftward from it: over the navigator, never
+  over the preview, which stays visible while the options are
+  worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
 - **Sidebar collapse** — the outliner collapses from a chevron by

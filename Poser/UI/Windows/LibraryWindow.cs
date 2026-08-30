@@ -144,16 +144,13 @@ public sealed class LibraryWindow : Window
                 max.Y - stripBottom - inset * 2f);
             if (preview)
             {
-                // The seat stands in its own gutter at the column's LEFT,
-                // the preview to its right — the menu opens leftward from
-                // the seat, so it stands over the navigator and never
-                // covers the preview. Only the types with import options
-                // get the seat.
+                // The preview column stays EXACTLY where it is — the seat
+                // just sits at its top-LEFT corner (not the right), so the
+                // menu opening leftward stands over the navigator and
+                // never covers the preview. Only the types with import
+                // options get the seat.
+                _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
                 float side = theme.Controls.ShellIconAction;
-                float gutter = (side + theme.Spacing.Three) * s;
-                _main.PoseFiles.DrawPreviewColumn(
-                    columnOrigin + new Vector2(gutter, 0f),
-                    columnSize - new Vector2(gutter, 0f));
                 var seat = columnOrigin;
                 ImGui.SetCursorScreenPos(seat);
                 Crystarium.IconButton(
