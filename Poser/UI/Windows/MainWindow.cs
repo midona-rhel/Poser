@@ -1189,6 +1189,10 @@ public class MainWindow : Window
         // Unconditional, exactly like the dialog pumps: a library spawn binds
         // its actor frames later, and leaving library mode must not strand it.
         _libraryPane.Tick();
+        // The companion catalog PREBUILDS from the shell's first frame — a
+        // background walk over three sheets — so the attach picker never
+        // opens against a catalog still building.
+        _companionCatalog.EnsureLoaded();
         // Last, and over everything: until the notice is accepted the shell
         // has drawn a workspace that is visible but not interactive.
         _firstRunNotice.Draw();

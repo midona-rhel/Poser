@@ -118,6 +118,11 @@ public sealed class CompanionSection
     /// by the pane at window level so it survives a section collapse.</summary>
     public void DrawPicker()
     {
+        // The catalog builds in the background: the status is RE-TOLD every
+        // frame, or a picker opened mid-build would show "Building" forever
+        // (the notice was an open-time argument and nothing refreshed it).
+        _picker.SetLoadStatus(
+            _catalog.IsLoaded ? null : "Building minion catalog…");
         _picker.Update(Options());
         if (_picker.Draw() is not { } chosen || _pickOwner is not { } ownerId)
             return;
