@@ -251,6 +251,19 @@ public sealed class AppShellViewModel
     public bool Collapsed;
     public Action<bool>? OnCollapse;
 
+    /// <summary>The sidebar COLUMN folded away; the titlebar cell stays,
+    /// so the brand, burger and library keep their seats.</summary>
+    public bool SidebarCollapsed;
+    public Action<bool>? OnSidebarCollapse;
+
+    /// <summary>The rail lives in its own Inspector window. The inspector
+    /// never merely FOLDS (ruled 2026-08-31): it is either in the shell
+    /// or in its own window.</summary>
+    public bool InspectorSplit;
+
+    /// <summary>Whether the rail column renders inside THIS window.</summary>
+    internal bool RailShown => DrawRail != null && !InspectorSplit;
+
     /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
     /// inspector. Off is the compact single-window UI.</summary>
@@ -513,7 +526,7 @@ public static class AppShellView
                 float wellLeft = vm.Detached
                     ? 0f
                     : vm.SidebarWidthPx * s;
-                float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
+                float wellRight = vm.RailShown ? RailWidth * s : 0f;
                 // Only the window's own corners round; an edge that meets a
                 // panel is square. The radius is dropped along with them, so
                 // the flags cannot fall through to ImGui's round-everything
@@ -536,6 +549,19 @@ public static class AppShellView
             SyncKeybindHelp();
             DrawTitlebar(vm, min, max, s, dl);
 
+            // Double-clicking the bar's open band collapses — the chevron's
+            // gesture twin. Every bar item was submitted by the call above,
+            // so a hovered button keeps its own clicks.
+            if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
+                && !ImGui.IsAnyItemHovered())
+            {
+                var barMouse = ImGui.GetMousePos();
+                if (barMouse.X >= min.X && barMouse.X < max.X
+                    && barMouse.Y >= min.Y
+                    && barMouse.Y < min.Y + TitlebarHeight * s)
+                    vm.CollapseToggled?.Invoke();
+            }
+
             if (vm.Collapsed)
             {
                 DrawOuterGlassBorder(min, max);
@@ -543,12 +569,15 @@ public static class AppShellView
             }
 
             float bodyTop = min.Y + TitlebarHeight * s;
-            float railW = vm.DrawRail != null ? RailWidth * s : 0f;
+            float railW = vm.RailShown ? RailWidth * s : 0f;
             // Detached mode: the sidebar is its own window; the content and
-            // the inspector stay together here.
-            float sbw = vm.Detached ? 0f : vm.SidebarWidthPx * s;
+            // the inspector stay together here. Collapsed, the column folds
+            // away and the well takes its width.
+            float sbw = vm.Detached || vm.SidebarCollapsed
+                ? 0f
+                : vm.SidebarWidthPx * s;
 
-            if (!vm.Detached)
+            if (!vm.Detached && !vm.SidebarCollapsed)
                 DrawSidebar(
                     vm, new Vector2(min.X, bodyTop),
                     new Vector2(min.X + sbw, max.Y), s, dl);
@@ -561,7 +590,7 @@ public static class AppShellView
             if (railW > 0f)
                 DrawRail(vm, new Vector2(max.X - railW, bodyTop), max, railW, s, dl);
 
-            if (!vm.Detached)
+            if (!vm.Detached && !vm.SidebarCollapsed)
                 DrawSidebarResize(vm, min.X + sbw, bodyTop, max.Y, s);
 
             // Panel fills are intentionally drawn after the base chassis.
@@ -586,7 +615,7 @@ public static class AppShellView
         float rule = 1f * s;
         float cellWidth = vm.Detached ? 0f : vm.SidebarWidthPx * s;
         float railWidth =
-            vm.DrawRail != null && !vm.Collapsed ? RailWidth * s : 0f;
+            vm.RailShown && !vm.Collapsed ? RailWidth * s : 0f;
 
         // Each column lays its panel ground once and stops at its own edge;
         // the workspace ground remains visible between columns.
@@ -623,7 +652,7 @@ public static class AppShellView
             // INTERNAL name: the user just sees the name of whatever they
             // have selected. The rail below is the inspector.
             string title = vm.TitleEntity == "Poser"
-                ? "Inspector"
+                ? "Properties"
                 : vm.TitleEntity;
             // The title stands on the content column's own inset, so the
             // window's left side reads as one aligned edge: title, tab
@@ -678,7 +707,7 @@ public static class AppShellView
             // The gizmo cluster lives on the TOOLBAR window — always its
             // own window — never in this titlebar.
         }
-        DrawTitleActions(vm, max.X, min.Y, height, s);
+        float clusterLeft = DrawTitleActions(vm, max.X, min.Y, height, s);
 
         // The CONTENT selector lives in the TITLEBAR, beside the window
         // action icons and measured against their cluster: Target shows
@@ -704,11 +733,16 @@ public static class AppShellView
             // The selector docks on the CONTENT side of the divider
             // between the content and the inspector — it swaps the
             // content, so it stands over what it governs.
-            float railEdge = vm.DrawRail != null && !vm.Collapsed
+            float railEdge = vm.RailShown && !vm.Collapsed
                 ? RailWidth * s
                 : 0f;
+            // The selector docks on the content/inspector divider — but
+            // never under the right cluster: with the rail folded or
+            // split, the cluster's own left edge is the bound.
+            float selectorRight = MathF.Min(
+                max.X - railEdge, clusterLeft);
             ImGui.SetCursorScreenPos(new Vector2(
-                max.X - railEdge - theme.Page.ActionGap * s - fixedWidth,
+                selectorRight - theme.Page.ActionGap * s - fixedWidth,
                 min.Y + (height - segSize.Y) * 0.5f));
             Crystarium.SegmentedControl(
                 "##content-mode",
@@ -819,24 +853,44 @@ public static class AppShellView
     private static void DrawCellActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
-        if (vm.OnLibrary is not { } onLibrary)
-            return;
         var theme = Crystarium.ActiveTheme;
         float side = theme.Controls.ShellIconAction;
         float y = top + (height - side * s) * 0.5f;
-        var labelStyle = new TextStyle
-        { Size = theme.Typography.LabelSize };
-        float labelWidth = Crystarium.MeasureText(
-            "Library", labelStyle).X;
-        float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
-        ImGui.SetCursorScreenPos(new Vector2(right - buttonWidth * s, y));
-        Crystarium.Button(
-            "Library",
-            onLibrary,
-            style: ControlStyle.Square(side) with
-            { Width = UiWidth.Fixed(buttonWidth) },
-            help: "Open the library",
-            id: "##shell-library");
+        float x = right;
+        if (vm.OnLibrary is { } onLibrary)
+        {
+            var labelStyle = new TextStyle
+            { Size = theme.Typography.LabelSize };
+            float labelWidth = Crystarium.MeasureText(
+                "Library", labelStyle).X;
+            float buttonWidth = labelWidth / s + theme.Spacing.Six * 2f;
+            x -= buttonWidth * s;
+            ImGui.SetCursorScreenPos(new Vector2(x, y));
+            Crystarium.Button(
+                "Library",
+                onLibrary,
+                style: ControlStyle.Square(side) with
+                { Width = UiWidth.Fixed(buttonWidth) },
+                help: "Open the library",
+                id: "##shell-library");
+            x -= theme.Page.ActionGap * s;
+        }
+        // The sidebar's own fold: the COLUMN goes, this cell stays — the
+        // brand, burger, library and this chevron keep their seats.
+        if (vm.OnSidebarCollapse is { } onSidebarCollapse)
+        {
+            x -= side * s;
+            IconAt(
+                new Vector2(x, y),
+                TablerIcon.ChevronRight,
+                side,
+                () => onSidebarCollapse(!vm.SidebarCollapsed),
+                "##shell-sidebar-fold",
+                flipX: !vm.SidebarCollapsed,
+                help: vm.SidebarCollapsed
+                    ? "Show the sidebar"
+                    : "Fold the sidebar away");
+        }
     }
 
 
@@ -931,7 +985,10 @@ public static class AppShellView
         return widest;
     }
 
-    private static void DrawTitleActions(
+    /// <summary>Draws the right cluster and answers its LEFT edge — the
+    /// selector's bound: one band, one layout, so a folded rail can never
+    /// slide the selector under these icons.</summary>
+    private static float DrawTitleActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
@@ -966,6 +1023,7 @@ public static class AppShellView
         }
         // Armature visibility is controlled by the sidebar and settings, not
         // by this titlebar cluster.
+        return x;
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────
@@ -1290,6 +1348,15 @@ public static class AppShellView
     /// <summary>The rail's scroll seam and content invocation, shared by the
     /// attached rail and the floating inspector window. The chassis around it
     /// is each host's own.</summary>
+    /// <summary>The split Inspector window's content: the same seam the
+    /// attached rail draws, inside a host-owned chassis.</summary>
+    internal static void DrawRailContent(
+        AppShellViewModel vm, Vector2 min, Vector2 max)
+    {
+        float s = ImGuiHelpers.GlobalScale;
+        RailScrollSeam(vm, min, max, (max.X - min.X) / s, s);
+    }
+
     private static void RailScrollSeam(
         AppShellViewModel vm, Vector2 railMin, Vector2 max,
         float railWidth, float s)

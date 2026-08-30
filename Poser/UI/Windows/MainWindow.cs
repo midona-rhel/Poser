@@ -160,6 +160,9 @@ public class MainWindow : Window
     private readonly HashSet<string> _knownCategoryNodes = new();
     private readonly HashSet<string> _knownActorNodes = new();
     private float _sidebarWidth = 280f;
+    // Session-local like the width: the fold is working posture, not
+    // configuration.
+    private bool _sidebarCollapsed;
     private readonly AppShellViewModel _vm = new();
 
     /// <summary>The acceptance gate. A field initializer, not a dependency:
@@ -690,6 +693,7 @@ public class MainWindow : Window
                 _collapsedNodes.Remove(expandKey);
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
+        _vm.OnSidebarCollapse = v => _sidebarCollapsed = v;
         _vm.OnRowContextMenu = row =>
         {
             // A right-click on a row that RIDES the multi-entity selection
@@ -958,10 +962,27 @@ public class MainWindow : Window
             return;
         }
 
+        // The split toggle's one-frame reseat: the RIGHT edge sheds or
+        // regains the rail; the left edge holds. It joins the size CHAIN —
+        // a standalone block here was reset to FirstUseEver by the chain's
+        // final else before the size ever applied.
+        if (_railShift != 0 && !_collapsed)
+        {
+            if (_shiftApplied)
+            {
+                Position = null;
+                _shiftApplied = false;
+            }
+            Size = new Vector2(
+                _lastWidth - _railShift * Views.AppShellView.RailWidth,
+                _lastHeight);
+            SizeCondition = ImGuiCond.Always;
+            _railShift = 0;
+        }
         // The detach toggle's one-frame reseat: width sheds or regains the
         // sidebar column while the left edge moves the same amount, so the
         // content and the inspector hold their screen position.
-        if (_detachShift != 0 && !_collapsed)
+        else if (_detachShift != 0 && !_collapsed)
         {
             float gs = ImGuiHelpers.GlobalScale;
             Position = new Vector2(
@@ -1068,8 +1089,12 @@ public class MainWindow : Window
     private float EffectiveMinimumWidth()
     {
         float minimum = MinimumWidth;
-        if (Config.ConfigurationService.Instance.Config.UI.DetachedShell)
+        var ui = Config.ConfigurationService.Instance.Config.UI;
+        if (ui.DetachedShell)
             minimum -= Crystarium.ActiveTheme.Shell.SidebarDefaultWidth;
+        // A split inspector hands the rail's column back too.
+        if (ui.SplitInspector)
+            minimum -= Views.AppShellView.RailWidth;
         return minimum;
     }
 
@@ -1079,6 +1104,13 @@ public class MainWindow : Window
     internal Vector2 LastPosition => _lastPosition;
     internal float LastWidth => _lastWidth;
     internal float LastHeight => _lastHeight;
+
+    /// <summary>Where the rail's top-left stands on screen — the split
+    /// window's seat at the split moment.</summary>
+    internal Vector2 RailSeatScreen => new(
+        _lastPosition.X + (_lastWidth - Views.AppShellView.RailWidth)
+            * Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale,
+        _lastPosition.Y);
     internal float LastSidebarWidth => _sidebarWidth;
 
     /// <summary>+1 detaching (shrink right past the departing sidebar), -1
@@ -1086,6 +1118,15 @@ public class MainWindow : Window
     /// content and the inspector hold their screen position through the
     /// toggle.</summary>
     internal void ApplyDetachShift(int direction) => _detachShift = direction;
+
+    /// <summary>+1 splitting (the right edge sheds the departing rail),
+    /// -1 merging (it grows back). One frame, PreDraw, the detach shift's
+    /// twin — the left edge holds, so the content keeps its place.</summary>
+    internal void ApplyRailShift(int direction) => _railShift = direction;
+
+    private int _railShift;
+
+    private SelectionId? _lookThroughApplied;
 
     private int _detachShift;
     private bool _shiftApplied;
@@ -1325,9 +1366,31 @@ public class MainWindow : Window
         var primary = _selection.Primary;
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
+        // Look-through-on-select (option): a camera ARRIVING as the primary
+        // selection becomes the live camera — once per arrival, so live can
+        // still be switched away while the camera stays selected.
+        if (primary is { Kind: SceneEntityKind.Camera, Camera: { } lookId })
+        {
+            if (!Equals(_lookThroughApplied, primary)
+                && Config.ConfigurationService.Instance.Config.Camera
+                    .LookThroughSelectedCamera)
+            {
+                _lookThroughApplied = primary;
+                if (_bindings.Resolve(lookId) is
+                    { Success: true, Value: { IsValid: true, IsLive: false } cam })
+                    _cameraService.SetLive(cam);
+            }
+        }
+        else
+        {
+            _lookThroughApplied = null;
+        }
         _vm.SidebarWidthPx = _sidebarWidth;
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;
+        _vm.SidebarCollapsed = _sidebarCollapsed;
+        _vm.InspectorSplit =
+            Config.ConfigurationService.Instance.Config.UI.SplitInspector;
         _vm.Detached =
             Config.ConfigurationService.Instance.Config.UI.DetachedShell;
         _vm.TitleEntity = TitleEntity(primary);
@@ -4192,6 +4255,7 @@ public class MainWindow : Window
         PopOutContent,
         DetachSeparator,
         ToggleDetached,
+        SplitInspector,
         WindowsSeparator,
         SceneWindow,
         InspectorWindow,
@@ -4226,7 +4290,8 @@ public class MainWindow : Window
         bool sceneOpen = GetSceneWindowOpen?.Invoke() ?? true;
         int layoutState = (uiConfig.DetachedShell ? 1 : 0)
             | (sceneOpen ? 2 : 0)
-            | (_contentHidden ? 4 : 0);
+            | (_contentHidden ? 4 : 0)
+            | (uiConfig.SplitInspector ? 8 : 0);
         if (_shellMenuRowsBuilt
             && poseTarget == _shellMenuPoseTarget
             && layoutState == _shellMenuLayoutState)
@@ -4240,7 +4305,8 @@ public class MainWindow : Window
             poseTarget,
             uiConfig.DetachedShell,
             sceneOpen,
-            _contentHidden);
+            _contentHidden,
+            uiConfig.SplitInspector);
     }
 
     /// <summary>Fills the shell menu rows for the current UI state.</summary>
@@ -4249,7 +4315,8 @@ public class MainWindow : Window
         bool poseTarget,
         bool detachedShell,
         bool sceneOpen,
-        bool contentHidden)
+        bool contentHidden,
+        bool splitInspector = false)
     {
         items[(int)ShellCommand.ShowLibrary] =
             new ContextMenuItem("Show library", TablerIcon.Book);
@@ -4276,16 +4343,27 @@ public class MainWindow : Window
             new ContextMenuItem(
                 detachedShell ? "Merge the UI" : "Detach the UI",
                 detachedShell ? TablerIcon.WindowMinimize : TablerIcon.WindowMaximize);
+        items[(int)ShellCommand.SplitInspector] =
+            new ContextMenuItem(
+                splitInspector ? "Merge the inspector" : "Split the inspector",
+                splitInspector
+                    ? TablerIcon.WindowMinimize
+                    : TablerIcon.WindowMaximize,
+                help: splitInspector
+                    ? "Fold the inspector back into the shell"
+                    : "Give the inspector its own window");
         items[(int)ShellCommand.WindowsSeparator] = ContextMenuItem.Separator;
         // Detached windows can be opened and closed here.
         items[(int)ShellCommand.SceneWindow] =
             new ContextMenuItem(
-                sceneOpen ? "Close Scene window" : "Open Scene window",
+                sceneOpen ? "Close the sidebar" : "Open the sidebar",
                 sceneOpen ? TablerIcon.DeviceIpadX : TablerIcon.LayoutPanel,
                 disabled: !detachedShell);
         items[(int)ShellCommand.InspectorWindow] =
             new ContextMenuItem(
-                contentHidden ? "Open Inspector window" : "Close Inspector window",
+                contentHidden
+                    ? "Open the properties panel"
+                    : "Close the properties panel",
                 contentHidden ? TablerIcon.LayoutSidebarLeft : TablerIcon.BrowserX,
                 disabled: !detachedShell);
         items[(int)ShellCommand.SettingsSeparator] = ContextMenuItem.Separator;
@@ -4295,6 +4373,9 @@ public class MainWindow : Window
 
     /// <summary>Requests the shell layout toggle.</summary>
     public event Action? OnDetachToggleRequested;
+
+    /// <summary>Requests the inspector split toggle.</summary>
+    public event Action? OnInspectorSplitToggleRequested;
 
     internal void RequestDetachToggle() => OnDetachToggleRequested?.Invoke();
 
@@ -4335,6 +4416,9 @@ public class MainWindow : Window
                 break;
             case ShellCommand.ToggleDetached:
                 RequestDetachToggle();
+                break;
+            case ShellCommand.SplitInspector:
+                OnInspectorSplitToggleRequested?.Invoke();
                 break;
             case ShellCommand.SceneWindow:
                 OnSceneWindowToggleRequested?.Invoke();
@@ -4482,27 +4566,36 @@ public class MainWindow : Window
                 ? "Import, export or stash this actor's pose"
                 : "Needs a loaded skeleton",
             submenuItems: actor.HasSkeleton
-                ?
-                [
-                    new ContextMenuItem("Import", TablerIcon.Download),
-                    new ContextMenuItem("Export", TablerIcon.Upload),
-                    new ContextMenuItem("Stash", TablerIcon.Stack2,
-                        help: "Save this actor's pose so you can apply it "
-                            + "to another actor. Replaces whatever was "
-                            + "stashed before."),
-                    new ContextMenuItem("Apply stashed", TablerIcon.ArrowBackUp,
-                        disabled: !hasStash,
-                        help: hasStash
-                            ? "Apply the stashed pose to this actor. Stashed "
-                                + $"from {_cleanPose.StashedFrom} at "
-                                + $"{_cleanPose.StashedAt:HH:mm:ss} UTC."
-                            : "Nothing stashed yet"),
-                ]
+                ? hasStash
+                    ?
+                    [
+                        new ContextMenuItem("Import", TablerIcon.Download),
+                        new ContextMenuItem(
+                            "Import from file", TablerIcon.FileText),
+                        new ContextMenuItem("Export", TablerIcon.Upload),
+                        new ContextMenuItem("Stash", TablerIcon.Stack2),
+                        new ContextMenuItem(
+                            "Apply stashed", TablerIcon.ArrowBackUp),
+                    ]
+                    :
+                    // No stash, no row: a menu never holds an empty seat.
+                    [
+                        new ContextMenuItem("Import", TablerIcon.Download),
+                        new ContextMenuItem(
+                            "Import from file", TablerIcon.FileText),
+                        new ContextMenuItem("Export", TablerIcon.Upload),
+                        new ContextMenuItem("Stash", TablerIcon.Stack2),
+                    ]
                 : null));
         actions.Add(null); // Pose — child clicks are read separately.
         var poseActions = new List<Action?>
         {
             () => _poseFileSection.RequestImportMenu(withPresets: true),
+            () =>
+            {
+                if (actor.HasSkeleton)
+                    _poseFileSection.OpenImportFromFile(actor.Skeleton);
+            },
             () => _poseFileSection.RequestExportMenu(),
             () => _cleanPose.Stash(
                 actor,

@@ -652,6 +652,12 @@ public class GizmoOverlayWindow : Window
             if (!GizmoConfig.KeepGizmoWhenBonesHidden && _gesture == null
                 && !_presentation.IsVisible(primaryBoneId))
                 return;
+            // The armature takes the gizmo with it, when asked — per
+            // SKELETON: this actor's bones must be shown, not anyone's.
+            if (GizmoConfig.HideGizmoWithoutArmature && _gesture == null
+                && !(ArmatureVisibility.MasterOn
+                    && _presentation.AnyVisibleFor(primaryBoneId)))
+                return;
             // Querying the skeleton matrix refreshes its runtime cache.
             if (_viewport.GetSkeletonModelMatrix(primaryBoneId) is not { } skeletonMatrix)
                 return;

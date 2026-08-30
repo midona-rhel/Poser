@@ -78,10 +78,21 @@ Windows each have ONE job. No mode may change what a window IS.
   the options are worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
-- **The sidebar never hides.** No collapse, no chevron — the
-  hide-sidebar button shipped and was rejected the same day
-  (2026-08-30). The only window-management verbs are pop out,
-  detach and merge. The scene tree is ONE continuous list — the
+- **The SIDEBAR folds; the INSPECTOR only splits** (ruled
+  2026-08-31, reversing the 2026-08-30 "sidebar never hides"): the
+  sidebar column folds behind a chevron in its titlebar cell (the
+  cell itself stays, so brand, burger and Library keep their
+  seats); the fold is session posture, not configuration. The
+  inspector NEVER folds or hides (an inspector fold shipped and was
+  rescinded the same day, 2026-08-31) — it is either in the shell
+  or SPLIT into its own Inspector window (burger verb, persisted,
+  merged back from its bar), rail-width fixed, seated where the
+  rail stood. The content selector's right bound is the MINIMUM of
+  the rail edge and the title-action cluster's left edge — a folded
+  or split rail must never slide it under the icons. Double-clicking
+  any titlebar's open band collapses the window — the chevron's
+  gesture twin, on every shell window including the detached parts;
+  hovered buttons keep their own clicks. The scene tree is ONE continuous list — the
   ACTORS/OBJECTS/LIGHTS/CAMERAS/OVERLAYS headers are gone (kind
   order retained: actors, objects, lights, cameras, overlays), and
   the filter pill spans the SAME width as the rows below it. The
@@ -603,6 +614,11 @@ The field's surroundings already say what is being searched; naming it
 again is chrome talking to itself (swept 2026-08-30).
 
 ## Tooltips
+
+CONTEXT MENUS carry no hovers at all (ruled 2026-08-31): a menu
+row's label is its whole explanation, and a row that would need a
+placeholder or an explanation is omitted, never seated disabled with
+a tooltip — a menu never holds an empty seat.
 
 A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
 "Reset the face bones", "Fade the whole actor" — a few words, verb

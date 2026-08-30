@@ -151,6 +151,7 @@ public class SettingsWindow : Window
             SnapLinearStep = c.Gizmo.SnapLinearStep,
             AllowRaySnap = c.Gizmo.AllowRaySnap,
             KeepGizmoWhenBonesHidden = c.Gizmo.KeepGizmoWhenBonesHidden,
+            HideGizmoWithoutArmature = c.Gizmo.HideGizmoWithoutArmature,
 
             NsfwBones = c.Display.ShowNsfwBones,
             AnonymousMode = c.Display.AnonymousMode,
@@ -169,6 +170,7 @@ public class SettingsWindow : Window
             CameraConsumeModifiers = c.Camera.ConsumeModifiersWhileFlying,
             CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
+            CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -343,6 +345,7 @@ public class SettingsWindow : Window
         c.Gizmo.SnapLinearStep = Math.Clamp(_vm.SnapLinearStep, 0.01f, 1f);
         c.Gizmo.AllowRaySnap = _vm.AllowRaySnap;
         c.Gizmo.KeepGizmoWhenBonesHidden = _vm.KeepGizmoWhenBonesHidden;
+        c.Gizmo.HideGizmoWithoutArmature = _vm.HideGizmoWithoutArmature;
 
         c.Display.ShowNsfwBones = _vm.NsfwBones;
         c.Display.AnonymousMode = _vm.AnonymousMode;
@@ -368,6 +371,7 @@ public class SettingsWindow : Window
         c.Camera.ConsumeModifiersWhileFlying = _vm.CameraConsumeModifiers;
         c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
+        c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;

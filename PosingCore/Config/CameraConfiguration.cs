@@ -55,4 +55,8 @@ public class CameraConfiguration
     /// screen-left.
     /// </summary>
     public bool FlipBindsPastNinety { get; set; }
+
+    /// <summary>Selecting a camera switches the view to it — the selection
+    /// IS the look-through, when asked.</summary>
+    public bool LookThroughSelectedCamera { get; set; }
 }

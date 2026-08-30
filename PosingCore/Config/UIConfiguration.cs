@@ -53,6 +53,10 @@ public class UIConfiguration
     /// overlays stay, the scene clears. Off by default.</summary>
     public bool HideWhileManipulating { get; set; }
 
+    /// <summary>The inspector rail lives in its own window — the third
+    /// split, beside the detached shell.</summary>
+    public bool SplitInspector { get; set; }
+
     /// <summary>The dependent option: the world gizmo's chrome hides with
     /// the shell — the drag's own sweep and readout never do.</summary>
     public bool HideGizmoWhileManipulating { get; set; }
