@@ -76,6 +76,52 @@ public class PoseRailPane
         var cursor = origin;
         float width = size.X;
 
+        // The ANONYMOUS GROUP's rail: the count, the whole-selection
+        // verbs, and the SAME rotation ball every selection wears —
+        // wired to rotate everything about the centroid in world axes.
+        if (_inspector.IsMultiEntitySelection)
+        {
+            var (multiWho, multiSub) = _inspector.MultiselectHeader();
+            Crystarium.TextAt(cursor, multiWho, new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.BodySize,
+                Weight = FontWeight.Medium,
+                Color = Crystarium.ActiveTheme.Text,
+            });
+            if (multiSub.Length > 0)
+                Crystarium.TextAt(
+                    cursor + new Vector2(0f, 17f) * s, multiSub,
+                    new TextStyle
+                    {
+                        Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                        Color = Crystarium.ActiveTheme.TextMuted,
+                    });
+            cursor.Y += (multiSub.Length > 0 ? 36f : 22f) * s;
+
+            ImGui.SetCursorScreenPos(cursor);
+            if (Crystarium.Button("Move to camera",
+                    id: "rail-multi-camera",
+                    help: "Place the selection in front of the camera",
+                    style: ControlStyle.Workspace))
+            {
+                var look = _camera.GetLookDirection();
+                if (look.LengthSquared() < 1e-6f)
+                    look = Vector3.UnitZ;
+                _inspector.GroupMoveTowards(
+                    _camera.GetCameraPosition()
+                    + Vector3.Normalize(look) * 2.5f);
+            }
+            ImGui.SameLine(0f, 6f * s);
+            if (Crystarium.Button("Deselect", id: "rail-multi-deselect",
+                    help: "Drop the whole selection",
+                    style: ControlStyle.Workspace))
+                _inspector.GroupDeselect();
+            cursor.Y += 36f * s;
+
+            DrawRotationGizmo(dl, cursor, width, s);
+            return;
+        }
+
         // Rail head: selected-bones summary + Linked count pill
         var (who, sub, linked) = _inspector.RailHeader();
         if (who.Length > 0)

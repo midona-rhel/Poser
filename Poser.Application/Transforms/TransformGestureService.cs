@@ -650,12 +650,16 @@ public sealed class TransformGestureService : IDisposable
     private static bool IsHomogeneous(
         IReadOnlyList<TransformTargetId> targets)
     {
+        // Bones stay alone and per-skeleton: their pivot math lives in
+        // model space. Scene ENTITIES mix freely — the anonymous group —
+        // because every entity target captures and applies in world space
+        // through its own port.
         var first = targets[0];
-        if (targets.Any(target => target.Kind != first.Kind))
-            return false;
-        return first.Kind != TransformTargetKind.Bone ||
-               targets.All(target =>
-                   target.ActorLineage == first.ActorLineage);
+        if (targets.Any(target => target.Kind == TransformTargetKind.Bone))
+            return targets.All(target =>
+                target.Kind == TransformTargetKind.Bone
+                && target.ActorLineage == first.ActorLineage);
+        return true;
     }
 
     private static TransformDelta Filter(
