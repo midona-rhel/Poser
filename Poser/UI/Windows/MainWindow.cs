@@ -963,20 +963,26 @@ public class MainWindow : Window
         }
 
         // The split toggle's one-frame reseat: the RIGHT edge sheds or
-        // regains the rail; the left edge holds.
+        // regains the rail; the left edge holds. It joins the size CHAIN —
+        // a standalone block here was reset to FirstUseEver by the chain's
+        // final else before the size ever applied.
         if (_railShift != 0 && !_collapsed)
         {
+            if (_shiftApplied)
+            {
+                Position = null;
+                _shiftApplied = false;
+            }
             Size = new Vector2(
                 _lastWidth - _railShift * Views.AppShellView.RailWidth,
                 _lastHeight);
             SizeCondition = ImGuiCond.Always;
             _railShift = 0;
         }
-
         // The detach toggle's one-frame reseat: width sheds or regains the
         // sidebar column while the left edge moves the same amount, so the
         // content and the inspector hold their screen position.
-        if (_detachShift != 0 && !_collapsed)
+        else if (_detachShift != 0 && !_collapsed)
         {
             float gs = ImGuiHelpers.GlobalScale;
             Position = new Vector2(
