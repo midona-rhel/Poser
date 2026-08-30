@@ -125,6 +125,15 @@ public sealed class UIManager : IUIManager
         {
             FrameProfiler.EndFrame();
         }
+        // Hide-while-manipulating (#77): the windows fade down while a
+        // world drag is HELD — hover never hides — so the scene is clear
+        // under the gesture.
+        Controls.ManipulationHide.Active =
+            _configService.Config.UI.HideWhileManipulating
+            && Controls.ManipulationDrag.Held;
+        Controls.ManipulationHide.HideGizmo =
+            _configService.Config.UI.HideGizmoWhileManipulating;
+        Controls.ManipulationHide.Advance();
         // The focus rule, published once per frame: typing, an active
         // ImGui item (a drag in the UI), or a live gizmo gesture owns the
         // keyboard, and the free camera's flight keys stand down.

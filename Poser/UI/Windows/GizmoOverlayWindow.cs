@@ -320,10 +320,18 @@ public class GizmoOverlayWindow : Window
         if (_gazeGesture == null && layout != null && !occluded)
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
-        if (layout != null && !io.KeyAlt)
+        // With the option on, the gizmo's chrome rides the shell's fade
+        // during a held drag; the gaze identity marker below stays.
+        if (layout != null && !io.KeyAlt
+            && !(ManipulationHide.HideGizmo && ManipulationHide.Hidden))
+        {
+            using var manipulationFade = ManipulationHide.HideGizmo
+                ? ManipulationHide.FadeScope()
+                : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, _gazeGesture?.Handle);
+        }
 
         // Draw the active-part marker over the handles.
         if (projection != null)
@@ -334,6 +342,9 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             GizmoPointerOwnership.Hold();
+            // Only the HELD gesture is a manipulation; hover is not.
+            if (_gazeGesture != null)
+                ManipulationDrag.Hold();
         }
 
         if (_gazeGesture == null && hover is { } grab && projection != null &&
@@ -807,10 +818,19 @@ public class GizmoOverlayWindow : Window
             hover = WorldGizmo.HitTest(layout, mouse, 8f * uiScale);
 
         // Occlusion suppresses hover/ownership but not handle drawing.
-        if (layout != null && !io.KeyAlt)
+        // With the option on, the gizmo's chrome rides the shell's fade
+        // during a held drag; the drag's sweep and readout, drawn below,
+        // never hide.
+        if (layout != null && !io.KeyAlt
+            && !(ManipulationHide.HideGizmo && ManipulationHide.Hidden))
+        {
+            using var manipulationFade = ManipulationHide.HideGizmo
+                ? ManipulationHide.FadeScope()
+                : default;
             WorldGizmo.Draw(
                 ImGui.GetWindowDrawList(), layout,
                 hover?.Handle, gesture?.Handle);
+        }
 
         // Capture current and next-frame mouse input.
         if (hover != null || gesture != null)
@@ -818,6 +838,9 @@ public class GizmoOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
             GizmoPointerOwnership.Hold();
+            // Only the HELD gesture is a manipulation; hover is not.
+            if (gesture != null)
+                ManipulationDrag.Hold();
         }
 
         if (gesture == null && hover is { } grab && layout != null &&

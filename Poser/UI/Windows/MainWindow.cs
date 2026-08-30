@@ -581,6 +581,27 @@ public class MainWindow : Window
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
         _vm.DragGhostText = DragGhostFor;
+        // Brio's Bullseye (CameraEditor.cs recenter_on_selected): the seat
+        // RETARGETS this camera's tracking onto the currently selected
+        // actor, aim offset corrected to the drawn body — it never merely
+        // swings the camera.
+        _vm.OnCameraRecenter = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.Camera, Camera: { } recenterId })
+                return;
+            if (SelectedActorRef() is not { Actor: { } trackActorId })
+                return;
+            var cameraResolved = _bindings.Resolve(recenterId);
+            if (!cameraResolved.Success
+                || cameraResolved.Value is not { IsValid: true } trackCamera)
+                return;
+            string trackLabel = FindActor(trackActorId.LogicalId) is { } tracked
+                ? Config.ConfigurationService.Instance.GetDisplayName(
+                    trackActorId.LogicalId, DisplayName(tracked.Name))
+                : "Actor";
+            _cameraPane.FollowActor(trackActorId, trackLabel, trackCamera);
+        };
         _vm.OnGroupLock = row =>
         {
             if (row.Tag is GroupRowTag lockTag
@@ -1195,9 +1216,12 @@ public class MainWindow : Window
         // Hidden Inspector: the frame still built everything the parts read,
         // and the menu/dialog pumps below still run — only the chassis and
         // its content stay undrawn.
-        if (!_contentHidden)
+        if (!_contentHidden && !Controls.ManipulationHide.Hidden)
+        {
+            using var manipulationFade = Controls.ManipulationHide.FadeScope();
             AppShellView.Draw(
                 _vm, ImGui.GetWindowPos(), ImGui.GetWindowSize());
+        }
         DrawShellMenu();
         DrawActorContextMenu();
         // Window-level: the attach picker outlives the context menu that
@@ -1974,6 +1998,9 @@ public class MainWindow : Window
             {
                 row.CameraLive = liveCamera.IsLive;
                 row.CameraLocked = liveCamera.IsLocked;
+                // The seat retargets tracking onto the SELECTED actor —
+                // it has work exactly when an actor is selected.
+                row.CameraCanRecenter = SelectedActorRef() != null;
             }
             else if (id.Overlay is { } overlayId &&
                 _bindings.Resolve(overlayId) is
@@ -5119,13 +5146,7 @@ public class MainWindow : Window
             return;
         }
 
-        var trackedActor = ResolveCameraTrackedActor(camera);
-        bool trackedActorVisible = trackedActor != null &&
-            TryResolveExactActor(trackedActor.Id, out var trackedExact) &&
-            _spawnService.IsVisible(trackedExact);
-        bool canRecenterTracked = trackedActorVisible &&
-            _cameraService.IsAvailable && !camera.IsLocked && camera.IsLive &&
-            camera.Kind != CameraKind.Free && camera.FixedPosition == null;
+        bool canRecenterTracked = CanRecenterOnTracked(camera);
         var items = new List<ContextMenuItem>
         {
             new(camera.IsLive
@@ -5134,8 +5155,9 @@ public class MainWindow : Window
                 disabled: camera.IsLive && camera.IsDefault),
             new(camera.IsLocked ? "Unlock" : "Lock",
                 camera.IsLocked ? TablerIcon.LockOpen : TablerIcon.Lock),
-            new("Recenter on tracked actor", TablerIcon.Crosshair,
-                disabled: !canRecenterTracked),
+            new("Look at tracked actor", TablerIcon.Crosshair,
+                disabled: !canRecenterTracked,
+                help: "Swing the camera back onto whoever it tracks"),
             new("Rename", TablerIcon.Edit, disabled: camera.IsLocked),
             new("Clone", TablerIcon.Copy),
             new("Save to file…", TablerIcon.DeviceFloppy),
@@ -5591,6 +5613,29 @@ public class MainWindow : Window
                     break;
             }
         }
+    }
+
+    /// <summary>The selection's actor, if any — the recenter seat's
+    /// target.</summary>
+    private SelectionId? SelectedActorRef()
+    {
+        foreach (var id in _selection.Selected)
+            if (id is { Kind: SceneEntityKind.Actor })
+                return id;
+        return null;
+    }
+
+    /// <summary>Whether the LOOK-AT verb has anything to do — the context
+    /// menu's "Look at tracked actor", distinct from the row seat's
+    /// Brio-style retarget.</summary>
+    private bool CanRecenterOnTracked(IVirtualCamera camera)
+    {
+        if (!_cameraService.IsAvailable || camera.IsLocked || !camera.IsLive
+            || camera.Kind == CameraKind.Free || camera.FixedPosition != null)
+            return false;
+        return ResolveCameraTrackedActor(camera) is { } tracked
+            && TryResolveExactActor(tracked.Id, out var exact)
+            && _spawnService.IsVisible(exact);
     }
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)

@@ -1063,7 +1063,10 @@ public sealed class CameraPane
             _notices.Refused(result.Detail ?? "Center: the camera could not move.");
     }
 
-    private void FollowActor(ActorId actorId, string displayName,
+    /// <summary>Public because the camera row's recenter seat speaks this
+    /// verb too — Brio's Bullseye: retarget the tracking onto the actor,
+    /// aim offset corrected to the drawn body.</summary>
+    public void FollowActor(ActorId actorId, string displayName,
         IVirtualCamera camera)
     {
         if (camera.IsTracking)

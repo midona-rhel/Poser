@@ -689,6 +689,14 @@ internal static class SvgIconTextureCache
         }
 
         float styleAlpha = ImGui.GetStyle().Alpha;
+        // The fade lands HERE, on the quad, never in the bake: a fading
+        // shell reuses the standing textures instead of re-baking every
+        // icon every frame — which starved the paint budget and killed
+        // the rest outright while their bakes were pending.
+        uint quadTint = styleAlpha >= 1f
+            ? White
+            : ImGui.ColorConvertFloat4ToU32(
+                new Vector4(1f, 1f, 1f, styleAlpha));
         ulong key = Key(
             doc, min, max, tint, flipX, strokeWidth,
             groupOpacity, groupBackground, styleAlpha);
@@ -726,9 +734,10 @@ internal static class SvgIconTextureCache
                     $"{(max - min).Y:0}px");
             try
             {
+                // Baked at FULL alpha always; the fade rides the quad tint.
                 bool bakeable = doc.TryResolveMask(
                     Vector2.Zero, max - min, tint, flipX, strokeWidth,
-                    groupOpacity, groupBackground, styleAlpha,
+                    groupOpacity, groupBackground, 1f,
                     out var baked);
                 entry = !bakeable
                     ? new Entry(0, default, default, null, true)
@@ -763,7 +772,8 @@ internal static class SvgIconTextureCache
                     StrokeWidth = strokeWidth,
                     GroupOpacity = groupOpacity,
                     GroupBackground = groupBackground,
-                    StyleAlpha = styleAlpha,
+                    // Baked at FULL alpha; the fade rides the quad tint.
+                    StyleAlpha = 1f,
                 });
                 Pump();
             }
@@ -785,7 +795,7 @@ internal static class SvgIconTextureCache
                         at + stale.Size * factor,
                         Vector2.Zero,
                         Vector2.One,
-                        White);
+                        quadTint);
                     return true;
                 }
             }
@@ -808,7 +818,7 @@ internal static class SvgIconTextureCache
                 at + entry.Size,
                 Vector2.Zero,
                 Vector2.One,
-                White);
+                quadTint);
             LastGood[variant] = (key, max - min);
         }
         return true;
@@ -845,7 +855,11 @@ internal static class SvgIconTextureCache
             hash = Mix(hash, color);
         hash = Mix(hash, Bits(groupOpacity));
         hash = Mix(hash, background);
-        return Mix(hash, Bits(styleAlpha));
+        // Style alpha is a DRAW-TIME quad tint, never a bake input: a
+        // fading shell must reuse the standing textures, not mint a new
+        // key per frame of the fade.
+        _ = styleAlpha;
+        return hash;
     }
 
     private const ulong FnvOffset = 14695981039346656037UL;
@@ -874,7 +888,9 @@ internal static class SvgIconTextureCache
             hash = Mix(hash, color);
         hash = Mix(hash, Bits(groupOpacity));
         hash = Mix(hash, background);
-        return Mix(hash, Bits(styleAlpha));
+        // See KeyVariant: style alpha never keys.
+        _ = styleAlpha;
+        return hash;
     }
 
     private static ulong Mix(ulong hash, uint value) =>

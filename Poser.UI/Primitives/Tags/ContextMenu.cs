@@ -435,12 +435,12 @@ public static partial class Crystarium
             var dl = ImGui.GetWindowDrawList();
             int vtxStart = dl.VtxBuffer.Size;
             int clicked = DrawSurfaceAndRows(
-                dl, s, interactive, _items, _min, _size, "##fm-row");
+                dl, s, interactive, _items, _min, _size, "##fm-row", alpha);
             if (_submenuItems is { } submenu)
             {
                 int childClicked = DrawSurfaceAndRows(
                     dl, s, interactive, submenu, _submenuMin, _submenuSize,
-                    "##fm-submenu-row");
+                    "##fm-submenu-row", alpha);
                 _submenuClicked = AcceptSubmenuClick(childClicked, submenu);
                 if (_submenuClicked >= 0)
                     _submenuClickedParent = _submenuParent;
@@ -515,14 +515,18 @@ public static partial class Crystarium
             ContextMenuItem[] items,
             Vector2 min,
             Vector2 size,
-            string rowIdPrefix)
+            string rowIdPrefix,
+            float fade)
         {
             var max = min + size;
+            // The lifecycle alpha rides the vertex pop AFTER this draw, so
+            // the blur — a prepass, not vertices — takes it here instead.
             FloatingSurface.DrawChrome(
                 dl,
                 min,
                 max,
-                Crystarium.ActiveTheme.Radii.Surface);
+                Crystarium.ActiveTheme.Radii.Surface,
+                fade: fade);
 
             // Rows.
             int clicked = -1;

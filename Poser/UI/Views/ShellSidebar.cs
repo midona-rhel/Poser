@@ -251,7 +251,7 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraActions ? 3
+                        : row.CameraActions ? 4
                         : row.LightActions ? 2
                         : row.GroupActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
@@ -825,7 +825,21 @@ public sealed class ShellSidebar
 
             if (row.CameraActions)
             {
+                // The recenter seat leads — Brio's Bullseye: retarget this
+                // camera's tracking onto the SELECTED actor.
                 ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        TablerIcon.Crosshair,
+                        selected: false,
+                        style: square,
+                        help: row.CameraCanRecenter
+                            ? "Recenter on the selected actor"
+                            : "Select an actor to track first",
+                        id: "##camera-recenter",
+                        dimmed: !row.CameraCanRecenter))
+                    _vm.OnCameraRecenter?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
                         selected: row.CameraLive,
@@ -851,13 +865,13 @@ public sealed class ShellSidebar
                         row.CameraMark, markStyle);
                     Crystarium.TextAt(
                         origin + new Vector2(
-                            step + (side * scale - markSize.X) * 0.5f,
+                            step * 2f + (side * scale - markSize.X) * 0.5f,
                             (side * scale - markSize.Y) * 0.5f),
                         row.CameraMark,
                         markStyle);
                 }
 
-                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 3f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.CameraLocked
                             ? TablerIcon.Lock

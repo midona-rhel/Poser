@@ -427,6 +427,77 @@ public static class RotationGizmoRings
 /// or its release frame — owns the pointer, selection surfaces (skeleton
 /// overlay, 3D view) must not treat the click as a bone/actor pick.
 /// </summary>
+/// <summary>Whether the shell windows hide because a world manipulation
+/// is HELD (#77): the setting AND a live drag — hovering a handle never
+/// hides. Written once per frame by the UI root; the shell fades over
+/// 250 ms rather than popping, and windows skip their draw only when
+/// fully faded. Reference images and the overlays deliberately stay
+/// visible.</summary>
+public static class ManipulationHide
+{
+    public static bool Active;
+
+    /// <summary>The dependent option: the world gizmo's CHROME rides the
+    /// same fade — the drag's own sweep and readout never do.</summary>
+    public static bool HideGizmo;
+
+    /// <summary>The shell's eased opacity: 1 shown, 0 hidden.</summary>
+    public static float Opacity { get; private set; } = 1f;
+
+    private const float FadeSeconds = 0.10f;
+
+    /// <summary>Advanced once per frame by the UI root, after Active is
+    /// written.</summary>
+    public static void Advance()
+    {
+        float step = ImGui.GetIO().DeltaTime / FadeSeconds;
+        Opacity = Active
+            ? MathF.Max(0f, Opacity - step)
+            : MathF.Min(1f, Opacity + step);
+    }
+
+    /// <summary>Fully faded: the shell windows skip their draw.</summary>
+    public static bool Hidden => Opacity <= 0f;
+
+    /// <summary>Scopes the fade over one window's draw: pushes the global
+    /// alpha (which every Crystarium color multiplies through) while the
+    /// shell is mid-fade, and pops it on ANY exit path.</summary>
+    public static FadeHandle FadeScope()
+    {
+        bool pushed = Opacity < 1f;
+        if (pushed)
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * Opacity);
+        return new FadeHandle(pushed);
+    }
+
+    public readonly struct FadeHandle : IDisposable
+    {
+        private readonly bool _pushed;
+        internal FadeHandle(bool pushed) => _pushed = pushed;
+        public void Dispose()
+        {
+            if (_pushed)
+                ImGui.PopStyleVar();
+        }
+    }
+}
+
+/// <summary>Frame-stamped hold for a LIVE world drag — the hide signal.
+/// Distinct from <see cref="GizmoPointerOwnership"/>, which hover also
+/// holds so a click on a handle is never a pick: only a held gesture
+/// holds this.</summary>
+public static class ManipulationDrag
+{
+    private static int _heldUntilFrame = -1;
+
+    public static void Hold() =>
+        _heldUntilFrame = ImGui.GetFrameCount() + 1;
+
+    public static bool Held =>
+        ImGui.GetFrameCount() <= _heldUntilFrame;
+}
+
 public static class GizmoPointerOwnership
 {
     private static int _ownedUntilFrame = -1;
