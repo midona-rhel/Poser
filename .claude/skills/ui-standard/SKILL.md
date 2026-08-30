@@ -167,9 +167,10 @@ Windows each have ONE job. No mode may change what a window IS.
   seams but hold no grip.
 - **State marks speak selected-accent** — a row's "this is the
   current one" fact (the game's target actor, the live camera) is
-  the accent-SELECTED mark on its action-strip glyph PLUS a full-row
-  accent OUTLINE (border only, the pill's geometry, under any fill),
-  never a text badge. The "Live" camera badge was removed 2026-08-30
+  the accent-SELECTED mark on its action-strip glyph PLUS the row's
+  own leading ICON rendered in the accent at full strength, never a
+  text badge. (A full-row accent outline was tried 2026-08-30 and
+  replaced by the accent icon the same day.) The "Live" camera badge was removed 2026-08-30
   for exactly this; "Default" remains a badge because it is
   identity, not state.
 - **Context menus: one lifetime family, every kind** — every entity

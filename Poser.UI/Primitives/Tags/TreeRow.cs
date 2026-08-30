@@ -68,9 +68,10 @@ public record struct TreeRowProps
     /// only the drop indicators speak.</summary>
     public bool SuppressHover;
 
-    /// <summary>The CURRENT-one outline: the game's target actor and the
-    /// live camera wear an accent border around the whole row, so which
-    /// one is which reads at a glance without selecting anything.</summary>
+    /// <summary>The CURRENT one: the game's target actor and the live
+    /// camera wear their row mark in the ACCENT at full strength, so
+    /// which is which reads at a glance without selecting anything. (A
+    /// full-row outline was tried 2026-08-30 and replaced by this.)</summary>
     public bool Marked;
 
     /// <summary>Right padding reserved for the scroll gutter.</summary>
@@ -258,28 +259,6 @@ public static partial class Crystarium
                 });
         }
 
-        // The CURRENT-one outline stands on its own: an accent border in
-        // the pill's geometry, under any fill, whether or not one shows.
-        if (props.Marked)
-        {
-            float markInset = (depth == 0
-                ? TreeRootPillInset
-                : TreeTrunkX(depth) + TreePillClearance) * scale;
-            var markBorder = theme.Accent;
-            BoxRenderer.Draw(
-                dl,
-                new Vector2(hit.ScreenMin.X + markInset, hit.ScreenMin.Y),
-                new Vector2(contentRight, hit.ScreenMax.Y - scale),
-                new BoxStyle
-                {
-                    BorderRadius = TreePillRadius,
-                    BorderWidth = 1f,
-                    BorderTopColor = markBorder,
-                    BorderRightColor = markBorder,
-                    BorderBottomColor = markBorder,
-                    BorderLeftColor = markBorder,
-                });
-        }
 
         if (branch != TreeBranch.None && !props.HideGuides)
             DrawTreeGuides(
@@ -339,6 +318,10 @@ public static partial class Crystarium
             var markMin = theme.Optical.Snap(new Vector2(
                 x, hit.ScreenMin.Y + (height - side) * 0.5f));
             var markMax = markMin + new Vector2(side);
+            // The CURRENT one — the game's target actor, the live camera —
+            // wears its mark in the accent, at full strength.
+            var markColor = props.Marked ? theme.Accent : theme.Text;
+            float markOpacity = props.Marked ? 1f : TreeIconOpacity;
             if (props.IconTexture is { } texture)
                 dl.AddImage(
                     texture.Handle,
@@ -350,12 +333,12 @@ public static partial class Crystarium
                         new Vector4(1f, 1f, 1f, TreeIconOpacity))));
             else if (props.Icon is { } glyph)
                 IconIn(
-                    markMin, markMax, glyph, theme.Text,
-                    opacity: TreeIconOpacity);
+                    markMin, markMax, glyph, markColor,
+                    opacity: markOpacity);
             else
                 IconIn(
-                    markMin, markMax, props.IconName!, theme.Text,
-                    opacity: TreeIconOpacity);
+                    markMin, markMax, props.IconName!, markColor,
+                    opacity: markOpacity);
             x += (TreeIconSide + TreeIconGap) * scale;
         }
 
