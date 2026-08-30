@@ -306,9 +306,17 @@ public class SkeletonOverlayWindow : Window
             int.MaxValue);
         bool listTravel = CanContinueIntoHoverList(
             mousePos, hoverListOwner);
+        // BOTH halves of "a window swallows the clicks it receives"
+        // (#79): the Interactive registry knows Poser's own surfaces, and
+        // the ImGui hover test knows every real window — each catches
+        // interfaces the other cannot see.
         bool pointerBlocked = Interactive.PointerOccluded(
             InteractionOwner.World,
-            mousePos);
+            mousePos)
+            || ImGui.IsWindowHovered(
+                ImGuiHoveredFlags.AnyWindow |
+                ImGuiHoveredFlags.AllowWhenBlockedByPopup |
+                ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
 
         // Ahead of the Alt gate: the listing's cadence and the select that
         // finishes an adoption are bookkeeping, and holding Alt is a request

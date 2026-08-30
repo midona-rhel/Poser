@@ -495,13 +495,19 @@ public class GizmoOverlayWindow : Window
             _gazeService.SetPartPosition(actor, ToTargetType(gesture.Part), target);
     }
 
-    /// <summary>Returns whether another interface owns the pointer.</summary>
+    /// <summary>Returns whether another interface owns the pointer —
+    /// BOTH halves of "a window swallows the clicks it receives" (#79):
+    /// the ImGui hover test knows every real window, and the Interactive
+    /// registry knows Poser surfaces that draw without one (the bone
+    /// hover list) — each catches interfaces the other cannot see.</summary>
     private static bool PointerOverInterface() =>
         ImGui.IsWindowHovered(
             ImGuiHoveredFlags.AnyWindow |
             ImGuiHoveredFlags.AllowWhenBlockedByPopup |
             ImGuiHoveredFlags.AllowWhenBlockedByActiveItem) ||
-        ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopup);
+        ImGui.IsPopupOpen(string.Empty, ImGuiPopupFlags.AnyPopup) ||
+        Interactive.PointerOccluded(
+            InteractionOwner.World, ImGui.GetMousePos());
 
     private GizmoTargetType GetGizmoTargetType()
     {
