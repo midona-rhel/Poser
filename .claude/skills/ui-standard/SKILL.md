@@ -222,7 +222,10 @@ Windows each have ONE job. No mode may change what a window IS.
   default) — the shell windows FADE over 100 ms while a world drag
   is HELD, and only then: hovering a handle never hides (ruled
   2026-08-30), overlays and reference images stay visible, and the
-  return fade is the same 100 ms. Nothing pops. Two rules the fade
+  return fade is the same 100 ms. Nothing pops. A dependent switch
+  ("Also hide the gizmo") fades the world gizmo's CHROME with the
+  shell — the drag's own feedback (the sweep arc, the readout)
+  never hides. Two rules the fade
   taught: the BACKDROP BLUR never lingers through ANY fade — it
   leaves across the first 40% and returns only across the last
   40%, smooth-eased (40 ms of the shell's 100; context menus gate
