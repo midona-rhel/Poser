@@ -42,6 +42,11 @@ public sealed class LibraryWindow : Window
 
 
 
+    private bool _collapsed;
+    private bool _restorePending;
+    private float _savedHeight = 680f;
+    private float _lastWidth = 1060f;
+
     public LibraryWindow(MainWindow main)
         : base($"Library###{PluginConstants.PluginName}_library",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -68,6 +73,35 @@ public sealed class LibraryWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        // Collapse pins the window to its bar, exactly the shell's own
+        // collapse; restore hands back the remembered height.
+        float bar = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        SizeConstraints = _collapsed
+            ? new WindowSizeConstraints
+            {
+                MinimumSize = new Vector2(860f, bar),
+                MaximumSize = new Vector2(float.MaxValue, bar),
+            }
+            : new WindowSizeConstraints
+            {
+                MinimumSize = new Vector2(860f, 520f),
+                MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
+            };
+        if (_collapsed)
+        {
+            Size = new Vector2(_lastWidth, bar);
+            SizeCondition = ImGuiCond.Always;
+        }
+        else if (_restorePending)
+        {
+            Size = new Vector2(_lastWidth, _savedHeight);
+            SizeCondition = ImGuiCond.Always;
+            _restorePending = false;
+        }
+        else
+        {
+            SizeCondition = ImGuiCond.FirstUseEver;
+        }
         ImGui.PushStyleColor(ImGuiCol.ChildBg, Vector4.Zero);
         ImGui.PushStyleColor(ImGuiCol.Text, Crystarium.ActiveTheme.Text);
         ImGui.PushStyleColor(ImGuiCol.TextDisabled, Crystarium.ActiveTheme.TextDim);
@@ -108,7 +142,10 @@ public sealed class LibraryWindow : Window
         {
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
+            _lastWidth = (max.X - min.X) / s;
             float barBottom = DrawBar(min, max, s, dl);
+            if (_collapsed)
+                return;
             float stripBottom = DrawTypeStrip(min, max, barBottom, s, dl);
 
             var pane = _main.LibraryPane;
@@ -144,21 +181,12 @@ public sealed class LibraryWindow : Window
                 max.Y - stripBottom - inset * 2f);
             if (preview)
             {
-                // The preview column stays EXACTLY where it is — the seat
-                // just sits at its top-LEFT corner (not the right), so the
-                // menu opening leftward stands over the navigator and
-                // never covers the preview. Only the types with import
-                // options get the seat.
-                _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
-                float side = theme.Controls.ShellIconAction;
-                var seat = columnOrigin;
-                ImGui.SetCursorScreenPos(seat);
-                Crystarium.IconButton(
-                    "settings",
-                    () => _main.PoseFiles.RequestLibraryOptionsMenu(seat),
-                    ControlStyle.Square(side),
-                    help: "Import options",
-                    id: "##library-options");
+                // The container owns its seat: the options button at the
+                // column's left with the Preview title beside it, and the
+                // menu opens leftward over the navigator. Only the types
+                // with import options get the seat.
+                _main.PoseFiles.DrawPreviewColumn(
+                    columnOrigin, columnSize, optionsSeat: true);
             }
             else if (type == PoseLibraryPane.LibraryType.Objects)
             {
@@ -199,8 +227,9 @@ public sealed class LibraryWindow : Window
             titleStyle);
 
         float closeSide = theme.Floating.CloseActionSize;
+        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
-            max.X - theme.Floating.CloseInset * s - closeSide * s,
+            closeX,
             min.Y + (height - closeSide * s) * 0.5f));
         Crystarium.IconButton(
             "x",
@@ -208,6 +237,25 @@ public sealed class LibraryWindow : Window
             ControlStyle.Square(closeSide),
             help: "Close the library",
             id: "##library-close");
+        ImGui.SetCursorScreenPos(new Vector2(
+            closeX - theme.Page.ActionGap * s - closeSide * s,
+            min.Y + (height - closeSide * s) * 0.5f));
+        Crystarium.IconButton(
+            _collapsed ? "chevron-down" : "chevron-up",
+            () =>
+            {
+                if (!_collapsed)
+                    _savedHeight = ImGui.GetWindowSize().Y
+                        / Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+                else
+                    _restorePending = true;
+                _collapsed = !_collapsed;
+            },
+            ControlStyle.Square(closeSide),
+            help: _collapsed
+                ? "Expand the window"
+                : "Collapse to the title bar",
+            id: "##library-collapse");
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(

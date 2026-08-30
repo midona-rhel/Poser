@@ -65,12 +65,13 @@ Windows each have ONE job. No mode may change what a window IS.
   options menu — the SAME standing settings the import flow reads
   (one retained state), but options only: reusing the import menu
   one-to-one shipped and was rejected the same day (its actions do
-  not belong in the library). The seat sits at the column's top-LEFT
-  corner — the column itself never moves or shrinks for it (a
-  carved gutter shipped and was rejected on sight, 2026-08-30) —
-  and the menu opens leftward from it: over the navigator, never
-  over the preview, which stays visible while the options are
-  worked. The
+  not belong in the library). The preview CONTAINER owns the seat:
+  the options button at the column's left with the Preview title
+  moved right beside it, one header band — the column itself never
+  moves or shrinks for it (a carved gutter shipped and was rejected
+  on sight, 2026-08-30) — and the menu opens leftward from it: over
+  the navigator, never over the preview, which stays visible while
+  the options are worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
 - **Sidebar collapse** — the outliner collapses from a chevron by
@@ -89,6 +90,9 @@ Windows each have ONE job. No mode may change what a window IS.
 - **Naming** — the detached selection window is the PROPERTIES
   window internally; the user just sees the name of what they have
   selected as its title. The right rail is the INSPECTOR.
+- **Collapse everywhere** — every shell window collapses to its
+  title bar with the chevron and remembers its height (main window,
+  library; Settings is the ONE exception).
 - **Toolbar** — permanently its own window with a remembered
   position, IMPLEMENTED 2026-08-28: always open with the shell,
   attached or detached, no reattach affordance, and the main

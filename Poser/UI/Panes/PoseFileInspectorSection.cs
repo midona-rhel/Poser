@@ -854,12 +854,49 @@ public sealed class PoseFileInspectorSection
             dense: dense);
 
     /// <summary>The preview alone — the library window's plain right
-    /// column. Not a rail and not styled as one.</summary>
-    public void DrawPreviewColumn(Vector2 origin, Vector2 size)
-        => MenuSection("##library-preview", "Preview",
-            origin, size.X,
-            form => DrawPreviewBody(form, size.X, size.Y),
-            divider: false);
+    /// column. Not a rail and not styled as one. With the seat, the
+    /// container lays out its OWN header: the options button at the
+    /// left, the Preview title moved right beside it.</summary>
+    public void DrawPreviewColumn(
+        Vector2 origin, Vector2 size, bool optionsSeat = false)
+    {
+        if (!optionsSeat)
+        {
+            MenuSection("##library-preview", "Preview",
+                origin, size.X,
+                form => DrawPreviewBody(form, size.X, size.Y),
+                divider: false);
+            return;
+        }
+        float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        var theme = Crystarium.ActiveTheme;
+        float side = theme.Controls.ShellIconAction;
+        ImGui.SetCursorScreenPos(origin);
+        Crystarium.IconButton(
+            "settings",
+            () => RequestLibraryOptionsMenu(origin),
+            ControlStyle.Square(side),
+            help: "Import options",
+            id: "##library-options");
+        Crystarium.TextInBand(
+            origin + new Vector2((side + theme.Spacing.Three) * scale, 0f),
+            new Vector2(
+                MathF.Max(
+                    1f, size.X - (side + theme.Spacing.Three) * scale),
+                side * scale),
+            "Preview",
+            new TextStyle
+            {
+                Size = theme.Typography.LabelSize,
+                Weight = FontWeight.Medium,
+                Color = theme.FormLabel,
+            });
+        float used = (side + theme.Spacing.Two) * scale;
+        MenuSection("##library-preview", "Preview",
+            origin + new Vector2(0f, used), size.X,
+            form => DrawPreviewBody(form, size.X, size.Y - used),
+            divider: false, dense: true);
+    }
 
     private float DrawOptionsSections(
         Vector2 origin, float width, bool withPresets, float previewCap = 0f,
