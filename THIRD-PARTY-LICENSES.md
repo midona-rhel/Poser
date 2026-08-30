@@ -172,6 +172,13 @@ These staged files, their hashes, the online vulnerability audit, the SBOM,
 the canonical tree/history scan, and the final ZIP scan are release-time gates.
 They are not claimed to be present in an unpublished archive.
 
+## Ktisis invisible-skin data
+
+Bundled files (`Poser/Data/Integration`): `skin-paths.json` and
+`mt_c0101b0001_a.mtrl`, from the Ktisis project's invisible-skin
+feature. Licensed under the GNU General Public License, Version 3 —
+the same license as Poser.
+
 ## Geist and Geist Mono
 
 Bundled font files (`Poser/Data/Fonts`): Geist Regular / Medium /

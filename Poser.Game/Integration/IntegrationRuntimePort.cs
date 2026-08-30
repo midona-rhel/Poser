@@ -82,6 +82,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
     private readonly ICallGateSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]> _getResourcePaths;
     private readonly ICallGateSubscriber<string> _getModDirectory;
     private readonly ICallGateSubscriber<int, int, object?> _redrawObject;
+    private readonly ICallGateSubscriber<string, Guid, int, int> _removeTemporaryMod;
 
     // Glamourer
     private readonly ICallGateSubscriber<(int Major, int Minor)> _glamourerVersion;
@@ -141,6 +142,7 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         _getResourcePaths = pluginInterface.GetIpcSubscriber<ushort[], Dictionary<string, HashSet<string>>?[]>("Penumbra.GetGameObjectResourcePaths.V5");
         _getModDirectory = pluginInterface.GetIpcSubscriber<string>("Penumbra.GetModDirectory");
         _redrawObject = pluginInterface.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
+        _removeTemporaryMod = pluginInterface.GetIpcSubscriber<string, Guid, int, int>("Penumbra.RemoveTemporaryMod.V5");
 
         _glamourerVersion = pluginInterface.GetIpcSubscriber<(int, int)>("Glamourer.ApiVersion.V2");
         _getDesignList = pluginInterface.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList.V2");
@@ -387,6 +389,48 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                 manipulations,
                 0);
             return PenumbraResult(ec, "adding the temporary mod");
+        });
+
+    // ── Penumbra: invisible skin (Ktisis AssignInvisibleSkin) ────────────
+
+    /// <summary>The invisible-skin mod's tag and priority. The priority
+    /// mirrors Ktisis (100): the remap must beat whatever ordinary mods the
+    /// effective collection already resolves for the same materials.</summary>
+    private const string InvisibleSkinTag = "Poser_InvisibleSkin";
+    private const int InvisibleSkinPriority = 100;
+
+    public IntegrationValue<Guid> GetEffectiveCollection(ActorId actor) =>
+        Guarded(Penumbra, "Effective collection", () =>
+        {
+            int index = ResolveIndex(actor, out var detail);
+            if (index < 0)
+                return IntegrationValue<Guid>.Fail(detail!);
+            var (valid, _, (id, _)) = _getCollectionForObject.InvokeFunc(index);
+            return valid
+                ? IntegrationValue<Guid>.Ok(id)
+                : IntegrationValue<Guid>.Fail(
+                    "Penumbra reports no collection for this actor.");
+        });
+
+    public IntegrationPortResult AddInvisibleSkinMods(
+        Guid collection, IReadOnlyDictionary<string, string> paths) =>
+        Guarded(Penumbra, "Invisible skin", () =>
+        {
+            int ec = _addTemporaryMod.InvokeFunc(
+                InvisibleSkinTag,
+                collection,
+                paths.ToDictionary(pair => pair.Key, pair => pair.Value),
+                string.Empty,
+                InvisibleSkinPriority);
+            return PenumbraResult(ec, "adding the invisible-skin mod");
+        });
+
+    public IntegrationPortResult RemoveInvisibleSkinMods(Guid collection) =>
+        Guarded(Penumbra, "Invisible skin cleanup", () =>
+        {
+            int ec = _removeTemporaryMod.InvokeFunc(
+                InvisibleSkinTag, collection, InvisibleSkinPriority);
+            return PenumbraResult(ec, "removing the invisible-skin mod");
         });
 
     public IntegrationPortResult DeleteTemporaryCollection(Guid collection) =>

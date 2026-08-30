@@ -38,6 +38,7 @@ public sealed class AppearancePane
 
     /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
+    private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -119,9 +120,11 @@ public sealed class AppearancePane
         StableBindingRegistry bindings,
         ITextureProvider textures,
         Config.ConfigurationService config,
+        Game.Integration.InvisibleSkinService invisibleSkin,
         UserNotices notices)
     {
         _notices = notices;
+        _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
         _presentation = presentation;
         _model = model;
@@ -520,6 +523,13 @@ public sealed class AppearancePane
             actions.Button("Reset appearance",
                 () => Report(_presentation.ResetActor(actor), "Reset appearance"),
                 help: "Undo opacity, tint, and wetness");
+            bool human = _invisibleSkin.IsHuman(actor);
+            actions.Button("Clothing only",
+                () => _invisibleSkin.Request(actor, _notices.Failed),
+                disabled: !human,
+                help: human
+                    ? "Hide the skin, hair and eyes; Redraw restores"
+                    : "Only human actors can hide their body");
         });
     }
 

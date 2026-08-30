@@ -90,6 +90,7 @@ public static partial class Crystarium
         private static Vector2 _submenuSize;
         private static int _submenuParent = -1;
         private static int _submenuClicked = -1;
+        private static int _submenuClickedParent = -1;
         private static double _phaseStart;
         private static int _lastOwnerFrame = -1;
         private static int _openedFrame = -1;
@@ -157,6 +158,17 @@ public static partial class Crystarium
         /// <summary>Returns and clears a submenu click.</summary>
         public static int ConsumeSubmenuClick()
         {
+            _submenuClickedParent = -1;
+            return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
+        }
+
+        /// <summary>Returns and clears a submenu click, naming the PARENT
+        /// row whose submenu it came from — a menu that carries several
+        /// submenus routes the click by it.</summary>
+        public static int ConsumeSubmenuClick(out int parent)
+        {
+            parent = _submenuClickedParent;
+            _submenuClickedParent = -1;
             return ConsumeSubmenuClick(ref _submenuClicked, _submenuItems);
         }
 
@@ -430,6 +442,8 @@ public static partial class Crystarium
                     dl, s, interactive, submenu, _submenuMin, _submenuSize,
                     "##fm-submenu-row");
                 _submenuClicked = AcceptSubmenuClick(childClicked, submenu);
+                if (_submenuClicked >= 0)
+                    _submenuClickedParent = _submenuParent;
             }
             int vtxEnd = dl.VtxBuffer.Size;
             // The whole surface — shadow, ring, chrome, rows — pops as one

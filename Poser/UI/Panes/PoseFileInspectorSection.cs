@@ -182,6 +182,9 @@ public sealed class PoseFileInspectorSection
     private bool _libraryMenuRequested;
     private float _libraryMenuHeight = 400f;
     private const string LibraryOptionsMenuId = "##library-options-menu";
+    private const string PoseActionsMenuId = "##pose-actions-menu";
+    private bool _poseActionsRequested;
+    private Vector2 _poseActionsAnchor;
 
     public void RequestBoneFilterMenu()
     {
@@ -316,6 +319,32 @@ public sealed class PoseFileInspectorSection
         {
             _libraryMenuRequested = false;
             Crystarium.OpenPopover(LibraryOptionsMenuId);
+        }
+        if (_poseActionsRequested)
+        {
+            _poseActionsRequested = false;
+            Crystarium.FloatingMenu.Open(
+                PoseActionsMenuId,
+                _poseActionsAnchor,
+                [
+                    new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Export", TablerIcon.Upload),
+                    new ContextMenuItem("Library", TablerIcon.Book),
+                ],
+                ExportMenuWidth);
+        }
+        int poseAction = Crystarium.FloatingMenu.Draw(PoseActionsMenuId);
+        switch (poseAction)
+        {
+            case 0:
+                RequestImportMenu(withPresets: true);
+                break;
+            case 1:
+                RequestExportMenu();
+                break;
+            case 2:
+                OnLibraryRequested?.Invoke();
+                break;
         }
         {
             float scale = Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
@@ -1880,9 +1909,13 @@ public sealed class PoseFileInspectorSection
 
         form.Actions("Pose", actions =>
         {
-            actions.Button("Import", () => RequestImportMenu(withPresets: true));
-            actions.Button("Export", () => RequestExportMenu());
-            actions.Button("Library", () => OnLibraryRequested?.Invoke());
+            actions.Button("Import, export…",
+                () =>
+                {
+                    _poseActionsAnchor = ImGui.GetMousePos();
+                    _poseActionsRequested = true;
+                },
+                help: "Import, export, or open the library");
         });
     }
 

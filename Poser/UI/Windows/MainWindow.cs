@@ -3728,14 +3728,30 @@ public class MainWindow : Window
             ContextMenuItem.Separator,
             // The companion slot exists for riding a mount or carrying an
             // ornament — standalone creatures come from the spawn browser —
-            // so its two verbs live here, out of every pane.
-            new("Attach companion", TablerIcon.UserPlus,
+            // so its verbs live here, out of every pane, as ONE submenu.
+            new("Companion", TablerIcon.Paw,
                 disabled: !_spawnService.HasCompanionSlot(actor),
                 help: _spawnService.HasCompanionSlot(actor)
-                    ? "Attach a minion, mount or ornament to this actor"
-                    : "Only actors spawned with a companion slot can attach one"),
-            new("Detach companion", TablerIcon.UserMinus,
-                disabled: _spawnService.GetCompanionInfo(actor) is null),
+                    ? "Attach or detach a minion, mount or ornament"
+                    : "Only actors spawned with a companion slot can attach one",
+                submenuItems: _spawnService.HasCompanionSlot(actor)
+                    ?
+                    [
+                        new ContextMenuItem("Attach", TablerIcon.UserPlus),
+                        new ContextMenuItem("Detach", TablerIcon.UserMinus,
+                            disabled:
+                                _spawnService.GetCompanionInfo(actor) is null),
+                    ]
+                    : null),
+        };
+        var companionActions = new List<Action?>
+        {
+            () =>
+            {
+                _companionCatalog.EnsureLoaded();
+                _companions.OpenAttachPicker(actorId);
+            },
+            () => _spawnService.DestroyCompanion(actor),
         };
         var actions = new List<Action?>
         {
@@ -3772,12 +3788,7 @@ public class MainWindow : Window
                     actorId.LogicalId, DisplayName(actor.Name)),
                 name => _scenePane.SaveActorEntry(actorId.LogicalId, name)),
             null, // separator
-            () =>
-            {
-                _companionCatalog.EnsureLoaded();
-                _companions.OpenAttachPicker(actorId);
-            },
-            () => _spawnService.DestroyCompanion(actor),
+            null, // Companion — child clicks are read separately.
         };
 
         // Bone presets belong to this actor.
@@ -3792,21 +3803,44 @@ public class MainWindow : Window
         actions.Add(null); // separator
         actions.Add(null); // Child clicks are read separately.
 
-        AddActorPoseFileMenuItems(
-            items,
-            actor.HasSkeleton,
-            _cleanPose.HasStash,
-            _cleanPose.StashedFrom,
-            _cleanPose.StashedAt);
+        items.Add(ContextMenuItem.Separator);
         actions.Add(null); // separator
-        // Both rows open the existing pose-file menus.
-        actions.Add(() => _poseFileSection.RequestImportMenu(withPresets: true));
-        actions.Add(() => _poseFileSection.RequestExportMenu());
-        actions.Add(() => _cleanPose.Stash(
-            actor,
-            Config.ConfigurationService.Instance.GetDisplayName(
-                actorId.LogicalId, DisplayName(actor.Name))));
-        actions.Add(() => _cleanPose.ApplyStash(actor));
+        bool hasStash = _cleanPose.HasStash;
+        items.Add(new ContextMenuItem(
+            "Pose", TablerIcon.Walk,
+            disabled: !actor.HasSkeleton,
+            help: actor.HasSkeleton
+                ? "Import, export or stash this actor's pose"
+                : "Needs a loaded skeleton",
+            submenuItems: actor.HasSkeleton
+                ?
+                [
+                    new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Export", TablerIcon.Upload),
+                    new ContextMenuItem("Stash", TablerIcon.Stack2,
+                        help: "Save this actor's pose so you can apply it "
+                            + "to another actor. Replaces whatever was "
+                            + "stashed before."),
+                    new ContextMenuItem("Apply stashed", TablerIcon.ArrowBackUp,
+                        disabled: !hasStash,
+                        help: hasStash
+                            ? "Apply the stashed pose to this actor. Stashed "
+                                + $"from {_cleanPose.StashedFrom} at "
+                                + $"{_cleanPose.StashedAt:HH:mm:ss} UTC."
+                            : "Nothing stashed yet"),
+                ]
+                : null));
+        actions.Add(null); // Pose — child clicks are read separately.
+        var poseActions = new List<Action?>
+        {
+            () => _poseFileSection.RequestImportMenu(withPresets: true),
+            () => _poseFileSection.RequestExportMenu(),
+            () => _cleanPose.Stash(
+                actor,
+                Config.ConfigurationService.Instance.GetDisplayName(
+                    actorId.LogicalId, DisplayName(actor.Name))),
+            () => _cleanPose.ApplyStash(actor),
+        };
 
         // ONE verb for every actor, Brio's: Destroy
         // (Brio ActorLifetimeWidget.cs:82 — the same word whoever spawned
@@ -3849,33 +3883,22 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##actor-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
-        int presetClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick();
-        if (presetClicked >= 0 && presetClicked < _bonePresetActions.Count)
-            _bonePresetActions[presetClicked]?.Invoke();
-    }
-
-    /// <summary>Adds pose-file rows for one actor.</summary>
-    internal static void AddActorPoseFileMenuItems(
-        List<ContextMenuItem> items,
-        bool hasSkeleton,
-        bool hasStash,
-        string? stashedFrom,
-        DateTimeOffset? stashedAt)
-    {
-        items.Add(ContextMenuItem.Separator);
-        items.Add(new ContextMenuItem(
-            "Import pose", TablerIcon.Download, disabled: !hasSkeleton));
-        items.Add(new ContextMenuItem(
-            "Export pose", TablerIcon.Upload, disabled: !hasSkeleton));
-        items.Add(new ContextMenuItem(
-            "Stash pose", TablerIcon.Stack2, disabled: !hasSkeleton,
-            help: "Save this actor's pose so you can apply it to another actor. Replaces whatever was stashed before."));
-        items.Add(new ContextMenuItem(
-            "Apply stashed pose", TablerIcon.ArrowBackUp,
-            disabled: !hasSkeleton || !hasStash,
-            help: hasStash
-                ? $"Apply the stashed pose to this actor. Stashed from {stashedFrom} at {stashedAt:HH:mm:ss} UTC."
-                : "Nothing stashed yet"));
+        // Three submenus share the menu; the click routes by its parent
+        // row's label.
+        int subClicked = Crystarium.FloatingMenu.ConsumeSubmenuClick(
+            out int subParent);
+        if (subClicked >= 0 && subParent >= 0 && subParent < items.Count)
+        {
+            var submenu = items[subParent].Label switch
+            {
+                "Bone presets" => _bonePresetActions,
+                "Companion" => companionActions,
+                "Pose" => poseActions,
+                _ => null,
+            };
+            if (submenu != null && subClicked < submenu.Count)
+                submenu[subClicked]?.Invoke();
+        }
     }
 
     private ContextMenuItem[] BuildBonePresetSubmenu(ActorId actorId)
