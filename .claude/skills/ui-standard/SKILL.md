@@ -143,6 +143,13 @@ Windows each have ONE job. No mode may change what a window IS.
   is only ever selected alone (it IS the whole membership), and only
   one of the two levels wears the pill at a time — actor bones are
   the ONE exception, keeping their dual actor-and-bones highlight.
+- **Tree drag-and-drop** — entity rows and group heads drag (never
+  bones or categories); a held press that travels is the drag, the
+  release is the drop, and the row under the pointer is the live
+  candidate: upper third inserts before, lower third after, the
+  middle drops INTO a head. Dragging a selected row carries the
+  whole entity selection. Open space un-groups; the ROOT list stays
+  kind-ordered by design — only groups and their members reorder.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 

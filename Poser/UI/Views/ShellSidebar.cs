@@ -363,6 +363,16 @@ public sealed class ShellSidebar
 
     // ── the tree ─────────────────────────────────────────────────────────
 
+    // ── row drag-and-drop ────────────────────────────────────────────────
+
+    /// <summary>The row being dragged, and this frame's drop candidate.
+    /// The candidate is re-derived every frame from the pointer; the drop
+    /// commits on release, wherever the pointer stands.</summary>
+    private ShellSidebarRow? _dragSource;
+    private ShellSidebarRow? _dropTarget;
+    private RowDropPosition _dropPosition;
+    private ShellSidebarRow? _paintDropTarget;
+
     private void DrawTree(Crystarium.ScrollRegionScope region)
     {
         var theme = Crystarium.ActiveTheme;
@@ -372,6 +382,12 @@ public sealed class ShellSidebar
         // Row fills extend beneath the gutter while content stops before it.
         float width = MathF.Max(1f, region.ContentWidth + gutter - inset);
         var origin = ImGui.GetCursorScreenPos() + new Vector2(inset * scale, 0f);
+
+        // Each frame re-derives the candidate; Paint fills it back in for
+        // whichever row the pointer crosses.
+        _paintDropTarget = _dropTarget;
+        _dropTarget = null;
+        _dropPosition = RowDropPosition.Out;
 
         var clipper = new ImGuiListClipper();
         clipper.Begin(_slotCount, _pitch * scale);
@@ -391,6 +407,35 @@ public sealed class ShellSidebar
         }
         clipper.End();
 
+        // The drag's ghost and its release, after every row painted.
+        if (_dragSource is { } dragging)
+        {
+            var mouse = ImGui.GetMousePos();
+            var ghostStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                Color = Crystarium.ActiveTheme.Text,
+            };
+            var text = dragging.Label;
+            var size = Crystarium.MeasureText(text, ghostStyle);
+            var pad = new Vector2(6f, 3f) * scale;
+            var min = mouse + new Vector2(14f, 6f) * scale;
+            ImGui.GetWindowDrawList().AddRectFilled(
+                min, min + size + pad * 2f,
+                ImGui.ColorConvertFloat4ToU32(
+                    Crystarium.ActiveTheme.SurfaceRaised),
+                Crystarium.ActiveTheme.Radii.Surface * scale);
+            Crystarium.TextAt(min + pad, text, ghostStyle);
+
+            if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
+                _dragSource = null;
+                _dropTarget = null;
+                _dirty = true;
+            }
+        }
+
         // The tail band preserves the exact scroll extent.
         ImGui.SetCursorScreenPos(
             origin + new Vector2(-inset * scale, _totalHeight * scale));
@@ -408,6 +453,34 @@ public sealed class ShellSidebar
         }
 
         var row = _vm.Sections[entry.Section].Rows[entry.Row];
+
+        // While a drag is live, the row under the pointer is the drop
+        // candidate: its upper third inserts before, the lower third
+        // after, the middle drops INTO (group heads only — for plain
+        // rows the middle behaves as the nearer edge).
+        if (_dragSource != null && !ReferenceEquals(_dragSource, row))
+        {
+            float rowHeight = entry.Height * scale;
+            var rectMin = at;
+            var rectMax = at + new Vector2(width * scale, rowHeight);
+            var mouse = ImGui.GetMousePos();
+            if (mouse.X >= rectMin.X && mouse.X < rectMax.X
+                && mouse.Y >= rectMin.Y && mouse.Y < rectMax.Y)
+            {
+                float third = rowHeight / 3f;
+                _dropTarget = row;
+                _dropPosition = mouse.Y < rectMin.Y + third
+                    ? RowDropPosition.Before
+                    : mouse.Y > rectMax.Y - third
+                        ? RowDropPosition.After
+                        : row.HasChildren
+                            ? RowDropPosition.Into
+                            : mouse.Y < rectMin.Y + rowHeight / 2f
+                                ? RowDropPosition.Before
+                                : RowDropPosition.After;
+            }
+        }
+
         var props = new TreeRowProps
         {
             Icon = row.IconName == null ? row.Icon : null,
@@ -429,6 +502,8 @@ public sealed class ShellSidebar
             Selected = row.Active,
             TrailingInset = theme.Scrollbar.GutterWidth,
             ActionSlots = entry.Actions,
+            Draggable = row.Draggable,
+            DropTarget = ReferenceEquals(_paintDropTarget, row),
         };
 
         ImGui.SetCursorScreenPos(at);
@@ -444,7 +519,12 @@ public sealed class ShellSidebar
         switch (action)
         {
             case TreeRowAction.Selected:
-                _vm.OnRowClicked?.Invoke(row);
+                // The release that ends a drag is the DROP, not a click.
+                if (_dragSource == null)
+                    _vm.OnRowClicked?.Invoke(row);
+                break;
+            case TreeRowAction.Drag:
+                _dragSource ??= row;
                 break;
             case TreeRowAction.Expander:
                 _vm.OnRowExpandToggled?.Invoke(row);

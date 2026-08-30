@@ -620,6 +620,7 @@ public class MainWindow : Window
         };
         // Static shell wiring (rebuilt data lives in BuildViewModel each frame).
         _vm.OnTab = OnTabClicked;
+        _vm.OnRowDrop = OnRowDropped;
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -1604,6 +1605,7 @@ public class MainWindow : Window
             {
                 Label = group.Name,
                 Icon = TablerIcon.Folder,
+                Draggable = true,
                 HasChildren = group.Members.Count > 0,
                 ExpandKey = key,
                 Expanded = expanded,
@@ -2309,6 +2311,7 @@ public class MainWindow : Window
     private ShellSidebarRow PropRow(PropDescriptor prop, int depth) => new()
     {
         Label = prop.Name,
+        Draggable = true,
         Count = "",
         Icon = TablerIcon.Diamond,
         Depth = depth,
@@ -2322,6 +2325,7 @@ public class MainWindow : Window
         WorldObjectDescriptor worldObject, int depth) => new()
     {
         Label = worldObject.Name,
+        Draggable = true,
         Count = "",
         // World objects use the square row mark.
         Icon = TablerIcon.Square,
@@ -2335,6 +2339,7 @@ public class MainWindow : Window
     private ShellSidebarRow LightRow(LightDescriptor light, int depth) => new()
     {
         Label = light.Name,
+        Draggable = true,
         Count = "",
         // Ownership outranks kind in the mark: a borrowed light is
         // released rather than destroyed, and the row has to say so
@@ -2355,6 +2360,7 @@ public class MainWindow : Window
     private ShellSidebarRow CameraRow(CameraDescriptor camera, int depth) => new()
     {
         Label = camera.Name,
+        Draggable = true,
         Count = CameraBadge(camera.IsLive, camera.IsDefault),
         Icon = camera.Kind == CameraKind.Free
             ? TablerIcon.Video
@@ -2371,6 +2377,7 @@ public class MainWindow : Window
         OverlayDescriptor overlay, int depth) => new()
     {
         Label = overlay.Name,
+        Draggable = true,
         Count = "",
         Icon = OverlayIcon(overlay.Kind),
         Depth = depth,
@@ -2592,6 +2599,7 @@ public class MainWindow : Window
             Tag = actorSelectionId,
             ExpandKey = actorKey,
             ActorActions = true,
+            Draggable = true,
         };
         section.Rows.Add(actorRow);
         // Selection, visibility, pause and the display name are stated by
@@ -3818,6 +3826,84 @@ public class MainWindow : Window
                 System.Numerics.Quaternion.Identity,
                 System.Numerics.Vector3.One));
         _cleanTransforms.Commit(gestureId);
+    }
+
+    /// <summary>A tree drag released. Dragging a GROUP HEAD reorders the
+    /// groups; dragging an entity moves it (and, when it is part of the
+    /// selection, every selected entity with it) into, within, or out of
+    /// a group. Open space un-groups; the root list itself stays
+    /// kind-ordered by design.</summary>
+    private void OnRowDropped(
+        ShellSidebarRow dragged,
+        ShellSidebarRow? target,
+        RowDropPosition position)
+    {
+        // A group head reorders among the groups.
+        if (dragged.Tag is GroupRowTag draggedGroup)
+        {
+            if (target?.Tag is GroupRowTag targetGroup
+                && targetGroup.Id != draggedGroup.Id)
+            {
+                int index = GroupIndex(targetGroup.Id);
+                _groups.MoveGroup(
+                    draggedGroup.Id,
+                    position == RowDropPosition.After ? index + 1 : index);
+            }
+            return;
+        }
+
+        if (dragged.Tag is not SelectionId draggedId
+            || !global::Poser.Application.Selection.EntitySelection
+                .IsEntity(draggedId.Kind))
+            return;
+        // Dragging a selected row carries the whole entity selection.
+        var moved = new List<SelectionId>();
+        if (_selection.IsSelected(draggedId))
+        {
+            foreach (var id in _selection.Selected)
+                if (global::Poser.Application.Selection.EntitySelection
+                        .IsEntity(id.Kind))
+                    moved.Add(id);
+        }
+        if (moved.Count == 0)
+            moved.Add(draggedId);
+
+        // Into a group's head: append in drag order.
+        if (target?.Tag is GroupRowTag intoGroup)
+        {
+            foreach (var id in moved)
+                _groups.AddMember(intoGroup.Id, id);
+            return;
+        }
+
+        // Beside a grouped member: insert at its place in that group.
+        if (target?.Tag is SelectionId targetId
+            && _groups.GroupOf(targetId) is { } host)
+        {
+            int index = host.Members.IndexOf(targetId);
+            if (position == RowDropPosition.After)
+                index++;
+            foreach (var id in moved)
+            {
+                _groups.AddMember(host.Id, id, index);
+                index = host.Members.IndexOf(id) + 1;
+            }
+            return;
+        }
+
+        // Open space or an ungrouped row: the dragged rows leave their
+        // groups; the root list keeps its kind order.
+        foreach (var id in moved)
+            _groups.RemoveMember(id);
+    }
+
+    private int GroupIndex(Guid id)
+    {
+        var all = _groups.All;
+        for (int i = 0; i < all.Count; i++)
+            if (all[i].Id == id)
+                return i;
+        return all.Count;
     }
 
     private IActor? ResolveActorRow(ShellSidebarRow row)

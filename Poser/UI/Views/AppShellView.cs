@@ -6,9 +6,25 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI.Views;
 
+/// <summary>Where a dragged row lands relative to its target.</summary>
+public enum RowDropPosition
+{
+    /// <summary>Into the target group, appended.</summary>
+    Into,
+    /// <summary>Before the target row, inside its group.</summary>
+    Before,
+    /// <summary>After the target row, inside its group.</summary>
+    After,
+    /// <summary>Open space: the dragged rows leave their group.</summary>
+    Out,
+}
+
 public sealed class ShellSidebarRow
 {
     public string Label = "";
+    /// <summary>Whether the row can be dragged (entities and group
+    /// heads; never bones or categories).</summary>
+    public bool Draggable;
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
@@ -248,6 +264,10 @@ public sealed class AppShellViewModel
     /// <see cref="OnBurger"/> is.</summary>
     public Action<Vector2>? OnSpawn;
     public Action<ShellSidebarRow>? OnRowClicked;
+
+    /// <summary>A drag released: <c>dragged</c> lands relative to
+    /// <c>target</c> (null target = open space, which un-groups).</summary>
+    public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
     public Action<ShellSidebarRow>? OnActorTarget;

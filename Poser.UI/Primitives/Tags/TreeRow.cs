@@ -9,7 +9,7 @@ namespace Poser.UI;
 public enum SidebarExpander { None, Collapsed, Open }
 
 /// <summary>The result of one tree-row gesture.</summary>
-public enum TreeRowAction { None, Selected, Expander, Context }
+public enum TreeRowAction { None, Selected, Expander, Context, Drag }
 
 /// <summary>Visual and interaction state for one tree row.</summary>
 public record struct TreeRowProps
@@ -58,6 +58,11 @@ public record struct TreeRowProps
 
     /// <summary>Drag-hover: the accent fill over its own hairline.</summary>
     public bool DropTarget;
+
+    /// <summary>Whether the row can be picked up and dragged — set by the
+    /// host for the rows whose order or grouping is the user's to move.
+    /// </summary>
+    public bool Draggable;
 
     /// <summary>Right padding reserved for the scroll gutter.</summary>
     public float TrailingInset;
@@ -190,6 +195,11 @@ public static partial class Crystarium
         var action = hit.Activated
             ? TreeRowAction.Selected
             : TreeRowAction.None;
+        // A held press that travels becomes a DRAG — reported every frame
+        // it persists; the host runs the drop state machine.
+        if (props.Draggable && hit.Active
+            && hit.DragDelta.LengthSquared() > 25f * scale * scale)
+            action = TreeRowAction.Drag;
         // Context menus open on a hovered right-button press.
         if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
             action = TreeRowAction.Context;

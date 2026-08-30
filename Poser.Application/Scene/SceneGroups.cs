@@ -79,6 +79,49 @@ public sealed class SceneGroups
             Revision++;
     }
 
+    /// <summary>Puts one entity into a group at <paramref name="index"/>
+    /// (clamped; negative appends). Joining leaves any other group; a
+    /// member of the SAME group moves to the new place instead.</summary>
+    public void AddMember(Guid groupId, SelectionId member, int index = -1)
+    {
+        if (!Selection.EntitySelection.IsEntity(member.Kind)
+            || Find(groupId) is not { } group)
+            return;
+        int existing = group.Members.IndexOf(member);
+        if (existing >= 0)
+        {
+            group.Members.RemoveAt(existing);
+            if (index > existing)
+                index--;
+        }
+        else
+        {
+            RemoveMemberCore(member);
+            // The removal above may have dissolved nothing relevant, but
+            // it can never have touched THIS group (the member was not in
+            // it), so the group reference stays valid.
+        }
+        if (index < 0 || index > group.Members.Count)
+            index = group.Members.Count;
+        group.Members.Insert(index, member);
+        Revision++;
+    }
+
+    /// <summary>Reorders one group among the groups.</summary>
+    public void MoveGroup(Guid id, int index)
+    {
+        if (Find(id) is not { } group)
+            return;
+        int existing = _groups.IndexOf(group);
+        _groups.RemoveAt(existing);
+        if (index > existing)
+            index--;
+        if (index < 0 || index > _groups.Count)
+            index = _groups.Count;
+        _groups.Insert(index, group);
+        Revision++;
+    }
+
     public SceneGroup? Find(Guid id) =>
         _groups.Find(group => group.Id == id);
 
