@@ -3440,14 +3440,7 @@ public class MainWindow : Window
         }
         else if (io.KeyCtrl)
         {
-            int before = _selection.Selected.Count;
             _selection.Toggle(id);
-            // TEMPORARY diagnostics for the bone ctrl-toggle report: says
-            // whether the toggle added, removed, or REPLACED.
-            _log.Debug(
-                $"[Tree] ctrl-toggle {id.Kind} before={before} "
-                + $"after={_selection.Selected.Count} "
-                + $"first={(_selection.Selected.Count > 0 ? _selection.Selected[0].Kind.ToString() : "none")}");
         }
         else
         {
