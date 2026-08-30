@@ -86,7 +86,9 @@ public sealed class WorldObjectsPane
             next => worldObject.Name = next,
             placeholder: "Object",
             help: "What the sidebar calls this object");
-        form.Label("Model", worldObject.Path);
+        // The path is the row's TEXT, not its tooltip; the hover keeps the
+        // whole path for when the cell truncates it.
+        form.ReadOnly("Model", worldObject.Path, help: worldObject.Path);
         form.Switch(
             "Visible",
             worldObject.Visible,
