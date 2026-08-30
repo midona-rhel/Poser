@@ -19,6 +19,9 @@ public sealed class SidebarPartWindow : Window
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
     private Vector2? _pendingSize;
+    // Collapse-to-titlebar, the shell contract every window keeps.
+    private bool _collapsed;
+    private float _savedHeight = 520f;
 
     /// <summary>Reattach clicked: the window set merges the shell.</summary>
     public event Action? OnReattach;
@@ -52,6 +55,13 @@ public sealed class SidebarPartWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(240f, _collapsed ? barHeight : 320f),
+            MaximumSize = new Vector2(
+                420f, _collapsed ? barHeight : float.MaxValue),
+        };
         if (_pendingPos is { } pos)
         {
             Position = pos;
@@ -114,8 +124,9 @@ public sealed class SidebarPartWindow : Window
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float headerBottom = DrawBar(min, max, s, dl);
-            AppShellView.DrawSidebarContent(
-                _main.ShellVm, new Vector2(min.X, headerBottom), max);
+            if (!_collapsed)
+                AppShellView.DrawSidebarContent(
+                    _main.ShellVm, new Vector2(min.X, headerBottom), max);
         }
         finally
         {
@@ -149,7 +160,21 @@ public sealed class SidebarPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
-        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        // The shell's own order: collapse stands far right, the merge to
+        // its LEFT.
+        float chevronX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        ImGui.SetCursorScreenPos(new Vector2(
+            chevronX,
+            min.Y + (height - closeSide * s) * 0.5f));
+        Crystarium.IconButton(
+            _collapsed ? "chevron-down" : "chevron-up",
+            ToggleCollapse,
+            ControlStyle.Square(closeSide),
+            help: _collapsed
+                ? "Expand the window"
+                : "Collapse to the title bar",
+            id: "##part-collapse-sidebar");
+        float closeX = chevronX - theme.Page.ActionGap * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
             closeX,
             min.Y + (height - closeSide * s) * 0.5f));
@@ -187,7 +212,35 @@ public sealed class SidebarPartWindow : Window
             new Vector2(max.X, MathF.Round(min.Y + height)),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
+
+        // Double-clicking the bar's open band collapses — the chevron's
+        // gesture twin, every shell window's rule.
+        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
+            && !ImGui.IsAnyItemHovered())
+        {
+            var barMouse = ImGui.GetMousePos();
+            if (barMouse.X >= min.X && barMouse.X < max.X
+                && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
+                ToggleCollapse();
+        }
         return min.Y + height;
+    }
+
+    private void ToggleCollapse()
+    {
+        float gs = ImGuiHelpers.GlobalScale;
+        float width = ImGui.GetWindowSize().X / gs;
+        if (!_collapsed)
+        {
+            _savedHeight = ImGui.GetWindowSize().Y / gs;
+            _pendingSize = new Vector2(
+                width, Crystarium.ActiveTheme.Floating.ModalBarHeight);
+        }
+        else
+        {
+            _pendingSize = new Vector2(width, _savedHeight);
+        }
+        _collapsed = !_collapsed;
     }
 }
 
@@ -290,6 +343,8 @@ public sealed class InspectorPartWindow : Window
     private readonly MainWindow _main;
     private Vector2? _pendingPos;
     private Vector2? _pendingSize;
+    private bool _collapsed;
+    private float _savedHeight = 560f;
 
     /// <summary>Merge clicked: the rail returns to the shell.</summary>
     public event Action? OnMerge;
@@ -325,6 +380,14 @@ public sealed class InspectorPartWindow : Window
     public override void PreDraw()
     {
         base.PreDraw();
+        float width = AppShellView.RailWidth + 2f;
+        float barHeight = Crystarium.ActiveTheme.Floating.ModalBarHeight;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(width, _collapsed ? barHeight : 320f),
+            MaximumSize = new Vector2(
+                width, _collapsed ? barHeight : float.MaxValue),
+        };
         if (_pendingPos is { } pos)
         {
             Position = pos;
@@ -375,8 +438,9 @@ public sealed class InspectorPartWindow : Window
             Crystarium.FloatingSurface.DrawChrome(
                 dl, min, max, theme.Radii.Window);
             float headerBottom = DrawBar(min, max, s, dl);
-            AppShellView.DrawRailContent(
-                _main.ShellVm, new Vector2(min.X, headerBottom), max);
+            if (!_collapsed)
+                AppShellView.DrawRailContent(
+                    _main.ShellVm, new Vector2(min.X, headerBottom), max);
         }
         finally
         {
@@ -402,7 +466,21 @@ public sealed class InspectorPartWindow : Window
             });
 
         float closeSide = theme.Floating.CloseActionSize;
-        float closeX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        // The shell's own order: collapse stands far right, the merge to
+        // its LEFT.
+        float chevronX = max.X - theme.Floating.CloseInset * s - closeSide * s;
+        ImGui.SetCursorScreenPos(new Vector2(
+            chevronX,
+            min.Y + (height - closeSide * s) * 0.5f));
+        Crystarium.IconButton(
+            _collapsed ? "chevron-down" : "chevron-up",
+            ToggleCollapse,
+            ControlStyle.Square(closeSide),
+            help: _collapsed
+                ? "Expand the window"
+                : "Collapse to the title bar",
+            id: "##part-collapse-inspector");
+        float closeX = chevronX - theme.Page.ActionGap * s - closeSide * s;
         ImGui.SetCursorScreenPos(new Vector2(
             closeX,
             min.Y + (height - closeSide * s) * 0.5f));
@@ -419,6 +497,34 @@ public sealed class InspectorPartWindow : Window
             new Vector2(max.X, MathF.Round(min.Y + height)),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
+
+        // Double-clicking the bar's open band collapses — the chevron's
+        // gesture twin, every shell window's rule.
+        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
+            && !ImGui.IsAnyItemHovered())
+        {
+            var barMouse = ImGui.GetMousePos();
+            if (barMouse.X >= min.X && barMouse.X < max.X
+                && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
+                ToggleCollapse();
+        }
         return min.Y + height;
+    }
+
+    private void ToggleCollapse()
+    {
+        float gs = ImGuiHelpers.GlobalScale;
+        float width = ImGui.GetWindowSize().X / gs;
+        if (!_collapsed)
+        {
+            _savedHeight = ImGui.GetWindowSize().Y / gs;
+            _pendingSize = new Vector2(
+                width, Crystarium.ActiveTheme.Floating.ModalBarHeight);
+        }
+        else
+        {
+            _pendingSize = new Vector2(width, _savedHeight);
+        }
+        _collapsed = !_collapsed;
     }
 }

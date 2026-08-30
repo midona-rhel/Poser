@@ -78,18 +78,21 @@ Windows each have ONE job. No mode may change what a window IS.
   the options are worked. The
   seat exists ONLY for the types that have import options — no
   options, no button.
-- **The columns FOLD** (ruled 2026-08-31, REVERSING the 2026-08-30
-  "sidebar never hides"): the sidebar column and the inspector rail
-  each fold away behind a chevron — the sidebar's in its titlebar
-  cell (the cell itself stays, so brand, burger and Library keep
-  their seats), the inspector's in the right cluster. Folds are
-  session posture, not configuration. The window-management verbs
-  are pop out, detach, merge — and SPLIT: the inspector can leave
-  the properties window for its own Inspector window (burger verb,
-  persisted, merged back from its bar), rail-width fixed, seated
-  where the rail stood. Double-clicking any titlebar's open band
-  collapses the window — the chevron's gesture twin; hovered
-  buttons keep their own clicks. The scene tree is ONE continuous list — the
+- **The SIDEBAR folds; the INSPECTOR only splits** (ruled
+  2026-08-31, reversing the 2026-08-30 "sidebar never hides"): the
+  sidebar column folds behind a chevron in its titlebar cell (the
+  cell itself stays, so brand, burger and Library keep their
+  seats); the fold is session posture, not configuration. The
+  inspector NEVER folds or hides (an inspector fold shipped and was
+  rescinded the same day, 2026-08-31) — it is either in the shell
+  or SPLIT into its own Inspector window (burger verb, persisted,
+  merged back from its bar), rail-width fixed, seated where the
+  rail stood. The content selector's right bound is the MINIMUM of
+  the rail edge and the title-action cluster's left edge — a folded
+  or split rail must never slide it under the icons. Double-clicking
+  any titlebar's open band collapses the window — the chevron's
+  gesture twin, on every shell window including the detached parts;
+  hovered buttons keep their own clicks. The scene tree is ONE continuous list — the
   ACTORS/OBJECTS/LIGHTS/CAMERAS/OVERLAYS headers are gone (kind
   order retained: actors, objects, lights, cameras, overlays), and
   the filter pill spans the SAME width as the rows below it. The

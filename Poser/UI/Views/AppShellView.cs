@@ -256,17 +256,13 @@ public sealed class AppShellViewModel
     public bool SidebarCollapsed;
     public Action<bool>? OnSidebarCollapse;
 
-    /// <summary>The inspector rail folded away; the titlebar keeps the
-    /// reopen chevron.</summary>
-    public bool InspectorCollapsed;
-    public Action<bool>? OnInspectorCollapse;
-
-    /// <summary>The rail lives in its own Inspector window.</summary>
+    /// <summary>The rail lives in its own Inspector window. The inspector
+    /// never merely FOLDS (ruled 2026-08-31): it is either in the shell
+    /// or in its own window.</summary>
     public bool InspectorSplit;
 
     /// <summary>Whether the rail column renders inside THIS window.</summary>
-    internal bool RailShown =>
-        DrawRail != null && !InspectorCollapsed && !InspectorSplit;
+    internal bool RailShown => DrawRail != null && !InspectorSplit;
 
     /// <summary>The detached-mode toggle floats the toolbar strip and the
     /// sidebar as their own windows; this window keeps the content and the
@@ -711,7 +707,7 @@ public static class AppShellView
             // The gizmo cluster lives on the TOOLBAR window — always its
             // own window — never in this titlebar.
         }
-        DrawTitleActions(vm, max.X, min.Y, height, s);
+        float clusterLeft = DrawTitleActions(vm, max.X, min.Y, height, s);
 
         // The CONTENT selector lives in the TITLEBAR, beside the window
         // action icons and measured against their cluster: Target shows
@@ -740,8 +736,13 @@ public static class AppShellView
             float railEdge = vm.RailShown && !vm.Collapsed
                 ? RailWidth * s
                 : 0f;
+            // The selector docks on the content/inspector divider — but
+            // never under the right cluster: with the rail folded or
+            // split, the cluster's own left edge is the bound.
+            float selectorRight = MathF.Min(
+                max.X - railEdge, clusterLeft);
             ImGui.SetCursorScreenPos(new Vector2(
-                max.X - railEdge - theme.Page.ActionGap * s - fixedWidth,
+                selectorRight - theme.Page.ActionGap * s - fixedWidth,
                 min.Y + (height - segSize.Y) * 0.5f));
             Crystarium.SegmentedControl(
                 "##content-mode",
@@ -984,7 +985,10 @@ public static class AppShellView
         return widest;
     }
 
-    private static void DrawTitleActions(
+    /// <summary>Draws the right cluster and answers its LEFT edge — the
+    /// selector's bound: one band, one layout, so a folded rail can never
+    /// slide the selector under these icons.</summary>
+    private static float DrawTitleActions(
         AppShellViewModel vm, float right, float top, float height, float s)
     {
         var theme = Crystarium.ActiveTheme;
@@ -1008,23 +1012,6 @@ public static class AppShellView
         IconAt(
             new Vector2(x, y), TablerIcon.Settings, side, vm.OnSettings,
             "##shell-settings", help: "Open Poser settings");
-        // The inspector's own fold — absent while the rail lives in its
-        // own window, which manages itself.
-        if (vm.DrawRail != null && !vm.InspectorSplit
-            && vm.OnInspectorCollapse is { } onInspectorCollapse)
-        {
-            x -= step;
-            IconAt(
-                new Vector2(x, y),
-                TablerIcon.ChevronRight,
-                side,
-                () => onInspectorCollapse(!vm.InspectorCollapsed),
-                "##shell-inspector-fold",
-                flipX: vm.InspectorCollapsed,
-                help: vm.InspectorCollapsed
-                    ? "Show the inspector"
-                    : "Fold the inspector away");
-        }
         // The pop-out remains available from the titlebar toolbar.
         if (vm.ShowPopOut)
         {
@@ -1036,6 +1023,7 @@ public static class AppShellView
         }
         // Armature visibility is controlled by the sidebar and settings, not
         // by this titlebar cluster.
+        return x;
     }
 
     // ── sidebar ──────────────────────────────────────────────────────────

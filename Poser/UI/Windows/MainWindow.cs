@@ -160,10 +160,9 @@ public class MainWindow : Window
     private readonly HashSet<string> _knownCategoryNodes = new();
     private readonly HashSet<string> _knownActorNodes = new();
     private float _sidebarWidth = 280f;
-    // Session-local like the width: the folds are working posture, not
+    // Session-local like the width: the fold is working posture, not
     // configuration.
     private bool _sidebarCollapsed;
-    private bool _inspectorCollapsed;
     private readonly AppShellViewModel _vm = new();
 
     /// <summary>The acceptance gate. A field initializer, not a dependency:
@@ -695,7 +694,6 @@ public class MainWindow : Window
         };
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnSidebarCollapse = v => _sidebarCollapsed = v;
-        _vm.OnInspectorCollapse = v => _inspectorCollapsed = v;
         _vm.OnRowContextMenu = row =>
         {
             // A right-click on a row that RIDES the multi-entity selection
@@ -1342,7 +1340,6 @@ public class MainWindow : Window
         _vm.OnLibrary = _openLibrary ??= ShowLibrary;
         _vm.Collapsed = _collapsed;
         _vm.SidebarCollapsed = _sidebarCollapsed;
-        _vm.InspectorCollapsed = _inspectorCollapsed;
         _vm.InspectorSplit =
             Config.ConfigurationService.Instance.Config.UI.SplitInspector;
         _vm.Detached =
