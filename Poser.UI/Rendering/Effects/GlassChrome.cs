@@ -53,14 +53,13 @@ internal static class GlassChrome
         if (!ShouldPrependBackdropBlur) return;
         // The blur cannot linger through a fade — a blurred rectangle
         // over a vanishing surface reads as a smear. It leaves within the
-        // first ~15% of any fade and returns only across the last ~15%,
-        // eased smooth: for the shell's 250 ms manipulation fade that is
-        // the 40 ms window, and shorter fades scale proportionally. The
-        // surface's own fade (menus animate vertex colors, not the style
-        // alpha) multiplies with the pushed style alpha, so both routes
-        // gate it.
+        // first 40% of any fade and returns only across the last 40%,
+        // eased smooth: 40 ms of the shell's 100 ms manipulation fade,
+        // and the same feel on a menu's 100 ms entrance. The surface's
+        // own fade (menus animate vertex colors, not the style alpha)
+        // multiplies with the pushed style alpha, so both routes gate it.
         float visibility = fade * ImGui.GetStyle().Alpha;
-        float band = Math.Clamp((visibility - 0.85f) / 0.15f, 0f, 1f);
+        float band = Math.Clamp((visibility - 0.6f) / 0.4f, 0f, 1f);
         float eased = band * band * (3f - 2f * band);
         if (eased <= 0f) return;
         GlassBlurSubmission plan = BlurSubmissions[0];

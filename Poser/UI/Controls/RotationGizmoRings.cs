@@ -440,7 +440,7 @@ public static class ManipulationHide
     /// <summary>The shell's eased opacity: 1 shown, 0 hidden.</summary>
     public static float Opacity { get; private set; } = 1f;
 
-    private const float FadeSeconds = 0.25f;
+    private const float FadeSeconds = 0.10f;
 
     /// <summary>Advanced once per frame by the UI root, after Active is
     /// written.</summary>
