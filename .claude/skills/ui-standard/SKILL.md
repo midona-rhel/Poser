@@ -55,18 +55,16 @@ Windows each have ONE job. No mode may change what a window IS.
   carries a title and a close, nothing else — the type strip gets
   its OWN band below it (corrected 2026-08-30), leading with the
   tabs that can PREVIEW (Poses, Auto-saves) and standing the
-  file-info tabs (MCDF, Scenes) at the far right. The types that
-  preview get a PLAIN preview column (224 logical — the library has
-  NO inspector and nothing styled as one) running the ENTIRE height
-  beside the footer, its left edge anchored to the window; every
-  other type hands that width back to the navigator. The footer is
-  the importer-style options band under the navigator only, at ONE
-  height whatever the type — switching tabs changes the band's
-  content, never the frame — its content LEFT-ALIGNED at the
-  importer's own width (a grid handed the whole window spreads,
-  which is why the cap exists) and breathing a margin off the rule
-  and the window bottom: pose apply options, scene file-info plus
-  load options, MCDF file info, object properties.
+  file-info tabs (MCDF, Scenes) at the far right. The right column is
+  PERMANENT (224 logical, a separator rule off the navigator — the
+  library has NO inspector and nothing styled as one): the preview
+  for the types that can preview, and the file's metadata — as much
+  as the entry knows — for the rest. There is NO footer (an
+  options-band footer shipped and was rejected the same day,
+  2026-08-30): the import options hide behind the importer's own
+  menu, opened from a settings seat by the preview, and the seat
+  exists ONLY for the types that have import options — no options,
+  no button.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the

@@ -40,15 +40,7 @@ public sealed class LibraryWindow : Window
     /// fifth.</summary>
     private const float PreviewColumnWidth = 224f;
 
-    /// <summary>The scenes footer's file-info column, logical; the load
-    /// options take the rest of the band.</summary>
-    private const float SceneInfoColumnWidth = 320f;
 
-    /// <summary>The footer band's content width cap, logical — the grid
-    /// spreads its columns across whatever it is given, and the importer's
-    /// own window is about this wide. The cap is what LEFT-ALIGNS the
-    /// options in a wide library window.</summary>
-    private const float FooterContentWidth = 760f;
 
     public LibraryWindow(MainWindow main)
         : base($"Library###{PluginConstants.PluginName}_library",
@@ -125,69 +117,59 @@ public sealed class LibraryWindow : Window
             bool preview = type is PoseLibraryPane.LibraryType.Poses
                 or PoseLibraryPane.LibraryType.AutoSaves;
             float inset = theme.Page.Inset * s;
-            float margin = theme.Spacing.Six * s;
-            float previewSpan = preview
-                ? (PreviewColumnWidth * s) + inset * 2f
-                : 0f;
-            float navigatorRight = max.X - previewSpan;
-
-            // ONE footer height for every type — the band's content
-            // changes, its frame does not, so the strip never reflows
-            // the window. It spans the NAVIGATOR only: the preview runs
-            // the entire height beside it, its left edge anchored to the
-            // window.
-            float footerHeight =
-                _main.PoseFiles.OptionsBandHeight() * s + margin * 2f;
+            float columnSpan = (PreviewColumnWidth * s) + inset * 2f;
+            float navigatorRight = max.X - columnSpan;
             float rule = MathF.Max(1f, s);
-            float footerTop = max.Y - footerHeight - rule;
-            dl.AddRectFilled(
-                new Vector2(min.X, MathF.Round(footerTop)),
-                new Vector2(navigatorRight, MathF.Round(footerTop + rule)),
-                ImGui.ColorConvertFloat4ToU32(
-                    ColorEx.ApplyAlpha(theme.FormSeparator)));
 
+            // There is NO footer: the navigator takes the whole height,
+            // and the right column is permanent — the preview where a
+            // pose can preview, the file's metadata everywhere else. The
+            // import options hide behind the importer's own menu, opened
+            // from the settings seat by the preview.
             pane.Draw(
                 new Vector2(min.X, stripBottom),
                 new Vector2(
                     navigatorRight - min.X,
-                    footerTop - stripBottom));
-            if (preview)
-                _main.PoseFiles.DrawPreviewColumn(
-                    new Vector2(navigatorRight + inset, stripBottom + inset),
-                    new Vector2(
-                        PreviewColumnWidth * s,
-                        max.Y - stripBottom - inset * 2f));
+                    max.Y - stripBottom));
+            dl.AddRectFilled(
+                new Vector2(MathF.Round(navigatorRight), stripBottom),
+                new Vector2(MathF.Round(navigatorRight) + rule, max.Y),
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.FormSeparator)));
 
-            // The band's content left-aligns at a capped width and
-            // breathes off the rule and the window bottom.
-            var footerOrigin = new Vector2(min.X, footerTop + rule + margin);
-            var footerSize = new Vector2(
-                MathF.Min(
-                    navigatorRight - min.X, FooterContentWidth * s),
-                footerHeight - margin * 2f);
-            switch (type)
+            var columnOrigin = new Vector2(
+                navigatorRight + rule + inset, stripBottom + inset);
+            var columnSize = new Vector2(
+                PreviewColumnWidth * s,
+                max.Y - stripBottom - inset * 2f);
+            if (preview)
             {
-                case PoseLibraryPane.LibraryType.Poses:
-                case PoseLibraryPane.LibraryType.AutoSaves:
-                    _main.PoseFiles.DrawOptionsBand(
-                        footerOrigin, footerSize, pane.SelectedPath);
-                    break;
-                case PoseLibraryPane.LibraryType.Scenes:
-                    // The file leads, the load options take the rest of
-                    // the band — the same options a tile's load runs.
-                    pane.DrawInfoRail(
-                        footerOrigin,
-                        new Vector2(SceneInfoColumnWidth * s, footerHeight));
-                    _main.Scene.DrawLibraryRail(
-                        footerOrigin + new Vector2(SceneInfoColumnWidth * s, 0f),
-                        footerSize - new Vector2(SceneInfoColumnWidth * s, 0f));
-                    break;
-                case PoseLibraryPane.LibraryType.Mcdf:
-                    pane.DrawInfoRail(footerOrigin, footerSize);
-                    break;
-                case PoseLibraryPane.LibraryType.Objects:
-                    pane.DrawObjectsRail(footerOrigin, footerSize);
-                    break;
+                _main.PoseFiles.DrawPreviewColumn(columnOrigin, columnSize);
+                // The importer's own options menu, verbatim — copied, not
+                // rebuilt. Only the types with import options get the seat.
+                float side = theme.Controls.ShellIconAction;
+                var seat = new Vector2(
+                    columnOrigin.X + columnSize.X - side * s,
+                    columnOrigin.Y);
+                ImGui.SetCursorScreenPos(seat);
+                Crystarium.IconButton(
+                    "settings",
+                    () => _main.PoseFiles.RequestImportMenu(
+                        withPresets: false,
+                        seat + new Vector2(0f, side * s)),
+                    ControlStyle.Square(side),
+                    help: "Import options",
+                    id: "##library-options");
+            }
+            else if (type == PoseLibraryPane.LibraryType.Objects)
+            {
+                // The objects rail already leads with the file's name and
+                // its properties — it IS the metadata panel here.
+                pane.DrawObjectsRail(columnOrigin, columnSize);
+            }
+            else
+            {
+                pane.DrawInfoRail(columnOrigin, columnSize);
             }
         }
         finally
