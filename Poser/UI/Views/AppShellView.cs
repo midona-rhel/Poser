@@ -195,10 +195,6 @@ public sealed class AppShellViewModel
     /// <summary>Sidebar width, resizable within 220–400px. Unscaled px.</summary>
     public float SidebarWidthPx = 280f;
 
-    /// <summary>The library workspace hides the outliner: content spans
-    /// the sidebar's column while this is set.</summary>
-    public bool SidebarHidden;
-
     /// <summary>The USER's sidebar collapse — the titlebar chevron. Kept
     /// apart from <see cref="SidebarHidden"/> so leaving the library
     /// restores whichever state the user chose.</summary>
@@ -478,8 +474,7 @@ public static class AppShellView
             }
             else
             {
-                float wellLeft = vm.Detached || vm.SidebarHidden
-                        || vm.SidebarCollapsed
+                float wellLeft = vm.Detached || vm.SidebarCollapsed
                     ? 0f
                     : vm.SidebarWidthPx * s;
                 float wellRight = vm.DrawRail != null ? RailWidth * s : 0f;
@@ -515,12 +510,11 @@ public static class AppShellView
             float railW = vm.DrawRail != null ? RailWidth * s : 0f;
             // Detached mode: the sidebar is its own window; the content and
             // the inspector stay together here.
-            float sbw = vm.Detached || vm.SidebarHidden
-                    || vm.SidebarCollapsed
+            float sbw = vm.Detached || vm.SidebarCollapsed
                 ? 0f
                 : vm.SidebarWidthPx * s;
 
-            if (!vm.Detached && !vm.SidebarHidden && !vm.SidebarCollapsed)
+            if (!vm.Detached && !vm.SidebarCollapsed)
                 DrawSidebar(
                     vm, new Vector2(min.X, bodyTop),
                     new Vector2(min.X + sbw, max.Y), s, dl);
@@ -556,8 +550,7 @@ public static class AppShellView
         float height = TitlebarHeight * s;
         float radius = theme.Radii.Window * s;
         float rule = 1f * s;
-        float cellWidth = vm.Detached || vm.SidebarHidden
-                || vm.SidebarCollapsed
+        float cellWidth = vm.Detached || vm.SidebarCollapsed
             ? 0f
             : vm.SidebarWidthPx * s;
         float railWidth =
@@ -812,8 +805,8 @@ public static class AppShellView
     }
 
     /// <summary>The same pair left-anchored — the sidebar's cell is gone
-    /// (collapsed, or the library holds the workspace), so the run starts
-    /// after the chevron and the library seat goes with the cell.</summary>
+    /// (collapsed), so the run starts after the chevron and the library
+    /// seat goes with the cell.</summary>
     private static void DrawCellActionsLeft(
         AppShellViewModel vm, float left, float top, float height, float s)
     {

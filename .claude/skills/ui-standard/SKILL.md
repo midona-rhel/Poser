@@ -47,14 +47,21 @@ Windows each have ONE job. No mode may change what a window IS.
   selection change never moves a pixel of the band. The kind follows
   the SELECTED OBJECT always, whichever panel is active — it names
   what Target would show, never the active panel.
-- **Library** — the full-width workspace: the outliner stands down
-  while it is open and returns with the scene editor. Reached from
-  the sidebar titlebar's library button, the Scene panel's "Open
-  library…" verb and the burger menu. Its type strip leads with the
-  tabs that can PREVIEW (Poses, Auto-saves, Objects) and stands the
-  file-info tabs (MCDF, Scenes) at the far right: a tab that cannot
-  preview shows the selected FILE instead — name, stamp, author,
-  contents, tags — never a fake preview (decided 2026-08-30).
+- **Library** — its OWN window, never a mode of the main window:
+  opening it replaces nothing (shipped once as a full-width main
+  workspace with an inspector-styled rail; both rejected 2026-08-30).
+  Reached from the sidebar titlebar's library button, the Scene
+  panel's "Open library…" verb and the burger menu. Its bar carries
+  the title, the type strip and the close; the strip leads with the
+  tabs that can PREVIEW (Poses, Auto-saves) and stands the file-info
+  tabs (MCDF, Scenes) at the far right. The types that preview get a
+  PLAIN preview column (the old rail width less a fifth, 224 — the
+  library has NO inspector and nothing styled as one); every other
+  type hands that width back to the navigator. The footer is the
+  importer-style options band at ONE height whatever the type —
+  switching tabs changes the band's content, never the frame: pose
+  apply options, scene file-info plus load options, MCDF file info,
+  object properties.
 - **Sidebar collapse** — the outliner collapses from a chevron by
   the brand in the titlebar; the choice is remembered. The chevron
   never moves with the cell it removes. The library button rides the

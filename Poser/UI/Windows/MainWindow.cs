@@ -155,11 +155,6 @@ public class MainWindow : Window
     /// <summary>The shell keeps workspace mode and entity selection mutually exclusive.</summary>
     private readonly ShellWorkspaceSelection _workspace;
 
-    /// <summary>The workspace is showing the pose library instead of the
-    /// selection's tabs. Entering it releases the entity selection, so the
-    /// library never shows through a selected entity's chrome.</summary>
-    private bool _libraryMode => _workspace.IsLibrary;
-
     /// <summary>The workspace is showing the complete scene view — save, load, progress
     /// and recovery — instead of the selection's tabs. A mode exactly like the
     /// library's, and its alternative: a scene is not a property of whatever
@@ -326,30 +321,6 @@ public class MainWindow : Window
     /// disclosure is the one non-scene input that changes the row count.
     /// </summary>
     private int _expandVersion;
-
-    /// <summary>Library mode's tab strip: the library types are the tabs —
-    /// a lone "Library" tab controlled nothing. Positional against the
-    /// pane's type indices.</summary>
-    private readonly ShellTab[] _libraryTabs =
-    [
-        new() { Label = "Poses" },
-        new() { Label = "Auto-saves" },
-        new() { Label = "Objects" },
-        new() { Label = "MCDF" },
-        new() { Label = "Scenes" },
-    ];
-
-    /// <summary>The strip's display order as pane types: the tabs that can
-    /// PREVIEW lead, and the file-info tabs (MCDF, Scenes) stand at the far
-    /// right. Positional against <see cref="_libraryTabs"/>.</summary>
-    private static readonly PoseLibraryPane.LibraryType[] LibraryStripOrder =
-    [
-        PoseLibraryPane.LibraryType.Poses,
-        PoseLibraryPane.LibraryType.AutoSaves,
-        PoseLibraryPane.LibraryType.Objects,
-        PoseLibraryPane.LibraryType.Mcdf,
-        PoseLibraryPane.LibraryType.Scenes,
-    ];
 
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
@@ -1113,8 +1084,6 @@ public class MainWindow : Window
     /// side is showing.</summary>
     private string ContentKind(SelectionId? primary)
     {
-        if (_libraryMode)
-            return "";
         // ALWAYS the selected object's kind — the segment names what
         // Target would show, whichever panel is active.
         return primary switch
@@ -1142,8 +1111,6 @@ public class MainWindow : Window
 
     private string TitleEntity(SelectionId? primary)
     {
-        if (_libraryMode)
-            return "Library";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -1227,19 +1194,17 @@ public class MainWindow : Window
         _firstRunNotice.Draw();
     }
 
-    /// <summary>Puts the workspace into library mode. Openers only — a second
-    /// request must not toggle a library that is already active. The
-    /// selection releases, because a mode and an entity are one selection
-    /// (see <see cref="ShellWorkspaceSelection"/>).</summary>
-    public void ShowLibrary()
-    {
-        _workspace.Enter(ShellWorkspace.Library);
-        // The switch can happen from a sidebar click, which occurs while
-        // AppShellView is already drawing: the viewport contract moves in the
-        // same breath as the content selection, so the remainder of the frame
-        // cannot render one mode through the other mode's layout path.
-        ResyncTabLayout();
-    }
+    /// <summary>The library is its OWN window — it never replaces the
+    /// properties window. Raised for the window set to open it.</summary>
+    public event Action? OnLibraryWindowRequested;
+
+    public void ShowLibrary() => OnLibraryWindowRequested?.Invoke();
+
+    /// <summary>The library window's seams: it draws from the same panes
+    /// the shell owns.</summary>
+    internal PoseLibraryPane LibraryPane => _libraryPane;
+    internal PoseFileInspectorSection PoseFiles => _poseFileSection;
+    internal ScenePane Scene => _scenePane;
 
     /// <summary>Puts the workspace into scene mode. Openers only, exactly like
     /// the library's, and releasing the entity selection exactly like it: the
@@ -1247,10 +1212,7 @@ public class MainWindow : Window
     public void ShowSceneFiles()
     {
         // The scene workspace died in the inspector-mode redesign: the
-        // whole panel lives in the inspector's Scene mode now, so opening
-        // it is a mode switch — leaving the library if it was showing.
-        if (_libraryMode)
-            _workspace.Leave();
+        // whole panel lives in the inspector's Scene mode now.
         Config.ConfigurationService.Instance.Config.UI.InspectorMode = 2;
         Config.ConfigurationService.Instance.Save();
         _scenePane.OnShown();
@@ -1269,8 +1231,9 @@ public class MainWindow : Window
     /// </summary>
     private void OnWorkspaceLeft(ShellWorkspace left)
     {
-        if (left == ShellWorkspace.Library)
-            _libraryPane.OnHidden();
+        // The library became its own window; no workspace mode remains
+        // that owes a leave-notice.
+        _ = left;
     }
 
     public override void PostDraw()
@@ -1288,9 +1251,6 @@ public class MainWindow : Window
 
         _vm.GPoseActive = _gPoseService.IsGPosing;
         _vm.SidebarWidthPx = _sidebarWidth;
-        // The library is the full-width workspace: the outliner stands
-        // down while it is open and returns with the scene editor.
-        _vm.SidebarHidden = _libraryMode;
         _vm.SidebarCollapsed = Config.ConfigurationService.Instance
             .Config.UI.SidebarCollapsed;
         _vm.OnSidebarToggle = _toggleSidebar ??= () =>
@@ -1342,23 +1302,6 @@ public class MainWindow : Window
             }
             _lastPrimaryForMode = primaryNow;
         }
-        if (_libraryMode)
-        {
-            _vm.OnInspectorMode = null;
-            _vm.DrawRail =
-                (PoseLibraryPane.LibraryType)_libraryPane.SelectedType switch
-                {
-                    PoseLibraryPane.LibraryType.Objects =>
-                        _libraryPane.DrawObjectsRail,
-                    // The tabs that cannot PREVIEW show the FILE instead:
-                    // name, stamp, author, contents. Scenes keep their load
-                    // options below the file.
-                    PoseLibraryPane.LibraryType.Scenes => DrawSceneInfoRail,
-                    PoseLibraryPane.LibraryType.Mcdf => DrawMcdfInfoRail,
-                    _ => _poseFileSection.DrawOptionsRail,
-                };
-        }
-        else
         {
             // The INSPECTOR is only ever the selected object. The mode
             // selector swaps the CONTENT side: the selection's tabs, the
@@ -1414,7 +1357,7 @@ public class MainWindow : Window
         _vm.RedoDescription = _cleanTransforms.RedoDescription;
         // Pop-out follows the toolbar actor: any selection that resolves to
         // an actor can be frozen into its own content window.
-        _vm.ShowPopOut = toolbarActor != null && !_libraryMode;
+        _vm.ShowPopOut = toolbarActor != null;
         // Entity creation has two entry points by design (approved shell): the
         // titlebar action and a section header's plus. Every one of them opens
         // the same surface, the spawn browser — the lights and cameras pluses
@@ -1426,10 +1369,8 @@ public class MainWindow : Window
 
         BuildSidebar(primary);
         BuildTabs(primary);
-        ApplyTabLayout(
-            _libraryMode ? "Library"
-            : _contentMode
-                switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
+        ApplyTabLayout(_contentMode
+            switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
         BuildStatus(primary);
     }
 
@@ -3127,38 +3068,11 @@ public class MainWindow : Window
     private Action? _toggleSidebar;
     private Action? _openLibrary;
 
-    /// <summary>The scenes tab's rail: the selected FILE leads, the load
-    /// options follow — the same options a tile's load runs.</summary>
-    private void DrawSceneInfoRail(Vector2 origin, Vector2 size)
-    {
-        float used = _libraryPane.DrawInfoRail(origin, size);
-        if (size.Y - used > 1f)
-            _scenePane.DrawLibraryRail(
-                origin + new Vector2(0f, used),
-                size - new Vector2(0f, used));
-    }
-
-    private void DrawMcdfInfoRail(Vector2 origin, Vector2 size)
-        => _libraryPane.DrawInfoRail(origin, size);
-
     private void BuildTabs(SelectionId? primary)
     {
         // Tabs are rebuilt each frame; the active one is preserved so a
         // selection change cannot silently return to Pose.
         _vm.Tabs.Clear();
-        if (_libraryMode)
-        {
-            // The library types are the tabs; _activeTab is left untouched,
-            // so leaving the library returns the prior tab.
-            _activeStrip = LibraryStrip;
-            int type = _libraryPane.SelectedType;
-            for (int i = 0; i < _libraryTabs.Length; i++)
-            {
-                _libraryTabs[i].Active = (int)LibraryStripOrder[i] == type;
-                _vm.Tabs.Add(_libraryTabs[i]);
-            }
-            return;
-        }
         int contentMode = _contentMode;
         if (contentMode == 1)
         {
@@ -3241,17 +3155,14 @@ public class MainWindow : Window
     {
         // Rebuild the tab rows and viewport contract together.
         BuildTabs(_selection.Primary);
-        ApplyTabLayout(
-            _libraryMode ? "Library"
-            : _contentMode
-                switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
+        ApplyTabLayout(_contentMode
+            switch { 1 => _activeTab, 2 => "Scene", _ => _activeTab });
     }
 
     /// <summary>The two mode strips. A mode is a strip like an entity type is
     /// — it has its own tabs — so it owns its own scroll identity: entering
     /// the library from an actor and from a light must land on one library,
     /// not on two with separate scroll memories.</summary>
-    private const string LibraryStrip = "library";
 
     // ── status bar, restated only when its numbers move ─────────────────
     private int _statusActorCount = -1;
@@ -3360,14 +3271,6 @@ public class MainWindow : Window
 
     private void OnTabClicked(int index)
     {
-        // In library mode the tabs are the library types; the selection-typed
-        // tab set is untouched underneath.
-        if (_libraryMode)
-        {
-            if (index >= 0 && index < LibraryStripOrder.Length)
-                _libraryPane.SelectType((int)LibraryStripOrder[index]);
-            return;
-        }
         if (index < 0 || index >= _vm.Tabs.Count) return;
         var label = _vm.Tabs[index].Label;
 
@@ -3518,14 +3421,6 @@ public class MainWindow : Window
 
     private void DrawTabContent(Vector2 origin, Vector2 size)
     {
-        // The library is browsable without a resolvable actor — the apply
-        // action is what needs one — so it precedes the GPose gate.
-        if (_libraryMode)
-        {
-            _libraryPane.Draw(origin, size);
-            return;
-        }
-
         int pageMode = _contentMode;
         if (pageMode == 1)
         {

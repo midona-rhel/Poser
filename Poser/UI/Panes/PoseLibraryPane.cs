@@ -1742,6 +1742,13 @@ public sealed class PoseLibraryPane
     /// The shell's tab strip states it while the mode is on.</summary>
     public int SelectedType => (int)_type;
 
+    /// <summary>The selected tile's file path, or null — the library
+    /// window's footer and preview state their content off it.</summary>
+    public string? SelectedPath
+        => _vm.Selected >= 0 && _vm.Selected < _vm.Tiles.Count
+            ? _vm.Tiles[_vm.Selected].ThumbKey
+            : null;
+
     /// <summary>A shell tab. The filters are drafts of the view being left, so
     /// the new type starts on its whole library.</summary>
     public void SelectType(int index)

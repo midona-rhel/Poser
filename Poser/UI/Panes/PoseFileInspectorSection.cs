@@ -797,6 +797,36 @@ public sealed class PoseFileInspectorSection
                 ?? (dense ? DenseLabelColumn : MenuLabelColumn),
             dense: dense);
 
+    /// <summary>The importer band's height for any width — the library
+    /// window's footer is the same band, so the two state one grid.</summary>
+    public float OptionsBandHeight()
+    {
+        var theme = Crystarium.ActiveTheme;
+        return PoseImportOptionsGrid.Create(
+            0f,
+            theme.Page.Inset,
+            theme.Spacing.Two,
+            theme.Page.ActionGap,
+            theme.Controls.ListRowHeight,
+            theme.Page.SectionHeaderHeight,
+            theme.Page.StatusLineHeight,
+            ImportStatusRows()).Height;
+    }
+
+    /// <summary>The importer's options band, drawn for another host — the
+    /// library window's footer.</summary>
+    public void DrawOptionsBand(
+        Vector2 origin, Vector2 size, string? highlighted)
+        => DrawImportOptionsBand(origin, size, highlighted);
+
+    /// <summary>The preview alone — the library window's plain right
+    /// column. Not a rail and not styled as one.</summary>
+    public void DrawPreviewColumn(Vector2 origin, Vector2 size)
+        => MenuSection("##library-preview", "Preview",
+            origin, size.X,
+            form => DrawPreviewBody(form, size.X, size.Y),
+            divider: false);
+
     private float DrawOptionsSections(
         Vector2 origin, float width, bool withPresets, float previewCap = 0f,
         bool withActions = true, bool dense = false)
