@@ -621,6 +621,7 @@ public class MainWindow : Window
         // Static shell wiring (rebuilt data lives in BuildViewModel each frame).
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
+        _vm.DragGhostText = DragGhostFor;
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -1606,6 +1607,7 @@ public class MainWindow : Window
                 Label = group.Name,
                 Icon = TablerIcon.Folder,
                 Draggable = true,
+                DropContainer = true,
                 HasChildren = group.Members.Count > 0,
                 ExpandKey = key,
                 Expanded = expanded,
@@ -3895,6 +3897,27 @@ public class MainWindow : Window
         // groups; the root list keeps its kind order.
         foreach (var id in moved)
             _groups.RemoveMember(id);
+    }
+
+    /// <summary>The drag ghost's text: a dragged row that rides with the
+    /// entity multiselect announces the whole cargo, not just itself.</summary>
+    private string DragGhostFor(ShellSidebarRow row)
+    {
+        if (row.Tag is not SelectionId id
+            || !global::Poser.Application.Selection.EntitySelection
+                .IsEntity(id.Kind)
+            || !_selection.IsSelected(id))
+            return row.Label;
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities < 2)
+            return row.Label;
+        if (_multiTitleCount != entities)
+        {
+            _multiTitleCount = entities;
+            _multiTitle = $"{entities} selected";
+        }
+        return _multiTitle;
     }
 
     private int GroupIndex(Guid id)

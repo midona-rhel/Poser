@@ -372,6 +372,7 @@ public sealed class ShellSidebar
     private ShellSidebarRow? _dropTarget;
     private RowDropPosition _dropPosition;
     private ShellSidebarRow? _paintDropTarget;
+    private RowDropPosition _paintDropPosition;
 
     private void DrawTree(Crystarium.ScrollRegionScope region)
     {
@@ -386,6 +387,7 @@ public sealed class ShellSidebar
         // Each frame re-derives the candidate; Paint fills it back in for
         // whichever row the pointer crosses.
         _paintDropTarget = _dropTarget;
+        _paintDropPosition = _dropPosition;
         _dropTarget = null;
         _dropPosition = RowDropPosition.Out;
 
@@ -416,7 +418,7 @@ public sealed class ShellSidebar
                 Size = Crystarium.ActiveTheme.Typography.LabelSize,
                 Color = Crystarium.ActiveTheme.Text,
             };
-            var text = dragging.Label;
+            var text = _vm.DragGhostText?.Invoke(dragging) ?? dragging.Label;
             var size = Crystarium.MeasureText(text, ghostStyle);
             var pad = new Vector2(6f, 3f) * scale;
             var min = mouse + new Vector2(14f, 6f) * scale;
@@ -455,10 +457,10 @@ public sealed class ShellSidebar
         var row = _vm.Sections[entry.Section].Rows[entry.Row];
 
         // While a drag is live, the row under the pointer is the drop
-        // candidate: its upper third inserts before, the lower third
-        // after, the middle drops INTO (group heads only — for plain
-        // rows the middle behaves as the nearer edge).
-        if (_dragSource != null && !ReferenceEquals(_dragSource, row))
+        // candidate. Only a CONTAINER (a group head) takes an INTO drop,
+        // and never from another container — one depth, always. Every
+        // other row splits at its midline into before/after.
+        if (_dragSource is { } source && !ReferenceEquals(source, row))
         {
             float rowHeight = entry.Height * scale;
             var rectMin = at;
@@ -467,17 +469,18 @@ public sealed class ShellSidebar
             if (mouse.X >= rectMin.X && mouse.X < rectMax.X
                 && mouse.Y >= rectMin.Y && mouse.Y < rectMax.Y)
             {
+                bool canInto = row.DropContainer && !source.DropContainer;
                 float third = rowHeight / 3f;
                 _dropTarget = row;
-                _dropPosition = mouse.Y < rectMin.Y + third
-                    ? RowDropPosition.Before
-                    : mouse.Y > rectMax.Y - third
-                        ? RowDropPosition.After
-                        : row.HasChildren
-                            ? RowDropPosition.Into
-                            : mouse.Y < rectMin.Y + rowHeight / 2f
-                                ? RowDropPosition.Before
-                                : RowDropPosition.After;
+                _dropPosition = canInto
+                    ? mouse.Y < rectMin.Y + third
+                        ? RowDropPosition.Before
+                        : mouse.Y > rectMax.Y - third
+                            ? RowDropPosition.After
+                            : RowDropPosition.Into
+                    : mouse.Y < rectMin.Y + rowHeight / 2f
+                        ? RowDropPosition.Before
+                        : RowDropPosition.After;
             }
         }
 
@@ -503,7 +506,12 @@ public sealed class ShellSidebar
             TrailingInset = theme.Scrollbar.GutterWidth,
             ActionSlots = entry.Actions,
             Draggable = row.Draggable,
-            DropTarget = ReferenceEquals(_paintDropTarget, row),
+            // The row-fill highlight means INTO; an insert shows as the
+            // caret line instead, and plain hover goes silent for the
+            // drag's duration.
+            DropTarget = ReferenceEquals(_paintDropTarget, row)
+                && _paintDropPosition == RowDropPosition.Into,
+            SuppressHover = _dragSource != null,
         };
 
         ImGui.SetCursorScreenPos(at);
@@ -515,6 +523,31 @@ public sealed class ShellSidebar
             new ControlStyle { Width = UiWidth.Fixed(width) });
         if (entry.Actions > 0)
             PaintActions(row, entry.Id, actions, scale, theme);
+
+        // The insert indicator: an accent line at the seam with a small
+        // caret at its head, exactly where the drop will land.
+        if (ReferenceEquals(_paintDropTarget, row)
+            && _paintDropPosition is RowDropPosition.Before
+                or RowDropPosition.After)
+        {
+            var dl = ImGui.GetWindowDrawList();
+            float y = _paintDropPosition == RowDropPosition.Before
+                ? at.Y
+                : at.Y + entry.Height * scale;
+            float x0 = at.X + (row.Depth * 20f + 6f) * scale;
+            float x1 = at.X + (width - theme.Scrollbar.GutterWidth) * scale;
+            uint accent = ImGui.ColorConvertFloat4ToU32(theme.Accent);
+            dl.AddRectFilled(
+                new Vector2(x0, y - 1f * scale),
+                new Vector2(x1, y + 1f * scale),
+                accent);
+            float tri = 4f * scale;
+            dl.AddTriangleFilled(
+                new Vector2(x0 - tri, y - tri),
+                new Vector2(x0 - tri, y + tri),
+                new Vector2(x0 + tri * 0.5f, y),
+                accent);
+        }
 
         switch (action)
         {

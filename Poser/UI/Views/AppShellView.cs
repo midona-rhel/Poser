@@ -25,6 +25,10 @@ public sealed class ShellSidebarRow
     /// <summary>Whether the row can be dragged (entities and group
     /// heads; never bones or categories).</summary>
     public bool Draggable;
+    /// <summary>Whether a drag can drop INTO this row — group heads
+    /// only. An actor's disclosure is not a container: nothing else
+    /// may highlight as one.</summary>
+    public bool DropContainer;
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
@@ -268,6 +272,10 @@ public sealed class AppShellViewModel
     /// <summary>A drag released: <c>dragged</c> lands relative to
     /// <c>target</c> (null target = open space, which un-groups).</summary>
     public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
+
+    /// <summary>The drag ghost's text for a row — "N selected" when the
+    /// dragged row carries the whole selection with it.</summary>
+    public Func<ShellSidebarRow, string>? DragGhostText;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
     public Action<ShellSidebarRow>? OnActorTarget;

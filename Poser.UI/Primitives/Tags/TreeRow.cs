@@ -64,6 +64,10 @@ public record struct TreeRowProps
     /// </summary>
     public bool Draggable;
 
+    /// <summary>While a drag is live the plain hover fill goes silent —
+    /// only the drop indicators speak.</summary>
+    public bool SuppressHover;
+
     /// <summary>Right padding reserved for the scroll gutter.</summary>
     public float TrailingInset;
 
@@ -211,7 +215,7 @@ public static partial class Crystarium
             ? theme.Chrome.AccentFill
             : props.Selected
                 ? theme.Chrome.SidebarSelected
-                : hit.Hovered
+                : hit.Hovered && !props.SuppressHover
                     ? theme.Chrome.SidebarHover
                     : Vector4.Zero;
         Span<MotionChannel> highlight =

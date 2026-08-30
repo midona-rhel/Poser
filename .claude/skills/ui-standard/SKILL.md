@@ -146,10 +146,18 @@ Windows each have ONE job. No mode may change what a window IS.
 - **Tree drag-and-drop** — entity rows and group heads drag (never
   bones or categories); a held press that travels is the drag, the
   release is the drop, and the row under the pointer is the live
-  candidate: upper third inserts before, lower third after, the
-  middle drops INTO a head. Dragging a selected row carries the
-  whole entity selection. Open space un-groups; the ROOT list stays
-  kind-ordered by design — only groups and their members reorder.
+  candidate. INTO exists only where a child can actually land: a
+  group head, and never from another group head (one depth) — those
+  rows split into thirds (before/INTO/after); every other row splits
+  at its midline into before/after, and NEVER lights up as a
+  container. The indicators (2026-08-30): INTO is the accent row
+  fill; an insert is an accent CARET LINE at the exact seam, a small
+  triangle at its head; plain hover goes SILENT for the drag's
+  duration — during a drag only the drop indicators speak. Dragging
+  a selected row carries the whole entity selection, and the ghost
+  says so ("3 selected", not the one row's name). Open space
+  un-groups; the ROOT list stays kind-ordered by design — only
+  groups and their members reorder.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
