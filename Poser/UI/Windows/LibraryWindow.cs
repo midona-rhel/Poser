@@ -246,15 +246,7 @@ public sealed class LibraryWindow : Window
         ImGui.SetCursorScreenPos(new Vector2(actionX, actionY));
         Crystarium.IconButton(
             _collapsed ? "chevron-down" : "chevron-up",
-            () =>
-            {
-                if (!_collapsed)
-                    _savedHeight = ImGui.GetWindowSize().Y
-                        / Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
-                else
-                    _restorePending = true;
-                _collapsed = !_collapsed;
-            },
+            ToggleCollapse,
             ControlStyle.Square(closeSide),
             help: _collapsed
                 ? "Expand the window"
@@ -275,7 +267,29 @@ public sealed class LibraryWindow : Window
             new Vector2(max.X, MathF.Round(min.Y + height)),
             ImGui.ColorConvertFloat4ToU32(
                 ColorEx.ApplyAlpha(theme.FormSeparator)));
+
+        // Double-clicking the bar's open band collapses — the chevron's
+        // gesture twin, the shell's own rule. The two buttons above keep
+        // their clicks.
+        if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
+            && !ImGui.IsAnyItemHovered())
+        {
+            var barMouse = ImGui.GetMousePos();
+            if (barMouse.X >= min.X && barMouse.X < max.X
+                && barMouse.Y >= min.Y && barMouse.Y < min.Y + height)
+                ToggleCollapse();
+        }
         return min.Y + height;
+    }
+
+    private void ToggleCollapse()
+    {
+        if (!_collapsed)
+            _savedHeight = ImGui.GetWindowSize().Y
+                / Dalamud.Interface.Utility.ImGuiHelpers.GlobalScale;
+        else
+            _restorePending = true;
+        _collapsed = !_collapsed;
     }
 
     /// <summary>The type strip's own band, between the titlebar and the

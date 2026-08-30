@@ -1897,6 +1897,12 @@ public sealed class PoseFileInspectorSection
         BrowseAndImport(skeleton, _lastPath, rememberPath: true);
     }
 
+    /// <summary>The context menu's "Import from file": straight to the
+    /// browser regardless of the library-first preference — the row names
+    /// its destination.</summary>
+    public void OpenImportFromFile(ISkeleton skeleton) =>
+        BrowseAndImport(skeleton, _lastPath, rememberPath: true);
+
     public void OpenAutoSaves(ISkeleton skeleton)
     {
         BrowseAndImport(skeleton, _autoSave.RootDirectory, rememberPath: false);

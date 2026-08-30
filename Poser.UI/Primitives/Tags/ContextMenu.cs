@@ -86,6 +86,15 @@ public static partial class Crystarium
         private static Vector2 _size;
         private static Vector2 _pivot;
         private static ContextMenuItem[]? _submenuItems;
+
+        /// <summary>The submenu's hover GRACE: the geometric bridge misses
+        /// the row gaps, the menu padding, and a diagonal pass over other
+        /// rows — pixels where the pointer hovers nothing — so an open
+        /// submenu survives this long after the pointer left every
+        /// keep-region. A row that opens its own submenu still takes over
+        /// immediately.</summary>
+        private const double SubmenuGraceSeconds = 0.30;
+        private static double _submenuKeepUntil;
         private static Vector2 _submenuMin;
         private static Vector2 _submenuSize;
         private static int _submenuParent = -1;
@@ -577,14 +586,25 @@ public static partial class Crystarium
                     hovered = hit.Hovered;
                 }
 
+                bool keepAlive = false;
+                if (ReferenceEquals(items, _items)
+                    && item.SubmenuItems is { Length: > 0 }
+                    && previousSubmenu is not null && previousParent == i)
+                {
+                    bool held = KeepSubmenuOpen(
+                        ImGui.GetMousePos(), rowMin, rowMax,
+                        _submenuMin, _submenuSize, min, size);
+                    double now = ImGui.GetTime();
+                    if (held || hovered)
+                        _submenuKeepUntil = now + SubmenuGraceSeconds;
+                    // openedSubmenu gate: a row the pointer actually stands
+                    // on beat this row already; grace never steals back.
+                    keepAlive = held || (!openedSubmenu
+                        && now < _submenuKeepUntil);
+                }
                 if (ReferenceEquals(items, _items)
                     && item.SubmenuItems is { Length: > 0 } child
-                    && (hovered || (previousSubmenu is not null
-                        && previousParent == i
-                        && KeepSubmenuOpen(
-                            ImGui.GetMousePos(), rowMin, rowMax,
-                            _submenuMin, _submenuSize, min, size)))
-                )
+                    && (hovered || keepAlive))
                 {
                     _submenuParent = i;
                     _submenuItems = child;

@@ -536,6 +536,19 @@ public static class AppShellView
             SyncKeybindHelp();
             DrawTitlebar(vm, min, max, s, dl);
 
+            // Double-clicking the bar's open band collapses — the chevron's
+            // gesture twin. Every bar item was submitted by the call above,
+            // so a hovered button keeps its own clicks.
+            if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left)
+                && !ImGui.IsAnyItemHovered())
+            {
+                var barMouse = ImGui.GetMousePos();
+                if (barMouse.X >= min.X && barMouse.X < max.X
+                    && barMouse.Y >= min.Y
+                    && barMouse.Y < min.Y + TitlebarHeight * s)
+                    vm.CollapseToggled?.Invoke();
+            }
+
             if (vm.Collapsed)
             {
                 DrawOuterGlassBorder(min, max);

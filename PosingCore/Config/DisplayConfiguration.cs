@@ -5,6 +5,6 @@ namespace Poser.Config;
 /// </summary>
 public class DisplayConfiguration
 {
-    public bool ShowNsfwBones { get; set; } = false;
+    public bool ShowNsfwBones { get; set; } = true;
     public bool AnonymousMode { get; set; } = false;
 }

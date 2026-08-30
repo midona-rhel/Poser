@@ -4485,6 +4485,8 @@ public class MainWindow : Window
                 ?
                 [
                     new ContextMenuItem("Import", TablerIcon.Download),
+                    new ContextMenuItem("Import from file", TablerIcon.FileText,
+                        help: "Pick a pose file straight from disk"),
                     new ContextMenuItem("Export", TablerIcon.Upload),
                     new ContextMenuItem("Stash", TablerIcon.Stack2,
                         help: "Save this actor's pose so you can apply it "
@@ -4503,6 +4505,11 @@ public class MainWindow : Window
         var poseActions = new List<Action?>
         {
             () => _poseFileSection.RequestImportMenu(withPresets: true),
+            () =>
+            {
+                if (actor.HasSkeleton)
+                    _poseFileSection.OpenImportFromFile(actor.Skeleton);
+            },
             () => _poseFileSection.RequestExportMenu(),
             () => _cleanPose.Stash(
                 actor,

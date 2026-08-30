@@ -64,6 +64,12 @@ public class GizmoConfiguration
     /// </summary>
     public bool KeepGizmoWhenBonesHidden { get; set; } = true;
 
+    /// <summary>Hides the bone gizmo whenever the armature overlay is not
+    /// drawn at all — the master-switch companion to
+    /// <see cref="KeepGizmoWhenBonesHidden"/>, which answers for one
+    /// hidden bone.</summary>
+    public bool HideGizmoWithoutArmature { get; set; }
+
     public OverlayHoldModifier DisableDotsModifier { get; set; } =
         OverlayHoldModifier.None;
 

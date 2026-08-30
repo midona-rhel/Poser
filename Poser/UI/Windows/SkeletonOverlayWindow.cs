@@ -328,6 +328,9 @@ public class SkeletonOverlayWindow : Window
         // light handles unconditionally. Alt still hides everything.
         bool drawArmature =
             (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor();
+        // Published for the gizmo's armature-visibility gate: one boolean,
+        // computed once, read wherever "are the bones on screen" matters.
+        ArmatureVisibility.Drawn = drawArmature;
 
         var selectedIds = _selectedIds;
         selectedIds.Clear();
@@ -1741,4 +1744,12 @@ public class SkeletonOverlayWindow : Window
     {
         return ((color >> 24) & 0xFF) / 255f;
     }
+}
+
+/// <summary>Whether the armature overlay drew its bones this frame — the
+/// one boolean the skeleton window computes and the gizmo's visibility
+/// gate reads.</summary>
+public static class ArmatureVisibility
+{
+    public static bool Drawn = true;
 }

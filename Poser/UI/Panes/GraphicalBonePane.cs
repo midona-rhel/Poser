@@ -254,6 +254,15 @@ public sealed class GraphicalBonePane : IDisposable
             Slot(0f, 0f, 674f, 1147f),
             drawMirrors: true,
             skeleton);
+        // The ROOT selector: the whole-skeleton anchor gets a dot of its
+        // own beneath the figure — no map image ever offered it. It goes
+        // through DrawBoneAt, so hover, click, filter and marquee treat
+        // it exactly as any drawn dot.
+        if (skeleton.GetBone("n_root") is { } rootBone)
+        {
+            var rootSeat = Slot(337f, 1105f, 0f, 0f);
+            DrawBoneAt(rootBone, new Vector2(rootSeat.X, rootSeat.Y));
+        }
         DrawBoneSectionAt(
             "armor",
             Slot(714f, 0f, 700f, 1147f),
