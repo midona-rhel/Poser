@@ -78,7 +78,17 @@ public sealed class WorldObjectsPane
     private void ObjectRows(
         Crystarium.FormScope form, AdoptedWorldObject worldObject)
     {
-        form.Label("Model", worldObject.Path);
+        // Identity first: the name is Poser's to give even on a borrowed
+        // thing; the model path below stays the map's fact.
+        form.TextInput(
+            "Name",
+            worldObject.Name,
+            next => worldObject.Name = next,
+            placeholder: "Object",
+            help: "What the sidebar calls this object");
+        // The path is the row's TEXT, not its tooltip; the hover keeps the
+        // whole path for when the cell truncates it.
+        form.ReadOnly("Model", worldObject.Path, help: worldObject.Path);
         form.Switch(
             "Visible",
             worldObject.Visible,

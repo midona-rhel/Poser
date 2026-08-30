@@ -134,16 +134,36 @@ public sealed class ShellSidebar
         float inset = theme.Page.Inset;
         float width = size.X / scale;
 
-        // The pill spans the SAME width the rows below it do — the
-        // gutter is the trailing inset, never a second right margin.
-        float pillWidth = MathF.Max(1f, width - inset - 1f);
-        ImGui.SetCursorScreenPos(origin + new Vector2(inset, SearchTop) * scale);
+        // The search ICON is the visual boundary: the pill's borderless box
+        // reaches left of the inset by its own leading pad, so the glyph —
+        // not invisible padding — lands on the page edge. The spawn plus
+        // closes the band at the right, where the rows' span ends; the
+        // pill takes what remains.
+        float side = SearchBandHeight - SearchTop * 2f;
+        // Not the full leading pad: the glyph should sit with the row
+        // chevrons below it, a shade in from the raw page edge.
+        float pillLeft = inset - theme.Controls.InputPaddingX + 4f;
+        // The plus is CONTENT: it stops a gutter early, exactly where the
+        // rows' own action glyphs stop — only fills reach under the gutter.
+        float plusX = width - theme.Scrollbar.GutterWidth - side;
+        float pillWidth = MathF.Max(
+            1f, plusX - theme.Page.ActionGap - pillLeft);
+        ImGui.SetCursorScreenPos(origin + new Vector2(pillLeft, SearchTop) * scale);
         Crystarium.FilterPill(
             SearchId,
             vm.SidebarSearch,
             _setSearch,
             "Search",
             ControlStyle.Workspace with { Width = UiWidth.Fixed(pillWidth) });
+        ImGui.SetCursorScreenPos(origin + new Vector2(plusX, SearchTop) * scale);
+        if (Crystarium.TemporaryIconToggle(
+                TablerIcon.Plus,
+                selected: false,
+                style: ControlStyle.Square(side),
+                help: "Add an actor or object to the scene",
+                id: "##sidebar-spawn"))
+            vm.OnSpawn?.Invoke(
+                origin + new Vector2(plusX, SearchTop + side) * scale);
 
         Sync(vm, theme);
 
@@ -231,8 +251,9 @@ public sealed class ShellSidebar
                     row.Depth,
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
-                        : row.CameraActions ? 2
+                        : row.CameraActions ? 3
                         : row.LightActions ? 2
+                        : row.GroupActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -363,6 +384,17 @@ public sealed class ShellSidebar
 
     // ── the tree ─────────────────────────────────────────────────────────
 
+    // ── row drag-and-drop ────────────────────────────────────────────────
+
+    /// <summary>The row being dragged, and this frame's drop candidate.
+    /// The candidate is re-derived every frame from the pointer; the drop
+    /// commits on release, wherever the pointer stands.</summary>
+    private ShellSidebarRow? _dragSource;
+    private ShellSidebarRow? _dropTarget;
+    private RowDropPosition _dropPosition;
+    private ShellSidebarRow? _paintDropTarget;
+    private RowDropPosition _paintDropPosition;
+
     private void DrawTree(Crystarium.ScrollRegionScope region)
     {
         var theme = Crystarium.ActiveTheme;
@@ -372,6 +404,13 @@ public sealed class ShellSidebar
         // Row fills extend beneath the gutter while content stops before it.
         float width = MathF.Max(1f, region.ContentWidth + gutter - inset);
         var origin = ImGui.GetCursorScreenPos() + new Vector2(inset * scale, 0f);
+
+        // Each frame re-derives the candidate; Paint fills it back in for
+        // whichever row the pointer crosses.
+        _paintDropTarget = _dropTarget;
+        _paintDropPosition = _dropPosition;
+        _dropTarget = null;
+        _dropPosition = RowDropPosition.Out;
 
         var clipper = new ImGuiListClipper();
         clipper.Begin(_slotCount, _pitch * scale);
@@ -391,6 +430,57 @@ public sealed class ShellSidebar
         }
         clipper.End();
 
+        // The drag's ghost and its release, after every row painted.
+        if (_dragSource is { } dragging)
+        {
+            // No row is the candidate: the drop lands at the END of the
+            // root list, leaving any group — the caret at the tree's tail
+            // says so instead of saying nothing.
+            if (_paintDropTarget == null)
+            {
+                var tailDl = ImGui.GetWindowDrawList();
+                float tailY = origin.Y + _totalHeight * scale;
+                float x0 = origin.X + 6f * scale;
+                float x1 = origin.X + (width - gutter) * scale;
+                uint accent = ImGui.ColorConvertFloat4ToU32(theme.Accent);
+                tailDl.AddRectFilled(
+                    new Vector2(x0, tailY - 1f * scale),
+                    new Vector2(x1, tailY + 1f * scale),
+                    accent);
+                float tri = 4f * scale;
+                tailDl.AddTriangleFilled(
+                    new Vector2(x0 - tri, tailY - tri),
+                    new Vector2(x0 - tri, tailY + tri),
+                    new Vector2(x0 + tri * 0.5f, tailY),
+                    accent);
+            }
+
+            var mouse = ImGui.GetMousePos();
+            var ghostStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                Color = Crystarium.ActiveTheme.Text,
+            };
+            var text = _vm.DragGhostText?.Invoke(dragging) ?? dragging.Label;
+            var size = Crystarium.MeasureText(text, ghostStyle);
+            var pad = new Vector2(6f, 3f) * scale;
+            var min = mouse + new Vector2(14f, 6f) * scale;
+            ImGui.GetWindowDrawList().AddRectFilled(
+                min, min + size + pad * 2f,
+                ImGui.ColorConvertFloat4ToU32(
+                    Crystarium.ActiveTheme.SurfaceRaised),
+                Crystarium.ActiveTheme.Radii.Surface * scale);
+            Crystarium.TextAt(min + pad, text, ghostStyle);
+
+            if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
+                _dragSource = null;
+                _dropTarget = null;
+                _dirty = true;
+            }
+        }
+
         // The tail band preserves the exact scroll extent.
         ImGui.SetCursorScreenPos(
             origin + new Vector2(-inset * scale, _totalHeight * scale));
@@ -408,6 +498,35 @@ public sealed class ShellSidebar
         }
 
         var row = _vm.Sections[entry.Section].Rows[entry.Row];
+
+        // While a drag is live, the row under the pointer is the drop
+        // candidate. Only a CONTAINER (a group head) takes an INTO drop,
+        // and never from another container — one depth, always. Every
+        // other row splits at its midline into before/after.
+        if (_dragSource is { } source && !ReferenceEquals(source, row))
+        {
+            float rowHeight = entry.Height * scale;
+            var rectMin = at;
+            var rectMax = at + new Vector2(width * scale, rowHeight);
+            var mouse = ImGui.GetMousePos();
+            if (mouse.X >= rectMin.X && mouse.X < rectMax.X
+                && mouse.Y >= rectMin.Y && mouse.Y < rectMax.Y)
+            {
+                bool canInto = row.DropContainer && !source.DropContainer;
+                float third = rowHeight / 3f;
+                _dropTarget = row;
+                _dropPosition = canInto
+                    ? mouse.Y < rectMin.Y + third
+                        ? RowDropPosition.Before
+                        : mouse.Y > rectMax.Y - third
+                            ? RowDropPosition.After
+                            : RowDropPosition.Into
+                    : mouse.Y < rectMin.Y + rowHeight / 2f
+                        ? RowDropPosition.Before
+                        : RowDropPosition.After;
+            }
+        }
+
         var props = new TreeRowProps
         {
             Icon = row.IconName == null ? row.Icon : null,
@@ -429,6 +548,17 @@ public sealed class ShellSidebar
             Selected = row.Active,
             TrailingInset = theme.Scrollbar.GutterWidth,
             ActionSlots = entry.Actions,
+            Draggable = row.Draggable,
+            // The row-fill highlight means INTO; an insert shows as the
+            // caret line instead, and plain hover goes silent for the
+            // drag's duration.
+            DropTarget = ReferenceEquals(_paintDropTarget, row)
+                && _paintDropPosition == RowDropPosition.Into,
+            SuppressHover = _dragSource != null,
+            // The game's target actor and the live camera wear the
+            // current-one outline; the flags are only ever set on their
+            // own row kinds.
+            Marked = row.ActorTargeted || row.CameraLive,
         };
 
         ImGui.SetCursorScreenPos(at);
@@ -441,10 +571,40 @@ public sealed class ShellSidebar
         if (entry.Actions > 0)
             PaintActions(row, entry.Id, actions, scale, theme);
 
+        // The insert indicator: an accent line at the seam with a small
+        // caret at its head, exactly where the drop will land.
+        if (ReferenceEquals(_paintDropTarget, row)
+            && _paintDropPosition is RowDropPosition.Before
+                or RowDropPosition.After)
+        {
+            var dl = ImGui.GetWindowDrawList();
+            float y = _paintDropPosition == RowDropPosition.Before
+                ? at.Y
+                : at.Y + entry.Height * scale;
+            float x0 = at.X + (row.Depth * 20f + 6f) * scale;
+            float x1 = at.X + (width - theme.Scrollbar.GutterWidth) * scale;
+            uint accent = ImGui.ColorConvertFloat4ToU32(theme.Accent);
+            dl.AddRectFilled(
+                new Vector2(x0, y - 1f * scale),
+                new Vector2(x1, y + 1f * scale),
+                accent);
+            float tri = 4f * scale;
+            dl.AddTriangleFilled(
+                new Vector2(x0 - tri, y - tri),
+                new Vector2(x0 - tri, y + tri),
+                new Vector2(x0 + tri * 0.5f, y),
+                accent);
+        }
+
         switch (action)
         {
             case TreeRowAction.Selected:
-                _vm.OnRowClicked?.Invoke(row);
+                // The release that ends a drag is the DROP, not a click.
+                if (_dragSource == null)
+                    _vm.OnRowClicked?.Invoke(row);
+                break;
+            case TreeRowAction.Drag:
+                _dragSource ??= row;
                 break;
             case TreeRowAction.Expander:
                 _vm.OnRowExpandToggled?.Invoke(row);
@@ -571,11 +731,13 @@ public sealed class ShellSidebar
                         dimmed: !handleShown))
                     _vm.OnHandleToggle?.Invoke(row);
 
-                // The crosshair marks the game's current target.
+                // The crosshair marks the game's current target — accent
+                // fill when this row IS it, the same voice the camera's
+                // live mark speaks in.
                 ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Crosshair,
-                        selected: false,
+                        selected: row.ActorTargeted,
                         style: square,
                         help: row.ActorTargeted
                             ? "The game's current target"
@@ -642,12 +804,31 @@ public sealed class ShellSidebar
             }
 
             // Camera rows keep live view and edit lock beside each other.
+            // A locked group's one seat: the lock itself.
+            if (row.GroupActions)
+            {
+                ImGui.SetCursorScreenPos(origin);
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupLocked
+                            ? TablerIcon.Lock
+                            : TablerIcon.LockOpen,
+                        selected: false,
+                        style: square,
+                        help: row.GroupLocked
+                            ? "Unlock group"
+                            : "Lock group — nothing in it moves",
+                        id: "##group-lock",
+                        dimmed: !row.GroupLocked))
+                    _vm.OnGroupLock?.Invoke(row);
+                return;
+            }
+
             if (row.CameraActions)
             {
                 ImGui.SetCursorScreenPos(origin);
                 if (Crystarium.TemporaryIconToggle(
                         TablerIcon.Video,
-                        selected: false,
+                        selected: row.CameraLive,
                         style: square,
                         help: row.CameraLive
                             ? "The live camera — click to return to the main camera"
@@ -656,7 +837,27 @@ public sealed class ShellSidebar
                         dimmed: !row.CameraLive))
                     _vm.OnCameraLive?.Invoke(row);
 
-                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                // The kind letter sits BETWEEN the seats — M main, F free,
+                // C camera. A marker, not a control: it explains the row,
+                // takes no click, and replaced the Default badge.
+                if (row.CameraMark.Length > 0)
+                {
+                    var markStyle = new TextStyle
+                    {
+                        Size = theme.Typography.LabelSize,
+                        Color = theme.TextMuted,
+                    };
+                    var markSize = Crystarium.MeasureText(
+                        row.CameraMark, markStyle);
+                    Crystarium.TextAt(
+                        origin + new Vector2(
+                            step + (side * scale - markSize.X) * 0.5f,
+                            (side * scale - markSize.Y) * 0.5f),
+                        row.CameraMark,
+                        markStyle);
+                }
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
                 if (Crystarium.TemporaryIconToggle(
                         row.CameraLocked
                             ? TablerIcon.Lock

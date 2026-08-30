@@ -41,9 +41,21 @@ public sealed class AdoptedWorldObject
 
     public int Id { get; }
 
-    /// <summary>What the sidebar calls it — the model file's own name, which
-    /// is the only human-readable thing a BG object carries.</summary>
-    public string Name { get; }
+    /// <summary>What the sidebar calls it — the model file's own name until
+    /// the user renames it. The name is Poser's, never written back to the
+    /// map; a changed name moves the scene signature exactly as a prop's
+    /// does.</summary>
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                _name = value.Trim();
+        }
+    }
+
+    private string _name = string.Empty;
 
     /// <summary>The model resource path, or the adoption address when no model
     /// is loaded.</summary>

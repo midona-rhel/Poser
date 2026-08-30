@@ -126,6 +126,8 @@ public sealed class SceneMetadataReadOutcome
     public int PropCount { get; }
     public int LightCount { get; }
     public int CameraCount { get; }
+    public int OverlayCount { get; }
+    public int WorldObjectCount { get; }
 
     /// <summary>The document's own format name and version, read back rather
     /// than assumed. A viewer states them beside the file so a scene's format
@@ -160,6 +162,8 @@ public sealed class SceneMetadataReadOutcome
         PropCount = scene.Props.Count;
         LightCount = scene.Lights.Count;
         CameraCount = scene.Cameras.Count;
+        OverlayCount = scene.Overlays?.Count ?? 0;
+        WorldObjectCount = scene.WorldObjects?.Count ?? 0;
     }
 
     internal static SceneMetadataReadOutcome Success(SceneFile scene) =>

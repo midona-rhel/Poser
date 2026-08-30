@@ -385,11 +385,24 @@ public class SettingsWindow : Window
 
         c.Library.UseLibraryWhenImporting = _vm.UseLibraryWhenImporting;
         c.Library.ShowFileExtensions = _vm.LibraryShowExtensions;
+        // The objects home has no folder row here, so the rebuild below
+        // must carry its configured path across — dropping it stranded
+        // every entry save in a folder no tab scanned.
+        string? objectsFolder = null;
+        foreach (var source in c.Library.Sources)
+            if (string.Equals(
+                    source.Name, LibraryConfiguration.ObjectsSourceName,
+                    StringComparison.Ordinal))
+                objectsFolder = source.Path;
         c.Library.Sources.Clear();
         c.Library.SetHomeRoot(
             LibraryConfiguration.PoseSourceName,
             LibraryConfiguration.DefaultPoseRoot,
             _vm.PoseFolder);
+        c.Library.SetHomeRoot(
+            LibraryConfiguration.ObjectsSourceName,
+            LibraryConfiguration.DefaultObjectsRoot,
+            objectsFolder);
         c.Library.SetHomeRoot(
             LibraryConfiguration.SceneSourceName,
             LibraryConfiguration.DefaultSceneRoot,

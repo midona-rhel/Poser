@@ -9,7 +9,7 @@ namespace Poser.UI;
 public enum SidebarExpander { None, Collapsed, Open }
 
 /// <summary>The result of one tree-row gesture.</summary>
-public enum TreeRowAction { None, Selected, Expander, Context }
+public enum TreeRowAction { None, Selected, Expander, Context, Drag }
 
 /// <summary>Visual and interaction state for one tree row.</summary>
 public record struct TreeRowProps
@@ -58,6 +58,21 @@ public record struct TreeRowProps
 
     /// <summary>Drag-hover: the accent fill over its own hairline.</summary>
     public bool DropTarget;
+
+    /// <summary>Whether the row can be picked up and dragged — set by the
+    /// host for the rows whose order or grouping is the user's to move.
+    /// </summary>
+    public bool Draggable;
+
+    /// <summary>While a drag is live the plain hover fill goes silent —
+    /// only the drop indicators speak.</summary>
+    public bool SuppressHover;
+
+    /// <summary>The CURRENT one: the game's target actor and the live
+    /// camera wear their row mark in the ACCENT at full strength, so
+    /// which is which reads at a glance without selecting anything. (A
+    /// full-row outline was tried 2026-08-30 and replaced by this.)</summary>
+    public bool Marked;
 
     /// <summary>Right padding reserved for the scroll gutter.</summary>
     public float TrailingInset;
@@ -190,6 +205,14 @@ public static partial class Crystarium
         var action = hit.Activated
             ? TreeRowAction.Selected
             : TreeRowAction.None;
+        // A held press that travels becomes a DRAG — reported every frame
+        // it persists; the host runs the drop state machine. Travel is
+        // measured from the PRESS POINT (ImGui's accumulated drag), never
+        // per-frame: a per-frame delta gate only fires on a fast yank and
+        // made slow deliberate drags read as clicks.
+        if (props.Draggable && hit.Active
+            && ImGui.IsMouseDragging(ImGuiMouseButton.Left, 5f * scale))
+            action = TreeRowAction.Drag;
         // Context menus open on a hovered right-button press.
         if (hit.Hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
             action = TreeRowAction.Context;
@@ -201,7 +224,7 @@ public static partial class Crystarium
             ? theme.Chrome.AccentFill
             : props.Selected
                 ? theme.Chrome.SidebarSelected
-                : hit.Hovered
+                : hit.Hovered && !props.SuppressHover
                     ? theme.Chrome.SidebarHover
                     : Vector4.Zero;
         Span<MotionChannel> highlight =
@@ -235,6 +258,7 @@ public static partial class Crystarium
                     BorderLeftColor = border,
                 });
         }
+
 
         if (branch != TreeBranch.None && !props.HideGuides)
             DrawTreeGuides(
@@ -294,6 +318,10 @@ public static partial class Crystarium
             var markMin = theme.Optical.Snap(new Vector2(
                 x, hit.ScreenMin.Y + (height - side) * 0.5f));
             var markMax = markMin + new Vector2(side);
+            // The CURRENT one — the game's target actor, the live camera —
+            // wears its mark in the accent, at full strength.
+            var markColor = props.Marked ? theme.Accent : theme.Text;
+            float markOpacity = props.Marked ? 1f : TreeIconOpacity;
             if (props.IconTexture is { } texture)
                 dl.AddImage(
                     texture.Handle,
@@ -305,12 +333,12 @@ public static partial class Crystarium
                         new Vector4(1f, 1f, 1f, TreeIconOpacity))));
             else if (props.Icon is { } glyph)
                 IconIn(
-                    markMin, markMax, glyph, theme.Text,
-                    opacity: TreeIconOpacity);
+                    markMin, markMax, glyph, markColor,
+                    opacity: markOpacity);
             else
                 IconIn(
-                    markMin, markMax, props.IconName!, theme.Text,
-                    opacity: TreeIconOpacity);
+                    markMin, markMax, props.IconName!, markColor,
+                    opacity: markOpacity);
             x += (TreeIconSide + TreeIconGap) * scale;
         }
 

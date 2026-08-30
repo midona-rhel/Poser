@@ -23,6 +23,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
     private const string CameraExtension = ".xivc";
     private static readonly string EnvironmentExtension =
         SceneFile.EnvironmentEntryExtension;
+    private static readonly string GroupExtension =
+        SceneFile.GroupEntryExtension;
     private static readonly string OverlayExtension =
         SceneFile.OverlayEntryExtension;
 
@@ -401,6 +403,7 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Camera:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
+                case PoseLibraryEntryKind.Group:
                     node.ObjectsCount++;
                     break;
                 default:
@@ -487,7 +490,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
         // container and takes the same probe.
         if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
             or PoseLibraryEntryKind.Environment
-            or PoseLibraryEntryKind.Overlay)
+            or PoseLibraryEntryKind.Overlay
+            or PoseLibraryEntryKind.Group)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -578,7 +582,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(LightExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(GroupExtension, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PoseLibraryEntryKind KindOf(string path)
@@ -598,6 +603,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
             return PoseLibraryEntryKind.Environment;
         if (extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Overlay;
+        if (extension.Equals(GroupExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Group;
         return PoseLibraryEntryKind.Pose;
     }
 
