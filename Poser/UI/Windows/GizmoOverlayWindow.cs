@@ -1177,7 +1177,11 @@ public class GizmoOverlayWindow : Window
         float multiplier = RotationGizmoRings.ModifierMultiplier(io);
         // Ctrl enables hold-snap; Shift enables translate ray-snap.
         var gizmoConfig = GizmoConfig;
-        bool holdSnap = gizmoConfig.AllowHoldSnap && io.KeyCtrl;
+        // Z and X, not Ctrl and Shift: those are the step ladder during a
+        // world drag (the modifier contract), so snapping holds its own
+        // keys.
+        bool holdSnap = gizmoConfig.AllowHoldSnap
+            && ImGui.IsKeyDown(ImGuiKey.Z);
         float rotationStep = holdSnap
             ? GizmoSnap.Increment(gizmoConfig.SnapRotationDegrees, io.KeyShift)
             : 0f;
@@ -1185,7 +1189,8 @@ public class GizmoOverlayWindow : Window
             ? GizmoSnap.Increment(gizmoConfig.SnapLinearStep, io.KeyShift)
             : 0f;
         // Shift ray-snap takes precedence for translation.
-        bool raySnap = gizmoConfig.AllowRaySnap && io.KeyShift;
+        bool raySnap = gizmoConfig.AllowRaySnap
+            && ImGui.IsKeyDown(ImGuiKey.X);
 
         switch (gesture.Handle.Kind)
         {

@@ -477,7 +477,9 @@ Ctrl are the drag ladder in the UI and the speed pair in flight, Alt
 is the visibility peek — exclusively and everywhere. A dropdown that
 let a user reassign a modifier's role shipped once (the Hold-to-
 suspend pair) and was removed 2026-08-30: configurable roles are how
-collisions come back.
+collisions come back. Gizmo snapping holds its OWN keys — Z for step
+snap, X for surface snap — because Ctrl and Shift are the step
+ladder during the very drags snapping applies to.
 
 ## Search fields
 

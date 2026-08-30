@@ -774,10 +774,10 @@ public static class SettingsView
         page.Section("Snapping", form =>
         {
             form.Switch(
-                "Hold Ctrl to snap",
+                "Hold Z to snap",
                 vm.AllowHoldSnap,
                 next => vm.AllowHoldSnap = next,
-                "Quantise a drag to fixed steps while Ctrl is held; add Shift for a tenth of the step");
+                "Quantise a drag to fixed steps while Z is held; add Shift for a tenth of the step");
             form.Slider(
                 "Rotation step",
                 vm.SnapRotationDegrees,
@@ -795,7 +795,7 @@ public static class SettingsView
                 format: "0.00",
                 disabled: !vm.AllowHoldSnap);
             form.Switch(
-                "Hold Shift for surface snap",
+                "Hold X for surface snap",
                 vm.AllowRaySnap,
                 next => vm.AllowRaySnap = next,
                 "While moving, put the target wherever the pointer meets the scene");
