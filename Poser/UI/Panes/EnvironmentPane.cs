@@ -92,6 +92,7 @@ public sealed class EnvironmentPane
     private bool _openTime = true;
     private bool _openWeather = true;
     private bool _openSky;
+    private bool _openClouds = true;
     private bool _openLighting;
     private bool _openFog;
     private bool _openRain;
@@ -284,6 +285,8 @@ public sealed class EnvironmentPane
     {
         page.Section("Sky", _openSky, next => _openSky = next, SkyRows,
             divider: false);
+        page.Section("Clouds", _openClouds,
+            next => _openClouds = next, CloudRows);
         page.Section("Stars", _openStars, next => _openStars = next, StarRows);
     }
 
@@ -584,7 +587,10 @@ public sealed class EnvironmentPane
                         _environment.Sky with { SunVisibility = value }),
                 help: "How much of the sun disc shows through the sky");
         });
+    }
 
+    private void CloudRows(Crystarium.FormScope form)
+    {
         SectionSwitch(form, "Natural", EnvSection.Clouds,
             "Let the game run the clouds. Changing any cloud value below "
                 + "holds them for Poser.");
@@ -723,6 +729,7 @@ public sealed class EnvironmentPane
 
     private void FogRows(Crystarium.FormScope form)
     {
+        form.PairRows();
         SectionSwitch(form, "Natural", EnvSection.Fog,
             "Let the game run the fog. Changing any value below holds it for "
                 + "Poser.");
@@ -736,10 +743,6 @@ public sealed class EnvironmentPane
                     Color = Rgb(value, _environment.Fog.Color.W),
                 });
         }, help: "The colour the fog washes the distance with");
-        // The colour well edits RGB only, so the fog colour's own alpha — which
-        // both references edit — takes the row beside it. The six sliders
-        // pair two-up: small values never span the page.
-        form.PairRows();
         form.Slider("Colour alpha", fog.Color.W, 0f, 1f,
             value => _environment.Fog = _environment.Fog with
             {
@@ -807,7 +810,7 @@ public sealed class EnvironmentPane
             help: "How thick a single rain line draws");
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Rain", rain.Color with { W = 1f },
+            wells.Well("", rain.Color with { W = 1f },
                 value => _environment.Rain = _environment.Rain with
                 {
                     Color = Rgb(value, _environment.Rain.Color.W),
@@ -838,7 +841,7 @@ public sealed class EnvironmentPane
     private void ParticleRows(Crystarium.FormScope form)
     {
         form.PairRows();
-        SectionSwitch(form, "Natural particles", EnvSection.Particles,
+        SectionSwitch(form, "Natural", EnvSection.Particles,
             "Let the game run the particles — dust, snow and leaves all come "
                 + "from this one block. Changing any value below holds it for "
                 + "Poser.");
@@ -857,7 +860,7 @@ public sealed class EnvironmentPane
             help: "How brightly the particles glow");
         form.ColorWells("Colour", wells =>
         {
-            wells.Well("Particles", particles.Color with { W = 1f },
+            wells.Well("", particles.Color with { W = 1f },
                 value => _environment.Particles = _environment.Particles with
                 {
                     Color = Rgb(value, _environment.Particles.Color.W),
@@ -908,8 +911,7 @@ public sealed class EnvironmentPane
 
     private void StarRows(Crystarium.FormScope form)
     {
-        form.PairRows();
-        SectionSwitch(form, "Natural stars", EnvSection.Stars,
+        SectionSwitch(form, "Natural", EnvSection.Stars,
             "Let the game run the night sky. Changing any value below holds "
                 + "it for Poser.");
         var stars = _environment.Stars;
@@ -957,10 +959,12 @@ public sealed class EnvironmentPane
                         }),
                 help: "How brightly the constellations burn");
         });
+        form.PairRows();
         form.Slider("Galaxy intensity", stars.GalaxyIntensity, 0f, 10f,
             value => _environment.Stars =
                 _environment.Stars with { GalaxyIntensity = value },
             help: "How brightly the galaxy band shows");
+        form.EndPair();
         form.Cells(cells =>
         {
             cells.Cell(
@@ -1000,7 +1004,7 @@ public sealed class EnvironmentPane
     private void WindRows(Crystarium.FormScope form)
     {
         form.PairRows();
-        SectionSwitch(form, "Natural wind", EnvSection.Wind,
+        SectionSwitch(form, "Natural", EnvSection.Wind,
             "Let the game run the wind. Changing any value below holds it for "
                 + "Poser.");
         var wind = _environment.Wind;

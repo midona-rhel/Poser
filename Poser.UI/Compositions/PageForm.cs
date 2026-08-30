@@ -46,7 +46,11 @@ public static partial class Crystarium
     {
         float scale = ImGuiHelpers.GlobalScale;
         float inset = ActiveTheme.Page.Inset * scale;
-        float width = MathF.Min(MathF.Max(0f, size.X - inset * 2f),
+        // ONE left inset only: every page host's scroll region reserves
+        // the gutter, and the gutter IS the trailing margin — a second
+        // right inset made the right edge twice the left (the
+        // gutter-symmetry rule, measured at last).
+        float width = MathF.Min(MathF.Max(0f, size.X - inset),
             ActiveTheme.Page.MaximumContentWidth * scale);
         var page = new PageScope(
             id,
@@ -1527,6 +1531,10 @@ public static partial class Crystarium
         public void Cells(Action<FormCellScope> content, string? help = null)
         {
             ArgumentNullException.ThrowIfNull(content);
+            // A Cells row is ALREADY a designed multi-cell row: pair flow
+            // halving it crushes every cell (the Stars incident). It always
+            // keeps its full line.
+            _page.NextFullLine = true;
             var scope = new FormCellScope();
             content(scope);
             var items = scope.Items;

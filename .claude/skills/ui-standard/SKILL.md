@@ -226,7 +226,12 @@ navigation, not a scrollbar — may shift anything.
   Orthographic|Ortho zoom, Follow|Lock, Freeze water|Restore water,
   Sections|File. Pairing is a
   deliberate per-section choice at the design width, not a responsive
-  behavior; selector rows and field rows keep full rows.
+  behavior; selector rows and field rows keep full rows. Pair flow is
+  applied by READING every row it will wrap — a Cells row is already
+  a designed multi-cell row and always keeps its full line (the
+  primitive enforces this since the Stars incident, 2026-08-30);
+  blanket-pairing a whole section without reading its rows is how
+  that incident happened.
 
 ## Sliders
 
@@ -387,6 +392,11 @@ widths:
    one equal-width column; reset verbs look the same everywhere.
 7. **What would Blender do?** Check the analogous editor; deviate on
    purpose or not at all.
+8. **Measure the four margins.** The trailing gutter counts as the
+   right margin — content runs to the scroll region's edge and the
+   gutter provides the space. A page inset stacked on the gutter
+   doubles the right edge; rules in prose catch nothing — MEASURE
+   the two edges on every surface you touch.
 
 Write the two designs down before writing code. If a control has no
 good narrow form, the surface is not done being designed.
