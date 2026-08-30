@@ -168,6 +168,7 @@ internal static class ServiceRegistration
         services.AddSingleton<SelectionSession>();
         services.AddSingleton<SceneSession>();
         services.AddSingleton<StableBindingRegistry>();
+        services.AddSingleton<Application.Scene.SceneGroups>();
         return services;
     }
 

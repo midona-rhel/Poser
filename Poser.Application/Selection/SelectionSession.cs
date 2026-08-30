@@ -238,15 +238,24 @@ public sealed class SelectionScope
 
     private static bool IsCompatible(SelectionId left, SelectionId right)
     {
-        if (left.Kind != right.Kind)
-            return false;
-        if (left.Kind == SceneEntityKind.Bone)
-            return left.ActorLineage == right.ActorLineage;
-        return true;
+        // Bones group only with bones of their own actor — posing stays a
+        // per-skeleton concern. Scene ENTITIES group freely across kinds:
+        // the anonymous group is any entities selected together, and the
+        // same-kind rule that stood here was exactly what stopped a light
+        // joining an actor (2026-08-30).
+        if (left.Kind == SceneEntityKind.Bone
+            || right.Kind == SceneEntityKind.Bone)
+            return left.Kind == right.Kind
+                && left.ActorLineage == right.ActorLineage;
+        if (EntitySelection.IsEntity(left.Kind)
+            && EntitySelection.IsEntity(right.Kind))
+            return true;
+        return left.Kind == right.Kind;
     }
 }
 
-/// <summary>Stable-id selection authority with homogeneous grouping.</summary>
+/// <summary>Stable-id selection authority. Entities group freely across
+/// kinds (the anonymous group); bones group per skeleton.</summary>
 public sealed class SelectionSession
 {
     private readonly SelectionScope _live;

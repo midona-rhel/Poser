@@ -996,16 +996,28 @@ public sealed class PoseLibraryPane
                             freeCamera && camera.CameraAnchor is not null;
                         _detailsHasActorAnchor =
                             freeCamera && camera.ActorAnchor is not null;
+                        if (freeCamera)
+                            _detailsRows.Add(("Anchors", Anchors(
+                                camera.CameraAnchor, camera.ActorAnchor)));
                     }
                     break;
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
+                case PoseLibraryEntryKind.Group:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
+                        // A group entry says what it HOLDS — the one fact
+                        // its tile cannot.
+                        if (kind == PoseLibraryEntryKind.Group)
+                        {
+                            string contents = ContentsSummary(metadata);
+                            if (contents.Length > 0)
+                                _detailsRows.Add(("Contents", contents));
+                        }
                         if (kind == PoseLibraryEntryKind.Environment)
                         {
                             // The name travels in the file when the capture
@@ -1025,7 +1037,8 @@ public sealed class PoseLibraryPane
                             _detailsRows.Add(("Saved", saved.ToLocalTime()
                                 .ToString(LibraryStamp.DateTimeFormat,
                                     CultureInfo.InvariantCulture)));
-                        if (kind == PoseLibraryEntryKind.Actor)
+                        if (kind is PoseLibraryEntryKind.Actor
+                            or PoseLibraryEntryKind.Group)
                         {
                             _detailsHasCameraAnchor = metadata.HasCameraAnchor;
                             _detailsHasActorAnchor = metadata.HasActorAnchor;
@@ -1033,6 +1046,14 @@ public sealed class PoseLibraryPane
                     }
                     break;
             }
+            // Every entry answers "Saved": the document's own stamp when it
+            // records one, else the file's write time — a light or camera
+            // document carries no date of its own.
+            if (!_detailsRows.Exists(row => row.Label == "Saved"))
+                _detailsRows.Add(("Saved",
+                    System.IO.File.GetLastWriteTime(path).ToString(
+                        LibraryStamp.DateTimeFormat,
+                        CultureInfo.InvariantCulture)));
         }
         catch (Exception)
         {
@@ -1040,6 +1061,23 @@ public sealed class PoseLibraryPane
         }
         if (_detailsRows.Count == 0 && _detailsColor is null)
             _detailsRows.Add(("Details", "none recorded"));
+    }
+
+    private static string ContentsSummary(SceneMetadataReadOutcome metadata)
+    {
+        var parts = new List<string>();
+        void Part(int count, string one, string many)
+        {
+            if (count > 0)
+                parts.Add($"{count} {(count == 1 ? one : many)}");
+        }
+        Part(metadata.ActorCount, "actor", "actors");
+        Part(metadata.PropCount, "object", "objects");
+        Part(metadata.WorldObjectCount, "borrowed object", "borrowed objects");
+        Part(metadata.LightCount, "light", "lights");
+        Part(metadata.CameraCount, "camera", "cameras");
+        Part(metadata.OverlayCount, "overlay", "overlays");
+        return string.Join(" · ", parts);
     }
 
     private static string Anchors(
@@ -1069,7 +1107,10 @@ public sealed class PoseLibraryPane
         var name = _vm.Tiles[index].Label;
         switch (_tileKinds[index])
         {
+            // A group entry is the actor entry's plural: the same container,
+            // the same placement-anchored load, several entities at once.
             case PoseLibraryEntryKind.Actor:
+            case PoseLibraryEntryKind.Group:
                 var actorMode = EffectiveMode();
                 if (!_anchors.TryCurrentFor(
                         actorMode, out var anchorPosition,
@@ -1922,6 +1963,7 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Camera => TablerIcon.Camera,
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
+                    PoseLibraryEntryKind.Group => TablerIcon.Folder,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2414,6 +2456,7 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Camera
                 or PoseLibraryEntryKind.Environment
                 or PoseLibraryEntryKind.Overlay
+                or PoseLibraryEntryKind.Group
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

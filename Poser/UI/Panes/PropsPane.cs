@@ -74,6 +74,13 @@ public sealed class PropsPane
 
     private void PropRows(Crystarium.FormScope form, PropHandle prop)
     {
+        // Identity first, the camera pattern: the name leads the page.
+        form.TextInput(
+            "Name",
+            prop.Name,
+            next => prop.Name = next,
+            placeholder: "Object",
+            help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,

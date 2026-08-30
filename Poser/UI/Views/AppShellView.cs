@@ -6,9 +6,38 @@ using Dalamud.Interface.Utility;
 
 namespace Poser.UI.Views;
 
+/// <summary>Where a dragged row lands relative to its target.</summary>
+public enum RowDropPosition
+{
+    /// <summary>Into the target group, appended.</summary>
+    Into,
+    /// <summary>Before the target row, inside its group.</summary>
+    Before,
+    /// <summary>After the target row, inside its group.</summary>
+    After,
+    /// <summary>Open space: the dragged rows leave their group.</summary>
+    Out,
+}
+
 public sealed class ShellSidebarRow
 {
     public string Label = "";
+    /// <summary>Whether the row can be dragged (entities and group
+    /// heads; never bones or categories).</summary>
+    public bool Draggable;
+    /// <summary>Whether a drag can drop INTO this row — group heads
+    /// only. An actor's disclosure is not a container: nothing else
+    /// may highlight as one.</summary>
+    public bool DropContainer;
+    /// <summary>Whether the row lives inside a named group's subtree —
+    /// the head-vs-members highlight rule reads it.</summary>
+    public bool GroupMember;
+    /// <summary>Group-head rows: the lock action seat.</summary>
+    public bool GroupActions;
+    public bool GroupLocked;
+    /// <summary>Camera rows: the kind letter between the live and lock
+    /// seats — M main, F free, C camera. A marker, not a control.</summary>
+    public string CameraMark = "";
     public string Count = "";
     public TablerIcon Icon = TablerIcon.User;
     /// <summary>Named custom icon (PoserIconSources) — wins over Icon when set.</summary>
@@ -248,8 +277,17 @@ public sealed class AppShellViewModel
     /// <see cref="OnBurger"/> is.</summary>
     public Action<Vector2>? OnSpawn;
     public Action<ShellSidebarRow>? OnRowClicked;
+
+    /// <summary>A drag released: <c>dragged</c> lands relative to
+    /// <c>target</c> (null target = open space, which un-groups).</summary>
+    public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
+
+    /// <summary>The drag ghost's text for a row — "N selected" when the
+    /// dragged row carries the whole selection with it.</summary>
+    public Func<ShellSidebarRow, string>? DragGhostText;
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
+    public Action<ShellSidebarRow>? OnGroupLock;
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
@@ -882,7 +920,8 @@ public static class AppShellView
     {
         float widest = 0f;
         foreach (var kind in (ReadOnlySpan<string>)
-            ["Target", "Actor", "Object", "Camera", "Light", "Overlay"])
+            ["Target", "Actor", "Object", "Camera", "Light", "Overlay",
+                "Selection"])
             widest = MathF.Max(
                 widest, Crystarium.MeasureText(kind, KindMeasureStyle).X);
         return widest;
@@ -997,18 +1036,8 @@ public static class AppShellView
                 vm.OnWorldClassToggle?.Invoke(index);
             x += step;
         }
-        // The spawn plus closes the band at the right: the adopt glyphs
-        // bring the world's things in, the plus adds anything new.
-        float plusX = max.X - StatusInset * s - side * s;
-        IconAt(
-            new Vector2(plusX, y), TablerIcon.Plus, side, SpawnPressed,
-            "##sidebar-spawn",
-            help: "Add an actor or object to the scene");
-        if (_spawnPressed)
-        {
-            _spawnPressed = false;
-            vm.OnSpawn?.Invoke(new Vector2(plusX, y + side * s));
-        }
+        // The spawn plus lives beside the sidebar's search now — this band
+        // is the adopt glyphs' alone.
     }
 
     /// <summary>Status information only: actor count and frame rate.</summary>

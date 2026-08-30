@@ -40,6 +40,7 @@ public class PoseInspectorPane
     private readonly IEditorState _editorState;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
+    private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Viewport.ViewportProjection _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
@@ -174,8 +175,10 @@ public class PoseInspectorPane
         Game.Posing.IkBakeCapture ikBake,
         IActorSpawnService spawnService,
         CameraPane cameraPane,
-        OverlayPane overlayPane)
+        OverlayPane overlayPane,
+        global::Poser.Application.Scene.SceneGroups groups)
     {
+        _groups = groups;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
@@ -253,7 +256,8 @@ public class PoseInspectorPane
         _effectiveRevision = _scene.Revision;
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
-        _effective = TransformTargetResolver.Resolve(selected, _scene.Snapshot);
+        _effective = TransformTargetResolver.Resolve(
+            selected, _scene.Snapshot, _groups.IsLockedMember);
         return _effective;
     }
 
@@ -435,6 +439,10 @@ public class PoseInspectorPane
 
     public (Quaternion FrameWorld, Quaternion AxisConversion, bool CanEdit) GizmoWorldContext()
     {
+        // The anonymous group rotates in WORLD axes about its centroid —
+        // one set point in space, whatever frame any member carries.
+        if (IsMultiEntitySelection)
+            return (Quaternion.Identity, Quaternion.Identity, true);
         var (transform, canEdit) = ReadTransform();
         if (_primary is { Kind: SceneEntityKind.Bone, Bone: { } boneId })
         {
@@ -476,6 +484,11 @@ public class PoseInspectorPane
     // Rotation deltas apply to the gesture baseline.
     public void RotateSelectionGizmo(Quaternion totalDelta)
     {
+        if (IsMultiEntitySelection)
+        {
+            RotateGroup(totalDelta);
+            return;
+        }
         UpdateGestureGuards();
         if (_gestureRestartSuppressed)
             return;
@@ -491,9 +504,146 @@ public class PoseInspectorPane
 
     public void CommitRotation()
     {
+        if (_groupGesture is { } group)
+        {
+            _cleanTransforms.Commit(group);
+            _groupGesture = null;
+            return;
+        }
         CommitTransformSession();
         ClearTransformSession();
     }
+
+    // ── the anonymous group: rail wiring ─────────────────────────────────
+
+    public bool IsMultiEntitySelection =>
+        global::Poser.Application.Selection.EntitySelection
+            .IsMultiEntity(_selection.Selected);
+
+    private global::Poser.Application.Transforms.TransformGestureId? _groupGesture;
+    private readonly int[] _multiHeadCounts = new int[5];
+    private string _multiHeadWho = string.Empty;
+    private string _multiHeadSub = string.Empty;
+
+    /// <summary>"N selected" and its per-kind line, minted only when the
+    /// counts change.</summary>
+    public (string Who, string Sub) MultiselectHeader()
+    {
+        Span<int> counts = stackalloc int[5];
+        int total = 0;
+        foreach (var id in _selection.Selected)
+        {
+            int slot = id.Kind switch
+            {
+                SceneEntityKind.Actor => 0,
+                SceneEntityKind.Prop or SceneEntityKind.WorldObject => 1,
+                SceneEntityKind.Light => 2,
+                SceneEntityKind.Camera => 3,
+                SceneEntityKind.Overlay => 4,
+                _ => -1,
+            };
+            if (slot < 0)
+                continue;
+            counts[slot]++;
+            total++;
+        }
+        bool changed = false;
+        for (int i = 0; i < 5; i++)
+            if (_multiHeadCounts[i] != counts[i])
+            {
+                _multiHeadCounts[i] = counts[i];
+                changed = true;
+            }
+        var namedGroup = _groups.ActiveSelection(_selection.Selected);
+        if (namedGroup is { } matched
+            && !string.Equals(_multiHeadWho, matched.Name, StringComparison.Ordinal))
+        {
+            _multiHeadWho = matched.Name;
+            changed = true;
+        }
+        if (changed || _multiHeadWho.Length == 0)
+        {
+            if (namedGroup == null)
+                _multiHeadWho = $"{total} selected";
+            var parts = new List<string>(3);
+            ReadOnlySpan<string> singular =
+                ["actor", "object", "light", "camera", "overlay"];
+            for (int i = 0; i < 5; i++)
+                if (counts[i] > 0)
+                    parts.Add(counts[i] == 1
+                        ? $"1 {singular[i]}"
+                        : $"{counts[i]} {singular[i]}s");
+            _multiHeadSub = string.Join(" · ", parts);
+        }
+        return (_multiHeadWho, _multiHeadSub);
+    }
+
+    private void RotateGroup(Quaternion totalDelta)
+    {
+        if (_groupGesture == null)
+        {
+            var resolved = global::Poser.Application.Transforms
+                .TransformTargetResolver.Resolve(
+                    _selection.Selected, _scene.Snapshot,
+                    _groups.IsLockedMember);
+            if (resolved is not { } selection)
+                return;
+            var begin = _cleanTransforms.Begin(
+                selection.Targets,
+                DomainOperation.Rotate,
+                global::Poser.Domain.Transforms.TransformSpace.World,
+                global::Poser.Domain.Transforms.PivotMode.Centroid,
+                description: "Rotate selection");
+            if (!begin.Success || begin.GestureId is not { } gestureId)
+                return;
+            _groupGesture = gestureId;
+        }
+        _cleanTransforms.Update(
+            _groupGesture.Value,
+            new global::Poser.Domain.Transforms.TransformDelta(
+                Vector3.Zero, totalDelta, Vector3.One));
+    }
+
+    /// <summary>One undoable translate: the whole selection moves so its
+    /// centroid lands at <paramref name="goal"/>, every member keeping its
+    /// offset from the others.</summary>
+    public void GroupMoveTowards(Vector3 goal)
+    {
+        var resolved = global::Poser.Application.Transforms
+            .TransformTargetResolver.Resolve(
+                _selection.Selected, _scene.Snapshot,
+                _groups.IsLockedMember);
+        if (resolved is not { } selection)
+            return;
+        var sum = Vector3.Zero;
+        int counted = 0;
+        foreach (var target in selection.Targets)
+        {
+            var pose = target is
+                { Kind: TransformTargetKind.Actor, Actor: { } actor }
+                    ? _viewport.GetActorTransform(actor)
+                    : _viewport.GetModelTransform(target);
+            if (pose is not { } position)
+                continue;
+            sum += position.Position;
+            counted++;
+        }
+        if (counted == 0)
+            return;
+        var begin = _cleanTransforms.Begin(
+            selection.Targets,
+            DomainOperation.Translate,
+            global::Poser.Domain.Transforms.TransformSpace.World,
+            description: "Move to camera");
+        if (!begin.Success || begin.GestureId is not { } gestureId)
+            return;
+        _cleanTransforms.Update(gestureId,
+            new global::Poser.Domain.Transforms.TransformDelta(
+                goal - sum / counted, Quaternion.Identity, Vector3.One));
+        _cleanTransforms.Commit(gestureId);
+    }
+
+    public void GroupDeselect() => _selection.Clear();
 
     private struct SectionStack
     {

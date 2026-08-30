@@ -123,6 +123,99 @@ Windows each have ONE job. No mode may change what a window IS.
   SPANS its row at a fixed width, each tab taking an equal share of
   the slack: a natural-width icon strip left a small island in a
   wide band, which read as broken (2026-08-30).
+- **The anonymous group** — selecting two or more entities of ANY
+  kinds is a group that was never created: one Selection page (kind
+  counts, Move to camera, Deselect), one gizmo seated at the LIVE
+  centroid of the members with a world-aligned frame, rotation and
+  scale about that one point (Centroid pivot), translation carrying
+  it. Cameras and overlays ride along untargeted. Selecting a single
+  member edits it individually, exactly as in a named group.
+- **Named groups** are NAMING AND STRUCTURE over the anonymous
+  group: one depth only (a group never contains a group), one home
+  per entity, folder rows first in the tree with members nested one
+  level in, and a group row's click selects the whole membership —
+  the multiselect machinery does everything else. The Selection page
+  and titles wear the group's name when the selection IS the group;
+  its NAME is the page's first field, edited inline (the camera's
+  own pattern); Group… and Ungroup live on that page, and Ungroup
+  dissolves without destroying. PARENT AND CHILDREN NEVER SELECT
+  TOGETHER: members multiselect freely within a group, but the head
+  is only ever selected alone (it IS the whole membership), and only
+  one of the two levels wears the pill at a time — actor bones are
+  the ONE exception, keeping their dual actor-and-bones highlight.
+  "The selection IS the group" happens by EXPLICIT head click only
+  (ruled 2026-08-30): hand-selecting every member stays a
+  member-level selection — set-equality inference was rejected. A
+  group LOCKS (lock seat on its head row): locked protects
+  PLACEMENT — members' world transforms refuse, nothing drags in,
+  out, or around, and rename/ungroup/destroy disable in place;
+  visibility and animation stay free. The head menu carries the
+  full lifetime: Rename, Save to library, Lock/Unlock, Ungroup, and
+  Destroy — which destroys the members through their own seams and
+  lets the emptied group dissolve.
+  Groups and the root order PERSIST: they ride whole-scene saves
+  (never single-entity entries) and rebuild over the loaded
+  entities; a member the load lost is skipped by name. "Save to
+  library" on a group (head menu, selection menu, Selection page)
+  writes a .xivg group entry — the actor entry's plural, listed in
+  the library's Objects tab, spawning its members with the group
+  when activated.
+- **Tree drag-and-drop** — entity rows and group heads drag (never
+  bones or categories); a held press that travels is the drag, the
+  release is the drop, and the row under the pointer is the live
+  candidate. INTO exists only where a child can actually land: a
+  group head, and never from another group head (one depth) — those
+  rows split into thirds (before/INTO/after); every other row splits
+  at its midline into before/after, and NEVER lights up as a
+  container. The indicators (2026-08-30): INTO is the accent row
+  fill; an insert is an accent CARET LINE at the exact seam, a small
+  triangle at its head; plain hover goes SILENT for the drag's
+  duration — during a drag only the drop indicators speak. Dragging
+  a selected row carries the whole entity selection, and the ghost
+  says so ("3 selected", not the one row's name). Open space
+  (no row under the pointer) drops to the END of the root list,
+  leaving any group — the caret at the tree's TAIL marks it; a drag
+  with no candidate must never show nothing. The ROOT list is the
+  USER'S order (ruled 2026-08-30, overriding the earlier
+  kind-order): entities and group heads re-seat anywhere, kinds
+  interleaved; a new spawn lands at the bottom, and the initial
+  seating order is cameras first, then actors, then the rest. ATTACHED rows never drag — a companion rides its owner, a
+  bone-attached light rides its bone; their rows still stand as drop
+  seams but hold no grip.
+- **State marks speak selected-accent** — a row's "this is the
+  current one" fact (the game's target actor, the live camera) is
+  the accent-SELECTED mark on its action-strip glyph PLUS the row's
+  own leading ICON rendered in the accent at full strength, never a
+  text badge. (A full-row accent outline was tried 2026-08-30 and
+  replaced by the accent icon the same day.) Camera rows carry a
+  KIND LETTER — M main, F free, C camera — as an inert marker
+  between the live and lock seats; it replaced the "Default" badge
+  (2026-08-30), so camera rows carry no text badge at all. The "Live" camera badge was removed 2026-08-30
+  for exactly this; "Default" remains a badge because it is
+  identity, not state.
+- **Context menus: one lifetime family, every kind** — every entity
+  row answers right-click with the actor menu's family spoken in its
+  own vocabulary: the visibility verb, Rename, Clone/Duplicate where
+  clonable, Save to library where a document kind exists, and the
+  ownership-aware ending (Destroy what the scene owns, Release what
+  the map owns — a borrowed thing never says Destroy). Group heads
+  answer with structure verbs (Rename, Ungroup). A row with no menu
+  at all is a defect (world objects shipped that way).
+- **The selection menu** — right-clicking a row that RIDES the
+  multi-entity selection opens the SELECTION's menu, not the row's:
+  Duplicate, Hide/Show, Pause/Resume, Move to camera, Group…/
+  Ungroup, Deselect, Destroy — each verb dispatching per kind
+  through the same plumbing the single menus use. A kind a verb
+  cannot reach is skipped, never refused; a verb no selected kind
+  answers disables in place. Hide and Pause drive the set to ONE
+  state (any visible → Hide). An unselected row keeps its single
+  menu.
+- **The sidebar search band** — the search ICON sits on the page
+  boundary: the pill's borderless box reaches left of the inset by
+  its own leading pad, so the glyph, not invisible padding, aligns
+  with the rows. The spawn plus closes the band at the right of the
+  search (moved from the adopt band 2026-08-30); the toolbar keeps
+  its own plus.
 - **Pop-outs** are pinned properties: the standard tab-content view
   with a pin. A bespoke pop-out layout is a defect.
 
@@ -438,6 +531,12 @@ is the normative implementation; never a bare number row for a
 texture id.
 
 ## Sections and headers
+
+- A section TITLE is part of every contained control's identity:
+  a title that changes while the user types in the section (a name
+  field renaming its own header) resets the field's focus after one
+  character and hands the keyboard to the game (group rename,
+  2026-08-30). Titles are STABLE; live values belong in fields.
 
 - Headers are SENTENCE CASE — "Wet surface", never "WET SURFACE".
   Only the first letter capitalizes; acronyms (MCDF, IK, 3D) keep

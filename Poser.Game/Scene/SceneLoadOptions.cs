@@ -50,7 +50,30 @@ public sealed record SceneSaveOptions
         IncludeEnvironment = false,
         IncludeOverlays = false,
         IncludeModdedAppearance = true,
+        IncludeStructure = false,
         OnlyActorLogicalId = logicalId,
+    };
+
+    /// <summary>Whether the document carries the sidebar's structure —
+    /// named groups and the user's root order. On for whole-scene saves;
+    /// single-entity entries have no structure to say.</summary>
+    public bool IncludeStructure { get; init; } = true;
+
+    /// <summary>Restricts the save to the entities whose keys (logical
+    /// ids; actor capture keys are admitted by translation) are in the
+    /// set — the group-entry save. Groups survive only when every member
+    /// is kept.</summary>
+    public IReadOnlyCollection<Guid>? OnlyEntityKeys { get; init; }
+
+    /// <summary>The group-entry save: one named group's members with
+    /// their appearances, the group riding along so the load recreates
+    /// it whole.</summary>
+    public static SceneSaveOptions GroupEntry(
+        IReadOnlyCollection<Guid> memberKeys) => new()
+    {
+        IncludeEnvironment = false,
+        IncludeModdedAppearance = true,
+        OnlyEntityKeys = memberKeys,
     };
 
     /// <summary>Restricts the save to one overlay — the overlay-entry
@@ -66,6 +89,7 @@ public sealed record SceneSaveOptions
         IncludeLights = false,
         IncludeCameras = false,
         IncludeEnvironment = false,
+        IncludeStructure = false,
         OnlyOverlayKey = key,
     };
 
@@ -78,6 +102,7 @@ public sealed record SceneSaveOptions
         IncludeLights = false,
         IncludeCameras = false,
         IncludeOverlays = false,
+        IncludeStructure = false,
     };
 
     public static SceneSaveOptions Default { get; } = new();

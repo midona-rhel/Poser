@@ -62,6 +62,37 @@ public class MainWindow : Window
     /// the act lands in the same history the transforms do.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly UserNotices _notices;
+    private readonly Dalamud.Plugin.Services.IPluginLog _log;
+    private readonly global::Poser.Application.Scene.SceneGroups _groups;
+
+    /// <summary>A group row's click target — selects the whole membership.
+    /// </summary>
+    private readonly record struct GroupRowTag(Guid Id);
+
+    /// <summary>The outliner's ONE section, retained with its rows: the
+    /// tree is the most expensive thing a frame can assemble, so it is
+    /// rebuilt only when <see cref="BuildSidebar"/>'s gate flips and
+    /// flag-refreshed in place on every other frame. One section because
+    /// the root list is the USER'S order — group heads and entities of
+    /// every kind interleave freely, so kind boundaries cannot own
+    /// rows.</summary>
+    private readonly ShellSidebarSection _sceneSection = new()
+    {
+        Title = "",
+    };
+
+    /// <summary>Rebuild scratch: the root-eligible entities handed to the
+    /// order sync, retained to keep the cold path allocation-flat.</summary>
+    private readonly List<SelectionId> _rootEntities = new();
+
+    private readonly Game.Scene.SceneWorkflow _sceneWorkflow;
+
+    /// <summary>Rebuilds this pending structure has waited through: the
+    /// spawned entities bind within a publish or two, so a stage nothing
+    /// ever resolves against is dropped rather than held forever.</summary>
+    private int _pendingStructureAttempts;
+    private readonly global::Poser.Services.ICameraService _gameCamera;
+    private readonly Game.Viewport.ViewportProjection _viewportProjection;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -181,65 +212,6 @@ public class MainWindow : Window
     private static readonly SelectionId EnvironmentSelection =
         SelectionId.ForEnvironment();
 
-    /// <summary>The scene's own sidebar section, retained with its rows: the
-    /// tree is the most expensive thing a frame can assemble, so it is rebuilt
-    /// only when <see cref="BuildSidebar"/>'s gate flips and refreshed in place
-    /// on every other frame.</summary>
-    private readonly ShellSidebarSection _actorsSection = new()
-    {
-        Title = "",
-        ShowPlus = false,
-    };
-
-    /// <summary>
-    /// The objects section, retained like actors: flat rows, one per object
-    /// the scene holds, rebuilt behind the same gate (the scene revision
-    /// carries an object's spawn, destroy and visibility) and flag-refreshed
-    /// on warm frames.
-    ///
-    /// <para>It holds both kinds the word covers — the ones the scene spawned
-    /// and the ones it borrowed from the map. They were two sections and are
-    /// one, because their source does not change their row behavior:
-    /// a table is a table whether Poser stood it there or the map did. What
-    /// separates them is stated per row, the way a light's ownership
-    /// is — a borrowed row wears its own mark and its verb is release, not
-    /// destroy.</para>
-    /// </summary>
-    private readonly ShellSidebarSection _propsSection = new()
-    {
-        Title = "",
-        ShowPlus = false,
-    };
-
-    /// <summary>The overlays section, the props section's sibling: flat rows,
-    /// one per staged game-UI node, rebuilt behind the same gate (the scene
-    /// revision carries a node's create, destroy, rename and visibility) and
-    /// flag-refreshed on warm frames.</summary>
-    private readonly ShellSidebarSection _overlaysSection = new()
-    {
-        Title = "",
-        ShowPlus = false,
-    };
-
-    /// <summary>The lights section, retained like actors. Lights are flat — a
-    /// spawned light owns nothing beneath it — so its rows are one per light,
-    /// rebuilt behind the same gate (the scene revision carries a light's
-    /// spawn, rename, kind and on-state) and flag-refreshed on warm frames.
-    /// </summary>
-    private readonly ShellSidebarSection _lightsSection = new()
-    {
-        Title = "",
-    };
-
-    /// <summary>The cameras section, the lights section's twin: flat rows,
-    /// one per virtual camera, rebuilt behind the same gate (the scene
-    /// revision carries a camera's create, rename and live switch) and
-    /// flag-refreshed on warm frames.</summary>
-    private readonly ShellSidebarSection _camerasSection = new()
-    {
-        Title = "",
-    };
-
     /// <summary>Footer toggles for world-object adoption classes.</summary>
     private readonly (WorldAdoptionKind Kind, ShellWorldClass Entry)[]
         _worldClasses = BuildWorldClasses();
@@ -321,6 +293,15 @@ public class MainWindow : Window
     /// disclosure is the one non-scene input that changes the row count.
     /// </summary>
     private int _expandVersion;
+    private int _sidebarGroupsRevision = -1;
+
+    /// <summary>The ANONYMOUS GROUP's strip: two or more entities selected
+    /// together get one Selection page — a group that was never created.
+    /// </summary>
+    private readonly ShellTab[] _multiselectTabs =
+    [
+        new() { Label = "Selection" },
+    ];
 
     /// <summary>The selection-typed tab strip, retained like the library's —
     /// three fresh ShellTabs per frame were pure churn.</summary>
@@ -463,6 +444,11 @@ public class MainWindow : Window
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
         UserNotices notices,
+        Dalamud.Plugin.Services.IPluginLog log,
+        global::Poser.Application.Scene.SceneGroups groups,
+        Game.Scene.SceneWorkflow sceneWorkflow,
+        global::Poser.Services.ICameraService gameCamera,
+        Game.Viewport.ViewportProjection viewportProjection,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |
@@ -495,6 +481,7 @@ public class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
         _cleanPose = cleanPose;
@@ -548,6 +535,10 @@ public class MainWindow : Window
         _gazeService = gazeService;
         _lifecycle = lifecycle;
         _notices = notices;
+        _log = log;
+        _groups = groups;
+        _gameCamera = gameCamera;
+        _viewportProjection = viewportProjection;
         // A gaze mode flip changes the sidebar's row set (the gaze anchor row
         // exists only in Position mode) while bumping neither the scene
         // revision nor the disclosure version. The handler arms the cold path
@@ -588,6 +579,14 @@ public class MainWindow : Window
         };
         // Static shell wiring (rebuilt data lives in BuildViewModel each frame).
         _vm.OnTab = OnTabClicked;
+        _vm.OnRowDrop = OnRowDropped;
+        _vm.DragGhostText = DragGhostFor;
+        _vm.OnGroupLock = row =>
+        {
+            if (row.Tag is GroupRowTag lockTag
+                && _groups.Find(lockTag.Id) is { } lockGroup)
+                _groups.SetLocked(lockTag.Id, !lockGroup.Locked);
+        };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -672,7 +671,31 @@ public class MainWindow : Window
         _vm.OnSidebarResize = w => _sidebarWidth = w;
         _vm.OnRowContextMenu = row =>
         {
-            if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
+            // A right-click on a row that RIDES the multi-entity selection
+            // opens the selection's own menu — the verbs speak for the
+            // whole carry, exactly as a drag does. An unselected row keeps
+            // its single menu.
+            if (row.Tag is SelectionId ctxMember
+                && global::Poser.Application.Selection.EntitySelection
+                    .IsEntity(ctxMember.Kind)
+                && _selection.IsSelected(ctxMember)
+                && global::Poser.Application.Selection.EntitySelection
+                    .CountEntities(_selection.Selected) >= 2)
+            {
+                _selectionCtxOpenRequested = true;
+            }
+            else if (row.Tag is GroupRowTag ctxGroup)
+            {
+                _ctxGroupId = ctxGroup.Id;
+                _groupCtxOpenRequested = true;
+            }
+            else if (row.Tag is SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } ctxWorld })
+            {
+                _ctxWorldObjectId = ctxWorld;
+                _worldObjectCtxOpenRequested = true;
+            }
+            else if (row.Tag is SelectionId { Kind: SceneEntityKind.Actor, Actor: { } ctxActor })
             {
                 _ctxActorId = ctxActor;
                 _ctxOpenRequested = true;
@@ -1085,7 +1108,11 @@ public class MainWindow : Window
     private string ContentKind(SelectionId? primary)
     {
         // ALWAYS the selected object's kind — the segment names what
-        // Target would show, whichever panel is active.
+        // Target would show, whichever panel is active. A multiselect IS
+        // its own kind: the anonymous group.
+        if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
+                _selection.Selected))
+            return "Selection";
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.Bone
@@ -1109,8 +1136,25 @@ public class MainWindow : Window
         _ => EnvironmentTab.Lighting,
     };
 
+    private int _multiTitleCount;
+    private string _multiTitle = string.Empty;
+
     private string TitleEntity(SelectionId? primary)
     {
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities >= 2)
+        {
+            // A selection that IS a named group wears the group's name.
+            if (_groups.ActiveSelection(_selection.Selected) is { } group)
+                return group.Name;
+            if (_multiTitleCount != entities)
+            {
+                _multiTitleCount = entities;
+                _multiTitle = $"{entities} selected";
+            }
+            return _multiTitle;
+        }
         return primary switch
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
@@ -1171,6 +1215,9 @@ public class MainWindow : Window
         DrawLightContextMenu();
         DrawCameraContextMenu();
         DrawPropContextMenu();
+        DrawWorldObjectContextMenu();
+        DrawGroupContextMenu();
+        DrawSelectionContextMenu();
         DrawRenameModal();
         DrawEntityRenameModal();
         DrawBonePresetManager();
@@ -1399,7 +1446,7 @@ public class MainWindow : Window
         _pivotKey.AddRange(selected);
 
         var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot);
+            selected, _scene.Snapshot, _groups.IsLockedMember);
         _pivotPrimaryIsBone =
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
         _pivotParentAvailable = false;
@@ -1474,6 +1521,7 @@ public class MainWindow : Window
         if (!_sidebarBuilt ||
             _gazeDirty ||
             _sidebarRevision != _scene.Revision ||
+            _sidebarGroupsRevision != _groups.Revision ||
             _sidebarExpandVersion != _expandVersion ||
             !string.Equals(_sidebarFilter, filter, StringComparison.Ordinal))
         {
@@ -1482,6 +1530,7 @@ public class MainWindow : Window
             // re-arms rather than being swallowed by the rebuild it raced.
             _gazeDirty = false;
             _sidebarRevision = _scene.Revision;
+            _sidebarGroupsRevision = _groups.Revision;
             _sidebarExpandVersion = _expandVersion;
             _sidebarFilter = filter;
             RebuildSidebar(filter);
@@ -1508,169 +1557,294 @@ public class MainWindow : Window
     private void RebuildSidebar(string filter)
     {
         _vm.Sections.Clear();
-        // The sidebar is the OUTLINER — world things only. The library,
-        // the scene, and the environment left it in the inspector-mode
-        // redesign: the first two are inspector panels, the library is
-        // its own workspace.
-        _vm.Sections.Add(_actorsSection);
-        // Lights stand under the actors they light; cameras close the list,
-        // looking at everything above them.
-        _vm.Sections.Add(_propsSection);
-        _vm.Sections.Add(_lightsSection);
-        _vm.Sections.Add(_camerasSection);
-        // Overlays close the scene's list: they are the one entity that lives
-        // on the screen rather than in the world the cameras above them look
-        // at.
-        _vm.Sections.Add(_overlaysSection);
-        _actorsSection.Rows.Clear();
-        _propsSection.Rows.Clear();
-        _lightsSection.Rows.Clear();
-        _camerasSection.Rows.Clear();
-        _overlaysSection.Rows.Clear();
+        // The sidebar is the OUTLINER — world things only, ONE list. The
+        // library, the scene, and the environment left it in the
+        // inspector-mode redesign: the first two are inspector panels,
+        // the library is its own workspace.
+        _vm.Sections.Add(_sceneSection);
+        _sceneSection.Rows.Clear();
         _actorRows.Clear();
 
         bool filtering = filter.Length > 0;
-
-        var actors = _actorsSection;
         var snapshot = _scene.Snapshot.Actors;
+
+        // Members the scene no longer holds leave their groups first;
+        // then the root order reconciles against everything root-eligible
+        // — every ungrouped entity, attached companions excepted (they
+        // draw inside their owner's subtree). The eligibility walk runs
+        // UNFILTERED: the filter decides what renders, never what holds a
+        // seat.
+        // A completed load staged the document's structure; the spawned
+        // entities bind on the snapshot publish this rebuild reads, so
+        // groups and order rebuild here — the stage clears once anything
+        // resolves, or after enough rebuilds that it never will.
+        RestorePendingStructure();
+
+        _groups.Prune(id => SceneContains(id));
+        _rootEntities.Clear();
+        // The eligibility order seats what has no slot yet, so it IS the
+        // initial order: cameras first, then actors, then the rest.
+        foreach (var camera in _scene.Snapshot.Cameras)
+        {
+            var cameraId = SelectionId.ForCamera(camera.Id);
+            if (_groups.GroupOf(cameraId) == null)
+                _rootEntities.Add(cameraId);
+        }
         foreach (var actor in snapshot)
         {
             // An attached companion is drawn inside its owner's subtree; one
             // whose owner left the scene falls back to a root of its own.
             if (actor.OwnerActor is { } owner && ContainsActor(snapshot, owner))
                 continue;
-            AddActorRows(
-                actors, actor, snapshot, filter, filtering,
-                0, RootTreeLines, true);
+            var id = SelectionId.ForActor(actor.Id);
+            if (_groups.GroupOf(id) == null)
+                _rootEntities.Add(id);
         }
-
-        // Objects are flat like lights: one row per object, the header's plus
-        // makes another, and the eye seat toggles draw visibility. The scene's
-        // own objects list first — the plus above the section makes those, so
-        // what it makes is what the section opens with.
         foreach (var prop in _scene.Snapshot.Props)
         {
-            if (filtering && !MatchesSidebarFilter(filter, prop.Name))
-                continue;
-            _propsSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = prop.Name,
-                Count = "",
-                Icon = TablerIcon.Diamond,
-                Tag = SelectionId.ForProp(prop.Id),
-                LightActions = true,
-                LightOn = prop.Visible,
-            });
+            var id = SelectionId.ForProp(prop.Id);
+            if (_groups.GroupOf(id) == null)
+                _rootEntities.Add(id);
         }
-
-        // The borrowed objects follow them in the same section. They wear a
-        // different mark for the same reason a borrowed light does: the row
-        // has to say the object belongs to the map — and that its verb is
-        // release, not destroy — before it is ever selected.
         foreach (var worldObject in _scene.Snapshot.WorldObjects)
         {
-            if (filtering && !MatchesSidebarFilter(filter, worldObject.Name))
-                continue;
-            _propsSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = worldObject.Name,
-                Count = "",
-                // World objects use the square row mark.
-                Icon = TablerIcon.Square,
-                Tag = SelectionId.ForWorldObject(worldObject.Id),
-                LightActions = true,
-                LightOn = worldObject.Visible,
-            });
+            var id = SelectionId.ForWorldObject(worldObject.Id);
+            if (_groups.GroupOf(id) == null)
+                _rootEntities.Add(id);
         }
-
-        // Lights are flat: a spawned light owns nothing beneath it, so the
-        // section is one row per light and the header's plus makes another.
-        // A light's name, kind and on-state all participate in the scene
-        // signature, so this walk sits behind the same gate as the tree.
         foreach (var light in _scene.Snapshot.Lights)
         {
-            if (filtering && !MatchesSidebarFilter(filter, light.Name))
-                continue;
-            var lightSelectionId = SelectionId.ForLight(light.Id);
-            _lightsSection.Rows.Add(new ShellSidebarRow
-            {
-                Label = light.Name,
-                Count = "",
-                // Ownership outranks kind in the mark: a borrowed light is
-                // released rather than destroyed, and the row has to say so
-                // before the light is ever selected.
-                Icon = light.Ownership switch
-                {
-                    LightOwnership.GPose => TablerIcon.Camera,
-                    LightOwnership.World => TablerIcon.BuildingStore,
-                    _ => KindIcon(light.Kind),
-                },
-                Tag = lightSelectionId,
-                LightActions = true,
-                LightOn = light.IsOn,
-            });
+            var id = SelectionId.ForLight(light.Id);
+            if (_groups.GroupOf(id) == null)
+                _rootEntities.Add(id);
         }
-
-        // Overlays are flat like props: one row per staged node, the header's
-        // plus makes another, and the eye seat toggles whether it is drawn.
-        // The mark states the kind, which is the one thing about a node that
-        // can never change.
         foreach (var overlay in _scene.Snapshot.Overlays)
         {
-            if (filtering && !MatchesSidebarFilter(filter, overlay.Name))
-                continue;
-            _overlaysSection.Rows.Add(new ShellSidebarRow
+            var id = SelectionId.ForOverlay(overlay.Id);
+            if (_groups.GroupOf(id) == null)
+                _rootEntities.Add(id);
+        }
+        var order = _groups.SyncRoot(_rootEntities);
+
+        // The USER'S order, kinds interleaved: a group head lists as a
+        // folder row with its members nested one level in; every other
+        // slot renders through the same constructions its grouped twin
+        // uses.
+        for (int s = 0; s < order.Count; s++)
+        {
+            var slot = order[s];
+            if (!slot.IsGroup)
             {
-                Label = overlay.Name,
-                Count = "",
-                Icon = OverlayIcon(overlay.Kind),
-                Tag = SelectionId.ForOverlay(overlay.Id),
-                LightActions = true,
-                LightOn = overlay.Visible,
+                if (slot.Entity is { } entityId)
+                    AddRootEntityRow(entityId, snapshot, filter, filtering);
+                continue;
+            }
+            if (_groups.Find(slot.GroupId) is not { } group)
+                continue;
+            string key = "group:" + group.Id;
+            bool expanded = filtering || !_collapsedNodes.Contains(key);
+            _sceneSection.Rows.Add(new ShellSidebarRow
+            {
+                Label = group.Name,
+                Icon = TablerIcon.Folder,
+                // A locked group holds still: no grip, no drops into it.
+                Draggable = !group.Locked,
+                DropContainer = !group.Locked,
+                GroupActions = true,
+                GroupLocked = group.Locked,
+                HasChildren = group.Members.Count > 0,
+                ExpandKey = key,
+                Expanded = expanded,
+                Tag = new GroupRowTag(group.Id),
             });
+            if (!expanded)
+                continue;
+            int memberStart = _sceneSection.Rows.Count;
+            for (int m = 0; m < group.Members.Count; m++)
+                AddGroupMemberRow(
+                    group.Members[m], snapshot, filter, filtering,
+                    isLast: m == group.Members.Count - 1);
+            // The head-vs-members highlight rule has to know which rows
+            // are grouped; the sweep marks the subtree whole, a grouped
+            // actor's bones included — and a locked group's members lose
+            // their grips with it.
+            for (int r = memberStart; r < _sceneSection.Rows.Count; r++)
+            {
+                _sceneSection.Rows[r].GroupMember = true;
+                if (group.Locked)
+                    _sceneSection.Rows[r].Draggable = false;
+            }
         }
 
         // A reference picture is an overlay by the same test the nodes are —
-        // it is laid over the game rather than into the scene — so it lists
-        // here beside them. It is not a scene entity: it
-        // carries no SelectionId, joins no journal, and its Tag is the session
-        // instance itself, which is what every verb below dispatches on.
+        // it is laid over the game rather than into the scene — so it closes
+        // the list. It is not a scene entity: it carries no SelectionId,
+        // holds no seat in the order, and its Tag is the session instance
+        // itself, which is what every verb below dispatches on.
         AppendReferenceImageRows(filter, filtering);
+    }
 
-        // Cameras are flat like lights: one row per camera with inline live
-        // and edit-lock actions.
-        foreach (var camera in _scene.Snapshot.Cameras)
+    /// <summary>Rebuilds a loaded document's groups and root order over
+    /// the freshly spawned entities. Tokens resolve through the SAME
+    /// binding registry the snapshot published from, so whatever this
+    /// rebuild can see, this can name; members that never spawned are
+    /// skipped by omission, and a group thinned below two dissolves
+    /// exactly as it does live.</summary>
+    private void RestorePendingStructure()
+    {
+        if (_sceneWorkflow.PendingSceneStructure is not { } pending)
+            return;
+
+        SelectionId? Resolve(global::Poser.Files.SceneStructureRef reference)
         {
-            if (filtering && !MatchesSidebarFilter(filter, camera.Name))
-                continue;
-            var cameraSelectionId = SelectionId.ForCamera(camera.Id);
-            _camerasSection.Rows.Add(new ShellSidebarRow
+            if (!pending.Tokens.TryGetValue(reference.Key, out var token))
+                return null;
+            return token switch
             {
-                Label = camera.Name,
-                Count = CameraBadge(camera.IsLive, camera.IsDefault),
-                Icon = camera.Kind == CameraKind.Free
-                    ? TablerIcon.Video
-                    : TablerIcon.Camera,
-                Tag = cameraSelectionId,
-                CameraActions = true,
-                CameraLive = camera.IsLive,
-                CameraLocked = camera.IsLocked,
-            });
+                IActor actor => _bindings.GetActorId(actor) is { } actorId
+                    ? SelectionId.ForActor(actorId)
+                    : null,
+                Game.PropHandle prop =>
+                    _bindings.GetPropId(prop) is { } propId
+                        ? SelectionId.ForProp(propId)
+                        : null,
+                Game.Overlays.OverlayNodeHandle node =>
+                    _bindings.GetOverlayId(node) is { } overlayId
+                        ? SelectionId.ForOverlay(overlayId)
+                        : null,
+                Game.WorldObjects.AdoptedWorldObject worldObject =>
+                    _bindings.GetWorldObjectId(worldObject) is { } worldId
+                        ? SelectionId.ForWorldObject(worldId)
+                        : null,
+                ILight light => _bindings.GetLightId(light) is { } lightId
+                    ? SelectionId.ForLight(lightId)
+                    : null,
+                IVirtualCamera camera =>
+                    _bindings.GetCameraId(camera) is { } cameraId
+                        ? SelectionId.ForCamera(cameraId)
+                        : null,
+                _ => null,
+            };
+        }
+
+        bool anyResolved = false;
+        var groupIds = new Dictionary<Guid, Guid>();
+        foreach (var entry in pending.Groups)
+        {
+            var members = new List<SelectionId>();
+            foreach (var member in entry.Members)
+                if (Resolve(member) is { } id)
+                    members.Add(id);
+            if (members.Count >= 2
+                && _groups.Create(entry.Name, members) is { } made)
+            {
+                groupIds[entry.Key] = made.Id;
+                _groups.SetLocked(made.Id, entry.Locked);
+                anyResolved = true;
+            }
+        }
+        if (pending.RootOrder is { } orderRefs)
+        {
+            var slots =
+                new List<global::Poser.Application.Scene.RootSlot>();
+            foreach (var reference in orderRefs)
+            {
+                if (string.Equals(
+                        reference.Kind, "group", StringComparison.Ordinal))
+                {
+                    if (groupIds.TryGetValue(reference.Key, out var groupId))
+                        slots.Add(global::Poser.Application.Scene.RootSlot
+                            .ForGroup(groupId));
+                }
+                else if (Resolve(reference) is { } id)
+                    slots.Add(
+                        global::Poser.Application.Scene.RootSlot.For(id));
+            }
+            if (slots.Count > 0)
+            {
+                _groups.RestoreOrder(slots);
+                anyResolved = true;
+            }
+        }
+
+        if (anyResolved || ++_pendingStructureAttempts > 30)
+        {
+            _pendingStructureAttempts = 0;
+            _sceneWorkflow.ClearPendingStructure();
         }
     }
 
-    /// <summary>
-    /// The camera row's badge. Exactly one camera is active — the one the shot
-    /// is actually framed through — and the row said so only by an undimmed
-    /// glyph in its action strip, which reads as an available verb rather than
-    /// as a state: the scene lists cameras but not
-    /// which is active). Live takes the one badge slot when it applies: which
-    /// camera you are looking through is the more urgent fact, and the default
-    /// camera's own mark — that it cannot be destroyed — is still told by its
-    /// absent destroy affordance.
-    /// </summary>
-    private static string CameraBadge(bool live, bool isDefault) =>
-        live ? "Live" : isDefault ? "Default" : "";
+    /// <summary>One root entity's row(s) at depth 0 — the kind dispatch
+    /// the old per-kind walks did, driven by the root order instead. The
+    /// filter applies here, per row, exactly as those walks applied
+    /// it.</summary>
+    private void AddRootEntityRow(
+        SelectionId id,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter,
+        bool filtering)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                foreach (var actor in snapshot)
+                    if (actor.Id.Equals(actorId))
+                    {
+                        AddActorRows(
+                            _sceneSection, actor, snapshot, filter, filtering,
+                            0, RootTreeLines, true);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                foreach (var prop in _scene.Snapshot.Props)
+                    if (prop.Id.Equals(propId))
+                    {
+                        if (!filtering || MatchesSidebarFilter(filter, prop.Name))
+                            _sceneSection.Rows.Add(PropRow(prop, 0));
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldId }:
+                foreach (var worldObject in _scene.Snapshot.WorldObjects)
+                    if (worldObject.Id.Equals(worldId))
+                    {
+                        if (!filtering
+                            || MatchesSidebarFilter(filter, worldObject.Name))
+                            _sceneSection.Rows.Add(WorldObjectRow(worldObject, 0));
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                foreach (var light in _scene.Snapshot.Lights)
+                    if (light.Id.Equals(lightId))
+                    {
+                        if (!filtering || MatchesSidebarFilter(filter, light.Name))
+                            _sceneSection.Rows.Add(LightRow(light, 0));
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                foreach (var camera in _scene.Snapshot.Cameras)
+                    if (camera.Id.Equals(cameraId))
+                    {
+                        if (!filtering || MatchesSidebarFilter(filter, camera.Name))
+                            _sceneSection.Rows.Add(CameraRow(camera, 0));
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                foreach (var overlay in _scene.Snapshot.Overlays)
+                    if (overlay.Id.Equals(overlayId))
+                    {
+                        if (!filtering
+                            || MatchesSidebarFilter(filter, overlay.Name))
+                            _sceneSection.Rows.Add(OverlayRow(overlay, 0));
+                        return;
+                    }
+                return;
+        }
+    }
 
     /// <summary>The mark for one overlay kind. A dialogue panel, a bubble and
     /// a status line are three different things on screen, so they are three
@@ -1720,7 +1894,7 @@ public class MainWindow : Window
             // The filter reads the displayed label.
             if (filtering && !MatchesSidebarFilter(filter, label))
                 continue;
-            _overlaysSection.Rows.Add(new ShellSidebarRow
+            _sceneSection.Rows.Add(new ShellSidebarRow
             {
                 Label = label,
                 Count = "",
@@ -1756,115 +1930,65 @@ public class MainWindow : Window
     /// </summary>
     private void RefreshSidebarFlags()
     {
-        // Without the native lighting signatures a spawn is a silent no-op, so
-        // the header's plus is absent rather than inert. The answer is a field
-        // read, so it is restated here rather than gated.
-        _lightsSection.ShowPlus = _lightingService.IsAvailable;
-        // The camera plus follows the same rule, plus the GPose gate: virtual
-        // cameras only exist inside a GPose session.
-        _camerasSection.ShowPlus =
-            _cameraService.IsAvailable && _gPoseService.IsGPosing;
         // The class glyphs read the current adoption source for the same reason
         // every other action glyph does: waiting for a republish would leave
         // the glyph behind the click that flipped it.
         foreach (var (kind, entry) in _worldClasses)
             entry.On = _worldAdoption.IsShown(kind);
 
-        var cameraRows = _camerasSection.Rows;
-        for (int i = 0; i < cameraRows.Count; i++)
-        {
-            var cameraRow = cameraRows[i];
-            if (cameraRow.Tag is not SelectionId cameraSelection)
-                continue;
-            cameraRow.Active = _selection.IsSelected(cameraSelection);
-            // The live mark reads the active camera, not the
-            // descriptor: the switch moves the scene signature, and waiting
-            // for the republish would leave the glyphs behind the click. The
-            // Badge is the same fact, so it is restated from the same read —
-            // the mark for which camera the shot is framed through must not
-            // lag the click that moved it.
-            if (cameraSelection.Camera is { } rowCameraId &&
-                _bindings.Resolve(rowCameraId) is
-                    { Success: true, Value: { } liveCamera })
-            {
-                cameraRow.CameraLive = liveCamera.IsLive;
-                cameraRow.CameraLocked = liveCamera.IsLocked;
-                cameraRow.Count =
-                    CameraBadge(liveCamera.IsLive, liveCamera.IsDefault);
-            }
-        }
-
-        // Without the node library a create is a silent no-op, so the
-        // header's plus is absent rather than inert — the lights header's own
-        // rule.
-        _overlaysSection.ShowPlus = _overlayService.IsAvailable;
-
-        var overlayRows = _overlaysSection.Rows;
-        for (int i = 0; i < overlayRows.Count; i++)
-        {
-            var overlayRow = overlayRows[i];
-            // A reference row carries the session instance, not a selection —
-            // so it is answered before the selection guard below, which would
-            // otherwise skip it. Its eye restates the session's own answer,
-            // live, for the same reason every other action glyph does.
-            if (overlayRow.Tag is ReferenceImageInstance rowImage)
-            {
-                overlayRow.LightOn = !ReferenceImageSession.IsHidden(rowImage);
-                continue;
-            }
-            if (overlayRow.Tag is not SelectionId overlaySelection)
-                continue;
-            overlayRow.Active = _selection.IsSelected(overlaySelection);
-            // The eye reads the active node, not the descriptor: visibility
-            // moves the scene signature, and waiting for the republish would
-            // leave the glyph behind the click that flipped it.
-            if (overlaySelection.Overlay is { } overlayId &&
-                _bindings.Resolve(overlayId) is
-                    { Success: true, Value: { } liveOverlay })
-                overlayRow.LightOn = liveOverlay.Visible;
-        }
-
-        var propRows = _propsSection.Rows;
-        for (int i = 0; i < propRows.Count; i++)
-        {
-            var propRow = propRows[i];
-            if (propRow.Tag is not SelectionId propSelection)
-                continue;
-            propRow.Active = _selection.IsSelected(propSelection);
-        // The eye reads the active handle: visibility moves the scene
-            // signature, and waiting for the republish would leave the glyph
-            // behind the click that flipped it. The section holds both kinds
-            // of object, so both are read here — a borrowed row that was never
-            // refreshed kept whatever the last rebuild said.
-            if (propSelection.Prop is { } propId &&
-                _bindings.Resolve(propId) is { Success: true, Value: { } prop })
-                propRow.LightOn = prop.Visible;
-            else if (propSelection.WorldObject is { } borrowedId &&
-                _bindings.Resolve(borrowedId) is
-                    { Success: true, Value: { } borrowed })
-                propRow.LightOn = borrowed.Visible;
-        }
-
-        var lightRows = _lightsSection.Rows;
-        for (int i = 0; i < lightRows.Count; i++)
-        {
-            var lightRow = lightRows[i];
-            if (lightRow.Tag is not SelectionId lightSelection)
-                continue;
-            lightRow.Active = _selection.IsSelected(lightSelection);
-            // The eye reads the active light so it responds on the click frame.
-            if (lightSelection.Light is { } lightId &&
-                _bindings.Resolve(lightId) is { Success: true, Value: { } light })
-                lightRow.LightOn = light.IsOn;
-        }
-
-        var rows = _actorsSection.Rows;
+        // ONE walk over the one section, dispatching on the tag. Every
+        // state glyph reads the live object, never the descriptor: the
+        // change moves the scene signature, and waiting for the republish
+        // would leave the glyph behind the click that flipped it.
+        //
+        // The head and its children never light together: while the
+        // selection IS the group, only the head row wears the pill — the
+        // one exception is actor bones, whose dual highlight is the
+        // posing tree's own rule.
+        var matchedGroup = _groups.ActiveSelection(_selection.Selected);
+        var rows = _sceneSection.Rows;
         for (int i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
+            // A reference row carries the session instance, not a selection.
+            // Its eye restates the session's own answer, live.
+            if (row.Tag is ReferenceImageInstance rowImage)
+            {
+                row.LightOn = !ReferenceImageSession.IsHidden(rowImage);
+                continue;
+            }
+            if (row.Tag is GroupRowTag tag)
+            {
+                row.Active = matchedGroup?.Id == tag.Id;
+                continue;
+            }
             // Category rows carry a string tag and own no selection state.
-            if (row.Tag is SelectionId id)
-                row.Active = _selection.IsSelected(id);
+            if (row.Tag is not SelectionId id)
+                continue;
+            row.Active = row.GroupMember
+                ? matchedGroup == null && _selection.IsSelected(id)
+                : _selection.IsSelected(id);
+            if (id.Camera is { } rowCameraId &&
+                _bindings.Resolve(rowCameraId) is
+                    { Success: true, Value: { } liveCamera })
+            {
+                row.CameraLive = liveCamera.IsLive;
+                row.CameraLocked = liveCamera.IsLocked;
+            }
+            else if (id.Overlay is { } overlayId &&
+                _bindings.Resolve(overlayId) is
+                    { Success: true, Value: { } liveOverlay })
+                row.LightOn = liveOverlay.Visible;
+            else if (id.Prop is { } propId &&
+                _bindings.Resolve(propId) is { Success: true, Value: { } prop })
+                row.LightOn = prop.Visible;
+            else if (id.WorldObject is { } borrowedId &&
+                _bindings.Resolve(borrowedId) is
+                    { Success: true, Value: { } borrowed })
+                row.LightOn = borrowed.Visible;
+            else if (id.Light is { } lightId &&
+                _bindings.Resolve(lightId) is { Success: true, Value: { } light })
+                row.LightOn = light.IsOn;
         }
 
         // The game's target, once per frame: its row's crosshair stands at
@@ -2248,6 +2372,210 @@ public class MainWindow : Window
     /// auxiliary slots. Depth and trunk flags are inherited, so an attached
     /// companion draws the same tree one level in and keeps its own subtree.
     /// </summary>
+    private ShellSidebarRow PropRow(PropDescriptor prop, int depth) => new()
+    {
+        Label = prop.Name,
+        Draggable = true,
+        Count = "",
+        Icon = TablerIcon.Diamond,
+        Depth = depth,
+        ForceIcon = depth > 0,
+        Tag = SelectionId.ForProp(prop.Id),
+        LightActions = true,
+        LightOn = prop.Visible,
+    };
+
+    private ShellSidebarRow WorldObjectRow(
+        WorldObjectDescriptor worldObject, int depth) => new()
+    {
+        Label = worldObject.Name,
+        Draggable = true,
+        Count = "",
+        // World objects use the square row mark.
+        Icon = TablerIcon.Square,
+        Depth = depth,
+        ForceIcon = depth > 0,
+        Tag = SelectionId.ForWorldObject(worldObject.Id),
+        LightActions = true,
+        LightOn = worldObject.Visible,
+    };
+
+    private ShellSidebarRow LightRow(LightDescriptor light, int depth) => new()
+    {
+        Label = light.Name,
+        // A bone-attached light rides its bone — its place is not the
+        // user's to move.
+        Draggable = light.AttachedBone == null,
+        Count = "",
+        // Ownership outranks kind in the mark: a borrowed light is
+        // released rather than destroyed, and the row has to say so
+        // before the light is ever selected.
+        Icon = light.Ownership switch
+        {
+            LightOwnership.GPose => TablerIcon.Camera,
+            LightOwnership.World => TablerIcon.BuildingStore,
+            _ => KindIcon(light.Kind),
+        },
+        Depth = depth,
+        ForceIcon = depth > 0,
+        Tag = SelectionId.ForLight(light.Id),
+        LightActions = true,
+        LightOn = light.IsOn,
+    };
+
+    private ShellSidebarRow CameraRow(CameraDescriptor camera, int depth) => new()
+    {
+        Label = camera.Name,
+        Draggable = true,
+        CameraMark = camera.IsDefault
+            ? "M"
+            : camera.Kind == CameraKind.Free ? "F" : "C",
+        Icon = camera.Kind == CameraKind.Free
+            ? TablerIcon.Video
+            : TablerIcon.Camera,
+        Depth = depth,
+        ForceIcon = depth > 0,
+        Tag = SelectionId.ForCamera(camera.Id),
+        CameraActions = true,
+        CameraLive = camera.IsLive,
+        CameraLocked = camera.IsLocked,
+    };
+
+    private ShellSidebarRow OverlayRow(
+        OverlayDescriptor overlay, int depth) => new()
+    {
+        Label = overlay.Name,
+        Draggable = true,
+        Count = "",
+        Icon = OverlayIcon(overlay.Kind),
+        Depth = depth,
+        ForceIcon = depth > 0,
+        Tag = SelectionId.ForOverlay(overlay.Id),
+        LightActions = true,
+        LightOn = overlay.Visible,
+    };
+
+    /// <summary>One grouped member's row(s), nested one level in — the
+    /// SAME constructions the kind walks use, so a grouped row never
+    /// drifts from its ungrouped twin.</summary>
+    private void AddGroupMemberRow(
+        SelectionId member,
+        IReadOnlyList<ActorDescriptor> snapshot,
+        string filter,
+        bool filtering,
+        bool isLast)
+    {
+        switch (member)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                foreach (var actor in snapshot)
+                    if (actor.Id.Equals(actorId))
+                    {
+                        AddActorRows(
+                            _sceneSection, actor, snapshot, filter,
+                            filtering, 1, RootTreeLines, isLast);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                foreach (var prop in _scene.Snapshot.Props)
+                    if (prop.Id.Equals(propId))
+                    {
+                        var row = PropRow(prop, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _sceneSection.Rows.Add(row);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldId }:
+                foreach (var worldObject in _scene.Snapshot.WorldObjects)
+                    if (worldObject.Id.Equals(worldId))
+                    {
+                        var row = WorldObjectRow(worldObject, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _sceneSection.Rows.Add(row);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                foreach (var light in _scene.Snapshot.Lights)
+                    if (light.Id.Equals(lightId))
+                    {
+                        var row = LightRow(light, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _sceneSection.Rows.Add(row);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                foreach (var camera in _scene.Snapshot.Cameras)
+                    if (camera.Id.Equals(cameraId))
+                    {
+                        var row = CameraRow(camera, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _sceneSection.Rows.Add(row);
+                        return;
+                    }
+                return;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                foreach (var overlay in _scene.Snapshot.Overlays)
+                    if (overlay.Id.Equals(overlayId))
+                    {
+                        var row = OverlayRow(overlay, 1);
+                        row.IsLastChild = isLast;
+                        row.TreeLines = RootTreeLines;
+                        _sceneSection.Rows.Add(row);
+                        return;
+                    }
+                return;
+        }
+    }
+
+    /// <summary>Whether the scene still holds the entity — the groups'
+    /// prune probe.</summary>
+    private bool SceneContains(SelectionId id)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                foreach (var actor in _scene.Snapshot.Actors)
+                    if (actor.Id.Equals(actorId))
+                        return true;
+                return false;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                foreach (var prop in _scene.Snapshot.Props)
+                    if (prop.Id.Equals(propId))
+                        return true;
+                return false;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } worldId }:
+                foreach (var worldObject in _scene.Snapshot.WorldObjects)
+                    if (worldObject.Id.Equals(worldId))
+                        return true;
+                return false;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                foreach (var light in _scene.Snapshot.Lights)
+                    if (light.Id.Equals(lightId))
+                        return true;
+                return false;
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                foreach (var camera in _scene.Snapshot.Cameras)
+                    if (camera.Id.Equals(cameraId))
+                        return true;
+                return false;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                foreach (var overlay in _scene.Snapshot.Overlays)
+                    if (overlay.Id.Equals(overlayId))
+                        return true;
+                return false;
+            default:
+                return false;
+        }
+    }
+
     private void AddActorRows(
         ShellSidebarSection section,
         ActorDescriptor actor,
@@ -2339,6 +2667,9 @@ public class MainWindow : Window
             Tag = actorSelectionId,
             ExpandKey = actorKey,
             ActorActions = true,
+            // An attached companion rides its owner — not the user's to
+            // move while attached.
+            Draggable = actor.OwnerActor == null,
         };
         section.Rows.Add(actorRow);
         // Selection, visibility, pause and the display name are stated by
@@ -3112,6 +3443,16 @@ public class MainWindow : Window
     /// </summary>
     private ShellTab[] SyncStripAndTab(SelectionId? primary)
     {
+        // The ANONYMOUS GROUP first: two or more entities together answer
+        // with ONE Selection page, whatever their kinds — the multiselect
+        // is a group that was never created.
+        if (global::Poser.Application.Selection.EntitySelection.IsMultiEntity(
+                _selection.Selected))
+        {
+            _activeStrip = "multi";
+            _activeTab = "Selection";
+            return _multiselectTabs;
+        }
         // The strip is a function of the selection type: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -3316,7 +3657,7 @@ public class MainWindow : Window
         // time on top of the Page's own.
         _vm.ContentUsesPage =
             tab is "Animation" or "Appearance" or "Object" or "Light"
-                or "Environment" or "Scene"
+                or "Environment" or "Scene" or "Selection"
                 or "Lighting" or "Sky" or "Atmosphere" or "World"
                 or "Camera"
                 or "Scene"
@@ -3362,6 +3703,30 @@ public class MainWindow : Window
         // click leaves through the selection itself; a bare category
         // disclosure selects nothing, so the tree still states it here.
         _workspace.Leave();
+        // A group row selects its whole MEMBERSHIP — the anonymous-group
+        // machinery does the rest. Ctrl adds the members instead.
+        if (row.Tag is GroupRowTag groupTag)
+        {
+            if (_groups.Find(groupTag.Id) is not { } group
+                || group.Members.Count == 0)
+                return;
+            var io2 = ImGui.GetIO();
+            if (io2.KeyCtrl)
+            {
+                foreach (var member in group.Members)
+                    _selection.Add(member);
+            }
+            else
+            {
+                _selection.Select(group.Members[0]);
+                for (int i = 1; i < group.Members.Count; i++)
+                    _selection.Add(group.Members[i]);
+                // The HEAD click alone makes the selection "the group" —
+                // hand-selecting every member stays a member selection.
+                _groups.ActiveGroupId = group.Id;
+            }
+            return;
+        }
         if (row.Tag is not SelectionId id) return;
 
         var io = ImGui.GetIO();
@@ -3403,6 +3768,274 @@ public class MainWindow : Window
         }
     }
 
+    // ── the multiselect page: the anonymous group ────────────────────────
+
+    /// <summary>Per-kind counts, minted only when they change — a warm
+    /// frame restates the same strings.</summary>
+    private readonly int[] _multiCounts = new int[5];
+    private readonly string[] _multiCountText = new string[5];
+    private static readonly string[] MultiKindLabels =
+        ["Actors", "Objects", "Lights", "Cameras", "Overlays"];
+
+    private void DrawMultiselectPage(Vector2 origin, Vector2 size)
+    {
+        Span<int> counts = stackalloc int[5];
+        foreach (var id in _selection.Selected)
+        {
+            int slot = id.Kind switch
+            {
+                SceneEntityKind.Actor => 0,
+                SceneEntityKind.Prop or SceneEntityKind.WorldObject => 1,
+                SceneEntityKind.Light => 2,
+                SceneEntityKind.Camera => 3,
+                SceneEntityKind.Overlay => 4,
+                _ => -1,
+            };
+            if (slot >= 0)
+                counts[slot]++;
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            if (_multiCounts[i] == counts[i] && _multiCountText[i] != null)
+                continue;
+            _multiCounts[i] = counts[i];
+            _multiCountText[i] = counts[i].ToString(
+                System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var matched = _groups.ActiveSelection(_selection.Selected);
+        Crystarium.Page("multiselect-page", origin, size, page =>
+        {
+            // The title is STABLE: the group's name lives in the field
+            // below, never in the section header — a header that renamed
+            // with each keystroke changed the field's identity and threw
+            // the keyboard back to the game after one character.
+            page.Section(matched != null ? "Group" : "Selection", form =>
+            {
+                if (matched is { } named)
+                    form.TextInput("Name", named.Name,
+                        value => _groups.Rename(named.Id, value),
+                        help: "Rename the group");
+                for (int i = 0; i < 5; i++)
+                    if (_multiCounts[i] > 0)
+                        form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
+                form.Actions(string.Empty, actions =>
+                {
+                    if (matched is { } group)
+                    {
+                        actions.Button("Save to library",
+                            () => OpenEntityRename(
+                                "Save group to library", group.Name,
+                                name => _scenePane.SaveGroupEntry(
+                                    group.Members, name)),
+                            help: "Save the group as a library entry");
+                        actions.Button("Ungroup",
+                            () => _groups.Dissolve(group.Id),
+                            help: "Dissolve the group; nothing is destroyed");
+                    }
+                    else
+                    {
+                        actions.Button("Group…",
+                            () => OpenEntityRename(
+                                "Name the group",
+                                $"Group {_groups.All.Count + 1}",
+                                name => _groups.Create(
+                                    name, _selection.Selected)),
+                            help: "Make a named group of the selection");
+                    }
+                    actions.Button("Move to camera", MoveSelectionToCamera,
+                        help: "Place the selection in front of the camera");
+                    actions.Button("Deselect", () => _selection.Clear(),
+                        help: "Drop the whole selection");
+                });
+            }, divider: false);
+        });
+    }
+
+    /// <summary>One undoable translate: the whole selection moves so its
+    /// centroid lands in front of the camera, every member keeping its
+    /// offset from the others.</summary>
+    private void MoveSelectionToCamera()
+    {
+        var resolved = global::Poser.Application.Transforms.TransformTargetResolver
+            .Resolve(
+                _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
+        if (resolved is not { } selection)
+        {
+            _notices.Failed("Nothing movable is selected.");
+            return;
+        }
+        var sum = System.Numerics.Vector3.Zero;
+        int counted = 0;
+        foreach (var target in selection.Targets)
+        {
+            var pose =
+                target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
+                    ? _viewportProjection.GetActorTransform(actor)
+                    : _viewportProjection.GetModelTransform(target);
+            if (pose is not { } position)
+                continue;
+            sum += position.Position;
+            counted++;
+        }
+        if (counted == 0)
+        {
+            _notices.Failed("Nothing movable is selected.");
+            return;
+        }
+        var centroid = sum / counted;
+        var look = _gameCamera.GetLookDirection();
+        if (look.LengthSquared() < 1e-6f)
+            look = System.Numerics.Vector3.UnitZ;
+        var goal = _gameCamera.GetCameraPosition()
+            + System.Numerics.Vector3.Normalize(look) * 2.5f;
+        var begin = _cleanTransforms.Begin(
+            selection.Targets,
+            global::Poser.Domain.Transforms.TransformOperation.Translate,
+            global::Poser.Domain.Transforms.TransformSpace.World,
+            description: "Move to camera");
+        if (!begin.Success || begin.GestureId is not { } gestureId)
+        {
+            _notices.Failed(
+                $"Move to camera: {begin.Detail ?? "refused"}.");
+            return;
+        }
+        _cleanTransforms.Update(gestureId,
+            new global::Poser.Domain.Transforms.TransformDelta(
+                goal - centroid,
+                System.Numerics.Quaternion.Identity,
+                System.Numerics.Vector3.One));
+        _cleanTransforms.Commit(gestureId);
+    }
+
+    /// <summary>A tree drag released. The root list is the USER'S order —
+    /// any entity or group head re-seats at the caret, kinds interleaved.
+    /// Group structure rides the same gesture: INTO a head joins, beside a
+    /// member inserts there, open space just leaves the group. Dragging a
+    /// selected row carries the whole entity selection.</summary>
+    private void OnRowDropped(
+        ShellSidebarRow dragged,
+        ShellSidebarRow? target,
+        RowDropPosition position)
+    {
+        // A group head re-seats among the root slots like anything else;
+        // open space is the end of the list.
+        if (dragged.Tag is GroupRowTag draggedGroup)
+        {
+            if (target == null)
+                _groups.MoveRootToEnd(RootSlot.ForGroup(draggedGroup.Id));
+            else if (position is RowDropPosition.Before or RowDropPosition.After
+                && RootSlotOf(target) is { } groupAnchor)
+                _groups.MoveRoot(
+                    RootSlot.ForGroup(draggedGroup.Id),
+                    groupAnchor,
+                    position == RowDropPosition.After);
+            return;
+        }
+
+        if (dragged.Tag is not SelectionId draggedId
+            || !global::Poser.Application.Selection.EntitySelection
+                .IsEntity(draggedId.Kind))
+            return;
+        var moved = new List<SelectionId>();
+        if (_selection.IsSelected(draggedId))
+        {
+            foreach (var id in _selection.Selected)
+                if (global::Poser.Application.Selection.EntitySelection
+                        .IsEntity(id.Kind))
+                    moved.Add(id);
+        }
+        if (moved.Count == 0)
+            moved.Add(draggedId);
+
+        // Into a group's head: append in drag order.
+        if (target?.Tag is GroupRowTag intoGroup
+            && position == RowDropPosition.Into)
+        {
+            foreach (var id in moved)
+                _groups.AddMember(intoGroup.Id, id);
+            return;
+        }
+
+        // Beside a grouped member: insert at its place in that group.
+        if (target?.Tag is SelectionId targetId
+            && _groups.GroupOf(targetId) is { } host)
+        {
+            int index = host.Members.IndexOf(targetId);
+            if (position == RowDropPosition.After)
+                index++;
+            foreach (var id in moved)
+            {
+                _groups.AddMember(host.Id, id, index);
+                index = host.Members.IndexOf(id) + 1;
+            }
+            return;
+        }
+
+        // A root seam: the dragged rows leave any group and re-seat at
+        // the caret, in carry order.
+        if (target != null
+            && position is RowDropPosition.Before or RowDropPosition.After
+            && RootSlotOf(target) is { } anchor)
+        {
+            bool after = position == RowDropPosition.After;
+            foreach (var id in moved)
+            {
+                _groups.RemoveMember(id);
+                _groups.MoveRoot(RootSlot.For(id), anchor, after);
+                anchor = RootSlot.For(id);
+                after = true;
+            }
+            return;
+        }
+
+        // Open space: the end of the root list, leaving any group — the
+        // caret at the tree's tail marks exactly this.
+        foreach (var id in moved)
+        {
+            _groups.RemoveMember(id);
+            _groups.MoveRootToEnd(RootSlot.For(id));
+        }
+    }
+
+    /// <summary>The root slot a drop row stands for: a group head or a
+    /// grouped member answers its group's slot, an ungrouped entity its
+    /// own. Rows with no root stake — bones, categories, reference
+    /// images, attached rows — answer null and the drop is a no-op.</summary>
+    private RootSlot? RootSlotOf(ShellSidebarRow row)
+    {
+        if (row.Tag is GroupRowTag tag)
+            return RootSlot.ForGroup(tag.Id);
+        if (row.Tag is not SelectionId id
+            || !global::Poser.Application.Selection.EntitySelection
+                .IsEntity(id.Kind))
+            return null;
+        if (_groups.GroupOf(id) is { } host)
+            return RootSlot.ForGroup(host.Id);
+        return RootSlot.For(id);
+    }
+
+    /// <summary>The drag ghost's text: a dragged row that rides with the
+    /// entity multiselect announces the whole cargo, not just itself.</summary>
+    private string DragGhostFor(ShellSidebarRow row)
+    {
+        if (row.Tag is not SelectionId id
+            || !global::Poser.Application.Selection.EntitySelection
+                .IsEntity(id.Kind)
+            || !_selection.IsSelected(id))
+            return row.Label;
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities < 2)
+            return row.Label;
+        if (_multiTitleCount != entities)
+        {
+            _multiTitleCount = entities;
+            _multiTitle = $"{entities} selected";
+        }
+        return _multiTitle;
+    }
+
     private IActor? ResolveActorRow(ShellSidebarRow row)
     {
         if (row.Tag is not SelectionId
@@ -3441,6 +4074,11 @@ public class MainWindow : Window
         // when another tab owns the centre pane.
         _poseInspector.SetSelection(_selection.Primary);
 
+        if (_activeTab == "Selection")
+        {
+            DrawMultiselectPage(origin, size);
+            return;
+        }
         if (_activeTab == "Animation")
         {
             _animationCatalog.EnsureLoaded();
@@ -4189,9 +4827,10 @@ public class MainWindow : Window
     private bool _overlayNodeCtxOpenRequested;
 
     /// <summary>Right-click menu for a staged overlay NODE (balloon, talk,
-    /// status) — distinct from the bone-category overlay menu below. Thin on
-    /// purpose until the #73 audit fills it: the library save is the verb
-    /// that exists nowhere else.</summary>
+    /// status) — distinct from the bone-category overlay menu below. The
+    /// same lifetime family the light menu speaks, in the overlay's
+    /// vocabulary; the pane's own Duplicate is reused so one duplication
+    /// rule answers everywhere.</summary>
     private void DrawOverlayNodeContextMenu()
     {
         if (_ctxOverlayNodeId is not { } overlayId)
@@ -4205,7 +4844,30 @@ public class MainWindow : Window
         }
         var items = new[]
         {
+            new ContextMenuItem(node.Visible ? "Hide" : "Show",
+                node.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Duplicate", TablerIcon.Copy),
             new ContextMenuItem("Save to library", TablerIcon.Library),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash, danger: true),
+        };
+        var actions = new Action?[]
+        {
+            () => node.Visible = !node.Visible,
+            () => OpenEntityRename(
+                "Rename overlay", node.Name, next => node.Name = next),
+            () => _overlayPane.Duplicate(node),
+            () => OpenEntityRename(
+                "Save overlay to library", node.State.Name,
+                name => _scenePane.SaveOverlayEntry(
+                    overlayId.LogicalId, name)),
+            null, // separator
+            () =>
+            {
+                _lifecycle.DestroyOverlay(node);
+                _selection.Clear();
+            },
         };
         if (_overlayNodeCtxOpenRequested)
         {
@@ -4214,13 +4876,8 @@ public class MainWindow : Window
                 "##overlay-node-ctx", ImGui.GetMousePos(), items);
         }
         int clicked = Crystarium.FloatingMenu.Draw("##overlay-node-ctx");
-        if (clicked == 0)
-        {
-            OpenEntityRename(
-                "Save overlay to library", node.State.Name,
-                name => _scenePane.SaveOverlayEntry(
-                    overlayId.LogicalId, name));
-        }
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
     }
 
     private void DrawOverlayContextMenu()
@@ -4544,6 +5201,396 @@ public class MainWindow : Window
         int clicked = Crystarium.FloatingMenu.Draw("##camera-ctx");
         if (clicked >= 0 && clicked < actions.Count)
             actions[clicked]?.Invoke();
+    }
+
+    // ── world-object / group / selection context menus ──────────────────
+
+    private WorldObjectId? _ctxWorldObjectId;
+    private bool _worldObjectCtxOpenRequested;
+    private Guid? _ctxGroupId;
+    private bool _groupCtxOpenRequested;
+    private bool _selectionCtxOpenRequested;
+
+    /// <summary>Right-click borrowed-object menu: the eye, the user's own
+    /// name over the map's model, and Release — never Destroy, because the
+    /// map owns the thing and gets it back where it stood.</summary>
+    private void DrawWorldObjectContextMenu()
+    {
+        if (_ctxWorldObjectId is not { } worldObjectId)
+            return;
+        var resolved = _bindings.Resolve(worldObjectId);
+        if (!resolved.Success || resolved.Value is not { IsValid: true } worldObject)
+        {
+            _ctxWorldObjectId = null;
+            Crystarium.FloatingMenu.Dismiss("##world-object-ctx");
+            return;
+        }
+        var items = new[]
+        {
+            new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
+                worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new ContextMenuItem("Rename", TablerIcon.Edit),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Release", TablerIcon.X),
+        };
+        var actions = new Action?[]
+        {
+            () => worldObject.Visible = !worldObject.Visible,
+            () => OpenEntityRename(
+                "Rename object", worldObject.Name,
+                next => worldObject.Name = next),
+            null, // separator
+            () =>
+            {
+                _lifecycle.ReleaseWorldObject(worldObject);
+                _selection.Clear();
+            },
+        };
+        if (_worldObjectCtxOpenRequested)
+        {
+            _worldObjectCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##world-object-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##world-object-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Right-click group-head menu: the structure verbs. The
+    /// selection verbs live one click away — the head's left click IS the
+    /// member selection, whose own menu then answers.</summary>
+    private void DrawGroupContextMenu()
+    {
+        if (_ctxGroupId is not { } groupId)
+            return;
+        if (_groups.Find(groupId) is not { } group)
+        {
+            _ctxGroupId = null;
+            Crystarium.FloatingMenu.Dismiss("##group-ctx");
+            return;
+        }
+        bool locked = group.Locked;
+        var items = new[]
+        {
+            new ContextMenuItem("Rename", TablerIcon.Edit,
+                disabled: locked),
+            new ContextMenuItem("Save to library", TablerIcon.Library,
+                help: "Saves the group and its members as a library entry"),
+            new ContextMenuItem(locked ? "Unlock" : "Lock",
+                locked ? TablerIcon.LockOpen : TablerIcon.Lock,
+                help: locked ? null : "Nothing in a locked group moves"),
+            new ContextMenuItem("Ungroup", TablerIcon.X,
+                disabled: locked,
+                help: "Dissolve the group; nothing is destroyed"),
+            ContextMenuItem.Separator,
+            new ContextMenuItem("Destroy", TablerIcon.Trash,
+                danger: true, disabled: locked,
+                help: "Destroy the group AND everything in it; borrowed "
+                    + "things are released instead"),
+        };
+        var actions = new Action?[]
+        {
+            () => OpenEntityRename(
+                "Rename group", group.Name,
+                next => _groups.Rename(groupId, next)),
+            () => OpenEntityRename(
+                "Save group to library", group.Name,
+                name => _scenePane.SaveGroupEntry(group.Members, name)),
+            () => _groups.SetLocked(groupId, !group.Locked),
+            () => _groups.Dissolve(groupId),
+            null, // separator
+            // The members go through each kind's own lifetime seam; the
+            // emptied group dissolves through the scene prune.
+            () => DestroyEntities(group.Members.ToArray()),
+        };
+        if (_groupCtxOpenRequested)
+        {
+            _groupCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##group-ctx", ImGui.GetMousePos(), items);
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##group-ctx");
+        if (clicked >= 0 && clicked < actions.Length)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Right-click on any row of a multi-entity selection: one
+    /// menu for the WHOLE selection, every verb dispatching per kind
+    /// through the same plumbing the single menus use. A kind a verb
+    /// cannot reach is skipped, never refused; verbs no selected kind
+    /// answers disable in place.</summary>
+    private void DrawSelectionContextMenu()
+    {
+        int entities = global::Poser.Application.Selection.EntitySelection
+            .CountEntities(_selection.Selected);
+        if (entities < 2)
+        {
+            Crystarium.FloatingMenu.Dismiss("##selection-ctx");
+            return;
+        }
+
+        // Hide/Show and Pause/Resume drive the set to ONE state: any
+        // visible member means Hide, any running actor means Pause.
+        bool anyVisible = false, anyActor = false, anyRunning = false;
+        foreach (var id in _selection.Selected)
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    anyActor = true;
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor }
+                        && _spawnService.IsVisible(actor))
+                        anyVisible = true;
+                    if (!_animation.IsPaused(actorId))
+                        anyRunning = true;
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsOn: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { Visible: true } })
+                        anyVisible = true;
+                    break;
+            }
+        }
+
+        var matched = _groups.ActiveSelection(_selection.Selected);
+        var items = new List<ContextMenuItem>
+        {
+            new("Duplicate", TablerIcon.Copy,
+                help: "Clone every selected thing that can be cloned"),
+            new(anyVisible ? "Hide" : "Show",
+                anyVisible ? TablerIcon.EyeOff : TablerIcon.Eye),
+            new(anyRunning ? "Pause animation" : "Resume animation",
+                anyRunning ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
+                disabled: !anyActor,
+                help: anyActor ? null : "No actors in the selection"),
+            new("Move to camera", TablerIcon.Crosshair),
+            ContextMenuItem.Separator,
+        };
+        var actions = new List<Action?>
+        {
+            DuplicateSelection,
+            () => SetSelectionVisible(!anyVisible),
+            () => SetSelectionPaused(anyRunning),
+            MoveSelectionToCamera,
+            null, // separator
+        };
+        if (matched != null)
+        {
+            items.Add(new ContextMenuItem(
+                "Save to library", TablerIcon.Library,
+                help: "Saves the group and its members as a library entry"));
+            actions.Add(() => OpenEntityRename(
+                "Save group to library", matched.Name,
+                name => _scenePane.SaveGroupEntry(matched.Members, name)));
+            items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
+                disabled: matched.Locked,
+                help: "Dissolve the group; nothing is destroyed"));
+            actions.Add(() => _groups.Dissolve(matched.Id));
+        }
+        else
+        {
+            items.Add(new ContextMenuItem("Group…", TablerIcon.Folder,
+                help: "Make a named group of the selection"));
+            actions.Add(() => OpenEntityRename(
+                "Name the group",
+                $"Group {_groups.All.Count + 1}",
+                name => _groups.Create(name, _selection.Selected)));
+        }
+        items.Add(new ContextMenuItem("Deselect", TablerIcon.X));
+        actions.Add(() => _selection.Clear());
+        items.Add(ContextMenuItem.Separator);
+        actions.Add(null);
+        items.Add(new ContextMenuItem("Destroy", TablerIcon.Trash,
+            danger: true,
+            disabled: matched is { Locked: true },
+            help: "Destroy what the scene owns; borrowed things are "
+                + "released instead"));
+        actions.Add(DestroySelection);
+        if (_selectionCtxOpenRequested)
+        {
+            _selectionCtxOpenRequested = false;
+            Crystarium.FloatingMenu.Open(
+                "##selection-ctx", ImGui.GetMousePos(), items.ToArray());
+        }
+        int clicked = Crystarium.FloatingMenu.Draw("##selection-ctx");
+        if (clicked >= 0 && clicked < actions.Count)
+            actions[clicked]?.Invoke();
+    }
+
+    /// <summary>Clones every clonable selected entity through the same
+    /// history-seamed calls the single menus use. Borrowed objects have
+    /// no clone; the selection stays on the ORIGINALS — the clones' own
+    /// bindings land asynchronously per kind, so re-selecting them here
+    /// would be a guess.</summary>
+    private void DuplicateSelection()
+    {
+        foreach (var id in _selection.Selected.ToArray())
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor })
+                        _lifecycle.SpawnActor(
+                            $"Clone actor '{DisplayName(actor.Name)}'",
+                            () => _spawnService.CloneActor(actor));
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                        _lifecycle.CloneLight(light);
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        _lifecycle.CloneProp(prop);
+                    break;
+                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                    if (_bindings.Resolve(cameraId) is
+                            { Success: true, Value: { IsValid: true } camera })
+                        _lifecycle.CloneCamera(camera);
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        _overlayPane.Duplicate(node);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>One visibility for the whole selection — actors' draw,
+    /// objects' and overlays' eyes, lights' on-state. Cameras have no
+    /// visibility and skip.</summary>
+    private void SetSelectionVisible(bool visible)
+    {
+        foreach (var id in _selection.Selected)
+        {
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor })
+                        _spawnService.SetVisibility(actor, visible);
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                        light.IsOn = visible;
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        prop.Visible = visible;
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { IsValid: true } borrowed })
+                        borrowed.Visible = visible;
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        node.Visible = visible;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>One animation state for every selected actor.</summary>
+    private void SetSelectionPaused(bool paused)
+    {
+        foreach (var id in _selection.Selected)
+        {
+            if (id is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                continue;
+            if (paused)
+                _animation.Pause(actorId);
+            else
+                _animation.Resume(actorId);
+        }
+    }
+
+    /// <summary>Destroys the whole selection, each kind through its own
+    /// lifetime seam: actors despawn where the service admits it, spawned
+    /// lights destroy while borrowed ones release, the default camera
+    /// stays, borrowed objects go back to the map.</summary>
+    private void DestroySelection()
+    {
+        DestroyEntities(_selection.Selected.ToArray());
+        _selection.Clear();
+    }
+
+    private void DestroyEntities(IReadOnlyList<SelectionId> ids)
+    {
+        foreach (var id in ids)
+        {
+            // A locked group keeps its members standing.
+            if (_groups.IsLockedMember(id))
+                continue;
+            switch (id)
+            {
+                case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                    if (_bindings.Resolve(actorId) is
+                            { Success: true, Value: { } actor }
+                        && (_spawnService.IsSpawnedActor(actor)
+                            || _spawnService.RemovalRefusal(actor) is null)
+                        && _lifecycle.DespawnActor(actor))
+                        _selection.RemoveActorLineage(actorId.LogicalId);
+                    break;
+                case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                    if (_bindings.Resolve(lightId) is
+                            { Success: true, Value: { IsValid: true } light })
+                    {
+                        if (light.Ownership == LightOwnership.Spawned)
+                            _lifecycle.DestroyLight(light);
+                        else
+                            _lightingService.ReleaseLight(light);
+                    }
+                    break;
+                case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                    if (_bindings.Resolve(propId) is
+                            { Success: true, Value: { IsValid: true } prop })
+                        _lifecycle.DestroyProp(prop);
+                    break;
+                case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                    if (_bindings.Resolve(cameraId) is
+                            { Success: true, Value: { IsValid: true } camera }
+                        && !camera.IsDefault)
+                        _lifecycle.DestroyCamera(camera);
+                    break;
+                case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                    if (_bindings.Resolve(overlayId) is
+                            { Success: true, Value: { } node })
+                        _lifecycle.DestroyOverlay(node);
+                    break;
+                case { Kind: SceneEntityKind.WorldObject,
+                        WorldObject: { } borrowedId }:
+                    if (_bindings.Resolve(borrowedId) is
+                            { Success: true, Value: { IsValid: true } borrowed })
+                        _lifecycle.ReleaseWorldObject(borrowed);
+                    break;
+            }
+        }
     }
 
     private void RecenterCameraOnTrackedActor(CameraId cameraId)

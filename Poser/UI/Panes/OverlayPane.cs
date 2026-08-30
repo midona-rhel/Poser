@@ -490,7 +490,9 @@ public sealed class OverlayPane
 
     // ── acts ─────────────────────────────────────────────────────────────
 
-    private void Duplicate(OverlayNodeHandle node)
+    /// <summary>Public because the overlay row's context menu speaks this
+    /// verb too — one duplication rule, wherever it is asked.</summary>
+    public void Duplicate(OverlayNodeHandle node)
     {
         // The copy is offset so it does not land exactly under the original,
         // where it would look like nothing happened; the NAME is dropped so

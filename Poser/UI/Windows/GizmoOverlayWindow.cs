@@ -32,7 +32,11 @@ internal enum GizmoTargetType
     Prop,
 
     /// <summary>Borrowed world object with one editable world transform.</summary>
-    WorldObject
+    WorldObject,
+
+    /// <summary>The anonymous group: entities of MIXED kinds selected
+    /// together, seated at their centroid.</summary>
+    Mixed
 }
 
 /// <summary>Overlay for actor, bone, light, prop, and world-object transforms.
@@ -54,6 +58,7 @@ public class GizmoOverlayWindow : Window
     private readonly Game.Bindings.StableBindingRegistry _bindings;
     // Controls whether hidden bones keep their gizmo.
     private readonly SkeletonOverlayPresentation _presentation;
+    private readonly global::Poser.Application.Scene.SceneGroups _groups;
 
     private static Config.GizmoConfiguration GizmoConfig =>
         Config.ConfigurationService.Instance.Config.Gizmo;
@@ -178,6 +183,7 @@ public class GizmoOverlayWindow : Window
         Game.Bindings.StableBindingRegistry bindings,
         IVirtualCameraService virtualCameras,
         SkeletonOverlayPresentation presentation,
+        global::Poser.Application.Scene.SceneGroups groups,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_gizmo_overlay",
             ImGuiWindowFlags.NoBackground |
@@ -201,6 +207,7 @@ public class GizmoOverlayWindow : Window
         _bindings = bindings;
         _virtualCameras = virtualCameras;
         _presentation = presentation;
+        _groups = groups;
         _log = log;
 
         RespectCloseHotkey = false;
@@ -511,6 +518,11 @@ public class GizmoOverlayWindow : Window
 
     private GizmoTargetType GetGizmoTargetType()
     {
+        // The anonymous group: mixed entity kinds take ONE gizmo at the
+        // selection's centroid.
+        if (global::Poser.Application.Selection.EntitySelection.IsMixedEntities(
+                _selection.Selected))
+            return GizmoTargetType.Mixed;
         return _selection.Primary switch
         {
             { Kind: SceneEntityKind.Bone } => GizmoTargetType.Bone,
@@ -532,7 +544,30 @@ public class GizmoOverlayWindow : Window
 
     /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
-        TransformTargetResolver.Resolve(_selection.Selected, _scene.Snapshot);
+        TransformTargetResolver.Resolve(
+            _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
+
+    /// <summary>The live average of the targets' world positions — the
+    /// group seat. Null when any member cannot answer, matching the
+    /// resolver's all-or-nothing rule.</summary>
+    private Vector3? SelectionCentroid(
+        IReadOnlyList<TransformTargetId> targets)
+    {
+        var sum = Vector3.Zero;
+        int counted = 0;
+        foreach (var target in targets)
+        {
+            var pose =
+                target is { Kind: TransformTargetKind.Actor, Actor: { } actor }
+                    ? _viewport.GetActorTransform(actor)
+                    : _viewport.GetModelTransform(target);
+            if (pose is not { } resolved)
+                return null;
+            sum += resolved.Position;
+            counted++;
+        }
+        return counted == 0 ? null : sum / counted;
+    }
 
     private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
         new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
@@ -635,7 +670,7 @@ public class GizmoOverlayWindow : Window
                 return;
             primaryWorldObject = primaryWorldObjectId;
         }
-        else
+        else if (targetType != GizmoTargetType.Mixed)
         {
             if (selection.Primary is not
                 { Kind: TransformTargetKind.Actor, Actor: { } primaryActorId })
@@ -650,7 +685,24 @@ public class GizmoOverlayWindow : Window
 
         // Active gestures use their frozen presentation baseline.
         Transform currentTransform;
-        if (gesture is { } presented)
+        // THE GROUP SEAT: a multi-entity selection (mixed kinds included)
+        // manipulates from the AVERAGE of its members' positions with a
+        // world-aligned frame — one set point in space. The centroid is
+        // LIVE: translation carries it, rotation and scale leave it
+        // (Centroid pivot), so the seat never orbits its own members.
+        if (!isBone
+            && (targetType == GizmoTargetType.Mixed || targets.Count > 1))
+        {
+            if (SelectionCentroid(targets) is not { } centroid)
+                return;
+            currentTransform = new Transform
+            {
+                Position = centroid,
+                Rotation = Quaternion.Identity,
+                Scale = Vector3.One,
+            };
+        }
+        else if (gesture is { } presented)
         {
             currentTransform = presented.Current;
         }
@@ -1099,6 +1151,8 @@ public class GizmoOverlayWindow : Window
                     $"Transform {targets.Count} light{(targets.Count == 1 ? "" : "s")}",
                 GizmoTargetType.Prop =>
                     $"Transform {targets.Count} object{(targets.Count == 1 ? "" : "s")}",
+                GizmoTargetType.Mixed =>
+                    $"Transform {targets.Count} things",
                 GizmoTargetType.WorldObject =>
                     $"Transform {targets.Count} world object{(targets.Count == 1 ? "" : "s")}",
                 _ =>
