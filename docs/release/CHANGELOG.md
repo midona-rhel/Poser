@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.9.2-beta — groups, the redesigned shell, and the input contract
+
+**Group anything.** Select two or more things of any kinds — actors, lights,
+objects, cameras, overlays — and they act as one: a centroid gizmo, a group
+rotation ball, and a Selection page with counts and shared verbs. Name a
+group and it becomes a scene-tree folder: click its head to select the whole
+membership, drag rows in, out, and around it, lock it so nothing inside
+moves, and save it to the library as a spawnable entry that comes back whole
+— members, name, and lock. Groups and your tree order ride scene saves.
+
+**The scene tree is yours to arrange.** Drag any entity or group anywhere,
+kinds mixed freely; a caret line shows exactly where the drop lands and the
+ghost says what you are carrying. Attached companions and bone-attached
+lights hold no grip. Every row answers right-click now — objects and
+overlays included — and right-clicking a multi-selection opens a menu for
+the whole selection: duplicate, hide, pause, move to camera, group, destroy.
+The game's target actor and the live camera wear their icons in the accent;
+camera rows carry a kind letter (M main, F free, C camera) and lead with a
+recenter seat that retargets the camera's tracking onto the selected actor.
+
+**The shell was redesigned.** The library is its own window with a permanent
+preview column and per-type metadata; the spawn browser is compact with an
+icon strip; the toolbar is always its own window; Geist is the UI face. The
+sidebar search sits on the page edge with the spawn plus beside it, and
+objects — spawned and borrowed — take names, with the model path stated
+plainly.
+
+**The input contract.** Modifiers have fixed roles: Ctrl and Shift are the
+drag ladder and the flight speed pair, Alt is the visibility peek, Space and
+C fly the camera vertically, Z and X are the snap holds. Chords are consumed
+when Poser handles them, the keybind recorder works and refuses collisions
+by name, and an optional Hide-while-manipulating switch fades the windows —
+and, if you choose, the gizmo — while a drag is held, leaving the drag's own
+angle and distance readouts visible.
+
+**Fixes.** Overlay windows no longer let clicks fall through to the world.
+"Clothing only" hides skin, hair and eyes under the Appearance tab. The
+companion picker builds its catalog up front. Save-to-library entries land
+in a folder the library actually scans. Alt-click resets values to what they
+were when Poser took ownership. Per-frame CPU dropped to what is actually
+looked at.
+
 ## 0.9.0-beta.1 — first public beta
 
 Poser is a posing and scene tool for FINAL FANTASY XIV's group pose, written as
