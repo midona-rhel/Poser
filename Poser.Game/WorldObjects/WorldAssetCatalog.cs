@@ -120,6 +120,17 @@ public sealed class WorldAssetCatalog
         ["stn"] = "Stone",
     };
 
+    /// <summary>The derived label for ANY path — the sidebar, hover, and
+    /// entry names use the same words the pickers do, so a spawned thing
+    /// keeps the name it was found under.</summary>
+    public static string LabelFor(string path)
+    {
+        string stem = System.IO.Path.GetFileNameWithoutExtension(path);
+        return string.IsNullOrWhiteSpace(stem)
+            ? path
+            : LabelOf(path, stem);
+    }
+
     private static string LabelOf(string path, string stem)
     {
         string type = AssetTypeOf(stem);

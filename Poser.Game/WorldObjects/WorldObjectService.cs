@@ -718,8 +718,10 @@ public sealed class WorldObjectService : IDisposable
     {
         if (string.IsNullOrWhiteSpace(path))
             return "World object";
-        string name = System.IO.Path.GetFileNameWithoutExtension(path);
-        return string.IsNullOrWhiteSpace(name) ? path : name;
+        // The catalog's derived label — "Rock [r2f0_rok01a]" — so the
+        // sidebar row, the viewport hover, and the entry name all speak
+        // the same words the pickers found the thing under.
+        return WorldAssetCatalog.LabelFor(path);
     }
 
     /// <summary>
