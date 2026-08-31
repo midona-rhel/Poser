@@ -1287,7 +1287,7 @@ public static partial class Crystarium
         /// control cell's own icon slot; 0 is no mark and costs the value no
         /// width.</param>
         public void ReadOnly(string label, string value, string? help = null,
-            bool unavailable = false, nint icon = 0)
+            bool unavailable = false, nint icon = 0, bool mono = false)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -1324,6 +1324,7 @@ public static partial class Crystarium
                 {
                     Size = ActiveTheme.Typography.BodySize,
                     Color = unavailable ? FormHintColor : FormValueColor,
+                    Family = mono ? FontFamily.Mono : default,
                 });
             _page.EndRow(row, id, help);
         }

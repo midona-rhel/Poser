@@ -177,10 +177,11 @@ public sealed class PoseLibraryPane
     /// entry starts on the poses.</summary>
     private LibraryType _type;
 
-    /// <summary>The Objects tab's KIND filter: empty admits every kind;
-    /// toggled kinds restrict the tiles to themselves. Multi-select by
-    /// design — the toggles are the strip band's icon buttons.</summary>
-    private readonly HashSet<PoseLibraryEntryKind> _kindFilter = new();
+    /// <summary>The Objects tab's KIND filter: the ADMITTED kinds. It
+    /// starts full — every kind allowed — and each strip toggle removes
+    /// or re-adds its kind (ruled 2026-09-01).</summary>
+    private readonly HashSet<PoseLibraryEntryKind> _kindFilter =
+        new(Enum.GetValues<PoseLibraryEntryKind>());
 
     public bool KindFilterContains(PoseLibraryEntryKind kind) =>
         _kindFilter.Contains(kind);
@@ -192,27 +193,14 @@ public sealed class PoseLibraryPane
         RebuildAfterFilterChange();
     }
 
-    /// <summary>The reset toggle: back to no filter, everything shown.
-    /// </summary>
-    public void ClearKindFilter()
+    /// <summary>The union toggle: every kind admitted again — this IS
+    /// the neutral state, so there is no separate reset.</summary>
+    public void SetKindFilterAll()
     {
-        if (_kindFilter.Count == 0)
-            return;
-        _kindFilter.Clear();
-        RebuildAfterFilterChange();
-    }
-
-    /// <summary>The all toggle: every stated kind latched at once.</summary>
-    public void SetKindFilterAll(
-        IEnumerable<PoseLibraryEntryKind> kinds)
-    {
-        _kindFilter.Clear();
-        foreach (var kind in kinds)
+        foreach (var kind in Enum.GetValues<PoseLibraryEntryKind>())
             _kindFilter.Add(kind);
         RebuildAfterFilterChange();
     }
-
-    public int KindFilterCount => _kindFilter.Count;
 
     /// <summary>The portal's from-library rows: exactly one kind shown,
     /// or none for the whole tab.</summary>
@@ -221,6 +209,9 @@ public sealed class PoseLibraryPane
         _kindFilter.Clear();
         if (kind is { } stated)
             _kindFilter.Add(stated);
+        else
+            foreach (var all in Enum.GetValues<PoseLibraryEntryKind>())
+                _kindFilter.Add(all);
         RebuildAfterFilterChange();
     }
 
@@ -238,7 +229,6 @@ public sealed class PoseLibraryPane
     private bool KindAdmitted(
         PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
         primary != PoseLibraryEntryKind.Actor
-        || _kindFilter.Count == 0
         || _kindFilter.Contains(entryKind);
 
     /// <summary>The action row's import components, one set per tab. SESSION
@@ -946,9 +936,10 @@ public sealed class PoseLibraryPane
             new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>
             {
-                form.ReadOnly("Saved", _tileModified[selected]);
+                form.ReadOnly("Saved", _tileModified[selected],
+                    mono: true);
                 if (!string.IsNullOrEmpty(tile.Author))
-                    form.ReadOnly("Author", tile.Author!);
+                    form.ReadOnly("Author", tile.Author!, mono: true);
                 // Contents are PER-KIND rows — "Actors 2", "Lights 3" —
                 // never one truncating line (ruled 2026-08-31). The
                 // pre-minted one-liner splits on its own separator.
@@ -961,12 +952,13 @@ public sealed class PoseLibraryPane
                             form.ReadOnly(
                                 char.ToUpperInvariant(part[space + 1])
                                     + part[(space + 2)..],
-                                part[..space]);
+                                part[..space], mono: true);
                         else
-                            form.ReadOnly("Contents", part);
+                            form.ReadOnly("Contents", part, mono: true);
                     }
                 if (tile.Tags.Count > 0)
-                    form.ReadOnly("Tags", string.Join(", ", tile.Tags));
+                    form.ReadOnly("Tags", string.Join(", ", tile.Tags),
+                        mono: true);
                 if (tile.Flagged)
                     form.Status(tile.StatusText);
             },
@@ -1024,7 +1016,7 @@ public sealed class PoseLibraryPane
                     });
                 }
                 foreach (var (label, value) in _detailsRows)
-                    form.ReadOnly(label, value);
+                    form.ReadOnly(label, value, mono: true);
             },
             divider: false, dense: true);
     }

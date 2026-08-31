@@ -353,57 +353,41 @@ public sealed class LibraryWindow : Window
             float buttonSide =
                 Crystarium.ActiveTheme.Controls.ShellIconAction * s;
             float gap = theme.Spacing.Three * s;
-            // Reset and All lead the cluster; the kinds follow.
-            int seats = KindToggles.Length + 2;
+            // The union leads; the kinds follow. No reset — all-on IS the
+            // neutral state, and the union restores it (ruled 2026-09-01).
+            int seats = KindToggles.Length + 1;
             float cluster = seats * buttonSide + (seats - 1) * gap;
             var seat = new Vector2(
                 max.X - inset - cluster,
                 top + (height - buttonSide) * 0.5f);
-            bool allActive = pane.KindFilterCount >= KindToggles.Length;
-
-            // An ACTIVE toggle wears the accent chip: these glyphs have no
-            // filled twins, so the latched state needs the chip to read.
-            void Chip(Vector2 at, bool active)
-            {
-                if (!active)
-                    return;
-                dl.AddRectFilled(
-                    at,
-                    at + new Vector2(buttonSide),
-                    ImGui.ColorConvertFloat4ToU32(
-                        ColorEx.ApplyAlpha(theme.Chrome.AccentFill)),
-                    theme.Radii.Control * s);
-            }
+            bool allActive = true;
+            foreach (var (kind, _, _) in KindToggles)
+                allActive &= pane.KindFilterContains(kind);
 
             ImGui.SetCursorScreenPos(seat);
-            Crystarium.IconButton(
-                TablerIcon.Refresh,
-                pane.ClearKindFilter,
-                help: "Show everything",
-                id: "##library-kind-reset");
-            seat.X += buttonSide + gap;
-
-            Chip(seat, allActive);
-            ImGui.SetCursorScreenPos(seat);
-            Crystarium.IconButton(
+            Crystarium.TemporaryIconToggle(
                 TablerIcon.LayersUnion,
-                () => pane.SetKindFilterAll(
-                    Array.ConvertAll(KindToggles, toggle => toggle.Kind)),
-                help: "All kinds",
+                allActive,
+                pane.SetKindFilterAll,
+                help: "Show every kind",
                 id: "##library-kind-all");
             seat.X += buttonSide + gap;
 
+            // An admitted kind is latched (the pill's white highlight);
+            // a filtered-out kind is dim and inert — the union is the one
+            // way back on (ruled 2026-09-01).
             foreach (var (kind, icon, name) in KindToggles)
             {
                 bool latched = pane.KindFilterContains(kind);
-                Chip(seat, latched);
                 ImGui.SetCursorScreenPos(seat);
-                Crystarium.IconButton(
+                Crystarium.TemporaryIconToggle(
                     icon,
+                    latched,
                     () => pane.ToggleKindFilter(kind),
-                    style: new ControlStyle { Selected = latched },
+                    disabled: !latched,
                     help: name,
-                    id: "##library-kind-" + name);
+                    id: "##library-kind-" + name,
+                    dimmed: !latched);
                 seat.X += buttonSide + gap;
             }
         }
