@@ -476,6 +476,13 @@ public class SceneProp
     public ushort Model { get; set; }
     public ushort Submodel { get; set; }
     public byte Variant { get; set; }
+
+    /// <summary>The two dye channels and the pose variant, exactly the
+    /// facts the native create bakes in. Absent reads undyed.</summary>
+    public byte Stain0 { get; set; }
+    public byte Stain1 { get; set; }
+    public byte AnimationVariant { get; set; }
+
     public bool Visible { get; set; } = true;
     public LightFile.TransformData Transform { get; set; } =
         LightFile.TransformData.Identity;

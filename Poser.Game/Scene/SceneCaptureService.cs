@@ -515,6 +515,9 @@ public sealed class SceneCaptureService
                 Model = prop.Model.Model,
                 Submodel = prop.Model.Submodel,
                 Variant = prop.Model.Variant,
+                Stain0 = prop.Model.Stain0,
+                Stain1 = prop.Model.Stain1,
+                AnimationVariant = prop.Model.AnimationVariant,
                 Visible = prop.Visible,
                 Transform = NormalizedTransform(
                     prop.Transform, $"Object '{prop.Name}'", notes),

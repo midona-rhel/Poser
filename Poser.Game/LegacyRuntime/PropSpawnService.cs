@@ -20,7 +20,10 @@ public readonly record struct PropModel(
     ushort Model,
     ushort Submodel,
     byte Variant,
-    string Description);
+    string Description,
+    byte Stain0 = 0,
+    byte Stain1 = 0,
+    byte AnimationVariant = 0);
 
 /// <summary>
 /// One spawned prop: a stable id and display name over the live native
@@ -64,8 +67,18 @@ public sealed unsafe class PropHandle
     }
 
     /// <summary>The model triple this prop was spawned from — what a scene
-    /// file needs to respawn the same prop.</summary>
-    public PropModel Model { get; }
+    /// file needs to respawn the same prop. It changes only through
+    /// <see cref="PropSpawnService.Respawn"/>: dyes and the animation
+    /// variant bake at creation, so editing one recreates the weapon.
+    /// </summary>
+    public PropModel Model { get; internal set; }
+
+    /// <summary>Recreates this prop from the stated model, keeping the
+    /// handle: same id, name, placement, bindings.</summary>
+    public bool Respawn(PropModel model, out string? detail) =>
+        _owner.Respawn(this, model, out detail);
+
+    internal void Retarget(nint address) => _address = address;
 
     public nint Address => _address;
 
@@ -275,10 +288,12 @@ public sealed unsafe class PropSpawnService : IDisposable
                     Id = model.Model,
                     Type = model.Submodel,
                     Variant = model.Variant,
-                    Stain0 = 0,
-                    Stain1 = 0,
+                    // The dyes and the pose variant bake at creation — the
+                    // reason a dye edit is a respawn.
+                    Stain0 = model.Stain0,
+                    Stain1 = model.Stain1,
                 },
-                AnimationVariant = 0,
+                AnimationVariant = model.AnimationVariant,
             };
             var weapon = CSWeapon.Create(&info);
             if (weapon == null)
@@ -329,6 +344,68 @@ public sealed unsafe class PropSpawnService : IDisposable
 
     /// <summary>Destroys one prop and forgets it. Destroying a handle that
     /// has already gone is a no-op.</summary>
+    /// <summary>Recreates one prop's native weapon from the stated model
+    /// — dyes and the animation variant bake at creation. The handle keeps
+    /// its id, name, placement, and bindings; the old weapon dies only
+    /// after the new one took, so a failed create costs nothing.</summary>
+    public bool Respawn(
+        PropHandle handle, PropModel model, out string? detail)
+    {
+        detail = null;
+        if (!_props.Contains(handle) || !handle.IsValid)
+        {
+            detail = "The object is no longer alive.";
+            return false;
+        }
+        var placement = handle.Transform;
+        bool visible = handle.Visible;
+        var old = handle.Address;
+        try
+        {
+            var info = new WeaponCreateInfo
+            {
+                WeaponModelId =
+                {
+                    Id = model.Model,
+                    Type = model.Submodel,
+                    Variant = model.Variant,
+                    Stain0 = model.Stain0,
+                    Stain1 = model.Stain1,
+                },
+                AnimationVariant = model.AnimationVariant,
+            };
+            var weapon = CSWeapon.Create(&info);
+            var world = CSWorld.Instance();
+            if (weapon == null || world == null)
+            {
+                if (weapon != null)
+                {
+                    weapon->CleanupRender();
+                    weapon->Dtor(1);
+                }
+                detail = "The game did not take the model.";
+                return false;
+            }
+            world->AddChild((CSObject*)weapon);
+            weapon->OnAddedToWorld();
+            handle.Retarget((nint)weapon);
+            handle.Model = model;
+            handle.Transform = placement;
+            handle.Visible = visible;
+            var doomed = (CSWeapon*)old;
+            doomed->CleanupRender();
+            doomed->Dtor(1);
+            _events.Publish(new PropListChangedEvent());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"PropSpawnService: respawn failed: {ex.Message}");
+            detail = "The respawn failed.";
+            return false;
+        }
+    }
+
     public void Destroy(PropHandle? handle)
     {
         if (handle == null)

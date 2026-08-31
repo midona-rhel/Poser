@@ -151,7 +151,12 @@ Windows each have ONE job. No mode may change what a window IS.
   with Browse opening the same picker — also how a spawned BG object
   re-models). VFX get a Loop|Speed pair on the
   object page; looping recreates the effect every 15s (Brio's
-  cadence) with the handle, id, and name surviving the churn.
+  cadence) with the handle, id, and name surviving the churn. World
+  objects also carry Visible|Opacity and (VFX) a Tint well; props
+  carry Dye|Dye 2 (the game's stain sheet, picked by name — a dye
+  edit is a respawn because stains bake at creation) and a Pose
+  variant that applies on release. All of it rides scene documents
+  and every entry kind (2026-08-31).
 - **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
   IS the spawned thing's name — "Stone rail" spawns a Stone rail. A
   group entry names the GROUP; its children keep their own saved

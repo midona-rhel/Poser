@@ -1105,7 +1105,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public object? SpawnProp(SceneProp data, out string? detail)
     {
         var handle = _props.SpawnProp(new PropModel(
-            data.Name, data.Model, data.Submodel, data.Variant, string.Empty));
+            data.Name, data.Model, data.Submodel, data.Variant, string.Empty,
+            data.Stain0, data.Stain1, data.AnimationVariant));
         if (handle is null)
         {
             detail = "The object spawn failed.";
