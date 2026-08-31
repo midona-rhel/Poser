@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Poser.Application.Scene;
 using Poser.Core;
@@ -28,6 +29,16 @@ public sealed class WorldObjectsPane
 {
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
+    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+
+    /// <summary>The whole-game asset browser, for re-modelling the
+    /// selected spawned object in place.</summary>
+    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+        _assetPicker = new("world-object-asset");
+
+    /// <summary>The combined picker list — models and effects both, told
+    /// apart by their glyphs — minted on first browse.</summary>
+    private List<Game.WorldObjects.WorldAsset>? _assetChoices;
 
     /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
     /// that files one in the same history the transforms use — the seam whose
@@ -48,13 +59,15 @@ public sealed class WorldObjectsPane
         StableBindingRegistry bindings,
         SceneLifecycleHistory lifecycle,
         ScenePane scenePane,
-        global::Poser.UI.Controls.EntityNameModal names)
+        global::Poser.UI.Controls.EntityNameModal names,
+        Game.WorldObjects.WorldAssetCatalog assets)
     {
         _names = names;
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
         _scenePane = scenePane;
+        _assets = assets;
     }
 
     private readonly ScenePane _scenePane;
@@ -79,9 +92,50 @@ public sealed class WorldObjectsPane
                 divider: false);
         });
 
+        // Pumped after the page: the surface a row opened has to outlive
+        // that row's own draw call — the overlay pane's rule.
+        if (_assetPicker.Draw() is { } picked
+            && SelectedWorldObject() is { } target)
+        {
+            if (target.Respawn(picked.Item.Path, out var refusal))
+            {
+                _pathDraftFor = null;
+                _status = string.Empty;
+            }
+            else
+                _status = refusal ?? "The path could not be spawned.";
+        }
+
         var pending = _pending;
         _pending = null;
         pending?.Invoke();
+    }
+
+    private void OpenAssetPicker()
+    {
+        if (_assetChoices == null)
+        {
+            _assetChoices = new List<Game.WorldObjects.WorldAsset>(
+                _assets.Models.Count + _assets.Effects.Count);
+            _assetChoices.AddRange(_assets.Models);
+            _assetChoices.AddRange(_assets.Effects);
+        }
+        _assetPicker.Open(
+            "world-object-model",
+            _assetChoices,
+            static asset => asset.Name,
+            static asset => asset.Path,
+            SelectedWorldObject()?.Path ?? string.Empty,
+            loadError: _assetChoices.Count == 0
+                ? "The path catalog could not be read."
+                : null,
+            options: new PickerOptions<Game.WorldObjects.WorldAsset>
+            {
+                Glyph = static asset => asset.Path.EndsWith(
+                    ".avfx", StringComparison.OrdinalIgnoreCase)
+                    ? TablerIcon.Fire
+                    : TablerIcon.Square,
+            });
     }
 
     // ── sections ─────────────────────────────────────────────────────────
@@ -114,21 +168,28 @@ public sealed class WorldObjectsPane
                 _pathDraft,
                 next => _pathDraft = next,
                 help: "The model or VFX path this object respawns from");
-            form.Actions(string.Empty, actions => actions.Button(
-                "Respawn",
-                () =>
-                {
-                    var stated = _pathDraft;
-                    _pending = () =>
+            form.Actions(string.Empty, actions =>
+            {
+                actions.Button(
+                    "Browse",
+                    () => OpenAssetPicker(),
+                    help: "Search every model and effect in the game");
+                actions.Button(
+                    "Respawn",
+                    () =>
                     {
-                        if (!worldObject.Respawn(stated, out var refusal))
-                            _status = refusal ?? "The path could not be "
-                                + "spawned.";
-                        else
-                            _status = string.Empty;
-                    };
-                },
-                help: "Recreate this object from the stated path"));
+                        var stated = _pathDraft;
+                        _pending = () =>
+                        {
+                            if (!worldObject.Respawn(stated, out var refusal))
+                                _status = refusal ?? "The path could not be "
+                                    + "spawned.";
+                            else
+                                _status = string.Empty;
+                        };
+                    },
+                    help: "Recreate this object from the stated path");
+            });
             if (_status.Length > 0)
                 form.Status(_status, warning: true);
         }

@@ -41,27 +41,22 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
-    private const int RowVfx = 4;
-    private const int RowOverlayTalk = 5;
-    private const int RowOverlayBalloon = 6;
-    private const int RowOverlayStatus = 7;
-    private const int RowLightSpot = 8;
-    private const int RowLightPoint = 9;
-    private const int RowLightArea = 10;
-    private const int RowLightDirectional = 11;
-    private const int RowLightFromFile = 12;
-    private const int RowWorldLight = 13;
-    private const int RowCameraGame = 14;
-    private const int RowCameraFree = 15;
-    private const int RowCameraFromFile = 16;
-    private const int RowReferenceImage = 17;
-    private const int ActionRows = 18;
-
-    /// <summary>What the VFX row spawns: a known looping world effect
-    /// (Stagehand's own demo default). The Model field on the spawned
-    /// object takes any .avfx path from there.</summary>
-    private const string DefaultVfxPath =
-        "bg/ffxiv/fst_f1/common/vfx/eff/b0941trp1a_o.avfx";
+    private const int RowWorldModel = 4;
+    private const int RowVfx = 5;
+    private const int RowOverlayTalk = 6;
+    private const int RowOverlayBalloon = 7;
+    private const int RowOverlayStatus = 8;
+    private const int RowLightSpot = 9;
+    private const int RowLightPoint = 10;
+    private const int RowLightArea = 11;
+    private const int RowLightDirectional = 12;
+    private const int RowLightFromFile = 13;
+    private const int RowWorldLight = 14;
+    private const int RowCameraGame = 15;
+    private const int RowCameraFree = 16;
+    private const int RowCameraFromFile = 17;
+    private const int RowReferenceImage = 18;
+    private const int ActionRows = 19;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -173,7 +168,8 @@ public sealed class SpawnBrowserWindow : Window
         global::Poser.Library.IPoseLibraryService library,
         Game.Scene.SceneWorkflow scenes,
         Game.Scene.PlacementAnchorSource anchors,
-        Game.WorldObjects.WorldObjectService worldObjects)
+        Game.WorldObjects.WorldObjectService worldObjects,
+        Game.WorldObjects.WorldAssetCatalog assets)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -199,6 +195,7 @@ public sealed class SpawnBrowserWindow : Window
         _scenes = scenes;
         _anchors = anchors;
         _worldObjects = worldObjects;
+        _assets = assets;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -388,6 +385,46 @@ public sealed class SpawnBrowserWindow : Window
         // row's own draw call.
         if (_worldPicker.Draw() is { } chosen)
             CaptureWorldLight(chosen.Item);
+        if (_assetPicker.Draw() is { } asset)
+            SpawnWorldAsset(asset.Item.Path);
+    }
+
+    /// <summary>The whole-game catalog: every spawnable path of the given
+    /// list, searched by the file's own name.</summary>
+    private void OpenAssetPicker(
+        string owner,
+        System.Collections.Generic.IReadOnlyList<
+            Game.WorldObjects.WorldAsset> list)
+    {
+        _assetPicker.Open(
+            owner,
+            list,
+            static asset => asset.Name,
+            static asset => asset.Path,
+            string.Empty,
+            loadError: list.Count == 0
+                ? "The path catalog could not be read."
+                : null,
+            options: new PickerOptions<Game.WorldObjects.WorldAsset>
+            {
+                Glyph = static asset => asset.Path.EndsWith(
+                    ".avfx", StringComparison.OrdinalIgnoreCase)
+                    ? TablerIcon.Fire
+                    : TablerIcon.Square,
+            });
+    }
+
+    /// <summary>Spawns one catalog path at the configured placement — the
+    /// world-object spawn every picked asset lands through.</summary>
+    private void SpawnWorldAsset(string path)
+    {
+        var at = global::Poser.Transform.Identity;
+        if (_anchors.TryCurrentFor(
+                _configuration.Config.DefaultSpawnPlacement,
+                out var position, out _, out _))
+            at = at with { Position = position };
+        if (_worldObjects.Spawn(path, at, true, out var refusal) is null)
+            _notices.Failed(refusal ?? SpawnFailedNote);
     }
 
     /// <summary>Capture spawns an owned copy and suppresses the original. The
@@ -425,10 +462,13 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
         rows.Add(ActionRow(
+            "##spawn-world-model", "World object", TablerIcon.Square,
+            !_worldObjects.IsAvailable,
+            help: "Any BG model in the game, searched by name"));
+        rows.Add(ActionRow(
             "##spawn-vfx", "VFX", TablerIcon.Fire,
             !_worldObjects.IsAvailable,
-            help: "A world effect, spawned looping — respawn it as any "
-                + ".avfx from its Model field"));
+            help: "Any world effect in the game, spawned looping"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -501,7 +541,7 @@ public sealed class SpawnBrowserWindow : Window
         // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i is RowProp or RowVfx
+            _rowTabs.Add(i is RowProp or RowWorldModel or RowVfx
                 ? SpawnBrowserTab.Props
                 : i < RowProp
                     ? SpawnBrowserTab.Actors
@@ -596,6 +636,12 @@ public sealed class SpawnBrowserWindow : Window
     private readonly Game.Scene.SceneWorkflow _scenes;
     private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly Game.WorldObjects.WorldObjectService _worldObjects;
+    private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+
+    /// <summary>The whole-game asset browser: effects or models, opened by
+    /// the two catalog rows below. One picker, two owners.</summary>
+    private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
+        _assetPicker = new("spawn-world-asset");
 
     /// <summary>Every SAVED library entry the row list carries after the
     /// prop models, parallel by index — actors, groups, objects, lights,
@@ -799,21 +845,12 @@ public sealed class SpawnBrowserWindow : Window
                 if (_lifecycle.SpawnProp() == null)
                     _notices.Failed(SpawnFailedNote);
                 return;
-            case RowVfx:
-            {
-                // The configured placement rule says where it lands, the
-                // saved-entry spawn's own anchor read.
-                var vfxAt = global::Poser.Transform.Identity;
-                if (_anchors.TryCurrentFor(
-                        _configuration.Config.DefaultSpawnPlacement,
-                        out var vfxPosition, out _, out _))
-                    vfxAt = vfxAt with { Position = vfxPosition };
-                if (_worldObjects.Spawn(
-                        DefaultVfxPath, vfxAt, true, out var vfxRefusal)
-                    is null)
-                    _notices.Failed(vfxRefusal ?? SpawnFailedNote);
+            case RowWorldModel:
+                OpenAssetPicker("world-model", _assets.Models);
                 return;
-            }
+            case RowVfx:
+                OpenAssetPicker("world-vfx", _assets.Effects);
+                return;
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:

@@ -377,6 +377,7 @@ internal static class ServiceRegistration
             Game.WorldObjects.IWorldObjectPort,
             Game.WorldObjects.NativeWorldObjectPort>();
         services.AddSingleton<Game.WorldObjects.WorldObjectService>();
+        services.AddSingleton<Game.WorldObjects.WorldAssetCatalog>();
         return services;
     }
 

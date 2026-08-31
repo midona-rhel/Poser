@@ -143,9 +143,13 @@ Windows each have ONE job. No mode may change what a window IS.
   spawn/identity/sidebar/gizmo/scene/library/group story, dispatched
   by the path's extension at the native port. VFX rows wear
   TablerIcon.Fire (the Tabler "flame" glyph); the portal's VFX row
-  spawns a known looping default and any .avfx is reached by editing
-  the spawned object's Model field (explicit-apply Respawn — also how
-  a spawned BG object re-models). VFX get a Loop|Speed pair on the
+  and World object rows open the WHOLE-GAME catalog picker (the
+  community path dump both references ship, bundled gzipped: 103k BG
+  models, 8k effects, searched by file name, glyphs telling the kinds
+  apart); picking spawns at the configured placement. The spawned
+  object's Model field stays the raw route (explicit-apply Respawn,
+  with Browse opening the same picker — also how a spawned BG object
+  re-models). VFX get a Loop|Speed pair on the
   object page; looping recreates the effect every 15s (Brio's
   cadence) with the handle, id, and name surviving the churn.
 - **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
