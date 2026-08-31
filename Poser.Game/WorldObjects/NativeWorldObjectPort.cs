@@ -371,6 +371,28 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return touched;
     }
 
+    /// <summary>Single tail-byte access (0xC0..0xE0), for the
+    /// animation-gate hunt: transform-animated scenery is driven by
+    /// something in the undocumented tail, found empirically like the
+    /// night byte was.</summary>
+    public byte? ReadBgTailByte(nint address, int offset)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || offset < 0xC0 || offset >= 0xE0)
+            return null;
+        return *((byte*)node + offset);
+    }
+
+    public void WriteBgTailByte(nint address, int offset, byte value)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || offset < 0xC0 || offset >= 0xE0)
+            return;
+        *((byte*)node + offset) = value;
+    }
+
     public bool? ReadBgNightState(nint address)
     {
         var node = Resolve(address);

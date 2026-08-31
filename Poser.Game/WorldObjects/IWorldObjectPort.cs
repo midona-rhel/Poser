@@ -172,6 +172,10 @@ public interface IWorldObjectPort
     /// its skeleton's controls exist.</summary>
     bool WriteBgAnimationSpeed(nint address, float speed);
 
+    byte? ReadBgTailByte(nint address, int offset);
+
+    void WriteBgTailByte(nint address, int offset, byte value);
+
     void WriteBgNightState(nint address, bool night);
 
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
