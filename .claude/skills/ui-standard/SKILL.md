@@ -77,7 +77,17 @@ Windows each have ONE job. No mode may change what a window IS.
   the navigator, never over the preview, which stays visible while
   the options are worked. The
   seat exists ONLY for the types that have import options — no
-  options, no button.
+  options, no button. The Objects tab's strip band carries the KIND
+  toggles right-aligned (ruled 2026-09-01): the filter holds the
+  ADMITTED kinds and starts full; an admitted kind is a latched
+  persistent toggle (the pill's white highlight — `SegmentSelected`
+  via `TemporaryIconToggle`, NEVER an accent chip), a filtered-out
+  kind draws dim and inert, and the layers-union button leading the
+  cluster re-admits everything — it is the one way back on, and
+  there is NO reset button (all-on IS the neutral state; a reset
+  shipped and was rescinded the same day). The right column's
+  metadata rails render property VALUES in the mono family
+  (`ReadOnly(..., mono: true)`) — both rails, not just Objects.
 - **The SIDEBAR folds; the INSPECTOR only splits** (ruled
   2026-08-31, reversing the 2026-08-30 "sidebar never hides"): the
   sidebar column folds behind a chevron in its titlebar cell (the
