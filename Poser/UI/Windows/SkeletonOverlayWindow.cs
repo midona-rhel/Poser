@@ -130,6 +130,9 @@ public class SkeletonOverlayWindow : Window
         public bool IsSelected;
         public ILight? Live;
         public bool IsHovered;
+        /// <summary>In a named group: the handle sheds its rim ring, the
+        /// grouped-child rule every kind follows.</summary>
+        public bool InGroup;
     }
 
     /// <summary>One thing the world holds that the scene does not. It carries
@@ -463,6 +466,7 @@ public class SkeletonOverlayWindow : Window
                     cameraPosition, lightTransform.Position),
                 IsSelected = lightSelected,
                 Live = resolved.Success ? resolved.Value : null,
+                InGroup = _groups.GroupOf(lightSelectionId) != null,
             });
         }
 
@@ -652,7 +656,9 @@ public class SkeletonOverlayWindow : Window
             adopt.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
-        float groupRadius = actorRadius + 3f * ImGuiHelpers.GlobalScale;
+        // The group dot is ACTOR-SIZED (ruled 2026-08-31) — its two inner
+        // rings are what say "group", not extra bulk.
+        float groupRadius = actorRadius;
         foreach (ref var groupDot in CollectionsMarshal.AsSpan(groupDots))
             groupDot.IsHovered = !pointerBlocked
                 && !listTravel
@@ -1737,9 +1743,12 @@ public class SkeletonOverlayWindow : Window
                 ? SelectedBoneColor
                 : ImGui.ColorConvertFloat4ToU32(color);
             drawList.AddCircleFilled(light.ScreenPos, radius, dot, 20);
-            drawList.AddCircle(
-                light.ScreenPos, radius, OutlineColor, 20,
-                2f * ImGuiHelpers.GlobalScale);
+            // A grouped light sheds its rim ring, the grouped-child rule;
+            // selection and hover keep their usual growth and accent.
+            if (!light.InGroup)
+                drawList.AddCircle(
+                    light.ScreenPos, radius, OutlineColor, 20,
+                    2f * ImGuiHelpers.GlobalScale);
             // The inner ring reads as an aperture, which is what separates a
             // light handle from an actor's transform point at a glance.
             drawList.AddCircle(

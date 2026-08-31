@@ -177,8 +177,11 @@ Windows each have ONE job. No mode may change what a window IS.
   the user steps inside. When they DO show, what both shed is the
   OUTERMOST circle — the rim ring (ruled 2026-08-31, superseding the
   same day's inner-circle-only try): the group dot is fill + two
-  inner rings, a grouped child is its full-size fill + inner ring —
-  visible but less important than the group's own dot. World objects carry the same named dot as
+  inner rings, a grouped child of EVERY kind — lights included — is
+  its full-size fill minus the rim, visible but less important than
+  the group's own dot. The group dot itself is ACTOR-SIZED; its
+  rings, not bulk, are what say "group". Selection and hover keep
+  their usual growth and accent on every reduced form. World objects carry the same named dot as
   props: the handle is the one viewport route to selecting either.
   The Selection page
   and titles wear the group's name when the selection IS the group;
