@@ -94,6 +94,12 @@ public class PoserConfiguration : IPluginConfiguration
     /// </summary>
     public bool SpawnFrozen { get; set; } = false;
 
+    /// <summary>Where spawned entries land by default — the rule every
+    /// saved thing obeys. In front of the camera unless the user says
+    /// otherwise.</summary>
+    public Poser.Files.ObjectPlacementMode DefaultSpawnPlacement { get; set; }
+        = Poser.Files.ObjectPlacementMode.InFrontOfCamera;
+
     /// <summary>
     /// The revision of the first-run notice this config has accepted (see
     /// <see cref="FirstRunNotice"/>). Zero — the value every config written

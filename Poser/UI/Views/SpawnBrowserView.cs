@@ -83,6 +83,19 @@ public sealed class SpawnBrowserViewModel
 
     public Action? OnFrozenToggle;
 
+    /// <summary>Focus the search on the next frame — set at open and after
+    /// a keyboard spawn, so typing continues without a click.</summary>
+    public bool FocusSearch;
+
+    /// <summary>The ROW index the keyboard highlight stands on; -1 none.
+    /// Arrow keys move it, Enter activates it, a refilter re-seats it on
+    /// the first match.</summary>
+    public int HighlightRow = -1;
+
+    /// <summary>The frame's footer band, published for the window's drag
+    /// grab.</summary>
+    public WindowFrameRect FooterRect;
+
     /// <summary>The footer caption: the honest count, or the note explaining
     /// why the last activation did nothing.</summary>
     public string Status = string.Empty;
@@ -288,9 +301,14 @@ public static class SpawnBrowserView
 
         DrawTabs(vm, rects.Band, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
+        vm.FooterRect = rects.Footer;
 
         if (submit)
-            ActivateFirstEnabled(vm);
+        {
+            ActivateHighlighted(vm);
+            // Another round: the search keeps the keyboard.
+            vm.FocusSearch = true;
+        }
     }
 
     /// <summary>The tab strip row, under the search. The strip SPANS the
@@ -340,6 +358,11 @@ public static class SpawnBrowserView
         ImGui.SetCursorScreenPos(bar.Min + new Vector2(
             margin * scale,
             (bar.Size.Y - SearchBandHeight * scale) * 0.5f));
+        if (vm.FocusSearch)
+        {
+            vm.FocusSearch = false;
+            ImGui.SetKeyboardFocusHere();
+        }
         Crystarium.FilterPill(
             SearchId,
             vm.Query,
@@ -434,7 +457,16 @@ public static class SpawnBrowserView
         ImGui.SetCursorScreenPos(
             new Vector2(bandMin.X, bandMin.Y + RowPitch * scale));
 
-        if (hit.Hovered || hit.Active)
+        // The keyboard highlight wears the selected fill; hover keeps its
+        // own weaker one.
+        if (index == vm.HighlightRow)
+            draw.AddRectFilled(
+                pillMin,
+                pillMin + pillSize,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.Chrome.SidebarSelected)),
+                theme.Radii.Control * scale);
+        else if (hit.Hovered || hit.Active)
             draw.AddRectFilled(
                 pillMin,
                 pillMin + pillSize,
@@ -560,8 +592,17 @@ public static class SpawnBrowserView
                 TextAlign.Start, besideIcon: true);
     }
 
-    private static void ActivateFirstEnabled(SpawnBrowserViewModel vm)
+    /// <summary>Enter spawns the KEYBOARD HIGHLIGHT when one stands on a
+    /// visible enabled row, else the first enabled match.</summary>
+    private static void ActivateHighlighted(SpawnBrowserViewModel vm)
     {
+        if (vm.HighlightRow >= 0
+            && vm.Visible.Contains(vm.HighlightRow)
+            && !vm.Rows[vm.HighlightRow].Disabled)
+        {
+            vm.OnActivate?.Invoke(vm.HighlightRow);
+            return;
+        }
         for (int i = 0; i < vm.Visible.Count; i++)
         {
             int index = vm.Visible[i];

@@ -96,6 +96,7 @@ public sealed class SettingsViewModel
     public bool CameraConsumeAllInput;
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
+    public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
     public bool TreeGuides = true;
@@ -199,6 +200,11 @@ public static class SettingsView
     private const float NavigationIconMargin = 2f;
 
     private const float NavigationPillRadius = 5f;
+
+    /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>
+    private static readonly string[] SpawnPlacementLabels =
+        ["Where they were saved", "Relative to the saved camera",
+         "Relative to the saved actor", "In front of the camera"];
 
     private static readonly (TablerIcon Icon, string Label)[] Nav =
     {
@@ -382,6 +388,13 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
+        page.Section("Spawning", form =>
+            form.Dropdown(
+                "Place spawned things",
+                SpawnPlacementLabels,
+                vm.DefaultSpawnPlacement,
+                next => vm.DefaultSpawnPlacement = next,
+                help: "Where a spawned entry lands by default"));
         page.Section("Behavior", form =>
         {
             form.Switch(

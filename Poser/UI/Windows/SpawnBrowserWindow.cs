@@ -229,6 +229,8 @@ public sealed class SpawnBrowserWindow : Window
         }
         IsOpen = true;
         BringToFront();
+        // Type immediately: the search takes the keyboard at open.
+        _vm.FocusSearch = true;
     }
 
     public override void OnOpen()
@@ -291,6 +293,14 @@ public sealed class SpawnBrowserWindow : Window
         SyncQuery();
         if (_refilter)
             Refilter();
+        if (_reseatHighlight)
+        {
+            _reseatHighlight = false;
+            // The highlight re-seats on the first match after any filter
+            // change, so Enter always answers what the list shows first.
+            _vm.HighlightRow =
+                _vm.Visible.Count > 0 ? _vm.Visible[0] : -1;
+        }
         SyncCloneRow();
         SyncStatus();
         _vm.Pinned = _pinned;
@@ -302,7 +312,26 @@ public sealed class SpawnBrowserWindow : Window
         bool focused = ImGui.IsWindowFocused(
             ImGuiFocusedFlags.RootAndChildWindows);
         if (focused)
+        {
             _hadFocus = true;
+            // Arrow keys walk the visible rows, wrapping at the ends; the
+            // search keeps the keyboard the whole time (up/down mean
+            // nothing to a one-line input).
+            if (_vm.Visible.Count > 0)
+            {
+                int at = _vm.Visible.IndexOf(_vm.HighlightRow);
+                if (ImGui.IsKeyPressed(ImGuiKey.DownArrow))
+                    at = at < 0 ? 0 : (at + 1) % _vm.Visible.Count;
+                else if (ImGui.IsKeyPressed(ImGuiKey.UpArrow))
+                    at = at <= 0 ? _vm.Visible.Count - 1 : at - 1;
+                if (at >= 0 && at < _vm.Visible.Count)
+                    _vm.HighlightRow = _vm.Visible[at];
+            }
+            else
+            {
+                _vm.HighlightRow = -1;
+            }
+        }
         else if (_hadFocus && !_pinned && !_worldPicker.IsOpen)
         {
             IsOpen = false;
@@ -320,6 +349,23 @@ public sealed class SpawnBrowserWindow : Window
         try
         {
             SpawnBrowserView.Draw(_vm, min);
+
+            // The footer band is the window's GRAB: pinned, the portal is
+            // a palette, and a palette must be movable.
+            var footer = _vm.FooterRect;
+            if (footer.Size.Y > 0f)
+            {
+                ImGui.SetCursorScreenPos(footer.Min);
+                ImGui.InvisibleButton("##portal-drag", footer.Size);
+                if (ImGui.IsItemHovered() || ImGui.IsItemActive())
+                    ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
+                if (ImGui.IsItemActive())
+                {
+                    var dragDelta = ImGui.GetIO().MouseDelta;
+                    if (dragDelta != Vector2.Zero)
+                        ImGui.SetWindowPos(ImGui.GetWindowPos() + dragDelta);
+                }
+            }
         }
         finally
         {
@@ -543,6 +589,7 @@ public sealed class SpawnBrowserWindow : Window
         global::Poser.Library.PoseLibraryEntryKind Kind)> _savedObjects = new();
     private int _propEntryCount;
     private int _libraryRevision = -1;
+    private bool _reseatHighlight;
 
     /// <summary>Spawns one saved entry where the player stands, each kind
     /// through the same route the library's own activation uses. No anchor
@@ -573,14 +620,16 @@ public sealed class SpawnBrowserWindow : Window
                         ?? $"'{saved.Label}' could not be staged.");
                 return;
         }
+        // The configured default rules here — the portal has no
+        // placement dropdown of its own.
+        var mode = _configuration.Config.DefaultSpawnPlacement;
         var options = new Game.Scene.SceneLoadOptions();
-        if (_anchors.TryCurrentFor(
-                global::Poser.Files.ObjectPlacementMode.RelativeToSelectedActor,
-                out var anchorPosition, out var anchorYaw, out _))
+        if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
+            && _anchors.TryCurrentFor(
+                mode, out var anchorPosition, out var anchorYaw, out _))
             options = new Game.Scene.SceneLoadOptions
             {
-                Placement =
-                    global::Poser.Files.ObjectPlacementMode.RelativeToSelectedActor,
+                Placement = mode,
                 PlacementPosition = anchorPosition,
                 PlacementYaw = anchorYaw,
             };
@@ -659,6 +708,7 @@ public sealed class SpawnBrowserWindow : Window
     private void Refilter()
     {
         _refilter = false;
+        _reseatHighlight = true;
         var visible = _vm.Visible;
         var rows = _vm.Rows;
         var tab = (SpawnBrowserTab)_vm.Tab;

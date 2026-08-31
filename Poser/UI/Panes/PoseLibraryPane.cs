@@ -144,7 +144,8 @@ public sealed class PoseLibraryPane
 
     /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor"];
+        ["As saved", "Relative to camera", "Relative to actor",
+         "In front of camera"];
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
@@ -814,6 +815,8 @@ public sealed class PoseLibraryPane
     {
         _placementChoices.Clear();
         _placementChoiceLabels.Clear();
+        // Front-of-camera needs no saved anchor, so it is never absent.
+        _placementChoices.Add(ObjectPlacementMode.InFrontOfCamera);
         _placementChoices.Add(ObjectPlacementMode.AsSaved);
         _placementChoiceLabels.Add(PlacementModeLabels[0]);
         if (_detailsHasCameraAnchor)
@@ -1144,8 +1147,22 @@ public sealed class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
+        // Scenes obey the placement rule like every entry (ruled
+        // 2026-08-31): the standing load options, plus wherever the
+        // footer's choice puts the content.
+        var sceneLoad = _sceneOptions.Options;
+        var sceneMode = EffectiveMode();
+        if (sceneMode != ObjectPlacementMode.AsSaved
+            && _anchors.TryCurrentFor(
+                sceneMode, out var scenePoint, out var sceneYaw, out _))
+            sceneLoad = sceneLoad with
+            {
+                Placement = sceneMode,
+                PlacementPosition = scenePoint,
+                PlacementYaw = sceneYaw,
+            };
         var started = _scenes.BeginLoad(
-            _vm.Tiles[index].ThumbKey, _sceneOptions.Options);
+            _vm.Tiles[index].ThumbKey, sceneLoad);
         if (!started.Success)
             _notices.Failed(
                 started.Detail ?? "The scene could not be loaded.");

@@ -829,30 +829,60 @@ public sealed class SceneWorkflow : IDisposable
             // touched.
             if (options.Placement != Poser.Files.ObjectPlacementMode.AsSaved)
             {
-                var savedAnchor = options.Placement ==
-                    Poser.Files.ObjectPlacementMode.RelativeToCamera
-                        ? scene.CameraAnchor
-                        : scene.ActorAnchor;
-                if (savedAnchor is null)
+                Poser.Files.PlacementAnchorData? savedAnchor;
+                if (options.Placement ==
+                    Poser.Files.ObjectPlacementMode.InFrontOfCamera)
                 {
-                    Finish(
-                        OperationReceiptState.Failed,
-                        "This entry records no anchor for that placement. " +
-                        "Load it as saved instead.");
-                    return;
+                    // The anchor is the content ITSELF: its centroid moves
+                    // to the point in front of the camera, no turn — the
+                    // light spawn's behavior, generalized. An entry that
+                    // places nothing simply loads as saved.
+                    savedAnchor = SceneContentCentroid(scene) is { } centroid
+                        ? new Poser.Files.PlacementAnchorData
+                        {
+                            Position = centroid,
+                            Yaw = options.PlacementYaw,
+                        }
+                        : null;
+                    if (savedAnchor is null)
+                        notes.Add(
+                            "The entry places nothing, so it loaded as "
+                            + "saved.");
                 }
-                if (ScenePlacementRebase.Rebase(
-                        scene, savedAnchor,
-                        options.PlacementPosition, options.PlacementYaw)
-                    is { } placementRefusal)
+                else
                 {
-                    Finish(OperationReceiptState.Failed, placementRefusal);
-                    return;
+                    savedAnchor = options.Placement ==
+                        Poser.Files.ObjectPlacementMode.RelativeToCamera
+                            ? scene.CameraAnchor
+                            : scene.ActorAnchor;
+                    if (savedAnchor is null)
+                    {
+                        Finish(
+                            OperationReceiptState.Failed,
+                            "This entry records no anchor for that placement. " +
+                            "Load it as saved instead.");
+                        return;
+                    }
                 }
-                notes.Add(options.Placement ==
-                    Poser.Files.ObjectPlacementMode.RelativeToCamera
-                        ? "Placed relative to the camera."
-                        : "Placed relative to the actor.");
+                if (savedAnchor is { } anchor)
+                {
+                    if (ScenePlacementRebase.Rebase(
+                            scene, anchor,
+                            options.PlacementPosition, options.PlacementYaw)
+                        is { } placementRefusal)
+                    {
+                        Finish(OperationReceiptState.Failed, placementRefusal);
+                        return;
+                    }
+                    notes.Add(options.Placement switch
+                    {
+                        Poser.Files.ObjectPlacementMode.RelativeToCamera =>
+                            "Placed relative to the camera.",
+                        Poser.Files.ObjectPlacementMode.InFrontOfCamera =>
+                            "Placed in front of the camera.",
+                        _ => "Placed relative to the actor.",
+                    });
+                }
             }
 
             total = actors.Count + props.Count +
@@ -1552,6 +1582,46 @@ public sealed class SceneWorkflow : IDisposable
             scene.Groups = null;
             scene.RootOrder = null;
         }
+    }
+
+    /// <summary>The average position of everything the document PLACES —
+    /// actors, props, unattached lights, spawned world objects, free
+    /// cameras. Null when it places nothing.</summary>
+    private static System.Numerics.Vector3? SceneContentCentroid(
+        SceneFile scene)
+    {
+        var sum = System.Numerics.Vector3.Zero;
+        int counted = 0;
+        foreach (var actor in scene.Actors)
+            if (actor.ModelTransform is { } placement)
+            {
+                sum += placement.Position;
+                counted++;
+            }
+        foreach (var prop in scene.Props)
+        {
+            sum += prop.Transform.Position;
+            counted++;
+        }
+        foreach (var light in scene.Lights)
+            if (light.Attachment is null && light.Light is { } document)
+            {
+                sum += document.Transform.Position;
+                counted++;
+            }
+        foreach (var worldObject in scene.WorldObjects ?? [])
+            if (worldObject.Spawned)
+            {
+                sum += worldObject.Transform.Position;
+                counted++;
+            }
+        foreach (var camera in scene.Cameras)
+            if (camera.Camera is { Kind: global::Poser.Domain.Scene.CameraKind.Free } document)
+            {
+                sum += document.Position;
+                counted++;
+            }
+        return counted == 0 ? null : sum / counted;
     }
 
     /// <summary>One line stating a category the user left out, and only when

@@ -298,7 +298,12 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
-        services.AddSingleton<global::Poser.Files.ObjectPlacementPreferences>();
+        services.AddSingleton(sp => new global::Poser.Files.ObjectPlacementPreferences
+        {
+            // The session's live choice starts at the configured default.
+            Mode = sp.GetRequiredService<ConfigurationService>()
+                .Config.DefaultSpawnPlacement,
+        });
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;

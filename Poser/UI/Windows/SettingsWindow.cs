@@ -171,6 +171,7 @@ public class SettingsWindow : Window
             CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
+            DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -372,6 +373,8 @@ public class SettingsWindow : Window
         c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
+        c.DefaultSpawnPlacement =
+            (global::Poser.Files.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
