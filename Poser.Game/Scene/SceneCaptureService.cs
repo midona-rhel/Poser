@@ -599,6 +599,8 @@ public sealed class SceneCaptureService
                 Tint = worldObject.Tint,
                 VfxLoop = worldObject.LoopVfx,
                 VfxSpeed = worldObject.VfxSpeed,
+                VfxIntensity = worldObject.VfxIntensity,
+                VfxPaused = worldObject.VfxPaused,
                 Transform = NormalizedTransform(
                     worldObject.Transform,
                     $"World object '{worldObject.Name}'",

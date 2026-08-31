@@ -244,6 +244,21 @@ public sealed class WorldObjectsPane
                     3f,
                     next => worldObject.VfxSpeed = next,
                     help: "Playback speed"));
+            form.Pair(
+                "Paused",
+                cell => cell.Switch(
+                    "##vfx-paused",
+                    worldObject.VfxPaused,
+                    next => worldObject.VfxPaused = next,
+                    help: "Freeze the effect mid-frame"),
+                "Intensity",
+                cell => cell.Slider(
+                    "##vfx-intensity",
+                    worldObject.VfxIntensity,
+                    0f,
+                    4f,
+                    next => worldObject.VfxIntensity = next,
+                    help: "Brighten or dim the effect"));
         }
         form.Actions("Library", actions =>
             actions.Button(

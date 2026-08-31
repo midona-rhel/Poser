@@ -1095,6 +1095,10 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             handle.LoopVfx = data.VfxLoop;
             if (Math.Abs(data.VfxSpeed - 1f) > 0.001f)
                 handle.VfxSpeed = data.VfxSpeed;
+            if (Math.Abs(data.VfxIntensity - 1f) > 0.001f)
+                handle.VfxIntensity = data.VfxIntensity;
+            if (data.VfxPaused)
+                handle.VfxPaused = true;
         }
         return handle;
     }

@@ -572,6 +572,13 @@ public class SceneWorldObject
 
     /// <summary>A spawned effect's playback speed.</summary>
     public float VfxSpeed { get; set; } = 1f;
+
+    /// <summary>A spawned effect's uniform brightness, 1 as authored.
+    /// </summary>
+    public float VfxIntensity { get; set; } = 1f;
+
+    /// <summary>Whether a spawned effect is frozen mid-frame.</summary>
+    public bool VfxPaused { get; set; }
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

@@ -140,6 +140,17 @@ public interface IWorldObjectPort
     /// natives this port does not carry yet.</summary>
     void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
 
+    /// <summary>One uniform brightness on the effect's intensity triple.
+    /// </summary>
+    void SetVfxIntensity(nint address, float intensity);
+
+    /// <summary>Freezes the effect mid-frame (pause native + speed 0).
+    /// </summary>
+    void PauseVfx(nint address);
+
+    /// <summary>Plays a paused effect again at the stated speed.</summary>
+    void ResumeVfx(nint address, float speed);
+
     /// <summary>Dyes a BG object; null clears to white. False while the
     /// model has not produced its stain buffer yet — retry next tick.
     /// </summary>

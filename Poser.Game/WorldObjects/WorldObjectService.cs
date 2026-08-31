@@ -100,6 +100,37 @@ public sealed class AdoptedWorldObject
 
     private float _vfxSpeed = 1f;
 
+    /// <summary>One uniform brightness on the effect's intensity triple,
+    /// 1 as authored, up to Brio's 4.</summary>
+    public float VfxIntensity
+    {
+        get => _vfxIntensity;
+        set
+        {
+            _vfxIntensity = Math.Clamp(value, 0f, 4f);
+            if (!_released)
+                _owner.WriteVfxIntensity(this);
+        }
+    }
+
+    private float _vfxIntensity = 1f;
+
+    /// <summary>Whether the effect is frozen mid-frame. Paused also
+    /// suspends the loop refresh — a recreate would restart the frames
+    /// the pause is holding.</summary>
+    public bool VfxPaused
+    {
+        get => _vfxPaused;
+        set
+        {
+            _vfxPaused = value;
+            if (!_released)
+                _owner.WriteVfxPaused(this);
+        }
+    }
+
+    private bool _vfxPaused;
+
     /// <summary>The drawn opacity, 1 fully drawn: a VFX's alpha, a BG
     /// object's dither. Composed with <see cref="Visible"/> — hiding
     /// writes zero, showing writes this.</summary>
@@ -251,7 +282,8 @@ public sealed class WorldObjectService : IDisposable
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
-            if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx)
+            if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
+                || handle.VfxPaused)
                 continue;
             if (now < handle.NextVfxRefresh)
                 continue;
@@ -308,7 +340,17 @@ public sealed class WorldObjectService : IDisposable
                 _port.SetVfxSpeed(fresh, handle.VfxSpeed);
             if (handle.Tint is { } tint)
                 _port.WriteVfxTint(fresh, tint);
-            handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+            if (Math.Abs(handle.VfxIntensity - 1f) > 0.001f)
+                _port.SetVfxIntensity(fresh, handle.VfxIntensity);
+            if (handle.VfxPaused)
+            {
+                _port.PauseVfx(fresh);
+                handle.NextVfxRefresh = DateTime.MaxValue;
+            }
+            else
+            {
+                handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+            }
         }
         else if (handle.Tint is not null)
         {
@@ -327,6 +369,29 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || !_port.IsAlive(handle.Address))
             return;
         _port.SetVfxSpeed(handle.Address, speed);
+    }
+
+    internal void WriteVfxIntensity(AdoptedWorldObject handle)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address) || !handle.IsVfx)
+            return;
+        _port.SetVfxIntensity(handle.Address, handle.VfxIntensity);
+    }
+
+    internal void WriteVfxPaused(AdoptedWorldObject handle)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address) || !handle.IsVfx)
+            return;
+        if (handle.VfxPaused)
+        {
+            _port.PauseVfx(handle.Address);
+            handle.NextVfxRefresh = DateTime.MaxValue;
+        }
+        else
+        {
+            _port.ResumeVfx(handle.Address, handle.VfxSpeed);
+            handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+        }
     }
 
     /// <summary>BG objects whose stain write is waiting for the model's

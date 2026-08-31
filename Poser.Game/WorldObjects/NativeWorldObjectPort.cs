@@ -321,6 +321,59 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             ((BgObject*)node)->SetTransparency(1f - clamped);
     }
 
+    /// <summary>The effect's brightness triple at 0x90 on the resource
+    /// instance (Brio's SetIntensity): one uniform value drives all three
+    /// components, then the transform/culling nudge makes it take.
+    /// </summary>
+    private const int VfxIntensityOffset = 0x90;
+
+    public void SetVfxIntensity(nint address, float intensity)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return;
+        var vfx = (CSVfx*)node;
+        var instance = (nint)vfx->VfxResourceInstance;
+        if (instance == nint.Zero)
+            return;
+        float clamped = Math.Clamp(intensity, 0f, 4f);
+        *(System.Numerics.Vector3*)(instance + VfxIntensityOffset) =
+            new System.Numerics.Vector3(clamped);
+        vfx->NotifyTransformChanged();
+        vfx->UpdateCulling();
+    }
+
+    /// <summary>Brio's pause pair: the pause native plus speed zero.
+    /// </summary>
+    public void PauseVfx(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return;
+        var instance = (nint)((CSVfx*)node)->VfxResourceInstance;
+        if (instance == nint.Zero)
+            return;
+        if (_vfxPause != null)
+            _vfxPause(instance);
+        if (_vfxSetSpeed != null)
+            _vfxSetSpeed(instance, 0f);
+    }
+
+    /// <summary>Brio's resume pair: play the static effect again and put
+    /// the stated speed back.</summary>
+    public void ResumeVfx(nint address, float speed)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return;
+        var vfx = (CSVfx*)node;
+        if (_vfxReady && _vfxPlayStatic != null)
+            _vfxPlayStatic((nint)vfx, 0f, 0xFFFFFFFF);
+        var instance = (nint)vfx->VfxResourceInstance;
+        if (instance != nint.Zero && _vfxSetSpeed != null)
+            _vfxSetSpeed(instance, speed);
+    }
+
     public void SetVfxSpeed(nint address, float speed)
     {
         var node = Resolve(address);
