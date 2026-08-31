@@ -149,7 +149,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.OverlayEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.OverlayEntry(logicalKey));
+            path, null,
+            SceneSaveOptions.OverlayEntry(logicalKey)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -196,7 +198,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.GroupEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.GroupEntry(keys));
+            path, null,
+            SceneSaveOptions.GroupEntry(keys)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -213,7 +217,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.LightEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.LightEntry(logicalId));
+            path, null,
+            SceneSaveOptions.LightEntry(logicalId)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -229,7 +235,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.CameraEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.CameraEntry(logicalId));
+            path, null,
+            SceneSaveOptions.CameraEntry(logicalId)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -245,7 +253,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.WorldObjectEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.WorldObjectEntry(logicalId));
+            path, null,
+            SceneSaveOptions.WorldObjectEntry(logicalId)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -259,7 +269,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.ActorEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.ActorEntry(logicalId));
+            path, null,
+            SceneSaveOptions.ActorEntry(logicalId)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "The actor could not be saved to the library.");

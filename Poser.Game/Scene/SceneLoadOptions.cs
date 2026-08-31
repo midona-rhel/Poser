@@ -81,6 +81,11 @@ public sealed record SceneSaveOptions
     /// spawnable copy on disk.</summary>
     public bool WorldObjectsAsSpawned { get; init; }
 
+    /// <summary>The name the save modal took: it lands ON the entry's one
+    /// thing — Stone rail spawns a Stone rail. A group entry names the
+    /// GROUP; children keep their own saved names.</summary>
+    public string? EntryName { get; init; }
+
     /// <summary>The light-entry save: one light, nothing else — the same
     /// container and key filter every entry uses.</summary>
     public static SceneSaveOptions LightEntry(Guid key) => new()

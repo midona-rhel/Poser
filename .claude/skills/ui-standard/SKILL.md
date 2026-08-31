@@ -134,12 +134,20 @@ Windows each have ONE job. No mode may change what a window IS.
   dropdown (General → Spawning); the library footer overrides per
   activation; the portal spawns by the default. Front-of-camera
   needs no saved anchor and is never absent.
+- **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
+  IS the spawned thing's name — "Stone rail" spawns a Stone rail. A
+  group entry names the GROUP; its children keep their own saved
+  names. Applied at save (the document is renamed), so the load path
+  needs no special case.
 - **Spawn browser (the portal)** — the add-to-scene window. It
   belongs to the KEYBOARD: the search focuses at open and again
   after every Enter, arrows walk the visible rows (selected-fill
   highlight, wrapping), Enter spawns the highlight (first match
   when none), and the footer band is the drag grab — a pinned
-  portal is a palette and a palette moves. The portal lists every
+  portal is a palette and a palette moves (the drag mutates the
+  Dalamud-held Position; an ImGui-side move loses to the Always
+  condition). Search fields select their whole text on focus
+  (2026-08-31), so a re-focused query is replaced by typing. The portal lists every
   SAVED library entry under its kind's tab with a "Saved" badge. Its kind
   strip is the MIXED segmented variant: the kinds wear their icons
   (six text tabs made the window super wide) and only "All" keeps
@@ -160,7 +168,15 @@ Windows each have ONE job. No mode may change what a window IS.
   group: one depth only (a group never contains a group), one home
   per entity, folder rows first in the tree with members nested one
   level in, and a group row's click selects the whole membership —
-  the multiselect machinery does everything else. The Selection page
+  the multiselect machinery does everything else. In the VIEWPORT
+  (2026-08-31) a group is one larger ringed dot at its members' live
+  centroid — clicking it selects the membership and makes it the
+  active group, exactly the sidebar head-click — and MEMBER handles
+  hide until the group is engaged (head active, or a member or a
+  member's bone selected), so a grouped set reads as one thing until
+  the user steps inside. World objects carry the same named dot as
+  props: the handle is the one viewport route to selecting either.
+  The Selection page
   and titles wear the group's name when the selection IS the group;
   its NAME is the page's first field, edited inline (the camera's
   own pattern); Group… and Ungroup live on that page, and Ungroup

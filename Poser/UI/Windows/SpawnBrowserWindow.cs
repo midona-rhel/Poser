@@ -361,9 +361,12 @@ public sealed class SpawnBrowserWindow : Window
                     ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeAll);
                 if (ImGui.IsItemActive())
                 {
+                    // The window's position is Dalamud-held (Always, from
+                    // the open's anchor), so the drag moves THAT — an
+                    // ImGui-side move was re-imposed away every frame.
                     var dragDelta = ImGui.GetIO().MouseDelta;
-                    if (dragDelta != Vector2.Zero)
-                        ImGui.SetWindowPos(ImGui.GetWindowPos() + dragDelta);
+                    if (dragDelta != Vector2.Zero && Position is { } held)
+                        Position = held + dragDelta;
                 }
             }
         }

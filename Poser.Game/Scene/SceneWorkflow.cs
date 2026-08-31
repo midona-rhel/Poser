@@ -538,6 +538,29 @@ public sealed class SceneWorkflow : IDisposable
                 foreach (var spawnable in scene.WorldObjects)
                     spawnable.Spawned = true;
 
+            // The entry's name IS the thing's name: Stone rail spawns a
+            // Stone rail. A group entry names the GROUP and its children
+            // keep their own saved names, so the group check leads.
+            if (options.EntryName is { Length: > 0 } entryName)
+            {
+                if (scene.Groups is { Count: 1 } namedGroups)
+                    namedGroups[0].Name = entryName;
+                else if (scene.WorldObjects is { Count: 1 } namedObjects)
+                    namedObjects[0].Name = entryName;
+                else if (scene.Lights is { Count: 1 } namedLights
+                    && namedLights[0].Light is { } lightDocument)
+                    lightDocument.Name = entryName;
+                else if (scene.Cameras is { Count: 1 } namedCameras
+                    && namedCameras[0].Camera is { } cameraDocument)
+                    cameraDocument.Name = entryName;
+                else if (scene.Overlays is { Count: 1 } namedOverlays
+                    && namedOverlays[0].Node is { } nodeDocument)
+                    namedOverlays[0].Node =
+                        nodeDocument with { Name = entryName };
+                else if (scene.Actors is { Count: 1 } namedActors)
+                    namedActors[0].Name = entryName;
+            }
+
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
