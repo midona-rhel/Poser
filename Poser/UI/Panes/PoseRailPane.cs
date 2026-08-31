@@ -403,15 +403,12 @@ public class PoseRailPane
     }
 
     // ── The overlay pad ──────────────────────────────────────────────
-    // Same footprint as the rotation ball. The DISC is a ONE-TO-ONE pad:
-    // drag a hundred pixels left and the overlay moves a hundred pixels
-    // left — a screen thing moves in screen pixels, no joystick rate.
-    // The WHITE RING drags the overlay's rotation directly, the camera
-    // orb's roll gesture.
+    // Same footprint as the rotation ball. The whole DISC is a
+    // ONE-TO-ONE pad: drag a hundred pixels left and the overlay moves a
+    // hundred pixels left — a screen thing moves in screen pixels, no
+    // joystick rate. No ring: overlays do not rotate (dropped
+    // 2026-08-31 — the game cannot draw rotated text).
 
-    private bool _padRotating;
-    private float _padRotateStartAngle;
-    private float _padRotateStartValue;
     private Vector2 _padOffset;
 
     private float DrawOverlayPad(
@@ -430,19 +427,9 @@ public class PoseRailPane
         bool active = ImGui.IsItemActive() && canEdit;
         bool hovered = ImGui.IsItemHovered();
         var mouse = ImGui.GetMousePos();
-        float mouseDistance = (mouse - center).Length();
 
         if (ImGui.IsItemActivated() && canEdit)
-        {
-            _padRotating = mouseDistance > discRadius + 2f * s;
             _padOffset = Vector2.Zero;
-            if (_padRotating && node != null)
-            {
-                _padRotateStartAngle = MathF.Atan2(
-                    mouse.Y - center.Y, mouse.X - center.X);
-                _padRotateStartValue = node.Rotation;
-            }
-        }
 
         var theme = Crystarium.ActiveTheme;
         dl.AddCircleFilled(center, ringRadius + 4f * s,
@@ -452,63 +439,34 @@ public class PoseRailPane
         if (active && node != null)
         {
             GizmoPointerOwnership.Hold();
-            if (_padRotating)
-            {
-                float angle = MathF.Atan2(
-                    mouse.Y - center.Y, mouse.X - center.X);
-                float delta = angle - _padRotateStartAngle;
-                if (delta > MathF.PI) delta -= MathF.Tau;
-                if (delta < -MathF.PI) delta += MathF.Tau;
-                float next = _padRotateStartValue
-                    + float.RadiansToDegrees(delta);
-                // Wrapped, not clamped: the ring never hits a wall.
-                while (next > 180f) next -= 360f;
-                while (next < -180f) next += 360f;
-                node.Rotation = next;
-            }
-            else
-            {
-                // ONE-TO-ONE: this frame's pointer delta IS the move.
-                var step = ImGui.GetIO().MouseDelta;
-                if (step != Vector2.Zero)
-                    node.Position += step;
-                // The knob shows the gesture, clamped to the disc, and
-                // springs home on release.
-                _padOffset += step;
-                var shown = _padOffset;
-                float length = shown.Length();
-                if (length > discRadius)
-                    shown *= discRadius / length;
-                knob = center + shown;
-            }
+            // ONE-TO-ONE: this frame's pointer delta IS the move.
+            var step = ImGui.GetIO().MouseDelta;
+            if (step != Vector2.Zero)
+                node.Position += step;
+            // The knob shows the gesture, clamped to the disc, and
+            // springs home on release.
+            _padOffset += step;
+            var shown = _padOffset;
+            float length = shown.Length();
+            if (length > discRadius)
+                shown *= discRadius / length;
+            knob = center + shown;
         }
-
-        // The white rotation ring, brightening under the pointer or drag.
-        bool ringHot = (active && _padRotating) ||
-            (hovered && !active && mouseDistance > discRadius + 2f * s &&
-             mouseDistance < ringRadius + 8f * s);
-        dl.AddCircle(center, ringRadius,
-            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
-                theme.Text with { W = ringHot ? 0.9f : 0.45f })),
-            0, (ringHot ? 2.5f : 1.5f) * s);
 
         // The pad: a faint travel boundary and the knob.
         dl.AddCircle(center, discRadius,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                 theme.Text with { W = 0.12f })), 0, 1f * s);
         var knobColor = canEdit
-            ? theme.Text with { W = active && !_padRotating ? 1f : 0.8f }
+            ? theme.Text with { W = active ? 1f : 0.8f }
             : theme.Text.Fade(theme.Chrome.DisabledOpacity);
         dl.AddCircleFilled(knob, 7f * s,
             ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)));
 
         if (hovered && !active)
-        {
-            bool overRing = mouseDistance > discRadius + 2f * s;
             Crystarium.HoverHelp.Explain("rail-overlay-pad",
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
-                overRing ? "Rotate the overlay" : "Move the overlay");
-        }
+                "Move the overlay");
 
         return d + 8f * s;
     }

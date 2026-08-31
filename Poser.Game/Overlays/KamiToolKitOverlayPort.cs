@@ -2,11 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
-using Dalamud.Interface.GameFonts;
-using Dalamud.Interface.ImGuiSeStringRenderer;
-using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using KamiToolKit;
@@ -56,14 +52,6 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
     private bool _failed;
     private bool _disposed;
 
-    /// <summary>The SeString renderer's font. It defaults to the CURRENT
-    /// ImGui font, and text renders during the Atk update — outside any
-    /// ImGui frame, where that font is empty — so the port carries its own
-    /// Axis handle and locks it per render. Lazy: a session that never
-    /// stages text builds no atlas.</summary>
-    private IFontAtlas? _fontAtlas;
-    private IFontHandle? _axisFont;
-
     public KamiToolKitOverlayPort(
         IDalamudPluginInterface plugin,
         ITextureProvider textures,
@@ -92,7 +80,6 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         // Bound to the node, not to the port's listener: the node knows nothing
         // about tokens, and the token is what the service upstream indexes by.
         node.Moved = position => Moved?.Invoke(node, position);
-        node.RenderText = RenderText;
         try
         {
             Write(node, state);
@@ -175,11 +162,6 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         }
         _controller = null;
 
-        _axisFont?.Dispose();
-        _axisFont = null;
-        _fontAtlas?.Dispose();
-        _fontAtlas = null;
-
         if (!_initialized)
             return;
         _initialized = false;
@@ -222,64 +204,6 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             return false;
         }
     }
-
-    /// <summary>One text request to one texture, through Dalamud's own
-    /// SeString renderer — the game's Axis face with colour and edge, on
-    /// the main thread the node update already runs on. Null on failure:
-    /// the seat simply keeps what it last showed.</summary>
-    private IDalamudTextureWrap? RenderText(TextRender request)
-    {
-        try
-        {
-            if (_axisFont == null)
-            {
-                _fontAtlas = _plugin.UiBuilder.CreateFontAtlas(
-                    FontAtlasAutoRebuildMode.Async);
-                // Axis 36 is the family's largest real rasterization; the
-                // seats render supersampled (up to 2×32), so the atlas
-                // glyphs must start big and scale DOWN.
-                _axisFont = _fontAtlas.NewGameFontHandle(
-                    new GameFontStyle(GameFontFamily.Axis, 36f));
-            }
-            // The atlas builds asynchronously: until it lands the seat
-            // simply keeps what it last showed and asks again next frame.
-            if (!_axisFont.Available)
-                return null;
-            using var locked = _axisFont.Lock();
-            return _textures.CreateTextureFromSeString(
-                System.Text.Encoding.UTF8.GetBytes(request.Text),
-                new SeStringDrawParams
-                {
-                    Font = locked.ImFont,
-                    // Outside an ImGui frame there is no cursor to anchor
-                    // on; the texture's own origin is the anchor.
-                    ScreenOffset = Vector2.Zero,
-                    FontSize = request.FontSize,
-                    WrapWidth = request.WrapWidth,
-                    Color = PackColor(request.Color),
-                    EdgeColor = request.Edge is { } edge
-                        ? PackColor(edge)
-                        : null,
-                    Edge = request.Edge != null,
-                    ForceEdgeColor = request.Edge != null,
-                },
-                "poser-overlay-text");
-        }
-        catch (Exception ex)
-        {
-            _log.Error(
-                $"KamiToolKitOverlayPort: rendering overlay text failed: {ex.Message}");
-            return null;
-        }
-    }
-
-    /// <summary>ImGui's RGBA byte order, which is what the SeString draw
-    /// parameters take.</summary>
-    private static uint PackColor(Vector4 color) =>
-        ((uint)(Math.Clamp(color.W, 0f, 1f) * 255f) << 24)
-        | ((uint)(Math.Clamp(color.Z, 0f, 1f) * 255f) << 16)
-        | ((uint)(Math.Clamp(color.Y, 0f, 1f) * 255f) << 8)
-        | (uint)(Math.Clamp(color.X, 0f, 1f) * 255f);
 
     /// <summary>One document onto one node: the shared frame first, then the
     /// status icon's path, which is the one field the node layer cannot

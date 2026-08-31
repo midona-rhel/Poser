@@ -598,15 +598,15 @@ tried on the camera 2026-08-28 and rejected: the DISC is a joystick
 at a deliberate rate; the knob springs home on release), and the
 WHITE RING drags camera roll directly. An OVERLAY (dialogue panel,
 bubble, status line) gets the PAD in the same slot (2026-08-31): the
-disc is a ONE-TO-ONE mover — drag a hundred pixels and the overlay
-moves a hundred pixels; screen things move in screen pixels, never at
-a joystick rate — and the white ring drags the overlay's rotation
-(degrees about its centre; overlays rotate as of the same ruling).
-Overlay TEXT is rendered to a texture (Dalamud's SeString renderer)
-and shown as an image node, because the game's glyph renderer drops
-node rotation — native UI never draws rotated text (verified against
-GaugeOMatic and ClientStructs, 2026-08-31). KamiToolKit is 2.x as of
-the same ruling.
+whole disc is a ONE-TO-ONE mover — drag a hundred pixels and the
+overlay moves a hundred pixels; screen things move in screen pixels,
+never at a joystick rate — and no ring. OVERLAYS DO NOT ROTATE
+(final, 2026-08-31): the game's glyph renderer drops node rotation —
+native UI never draws rotated text, and GaugeOMatic keeps its text
+outside every rotated container for exactly this. The texture route
+(SeString-rendered text as an image) was built, shipped, and dropped
+the same day for text quality; do not reintroduce rotation without a
+new ruling. KamiToolKit stays 2.x — the bump survives the drop.
 With NOTHING selected the rail keeps its skeleton: "Nothing
 selected", the same two verb seats disabled, and the inert ball — no
 reflow when a selection appears. The properties panel's empty state

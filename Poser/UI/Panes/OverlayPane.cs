@@ -194,15 +194,6 @@ public sealed class OverlayPane
                 1f,
                 next => node.Alpha = next,
                 help: "Fade the whole overlay"));
-        form.NumericSlider(
-            "Rotation",
-            node.Rotation,
-            -180f,
-            180f,
-            next => node.Rotation = next,
-            perPixel: 0.5f,
-            format: "0",
-            help: "Spin the overlay about its centre, degrees");
 
         form.Actions("Position", actions =>
         {

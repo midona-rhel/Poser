@@ -1,6 +1,5 @@
 using System;
 using System.Numerics;
-using Dalamud.Interface.Textures.TextureWraps;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using KamiToolKit.Classes;
 using KamiToolKit.Enums;
@@ -56,8 +55,6 @@ internal abstract class OverlayShapeNode : OverlayNode
     protected OverlayShapeNode(OverlayNodeKind kind)
     {
         Size = OverlayNodeGeometry.DesignSize(kind);
-        // Rotation spins about the drawn CENTRE, not the top-left corner.
-        Origin = Size / 2f;
         OnMoveComplete = _ =>
         {
             // The node is already where the pointer left it, so this states the
@@ -92,7 +89,6 @@ internal abstract class OverlayShapeNode : OverlayNode
             Position = value.Position;
             ScaleX = value.Scale;
             ScaleY = value.Scale;
-            RotationDegrees = value.Rotation;
             Alpha = value.Alpha;
             IsVisible = value.Visible;
             EnableMoving = value.Draggable;
@@ -103,75 +99,11 @@ internal abstract class OverlayShapeNode : OverlayNode
     /// (the node layer has no texture service of its own).</summary>
     public string IconPath { get; set; } = string.Empty;
 
-    /// <summary>Renders one text request to a texture, supplied by the port
-    /// — the IconPath seam's shape. The game's text renderer drops node
-    /// rotation at the glyph pass (native UI never draws rotated text), so
-    /// text is drawn as a TEXTURE and rides the node matrix like any other
-    /// image (ruled 2026-08-31, the texture route).</summary>
-    public Func<TextRender, IDalamudTextureWrap?>? RenderText { get; set; }
-
     protected static Vector4 Rgba(byte r, byte g, byte b) =>
         new(r / 255f, g / 255f, b / 255f, 1f);
 
     protected static readonly Vector4 White = new(1f, 1f, 1f, 1f);
     protected static readonly Vector4 Black = new(0f, 0f, 0f, 1f);
-}
-
-/// <summary>Everything that changes a rendered text's pixels — the seat's
-/// cache key.</summary>
-internal readonly record struct TextRender(
-    string Text,
-    float FontSize,
-    Vector4 Color,
-    Vector4? Edge,
-    float? WrapWidth);
-
-/// <summary>One rasterized text seat: an image node fed by the port's
-/// SeString renderer, re-rendered only when its request changes. The
-/// loaded texture is owned by the node (LoadTexture disposes the one it
-/// replaces, and Dispose the last).</summary>
-internal sealed class TextSeatNode : ImGuiImageNode
-{
-    /// <summary>Rendered at twice the stated size and shown at half — the
-    /// game's own _hr1 two-times convention. A texture rasterized at the
-    /// logical size upscales on any HUD scale and reads soft.</summary>
-    private const float Supersample = 2f;
-
-    private TextRender _rendered;
-    private bool _any;
-
-    public TextSeatNode()
-    {
-        WrapMode = WrapMode.Stretch;
-    }
-
-    /// <summary>Renders and shows the request; empty text hides the seat.
-    /// </summary>
-    public void Show(OverlayShapeNode owner, TextRender request)
-    {
-        if (request.Text.Length == 0)
-        {
-            IsVisible = false;
-            return;
-        }
-        IsVisible = true;
-        if (owner.RenderText is not { } render)
-            return;
-        if (_any && _rendered.Equals(request))
-            return;
-        if (render(request with
-            {
-                FontSize = request.FontSize * Supersample,
-                WrapWidth = request.WrapWidth * Supersample,
-            }) is not { } made)
-            return;
-        _rendered = request;
-        _any = true;
-        var extent = new Vector2(made.Width, made.Height);
-        LoadTexture(made);
-        TextureSize = extent;
-        Size = extent / Supersample;
-    }
 }
 
 /// <summary>The NPC dialogue panel: background plate, speaker plate, body
@@ -191,8 +123,8 @@ internal sealed class TalkShapeNode : OverlayShapeNode
     private readonly SimpleImageNode _background;
     private readonly NineGridNode _speakerPlate;
     private readonly SimpleImageNode _cursor;
-    private readonly TextSeatNode _body;
-    private readonly TextSeatNode _speaker;
+    private readonly TextNode _body;
+    private readonly TextNode _speaker;
 
     /// <summary>Unsafe for one reason: the speaker plate's nine-grid part is
     /// added through a pointer-taking overload.</summary>
@@ -231,8 +163,28 @@ internal sealed class TalkShapeNode : OverlayShapeNode
             TexturePath = FrameSheet,
             TextureSize = new Vector2(16f, 24f),
         };
-        _body = new TextSeatNode { Position = new Vector2(62f, 42f) };
-        _speaker = new TextSeatNode { Position = new Vector2(60f, 2f) };
+        _body = new TextNode
+        {
+            Size = new Vector2(556f, 90f),
+            Position = new Vector2(62f, 42f),
+            TextColor = Black,
+            FontType = FontType.Axis,
+            TextFlags = TextFlags.WordWrap | TextFlags.MultiLine
+                | TextFlags.OverflowHidden,
+            FontSize = OverlayNodeLimits.DefaultFontSize,
+            LineSpacing = 18,
+        };
+        _speaker = new TextNode
+        {
+            Size = new Vector2(300f, 36f),
+            Position = new Vector2(60f, 2f),
+            TextColor = White,
+            TextOutlineColor = Black,
+            FontType = FontType.Axis,
+            FontSize = 18,
+            AlignmentType = AlignmentType.Left,
+            TextFlags = TextFlags.Edge | TextFlags.Ellipsis,
+        };
 
         _background.AttachNode(this);
         _speakerPlate.AttachNode(this);
@@ -244,12 +196,10 @@ internal sealed class TalkShapeNode : OverlayShapeNode
     protected override void OnUpdate()
     {
         var state = State;
-        // The body wraps at the plate's text run; the speaker is one line.
-        _body.Show(this, new TextRender(
-            state.Text, state.FontSize,
-            BodyColor(state.TalkBackground), null, 556f));
-        _speaker.Show(this, new TextRender(
-            state.Speaker, 18f, White, Black, null));
+        _body.String = state.Text;
+        _body.TextColor = BodyColor(state.TalkBackground);
+        _body.FontSize = state.FontSize;
+        _speaker.String = state.Speaker;
 
         _cursor.TextureCoordinates = CursorCoordinates(state.TalkCursor);
         _cursor.IsVisible = state.TalkCursor != TalkCursor.None;
@@ -309,7 +259,7 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
     private readonly SimpleNineGridNode _frame;
     private readonly SimpleNineGridNode _gradient;
     private readonly SimpleImageNode _arrow;
-    private readonly TextSeatNode _text;
+    private readonly TextNode _text;
 
     public BalloonShapeNode() : base(OverlayNodeKind.Balloon)
     {
@@ -323,7 +273,17 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
             Position = new Vector2(49f, 70f),
             Size = new Vector2(32f, 32f),
         };
-        _text = new TextSeatNode { Position = new Vector2(24f, 43f) };
+        _text = new TextNode
+        {
+            Size = new Vector2(151f, 17f),
+            Position = new Vector2(24f, 43f),
+            TextColor = Black,
+            FontType = FontType.Axis,
+            TextFlags = TextFlags.Ellipsis,
+            AlignmentType = AlignmentType.Center,
+            FontSize = 12,
+            LineSpacing = 14,
+        };
 
         _frame.AttachNode(this);
         _gradient.AttachNode(this);
@@ -346,13 +306,8 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
     protected override void OnUpdate()
     {
         var state = State;
-        _text.Show(this, new TextRender(
-            state.Text, state.FontSize, Black, null, null));
-        // The line CENTRES in the bubble's text band, as the text node's
-        // centre alignment used to do.
-        _text.Position = new Vector2(
-            24f + MathF.Max(0f, (151f - _text.Size.X) * 0.5f),
-            43f + (17f - _text.Size.Y) * 0.5f);
+        _text.String = state.Text;
+        _text.FontSize = state.FontSize;
 
         float row = ChannelRow * (int)state.BalloonChannel;
         _frame.TextureCoordinates = new Vector2(0f, row);
@@ -399,7 +354,7 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
 internal sealed class StatusShapeNode : OverlayShapeNode
 {
     private readonly SimpleImageNode _icon;
-    private readonly TextSeatNode _text;
+    private readonly TextNode _text;
 
     public StatusShapeNode() : base(OverlayNodeKind.Status)
     {
@@ -410,7 +365,18 @@ internal sealed class StatusShapeNode : OverlayShapeNode
             Position = Vector2.Zero,
             Size = new Vector2(24f, 32f),
         };
-        _text = new TextSeatNode { Position = new Vector2(27f, 2f) };
+        _text = new TextNode
+        {
+            Size = new Vector2(660f, 28f),
+            Position = new Vector2(27f, 2f),
+            TextColor = White,
+            TextOutlineColor = Black,
+            FontType = FontType.Axis,
+            TextFlags = TextFlags.Edge | TextFlags.Ellipsis,
+            AlignmentType = AlignmentType.Left,
+            FontSize = 18,
+            LineSpacing = 16,
+        };
 
         _icon.AttachNode(this);
         _text.AttachNode(this);
@@ -419,10 +385,9 @@ internal sealed class StatusShapeNode : OverlayShapeNode
     protected override void OnUpdate()
     {
         var state = State;
-        _text.Show(this, new TextRender(
-            Line(state), 18f,
-            TextColor(state.StatusKind), OutlineColor(state.StatusKind),
-            null));
+        _text.String = Line(state);
+        _text.TextColor = TextColor(state.StatusKind);
+        _text.TextOutlineColor = OutlineColor(state.StatusKind);
         if (IconPath.Length > 0)
             _icon.TexturePath = IconPath;
     }

@@ -131,10 +131,6 @@ public sealed record OverlayNodeState
     /// <summary>Uniform scale; the node has no independent axes.</summary>
     public float Scale { get; init; } = 1f;
 
-    /// <summary>Degrees about the node's own centre. A screen thing spins
-    /// in the plane; there is nothing else to rotate.</summary>
-    public float Rotation { get; init; }
-
     /// <summary>0 fully transparent through 1 fully opaque.</summary>
     public float Alpha { get; init; } = 1f;
 
@@ -188,7 +184,6 @@ public sealed record OverlayNodeState
             Finite(Position.Y, 0f, OverlayNodeLimits.MaxPosition)),
         Scale = Finite(
             Scale, 1f, OverlayNodeLimits.MaxScale, OverlayNodeLimits.MinScale),
-        Rotation = Finite(Rotation, 0f, 180f, -180f),
         Alpha = Finite(Alpha, 1f, 1f),
         FontSize = FontSize < OverlayNodeLimits.MinFontSize
             || FontSize > OverlayNodeLimits.MaxFontSize

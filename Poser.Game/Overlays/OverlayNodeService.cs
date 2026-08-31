@@ -72,14 +72,6 @@ public sealed class OverlayNodeHandle
         set => State = _state with { Scale = value };
     }
 
-    /// <summary>Degrees about the node's centre; the rail pad's ring and
-    /// the Placement row both write it.</summary>
-    public float Rotation
-    {
-        get => _state.Rotation;
-        set => State = _state with { Rotation = value };
-    }
-
     public float Alpha
     {
         get => _state.Alpha;
