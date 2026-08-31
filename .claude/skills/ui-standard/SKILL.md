@@ -125,7 +125,22 @@ Windows each have ONE job. No mode may change what a window IS.
   titlebar never hosts the gizmo cluster. It carries the brand,
   burger, undo/redo, spawn, project, and the gizmo clusters; new
   global buttons earn a place there.
-- **Spawn browser (the portal)** — the add-to-scene window. Its kind
+- **THE PLACEMENT RULE** (2026-08-31): every saved entry — actor,
+  group, object, light, camera, scene — obeys the four placement
+  modes through the ONE load: in front of the camera (the content's
+  centroid a short reach ahead, no turn — the light spawn's own
+  behavior and THE default), as saved, relative to the saved
+  camera, relative to the saved actor. The default is a settings
+  dropdown (General → Spawning); the library footer overrides per
+  activation; the portal spawns by the default. Front-of-camera
+  needs no saved anchor and is never absent.
+- **Spawn browser (the portal)** — the add-to-scene window. It
+  belongs to the KEYBOARD: the search focuses at open and again
+  after every Enter, arrows walk the visible rows (selected-fill
+  highlight, wrapping), Enter spawns the highlight (first match
+  when none), and the footer band is the drag grab — a pinned
+  portal is a palette and a palette moves. The portal lists every
+  SAVED library entry under its kind's tab with a "Saved" badge. Its kind
   strip is the MIXED segmented variant: the kinds wear their icons
   (six text tabs made the window super wide) and only "All" keeps
   its word — short, and no glyph says it better; the kind names
