@@ -554,13 +554,19 @@ public sealed class WorldObjectService : IDisposable
     private int _animHuntOffset;
     private int _animHuntTicks;
     private float _animHuntMotion;
-    private Quaternion? _animHuntLast;
+    private float _animHuntBaseline;
+    private Transform? _animHuntLast;
     private byte _animHuntOriginal;
 
     private const int BaselineTicks = 45;
     private const int StepTicks = 45;
-    private const float MovingThreshold = 0.01f;
-    private const float StoppedThreshold = 0.001f;
+
+    /// <summary>Total radians-plus-yalms over the baseline window that
+    /// counts as moving: ~0.3 degrees of total turn. The metric is the
+    /// SUMMED ROTATION ANGLE (the quaternion dot is quadratic in angle
+    /// and hid a slow windmill entirely, 2026-09-01) plus the position
+    /// distance.</summary>
+    private const float MovingThreshold = 0.005f;
 
     /// <summary>Documented bytes the hunt must not touch: the night state,
     /// the colour intensity, and the colour.</summary>
@@ -580,9 +586,13 @@ public sealed class WorldObjectService : IDisposable
         if (!_port.TryRead(target.Address, out var placement))
             return;
         if (_animHuntLast is { } last)
-            _animHuntMotion += 1f - Math.Min(1f, Math.Abs(
-                Quaternion.Dot(placement.Rotation, last)));
-        _animHuntLast = placement.Rotation;
+        {
+            float dot = Math.Min(1f, Math.Abs(
+                Quaternion.Dot(placement.Rotation, last.Rotation)));
+            _animHuntMotion += 2f * MathF.Acos(dot)
+                + Vector3.Distance(placement.Position, last.Position);
+        }
+        _animHuntLast = placement;
         if (--_animHuntTicks > 0)
             return;
 
@@ -592,16 +602,23 @@ public sealed class WorldObjectService : IDisposable
             if (_animHuntMotion < MovingThreshold)
             {
                 _log.Debug(
-                    "[WorldObject] anim hunt: rotation is not moving; "
-                    + "no transform gate to find");
+                    "[WorldObject] anim hunt: the transform is not "
+                    + $"moving (motion {_animHuntMotion:e2}); no gate "
+                    + "to find");
                 _animHunt = null;
                 return;
             }
+            _animHuntBaseline = _animHuntMotion;
+            _log.Debug(
+                $"[WorldObject] anim hunt: baseline motion "
+                + $"{_animHuntBaseline:e2}; stepping");
             _animHuntOffset = 0xC0;
         }
         else
         {
-            if (_animHuntMotion < StoppedThreshold)
+            // STOPPED is relative to how fast it was going: a tenth of
+            // the baseline over the same window.
+            if (_animHuntMotion < _animHuntBaseline * 0.1f)
             {
                 // FOUND: this byte gates the motion. Keep it written —
                 // the object is paused — and remember it for unpause.
