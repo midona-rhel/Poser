@@ -291,17 +291,16 @@ public sealed class SpawnBrowserWindow : Window
     public override void Draw()
     {
         // A scan that finished while the window is open re-lists the saved
-        // objects live — one int compare per frame.
-        // The NPC catalog builds in the background; its publication
-        // re-lists the rows the way a library save does.
+        // objects live, and the NPC catalog's background publication
+        // re-lists the same way — one int compare each per frame. BuildRows
+        // owns ALL the clearing: a rebuild trigger that cleared some lists
+        // at its call site and not others desynced rows from their tabs
+        // and crashed the filter (2026-08-31).
         _modelLoader.EnsureLoaded();
-        if (_modelCatalog.PublicationVersion != _modelCatalogVersion)
-            _built = false;
-        if (_library.Snapshot.Revision != _libraryRevision)
+        if (_modelCatalog.PublicationVersion != _modelCatalogVersion
+            || _library.Snapshot.Revision != _libraryRevision)
         {
             _built = false;
-            _vm.Rows.Clear();
-            _rowTabs.Clear();
             BuildRows();
         }
         ReconcilePendingSpawn();
@@ -461,7 +460,13 @@ public sealed class SpawnBrowserWindow : Window
             return;
         _built = true;
 
+        // EVERY list this method fills is cleared HERE, never at a call
+        // site: partial clearing is exactly the rows-versus-tabs desync
+        // that crashed the filter.
         var rows = _vm.Rows;
+        rows.Clear();
+        _rowTabs.Clear();
+        _vm.Visible.Clear();
         rows.Add(ActionRow(
             "##spawn-new-actor", "Actor", TablerIcon.UserPlus));
         rows.Add(ActionRow(
