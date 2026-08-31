@@ -40,8 +40,8 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActor = 0;
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
-    private const int RowActorFromFile = 3;
-    private const int RowActorFromMcdf = 4;
+    private const int RowActorFromMcdf = 3;
+    private const int RowActorFromFile = 4;
     private const int RowProp = 5;
     private const int RowPropFromFile = 6;
     private const int RowObjectFromFile = 7;
@@ -49,17 +49,17 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowOverlayTalk = 9;
     private const int RowOverlayBalloon = 10;
     private const int RowOverlayStatus = 11;
-    private const int RowOverlayFromFile = 12;
-    private const int RowLightSpot = 13;
-    private const int RowLightPoint = 14;
-    private const int RowLightArea = 15;
-    private const int RowLightDirectional = 16;
-    private const int RowLightFromFile = 17;
+    private const int RowReferenceImage = 12;
+    private const int RowOverlayFromFile = 13;
+    private const int RowLightSpot = 14;
+    private const int RowLightPoint = 15;
+    private const int RowLightArea = 16;
+    private const int RowLightDirectional = 17;
     private const int RowWorldLight = 18;
-    private const int RowCameraGame = 19;
-    private const int RowCameraFree = 20;
-    private const int RowCameraFromFile = 21;
-    private const int RowReferenceImage = 22;
+    private const int RowLightFromFile = 19;
+    private const int RowCameraGame = 20;
+    private const int RowCameraFree = 21;
+    private const int RowCameraFromFile = 22;
     private const int ActionRows = 23;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
@@ -541,20 +541,22 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow(
-            "##spawn-actor-file", "Actor from file", TablerIcon.File,
-            help: "Load a saved actor entry"));
-        rows.Add(ActionRow(
             "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserCircle,
             help: "Spawn a fresh actor and dress it from a character file"));
+        rows.Add(ActionRow(
+            "##spawn-actor-file", "Actor from file", TablerIcon.UserFromFile,
+            help: "Load a saved actor entry"));
         rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Moneybag));
         rows.Add(ActionRow(
-            "##spawn-prop-file", "Prop from file", TablerIcon.File,
+            "##spawn-prop-file", "Prop from file",
+            TablerIcon.MoneybagFromFile,
             help: "Load a saved prop entry"));
         rows.Add(ActionRow(
-            "##spawn-object-file", "Object from file", TablerIcon.File,
+            "##spawn-object-file", "Object from file",
+            TablerIcon.PlantFromFile,
             help: "Load a saved object entry"));
         rows.Add(ActionRow(
-            "##spawn-vfx-file", "VFX from file", TablerIcon.File,
+            "##spawn-vfx-file", "VFX from file", TablerIcon.FireFromFile,
             help: "Load a saved effect entry"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
@@ -573,7 +575,12 @@ public sealed class SpawnBrowserWindow : Window
             noOverlays,
             help: "One line of the status bar: an icon and an effect name"));
         rows.Add(ActionRow(
-            "##spawn-overlay-file", "Overlay from file", TablerIcon.File,
+            "##spawn-reference-image", "Reference image", TablerIcon.Photo,
+            help: "Pin a picture over the game to pose against — it keeps "
+                + "its place across GPose and reloads"));
+        rows.Add(ActionRow(
+            "##spawn-overlay-file", "Overlay from file",
+            TablerIcon.MessageFromFile,
             help: "Load a saved overlay entry"));
         // Both light entries need the native lighting signatures; without them
         // a spawn is a silent no-op, so they read as disabled rather than
@@ -591,9 +598,6 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-light-directional", "Directional light",
             TablerIcon.Sun, noLights));
-        rows.Add(ActionRow(
-            "##spawn-light-file", "Light from file", TablerIcon.File,
-            noLights));
         // Capture takes a copy of a light the world itself placed and
         // suppresses the original; availability moves with the player, so this
         // row is re-stated on every open.
@@ -601,6 +605,9 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-world-light", "World light", TablerIcon.BuildingStore,
             noLights,
             help: "Copy a light the world places here and edit it"));
+        rows.Add(ActionRow(
+            "##spawn-light-file", "Light from file", TablerIcon.BulbFromFile,
+            noLights));
         // The camera entries follow the light rule: without the native camera
         // signature a create is a silent no-op, so they read as disabled.
         bool noCameras = !_cameraService.IsAvailable;
@@ -613,14 +620,9 @@ public sealed class SpawnBrowserWindow : Window
             help: "A camera that flies free of the orbit, on WASD and "
                 + "right-drag"));
         rows.Add(ActionRow(
-            "##spawn-camera-file", "Camera from file", TablerIcon.File,
+            "##spawn-camera-file", "Camera from file",
+            TablerIcon.CameraFromFile,
             noCameras));
-        // A reference picture needs no native signature and no scene entity,
-        // so it is never disabled.
-        rows.Add(ActionRow(
-            "##spawn-reference-image", "Reference image", TablerIcon.Photo,
-            help: "Pin a picture over the game to pose against — it keeps "
-                + "its place across GPose and reloads"));
 
         // Tab per action row, by the fixed row order above. The prop entry
         // is its own tab (a prop catalog arrives later); everything the
@@ -633,13 +635,12 @@ public sealed class SpawnBrowserWindow : Window
         for (int i = 0; i < ActionRows; i++)
             _rowTabs.Add(i switch
             {
-                <= RowActorFromMcdf => SpawnBrowserTab.Actors,
+                <= RowActorFromFile => SpawnBrowserTab.Actors,
                 RowProp or RowPropFromFile => SpawnBrowserTab.Props,
                 RowObjectFromFile => SpawnBrowserTab.SceneObjects,
                 RowVfxFromFile => SpawnBrowserTab.Effects,
                 <= RowOverlayFromFile => SpawnBrowserTab.Overlays,
-                <= RowWorldLight => SpawnBrowserTab.Lights,
-                RowReferenceImage => SpawnBrowserTab.Overlays,
+                <= RowLightFromFile => SpawnBrowserTab.Lights,
                 _ => SpawnBrowserTab.Cameras,
             });
 
