@@ -150,9 +150,15 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
                         _lights.Add(address);
                     continue;
                 }
-                if (type != ObjectType.BgObject)
-                    continue;
-                _rows.Add(ReadRow(address, (BgObject*)node));
+                if (type == ObjectType.BgObject)
+                    _rows.Add(ReadRow(address, (BgObject*)node));
+                else if (type == ObjectType.VfxObject)
+                    // World EFFECTS list beside the map's objects: a zone
+                    // bonfire's flame or a fountain's splash adopts by
+                    // reference exactly like a BG object (ruled
+                    // 2026-09-01), and every handle verb already
+                    // dispatches on the node type.
+                    _rows.Add(ReadVfxRow(address, (CSVfx*)node));
             }
 
             if (_visited.Count >= MaxNodes)
@@ -687,6 +693,34 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             _pending.Push((nint)cursor);
             cursor = cursor->NextSiblingObject;
         }
+    }
+
+    /// <summary>A world effect's row: the .avfx path read through the
+    /// resource chain (instance → resource object → apricot handle), the
+    /// address as ever when nothing is readable yet.</summary>
+    private WorldObjectRow ReadVfxRow(nint address, CSVfx* vfx)
+    {
+        string path = address.ToString("X");
+        try
+        {
+            var instance = vfx->VfxResourceInstance;
+            if (instance != null
+                && instance->VfxResourceObject != null
+                && instance->VfxResourceObject->ApricotResourceHandle != null)
+                path = instance->VfxResourceObject->ApricotResourceHandle
+                    ->FileName.ToString();
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(
+                $"NativeWorldObjectPort: {address:X} has no readable effect name: {ex.Message}");
+        }
+        var node = (CSObject*)vfx;
+        return new WorldObjectRow(
+            address,
+            path,
+            new Transform(node->Position, node->Rotation, node->Scale),
+            ((DrawObject*)node)->Flags);
     }
 
     private WorldObjectRow ReadRow(nint address, BgObject* bg)

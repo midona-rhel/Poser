@@ -28,6 +28,53 @@ public sealed record WorldAsset(
 /// </summary>
 public sealed class WorldAssetCatalog
 {
+    /// <summary>The user's own names, beside the config: a plain JSON
+    /// object of path → label, overlaid on the derived names at catalog
+    /// load — names grow with use instead of shipping a curated database
+    /// nobody has. Created empty on first run so it is findable; read
+    /// once per session.</summary>
+    public const string NamesFileName = "asset-names.json";
+
+    private static string? _namesPath;
+    private static Dictionary<string, string>? _overrides;
+
+    public WorldAssetCatalog(
+        Dalamud.Plugin.IDalamudPluginInterface pluginInterface)
+    {
+        _namesPath = System.IO.Path.Combine(
+            pluginInterface.GetPluginConfigDirectory(), NamesFileName);
+    }
+
+    private static Dictionary<string, string> Overrides
+    {
+        get
+        {
+            if (_overrides is { } loaded)
+                return loaded;
+            var names = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (_namesPath is { } path)
+                {
+                    if (!File.Exists(path))
+                        File.WriteAllText(path, "{" + global::System.Environment.NewLine + "}" + global::System.Environment.NewLine);
+                    else if (System.Text.Json.JsonSerializer
+                        .Deserialize<Dictionary<string, string>>(
+                            File.ReadAllText(path)) is { } read)
+                        foreach (var (key, value) in read)
+                            if (!string.IsNullOrWhiteSpace(value))
+                                names[key] = value.Trim();
+                }
+            }
+            catch (Exception)
+            {
+                // A malformed file names nothing; the derived labels stand.
+            }
+            return _overrides = names;
+        }
+    }
+
     private const string ModelsResource =
         "Poser.Game.Data.WorldModelPaths.txt.gz";
 
@@ -208,6 +255,8 @@ public sealed class WorldAssetCatalog
     /// keeps the name it was found under.</summary>
     public static string LabelFor(string path)
     {
+        if (Overrides.TryGetValue(path, out var custom))
+            return custom;
         string stem = System.IO.Path.GetFileNameWithoutExtension(path);
         return string.IsNullOrWhiteSpace(stem)
             ? path
@@ -246,6 +295,7 @@ public sealed class WorldAssetCatalog
         var parts = path.Split('/');
         string expansion = "Base Game";
         string subtype = string.Empty;
+        string zone = string.Empty;
         if (parts.Length > 1 && parts[0] == "bg"
             && ExpansionNames.TryGetValue(parts[1], out var named))
         {
@@ -254,6 +304,11 @@ public sealed class WorldAssetCatalog
                 subtype = SubtypeNames.TryGetValue(parts[3], out var sub)
                     ? sub
                     : parts[3];
+            // The ZONE segment (fst_f1, roc_r2) narrows the badge to the
+            // place the asset dresses — the one honest fact an opaque
+            // stem always carries.
+            if (parts.Length > 2 && parts[2] != "common")
+                zone = parts[2];
         }
         else if (parts[0] == "bgcommon" && parts.Length > 2)
         {
@@ -261,7 +316,10 @@ public sealed class WorldAssetCatalog
                 ? sub
                 : parts[1];
         }
-        return subtype.Length == 0 ? expansion : expansion + " - " + subtype;
+        string context = subtype.Length == 0
+            ? expansion
+            : expansion + " - " + subtype;
+        return zone.Length == 0 ? context : context + " · " + zone;
     }
 
     private static IReadOnlyList<WorldAsset> Load(string resource)
@@ -282,16 +340,24 @@ public sealed class WorldAssetCatalog
                     continue;
                 string stem =
                     System.IO.Path.GetFileNameWithoutExtension(line);
+                string label = Overrides.TryGetValue(line, out var custom)
+                    ? custom
+                    : LabelOf(line, stem);
                 assets.Add(new WorldAsset(
-                    stem, line, LabelOf(line, stem), ContextOf(line)));
+                    stem, line, label, ContextOf(line)));
             }
             // RECOGNIZED entries lead (user 2026-08-31: "sort the ones
             // matching first"): a row with a real word sorts before a raw
             // stem, alphabetical within each half.
             assets.Sort(static (a, b) =>
             {
-                bool aNamed = a.Label.Length != a.Name.Length;
-                bool bNamed = b.Label.Length != b.Name.Length;
+                // NAMED means the label says more than the raw stem — a
+                // derived word or a user override (the old length compare
+                // misfiled a custom name of the stem's exact length).
+                bool aNamed = !string.Equals(
+                    a.Label, a.Name, StringComparison.Ordinal);
+                bool bNamed = !string.Equals(
+                    b.Label, b.Name, StringComparison.Ordinal);
                 if (aNamed != bNamed)
                     return aNamed ? -1 : 1;
                 return string.Compare(
