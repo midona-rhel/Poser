@@ -19,6 +19,11 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
+    /// <summary>Every world effect in the game data, inline — the VFX
+    /// catalog IS the tab (user 2026-08-31): no opener row, just 8k
+    /// searchable flame rows.</summary>
+    Effects,
+
     /// <summary>Everything this browser lays OVER the game rather than into
     /// the scene: the three game-UI overlay nodes — the dialogue panel, the
     /// chat bubble and the status line — and the reference picture, which is
@@ -184,6 +189,7 @@ public static class SpawnBrowserView
         "Lights",
         "Cameras",
         "Objects",
+        "Effects",
         "Overlays",
     ];
 
@@ -196,6 +202,7 @@ public static class SpawnBrowserView
         TablerIcon.Bulb,
         TablerIcon.Camera,
         TablerIcon.Diamond,
+        TablerIcon.Fire,
         TablerIcon.Message,
     ];
 

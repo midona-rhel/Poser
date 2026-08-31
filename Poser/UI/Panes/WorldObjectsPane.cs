@@ -123,7 +123,7 @@ public sealed class WorldObjectsPane
         _assetPicker.Open(
             "world-object-model",
             _assetChoices,
-            static asset => asset.Name,
+            static asset => asset.Label,
             static asset => asset.Path,
             SelectedWorldObject()?.Path ?? string.Empty,
             loadError: _assetChoices.Count == 0
@@ -135,6 +135,7 @@ public sealed class WorldObjectsPane
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire
                     : TablerIcon.Square,
+                Badge = static asset => asset.Context,
             });
     }
 

@@ -42,21 +42,20 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
     private const int RowWorldModel = 4;
-    private const int RowVfx = 5;
-    private const int RowOverlayTalk = 6;
-    private const int RowOverlayBalloon = 7;
-    private const int RowOverlayStatus = 8;
-    private const int RowLightSpot = 9;
-    private const int RowLightPoint = 10;
-    private const int RowLightArea = 11;
-    private const int RowLightDirectional = 12;
-    private const int RowLightFromFile = 13;
-    private const int RowWorldLight = 14;
-    private const int RowCameraGame = 15;
-    private const int RowCameraFree = 16;
-    private const int RowCameraFromFile = 17;
-    private const int RowReferenceImage = 18;
-    private const int ActionRows = 19;
+    private const int RowOverlayTalk = 5;
+    private const int RowOverlayBalloon = 6;
+    private const int RowOverlayStatus = 7;
+    private const int RowLightSpot = 8;
+    private const int RowLightPoint = 9;
+    private const int RowLightArea = 10;
+    private const int RowLightDirectional = 11;
+    private const int RowLightFromFile = 12;
+    private const int RowWorldLight = 13;
+    private const int RowCameraGame = 14;
+    private const int RowCameraFree = 15;
+    private const int RowCameraFromFile = 16;
+    private const int RowReferenceImage = 17;
+    private const int ActionRows = 18;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -399,7 +398,7 @@ public sealed class SpawnBrowserWindow : Window
         _assetPicker.Open(
             owner,
             list,
-            static asset => asset.Name,
+            static asset => asset.Label,
             static asset => asset.Path,
             string.Empty,
             loadError: list.Count == 0
@@ -411,6 +410,7 @@ public sealed class SpawnBrowserWindow : Window
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire
                     : TablerIcon.Square,
+                Badge = static asset => asset.Context,
             });
     }
 
@@ -465,10 +465,6 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-world-model", "World object", TablerIcon.Square,
             !_worldObjects.IsAvailable,
             help: "Any BG model in the game, searched by name"));
-        rows.Add(ActionRow(
-            "##spawn-vfx", "VFX", TablerIcon.Fire,
-            !_worldObjects.IsAvailable,
-            help: "Any world effect in the game, spawned looping"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -541,7 +537,7 @@ public sealed class SpawnBrowserWindow : Window
         // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i is RowProp or RowWorldModel or RowVfx
+            _rowTabs.Add(i is RowProp or RowWorldModel
                 ? SpawnBrowserTab.Props
                 : i < RowProp
                     ? SpawnBrowserTab.Actors
@@ -623,6 +619,23 @@ public sealed class SpawnBrowserWindow : Window
                 "Saved",
                 false));
             _rowTabs.Add(placed.tab);
+        }
+
+        // The EFFECTS tab is the whole vfx catalog, inline: every world
+        // effect the game data holds, one flame row each, spawnable by
+        // Enter like anything else here.
+        var effects = _assets.Effects;
+        for (int i = 0; i < effects.Count; i++)
+        {
+            rows.Add(new SpawnBrowserRow(
+                "##spawn-effect-" + i.ToString(CultureInfo.InvariantCulture),
+                effects[i].Label,
+                effects[i].Label.ToLowerInvariant(),
+                TablerIcon.Fire,
+                0u,
+                "VFX",
+                false));
+            _rowTabs.Add(SpawnBrowserTab.Effects);
         }
 
         _refilter = true;
@@ -848,9 +861,6 @@ public sealed class SpawnBrowserWindow : Window
             case RowWorldModel:
                 OpenAssetPicker("world-model", _assets.Models);
                 return;
-            case RowVfx:
-                OpenAssetPicker("world-vfx", _assets.Effects);
-                return;
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:
@@ -951,7 +961,15 @@ public sealed class SpawnBrowserWindow : Window
             {
                 int savedIndex = modelIndex - _propEntryCount;
                 if (savedIndex >= 0 && savedIndex < _savedObjects.Count)
+                {
                     SpawnSavedObject(_savedObjects[savedIndex]);
+                    return;
+                }
+                // The effect catalog closes the list.
+                int effectIndex = savedIndex - _savedObjects.Count;
+                var effects = _assets.Effects;
+                if (effectIndex >= 0 && effectIndex < effects.Count)
+                    SpawnWorldAsset(effects[effectIndex].Path);
                 return;
             }
             var models = _propService.Catalog;
