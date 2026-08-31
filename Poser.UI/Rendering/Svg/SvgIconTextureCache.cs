@@ -205,6 +205,53 @@ internal static class SvgIconTextureCache
         TablerIcon.Movie,
     ];
 
+    /// <summary>The spawn portal's first screen: row glyphs (including
+    /// the derived from-file badges), measured as cold-open sync paints
+    /// on 2026-09-01 — 14 of them ate a 200ms first frame.</summary>
+    private static readonly TablerIcon[] SpawnPortalRowIcons =
+    [
+        TablerIcon.User,
+        TablerIcon.Paw,
+        TablerIcon.Copy,
+        TablerIcon.UserPlus,
+        TablerIcon.UserFromFile,
+        TablerIcon.Moneybag,
+        TablerIcon.MoneybagFromFile,
+        TablerIcon.PlantFromFile,
+        TablerIcon.FireFromFile,
+        TablerIcon.Message,
+        TablerIcon.MessageCircle,
+        TablerIcon.Star,
+        TablerIcon.Photo,
+        TablerIcon.MessageFromFile,
+        TablerIcon.Spotlight,
+        TablerIcon.Bulb,
+        TablerIcon.LightPanel,
+        TablerIcon.Sun,
+        TablerIcon.BuildingStore,
+        TablerIcon.BulbFromFile,
+        TablerIcon.Camera,
+        TablerIcon.Video,
+        TablerIcon.CameraFromFile,
+        TablerIcon.Circle,
+        TablerIcon.Plant,
+        TablerIcon.Fire,
+        TablerIcon.Folder,
+    ];
+
+    /// <summary>The portal's mixed tab strip, drawn at 14px (measured
+    /// 2026-09-01).</summary>
+    private static readonly TablerIcon[] SpawnPortalTabIcons =
+    [
+        TablerIcon.User,
+        TablerIcon.Bulb,
+        TablerIcon.Camera,
+        TablerIcon.Moneybag,
+        TablerIcon.Plant,
+        TablerIcon.Fire,
+        TablerIcon.Message,
+    ];
+
     private static readonly TablerIcon[] LibraryFallbackIcons =
     [
         TablerIcon.Armature,
@@ -363,6 +410,30 @@ internal static class SvgIconTextureCache
         QueueStartup(
             Tabler.Get(TablerIcon.ChevronRight), menuSide * 0.8f, menuTint,
             false, null, 1f, Vector4.Zero, styleAlpha);
+
+        // The spawn portal's cold-open set: rows draw through IconIn
+        // (theme text, default stroke), the tab strip at its measured
+        // 14px in both segment tints, the header buttons like ShellIcons.
+        float portalRowSide = theme.Controls.IconSize * scale;
+        foreach (var icon in SpawnPortalRowIcons)
+            QueueStartup(
+                Tabler.Get(icon), portalRowSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        float portalTabSide = 14f * scale;
+        foreach (var icon in SpawnPortalTabIcons)
+        {
+            QueueStartup(
+                Tabler.Get(icon), portalTabSide, segmentTint, false, null,
+                1f, Vector4.Zero, styleAlpha);
+            QueueStartup(
+                Tabler.Get(icon), portalTabSide, theme.Text, false, null,
+                1f, Vector4.Zero, styleAlpha);
+        }
+        foreach (var icon in new[]
+            { TablerIcon.PlayerPause, TablerIcon.Pin })
+            QueueStartup(
+                Tabler.Get(icon), shellSide, theme.Text, false, 1.5f,
+                0.8f, Vector4.Zero, styleAlpha);
 
         float librarySide = theme.Controls.SmallIconSize * scale;
         foreach (var icon in LibraryIcons)
@@ -652,6 +723,14 @@ internal static class SvgIconTextureCache
     /// surface degrades to the async path instead of a hitch.</summary>
     private const int SyncPaintBudget = 12;
 
+    /// <summary>The sync path's TIME box, per frame. The count budget
+    /// assumed sub-millisecond bakes; measured cold paints run 10–27ms
+    /// each (spawn portal, 2026-09-01), so twelve of them froze the
+    /// open for 200ms. Once a frame has spent this much painting, the
+    /// rest go async and pop in a frame late instead.</summary>
+    private const double SyncPaintBudgetMs = 3.0;
+    private static double _syncPaintMs;
+
     /// <summary>Only small glyphs paint synchronously: a menu icon bakes in
     /// under a millisecond, a 120px library tile does not — the profiler
     /// attributed 25–99ms spikes to exactly that. Large icons keep the
@@ -669,6 +748,7 @@ internal static class SvgIconTextureCache
         _paints = 0;
         _uploads = 0;
         _syncPaints = 0;
+        _syncPaintMs = 0;
     }
 
     internal static bool TryDraw(
@@ -718,20 +798,18 @@ internal static class SvgIconTextureCache
             slot.LastDraw = _drawTick;
             entry = slot;
         }
-        else if (_syncPaints < SyncPaintBudget && !Pending.Contains(key)
+        else if (_syncPaints < SyncPaintBudget
+            && _syncPaintMs < SyncPaintBudgetMs
+            && !Pending.Contains(key)
             && (max - min).Y <= SyncPaintMaxSide)
         {
-            // FIRST USE PAINTS NOW. A small SVG mask bakes in well under a
-            // millisecond, so a bounded number per frame render the frame
-            // they are first asked for — pop-in stopped being possible the
-            // day this branch landed. The async worker keeps everything
-            // over budget, and the startup warm remains an optimization
-            // rather than a correctness mechanism.
+            // FIRST USE PAINTS NOW, inside the frame's time box: the frame
+            // they are first asked for when the box allows, the async path
+            // (one frame of pop-in) when it does not. The startup warm
+            // remains an optimization rather than a correctness mechanism.
             _syncPaints++;
-            if (_startupRemaining == 0 && _missLogged.Add(key))
-                Crystarium.Log?.Invoke(
-                    $"Icon painted on first use: {Tabler.NameOf(doc)} at " +
-                    $"{(max - min).Y:0}px");
+            var paintClock = System.Diagnostics.Stopwatch.StartNew();
+            double bakeMs;
             try
             {
                 // Baked at FULL alpha always; the fade rides the quad tint.
@@ -739,6 +817,7 @@ internal static class SvgIconTextureCache
                     Vector2.Zero, max - min, tint, flipX, strokeWidth,
                     groupOpacity, groupBackground, 1f,
                     out var baked);
+                bakeMs = paintClock.Elapsed.TotalMilliseconds;
                 entry = !bakeable
                     ? new Entry(0, default, default, null, true)
                     : baked is not { } bakedMask
@@ -747,8 +826,17 @@ internal static class SvgIconTextureCache
             }
             catch (Exception)
             {
+                bakeMs = paintClock.Elapsed.TotalMilliseconds;
                 entry = new Entry(0, default, default, null, true);
             }
+            paintClock.Stop();
+            double paintMs = paintClock.Elapsed.TotalMilliseconds;
+            _syncPaintMs += paintMs;
+            if (_startupRemaining == 0 && _missLogged.Add(key))
+                Crystarium.Log?.Invoke(
+                    $"Icon painted on first use: {Tabler.NameOf(doc)} at " +
+                    $"{(max - min).Y:0}px (bake {bakeMs:F1}ms, upload " +
+                    $"{paintMs - bakeMs:F1}ms)");
             entry.LastDraw = _drawTick;
             if (Cache.Count >= MaxEntries)
                 EvictStale();

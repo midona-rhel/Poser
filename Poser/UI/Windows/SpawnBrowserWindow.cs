@@ -382,7 +382,10 @@ public sealed class SpawnBrowserWindow : Window
                 _framesToLog--;
                 _log?.Information(
                     $"[SpawnBrowser] open frame {3 - _framesToLog}: "
-                    + $"{ms:F1}ms (view {_viewMs:F1}ms, gc "
+                    + $"{ms:F1}ms (view {_viewMs:F1}ms — frame "
+                    + $"{SpawnBrowserView.LastFrameMs:F1} tabs "
+                    + $"{SpawnBrowserView.LastTabsMs:F1} body "
+                    + $"{SpawnBrowserView.LastBodyMs:F1}, gc "
                     + $"{GC.CollectionCount(0) - gen0}/"
                     + $"{GC.CollectionCount(1) - gen1}/"
                     + $"{GC.CollectionCount(2) - gen2}, "
