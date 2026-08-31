@@ -365,6 +365,10 @@ public sealed class SpawnBrowserWindow : Window
     public override void Draw()
     {
         var frameClock = System.Diagnostics.Stopwatch.StartNew();
+        int gen0 = GC.CollectionCount(0);
+        int gen1 = GC.CollectionCount(1);
+        int gen2 = GC.CollectionCount(2);
+        _viewMs = 0;
         try
         {
             DrawPortal();
@@ -378,17 +382,29 @@ public sealed class SpawnBrowserWindow : Window
                 _framesToLog--;
                 _log?.Information(
                     $"[SpawnBrowser] open frame {3 - _framesToLog}: "
-                    + $"{ms:F1}ms (rows {_vm.Rows.Count}, "
+                    + $"{ms:F1}ms (view {_viewMs:F1}ms, gc "
+                    + $"{GC.CollectionCount(0) - gen0}/"
+                    + $"{GC.CollectionCount(1) - gen1}/"
+                    + $"{GC.CollectionCount(2) - gen2}, "
+                    + $"rows {_vm.Rows.Count}, "
                     + $"visible {_vm.Visible.Count})");
             }
             else if (ms > 8)
             {
                 _log?.Warning(
                     $"[SpawnBrowser] frame took {ms:F1}ms "
-                    + $"(rows {_vm.Rows.Count}, visible {_vm.Visible.Count})");
+                    + $"(view {_viewMs:F1}ms, gc "
+                    + $"{GC.CollectionCount(0) - gen0}/"
+                    + $"{GC.CollectionCount(1) - gen1}/"
+                    + $"{GC.CollectionCount(2) - gen2}, "
+                    + $"rows {_vm.Rows.Count}, visible {_vm.Visible.Count})");
             }
         }
     }
+
+    /// <summary>The view draw's share of the frame, for the open-frame
+    /// log's split.</summary>
+    private double _viewMs;
 
     private void DrawPortal()
     {
@@ -481,7 +497,10 @@ public sealed class SpawnBrowserWindow : Window
             min + ImGui.GetWindowSize());
         try
         {
+            var viewClock = System.Diagnostics.Stopwatch.StartNew();
             SpawnBrowserView.Draw(_vm, min);
+            viewClock.Stop();
+            _viewMs = viewClock.Elapsed.TotalMilliseconds;
 
             // The footer band is the window's GRAB: pinned, the portal is
             // a palette, and a palette must be movable.
