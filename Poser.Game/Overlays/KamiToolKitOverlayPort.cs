@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
+using Dalamud.Interface.ImGuiSeStringRenderer;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using KamiToolKit;
-using KamiToolKit.Overlay.UiOverlay;
+using KamiToolKit.UiOverlay;
 using Poser.Domain.Presentation;
 
 namespace Poser.Game.Overlays;
@@ -80,6 +82,7 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
         // Bound to the node, not to the port's listener: the node knows nothing
         // about tokens, and the token is what the service upstream indexes by.
         node.Moved = position => Moved?.Invoke(node, position);
+        node.RenderText = RenderText;
         try
         {
             Write(node, state);
@@ -204,6 +207,45 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             return false;
         }
     }
+
+    /// <summary>One text request to one texture, through Dalamud's own
+    /// SeString renderer — the game's Axis face with colour and edge, on
+    /// the main thread the node update already runs on. Null on failure:
+    /// the seat simply keeps what it last showed.</summary>
+    private IDalamudTextureWrap? RenderText(TextRender request)
+    {
+        try
+        {
+            return _textures.CreateTextureFromSeString(
+                System.Text.Encoding.UTF8.GetBytes(request.Text),
+                new SeStringDrawParams
+                {
+                    FontSize = request.FontSize,
+                    WrapWidth = request.WrapWidth,
+                    Color = PackColor(request.Color),
+                    EdgeColor = request.Edge is { } edge
+                        ? PackColor(edge)
+                        : null,
+                    Edge = request.Edge != null,
+                    ForceEdgeColor = request.Edge != null,
+                },
+                "poser-overlay-text");
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                $"KamiToolKitOverlayPort: rendering overlay text failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>ImGui's RGBA byte order, which is what the SeString draw
+    /// parameters take.</summary>
+    private static uint PackColor(Vector4 color) =>
+        ((uint)(Math.Clamp(color.W, 0f, 1f) * 255f) << 24)
+        | ((uint)(Math.Clamp(color.Z, 0f, 1f) * 255f) << 16)
+        | ((uint)(Math.Clamp(color.Y, 0f, 1f) * 255f) << 8)
+        | (uint)(Math.Clamp(color.X, 0f, 1f) * 255f);
 
     /// <summary>One document onto one node: the shared frame first, then the
     /// status icon's path, which is the one field the node layer cannot

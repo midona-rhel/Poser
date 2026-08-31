@@ -28,7 +28,7 @@
     <!-- The game-UI node library behind the overlay nodes (Poser.Game/Overlays).
          Pinned to the version Ktisis ships, which is the implementation those
          nodes are transcribed from. -->
-    <PackageReference Include="KamiToolKit" Version="1.1.17" />
+    <PackageReference Include="KamiToolKit" Version="2.2.27" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />
