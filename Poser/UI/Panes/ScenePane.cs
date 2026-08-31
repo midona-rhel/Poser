@@ -60,6 +60,7 @@ public sealed class ScenePane
             SceneFile.GroupEntryExtension,
             SceneFile.LightEntryExtension,
             SceneFile.CameraEntryExtension,
+            SceneFile.EnvironmentEntryExtension,
         });
 
     /// <summary>

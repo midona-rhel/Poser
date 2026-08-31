@@ -137,6 +137,17 @@ Windows each have ONE job. No mode may change what a window IS.
   day, NO mode refuses: an entry without a saved anchor anchors on
   its content's CENTROID instead, landing the content on the current
   camera or actor, no turn. The footer offers all four modes always.
+- **THE KIND CONTRACT** (defining, 2026-08-31): EVERY scene-object
+  kind owes all six of these, and a kind missing one is incomplete:
+  (1) a spawnable catalog of readily identifiable things — named
+  NPCs, scenery by vocabulary, curated props; (2) Save to library,
+  from BOTH its properties page and its row context menu, through
+  the named-entry pipeline; (3) a properties page that edits it;
+  (4) an inspector with the transformations appropriate to it (ball,
+  joystick, or pad by nature); (5) a from-file row in the portal
+  through the one shared entry dialog; (6) the best attempt at
+  naming — sheet names, curated names, or the derived vocabulary,
+  the same words at spawn, sidebar, hover, and entry alike.
 - **VFX ARE WORLD OBJECTS** (2026-08-31): a world effect (.avfx) is
   not its own entity kind — it rides the whole world-object slice
   (Brio's own shape: its StaticVfxObject IS a WorldObject). One
