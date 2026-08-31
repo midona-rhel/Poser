@@ -116,17 +116,19 @@ public sealed class AdoptedWorldObject
 
     private float _opacity = 1f;
 
-    /// <summary>The effect's colour multiplier, when the user tinted it;
-    /// null leaves the file's own colours alone. VFX only for now — BG
-    /// staining waits on natives.</summary>
+    /// <summary>The colour, when the user tinted it: a VFX's colour
+    /// multiplier, a BG object's stain dye. Null leaves the file's own
+    /// colours alone (a BG object that WAS dyed clears back to white).
+    /// </summary>
     public Vector3? Tint
     {
         get => _tint;
         set
         {
+            bool hadTint = _tint is not null;
             _tint = value;
-            if (!_released && value is { } stated)
-                _owner.WriteVfxTint(this, stated);
+            if (!_released && (value is not null || hadTint))
+                _owner.WriteTint(this);
         }
     }
 
@@ -239,6 +241,13 @@ public sealed class WorldObjectService : IDisposable
     {
         if (_disposed || _adopted.Count == 0)
             return;
+        // Stain writes that beat their model's load land here, once the
+        // stain buffer exists.
+        if (_pendingStains.Count > 0)
+            _pendingStains.RemoveWhere(pending =>
+                !_adopted.Contains(pending)
+                || !_port.IsAlive(pending.Address)
+                || _port.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
@@ -301,6 +310,12 @@ public sealed class WorldObjectService : IDisposable
                 _port.WriteVfxTint(fresh, tint);
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
         }
+        else if (handle.Tint is not null)
+        {
+            // The fresh incarnation's model is still loading, so the dye
+            // rides the pending-stain retry.
+            WriteTint(handle);
+        }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
         _events.Publish(new WorldObjectListChangedEvent());
@@ -314,11 +329,23 @@ public sealed class WorldObjectService : IDisposable
         _port.SetVfxSpeed(handle.Address, speed);
     }
 
-    internal void WriteVfxTint(AdoptedWorldObject handle, Vector3 tint)
+    /// <summary>BG objects whose stain write is waiting for the model's
+    /// stain buffer to exist; retried on the framework tick, exactly
+    /// Stagehand's poll.</summary>
+    private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
+
+    internal void WriteTint(AdoptedWorldObject handle)
     {
         if (_disposed || !_port.IsAlive(handle.Address))
             return;
-        _port.WriteVfxTint(handle.Address, tint);
+        if (handle.IsVfx)
+        {
+            if (handle.Tint is { } tint)
+                _port.WriteVfxTint(handle.Address, tint);
+            return;
+        }
+        if (!_port.WriteBgTint(handle.Address, handle.Tint))
+            _pendingStains.Add(handle);
     }
 
     /// <summary>Restates the drawn opacity from the handle's own facts —

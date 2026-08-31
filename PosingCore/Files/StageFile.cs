@@ -107,7 +107,6 @@ public static class StageFile
 
         int sounds = 0;
         int disabled = 0;
-        int dyed = 0;
         var modpacks = new SortedSet<string>(StringComparer.Ordinal);
         var centroid = Vector3.Zero;
         int placed = 0;
@@ -136,8 +135,6 @@ public static class StageFile
             switch (definition)
             {
                 case BgObjectDefinition bg:
-                    if (Tint(bg.DyeColor) is not null)
-                        dyed++;
                     scene.WorldObjects.Add(new SceneWorldObject
                     {
                         Key = Guid.NewGuid(),
@@ -208,10 +205,6 @@ public static class StageFile
         if (disabled > 0)
             notes.Add(Counted(disabled, "disabled object", "disabled objects")
                 + " left out, as the Stage itself asks.");
-        if (dyed > 0)
-            notes.Add(Counted(dyed, "object carries", "objects carry")
-                + " a Stage dye color; Poser saves it but does not "
-                + "apply it to models yet.");
         if (modpacks.Count > 0)
             notes.Add(
                 "This Stage references " +

@@ -269,6 +269,33 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             ((DrawObject*)node)->IsVisible = visible;
     }
 
+    /// <summary>Dyes a BG object through the game's stain buffer —
+    /// Stagehand's LiveBgObject mechanism whole. Returns FALSE while the
+    /// buffer does not exist yet (it appears only after the model loads),
+    /// so the service retries on its framework tick. Null clears to
+    /// white, the game's own leave-it-alone dye. The colour squares into
+    /// the game's linear space via sqrt-sRGB bytes (their conversion;
+    /// their alpha-from-blue slip is not copied — alpha states full).
+    /// </summary>
+    public bool WriteBgTint(nint address, System.Numerics.Vector3? tint)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return true;
+        var bg = (BgObject*)node;
+        if (bg->StainBuffer == null)
+            return false;
+        var stated = tint ?? System.Numerics.Vector3.One;
+        var color = new FFXIVClientStructs.FFXIV.Client.Graphics.ByteColor
+        {
+            R = (byte)(Math.Sqrt(Math.Clamp(stated.X, 0f, 1f)) * 255f),
+            G = (byte)(Math.Sqrt(Math.Clamp(stated.Y, 0f, 1f)) * 255f),
+            B = (byte)(Math.Sqrt(Math.Clamp(stated.Z, 0f, 1f)) * 255f),
+            A = byte.MaxValue,
+        };
+        return bg->TrySetStainColor(color);
+    }
+
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
         var node = Resolve(address);

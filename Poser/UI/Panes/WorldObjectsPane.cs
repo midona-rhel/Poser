@@ -215,17 +215,19 @@ public sealed class WorldObjectsPane
                 1f,
                 next => worldObject.Opacity = next,
                 help: "Fade the whole object"));
+        form.ColorWells("Tint", wells =>
+        {
+            var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
+            wells.Well(
+                "Tint",
+                new Vector4(tint, 1f),
+                value => worldObject.Tint =
+                    new Vector3(value.X, value.Y, value.Z));
+        }, help: worldObject.IsVfx
+            ? "Multiply the effect's colours"
+            : "Dye the model");
         if (worldObject.IsVfx)
         {
-            form.ColorWells("Tint", wells =>
-            {
-                var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
-                wells.Well(
-                    "Tint",
-                    new Vector4(tint, 1f),
-                    value => worldObject.Tint =
-                        new Vector3(value.X, value.Y, value.Z));
-            }, help: "Multiply the effect's colours");
             // The effect's own pair: whether it replays, and how fast.
             form.Pair(
                 "Loop",

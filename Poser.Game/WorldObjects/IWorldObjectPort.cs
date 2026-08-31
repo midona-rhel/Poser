@@ -140,6 +140,11 @@ public interface IWorldObjectPort
     /// natives this port does not carry yet.</summary>
     void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
 
+    /// <summary>Dyes a BG object; null clears to white. False while the
+    /// model has not produced its stain buffer yet — retry next tick.
+    /// </summary>
+    bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
+
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);
