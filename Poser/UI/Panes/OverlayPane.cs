@@ -409,24 +409,26 @@ public sealed class OverlayPane
             next => node.Text = next,
             placeholder: "What the effect is called",
             help: "The name the status bar shows");
-        form.Dropdown(
-            "Reads as",
-            StatusKindLabels,
-            (int)node.StatusKind,
-            next => node.StatusKind = (StatusKind)next,
-            help: "Gained effects read as additions and expiring ones as "
-                + "subtractions, in the game's own green, red and grey");
-
         string current = _statusIcons.NameFor(node.StatusIconId);
-        form.Picker(
+        form.Pair(
+            "Reads as",
+            cell => cell.Dropdown(
+                "##status-kind",
+                StatusKindLabels,
+                (int)node.StatusKind,
+                next => node.StatusKind = (StatusKind)next,
+                help: "Gained reads as an addition, expiring as a "
+                    + "subtraction"),
             "Icon",
-            current.Length > 0
-                ? current
-                : node.StatusIconId == 0
-                    ? "None"
-                    : "Icon " + node.StatusIconId,
-            () => OpenIconPicker(node),
-            help: "Any status icon the game declares");
+            cell => cell.Picker(
+                "##status-icon-pick",
+                current.Length > 0
+                    ? current
+                    : node.StatusIconId == 0
+                        ? "None"
+                        : "Icon " + node.StatusIconId,
+                () => OpenIconPicker(node),
+                help: "Any status icon the game declares"));
     }
 
     private static void FontSizeRow(

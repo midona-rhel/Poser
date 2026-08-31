@@ -124,9 +124,27 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         node->Rotation = placement.Rotation;
         node->Scale = placement.Scale;
         // Placement alone does not update the dependent render and culling
-        // state, so refresh both after writing the native transform.
-        node->UpdateRender();
-        ((BgObject*)node)->UpdateCulling();
+        // state — but the refreshes are GATED on the model being fully
+        // loaded, Brio's BgObjectEx gate (LoadState 7), and use Brio's own
+        // pair (culling + transforms; it never calls UpdateRender on a BG
+        // object). Refreshing a still-streaming object crashed the
+        // renderer on scene-load spawns (2026-08-31). An early write still
+        // lands: the game derives its initial state from the fields when
+        // the load completes.
+        var bg = (BgObject*)node;
+        if (!RenderReady(bg))
+            return;
+        bg->UpdateCulling();
+        bg->UpdateTransforms(false);
+    }
+
+    /// <summary>Whether the BG object's model has fully streamed in —
+    /// LoadState 7, the only state the render refreshes are safe in.
+    /// </summary>
+    private static bool RenderReady(BgObject* bg)
+    {
+        var resource = bg->ModelResourceHandle;
+        return resource != null && (byte)resource->LoadState == 7;
     }
 
     public bool TryReadFlags(nint address, out byte flags)
