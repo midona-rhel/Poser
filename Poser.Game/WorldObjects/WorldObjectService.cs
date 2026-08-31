@@ -170,8 +170,10 @@ public sealed class AdoptedWorldObject
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
 
     /// <summary>The model's DAY or NIGHT dressing — lamps glow at
-    /// night. A raw spawn ships in the night state; the zone writes day
-    /// onto its own objects.</summary>
+    /// night. OFF (day) is the default everywhere a state is undefined
+    /// (ruled 2026-09-01): a fresh spawn is dressed for day even though
+    /// the raw native object ships lit, and a file without the field
+    /// reads day.</summary>
     public bool NightState
     {
         get => _nightState;
@@ -183,7 +185,7 @@ public sealed class AdoptedWorldObject
         }
     }
 
-    private bool _nightState = true;
+    private bool _nightState;
 
     internal void SeedNightState(bool value) => _nightState = value;
 
@@ -401,8 +403,8 @@ public sealed class WorldObjectService : IDisposable
                 // The fresh incarnation's model is still loading, so the
                 // dye rides the pending-stain retry.
                 WriteTint(handle);
-            if (!handle.NightState)
-                handle.NightStatePending = true;
+            // The fresh incarnation ships lit; restate the dressing.
+            handle.NightStatePending = true;
         }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
@@ -597,6 +599,10 @@ public sealed class WorldObjectService : IDisposable
             handle.Visible = false;
         if (handle.IsVfx)
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+        else
+            // The raw native object ships lit; the default dressing is
+            // day, written once the model streams in.
+            handle.NightStatePending = true;
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;

@@ -1099,8 +1099,7 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                 handle.VfxIntensity = data.VfxIntensity;
             if (data.VfxPaused)
                 handle.VfxPaused = true;
-            if (!data.NightState)
-                handle.NightState = false;
+            handle.NightState = data.NightState;
         }
         return handle;
     }

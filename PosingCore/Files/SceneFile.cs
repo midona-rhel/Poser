@@ -580,9 +580,9 @@ public class SceneWorldObject
     /// <summary>Whether a spawned effect is frozen mid-frame.</summary>
     public bool VfxPaused { get; set; }
 
-    /// <summary>The model's day/night dressing — true is the night state
-    /// a raw spawn ships in, so older files read unchanged.</summary>
-    public bool NightState { get; set; } = true;
+    /// <summary>The model's day/night dressing. Absent reads DAY (off)
+    /// — the ruled default for anything undefined.</summary>
+    public bool NightState { get; set; }
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

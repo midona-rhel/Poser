@@ -228,22 +228,13 @@ public sealed class WorldObjectsPane
             : "Dye the model");
         if (!worldObject.IsVfx)
         {
-            // The model's two dressings: lamps glow at night. A raw spawn
-            // ships lit; the zone dresses its own objects by the clock.
-            bool night = worldObject.NightState;
-            form.Actions("State", actions =>
-            {
-                actions.Button(
-                    "Day",
-                    () => worldObject.NightState = false,
-                    disabled: !night,
-                    help: "The daytime look");
-                actions.Button(
-                    "Night",
-                    () => worldObject.NightState = true,
-                    disabled: night,
-                    help: "The night look — lamps lit");
-            });
+            // The model's two dressings: lamps glow at night. Off (day)
+            // is the default everywhere a state is undefined.
+            form.Switch(
+                "Night",
+                worldObject.NightState,
+                next => worldObject.NightState = next,
+                help: "The night look — lamps lit");
         }
         if (worldObject.IsVfx)
         {
