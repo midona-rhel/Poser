@@ -298,6 +298,10 @@ public sealed class AppShellViewModel
     /// <c>target</c> (null target = open space, which un-groups).</summary>
     public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
 
+    /// <summary>A click on the tree's open space below the last row — the
+    /// "nothing" target: the shell clears the selection.</summary>
+    public Action? OnEmptyClick;
+
     /// <summary>The drag ghost's text for a row — "N selected" when the
     /// dragged row carries the whole selection with it.</summary>
     public Func<ShellSidebarRow, string>? DragGhostText;

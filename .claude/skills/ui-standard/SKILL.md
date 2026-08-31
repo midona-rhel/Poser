@@ -594,7 +594,18 @@ ball. A camera gets the JOYSTICK ORB instead — ring semantics were
 tried on the camera 2026-08-28 and rejected: the DISC is a joystick
 (grab anywhere inside, leniency by design; deflection pans the camera
 at a deliberate rate; the knob springs home on release), and the
-WHITE RING drags camera roll directly.
+WHITE RING drags camera roll directly. An OVERLAY (dialogue panel,
+bubble, status line) gets the PAD in the same slot (2026-08-31): the
+disc is a ONE-TO-ONE mover — drag a hundred pixels and the overlay
+moves a hundred pixels; screen things move in screen pixels, never at
+a joystick rate — and the white ring drags the overlay's rotation
+(degrees about its centre; overlays rotate as of the same ruling).
+With NOTHING selected the rail keeps its skeleton: "Nothing
+selected", the same two verb seats disabled, and the inert ball — no
+reflow when a selection appears. The properties panel's empty state
+is one centred "Nothing selected" line with no tabs, and the titlebar
+names the THING itself — "Balloon 1", never the kind label. A click
+on the sidebar's open space below the last row deselects.
 
 ## Texture selection
 

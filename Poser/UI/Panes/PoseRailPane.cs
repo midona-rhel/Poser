@@ -212,6 +212,19 @@ public class PoseRailPane
         {
             Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
             cursor.Y += 22f * s;
+            // The verbs band stands even with nothing selected — the same
+            // two seats, disabled, so a selection appearing or leaving
+            // never reflows the rail. The gizmo below draws inert the
+            // same way.
+            ImGui.SetCursorScreenPos(cursor);
+            Crystarium.Button("Reset transform", id: "rail-reset",
+                help: "Nothing to reset here",
+                style: ControlStyle.Workspace, disabled: true);
+            ImGui.SameLine(0f, 6f * s);
+            Crystarium.Button("Select children", id: "rail-children",
+                help: "Bones only",
+                style: ControlStyle.Workspace, disabled: true);
+            cursor.Y += 36f * s;
         }
 
         // The group verbs come before the gizmo and before every section: they
@@ -220,12 +233,14 @@ public class PoseRailPane
         cursor.Y += _selection.Draw(cursor, width);
 
         // A camera has no rotation for the rings to edit — its view is
-        // angle/pan, owned by the Camera tab — so the gizmo stands down
-        // rather than drawing an inert widget. An overlay node has none
-        // either: it is flat on the screen, not placed in the world.
+        // angle/pan, owned by the Camera tab — so it gets the joystick.
+        // An overlay is flat on the screen: its widget is the PAD, a
+        // one-to-one screen mover with a rotation ring.
         if (_inspector.IsCameraSelection)
             cursor.Y += DrawCameraJoystick(dl, cursor, width, s);
-        else if (!_inspector.IsOverlaySelection)
+        else if (_inspector.IsOverlaySelection)
+            cursor.Y += DrawOverlayPad(dl, cursor, width, s);
+        else
             cursor.Y += DrawRotationGizmo(dl, cursor, width, s);
 
         // relocated inspector sections (compact width)
@@ -366,6 +381,117 @@ public class PoseRailPane
             Crystarium.HoverHelp.Explain("rail-camera-joystick",
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
                 overRing ? "Roll the camera" : "Pan the camera");
+        }
+
+        return d + 8f * s;
+    }
+
+    // ── The overlay pad ──────────────────────────────────────────────
+    // Same footprint as the rotation ball. The DISC is a ONE-TO-ONE pad:
+    // drag a hundred pixels left and the overlay moves a hundred pixels
+    // left — a screen thing moves in screen pixels, no joystick rate.
+    // The WHITE RING drags the overlay's rotation directly, the camera
+    // orb's roll gesture.
+
+    private bool _padRotating;
+    private float _padRotateStartAngle;
+    private float _padRotateStartValue;
+    private Vector2 _padOffset;
+
+    private float DrawOverlayPad(
+        ImDrawListPtr dl, Vector2 cursor, float width, float s)
+    {
+        float d = 158f * s;
+        var center = new Vector2(cursor.X + width / 2f, cursor.Y + d / 2f);
+        float ringRadius = d / 2f - 6f * s;
+        float discRadius = ringRadius - 10f * s;
+
+        var node = _inspector.RailOverlayNode();
+        bool canEdit = node != null;
+
+        ImGui.SetCursorScreenPos(new Vector2(center.X - d / 2f, cursor.Y));
+        ImGui.InvisibleButton("##rail-overlay-pad", new Vector2(d, d));
+        bool active = ImGui.IsItemActive() && canEdit;
+        bool hovered = ImGui.IsItemHovered();
+        var mouse = ImGui.GetMousePos();
+        float mouseDistance = (mouse - center).Length();
+
+        if (ImGui.IsItemActivated() && canEdit)
+        {
+            _padRotating = mouseDistance > discRadius + 2f * s;
+            _padOffset = Vector2.Zero;
+            if (_padRotating && node != null)
+            {
+                _padRotateStartAngle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                _padRotateStartValue = node.Rotation;
+            }
+        }
+
+        var theme = Crystarium.ActiveTheme;
+        dl.AddCircleFilled(center, ringRadius + 4f * s,
+            ImGui.ColorConvertFloat4ToU32(theme.Glass.Luminosity));
+
+        Vector2 knob = center;
+        if (active && node != null)
+        {
+            GizmoPointerOwnership.Hold();
+            if (_padRotating)
+            {
+                float angle = MathF.Atan2(
+                    mouse.Y - center.Y, mouse.X - center.X);
+                float delta = angle - _padRotateStartAngle;
+                if (delta > MathF.PI) delta -= MathF.Tau;
+                if (delta < -MathF.PI) delta += MathF.Tau;
+                float next = _padRotateStartValue
+                    + float.RadiansToDegrees(delta);
+                // Wrapped, not clamped: the ring never hits a wall.
+                while (next > 180f) next -= 360f;
+                while (next < -180f) next += 360f;
+                node.Rotation = next;
+            }
+            else
+            {
+                // ONE-TO-ONE: this frame's pointer delta IS the move.
+                var step = ImGui.GetIO().MouseDelta;
+                if (step != Vector2.Zero)
+                    node.Position += step;
+                // The knob shows the gesture, clamped to the disc, and
+                // springs home on release.
+                _padOffset += step;
+                var shown = _padOffset;
+                float length = shown.Length();
+                if (length > discRadius)
+                    shown *= discRadius / length;
+                knob = center + shown;
+            }
+        }
+
+        // The white rotation ring, brightening under the pointer or drag.
+        bool ringHot = (active && _padRotating) ||
+            (hovered && !active && mouseDistance > discRadius + 2f * s &&
+             mouseDistance < ringRadius + 8f * s);
+        dl.AddCircle(center, ringRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = ringHot ? 0.9f : 0.45f })),
+            0, (ringHot ? 2.5f : 1.5f) * s);
+
+        // The pad: a faint travel boundary and the knob.
+        dl.AddCircle(center, discRadius,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
+                theme.Text with { W = 0.12f })), 0, 1f * s);
+        var knobColor = canEdit
+            ? theme.Text with { W = active && !_padRotating ? 1f : 0.8f }
+            : theme.Text.Fade(theme.Chrome.DisabledOpacity);
+        dl.AddCircleFilled(knob, 7f * s,
+            ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(knobColor)));
+
+        if (hovered && !active)
+        {
+            bool overRing = mouseDistance > discRadius + 2f * s;
+            Crystarium.HoverHelp.Explain("rail-overlay-pad",
+                mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
+                overRing ? "Rotate the overlay" : "Move the overlay");
         }
 
         return d + 8f * s;

@@ -50,6 +50,11 @@ public sealed class OverlayPane
     private readonly List<StatusIconChoice> _iconChoices = new();
 
     private bool _openPlacement = true;
+
+    /// <summary>Whether remove-all confirmation is armed — the camera
+    /// pane's destroy-all idiom: a whole-set destroyer takes two presses.
+    /// </summary>
+    private bool _removeAllArmed;
     private bool _openContent = true;
     private bool _openActions = true;
 
@@ -178,6 +183,14 @@ public sealed class OverlayPane
             1f,
             next => node.Alpha = next,
             perPixel: 0.01f);
+        form.NumericSlider(
+            "Rotation",
+            node.Rotation,
+            -180f,
+            180f,
+            next => node.Rotation = next,
+            perPixel: 0.5f,
+            format: "0");
 
         form.Actions("Position", actions =>
         {
@@ -203,6 +216,10 @@ public sealed class OverlayPane
     /// the pane that owns the entity rather than resolving it a second
     /// time.</summary>
     public bool HasRailNode => SelectedNode() != null;
+
+    /// <summary>The rail pad's node — the camera pane's BallCamera idiom:
+    /// the rail asks the pane that owns the entity.</summary>
+    public OverlayNodeHandle? RailNode => SelectedNode();
 
     /// <summary>
     /// The rail's section for an overlay node — the three facts a node is
@@ -436,9 +453,15 @@ public sealed class OverlayPane
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
             actions.Button(
-                "Remove all",
+                _removeAllArmed ? "Confirm remove all" : "Remove all",
                 () => _pending = () =>
                 {
+                    if (!_removeAllArmed)
+                    {
+                        _removeAllArmed = true;
+                        return;
+                    }
+                    _removeAllArmed = false;
                     _lifecycle.DestroyAllOverlays();
                     _scene.Selection.Clear();
                 },
@@ -558,9 +581,10 @@ public sealed class OverlayPane
 
     private static string ContentTitle(OverlayNodeKind kind) => kind switch
     {
-        OverlayNodeKind.Balloon => "BUBBLE",
-        OverlayNodeKind.Status => "STATUS",
-        _ => "DIALOGUE",
+        // Sentence case, the header rule.
+        OverlayNodeKind.Balloon => "Bubble",
+        OverlayNodeKind.Status => "Status",
+        _ => "Dialogue",
     };
 
     // The label sets are positional against their enums, minted once: a

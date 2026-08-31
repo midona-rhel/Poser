@@ -2538,6 +2538,11 @@ public class PoseInspectorPane
     public bool IsOverlaySelection =>
         _primary is { Kind: SceneEntityKind.Overlay };
 
+    /// <summary>The rail pad's overlay node — the camera ball's idiom.
+    /// </summary>
+    public Game.Overlays.OverlayNodeHandle? RailOverlayNode() =>
+        _overlayPane.RailNode;
+
     public bool IsActorSelection =>
         _primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget };
 

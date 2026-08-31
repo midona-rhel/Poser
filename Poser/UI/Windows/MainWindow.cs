@@ -585,6 +585,8 @@ public class MainWindow : Window
         // Static shell wiring (rebuilt data lives in BuildViewModel each frame).
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
+        // A click on the tree's open space drops the whole selection.
+        _vm.OnEmptyClick = () => _selection.Clear();
         _vm.DragGhostText = DragGhostFor;
         // Brio's Bullseye (CameraEditor.cs recenter_on_selected): the seat
         // RETARGETS this camera's tracking onto the currently selected
@@ -1232,12 +1234,49 @@ public class MainWindow : Window
                     : "Poser",
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
-            { Kind: SceneEntityKind.Camera } => "Camera",
-            { Kind: SceneEntityKind.Prop } => "Object",
-            { Kind: SceneEntityKind.WorldObject } => "Object",
-            { Kind: SceneEntityKind.Overlay } => "Overlay",
+            // The titlebar says the THING's name — "Balloon 1", never the
+            // kind label (ruled 2026-08-31).
+            { Kind: SceneEntityKind.Camera } =>
+                EntityTitle(primary.Value, "Camera"),
+            { Kind: SceneEntityKind.Prop } =>
+                EntityTitle(primary.Value, "Object"),
+            { Kind: SceneEntityKind.WorldObject } =>
+                EntityTitle(primary.Value, "Object"),
+            { Kind: SceneEntityKind.Overlay } =>
+                EntityTitle(primary.Value, "Overlay"),
             _ => "Poser",
         };
+    }
+
+    /// <summary>The selected entity's own name from the snapshot, by kind;
+    /// the kind label only when the snapshot no longer holds it.</summary>
+    private string EntityTitle(SelectionId id, string fallback)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                foreach (var camera in _scene.Snapshot.Cameras)
+                    if (camera.Id.Equals(cameraId))
+                        return camera.Name;
+                break;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                foreach (var prop in _scene.Snapshot.Props)
+                    if (prop.Id.Equals(propId))
+                        return prop.Name;
+                break;
+            case { Kind: SceneEntityKind.WorldObject,
+                WorldObject: { } worldId }:
+                foreach (var worldObject in _scene.Snapshot.WorldObjects)
+                    if (worldObject.Id.Equals(worldId))
+                        return worldObject.Name;
+                break;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                foreach (var overlay in _scene.Snapshot.Overlays)
+                    if (overlay.Id.Equals(overlayId))
+                        return overlay.Name;
+                break;
+        }
+        return fallback;
     }
 
     private string LightTitle(SelectionId id)
@@ -3546,6 +3585,14 @@ public class MainWindow : Window
             _activeTab = "Selection";
             return _multiselectTabs;
         }
+        // NOTHING selected: no strip and no tabs — the content side says
+        // so instead of showing an ownerless actor page.
+        if (primary == null)
+        {
+            _activeStrip = "none";
+            _activeTab = string.Empty;
+            return [];
+        }
         // The strip is a function of the selection type: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -4166,6 +4213,24 @@ public class MainWindow : Window
         // Inspector-owned selection state drives IK and must be current even
         // when another tab owns the centre pane.
         _poseInspector.SetSelection(_selection.Primary);
+
+        // The properties panel's empty state: one centred line.
+        if (_selection.Primary == null
+            && !global::Poser.Application.Selection.EntitySelection
+                .IsMultiEntity(_selection.Selected))
+        {
+            var emptyStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                Color = Crystarium.ActiveTheme.FormHint,
+            };
+            var measured = Crystarium.MeasureText(
+                "Nothing selected", emptyStyle);
+            Crystarium.TextAt(
+                origin + (size - measured) * 0.5f,
+                "Nothing selected", emptyStyle);
+            return;
+        }
 
         if (_activeTab == "Selection")
         {

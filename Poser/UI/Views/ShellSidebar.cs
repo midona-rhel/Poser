@@ -480,6 +480,14 @@ public sealed class ShellSidebar
                 _dirty = true;
             }
         }
+        else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)
+            && ImGui.IsWindowHovered()
+            && ImGui.GetMousePos().Y > origin.Y + _totalHeight * scale)
+        {
+            // A click on the open space below the last row DESELECTS —
+            // the tree's own background is the "nothing" target.
+            _vm.OnEmptyClick?.Invoke();
+        }
 
         // The tail band preserves the exact scroll extent.
         ImGui.SetCursorScreenPos(

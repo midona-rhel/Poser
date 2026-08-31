@@ -55,6 +55,8 @@ internal abstract class OverlayShapeNode : OverlayNode
     protected OverlayShapeNode(OverlayNodeKind kind)
     {
         Size = OverlayNodeGeometry.DesignSize(kind);
+        // Rotation spins about the drawn CENTRE, not the top-left corner.
+        Origin = Size / 2f;
         OnMoveComplete = _ =>
         {
             // The node is already where the pointer left it, so this states the
@@ -89,6 +91,7 @@ internal abstract class OverlayShapeNode : OverlayNode
             Position = value.Position;
             ScaleX = value.Scale;
             ScaleY = value.Scale;
+            RotationDegrees = value.Rotation;
             Alpha = value.Alpha;
             IsVisible = value.Visible;
             EnableMoving = value.Draggable;
