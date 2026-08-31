@@ -511,7 +511,16 @@ public sealed class WorldObjectService : IDisposable
 
     /// <summary>Returns unadopted world objects in the port's traversal order.
     /// Range filtering and ordering belong to the overlay.</summary>
-    public IReadOnlyList<WorldObjectCandidate> GetCandidates()
+    public IReadOnlyList<WorldObjectCandidate> GetCandidates() =>
+        Candidates(effects: false);
+
+    /// <summary>The world's playing EFFECTS, listed apart — effects are
+    /// their own class everywhere (portal tab, sidebar mark, footer
+    /// glyph), never filed under the map's objects.</summary>
+    public IReadOnlyList<WorldObjectCandidate> GetEffectCandidates() =>
+        Candidates(effects: true);
+
+    private IReadOnlyList<WorldObjectCandidate> Candidates(bool effects)
     {
         if (_disposed)
             return Array.Empty<WorldObjectCandidate>();
@@ -522,7 +531,7 @@ public sealed class WorldObjectService : IDisposable
         var candidates = new List<WorldObjectCandidate>(rows.Count);
         foreach (var row in rows)
         {
-            if (IsAdopted(row.Address))
+            if (row.IsEffect != effects || IsAdopted(row.Address))
                 continue;
             candidates.Add(new WorldObjectCandidate(
                 row.Address,

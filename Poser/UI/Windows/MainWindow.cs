@@ -245,12 +245,23 @@ public class MainWindow : Window
             },
             WorldAdoptionKind.WorldObject => new ShellWorldClass
             {
-                Icon = TablerIcon.Square,
+                // The kind's own mark, as everywhere (Square shipped and
+                // was an imprecise leftover).
+                Icon = TablerIcon.Plant,
                 Id = "##world-class-objects",
                 ShowHelp =
                     "Mark the map's own objects — click a mark to borrow it "
                     + "into the scene; releasing it puts it back",
                 HideHelp = "Stop marking the map's own objects",
+            },
+            WorldAdoptionKind.Effect => new ShellWorldClass
+            {
+                Icon = TablerIcon.Fire,
+                Id = "##world-class-effects",
+                ShowHelp =
+                    "Mark the world's playing effects — click a mark to "
+                    + "borrow it into the scene; releasing it puts it back",
+                HideHelp = "Stop marking the world's playing effects",
             },
             _ => new ShellWorldClass
             {

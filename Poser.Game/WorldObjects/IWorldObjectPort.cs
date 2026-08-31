@@ -17,7 +17,8 @@ public readonly record struct WorldObjectRow(
     nint Address,
     string Path,
     Transform Placement,
-    byte Flags);
+    byte Flags,
+    bool IsEffect = false);
 
 /// <summary>
 /// One BG object the world holds and the scene has not adopted, as an

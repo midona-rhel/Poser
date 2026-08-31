@@ -720,7 +720,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             address,
             path,
             new Transform(node->Position, node->Rotation, node->Scale),
-            ((DrawObject*)node)->Flags);
+            ((DrawObject*)node)->Flags,
+            IsEffect: true);
     }
 
     private WorldObjectRow ReadRow(nint address, BgObject* bg)

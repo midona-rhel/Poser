@@ -167,7 +167,8 @@ internal static class SvgIconTextureCache
     private static readonly TablerIcon[] SidebarWorldClassIcons =
     [
         TablerIcon.Bulb,
-        TablerIcon.Square,
+        TablerIcon.Plant,
+        TablerIcon.Fire,
         TablerIcon.User,
     ];
 
