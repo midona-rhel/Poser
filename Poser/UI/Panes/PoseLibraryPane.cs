@@ -885,8 +885,22 @@ public sealed class PoseLibraryPane
                 form.ReadOnly("Saved", _tileModified[selected]);
                 if (!string.IsNullOrEmpty(tile.Author))
                     form.ReadOnly("Author", tile.Author!);
+                // Contents are PER-KIND rows — "Actors 2", "Lights 3" —
+                // never one truncating line (ruled 2026-08-31). The
+                // pre-minted one-liner splits on its own separator.
                 if (_tileContents[selected].Length > 0)
-                    form.ReadOnly("Contents", _tileContents[selected]);
+                    foreach (var part in _tileContents[selected].Split(", "))
+                    {
+                        int space = part.IndexOf(' ');
+                        if (space > 0 && int.TryParse(
+                                part[..space], out _))
+                            form.ReadOnly(
+                                char.ToUpperInvariant(part[space + 1])
+                                    + part[(space + 2)..],
+                                part[..space]);
+                        else
+                            form.ReadOnly("Contents", part);
+                    }
                 if (tile.Tags.Count > 0)
                     form.ReadOnly("Tags", string.Join(", ", tile.Tags));
                 if (tile.Flagged)
@@ -977,13 +991,9 @@ public sealed class PoseLibraryPane
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
                         // A group entry says what it HOLDS — the one fact
-                        // its tile cannot.
+                        // its tile cannot — as per-kind rows.
                         if (kind == PoseLibraryEntryKind.Group)
-                        {
-                            string contents = ContentsSummary(metadata);
-                            if (contents.Length > 0)
-                                _detailsRows.Add(("Contents", contents));
-                        }
+                            AppendContentsRows(metadata, _detailsRows);
                         if (kind == PoseLibraryEntryKind.Environment)
                         {
                             // The name travels in the file when the capture
@@ -1029,21 +1039,24 @@ public sealed class PoseLibraryPane
             _detailsRows.Add(("Details", "none recorded"));
     }
 
-    private static string ContentsSummary(SceneMetadataReadOutcome metadata)
+    /// <summary>The entry's contents as PER-KIND rows — "Actors 2",
+    /// "Lights 3" — never one truncating line.</summary>
+    private static void AppendContentsRows(
+        SceneMetadataReadOutcome metadata,
+        List<(string Label, string Value)> rows)
     {
-        var parts = new List<string>();
-        void Part(int count, string one, string many)
+        void Part(int count, string label)
         {
             if (count > 0)
-                parts.Add($"{count} {(count == 1 ? one : many)}");
+                rows.Add((label,
+                    count.ToString(CultureInfo.InvariantCulture)));
         }
-        Part(metadata.ActorCount, "actor", "actors");
-        Part(metadata.PropCount, "object", "objects");
-        Part(metadata.WorldObjectCount, "borrowed object", "borrowed objects");
-        Part(metadata.LightCount, "light", "lights");
-        Part(metadata.CameraCount, "camera", "cameras");
-        Part(metadata.OverlayCount, "overlay", "overlays");
-        return string.Join(" · ", parts);
+        Part(metadata.ActorCount, "Actors");
+        Part(metadata.PropCount, "Objects");
+        Part(metadata.WorldObjectCount, "Borrowed objects");
+        Part(metadata.LightCount, "Lights");
+        Part(metadata.CameraCount, "Cameras");
+        Part(metadata.OverlayCount, "Overlays");
     }
 
     private static string Anchors(
