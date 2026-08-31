@@ -156,12 +156,6 @@ public interface IWorldObjectPort
     /// </summary>
     bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
 
-    /// <summary>The BG instance's colour-intensity byte as 0..1; null for
-    /// effects. Experimental day/night-glow candidate.</summary>
-    float? ReadBgGlow(nint address);
-
-    void WriteBgGlow(nint address, float glow);
-
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);

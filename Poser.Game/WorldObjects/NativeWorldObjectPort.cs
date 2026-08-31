@@ -297,34 +297,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return bg->TrySetStainColor(color);
     }
 
-    /// <summary>The BG instance's ColorIntensity byte (0xCE) — the best
-    /// candidate for the day/night glow the zone's layout system drives
-    /// on its own objects and a raw spawn never receives. EXPERIMENTAL:
-    /// semantics unverified in game (2026-09-01); no reference touches
-    /// it.</summary>
-    public float? ReadBgGlow(nint address)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return null;
-        return ((BgObject*)node)->ColorIntensity / 255f;
-    }
-
-    public void WriteBgGlow(nint address, float glow)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return;
-        var bg = (BgObject*)node;
-        bg->ColorIntensity =
-            (byte)(Math.Clamp(glow, 0f, 1f) * byte.MaxValue);
-        if (RenderReady(bg))
-        {
-            bg->UpdateCulling();
-            bg->UpdateTransforms(false);
-        }
-    }
-
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
         var node = Resolve(address);

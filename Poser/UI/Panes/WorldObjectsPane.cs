@@ -226,20 +226,6 @@ public sealed class WorldObjectsPane
         }, help: worldObject.IsVfx
             ? "Multiply the effect's colours"
             : "Dye the model");
-        if (!worldObject.IsVfx)
-        {
-            // EXPERIMENT (2026-09-01): the native colour-intensity byte,
-            // the candidate for the always-night glow on spawned lamps.
-            float glow = worldObject.Glow ?? 1f;
-            form.Slider(
-                "Glow",
-                glow,
-                0f,
-                1f,
-                next => worldObject.Glow = next,
-                disabled: worldObject.Glow is null,
-                help: "The instance's light intensity");
-        }
         if (worldObject.IsVfx)
         {
             // The effect's own pair: whether it replays, and how fast.

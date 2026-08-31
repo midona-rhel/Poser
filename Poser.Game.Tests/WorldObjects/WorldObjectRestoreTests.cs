@@ -129,8 +129,6 @@ private sealed class World
         public bool WriteBgTint(
             nint address, System.Numerics.Vector3? tint) => true;
         public void SetVfxIntensity(nint address, float intensity) { }
-        public float? ReadBgGlow(nint address) => null;
-        public void WriteBgGlow(nint address, float glow) { }
         public void PauseVfx(nint address) { }
         public void ResumeVfx(nint address, float speed) { }
 

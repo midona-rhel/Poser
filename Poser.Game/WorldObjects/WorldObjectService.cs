@@ -165,19 +165,6 @@ public sealed class AdoptedWorldObject
 
     private Vector3? _tint;
 
-    /// <summary>The BG instance's live colour intensity, 0..1 — the
-    /// day/night-glow EXPERIMENT (semantics unverified in game). Read
-    /// straight from the native instance; null for effects.</summary>
-    public float? Glow
-    {
-        get => _released ? null : _owner.ReadGlow(this);
-        set
-        {
-            if (!_released && value is { } stated)
-                _owner.WriteGlow(this, stated);
-        }
-    }
-
     /// <summary>When the loop refresh next recreates this effect. Internal
     /// to the service's tick.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
@@ -382,18 +369,6 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || !_port.IsAlive(handle.Address))
             return;
         _port.SetVfxSpeed(handle.Address, speed);
-    }
-
-    internal float? ReadGlow(AdoptedWorldObject handle) =>
-        _disposed || !_port.IsAlive(handle.Address)
-            ? null
-            : _port.ReadBgGlow(handle.Address);
-
-    internal void WriteGlow(AdoptedWorldObject handle, float glow)
-    {
-        if (_disposed || !_port.IsAlive(handle.Address))
-            return;
-        _port.WriteBgGlow(handle.Address, glow);
     }
 
     internal void WriteVfxIntensity(AdoptedWorldObject handle)
