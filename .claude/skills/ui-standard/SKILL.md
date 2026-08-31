@@ -133,7 +133,10 @@ Windows each have ONE job. No mode may change what a window IS.
   camera, relative to the saved actor. The default is a settings
   dropdown (General → Spawning); the library footer overrides per
   activation; the portal spawns by the default. Front-of-camera
-  needs no saved anchor and is never absent.
+  needs no saved anchor and is never absent — and as of the same
+  day, NO mode refuses: an entry without a saved anchor anchors on
+  its content's CENTROID instead, landing the content on the current
+  camera or actor, no turn. The footer offers all four modes always.
 - **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
   IS the spawned thing's name — "Stone rail" spawns a Stone rail. A
   group entry names the GROUP; its children keep their own saved

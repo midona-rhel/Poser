@@ -878,13 +878,29 @@ public sealed class SceneWorkflow : IDisposable
                         Poser.Files.ObjectPlacementMode.RelativeToCamera
                             ? scene.CameraAnchor
                             : scene.ActorAnchor;
+                    // No saved anchor is no longer a refusal (ruled
+                    // 2026-08-31): the content's CENTROID stands in, so
+                    // the content lands ON the current camera or actor —
+                    // no turn — instead of keeping an offset the entry
+                    // never recorded.
                     if (savedAnchor is null)
                     {
-                        Finish(
-                            OperationReceiptState.Failed,
-                            "This entry records no anchor for that placement. " +
-                            "Load it as saved instead.");
-                        return;
+                        savedAnchor =
+                            SceneContentCentroid(scene) is { } centre
+                                ? new Poser.Files.PlacementAnchorData
+                                {
+                                    Position = centre,
+                                    Yaw = options.PlacementYaw,
+                                }
+                                : null;
+                        if (savedAnchor is null)
+                            notes.Add(
+                                "The entry places nothing, so it loaded as "
+                                + "saved.");
+                        else
+                            notes.Add(
+                                "No saved anchor: the content's centre "
+                                + "lands on the anchor instead.");
                     }
                 }
                 if (savedAnchor is { } anchor)

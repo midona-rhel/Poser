@@ -805,9 +805,10 @@ public sealed class PoseLibraryPane
     private bool _detailsHasCameraAnchor;
     private bool _detailsHasActorAnchor;
 
-    /// <summary>The modes the SELECTED entry can honour, positional against
-    /// the dropdown. As-saved always; a relative mode only when the entry
-    /// records its anchor.</summary>
+    /// <summary>The modes on offer, positional against the dropdown. ALL
+    /// four, always (ruled 2026-08-31): an entry without a saved anchor no
+    /// longer refuses a relative mode — the load anchors on the content's
+    /// centroid, landing it on the current camera or actor.</summary>
     private readonly List<ObjectPlacementMode> _placementChoices = [];
     private readonly List<string> _placementChoiceLabels = [];
 
@@ -815,20 +816,14 @@ public sealed class PoseLibraryPane
     {
         _placementChoices.Clear();
         _placementChoiceLabels.Clear();
-        // Front-of-camera needs no saved anchor, so it is never absent.
         _placementChoices.Add(ObjectPlacementMode.InFrontOfCamera);
+        _placementChoiceLabels.Add(PlacementModeLabels[3]);
         _placementChoices.Add(ObjectPlacementMode.AsSaved);
         _placementChoiceLabels.Add(PlacementModeLabels[0]);
-        if (_detailsHasCameraAnchor)
-        {
-            _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
-            _placementChoiceLabels.Add(PlacementModeLabels[1]);
-        }
-        if (_detailsHasActorAnchor)
-        {
-            _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
-            _placementChoiceLabels.Add(PlacementModeLabels[2]);
-        }
+        _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
+        _placementChoiceLabels.Add(PlacementModeLabels[1]);
+        _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
+        _placementChoiceLabels.Add(PlacementModeLabels[2]);
     }
 
     /// <summary>What this spawn actually uses: the preference when the
