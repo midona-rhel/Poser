@@ -2525,8 +2525,11 @@ public class MainWindow : Window
         Label = worldObject.Name,
         Draggable = true,
         Count = "",
-        // World objects use the square row mark.
-        Icon = TablerIcon.Square,
+        // World objects use the square row mark; a VFX burns instead.
+        Icon = worldObject.Path.EndsWith(
+            ".avfx", StringComparison.OrdinalIgnoreCase)
+            ? TablerIcon.Fire
+            : TablerIcon.Square,
         Depth = depth,
         ForceIcon = depth > 0,
         Tag = SelectionId.ForWorldObject(worldObject.Id),

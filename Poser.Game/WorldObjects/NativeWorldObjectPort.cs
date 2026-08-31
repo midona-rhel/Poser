@@ -1,8 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+using Dalamud.Game;
+using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using FFXIVClientStructs.FFXIV.Client.System.Resource.Handle;
 using CSObject = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object;
+using CSVfx = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.VfxObject;
 using CSWorld = FFXIVClientStructs.FFXIV.Client.Graphics.Scene.World;
 
 namespace Poser.Game.WorldObjects;
@@ -29,7 +35,68 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     private readonly HashSet<nint> _visited = new();
     private readonly Stack<nint> _pending = new();
 
-    public NativeWorldObjectPort(IPluginLog log) => _log = log;
+    // ── the VFX arm ──────────────────────────────────────────────────
+    // A world VFX rides the SAME port as a BG object — Brio's own shape
+    // (StaticVfxObject IS a WorldObject there) — dispatched by the path's
+    // .avfx extension at spawn and by the node's object type everywhere
+    // else. The natives come from Brio (Brio/Game/Core/VFXService.cs):
+    // play/pause/speed signatures, plus the resource-load hook that
+    // unbinds AVFX timeline items for OUR paths so a standalone world
+    // effect actually plays and loops.
+
+    private unsafe delegate* unmanaged<nint, float, uint, nint> _vfxPlayStatic;
+    private unsafe delegate* unmanaged<nint, void> _vfxPause;
+    private unsafe delegate* unmanaged<nint, float, void> _vfxSetSpeed;
+
+    private delegate nint VfxResourceLoadDelegate(
+        void* job, nint unk1, byte* filePath, byte* avfxData, uint dataSize,
+        ResourceHandle* resourceHandle, uint unk2);
+
+    private readonly Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
+    private readonly object _handledLock = new();
+    private readonly HashSet<string> _handledVfxPaths =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool _vfxReady;
+
+    public NativeWorldObjectPort(
+        ISigScanner sigScanner,
+        IGameInteropProvider gameInterop,
+        IPluginLog log)
+    {
+        _log = log;
+        // Each signature is guarded on its own: a patch that breaks one
+        // takes VFX away and leaves BG objects standing.
+        try
+        {
+            _vfxPlayStatic = (delegate* unmanaged<nint, float, uint, nint>)
+                sigScanner.ScanText("E8 ?? ?? ?? ?? B0 02 EB 02");
+            _vfxPause = (delegate* unmanaged<nint, void>)sigScanner.ScanText(
+                "E8 ?? ?? ?? ?? 48 8B CB E8 ?? ?? ?? ?? 0F 2E C7 7A ?? 74 ?? "
+                + "0F 28 CF 48 8B CB E8");
+            _vfxSetSpeed = (delegate* unmanaged<nint, float, void>)
+                sigScanner.ScanText(
+                    "48 89 5C 24 08 57 48 83 EC 30 48 8B 59 60");
+            _vfxResourceLoad = gameInterop.HookFromAddress<
+                VfxResourceLoadDelegate>(
+                sigScanner.ScanText(
+                    "E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 85 C0 48 8B 6C 24"),
+                VfxResourceLoadDetour);
+            _vfxResourceLoad.Enable();
+            _vfxReady = true;
+        }
+        catch (Exception ex)
+        {
+            _vfxReady = false;
+            _log.Warning(
+                $"NativeWorldObjectPort: the VFX natives are unavailable, "
+                + $"so VFX spawns will refuse: {ex.Message}");
+        }
+    }
+
+    /// <summary>Whether the path names a VFX rather than a model — the one
+    /// dispatch fact the whole arm turns on.</summary>
+    public static bool IsVfxPath(string path) =>
+        path.EndsWith(".avfx", StringComparison.OrdinalIgnoreCase);
 
     public bool IsAvailable => CSWorld.Instance() != null;
 
@@ -123,6 +190,16 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         node->Position = placement.Position;
         node->Rotation = placement.Rotation;
         node->Scale = placement.Scale;
+        if (node->GetObjectType() == ObjectType.VfxObject)
+        {
+            // Brio's StaticVfxObject.SetTransform: notify, re-cull, and
+            // keep the effect playing.
+            var moved = (CSVfx*)node;
+            moved->NotifyTransformChanged();
+            moved->UpdateCulling();
+            PlayVfx(moved);
+            return;
+        }
         // Placement alone does not update the dependent render and culling
         // state — but the refreshes are GATED on the model being fully
         // loaded, Brio's BgObjectEx gate (LoadState 7), and use Brio's own
@@ -165,13 +242,19 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         ((DrawObject*)node)->Flags = flags;
     }
 
+    /// <summary>A vfx's drawn state is its ALPHA (Brio's rule); the draw
+    /// flag says nothing for an effect.</summary>
+    private const int VfxAlphaOffset = 0x26C;
+
     public bool TryReadVisible(nint address, out bool visible)
     {
         visible = false;
         var node = Resolve(address);
         if (node == null)
             return false;
-        visible = ((DrawObject*)node)->IsVisible;
+        visible = node->GetObjectType() == ObjectType.VfxObject
+            ? *(float*)((byte*)node + VfxAlphaOffset) > 0f
+            : ((DrawObject*)node)->IsVisible;
         return true;
     }
 
@@ -180,7 +263,21 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         var node = Resolve(address);
         if (node == null)
             return;
-        ((DrawObject*)node)->IsVisible = visible;
+        if (node->GetObjectType() == ObjectType.VfxObject)
+            *(float*)((byte*)node + VfxAlphaOffset) = visible ? 1f : 0f;
+        else
+            ((DrawObject*)node)->IsVisible = visible;
+    }
+
+    public void SetVfxSpeed(nint address, float speed)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject
+            || _vfxSetSpeed == null)
+            return;
+        var instance = (nint)((CSVfx*)node)->VfxResourceInstance;
+        if (instance != nint.Zero)
+            _vfxSetSpeed(instance, speed);
     }
 
     public bool TryReadOutline(nint address, out byte outline)
@@ -209,6 +306,8 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             return nint.Zero;
         try
         {
+            if (IsVfxPath(path))
+                return SpawnVfx(path, placement);
             // The second argument is an unused debug string (Brio's own
             // note); empty is what the game expects.
             var bg = BgObject.Create(path, string.Empty);
@@ -236,7 +335,11 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         try
         {
             // Brio's teardown order (BGOObject.Destroy): render cleanup
-            // first, then the freeing destructor.
+            // first, then the freeing destructor. VfxObject shares the
+            // same virtual seats, so one call site serves both types. A
+            // destroyed vfx's path stays HANDLED for the session — the
+            // unbind patch is idempotent, and forgetting it would unpatch
+            // a second live copy of the same effect (Brio's caveat).
             var bg = (BgObject*)node;
             bg->CleanupRender();
             bg->Dtor(1);
@@ -245,6 +348,144 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         {
             _log.Error(
                 $"NativeWorldObjectPort: destroying {address:X} failed: {ex.Message}");
+        }
+    }
+
+    // ── the vfx arm's private half ───────────────────────────────────
+
+    /// <summary>Brio's create sequence (StaticVfxObject.Create): create,
+    /// clear the auto-play-gate flag, prime one update, place, then play.
+    /// The path is marked HANDLED first so the resource hook unbinds its
+    /// timeline items when the avfx streams in.</summary>
+    private nint SpawnVfx(string path, in Transform placement)
+    {
+        if (!_vfxReady)
+            return nint.Zero;
+        lock (_handledLock)
+        {
+            _handledVfxPaths.Add(path);
+        }
+        var vfx = CSVfx.Create(path, string.Empty);
+        if (vfx == null)
+            return nint.Zero;
+        vfx->SomeFlags &= 0xF7;
+        vfx->Update(0f);
+        var node = (CSObject*)vfx;
+        node->Position = placement.Position;
+        node->Rotation = placement.Rotation;
+        node->Scale = placement.Scale;
+        vfx->NotifyTransformChanged();
+        vfx->UpdateCulling();
+        PlayVfx(vfx);
+        *(float*)((byte*)vfx + VfxAlphaOffset) = 1f;
+        return (nint)vfx;
+    }
+
+    private void PlayVfx(CSVfx* vfx)
+    {
+        if (_vfxReady && _vfxPlayStatic != null)
+            _vfxPlayStatic((nint)vfx, 0f, 0xFFFFFFFF);
+    }
+
+    /// <summary>The resource-load seam: for paths POSER spawned, every
+    /// timeline item's binder id is nulled in the streamed avfx bytes, so
+    /// the effect plays standalone instead of waiting on a caster it will
+    /// never have. Brio's mechanism, ported whole.</summary>
+    private nint VfxResourceLoadDetour(
+        void* job, nint unk1, byte* filePath, byte* avfxData, uint dataSize,
+        ResourceHandle* resourceHandle, uint unk2)
+    {
+        try
+        {
+            bool any;
+            lock (_handledLock)
+            {
+                any = _handledVfxPaths.Count > 0;
+            }
+            if (any && filePath != null && avfxData != null && dataSize > 0)
+            {
+                var span = MemoryMarshal
+                    .CreateReadOnlySpanFromNullTerminated(filePath);
+                var path = Encoding.UTF8.GetString(span);
+                bool handled;
+                lock (_handledLock)
+                {
+                    handled = _handledVfxPaths.Contains(path);
+                }
+                if (handled)
+                    UnbindAllTimelineItems(avfxData, (int)dataSize);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"NativeWorldObjectPort: avfx unbind failed: {ex.Message}");
+        }
+        return _vfxResourceLoad!.Original(
+            job, unk1, filePath, avfxData, dataSize, resourceHandle, unk2);
+    }
+
+    // The AVFX chunk walk (Brio VFXService.cs): null every BdNo in every
+    // Item of every TmLn, so nothing in the file binds to a timeline.
+
+    private static uint Tag(string s) =>
+        (uint)(((byte)s[0] << 24) | ((byte)s[1] << 16)
+            | ((byte)s[2] << 8) | (byte)s[3]);
+
+    private static int FindChunk(byte* data, int start, int len, uint tag)
+    {
+        int consumed = 0;
+        while (consumed + 8 <= len)
+        {
+            uint t = *(uint*)(data + start + consumed);
+            uint pl = *(uint*)(data + start + consumed + 4);
+            if (t == tag)
+                return start + consumed + 8;
+            consumed += 8 + (int)((pl + 3u) & ~3u);
+        }
+        return -1;
+    }
+
+    private static void UnbindAllTimelineItems(byte* data, int len)
+    {
+        int avfx = FindChunk(data, 0, len, Tag("AVFX"));
+        if (avfx < 0)
+            return;
+        int avfxLen = (int)*(uint*)(data + avfx - 4);
+        int consumed = 0;
+        while (consumed + 8 <= avfxLen)
+        {
+            int childStart = avfx + consumed;
+            uint tag = *(uint*)(data + childStart);
+            uint payLen = *(uint*)(data + childStart + 4);
+            int payStart = childStart + 8;
+            if (payStart + (int)payLen > avfx + avfxLen)
+                break;
+            if (tag == Tag("TmLn"))
+                UnbindTimeline(data, payStart, (int)payLen, len);
+            consumed += 8 + (int)((payLen + 3u) & ~3u);
+        }
+    }
+
+    private static void UnbindTimeline(
+        byte* data, int tmlnStart, int tmlnLen, int totalLen)
+    {
+        int consumed = 0;
+        while (consumed + 8 <= tmlnLen)
+        {
+            int childStart = tmlnStart + consumed;
+            uint tag = *(uint*)(data + childStart);
+            uint payLen = *(uint*)(data + childStart + 4);
+            int payStart = childStart + 8;
+            if (payStart + (int)payLen > tmlnStart + tmlnLen)
+                break;
+            if (tag == Tag("Item"))
+            {
+                int bd = FindChunk(data, payStart, (int)payLen, Tag("BdNo"));
+                if (bd >= 0 && bd + 4 <= totalLen)
+                    *(uint*)(data + bd) = 0xFFFFFFFF;
+            }
+            consumed += 8 + (int)((payLen + 3u) & ~3u);
         }
     }
 
@@ -258,7 +499,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         try
         {
             var node = (CSObject*)address;
-            return node->GetObjectType() == ObjectType.BgObject ? node : null;
+            var type = node->GetObjectType();
+            return type is ObjectType.BgObject or ObjectType.VfxObject
+                ? node
+                : null;
         }
         catch (Exception ex)
         {

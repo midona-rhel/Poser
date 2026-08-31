@@ -122,6 +122,8 @@ private sealed class World
 
         public bool IsAvailable => true;
 
+        public void SetVfxSpeed(nint address, float speed) { }
+
         public nint Spawn(string path, in Transform placement)
         {
             var address = _next++;

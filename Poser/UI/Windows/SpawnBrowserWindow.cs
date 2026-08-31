@@ -41,20 +41,27 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
-    private const int RowOverlayTalk = 4;
-    private const int RowOverlayBalloon = 5;
-    private const int RowOverlayStatus = 6;
-    private const int RowLightSpot = 7;
-    private const int RowLightPoint = 8;
-    private const int RowLightArea = 9;
-    private const int RowLightDirectional = 10;
-    private const int RowLightFromFile = 11;
-    private const int RowWorldLight = 12;
-    private const int RowCameraGame = 13;
-    private const int RowCameraFree = 14;
-    private const int RowCameraFromFile = 15;
-    private const int RowReferenceImage = 16;
-    private const int ActionRows = 17;
+    private const int RowVfx = 4;
+    private const int RowOverlayTalk = 5;
+    private const int RowOverlayBalloon = 6;
+    private const int RowOverlayStatus = 7;
+    private const int RowLightSpot = 8;
+    private const int RowLightPoint = 9;
+    private const int RowLightArea = 10;
+    private const int RowLightDirectional = 11;
+    private const int RowLightFromFile = 12;
+    private const int RowWorldLight = 13;
+    private const int RowCameraGame = 14;
+    private const int RowCameraFree = 15;
+    private const int RowCameraFromFile = 16;
+    private const int RowReferenceImage = 17;
+    private const int ActionRows = 18;
+
+    /// <summary>What the VFX row spawns: a known looping world effect
+    /// (Stagehand's own demo default). The Model field on the spawned
+    /// object takes any .avfx path from there.</summary>
+    private const string DefaultVfxPath =
+        "bg/ffxiv/fst_f1/common/vfx/eff/b0941trp1a_o.avfx";
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -165,7 +172,8 @@ public sealed class SpawnBrowserWindow : Window
         ReferenceImageSession referenceImages,
         global::Poser.Library.IPoseLibraryService library,
         Game.Scene.SceneWorkflow scenes,
-        Game.Scene.PlacementAnchorSource anchors)
+        Game.Scene.PlacementAnchorSource anchors,
+        Game.WorldObjects.WorldObjectService worldObjects)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -190,6 +198,7 @@ public sealed class SpawnBrowserWindow : Window
         _library = library;
         _scenes = scenes;
         _anchors = anchors;
+        _worldObjects = worldObjects;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -415,6 +424,11 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
+        rows.Add(ActionRow(
+            "##spawn-vfx", "VFX", TablerIcon.Fire,
+            !_worldObjects.IsAvailable,
+            help: "A world effect, spawned looping — respawn it as any "
+                + ".avfx from its Model field"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -487,7 +501,7 @@ public sealed class SpawnBrowserWindow : Window
         // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i == RowProp
+            _rowTabs.Add(i is RowProp or RowVfx
                 ? SpawnBrowserTab.Props
                 : i < RowProp
                     ? SpawnBrowserTab.Actors
@@ -581,6 +595,7 @@ public sealed class SpawnBrowserWindow : Window
     private readonly global::Poser.Library.IPoseLibraryService _library;
     private readonly Game.Scene.SceneWorkflow _scenes;
     private readonly Game.Scene.PlacementAnchorSource _anchors;
+    private readonly Game.WorldObjects.WorldObjectService _worldObjects;
 
     /// <summary>Every SAVED library entry the row list carries after the
     /// prop models, parallel by index — actors, groups, objects, lights,
@@ -784,6 +799,21 @@ public sealed class SpawnBrowserWindow : Window
                 if (_lifecycle.SpawnProp() == null)
                     _notices.Failed(SpawnFailedNote);
                 return;
+            case RowVfx:
+            {
+                // The configured placement rule says where it lands, the
+                // saved-entry spawn's own anchor read.
+                var vfxAt = global::Poser.Transform.Identity;
+                if (_anchors.TryCurrentFor(
+                        _configuration.Config.DefaultSpawnPlacement,
+                        out var vfxPosition, out _, out _))
+                    vfxAt = vfxAt with { Position = vfxPosition };
+                if (_worldObjects.Spawn(
+                        DefaultVfxPath, vfxAt, true, out var vfxRefusal)
+                    is null)
+                    _notices.Failed(vfxRefusal ?? SpawnFailedNote);
+                return;
+            }
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:

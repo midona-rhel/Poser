@@ -131,9 +131,13 @@ public interface IWorldObjectPort
     /// never restored.</summary>
     nint Spawn(string path, in Transform placement);
 
-    /// <summary>Destroys a BG object THIS PORT spawned. Never called with
-    /// an adopted address — the map's own objects are always restored
-    /// instead.</summary>
+    /// <summary>Sets a spawned VFX's playback speed. A no-op on anything
+    /// that is not a live VFX.</summary>
+    void SetVfxSpeed(nint address, float speed);
+
+    /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
+    /// both. Never called with an adopted address — the map's own objects
+    /// are always restored instead.</summary>
     void Destroy(nint address);
 }
 

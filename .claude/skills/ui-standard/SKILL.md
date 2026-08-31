@@ -137,6 +137,17 @@ Windows each have ONE job. No mode may change what a window IS.
   day, NO mode refuses: an entry without a saved anchor anchors on
   its content's CENTROID instead, landing the content on the current
   camera or actor, no turn. The footer offers all four modes always.
+- **VFX ARE WORLD OBJECTS** (2026-08-31): a world effect (.avfx) is
+  not its own entity kind — it rides the whole world-object slice
+  (Brio's own shape: its StaticVfxObject IS a WorldObject). One
+  spawn/identity/sidebar/gizmo/scene/library/group story, dispatched
+  by the path's extension at the native port. VFX rows wear
+  TablerIcon.Fire (the Tabler "flame" glyph); the portal's VFX row
+  spawns a known looping default and any .avfx is reached by editing
+  the spawned object's Model field (explicit-apply Respawn — also how
+  a spawned BG object re-models). VFX get a Loop|Speed pair on the
+  object page; looping recreates the effect every 15s (Brio's
+  cadence) with the handle, id, and name surviving the churn.
 - **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
   IS the spawned thing's name — "Stone rail" spawns a Stone rail. A
   group entry names the GROUP; its children keep their own saved

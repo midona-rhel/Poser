@@ -65,12 +65,50 @@ public sealed class AdoptedWorldObject
     private string _name = string.Empty;
 
     /// <summary>The model resource path, or the adoption address when no model
-    /// is loaded.</summary>
-    public string Path { get; }
+    /// is loaded. A SPAWNED object's path can change — respawning from a
+    /// stated path is how the model field edits.</summary>
+    public string Path { get; internal set; }
 
-    /// <summary>The native address the object was adopted at. Valid for this
-    /// GPose session only.</summary>
-    public nint Address { get; }
+    /// <summary>The native address the object was adopted at — or, for a
+    /// spawned VFX, the CURRENT incarnation's address: the loop refresh
+    /// recreates the effect and swaps this in place, so the handle and
+    /// every id bound to it survive the churn.</summary>
+    public nint Address { get; internal set; }
+
+    /// <summary>Whether this is a world VFX rather than a model — spawned
+    /// from an .avfx path, playing rather than standing.</summary>
+    public bool IsVfx =>
+        Path.EndsWith(".avfx", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether the effect replays on the refresh interval. Most
+    /// world effects are one-shots the game retires; looping them is the
+    /// point of spawning one, so it starts on.</summary>
+    public bool LoopVfx { get; set; } = true;
+
+    /// <summary>The effect's playback speed. Written through immediately;
+    /// re-applied after every loop refresh.</summary>
+    public float VfxSpeed
+    {
+        get => _vfxSpeed;
+        set
+        {
+            _vfxSpeed = Math.Clamp(value, 0f, 5f);
+            if (!_released)
+                _owner.WriteVfxSpeed(this, _vfxSpeed);
+        }
+    }
+
+    private float _vfxSpeed = 1f;
+
+    /// <summary>When the loop refresh next recreates this effect. Internal
+    /// to the service's tick.</summary>
+    internal DateTime NextVfxRefresh = DateTime.MaxValue;
+
+    /// <summary>Respawns this SPAWNED object from the stated path — the
+    /// model field's apply. The old incarnation is destroyed only after
+    /// the new one took, so a bad path costs nothing.</summary>
+    public bool Respawn(string path, out string? detail) =>
+        _owner.Respawn(this, path, out detail);
 
     /// <summary>Placement captured when the object was adopted and restored on
     /// release.</summary>
@@ -135,20 +173,109 @@ public sealed class WorldObjectService : IDisposable
     private readonly IWorldObjectPort _port;
     private readonly IEventBus _events;
     private readonly IPluginLog _log;
+    private readonly Dalamud.Plugin.Services.IFramework? _framework;
     private readonly List<AdoptedWorldObject> _adopted = new();
 
     private int _nextId;
     private bool _disposed;
 
+    /// <summary>Brio's cadence: a looping world effect is recreated on
+    /// this interval, because a played-out avfx does not restart itself.
+    /// </summary>
+    private static readonly TimeSpan VfxRefreshInterval =
+        TimeSpan.FromSeconds(15);
+
     public WorldObjectService(
         IWorldObjectPort port,
         IEventBus events,
-        IPluginLog log)
+        IPluginLog log,
+        Dalamud.Plugin.Services.IFramework? framework = null)
     {
         _port = port;
         _events = events;
         _log = log;
+        _framework = framework;
         _events.Subscribe<GPoseStateChangedEvent>(OnGPoseChanged);
+        if (_framework != null)
+            _framework.Update += OnFrameworkUpdate;
+    }
+
+    /// <summary>The loop refresh: each looping spawned VFX past its
+    /// interval is recreated in place. One per frame at most — churning
+    /// several effects in one frame stutters for nothing.</summary>
+    private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework frame)
+    {
+        if (_disposed || _adopted.Count == 0)
+            return;
+        var now = DateTime.UtcNow;
+        foreach (var handle in _adopted)
+        {
+            if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx)
+                continue;
+            if (now < handle.NextVfxRefresh)
+                continue;
+            Respawn(handle, handle.Path, out _);
+            return;
+        }
+    }
+
+    /// <summary>Recreates one SPAWNED object from the stated path, keeping
+    /// the handle: same id, same name, same placement, same bindings — a
+    /// new native incarnation under them. The loop refresh and the model
+    /// field's apply are both this. The old native object is destroyed
+    /// only after the new spawn took.</summary>
+    internal bool Respawn(
+        AdoptedWorldObject handle, string path, out string? detail)
+    {
+        detail = null;
+        if (_disposed || !handle.Spawned || !_adopted.Contains(handle))
+        {
+            detail = "Only a spawned object can respawn.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            detail = "The path names nothing.";
+            return false;
+        }
+        var placement = handle.Transform;
+        bool visible = handle.Visible;
+        var fresh = _port.Spawn(path, placement);
+        if (fresh == nint.Zero)
+        {
+            detail = $"'{DisplayName(path)}' could not be spawned — the "
+                + "game did not take it.";
+            return false;
+        }
+        var old = handle.Address;
+        handle.Address = fresh;
+        handle.Path = path.Trim();
+        try
+        {
+            _port.Destroy(old);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"WorldObjectService: destroying the old incarnation failed: {ex.Message}");
+        }
+        if (!visible)
+            handle.Visible = false;
+        if (handle.IsVfx)
+        {
+            if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f)
+                _port.SetVfxSpeed(fresh, handle.VfxSpeed);
+            handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+        }
+        _events.Publish(new WorldObjectListChangedEvent());
+        return true;
+    }
+
+    internal void WriteVfxSpeed(AdoptedWorldObject handle, float speed)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address))
+            return;
+        _port.SetVfxSpeed(handle.Address, speed);
     }
 
     /// <summary>The live claims. It is the service's own list, so a caller
@@ -265,6 +392,8 @@ public sealed class WorldObjectService : IDisposable
             spawned: true);
         if (!visible)
             handle.Visible = false;
+        if (handle.IsVfx)
+            handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
@@ -579,6 +708,8 @@ public sealed class WorldObjectService : IDisposable
     {
         if (_disposed)
             return;
+        if (_framework != null)
+            _framework.Update -= OnFrameworkUpdate;
         _events.Unsubscribe<GPoseStateChangedEvent>(OnGPoseChanged);
         // Released BEFORE the disposed flag goes up: the restore writes go
         // through the same guarded path every other release does, and a

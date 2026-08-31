@@ -37,6 +37,9 @@ public sealed class WorldObjectsPane
     private bool _openObject = true;
 
     private Action? _pending;
+    private AdoptedWorldObject? _pathDraftFor;
+    private string _pathDraft = string.Empty;
+    private string _status = string.Empty;
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
@@ -94,14 +97,71 @@ public sealed class WorldObjectsPane
             next => worldObject.Name = next,
             placeholder: "Object",
             help: "What the sidebar calls this object");
-        // The path is the row's TEXT, not its tooltip; the hover keeps the
-        // whole path for when the cell truncates it.
-        form.ReadOnly("Model", worldObject.Path, help: worldObject.Path);
+        // A SPAWNED object's model is editable — an explicit-apply field,
+        // because a path applies whole or not at all: Respawn recreates
+        // the object from the stated path in place, keeping its name,
+        // placement, and identity. A borrowed object's path stays the
+        // map's fact.
+        if (worldObject.Spawned)
+        {
+            if (!ReferenceEquals(_pathDraftFor, worldObject))
+            {
+                _pathDraftFor = worldObject;
+                _pathDraft = worldObject.Path;
+            }
+            form.TextInput(
+                "Model",
+                _pathDraft,
+                next => _pathDraft = next,
+                help: "The model or VFX path this object respawns from");
+            form.Actions(string.Empty, actions => actions.Button(
+                "Respawn",
+                () =>
+                {
+                    var stated = _pathDraft;
+                    _pending = () =>
+                    {
+                        if (!worldObject.Respawn(stated, out var refusal))
+                            _status = refusal ?? "The path could not be "
+                                + "spawned.";
+                        else
+                            _status = string.Empty;
+                    };
+                },
+                help: "Recreate this object from the stated path"));
+            if (_status.Length > 0)
+                form.Status(_status, warning: true);
+        }
+        else
+        {
+            // The path is the row's TEXT, not its tooltip; the hover keeps
+            // the whole path for when the cell truncates it.
+            form.ReadOnly("Model", worldObject.Path, help: worldObject.Path);
+        }
         form.Switch(
             "Visible",
             worldObject.Visible,
             next => worldObject.Visible = next,
             help: "Hide this object without moving it");
+        if (worldObject.IsVfx)
+        {
+            // The effect's own pair: whether it replays, and how fast.
+            form.Pair(
+                "Loop",
+                cell => cell.Switch(
+                    "##vfx-loop",
+                    worldObject.LoopVfx,
+                    next => worldObject.LoopVfx = next,
+                    help: "Replay the effect when it runs out"),
+                "Speed",
+                cell => cell.Slider(
+                    "##vfx-speed",
+                    worldObject.VfxSpeed,
+                    0f,
+                    3f,
+                    next => worldObject.VfxSpeed = next,
+                    help: "Playback speed"));
+        }
         form.Actions("Library", actions =>
             actions.Button(
                 "Save to library",
