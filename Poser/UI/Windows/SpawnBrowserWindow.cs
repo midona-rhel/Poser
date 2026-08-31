@@ -178,7 +178,8 @@ public sealed class SpawnBrowserWindow : Window
         Game.Appearance.ModelCatalogLoader modelLoader,
         global::Poser.Application.Appearance.ActorModelIdSession model,
         ScenePane scenePane,
-        AppearancePane appearancePane)
+        AppearancePane appearancePane,
+        Dalamud.Plugin.Services.IPluginLog log)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -211,11 +212,13 @@ public sealed class SpawnBrowserWindow : Window
         _scenePane = scenePane;
         _appearance = appearancePane;
         _icons = new GameIconResolver(textures);
+        _log = log;
 
         // The catalog rows mint OFF-THREAD, immediately: pure data from
         // the gzipped path lists, ready long before the first open.
         _catalogRowsTask = System.Threading.Tasks.Task.Run(() =>
         {
+            var mintClock = System.Diagnostics.Stopwatch.StartNew();
             var effectAssets = _assets.Effects;
             var effectRows = new SpawnBrowserRow[effectAssets.Count];
             for (int i = 0; i < effectAssets.Count; i++)
@@ -240,6 +243,10 @@ public sealed class SpawnBrowserWindow : Window
                     0u,
                     modelAssets[i].Context,
                     false);
+            mintClock.Stop();
+            _log?.Information(
+                $"[SpawnBrowser] catalog mint finished off-thread in "
+                + $"{mintClock.ElapsedMilliseconds}ms");
             return (effectRows, modelRows);
         });
 
@@ -345,12 +352,26 @@ public sealed class SpawnBrowserWindow : Window
             || _library.Snapshot.Revision != _libraryRevision)
         {
             _built = false;
+            var rebuildClock = System.Diagnostics.Stopwatch.StartNew();
             BuildRows();
+            rebuildClock.Stop();
+            if (rebuildClock.ElapsedMilliseconds > 8)
+                _log?.Warning(
+                    $"[SpawnBrowser] rebuild took {rebuildClock.ElapsedMilliseconds}ms "
+                    + $"(rows {_vm.Rows.Count})");
         }
         ReconcilePendingSpawn();
         SyncQuery();
         if (_refilter)
+        {
+            var filterClock = System.Diagnostics.Stopwatch.StartNew();
             Refilter();
+            filterClock.Stop();
+            if (filterClock.ElapsedMilliseconds > 8)
+                _log?.Warning(
+                    $"[SpawnBrowser] refilter took {filterClock.ElapsedMilliseconds}ms "
+                    + $"(visible {_vm.Visible.Count})");
+        }
         if (_reseatHighlight)
         {
             _reseatHighlight = false;
@@ -774,6 +795,7 @@ public sealed class SpawnBrowserWindow : Window
     private (IActor Actor, int ModelCharaId)? _pendingNpcModel;
     private readonly ScenePane _scenePane;
     private readonly AppearancePane _appearance;
+    private readonly Dalamud.Plugin.Services.IPluginLog? _log;
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
