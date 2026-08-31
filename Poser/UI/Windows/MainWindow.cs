@@ -5260,6 +5260,7 @@ public class MainWindow : Window
                 prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Copy),
+            new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
         };
@@ -5274,6 +5275,9 @@ public class MainWindow : Window
                     _bindings.GetPropId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForProp(cloneId));
             },
+            () => OpenEntityRename(
+                "Save prop to library", prop.Name,
+                name => _scenePane.SavePropEntry(propId.LogicalId, name)),
             null, // separator
             () =>
             {

@@ -775,10 +775,6 @@ public sealed class SpawnBrowserWindow : Window
     private readonly ScenePane _scenePane;
     private readonly AppearancePane _appearance;
 
-    /// <summary>The MCDF spawn's second half: the fresh body opens the
-    /// character-file dialog once the actor binds.</summary>
-    private IActor? _pendingMcdfImport;
-
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
     private readonly Crystarium.SearchPicker<Game.WorldObjects.WorldAsset>
@@ -996,20 +992,21 @@ public sealed class SpawnBrowserWindow : Window
                 _scenePane.OpenEntryLoad();
                 return;
             case RowActorFromMcdf:
-            {
-                var body = _lifecycle.SpawnActor(
-                    "Add actor from MCDF",
-                    () => _spawnService.SpawnNewActor(
-                        reserveCompanionSlot: false));
-                if (body == null)
+                // FILE FIRST: the pane's dialog opens now; the pick spawns
+                // the body and the import lands once it binds.
+                _appearance.OpenMcdfSpawn(() =>
                 {
-                    _notices.Failed(SpawnFailedNote);
-                    return;
-                }
-                _pendingMcdfImport = body;
-                SelectSpawned(body);
+                    var body = _lifecycle.SpawnActor(
+                        "Add actor from MCDF",
+                        () => _spawnService.SpawnNewActor(
+                            reserveCompanionSlot: false));
+                    if (body == null)
+                        _notices.Failed(SpawnFailedNote);
+                    else
+                        SelectSpawned(body);
+                    return body;
+                });
                 return;
-            }
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:
@@ -1213,13 +1210,6 @@ public sealed class SpawnBrowserWindow : Window
         {
             _selection.Select(SelectionId.ForLight(lightId));
             _pendingSelectSpawnedLight = null;
-        }
-
-        if (_pendingMcdfImport is { } dressing
-            && _bindings.GetActorId(dressing) is { } dressActor)
-        {
-            _appearance.OpenMcdfImport(dressActor);
-            _pendingMcdfImport = null;
         }
 
         // The NPC spawn's second half: the fresh body takes the model

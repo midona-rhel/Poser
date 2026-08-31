@@ -79,14 +79,21 @@ public sealed class OverlayPane
         StableBindingRegistry bindings,
         StatusIconCatalog statusIcons,
         SceneLifecycleHistory lifecycle,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        ScenePane scenePane,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
         _scene = scene;
         _bindings = bindings;
         _statusIcons = statusIcons;
         _lifecycle = lifecycle;
         _icons = new GameIconResolver(textures);
+        _scenePane = scenePane;
+        _names = names;
     }
+
+    private readonly ScenePane _scenePane;
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     /// <summary>Selects a node some other surface just created — the spawn
     /// browser's rows and this pane's own duplicate. The scene has not
@@ -448,6 +455,18 @@ public sealed class OverlayPane
     private void LifetimeRows(
         Crystarium.FormScope form, OverlayNodeHandle node)
     {
+        form.Actions("Library", actions =>
+            actions.Button(
+                "Save to library",
+                () => _names.Open(
+                    "Save overlay to library", node.Name,
+                    name =>
+                    {
+                        if (_bindings.GetOverlayId(node) is { } entryId)
+                            _scenePane.SaveOverlayEntry(
+                                entryId.LogicalId, name);
+                    }),
+                help: "Save this overlay as a library entry"));
         form.Actions("Overlay", actions =>
         {
             actions.Button(
