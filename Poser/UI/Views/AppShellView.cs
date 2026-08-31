@@ -77,6 +77,11 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
+
+    /// <summary>A spawned effect's row grows a third seat: pause, the
+    /// actor row's own play/pause glyph.</summary>
+    public bool PauseAction;
+    public bool Paused;
     /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;
@@ -313,6 +318,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
+    public Action<ShellSidebarRow>? OnRowPause;
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;

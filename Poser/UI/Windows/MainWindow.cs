@@ -806,6 +806,20 @@ public class MainWindow : Window
             if (row.Tag is SelectionId handleId)
                 _overlayPresentation.ToggleHandle(handleId);
         };
+        // The effect row's pause seat: the same freeze the properties
+        // page states, reachable without selecting first.
+        _vm.OnRowPause = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } pausedId })
+                return;
+            var effect = _bindings.Resolve(pausedId);
+            if (!effect.Success ||
+                effect.Value is not { IsValid: true } vfxHandle)
+                return;
+            vfxHandle.VfxPaused = !vfxHandle.VfxPaused;
+            row.Paused = vfxHandle.VfxPaused;
+        };
         _vm.OnLightVisibility = row =>
         {
             // A reference picture wears the same eye seat: its toggle is
@@ -2520,22 +2534,26 @@ public class MainWindow : Window
     };
 
     private ShellSidebarRow WorldObjectRow(
-        WorldObjectDescriptor worldObject, int depth) => new()
+        WorldObjectDescriptor worldObject, int depth)
     {
-        Label = worldObject.Name,
-        Draggable = true,
-        Count = "",
-        // World objects wear the plant row mark; a VFX burns instead.
-        Icon = worldObject.Path.EndsWith(
-            ".avfx", StringComparison.OrdinalIgnoreCase)
-            ? TablerIcon.Fire
-            : TablerIcon.Plant,
-        Depth = depth,
-        ForceIcon = depth > 0,
-        Tag = SelectionId.ForWorldObject(worldObject.Id),
-        LightActions = true,
-        LightOn = worldObject.Visible,
-    };
+        bool isVfx = worldObject.Path.EndsWith(
+            ".avfx", StringComparison.OrdinalIgnoreCase);
+        return new ShellSidebarRow
+        {
+            Label = worldObject.Name,
+            Draggable = true,
+            Count = "",
+            // World objects wear the plant row mark; a VFX burns instead.
+            Icon = isVfx ? TablerIcon.Fire : TablerIcon.Plant,
+            Depth = depth,
+            ForceIcon = depth > 0,
+            Tag = SelectionId.ForWorldObject(worldObject.Id),
+            LightActions = true,
+            LightOn = worldObject.Visible,
+            PauseAction = isVfx,
+            Paused = worldObject.VfxPaused,
+        };
+    }
 
     private ShellSidebarRow LightRow(LightDescriptor light, int depth) => new()
     {

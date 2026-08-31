@@ -252,7 +252,7 @@ public sealed class ShellSidebar
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
-                        : row.LightActions ? 2
+                        : row.LightActions ? (row.PauseAction ? 3 : 2)
                         : row.GroupActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
@@ -808,6 +808,25 @@ public sealed class ShellSidebar
                         id: "##light-on",
                         dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
+
+                // A spawned effect's third seat: the actor row's own
+                // play/pause glyph, freezing the effect mid-frame.
+                if (row.PauseAction)
+                {
+                    ImGui.SetCursorScreenPos(
+                        origin + new Vector2(step * 2f, 0f));
+                    if (Crystarium.TemporaryIconToggle(
+                            row.Paused
+                                ? TablerIcon.PlayerPause
+                                : TablerIcon.PlayerPlay,
+                            selected: false,
+                            style: square,
+                            help: row.Paused
+                                ? "Resume the effect"
+                                : "Pause the effect",
+                            id: "##vfx-pause"))
+                        _vm.OnRowPause?.Invoke(row);
+                }
                 return;
             }
 

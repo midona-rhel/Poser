@@ -192,12 +192,13 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         node->Scale = placement.Scale;
         if (node->GetObjectType() == ObjectType.VfxObject)
         {
-            // Brio's StaticVfxObject.SetTransform: notify, re-cull, and
-            // keep the effect playing.
+            // Brio's StaticVfxObject.SetTransform: notify and re-cull,
+            // NOTHING else — replaying here restarted the effect on every
+            // drag tick (and would un-pause a paused one). Brio resumes
+            // only behind its own ShouldResume flag, which we don't carry.
             var moved = (CSVfx*)node;
             moved->NotifyTransformChanged();
             moved->UpdateCulling();
-            PlayVfx(moved);
             return;
         }
         // Placement alone does not update the dependent render and culling

@@ -122,7 +122,8 @@ public sealed record WorldObjectDescriptor(
     string Name,
     string Path,
     bool Visible = true,
-    bool Spawned = false);
+    bool Spawned = false,
+    bool VfxPaused = false);
 
 /// <summary>
 /// Owns the pointer-free overlay-node row state. It does not own the live
