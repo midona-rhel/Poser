@@ -375,11 +375,18 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     /// animation-gate hunt: transform-animated scenery is driven by
     /// something in the undocumented tail, found empirically like the
     /// night byte was.</summary>
+    /// <summary>Offsets the byte diagnostics may touch: the DrawObject
+    /// flag bytes (0x88..0x90, except 0x89 — its low nibble is the load
+    /// state) and the undocumented tail.</summary>
+    private static bool ByteOffsetAllowed(int offset) =>
+        (offset >= 0x88 && offset < 0x90 && offset != 0x89)
+        || (offset >= 0xC0 && offset < 0xE0);
+
     public byte? ReadBgTailByte(nint address, int offset)
     {
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || offset < 0xC0 || offset >= 0xE0)
+            || !ByteOffsetAllowed(offset))
             return null;
         return *((byte*)node + offset);
     }
@@ -388,9 +395,27 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     {
         var node = Resolve(address);
         if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || offset < 0xC0 || offset >= 0xE0)
+            || !ByteOffsetAllowed(offset))
             return;
         *((byte*)node + offset) = value;
+    }
+
+    /// <summary>The base Object's 64-bit flag word at 0x38 — the widest
+    /// undocumented lever the instance carries.</summary>
+    public ulong? ReadBgObjectFlags(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return null;
+        return node->ObjectFlags;
+    }
+
+    public void WriteBgObjectFlags(nint address, ulong flags)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return;
+        node->ObjectFlags = flags;
     }
 
     public bool? ReadBgNightState(nint address)

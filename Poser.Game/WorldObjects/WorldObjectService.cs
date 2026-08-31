@@ -229,11 +229,37 @@ public sealed class AdoptedWorldObject
     /// controls, and its retries must not run forever.</summary>
     internal int AnimationPauseRetries;
 
-    /// <summary>The tail byte the hunt proved gates this object's
-    /// transform motion, and the value it held — written back on
-    /// unpause and release.</summary>
-    internal int? AnimGateOffset;
-    internal byte AnimGateOriginal;
+    /// <summary>The lever the hunt proved gates this object's transform
+    /// motion (0 = object-flags bit flip, 1 = byte zeroed, 2 = draw-flag
+    /// bit flip), with the offset/mask it names and the value it held —
+    /// written back on unpause and release.</summary>
+    internal int? AnimGateKind;
+    internal int AnimGateOffset;
+    internal ulong AnimGateMask;
+    internal ulong AnimGateOriginal;
+
+    /// <summary>Live debug access to the base object's 64-bit flag word.
+    /// </summary>
+    public ulong? DebugObjectFlags
+    {
+        get => _released ? null : _owner.ReadObjectFlags(this);
+        set
+        {
+            if (!_released && value is { } stated)
+                _owner.WriteObjectFlags(this, stated);
+        }
+    }
+
+    /// <summary>Live debug access to one instance byte (the port bounds
+    /// the offsets).</summary>
+    public byte? DebugByte(int offset) =>
+        _released ? null : _owner.ReadDebugByte(this, offset);
+
+    public void SetDebugByte(int offset, byte value)
+    {
+        if (!_released)
+            _owner.WriteDebugByte(this, offset, value);
+    }
 
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
@@ -494,6 +520,29 @@ public sealed class WorldObjectService : IDisposable
     /// Stagehand's poll.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
 
+    internal ulong? ReadObjectFlags(AdoptedWorldObject handle) =>
+        _disposed || !_port.IsAlive(handle.Address)
+            ? null
+            : _port.ReadBgObjectFlags(handle.Address);
+
+    internal void WriteObjectFlags(AdoptedWorldObject handle, ulong flags)
+    {
+        if (!_disposed && _port.IsAlive(handle.Address))
+            _port.WriteBgObjectFlags(handle.Address, flags);
+    }
+
+    internal byte? ReadDebugByte(AdoptedWorldObject handle, int offset) =>
+        _disposed || !_port.IsAlive(handle.Address)
+            ? null
+            : _port.ReadBgTailByte(handle.Address, offset);
+
+    internal void WriteDebugByte(
+        AdoptedWorldObject handle, int offset, byte value)
+    {
+        if (!_disposed && _port.IsAlive(handle.Address))
+            _port.WriteBgTailByte(handle.Address, offset, value);
+    }
+
     internal bool? CanDye(AdoptedWorldObject handle) =>
         _disposed || !_port.IsAlive(handle.Address)
             ? false
@@ -522,16 +571,15 @@ public sealed class WorldObjectService : IDisposable
         // keep the byte that stops it (2026-09-01, user-directed).
         if (handle.AnimationPaused)
         {
-            if (handle.AnimGateOffset is { } known)
+            if (handle.AnimGateKind is { } kind)
             {
-                handle.AnimGateOriginal =
-                    _port.ReadBgTailByte(handle.Address, known) ?? 0;
-                _port.WriteBgTailByte(handle.Address, known, 0);
+                handle.AnimGateOriginal = ReadLever(handle, kind);
+                ApplyLever(handle, kind, paused: true);
             }
             else
             {
                 _animHunt = handle;
-                _animHuntOffset = -1;
+                _animHuntStep = -1;
                 _animHuntTicks = BaselineTicks;
                 _animHuntMotion = 0f;
                 _animHuntLast = null;
@@ -543,20 +591,48 @@ public sealed class WorldObjectService : IDisposable
         {
             if (_animHunt == handle)
                 _animHunt = null;
-            if (handle.AnimGateOffset is { } gate)
-                _port.WriteBgTailByte(
-                    handle.Address, gate, handle.AnimGateOriginal);
+            if (handle.AnimGateKind is { } gate)
+                ApplyLever(handle, gate, paused: false);
         }
+    }
+
+    private ulong ReadLever(AdoptedWorldObject handle, int kind) =>
+        kind == 0
+            ? _port.ReadBgObjectFlags(handle.Address) ?? 0
+            : _port.ReadBgTailByte(handle.Address, handle.AnimGateOffset)
+                ?? 0;
+
+    private void ApplyLever(
+        AdoptedWorldObject handle, int kind, bool paused)
+    {
+        if (kind == 0)
+        {
+            ulong current = _port.ReadBgObjectFlags(handle.Address) ?? 0;
+            _port.WriteBgObjectFlags(handle.Address, paused
+                ? current ^ handle.AnimGateMask
+                : handle.AnimGateOriginal);
+            return;
+        }
+        byte value = paused
+            ? kind == 1
+                ? (byte)0
+                : (byte)((_port.ReadBgTailByte(
+                    handle.Address, handle.AnimGateOffset) ?? 0)
+                    ^ (byte)handle.AnimGateMask)
+            : (byte)handle.AnimGateOriginal;
+        _port.WriteBgTailByte(handle.Address, handle.AnimGateOffset, value);
     }
 
     // ── The animation-gate hunt state (one at a time) ────────────────
     private AdoptedWorldObject? _animHunt;
-    private int _animHuntOffset;
+    private int _animHuntStep;
     private int _animHuntTicks;
     private float _animHuntMotion;
     private float _animHuntBaseline;
     private Transform? _animHuntLast;
-    private byte _animHuntOriginal;
+    private ulong _animHuntOriginal;
+    private readonly List<(string Label, int Kind, int Offset, ulong Mask)>
+        _animHuntSteps = new();
 
     private const int BaselineTicks = 45;
     private const int StepTicks = 45;
@@ -572,6 +648,60 @@ public sealed class WorldObjectService : IDisposable
     /// the colour intensity, and the colour.</summary>
     private static bool HuntSkips(int offset) =>
         offset is 0xCD or 0xCE or >= 0xD0 and <= 0xD3;
+
+    /// <summary>Every lever the hunt tries, widest first: all 64 object
+    /// flag bits (flipped), the draw flag byte's bits (flipped), the
+    /// spare draw bytes and the undocumented tail (zeroed). The tail
+    /// alone answered nothing — its values churn per frame, it is live
+    /// animation state, not the gate.</summary>
+    private void BuildHuntSteps()
+    {
+        _animHuntSteps.Clear();
+        for (int bit = 0; bit < 64; bit++)
+            _animHuntSteps.Add(
+                ($"object-flags bit {bit}", 0, 0, 1UL << bit));
+        for (int bit = 0; bit < 8; bit++)
+            _animHuntSteps.Add(
+                ($"draw-flags bit {bit}", 2, 0x88, 1UL << bit));
+        for (int offset = 0x8A; offset < 0x90; offset++)
+            _animHuntSteps.Add(($"byte 0x{offset:X2}", 1, offset, 0));
+        for (int offset = 0xC0; offset < 0xE0; offset++)
+            if (!HuntSkips(offset))
+                _animHuntSteps.Add(($"byte 0x{offset:X2}", 1, offset, 0));
+    }
+
+    private void ApplyHuntStep(AdoptedWorldObject target, bool restore)
+    {
+        var (_, kind, offset, mask) = _animHuntSteps[_animHuntStep];
+        switch (kind)
+        {
+            case 0:
+                if (restore)
+                    _port.WriteBgObjectFlags(
+                        target.Address, _animHuntOriginal);
+                else
+                {
+                    _animHuntOriginal =
+                        _port.ReadBgObjectFlags(target.Address) ?? 0;
+                    _port.WriteBgObjectFlags(
+                        target.Address, _animHuntOriginal ^ mask);
+                }
+                break;
+            default:
+                if (restore)
+                    _port.WriteBgTailByte(
+                        target.Address, offset, (byte)_animHuntOriginal);
+                else
+                {
+                    _animHuntOriginal =
+                        _port.ReadBgTailByte(target.Address, offset) ?? 0;
+                    _port.WriteBgTailByte(target.Address, offset, kind == 1
+                        ? (byte)0
+                        : (byte)((byte)_animHuntOriginal ^ (byte)mask));
+                }
+                break;
+        }
+    }
 
     private void RunAnimHunt()
     {
@@ -596,9 +726,8 @@ public sealed class WorldObjectService : IDisposable
         if (--_animHuntTicks > 0)
             return;
 
-        if (_animHuntOffset < 0)
+        if (_animHuntStep < 0)
         {
-            // Baseline done: only a MOVING object can answer the hunt.
             if (_animHuntMotion < MovingThreshold)
             {
                 _log.Debug(
@@ -612,7 +741,7 @@ public sealed class WorldObjectService : IDisposable
             _log.Debug(
                 $"[WorldObject] anim hunt: baseline motion "
                 + $"{_animHuntBaseline:e2}; stepping");
-            _animHuntOffset = 0xC0;
+            BuildHuntSteps();
         }
         else
         {
@@ -620,38 +749,45 @@ public sealed class WorldObjectService : IDisposable
             // the baseline over the same window.
             if (_animHuntMotion < _animHuntBaseline * 0.1f)
             {
-                // FOUND: this byte gates the motion. Keep it written —
-                // the object is paused — and remember it for unpause.
+                var (label, kind, offset, mask) =
+                    _animHuntSteps[_animHuntStep];
                 _log.Information(
-                    $"[WorldObject] anim hunt: 0x{_animHuntOffset:X2} "
-                    + $"gates the motion (was {_animHuntOriginal:x2})");
-                target.AnimGateOffset = _animHuntOffset;
+                    $"[WorldObject] anim hunt: {label} gates the motion "
+                    + $"(was 0x{_animHuntOriginal:x})");
+                target.AnimGateKind = kind;
+                target.AnimGateOffset = offset;
+                target.AnimGateMask = mask;
                 target.AnimGateOriginal = _animHuntOriginal;
                 _animHunt = null;
                 return;
             }
-            _port.WriteBgTailByte(
-                target.Address, _animHuntOffset, _animHuntOriginal);
-            _animHuntOffset++;
+            ApplyHuntStep(target, restore: true);
         }
 
-        while (_animHuntOffset < 0xE0 && (HuntSkips(_animHuntOffset)
-            || _port.ReadBgTailByte(target.Address, _animHuntOffset)
-                is null or 0))
-            _animHuntOffset++;
-        if (_animHuntOffset >= 0xE0)
+        // Advance to the next applicable lever; zeroing an already-zero
+        // byte answers nothing.
+        while (true)
         {
-            _log.Information(
-                "[WorldObject] anim hunt: no tail byte gates the motion");
-            _animHunt = null;
-            return;
+            _animHuntStep++;
+            if (_animHuntStep >= _animHuntSteps.Count)
+            {
+                _log.Information(
+                    "[WorldObject] anim hunt: no instance lever gates "
+                    + "the motion; the driver is outside the object");
+                _animHunt = null;
+                return;
+            }
+            var (_, kind, offset, _) = _animHuntSteps[_animHuntStep];
+            if (kind == 1 && (_port.ReadBgTailByte(target.Address, offset)
+                ?? 0) == 0)
+                continue;
+            break;
         }
-        _animHuntOriginal =
-            _port.ReadBgTailByte(target.Address, _animHuntOffset) ?? 0;
-        _port.WriteBgTailByte(target.Address, _animHuntOffset, 0);
+        ApplyHuntStep(target, restore: false);
+        var step = _animHuntSteps[_animHuntStep];
         _log.Debug(
-            $"[WorldObject] anim hunt: trying 0x{_animHuntOffset:X2} "
-            + $"({_animHuntOriginal:x2} -> 00)");
+            $"[WorldObject] anim hunt: trying {step.Label} "
+            + $"({_animHuntStep + 1}/{_animHuntSteps.Count})");
         _animHuntTicks = StepTicks;
         _animHuntMotion = 0f;
     }
@@ -1060,9 +1196,8 @@ public sealed class WorldObjectService : IDisposable
                 if (handle.AnimationPaused)
                     _port.WriteBgAnimationSpeed(handle.Address, 1f);
                 if (handle.AnimationPaused
-                    && handle.AnimGateOffset is { } animGate)
-                    _port.WriteBgTailByte(
-                        handle.Address, animGate, handle.AnimGateOriginal);
+                    && handle.AnimGateKind is { } animGate)
+                    ApplyLever(handle, animGate, paused: false);
                 // Written BESIDE the flags rather than left to them: whether
                 // the drawn bit lives inside that byte is the game's business,
                 // and this contract may not rest on the answer.

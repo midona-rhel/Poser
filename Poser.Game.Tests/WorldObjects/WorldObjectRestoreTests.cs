@@ -135,6 +135,8 @@ private sealed class World
             true;
         public byte? ReadBgTailByte(nint address, int offset) => null;
         public void WriteBgTailByte(nint address, int offset, byte value) { }
+        public ulong? ReadBgObjectFlags(nint address) => null;
+        public void WriteBgObjectFlags(nint address, ulong flags) { }
         public void WriteBgNightState(nint address, bool night) { }
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address) { }

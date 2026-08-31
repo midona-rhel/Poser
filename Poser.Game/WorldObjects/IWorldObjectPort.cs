@@ -176,6 +176,10 @@ public interface IWorldObjectPort
 
     void WriteBgTailByte(nint address, int offset, byte value);
 
+    ulong? ReadBgObjectFlags(nint address);
+
+    void WriteBgObjectFlags(nint address, ulong flags);
+
     void WriteBgNightState(nint address, bool night);
 
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a

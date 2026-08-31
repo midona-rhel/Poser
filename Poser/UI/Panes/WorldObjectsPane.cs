@@ -1,3 +1,4 @@
+using System.Globalization;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -90,6 +91,15 @@ public sealed class WorldObjectsPane
                 next => _openObject = next,
                 form => ObjectRows(form, worldObject),
                 divider: false);
+
+            // The instance's raw levers, for the pause hunt and whatever
+            // the next hunt is: every bit writable live, nothing hidden.
+            if (!worldObject.IsVfx)
+                page.Section(
+                    "Debug",
+                    _openDebug,
+                    next => _openDebug = next,
+                    form => DebugRows(form, worldObject));
         });
 
         // Pumped after the page: the surface a row opened has to outlive
@@ -137,6 +147,74 @@ public sealed class WorldObjectsPane
                     : TablerIcon.Plant,
                 Badge = static asset => asset.Context,
             });
+    }
+
+    private bool _openDebug;
+
+    /// <summary>The base object's 64 flag bits and the draw-flag byte's
+    /// eight, each a live checkbox, plus mono readouts — the manual twin
+    /// of the automated gate hunt.</summary>
+    private void DebugRows(
+        Crystarium.FormScope form, AdoptedWorldObject worldObject)
+    {
+        ulong flags = worldObject.DebugObjectFlags ?? 0;
+        form.ReadOnly(
+            "Object flags",
+            flags.ToString("x16", CultureInfo.InvariantCulture),
+            mono: true);
+        for (int row = 0; row < 8; row++)
+        {
+            int start = row * 8;
+            var items = new Crystarium.CheckItem[8];
+            for (int i = 0; i < 8; i++)
+            {
+                int bit = start + i;
+                items[i] = new Crystarium.CheckItem(
+                    bit.ToString(CultureInfo.InvariantCulture),
+                    (flags >> bit & 1UL) != 0,
+                    _ => _pending = () =>
+                    {
+                        if (worldObject.DebugObjectFlags is { } current)
+                            worldObject.DebugObjectFlags =
+                                current ^ (1UL << bit);
+                    },
+                    null);
+            }
+            form.Checkboxes(
+                start.ToString(CultureInfo.InvariantCulture) + "-"
+                    + (start + 7).ToString(CultureInfo.InvariantCulture),
+                false,
+                false,
+                44f,
+                items);
+        }
+        byte draw = worldObject.DebugByte(0x88) ?? 0;
+        var drawItems = new Crystarium.CheckItem[8];
+        for (int i = 0; i < 8; i++)
+        {
+            int bit = i;
+            drawItems[i] = new Crystarium.CheckItem(
+                bit.ToString(CultureInfo.InvariantCulture),
+                (draw >> bit & 1) != 0,
+                _ => _pending = () =>
+                {
+                    if (worldObject.DebugByte(0x88) is { } current)
+                        worldObject.SetDebugByte(
+                            0x88, (byte)(current ^ (1 << bit)));
+                },
+                null);
+        }
+        form.Checkboxes("Draw flags", false, false, 44f, drawItems);
+
+        var tail = new System.Text.StringBuilder(96);
+        for (int offset = 0xC0; offset < 0xE0; offset++)
+        {
+            if (offset > 0xC0 && offset % 8 == 0)
+                tail.Append(' ');
+            tail.Append((worldObject.DebugByte(offset) ?? 0)
+                .ToString("x2", CultureInfo.InvariantCulture));
+        }
+        form.ReadOnly("Tail C0-DF", tail.ToString(), mono: true);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
