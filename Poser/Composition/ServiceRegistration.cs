@@ -342,7 +342,12 @@ internal static class ServiceRegistration
             var config = sp.GetRequiredService<ConfigurationService>();
             // Create every configured library root before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
-            return new Library.PoseLibraryService(config);
+            var library = new Library.PoseLibraryService(config);
+            // ONE scan at startup; after it, Poser knows what it saves —
+            // every entry save requests its own rescan, and the refresh
+            // button covers files changed outside Poser.
+            library.RequestScan();
+            return library;
         });
         return services;
     }

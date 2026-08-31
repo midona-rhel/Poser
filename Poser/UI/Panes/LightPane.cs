@@ -117,6 +117,8 @@ public sealed class LightPane
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
+    private readonly ScenePane _scenePane;
+
     public LightPane(
         SceneSession scene,
         StableBindingRegistry bindings,
@@ -130,12 +132,14 @@ public sealed class LightPane
         ICameraService camera,
         ITextureProvider textures,
         UserNotices notices,
-        global::Poser.UI.Controls.EntityNameModal names)
+        global::Poser.UI.Controls.EntityNameModal names,
+        ScenePane scenePane)
     {
         _names = names;
         _notices = notices;
         _scene = scene;
         _bindings = bindings;
+        _scenePane = scenePane;
         _lighting = lighting;
         _lifecycle = lifecycle;
         _lightFiles = lightFiles;
@@ -214,25 +218,6 @@ public sealed class LightPane
             return null;
         return _lightFiles.ImportLight(
             path, mode, position, yaw, out refusal);
-    }
-
-    /// <summary>The library tile's import: placed by the shared mode,
-    /// recorded for undo, selected once bound. Outcomes are posted here so
-    /// every caller reads the same.</summary>
-    public bool ImportFromLibrary(string path, ObjectPlacementMode mode)
-    {
-        string name = System.IO.Path.GetFileNameWithoutExtension(path);
-        var imported = _lifecycle.RecordSpawnedLight(
-            $"Add light '{name}' from the library",
-            ImportPlaced(path, mode, out var refusal));
-        if (imported == null)
-        {
-            _notices.Refused(refusal ?? "The light file could not be read.");
-            return false;
-        }
-        _pendingSelect = imported;
-        _notices.Done($"Spawned light from '{name}'.");
-        return true;
     }
 
     /// <summary>Opens the load dialog from outside the pane — the add-entity
@@ -717,33 +702,16 @@ public sealed class LightPane
             actions.Button("Save to library",
                 () => _names.Open(
                     "Save light to library", light.Name,
-                    name => SaveToLibrary(light, name)),
+                    name =>
+                    {
+                        if (_bindings.GetLightId(light) is { } entryId)
+                            _scenePane.SaveLightEntry(
+                                entryId.LogicalId, name);
+                    }),
                 help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");
         });
-    }
-
-    /// <summary>One click, no dialog: the light lands in the objects home,
-    /// which is exactly what the library's Objects tab scans.</summary>
-    public void SaveToLibrary(ILight light, string? name = null)
-    {
-        if (!light.IsValid)
-        {
-            _notices.Refused("The light no longer exists.");
-            return;
-        }
-        var root = Config.ConfigurationService.Instance.Config.Library
-            .EnsureObjectsRootExists();
-        var entryName = string.IsNullOrWhiteSpace(name) ? light.Name : name!;
-        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
-            root, entryName, ".xivl");
-        if (_lightFiles.ExportLight(
-                light, path,
-                _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
-            _notices.Done($"Saved '{entryName}' to the library.");
-        else
-            _notices.Failed("The light file could not be written.");
     }
 
     /// <summary>Public for the sidebar context menu: same dialog, same pump.

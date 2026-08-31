@@ -966,46 +966,13 @@ public sealed class PoseLibraryPane
         {
             switch (kind)
             {
-                case PoseLibraryEntryKind.Light:
-                    if (LightFile.Load(path) is { } light)
-                    {
-                        _detailsRows.Add(("Kind", light.Kind.ToString()));
-                        _detailsRows.Add(("Intensity", light.Intensity
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("Range", light.Range
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("Anchors", Anchors(
-                            light.CameraAnchor, light.ActorAnchor)));
-                        _detailsColor = light.Color;
-                        _detailsHasCameraAnchor = light.CameraAnchor is not null;
-                        _detailsHasActorAnchor = light.ActorAnchor is not null;
-                    }
-                    break;
-                case PoseLibraryEntryKind.Camera:
-                    if (CameraFile.Load(path) is { } camera)
-                    {
-                        _detailsRows.Add(("Kind", camera.Kind.ToString()));
-                        _detailsRows.Add(("Zoom", camera.Zoom
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("FoV", camera.FoV
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        // Only a FREE camera places relatively at all.
-                        bool freeCamera = camera.Kind ==
-                            global::Poser.Domain.Scene.CameraKind.Free;
-                        _detailsHasCameraAnchor =
-                            freeCamera && camera.CameraAnchor is not null;
-                        _detailsHasActorAnchor =
-                            freeCamera && camera.ActorAnchor is not null;
-                        if (freeCamera)
-                            _detailsRows.Add(("Anchors", Anchors(
-                                camera.CameraAnchor, camera.ActorAnchor)));
-                    }
-                    break;
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
                 case PoseLibraryEntryKind.Group:
                 case PoseLibraryEntryKind.WorldObject:
+                case PoseLibraryEntryKind.Light:
+                case PoseLibraryEntryKind.Camera:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
@@ -1108,12 +1075,14 @@ public sealed class PoseLibraryPane
         var name = _vm.Tiles[index].Label;
         switch (_tileKinds[index])
         {
-            // A group entry is the actor entry's plural: the same container,
-            // the same placement-anchored load, several entities at once —
-            // and a world-object entry spawns through the same load.
+            // ONE pipeline: every container entry — actor, group, object,
+            // light, camera — spawns through the same placement-anchored
+            // load.
             case PoseLibraryEntryKind.Actor:
             case PoseLibraryEntryKind.Group:
             case PoseLibraryEntryKind.WorldObject:
+            case PoseLibraryEntryKind.Light:
+            case PoseLibraryEntryKind.Camera:
                 var actorMode = EffectiveMode();
                 if (!_anchors.TryCurrentFor(
                         actorMode, out var anchorPosition,
@@ -1164,15 +1133,6 @@ public sealed class PoseLibraryPane
                     _notices.Failed(
                         applied.Detail ??
                         "The environment could not be applied.");
-                break;
-            case PoseLibraryEntryKind.Light:
-                // The light pane owns the whole placed import: the undo
-                // recording and the outcome notices; the mode is the one
-                // the dropdown showed for THIS entry.
-                _lightPane.ImportFromLibrary(path, EffectiveMode());
-                break;
-            case PoseLibraryEntryKind.Camera:
-                _cameraPane.ImportFromLibrary(path, EffectiveMode());
                 break;
         }
     }

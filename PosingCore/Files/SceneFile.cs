@@ -84,6 +84,19 @@ public class SceneFile
     /// </summary>
     public const string WorldObjectEntryExtension = ".xivw";
 
+    /// <summary>
+    /// A light library entry. ONE pipeline for every entry (ruled
+    /// 2026-08-31): the scene container restricted to one light, saved
+    /// through the workflow and restored through the load — the pane-direct
+    /// LightFile write this replaced left old-format entries behind, which
+    /// read as unreadable and are re-saved.
+    /// </summary>
+    public const string LightEntryExtension = ".xivl";
+
+    /// <summary>The camera's twin of <see cref="LightEntryExtension"/>.
+    /// </summary>
+    public const string CameraEntryExtension = ".xivc";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 

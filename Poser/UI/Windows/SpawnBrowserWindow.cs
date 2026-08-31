@@ -233,11 +233,8 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
-        // The library scans ON REQUEST, and only the library window used
-        // to ask — a save made with the library closed was invisible here
-        // forever. The portal asks too; the snapshot lands asynchronously
-        // and the revision check in Draw re-lists the moment it does.
-        _library.RequestScan();
+        // No rescan here: the index scans once at startup and every save
+        // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
         RefreshWorldLights();
         // The query is a DRAFT: it means nothing outside the open surface, so
@@ -484,26 +481,45 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
-        // The SAVED objects close the list: every .xivw the library holds,
-        // spawnable from here by name — the whole point of saving one.
+        // The SAVED entries close the list: everything the library holds
+        // that can come back into the scene — actors, groups, objects,
+        // lights, cameras, overlays — spawnable from here by the name it
+        // was saved under. That is the point of saving: press plus and
+        // search anything you kept.
         var snapshot = _library.Snapshot;
         _libraryRevision = snapshot.Revision;
         _savedObjects.Clear();
         for (int i = 0; i < snapshot.Entries.Count; i++)
         {
             var entry = snapshot.Entries[i];
-            if (entry.Kind != global::Poser.Library.PoseLibraryEntryKind.WorldObject)
+            (TablerIcon glyph, SpawnBrowserTab tab)? seat = entry.Kind switch
+            {
+                global::Poser.Library.PoseLibraryEntryKind.Actor =>
+                    (TablerIcon.User, SpawnBrowserTab.Actors),
+                global::Poser.Library.PoseLibraryEntryKind.Group =>
+                    (TablerIcon.Folder, SpawnBrowserTab.Actors),
+                global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
+                    (TablerIcon.Square, SpawnBrowserTab.Props),
+                global::Poser.Library.PoseLibraryEntryKind.Light =>
+                    (TablerIcon.Bulb, SpawnBrowserTab.Lights),
+                global::Poser.Library.PoseLibraryEntryKind.Camera =>
+                    (TablerIcon.Camera, SpawnBrowserTab.Cameras),
+                global::Poser.Library.PoseLibraryEntryKind.Overlay =>
+                    (TablerIcon.Message, SpawnBrowserTab.Overlays),
+                _ => null,
+            };
+            if (seat is not { } placed)
                 continue;
-            _savedObjects.Add((entry.Name, entry.FilePath));
+            _savedObjects.Add((entry.Name, entry.FilePath, entry.Kind));
             rows.Add(new SpawnBrowserRow(
                 "##spawn-saved-" + i.ToString(CultureInfo.InvariantCulture),
                 entry.Name,
                 entry.NameLower,
-                TablerIcon.Square,
+                placed.glyph,
                 0u,
                 "Saved",
                 false));
-            _rowTabs.Add(SpawnBrowserTab.Props);
+            _rowTabs.Add(placed.tab);
         }
 
         _refilter = true;
@@ -517,19 +533,46 @@ public sealed class SpawnBrowserWindow : Window
     private readonly Game.Scene.SceneWorkflow _scenes;
     private readonly Game.Scene.PlacementAnchorSource _anchors;
 
-    /// <summary>Saved-object entries (.xivw) the row list carries after the
-    /// prop models, parallel by index. The library revision the list was
-    /// built from gates the rebuild: a new save re-lists on the next
-    /// open.</summary>
-    private readonly List<(string Label, string Path)> _savedObjects = new();
+    /// <summary>Every SAVED library entry the row list carries after the
+    /// prop models, parallel by index — actors, groups, objects, lights,
+    /// cameras and overlays: press plus, search anything you saved. The
+    /// library revision gates the rebuild.</summary>
+    private readonly List<(
+        string Label,
+        string Path,
+        global::Poser.Library.PoseLibraryEntryKind Kind)> _savedObjects = new();
     private int _propEntryCount;
     private int _libraryRevision = -1;
 
-    /// <summary>Spawns one saved object where the player stands, through
-    /// the same load every library entry uses. No anchor (no local player)
+    /// <summary>Spawns one saved entry where the player stands, each kind
+    /// through the same route the library's own activation uses. No anchor
     /// falls back to the entry's saved placement.</summary>
-    private void SpawnSavedObject((string Label, string Path) saved)
+    private void SpawnSavedObject(
+        (string Label,
+         string Path,
+         global::Poser.Library.PoseLibraryEntryKind Kind) saved)
     {
+        switch (saved.Kind)
+        {
+            case global::Poser.Library.PoseLibraryEntryKind.Overlay:
+                // Screen-space: placement modes do not apply; the stored
+                // centre-relative position re-attaches inside the load.
+                var overlayLoad = _scenes.BeginLoad(
+                    saved.Path,
+                    new Game.Scene.SceneLoadOptions
+                    {
+                        IncludeActors = false,
+                        IncludeProps = false,
+                        IncludeLights = false,
+                        IncludeCameras = false,
+                        IncludeEnvironment = false,
+                    });
+                if (!overlayLoad.Success)
+                    _notices.Failed(
+                        overlayLoad.Detail
+                        ?? $"'{saved.Label}' could not be staged.");
+                return;
+        }
         var options = new Game.Scene.SceneLoadOptions();
         if (_anchors.TryCurrentFor(
                 global::Poser.Files.ObjectPlacementMode.RelativeToSelectedActor,

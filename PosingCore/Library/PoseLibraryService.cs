@@ -495,7 +495,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
             or PoseLibraryEntryKind.Environment
             or PoseLibraryEntryKind.Overlay
             or PoseLibraryEntryKind.Group
-            or PoseLibraryEntryKind.WorldObject)
+            or PoseLibraryEntryKind.WorldObject
+            or PoseLibraryEntryKind.Light
+            or PoseLibraryEntryKind.Camera)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)

@@ -81,6 +81,31 @@ public sealed record SceneSaveOptions
     /// spawnable copy on disk.</summary>
     public bool WorldObjectsAsSpawned { get; init; }
 
+    /// <summary>The light-entry save: one light, nothing else — the same
+    /// container and key filter every entry uses.</summary>
+    public static SceneSaveOptions LightEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
+    /// <summary>The camera-entry save: one camera, nothing else.</summary>
+    public static SceneSaveOptions CameraEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
     /// <summary>The world-object-entry save: one object as a spawnable
     /// copy — path and placement, no map identity to match. Overlays stay
     /// INCLUDED even though none survive the key prune: the save policy

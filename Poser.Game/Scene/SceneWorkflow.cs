@@ -126,28 +126,37 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         Poser.Application.Scene.SceneGroups sceneGroups,
+        Poser.Library.IPoseLibraryService library,
         Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups)
+            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups,
+            library)
     {
     }
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
         Dalamud.Plugin.Services.IPluginLog? log = null,
-        Poser.Application.Scene.SceneGroups? groups = null)
+        Poser.Application.Scene.SceneGroups? groups = null,
+        Poser.Library.IPoseLibraryService? library = null)
     {
         _runtime = runtime;
         _log = log;
         _groups = groups;
+        _library = library;
     }
 
     /// <summary>The sidebar's structure store — null only under the test
     /// runtime, where saves simply carry no structure.</summary>
     private readonly Poser.Application.Scene.SceneGroups? _groups;
+
+    /// <summary>The library index — a completed save tells it, so a fresh
+    /// entry lists without anyone rescanning by hand. Null under the test
+    /// runtime.</summary>
+    private readonly Poser.Library.IPoseLibraryService? _library;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -512,8 +521,8 @@ public sealed class SceneWorkflow : IDisposable
                     + (scene.WorldObjects?.Count ?? 0) == 0)
                 {
                     Finish(false,
-                        "None of the group's members were in the capture; "
-                        + "they may have just been removed. Nothing was "
+                        "Nothing the entry names was in the capture; it "
+                        + "may have just been removed. Nothing was "
                         + "saved.");
                     return;
                 }
@@ -625,6 +634,9 @@ public sealed class SceneWorkflow : IDisposable
             }
 
             Finish(true, summary, notes);
+            // The file exists NOW: tell the index, so the entry lists in
+            // the library and the portal without a hand-driven refresh.
+            _library?.RequestScan();
         }
         catch (Exception ex)
         {

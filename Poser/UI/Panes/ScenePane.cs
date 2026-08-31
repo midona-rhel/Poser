@@ -204,6 +204,39 @@ public sealed class ScenePane
         return result.Success;
     }
 
+    /// <summary>The light menus' "Save to library": one light through the
+    /// SAME workflow pipeline as every entry (ruled 2026-08-31 — the
+    /// pane-direct LightFile write built legacy).</summary>
+    public bool SaveLightEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.LightEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.LightEntry(logicalId));
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The light could not be saved to the library.");
+        return result.Success;
+    }
+
+    /// <summary>The camera menus' "Save to library" — the light save's
+    /// twin.</summary>
+    public bool SaveCameraEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.CameraEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.CameraEntry(logicalId));
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The camera could not be saved to the library.");
+        return result.Success;
+    }
+
     /// <summary>The world-object menus' "Save to library": the object as
     /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
     public bool SaveWorldObjectEntry(Guid logicalId, string displayName)

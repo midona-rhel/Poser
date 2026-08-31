@@ -5126,7 +5126,7 @@ public class MainWindow : Window
             // modal renames use, with the light's name as the start.
             () => OpenEntityRename(
                 "Save light to library", light.Name,
-                name => _lightPane.SaveToLibrary(light, name)),
+                name => _scenePane.SaveLightEntry(lightId.LogicalId, name)),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -5290,7 +5290,7 @@ public class MainWindow : Window
             () => _cameraPane.OpenSave(camera),
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
-                name => _cameraPane.SaveToLibrary(camera, name)),
+                name => _scenePane.SaveCameraEntry(cameraId.LogicalId, name)),
             () => _cameraPane.ResetCameraTransform(cameraId),
             () => camera.ResetProperties(),
         };
