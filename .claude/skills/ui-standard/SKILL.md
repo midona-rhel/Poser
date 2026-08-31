@@ -85,7 +85,11 @@ Windows each have ONE job. No mode may change what a window IS.
   kind draws dim but stays CLICKABLE — the same press re-admits it
   (an inert off-state shipped and was reversed the same day) — and
   the layers-union button (Tabler's real merged-silhouette glyph,
-  not layers-intersect) leading the cluster re-admits everything.
+  not layers-intersect) leading the cluster is a TRUE toggle: press
+  re-admits everything, press again while all-on clears everything.
+  Toggle order is the SPAWN PORTAL's tab order — actors, lights,
+  cameras, props, objects, overlays — with the kinds the portal has
+  no tab for (environments, groups) last.
   There is NO reset button (all-on IS the neutral state; a reset
   shipped and was rescinded the same day). The right column's
   metadata rails render property VALUES in the mono family

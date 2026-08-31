@@ -36,8 +36,10 @@ public sealed class LibraryWindow : Window
     private static readonly string[] StripLabels =
         ["Poses", "Auto-saves", "Objects", "MCDF", "Scenes"];
 
-    /// <summary>The Objects tab's kind toggles, in the sidebar's kind
-    /// order, each wearing its kind's own mark.</summary>
+    /// <summary>The Objects tab's kind toggles, in the SPAWN PORTAL's
+    /// tab order — actors, lights, cameras, props, objects, overlays —
+    /// with the kinds the portal has no tab for (environments, groups)
+    /// last (ruled 2026-09-01). Each wears its kind's own mark.</summary>
     private static readonly
         (global::Poser.Library.PoseLibraryEntryKind Kind, TablerIcon Icon,
             string Name)[]
@@ -45,20 +47,20 @@ public sealed class LibraryWindow : Window
     [
         (global::Poser.Library.PoseLibraryEntryKind.Actor, TablerIcon.User,
             "Actors"),
-        (global::Poser.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
-            "Groups"),
-        (global::Poser.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
-            "Props"),
-        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
-            "Objects"),
         (global::Poser.Library.PoseLibraryEntryKind.Light, TablerIcon.Bulb,
             "Lights"),
         (global::Poser.Library.PoseLibraryEntryKind.Camera, TablerIcon.Camera,
             "Cameras"),
+        (global::Poser.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
+            "Props"),
+        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
+            "Objects"),
         (global::Poser.Library.PoseLibraryEntryKind.Overlay, TablerIcon.Message,
             "Overlays"),
         (global::Poser.Library.PoseLibraryEntryKind.Environment, TablerIcon.Sun,
             "Environments"),
+        (global::Poser.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
+            "Groups"),
     ];
 
     /// <summary>The preview column, logical: the old 280 rail less a
@@ -364,11 +366,13 @@ public sealed class LibraryWindow : Window
             foreach (var (kind, _, _) in KindToggles)
                 allActive &= pane.KindFilterContains(kind);
 
+            // The union is a true toggle: all on, or — pressed again while
+            // everything is on — all off (ruled 2026-09-01).
             ImGui.SetCursorScreenPos(seat);
             Crystarium.TemporaryIconToggle(
                 TablerIcon.LayersUnion,
                 allActive,
-                pane.SetKindFilterAll,
+                allActive ? pane.SetKindFilterNone : pane.SetKindFilterAll,
                 help: "Show every kind",
                 id: "##library-kind-all");
             seat.X += buttonSide + gap;

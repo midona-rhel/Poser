@@ -193,6 +193,16 @@ public sealed class PoseLibraryPane
         RebuildAfterFilterChange();
     }
 
+    /// <summary>The union toggle's off half: nothing admitted, so the
+    /// tab shows nothing until a kind comes back.</summary>
+    public void SetKindFilterNone()
+    {
+        if (_kindFilter.Count == 0)
+            return;
+        _kindFilter.Clear();
+        RebuildAfterFilterChange();
+    }
+
     /// <summary>The union toggle: every kind admitted again — this IS
     /// the neutral state, so there is no separate reset.</summary>
     public void SetKindFilterAll()
