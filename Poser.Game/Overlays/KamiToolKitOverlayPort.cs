@@ -235,8 +235,11 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
             {
                 _fontAtlas = _plugin.UiBuilder.CreateFontAtlas(
                     FontAtlasAutoRebuildMode.Async);
+                // Axis 36 is the family's largest real rasterization; the
+                // seats render supersampled (up to 2×32), so the atlas
+                // glyphs must start big and scale DOWN.
                 _axisFont = _fontAtlas.NewGameFontHandle(
-                    new GameFontStyle(GameFontFamily.Axis, 18f));
+                    new GameFontStyle(GameFontFamily.Axis, 36f));
             }
             // The atlas builds asynchronously: until it lands the seat
             // simply keeps what it last showed and asks again next frame.

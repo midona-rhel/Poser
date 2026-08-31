@@ -132,8 +132,18 @@ internal readonly record struct TextRender(
 /// replaces, and Dispose the last).</summary>
 internal sealed class TextSeatNode : ImGuiImageNode
 {
+    /// <summary>Rendered at twice the stated size and shown at half — the
+    /// game's own _hr1 two-times convention. A texture rasterized at the
+    /// logical size upscales on any HUD scale and reads soft.</summary>
+    private const float Supersample = 2f;
+
     private TextRender _rendered;
     private bool _any;
+
+    public TextSeatNode()
+    {
+        WrapMode = WrapMode.Stretch;
+    }
 
     /// <summary>Renders and shows the request; empty text hides the seat.
     /// </summary>
@@ -149,14 +159,18 @@ internal sealed class TextSeatNode : ImGuiImageNode
             return;
         if (_any && _rendered.Equals(request))
             return;
-        if (render(request) is not { } made)
+        if (render(request with
+            {
+                FontSize = request.FontSize * Supersample,
+                WrapWidth = request.WrapWidth * Supersample,
+            }) is not { } made)
             return;
         _rendered = request;
         _any = true;
         var extent = new Vector2(made.Width, made.Height);
         LoadTexture(made);
         TextureSize = extent;
-        Size = extent;
+        Size = extent / Supersample;
     }
 }
 
