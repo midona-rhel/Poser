@@ -344,7 +344,8 @@ internal static class SvgIconTextureCache
             QueueStartup(
                 Tabler.Get(name), shellSide, theme.Text, false, null,
                 1f, Vector4.Zero, styleAlpha);
-        foreach (var name in new[] { "search", "selector" })
+        foreach (var name in new[]
+            { "search", "selector", "crosshair", "eye" })
             QueueStartup(
                 Tabler.Get(name), 14f * scale, theme.Text, false, null,
                 1f, Vector4.Zero, styleAlpha);

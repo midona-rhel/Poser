@@ -611,7 +611,11 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
-            var written = _runtime.WriteScene(scene, path);
+            // A .json path exports a Stagehand Stage; what a Stage cannot
+            // carry lands in the notes.
+            var written = Poser.Files.StageFile.IsStagePath(path)
+                ? Poser.Files.StageFile.Write(scene, path, notes)
+                : _runtime.WriteScene(scene, path);
             // The writer has streamed every payload into the container, so the
             // packages sealing created are the caller's to drop now — and only
             // now: deleting them earlier would delete the bytes being saved.
@@ -736,7 +740,11 @@ public sealed class SceneWorkflow : IDisposable
             // Phase 1 — read and validate the WHOLE document off-thread.
             // Nothing native has happened yet; a corrupt, oversized, or
             // future file is a pure typed refusal.
-            var read = _runtime.ReadScene(path);
+            // A .json path is a Stagehand Stage: the read translates it
+            // into a scene document and the rest of the load never knows.
+            var read = Poser.Files.StageFile.IsStagePath(path)
+                ? Poser.Files.StageFile.Read(path, notes)
+                : _runtime.ReadScene(path);
             if (!read.Succeeded || read.Scene is not { } scene)
             {
                 // Nothing native has run, so there is nothing to roll back:

@@ -47,6 +47,14 @@ public sealed class ScenePane
     private readonly Crystarium.FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
 
+    // The Stagehand seam: a Stage is a plain .json in Documents\Stages,
+    // and both dialogs open there so the two plugins read one folder.
+    private readonly Crystarium.FileDialog _stageSaveBrowser =
+        new("Export Stage", new[] { global::Poser.Files.StageFile.Extension },
+            isSaveMode: true);
+    private readonly Crystarium.FileDialog _stageLoadBrowser =
+        new("Import Stage", new[] { global::Poser.Files.StageFile.Extension });
+
     /// <summary>ONE dialog serves every "from file" row in the portal: an
     /// entry's kind lives in its extension, and the load takes any of
     /// them through the same placement-anchored BeginLoad.</summary>
@@ -516,6 +524,8 @@ public sealed class ScenePane
         DrawLibrarySaveModal();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+        _stageSaveBrowser.Draw();
+        _stageLoadBrowser.Draw();
         _entryBrowser.Draw();
 
         // The notification is pumped HERE, not from the page, for the same
@@ -610,6 +620,24 @@ public sealed class ScenePane
                         help: busy ? BusyHelp
                             : snapshots ? "Automatic snapshots"
                             : "None taken yet");
+                });
+                // The Stagehand seam: their Stage .json, both ways. Objects,
+                // props, effects and lights travel; the receipt names what
+                // cannot.
+                form.Actions("Stage", actions =>
+                {
+                    actions.Button(
+                        "Export…",
+                        OpenStageExport,
+                        disabled: busy,
+                        help: busy ? BusyHelp
+                            : "Write a Stagehand Stage file");
+                    actions.Button(
+                        "Import…",
+                        OpenStageImport,
+                        disabled: busy,
+                        help: busy ? BusyHelp
+                            : "Load a Stagehand Stage file");
                 });
             },
             divider: false);
@@ -1236,6 +1264,43 @@ public sealed class ScenePane
         _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         BeginLoad(path);
     });
+
+    /// <summary>Both Stage dialogs start in Stagehand's own folder, so the
+    /// two plugins read and write one place. It is created on export so the
+    /// dialog has somewhere to land.</summary>
+    private static string StageFolder()
+    {
+        string folder = global::Poser.Files.StageFile.DefaultFolder;
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception)
+        {
+            folder = Environment.GetFolderPath(
+                Environment.SpecialFolder.MyDocuments);
+        }
+        return folder;
+    }
+
+    private void OpenStageExport() => _stageSaveBrowser.Open(
+        StageFolder(), path =>
+    {
+        if (!path.EndsWith(
+                global::Poser.Files.StageFile.Extension,
+                StringComparison.OrdinalIgnoreCase))
+            path += global::Poser.Files.StageFile.Extension;
+        var started = _workflow.BeginSave(
+            path,
+            string.IsNullOrWhiteSpace(_description) ? null : _description,
+            SaveOptions with { IncludeModdedAppearance = false });
+        if (!started.Success)
+            _notices.Failed(
+                started.Detail ?? "The Stage could not be exported.");
+    });
+
+    private void OpenStageImport() =>
+        _stageLoadBrowser.Open(StageFolder(), BeginLoad);
 
     private void OpenSnapshots() =>
         _snapshotBrowser.Open(_snapshots.RootDirectory, BeginLoad);
