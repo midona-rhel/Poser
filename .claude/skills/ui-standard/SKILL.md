@@ -469,7 +469,7 @@ navigation, not a scrollbar — may shift anything.
   Orthographic|Ortho zoom, Follow|Lock, Freeze water|Restore water,
   Sections|File, and the overlay pages (2026-08-31):
   Visible|Drag on screen, Scale|Opacity, Channel|Tint,
-  Tail|Tail position, Panel|Advance mark. Pairing is a
+  Tail|Tail position, Panel|Advance mark, Reads as|Icon. Pairing is a
   deliberate per-section choice at the design width, not a responsive
   behavior; selector rows and field rows keep full rows. Pair flow is
   applied by READING every row it will wrap — a Cells row is already
