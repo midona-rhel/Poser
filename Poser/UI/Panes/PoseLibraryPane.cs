@@ -177,6 +177,48 @@ public sealed class PoseLibraryPane
     /// entry starts on the poses.</summary>
     private LibraryType _type;
 
+    /// <summary>The Objects tab's KIND filter: empty admits every kind;
+    /// toggled kinds restrict the tiles to themselves. Multi-select by
+    /// design — the toggles are the strip band's icon buttons.</summary>
+    private readonly HashSet<PoseLibraryEntryKind> _kindFilter = new();
+
+    public bool KindFilterContains(PoseLibraryEntryKind kind) =>
+        _kindFilter.Contains(kind);
+
+    public void ToggleKindFilter(PoseLibraryEntryKind kind)
+    {
+        if (!_kindFilter.Add(kind))
+            _kindFilter.Remove(kind);
+        RebuildAfterFilterChange();
+    }
+
+    /// <summary>The portal's from-library rows: exactly one kind shown,
+    /// or none for the whole tab.</summary>
+    public void SetOnlyKindFilter(PoseLibraryEntryKind? kind)
+    {
+        _kindFilter.Clear();
+        if (kind is { } stated)
+            _kindFilter.Add(stated);
+        RebuildAfterFilterChange();
+    }
+
+    private void RebuildAfterFilterChange()
+    {
+        _lastAppliedTile = -1;
+        _vm.Selected = -1;
+        _seenRevision = -1;
+        _autoDirty = true;
+        _refilter = true;
+    }
+
+    /// <summary>Whether the kind passes the Objects tab's toggle filter.
+    /// Every other tab is one kind and ignores it.</summary>
+    private bool KindAdmitted(
+        PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
+        primary != PoseLibraryEntryKind.Actor
+        || _kindFilter.Count == 0
+        || _kindFilter.Contains(entryKind);
+
     /// <summary>The action row's import components, one set per tab. SESSION
     /// state like the FILES section's own toggles. The poses tab starts
     /// rotation-only — the pose import default; the auto-save tab starts with
@@ -1832,7 +1874,8 @@ public sealed class PoseLibraryPane
         int favored = 0;
         for (int i = 0; i < entries.Count; i++)
         {
-            if (!InTab(entries[i].Kind, kind))
+            if (!InTab(entries[i].Kind, kind)
+                || !KindAdmitted(entries[i].Kind, kind))
                 continue;
             total++;
             if (favorites.Contains(entries[i].FilePath))
@@ -2453,10 +2496,11 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Prop
             : entryKind == primary;
 
-    private static IEnumerable<PoseLibraryEntry> Ordered(
+    private IEnumerable<PoseLibraryEntry> Ordered(
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
     {
-        var matching = entries.Where(entry => InTab(entry.Kind, kind));
+        var matching = entries.Where(entry =>
+            InTab(entry.Kind, kind) && KindAdmitted(entry.Kind, kind));
         return kind == PoseLibraryEntryKind.Scene
             ? matching
                 .OrderByDescending(entry => SceneDay(entry).Date)

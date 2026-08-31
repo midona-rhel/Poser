@@ -69,9 +69,11 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowCameraFromFile = 29;
     private const int ActionRows = 30;
 
-    /// <summary>Opens the library window on its Objects tab — the
-    /// from-library rows' one act, wired by the window set.</summary>
-    public Action? OnLibraryRequested;
+    /// <summary>Opens the library window on its Objects tab, filtered to
+    /// the stated kind (null = everything) — the from-library rows' one
+    /// act, wired by the window set.</summary>
+    public Action<global::Poser.Library.PoseLibraryEntryKind?>?
+        OnLibraryRequested;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -307,7 +309,10 @@ public sealed class SpawnBrowserWindow : Window
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
-        RefreshWorldLights();
+        // NO world-light refresh here: that is a native world-graph walk
+        // on the draw thread, and it froze every open (2026-08-31). The
+        // World light row refreshes on demand — its own activation already
+        // calls RefreshWorldLights.
         // The query is a DRAFT: it means nothing outside the open surface, so
         // each open starts on the whole list.
         _vm.Query = string.Empty;
@@ -1051,7 +1056,22 @@ public sealed class SpawnBrowserWindow : Window
             case RowOverlayFromLibrary:
             case RowLightFromLibrary:
             case RowCameraFromLibrary:
-                OnLibraryRequested?.Invoke();
+                OnLibraryRequested?.Invoke(index switch
+                {
+                    RowActorFromLibrary =>
+                        global::Poser.Library.PoseLibraryEntryKind.Actor,
+                    RowPropFromLibrary =>
+                        global::Poser.Library.PoseLibraryEntryKind.Prop,
+                    RowLightFromLibrary =>
+                        global::Poser.Library.PoseLibraryEntryKind.Light,
+                    RowCameraFromLibrary =>
+                        global::Poser.Library.PoseLibraryEntryKind.Camera,
+                    RowOverlayFromLibrary =>
+                        global::Poser.Library.PoseLibraryEntryKind.Overlay,
+                    // Objects and effects share the WorldObject kind.
+                    _ => global::Poser.Library
+                        .PoseLibraryEntryKind.WorldObject,
+                });
                 return;
             case RowActorFromFile:
             case RowPropFromFile:
