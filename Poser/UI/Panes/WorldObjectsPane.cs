@@ -247,6 +247,11 @@ public sealed class WorldObjectsPane
                     worldObject.NightState,
                     next => worldObject.NightState = next,
                     help: "Toggles night state"));
+            form.Switch(
+                "Paused",
+                worldObject.AnimationPaused,
+                next => worldObject.AnimationPaused = next,
+                help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
         {

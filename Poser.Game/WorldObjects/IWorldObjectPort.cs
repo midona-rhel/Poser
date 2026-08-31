@@ -168,6 +168,10 @@ public interface IWorldObjectPort
 
     bool? ReadBgNightState(nint address);
 
+    /// <summary>Sets an animated BG object's playback speed; false until
+    /// its skeleton's controls exist.</summary>
+    bool WriteBgAnimationSpeed(nint address, float speed);
+
     void WriteBgNightState(nint address, bool night);
 
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a

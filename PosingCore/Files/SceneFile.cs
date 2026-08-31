@@ -583,6 +583,9 @@ public class SceneWorldObject
     /// <summary>The model's day/night dressing. Absent reads DAY (off)
     /// — the ruled default for anything undefined.</summary>
     public bool NightState { get; set; }
+
+    /// <summary>Whether an animated model's motion is frozen.</summary>
+    public bool AnimPaused { get; set; }
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

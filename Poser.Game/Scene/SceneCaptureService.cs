@@ -602,6 +602,7 @@ public sealed class SceneCaptureService
                 VfxIntensity = worldObject.VfxIntensity,
                 VfxPaused = worldObject.VfxPaused,
                 NightState = worldObject.NightState,
+                AnimPaused = worldObject.AnimationPaused,
                 Transform = NormalizedTransform(
                     worldObject.Transform,
                     $"World object '{worldObject.Name}'",

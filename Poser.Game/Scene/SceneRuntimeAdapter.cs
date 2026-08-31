@@ -1100,6 +1100,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
             if (data.VfxPaused)
                 handle.VfxPaused = true;
             handle.NightState = data.NightState;
+            if (data.AnimPaused)
+                handle.AnimationPaused = true;
         }
         return handle;
     }

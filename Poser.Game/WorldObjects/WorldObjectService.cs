@@ -208,6 +208,27 @@ public sealed class AdoptedWorldObject
     /// state is re-asserted on the tick until release.</summary>
     internal bool NightStateHeld;
 
+    /// <summary>Whether an animated model's motion is frozen — a windmill
+    /// mid-turn, a banner mid-sway. A no-op on models with no skeleton.
+    /// </summary>
+    public bool AnimationPaused
+    {
+        get => _animationPaused;
+        set
+        {
+            _animationPaused = value;
+            if (!_released)
+                _owner.WriteAnimationPaused(this);
+        }
+    }
+
+    private bool _animationPaused;
+
+    /// <summary>Ticks left to retry the speed write while the skeleton
+    /// streams in. Bounded: a model with no animation never grows
+    /// controls, and its retries must not run forever.</summary>
+    internal int AnimationPauseRetries;
+
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
@@ -329,6 +350,14 @@ public sealed class WorldObjectService : IDisposable
                 handle.NightStatePending = false;
                 _port.WriteBgNightState(handle.Address, handle.NightState);
             }
+            if (handle.AnimationPauseRetries > 0)
+            {
+                handle.AnimationPauseRetries--;
+                if (_port.WriteBgAnimationSpeed(
+                        handle.Address,
+                        handle.AnimationPaused ? 0f : 1f))
+                    handle.AnimationPauseRetries = 0;
+            }
             // An adopted object's held dressing: the zone's layout keeps
             // re-writing its own instances, so the user's choice is
             // re-asserted whenever the game takes it back.
@@ -414,6 +443,8 @@ public sealed class WorldObjectService : IDisposable
                 WriteTint(handle);
             // The fresh incarnation ships lit; restate the dressing.
             handle.NightStatePending = true;
+            if (handle.AnimationPaused)
+                handle.AnimationPauseRetries = AnimationPauseRetryTicks;
         }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
@@ -462,6 +493,22 @@ public sealed class WorldObjectService : IDisposable
             : handle.IsVfx
                 ? true
                 : _port.CanDyeBg(handle.Address);
+
+    /// <summary>How many framework ticks a pending animation-speed write
+    /// keeps retrying — the skeleton streams in behind the model; a model
+    /// without one lets the countdown lapse.</summary>
+    private const int AnimationPauseRetryTicks = 600;
+
+    internal void WriteAnimationPaused(AdoptedWorldObject handle)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address) || handle.IsVfx)
+            return;
+        float speed = handle.AnimationPaused ? 0f : 1f;
+        handle.AnimationPauseRetries =
+            _port.WriteBgAnimationSpeed(handle.Address, speed)
+                ? 0
+                : AnimationPauseRetryTicks;
+    }
 
     internal void WriteNightState(AdoptedWorldObject handle)
     {
@@ -864,6 +911,8 @@ public sealed class WorldObjectService : IDisposable
                 _port.WriteFlags(handle.Address, handle.InitialFlags);
                 if (handle.InitialNightState is { } dressing)
                     _port.WriteBgNightState(handle.Address, dressing);
+                if (handle.AnimationPaused)
+                    _port.WriteBgAnimationSpeed(handle.Address, 1f);
                 // Written BESIDE the flags rather than left to them: whether
                 // the drawn bit lives inside that byte is the game's business,
                 // and this contract may not rest on the answer.

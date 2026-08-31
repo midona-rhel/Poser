@@ -131,6 +131,8 @@ private sealed class World
         public bool IsBgReady(nint address) => true;
         public bool? CanDyeBg(nint address) => null;
         public bool? ReadBgNightState(nint address) => null;
+        public bool WriteBgAnimationSpeed(nint address, float speed) =>
+            true;
         public void WriteBgNightState(nint address, bool night) { }
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address) { }

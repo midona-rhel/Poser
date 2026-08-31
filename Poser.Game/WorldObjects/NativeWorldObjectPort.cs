@@ -336,6 +336,41 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return bg->StainBuffer != null;
     }
 
+    /// <summary>Sets every Havok animation control on the BG object's
+    /// render skeleton to the stated speed — the same lever the actor
+    /// animation port pulls, reached through LoadedAnimationData. False
+    /// until the skeleton and its controls exist (they stream in after
+    /// the model, and a model without animation never grows them).
+    /// </summary>
+    public bool WriteBgAnimationSpeed(nint address, float speed)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return false;
+        var bg = (BgObject*)node;
+        var animation = bg->LoadedAnimationData;
+        if (animation == null || animation->RenderSkeleton == null)
+            return false;
+        var skeleton = animation->RenderSkeleton;
+        bool touched = false;
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var animated =
+                skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (animated == null)
+                continue;
+            for (int c = 0; c < animated->AnimationControls.Length; c++)
+            {
+                var control = animated->AnimationControls[c].Value;
+                if (control == null)
+                    continue;
+                control->PlaybackSpeed = speed;
+                touched = true;
+            }
+        }
+        return touched;
+    }
+
     public bool? ReadBgNightState(nint address)
     {
         var node = Resolve(address);
