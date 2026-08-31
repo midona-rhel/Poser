@@ -306,6 +306,7 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
+        var openClock = System.Diagnostics.Stopwatch.StartNew();
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
@@ -321,7 +322,16 @@ public sealed class SpawnBrowserWindow : Window
         // Re-read rather than trust the cached toggle: a config reset is not
         // routed through this window.
         _vm.Frozen = _configuration.Config.SpawnFrozen;
+        openClock.Stop();
+        _log?.Information(
+            $"[SpawnBrowser] OnOpen took {openClock.Elapsed.TotalMilliseconds:F1}ms");
+        _framesToLog = 3;
     }
+
+    /// <summary>The first frames after an open log their WHOLE cost
+    /// unconditionally — the stutter hunt needs the number even when it
+    /// is under the warning gate.</summary>
+    private int _framesToLog;
 
     public override void PreDraw()
     {
@@ -353,6 +363,34 @@ public sealed class SpawnBrowserWindow : Window
     public override void PostDraw() => ImGui.PopStyleVar(2);
 
     public override void Draw()
+    {
+        var frameClock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            DrawPortal();
+        }
+        finally
+        {
+            frameClock.Stop();
+            double ms = frameClock.Elapsed.TotalMilliseconds;
+            if (_framesToLog > 0)
+            {
+                _framesToLog--;
+                _log?.Information(
+                    $"[SpawnBrowser] open frame {3 - _framesToLog}: "
+                    + $"{ms:F1}ms (rows {_vm.Rows.Count}, "
+                    + $"visible {_vm.Visible.Count})");
+            }
+            else if (ms > 8)
+            {
+                _log?.Warning(
+                    $"[SpawnBrowser] frame took {ms:F1}ms "
+                    + $"(rows {_vm.Rows.Count}, visible {_vm.Visible.Count})");
+            }
+        }
+    }
+
+    private void DrawPortal()
     {
         // A scan that finished while the window is open re-lists the saved
         // objects live, and the NPC catalog's background publication
