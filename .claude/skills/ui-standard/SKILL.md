@@ -82,9 +82,11 @@ Windows each have ONE job. No mode may change what a window IS.
   ADMITTED kinds and starts full; an admitted kind is a latched
   persistent toggle (the pill's white highlight — `SegmentSelected`
   via `TemporaryIconToggle`, NEVER an accent chip), a filtered-out
-  kind draws dim and inert, and the layers-union button leading the
-  cluster re-admits everything — it is the one way back on, and
-  there is NO reset button (all-on IS the neutral state; a reset
+  kind draws dim but stays CLICKABLE — the same press re-admits it
+  (an inert off-state shipped and was reversed the same day) — and
+  the layers-union button (Tabler's real merged-silhouette glyph,
+  not layers-intersect) leading the cluster re-admits everything.
+  There is NO reset button (all-on IS the neutral state; a reset
   shipped and was rescinded the same day). The right column's
   metadata rails render property VALUES in the mono family
   (`ReadOnly(..., mono: true)`) — both rails, not just Objects.
