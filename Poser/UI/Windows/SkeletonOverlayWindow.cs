@@ -1863,10 +1863,15 @@ public class SkeletonOverlayWindow : Window
             case LightKind.Point:
                 // Omnidirectional: there is no facing to indicate, so the
                 // handle dot is the whole mark. Selection adds one ring around
-                // it, in screen space with the dot it belongs to.
+                // it, in screen space with the dot it belongs to — and a
+                // REDUCED dot's ring shrinks with it, staying centred on
+                // the smaller form.
                 if (selected)
                     drawList.AddCircle(
-                        light.ScreenPos, dotRadius + 5f * uiScale,
+                        light.ScreenPos,
+                        light.Reduced
+                            ? (dotRadius + 5f * uiScale) * 0.45f
+                            : dotRadius + 5f * uiScale,
                         ImGui.ColorConvertFloat4ToU32(stroke), 24, thickness);
                 break;
             case LightKind.Spot:
