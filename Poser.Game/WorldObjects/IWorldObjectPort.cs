@@ -156,20 +156,14 @@ public interface IWorldObjectPort
     /// </summary>
     bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
 
-    /// <summary>Diagnostic: the raw BG instance bytes, for the day/night
-    /// state hunt.</summary>
-    string DescribeBgBytes(nint address);
-
     /// <summary>Whether a BG object's model has fully streamed in.</summary>
     bool IsBgReady(nint address);
 
-    /// <summary>Diagnostic: copies one instance byte range between two BG
-    /// objects (0xC0..0xE0 only).</summary>
-    bool CopyBgBytes(nint from, nint to, int offset, int count);
+    /// <summary>The instance's day/night state byte: true = night (a raw
+    /// spawn's default). Null for effects.</summary>
+    bool? ReadBgNightState(nint address);
 
-    byte? ReadBgByte(nint address, int offset);
-
-    void WriteBgByte(nint address, int offset, byte value);
+    void WriteBgNightState(nint address, bool night);
 
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>

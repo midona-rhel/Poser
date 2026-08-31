@@ -169,9 +169,31 @@ public sealed class AdoptedWorldObject
     /// to the service's tick.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
 
-    /// <summary>Whether the day/night byte dump is still owed, once the
-    /// model streams in. Diagnostic only.</summary>
-    internal bool DumpPending;
+    /// <summary>The model's DAY or NIGHT dressing — lamps glow at
+    /// night. A raw spawn ships in the night state; the zone writes day
+    /// onto its own objects.</summary>
+    public bool NightState
+    {
+        get => _nightState;
+        set
+        {
+            _nightState = value;
+            if (!_released)
+                _owner.WriteNightState(this);
+        }
+    }
+
+    private bool _nightState = true;
+
+    internal void SeedNightState(bool value) => _nightState = value;
+
+    /// <summary>The adopted original's own state, put back on release.
+    /// </summary>
+    internal bool? InitialNightState;
+
+    /// <summary>Whether the state write is still owed, once the model
+    /// streams in.</summary>
+    internal bool NightStatePending;
 
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
@@ -284,17 +306,12 @@ public sealed class WorldObjectService : IDisposable
                 || !_port.IsAlive(pending.Address)
                 || _port.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
-        RunStateHunt(now);
         foreach (var handle in _adopted)
         {
-            if (handle.DumpPending && _port.IsBgReady(handle.Address))
+            if (handle.NightStatePending && _port.IsBgReady(handle.Address))
             {
-                handle.DumpPending = false;
-                _log.Debug(
-                    "[WorldObject] spawn bytes " + handle.Path + ": "
-                    + _port.DescribeBgBytes(handle.Address));
-                _huntNextStep = DateTime.UtcNow + TimeSpan.FromSeconds(4);
-                _huntStep = 0;
+                handle.NightStatePending = false;
+                _port.WriteBgNightState(handle.Address, handle.NightState);
             }
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
                 || handle.VfxPaused)
@@ -304,63 +321,6 @@ public sealed class WorldObjectService : IDisposable
             Respawn(handle, handle.Path, out _);
             return;
         }
-    }
-
-    // ── The day/night state hunt (2026-09-01, diagnostic) ───────────
-    // While a lit SPAWN and a dark ADOPTED twin of the same model stand
-    // together, the undocumented tail bytes that differed in the dumps
-    // are copied dark→lit one range at a time, four seconds apart, each
-    // step logged. Whichever step changes the lamp names the mechanism.
-    // ROUND 2: the first pass named 0xCB..0xCD. Now one byte at a time,
-    // each put back before the next, so the lamp goes dark and relights
-    // exactly once — at the byte that owns the state.
-    private static readonly int[] HuntBytes = [0xCB, 0xCC, 0xCD];
-    private byte _huntOriginal;
-
-    private int _huntStep = -1;
-    private DateTime _huntNextStep = DateTime.MaxValue;
-
-    private void RunStateHunt(DateTime now)
-    {
-        if (_huntStep < 0 || _huntStep >= HuntBytes.Length
-            || now < _huntNextStep)
-            return;
-        AdoptedWorldObject? lit = null;
-        AdoptedWorldObject? dark = null;
-        foreach (var candidate in _adopted)
-        {
-            if (candidate.IsVfx)
-                continue;
-            if (candidate.Spawned)
-                lit ??= candidate;
-        }
-        foreach (var candidate in _adopted)
-            if (!candidate.IsVfx && !candidate.Spawned
-                && lit != null && candidate.Path == lit.Path)
-                dark ??= candidate;
-        if (lit == null || dark == null)
-        {
-            _huntStep = -1;
-            return;
-        }
-        // The previous step's byte goes back before the next is tried,
-        // so exactly one candidate is live at a time.
-        if (_huntStep > 0)
-            _port.WriteBgByte(
-                lit.Address, HuntBytes[_huntStep - 1], _huntOriginal);
-        int offset = HuntBytes[_huntStep];
-        byte original = _port.ReadBgByte(lit.Address, offset) ?? 0;
-        byte darkValue = _port.ReadBgByte(dark.Address, offset) ?? 0;
-        _huntOriginal = original;
-        _port.WriteBgByte(lit.Address, offset, darkValue);
-        _log.Debug(
-            $"[WorldObject] hunt step {_huntStep + 1}/{HuntBytes.Length}: "
-            + $"0x{offset:X2} lit {original:x2} -> dark {darkValue:x2}");
-        _huntStep++;
-        _huntNextStep = now + TimeSpan.FromSeconds(4);
-        if (_huntStep >= HuntBytes.Length)
-            _log.Debug("[WorldObject] hunt round 2 complete — the last "
-                + "applied byte stays; say which step went dark");
     }
 
     /// <summary>Recreates one SPAWNED object from the stated path, keeping
@@ -423,11 +383,14 @@ public sealed class WorldObjectService : IDisposable
                 handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
             }
         }
-        else if (handle.Tint is not null)
+        else
         {
-            // The fresh incarnation's model is still loading, so the dye
-            // rides the pending-stain retry.
-            WriteTint(handle);
+            if (handle.Tint is not null)
+                // The fresh incarnation's model is still loading, so the
+                // dye rides the pending-stain retry.
+                WriteTint(handle);
+            if (!handle.NightState)
+                handle.NightStatePending = true;
         }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
@@ -469,6 +432,16 @@ public sealed class WorldObjectService : IDisposable
     /// stain buffer to exist; retried on the framework tick, exactly
     /// Stagehand's poll.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
+
+    internal void WriteNightState(AdoptedWorldObject handle)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address) || handle.IsVfx)
+            return;
+        if (_port.IsBgReady(handle.Address))
+            _port.WriteBgNightState(handle.Address, handle.NightState);
+        else
+            handle.NightStatePending = true;
+    }
 
     internal void WriteTint(AdoptedWorldObject handle)
     {
@@ -610,10 +583,6 @@ public sealed class WorldObjectService : IDisposable
             handle.Visible = false;
         if (handle.IsVfx)
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
-        else
-            // The day/night hunt: dump the instance bytes once the model
-            // streams in, so a spawn diffs against an adopted twin.
-            handle.DumpPending = true;
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
@@ -646,13 +615,12 @@ public sealed class WorldObjectService : IDisposable
             placement,
             flags,
             visible);
+        // The original's own dressing, put back on release; the handle
+        // starts from the same value so the buttons read true.
+        handle.InitialNightState = _port.ReadBgNightState(address);
+        if (handle.InitialNightState is { } adoptedState)
+            handle.SeedNightState(adoptedState);
         _adopted.Add(handle);
-        // The day/night hunt (2026-09-01): an adopted zone object carries
-        // whatever state the layout gave it — logged so it can be diffed
-        // against a raw spawn of the same model.
-        _log.Debug(
-            "[WorldObject] adopt bytes " + path + ": "
-            + _port.DescribeBgBytes(address));
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
     }
@@ -849,6 +817,8 @@ public sealed class WorldObjectService : IDisposable
             {
                 _port.Write(handle.Address, handle.InitialPlacement);
                 _port.WriteFlags(handle.Address, handle.InitialFlags);
+                if (handle.InitialNightState is { } dressing)
+                    _port.WriteBgNightState(handle.Address, dressing);
                 // Written BESIDE the flags rather than left to them: whether
                 // the drawn bit lives inside that byte is the game's business,
                 // and this contract may not rest on the answer.

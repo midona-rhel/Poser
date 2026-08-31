@@ -297,26 +297,6 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return bg->TrySetStainColor(color);
     }
 
-    /// <summary>The day/night hunt's probe: the raw BG instance bytes,
-    /// logged at spawn and adoption so a spawned lamp and the zone's own
-    /// identical lamp can be diffed field by field. Diagnostic only.
-    /// </summary>
-    public string DescribeBgBytes(nint address)
-    {
-        var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
-            return "(not a BG object)";
-        var text = new System.Text.StringBuilder(0xE0 * 3 + 16);
-        byte* bytes = (byte*)node;
-        for (int i = 0; i < 0xE0; i++)
-        {
-            if (i > 0 && i % 16 == 0)
-                text.Append(i % 64 == 0 ? " | " : " ");
-            text.Append(bytes[i].ToString("x2"));
-        }
-        return text.ToString();
-    }
-
     /// <summary>Whether a BG object's model has fully streamed in — the
     /// moment its bytes are worth dumping.</summary>
     public bool IsBgReady(nint address)
@@ -327,46 +307,27 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             && RenderReady((BgObject*)node);
     }
 
-    /// <summary>The day/night hunt's staged copy: one byte range from a
-    /// dark adopted twin onto a lit spawn. Diagnostic only.</summary>
-    public bool CopyBgBytes(nint from, nint to, int offset, int count)
-    {
-        var source = Resolve(from);
-        var target = Resolve(to);
-        if (source == null || target == null
-            || source->GetObjectType() == ObjectType.VfxObject
-            || target->GetObjectType() == ObjectType.VfxObject
-            || offset < 0xC0 || offset + count > 0xE0)
-            return false;
-        for (int i = 0; i < count; i++)
-            *((byte*)target + offset + i) = *((byte*)source + offset + i);
-        var bg = (BgObject*)target;
-        if (RenderReady(bg))
-        {
-            bg->UpdateCulling();
-            bg->UpdateTransforms(false);
-        }
-        return true;
-    }
+    /// <summary>The instance's DAY/NIGHT state byte at 0xCD — found by
+    /// the twin-diff hunt (2026-09-01): the zone's layout writes 0x00 on
+    /// its own objects by day and a raw spawn ships 0xFF, which is why
+    /// spawned lamps always glowed. No reference plugin knows this byte.
+    /// </summary>
+    private const int BgNightStateOffset = 0xCD;
 
-    /// <summary>Diagnostic single-byte read/write on a BG instance's
-    /// tail (0xC0..0xE0), for the day/night hunt.</summary>
-    public byte? ReadBgByte(nint address, int offset)
+    public bool? ReadBgNightState(nint address)
     {
         var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || offset < 0xC0 || offset >= 0xE0)
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return null;
-        return *((byte*)node + offset);
+        return *((byte*)node + BgNightStateOffset) != 0;
     }
 
-    public void WriteBgByte(nint address, int offset, byte value)
+    public void WriteBgNightState(nint address, bool night)
     {
         var node = Resolve(address);
-        if (node == null || node->GetObjectType() == ObjectType.VfxObject
-            || offset < 0xC0 || offset >= 0xE0)
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
             return;
-        *((byte*)node + offset) = value;
+        *((byte*)node + BgNightStateOffset) = night ? byte.MaxValue : (byte)0;
         var bg = (BgObject*)node;
         if (RenderReady(bg))
         {
