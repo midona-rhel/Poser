@@ -41,12 +41,16 @@ public sealed class WorldObjectsPane
     public WorldObjectsPane(
         SceneSession scene,
         StableBindingRegistry bindings,
-        SceneLifecycleHistory lifecycle)
+        SceneLifecycleHistory lifecycle,
+        ScenePane scenePane)
     {
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
+        _scenePane = scenePane;
     }
+
+    private readonly ScenePane _scenePane;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -94,16 +98,37 @@ public sealed class WorldObjectsPane
             worldObject.Visible,
             next => worldObject.Visible = next,
             help: "Hide this object without moving it");
-        form.Actions("Claim", actions =>
-        {
+        form.Actions("Library", actions =>
             actions.Button(
-                "Release",
+                "Save to library",
                 () => _pending = () =>
                 {
-                    _lifecycle.ReleaseWorldObject(worldObject);
-                    _scene.Selection.Clear();
+                    if (_bindings.GetWorldObjectId(worldObject) is { } entryId)
+                        _scenePane.SaveWorldObjectEntry(
+                            entryId.LogicalId, worldObject.Name);
                 },
-                help: "Give this object back to the map, where it stood");
+                help: "Save a spawnable copy of this object"));
+        form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
+        {
+            if (worldObject.Spawned)
+                actions.Button(
+                    "Destroy",
+                    () => _pending = () =>
+                    {
+                        _lifecycle.ReleaseWorldObject(worldObject);
+                        _scene.Selection.Clear();
+                    },
+                    variant: ButtonVariant.Danger,
+                    help: "Destroy this spawned object");
+            else
+                actions.Button(
+                    "Release",
+                    () => _pending = () =>
+                    {
+                        _lifecycle.ReleaseWorldObject(worldObject);
+                        _scene.Selection.Clear();
+                    },
+                    help: "Give this object back to the map, where it stood");
             actions.Button(
                 "Release all",
                 () => _pending = () =>
@@ -111,7 +136,8 @@ public sealed class WorldObjectsPane
                     _lifecycle.ReleaseAllWorldObjects();
                     _scene.Selection.Clear();
                 },
-                help: "Give every borrowed object back");
+                help: "Give every borrowed object back and destroy every "
+                    + "spawned one");
         });
     }
 

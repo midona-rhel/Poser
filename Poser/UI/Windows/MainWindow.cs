@@ -5345,8 +5345,14 @@ public class MainWindow : Window
             new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
                 worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
-            new ContextMenuItem("Release", TablerIcon.X),
+            // A spawned object is Poser's own and DESTROYS; a borrowed
+            // one is the map's and goes back where it stood.
+            worldObject.Spawned
+                ? new ContextMenuItem("Destroy", TablerIcon.Trash,
+                    danger: true)
+                : new ContextMenuItem("Release", TablerIcon.X),
         };
         var actions = new Action?[]
         {
@@ -5354,6 +5360,10 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
+            () => OpenEntityRename(
+                "Save object to library", worldObject.Name,
+                name => _scenePane.SaveWorldObjectEntry(
+                    worldObjectId.LogicalId, name)),
             null, // separator
             () =>
             {

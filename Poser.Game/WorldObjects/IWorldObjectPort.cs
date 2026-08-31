@@ -42,8 +42,10 @@ public readonly record struct WorldObjectCandidate(
 /// finds. Nothing else in Poser touches a map object.
 ///
 /// <para>Enumeration may read the whole graph, but writes are reached only
-/// through an adopted handle. Poser never creates or destroys BG objects, and
-/// restores each object before forgetting its handle.</para>
+/// through an adopted or spawned handle. The map's own objects are never
+/// created or destroyed — each is restored before its handle is forgotten.
+/// Objects POSER spawned are the one exception: they are Poser's to destroy,
+/// and are never restored onto.</para>
 ///
 /// <para>Every implementation must:</para>
 /// <list type="number">
@@ -121,6 +123,18 @@ public interface IWorldObjectPort
     /// the byte carries more than the colour, so what a hover puts back is
     /// what the hover found.</summary>
     void WriteOutline(nint address, byte outline);
+
+    /// <summary>Creates a NEW BG object from a model path at the given
+    /// placement — Brio's spawn-by-path (<c>BgObject.Create</c>), the way
+    /// its world-object clone works. Zero when the game refuses. A spawned
+    /// object is Poser's own: destroyed through <see cref="Destroy"/>,
+    /// never restored.</summary>
+    nint Spawn(string path, in Transform placement);
+
+    /// <summary>Destroys a BG object THIS PORT spawned. Never called with
+    /// an adopted address — the map's own objects are always restored
+    /// instead.</summary>
+    void Destroy(nint address);
 }
 
 /// <summary>

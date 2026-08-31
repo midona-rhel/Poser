@@ -26,7 +26,8 @@ public sealed class AdoptedWorldObject
         nint address,
         Transform initialPlacement,
         byte initialFlags,
-        bool initialVisible)
+        bool initialVisible,
+        bool spawned = false)
     {
         _owner = owner;
         Id = id;
@@ -36,8 +37,14 @@ public sealed class AdoptedWorldObject
         InitialPlacement = initialPlacement;
         InitialFlags = initialFlags;
         InitialVisible = initialVisible;
+        Spawned = spawned;
         _placement = initialPlacement;
     }
+
+    /// <summary>Whether POSER created this object. A spawned object is
+    /// owned — destroyed on release — where a borrowed one is the map's
+    /// and is restored. Everything else about the handle is identical.</summary>
+    public bool Spawned { get; }
 
     public int Id { get; }
 
@@ -225,6 +232,44 @@ public sealed class WorldObjectService : IDisposable
     /// existing claim when it is already adopted — adopting twice is one claim,
     /// never two captures of a value the first one may already have changed.
     /// </summary>
+    /// <summary>Creates a NEW BG object from a model path — Poser's own,
+    /// destroyed on release rather than restored. This is how a saved
+    /// world object comes back in another zone: by path, standing where
+    /// the caller says. Null with a stated <paramref name="detail"/> on
+    /// every refusal.</summary>
+    public AdoptedWorldObject? Spawn(
+        string path, Transform placement, bool visible, out string? detail)
+    {
+        detail = null;
+        if (_disposed || !_port.IsAvailable)
+        {
+            detail = "The world cannot be reached right now.";
+            return null;
+        }
+        var address = _port.Spawn(path, placement);
+        if (address == nint.Zero)
+        {
+            detail = $"'{DisplayName(path)}' could not be spawned — the "
+                + "game did not take the model.";
+            return null;
+        }
+        var handle = new AdoptedWorldObject(
+            this,
+            ++_nextId,
+            UniqueName(DisplayName(path)),
+            path,
+            address,
+            placement,
+            0,
+            true,
+            spawned: true);
+        if (!visible)
+            handle.Visible = false;
+        _adopted.Add(handle);
+        _events.Publish(new WorldObjectListChangedEvent());
+        return handle;
+    }
+
     public AdoptedWorldObject? Adopt(nint address)
     {
         if (_disposed)
@@ -420,6 +465,25 @@ public sealed class WorldObjectService : IDisposable
     /// took its place is the single way this contract could do harm.</summary>
     private void RestoreNative(AdoptedWorldObject handle)
     {
+        // A SPAWNED object has nothing to restore: it is Poser's own, and
+        // its end is destruction.
+        if (handle.Spawned)
+        {
+            try
+            {
+                _port.Destroy(handle.Address);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(
+                    $"WorldObjectService: destroying a spawned object failed: {ex.Message}");
+            }
+            finally
+            {
+                handle.MarkReleased(handle.InitialPlacement);
+            }
+            return;
+        }
         try
         {
             if (_port.IsAlive(handle.Address))

@@ -1071,13 +1071,23 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     /// rather than spawns, and a match that does not come off is a refusal
     /// naming the model rather than a claim on something else.
     /// </summary>
-    public object? AdoptWorldObject(SceneWorldObject data, out string? detail) =>
-        _worldObjects.AdoptByIdentity(
-            data.Path,
-            data.MapPosition,
-            data.Transform,
-            data.Visible,
-            out detail);
+    public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
+    {
+        // A SPAWNED entry restores by creating its path anew — any zone;
+        // a borrowed one matches the object the map is standing.
+        var handle = data.Spawned
+            ? _worldObjects.Spawn(
+                data.Path, data.Transform, data.Visible, out detail)
+            : _worldObjects.AdoptByIdentity(
+                data.Path,
+                data.MapPosition,
+                data.Transform,
+                data.Visible,
+                out detail);
+        if (handle != null && data.Name.Length > 0)
+            handle.Name = data.Name;
+        return handle;
+    }
 
     public void ReleaseWorldObject(object token) =>
         _worldObjects.Release((WorldObjects.AdoptedWorldObject)token);

@@ -522,6 +522,13 @@ public sealed class SceneWorkflow : IDisposable
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
             }
 
+            // The world-object entry saves a SPAWNABLE copy: the load
+            // creates its path anew instead of matching the map, so the
+            // entry works in any zone.
+            if (options.WorldObjectsAsSpawned && scene.WorldObjects != null)
+                foreach (var spawnable in scene.WorldObjects)
+                    spawnable.Spawned = true;
+
             // Appearance is sealed BEFORE the policy narrows the document:
             // the policy's job is to drop what could not be sealed, so it has
             // to run second. Only a save that asked for appearance pays for
@@ -719,24 +726,35 @@ public sealed class SceneWorkflow : IDisposable
             // already standing. The gate runs here, before any native work, so
             // a scene loaded in the wrong zone refuses its borrowed entries by
             // name and lands everything else.
+            // SPAWNED objects are the exception to the zone gate: they are
+            // created by path, standing anywhere; only BORROWED entries can
+            // be refused for being in the wrong zone.
             var worldObjects = (IReadOnlyList<SceneWorldObject>)(
                 scene.WorldObjects ?? []);
-            uint currentTerritory = worldObjects.Count == 0
+            int borrowedCount = 0;
+            foreach (var entry in worldObjects)
+                if (!entry.Spawned)
+                    borrowedCount++;
+            uint currentTerritory = borrowedCount == 0
                 ? 0u
                 : await _runtime.OnFramework(_runtime.CurrentTerritoryId);
-            if (worldObjects.Count > 0 &&
+            if (borrowedCount > 0 &&
                 (currentTerritory == 0 || currentTerritory != scene.TerritoryId))
             {
                 string where = string.IsNullOrWhiteSpace(scene.PlaceName)
                     ? $"territory {scene.TerritoryId}"
                     : scene.PlaceName;
                 notes.Add(
-                    $"This scene borrowed {worldObjects.Count} map " +
-                    $"{(worldObjects.Count == 1 ? "object" : "objects")} in " +
+                    $"This scene borrowed {borrowedCount} map " +
+                    $"{(borrowedCount == 1 ? "object" : "objects")} in " +
                     $"{where}, which is not where you are. " +
-                    $"{(worldObjects.Count == 1 ? "It was" : "They were")} " +
+                    $"{(borrowedCount == 1 ? "It was" : "They were")} " +
                     "left alone.");
-                worldObjects = Array.Empty<SceneWorldObject>();
+                var spawnedOnly = new List<SceneWorldObject>();
+                foreach (var entry in worldObjects)
+                    if (entry.Spawned)
+                        spawnedOnly.Add(entry);
+                worldObjects = spawnedOnly;
             }
             var lights = options.IncludeLights
                 ? (IReadOnlyList<SceneLight>)scene.Lights

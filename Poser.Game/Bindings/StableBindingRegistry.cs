@@ -463,7 +463,8 @@ public sealed class StableBindingRegistry
                 worldObjectId,
                 worldObject.Name,
                 worldObject.Path,
-                worldObject.Visible));
+                worldObject.Visible,
+                worldObject.Spawned));
         }
 
         // This registry can justify native identity/topology plus the current

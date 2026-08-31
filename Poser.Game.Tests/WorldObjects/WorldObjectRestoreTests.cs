@@ -118,8 +118,27 @@ private sealed class World
 
         public int Writes { get; private set; }
         public bool ThrowOnWrite { get; set; }
+        public readonly List<nint> Destroyed = new();
 
         public bool IsAvailable => true;
+
+        public nint Spawn(string path, in Transform placement)
+        {
+            var address = _next++;
+            _nodes[address] = new Node
+            {
+                Placement = placement,
+                Flags = 0,
+                Visible = true,
+            };
+            return address;
+        }
+
+        public void Destroy(nint address)
+        {
+            Destroyed.Add(address);
+            _nodes.Remove(address);
+        }
 
         public nint Add(
             string path, Transform placement, byte flags = 0, bool visible = true)

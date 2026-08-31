@@ -204,6 +204,22 @@ public sealed class ScenePane
         return result.Success;
     }
 
+    /// <summary>The world-object menus' "Save to library": the object as
+    /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
+    public bool SaveWorldObjectEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.WorldObjectEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null, SceneSaveOptions.WorldObjectEntry(logicalId));
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The object could not be saved to the library.");
+        return result.Success;
+    }
+
     public bool SaveActorEntry(Guid logicalId, string displayName)
     {
         var root = _libraryConfig.EnsureObjectsRootExists();

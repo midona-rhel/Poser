@@ -77,6 +77,13 @@ public class SceneFile
     /// </summary>
     public const string GroupEntryExtension = ".xivg";
 
+    /// <summary>
+    /// A world-object library entry: the scene container restricted to one
+    /// world object saved as a SPAWNABLE copy — the entry carries the model
+    /// path marked spawned, so activation creates it anywhere, any zone.
+    /// </summary>
+    public const string WorldObjectEntryExtension = ".xivw";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
@@ -516,6 +523,17 @@ public class SceneWorldObject
         LightFile.TransformData.Identity;
 
     public bool Visible { get; set; } = true;
+
+    /// <summary>Whether POSER created this object rather than borrowing it
+    /// from the map. A spawned entry restores by SPAWNING its path — any
+    /// zone, no map identity to match — where a borrowed one re-adopts the
+    /// object the map is standing. Absent on older files, which only ever
+    /// borrowed.</summary>
+    public bool Spawned { get; set; }
+
+    /// <summary>The user's name for it, when one was given; empty derives
+    /// from the path as ever.</summary>
+    public string Name { get; set; } = string.Empty;
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

@@ -1005,6 +1005,7 @@ public sealed class PoseLibraryPane
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
                 case PoseLibraryEntryKind.Group:
+                case PoseLibraryEntryKind.WorldObject:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
@@ -1108,9 +1109,11 @@ public sealed class PoseLibraryPane
         switch (_tileKinds[index])
         {
             // A group entry is the actor entry's plural: the same container,
-            // the same placement-anchored load, several entities at once.
+            // the same placement-anchored load, several entities at once —
+            // and a world-object entry spawns through the same load.
             case PoseLibraryEntryKind.Actor:
             case PoseLibraryEntryKind.Group:
+            case PoseLibraryEntryKind.WorldObject:
                 var actorMode = EffectiveMode();
                 if (!_anchors.TryCurrentFor(
                         actorMode, out var anchorPosition,
@@ -1964,6 +1967,7 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
                     PoseLibraryEntryKind.Group => TablerIcon.Folder,
+                    PoseLibraryEntryKind.WorldObject => TablerIcon.Square,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2457,6 +2461,7 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Environment
                 or PoseLibraryEntryKind.Overlay
                 or PoseLibraryEntryKind.Group
+                or PoseLibraryEntryKind.WorldObject
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

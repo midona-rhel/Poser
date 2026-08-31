@@ -590,6 +590,8 @@ public sealed class SceneCaptureService
                 Path = Bounded(worldObject.Path, "World object"),
                 MapPosition = Finite(worldObject.InitialPlacement.Position),
                 Visible = worldObject.Visible,
+                Spawned = worldObject.Spawned,
+                Name = worldObject.Name,
                 Transform = NormalizedTransform(
                     worldObject.Transform,
                     $"World object '{worldObject.Name}'",

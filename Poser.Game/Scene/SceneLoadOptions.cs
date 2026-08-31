@@ -76,6 +76,26 @@ public sealed record SceneSaveOptions
         OnlyEntityKeys = memberKeys,
     };
 
+    /// <summary>Marks every saved world object as SPAWNED — the
+    /// world-object entry's rewrite: a borrowed original becomes a
+    /// spawnable copy on disk.</summary>
+    public bool WorldObjectsAsSpawned { get; init; }
+
+    /// <summary>The world-object-entry save: one object as a spawnable
+    /// copy — path and placement, no map identity to match.</summary>
+    public static SceneSaveOptions WorldObjectEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+        WorldObjectsAsSpawned = true,
+    };
+
     /// <summary>Restricts the save to one overlay — the overlay-entry
     /// (.xivo) save. Same contract as the actor filter.</summary>
     public Guid? OnlyOverlayKey { get; init; }
@@ -255,6 +275,12 @@ public static class SceneRelativePlacement
         foreach (var prop in scene.Props)
             prop.Transform.Position += offset;
 
+        // Only what POSER spawned moves; the map's own objects are matched
+        // by where the map stands them.
+        foreach (var worldObject in scene.WorldObjects ?? [])
+            if (worldObject.Spawned)
+                worldObject.Transform.Position += offset;
+
         foreach (var light in scene.Lights)
         {
             // An attached light's transform is stated against its bone, and
@@ -328,6 +354,18 @@ public static class ScenePlacementRebase
             prop.Transform.Position = Move(prop.Transform.Position);
             prop.Transform.Rotation = System.Numerics.Quaternion.Normalize(
                 turn * prop.Transform.Rotation);
+        }
+        // Only what POSER spawned moves; the map's own objects are matched
+        // by where the map stands them.
+        foreach (var worldObject in scene.WorldObjects ?? [])
+        {
+            if (!worldObject.Spawned)
+                continue;
+            worldObject.Transform.Position =
+                Move(worldObject.Transform.Position);
+            worldObject.Transform.Rotation =
+                System.Numerics.Quaternion.Normalize(
+                    turn * worldObject.Transform.Rotation);
         }
         foreach (var light in scene.Lights)
         {

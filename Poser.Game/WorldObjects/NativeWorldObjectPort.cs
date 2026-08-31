@@ -185,6 +185,51 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         ((DrawObject*)node)->OutlineFlags = outline;
     }
 
+    public nint Spawn(string path, in Transform placement)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return nint.Zero;
+        try
+        {
+            // The second argument is an unused debug string (Brio's own
+            // note); empty is what the game expects.
+            var bg = BgObject.Create(path, string.Empty);
+            if (bg == null)
+                return nint.Zero;
+            var address = (nint)bg;
+            // The placement write restates render and culling exactly as
+            // any placement write does.
+            Write(address, placement);
+            return address;
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                $"NativeWorldObjectPort: spawning '{path}' failed: {ex.Message}");
+            return nint.Zero;
+        }
+    }
+
+    public void Destroy(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null)
+            return;
+        try
+        {
+            // Brio's teardown order (BGOObject.Destroy): render cleanup
+            // first, then the freeing destructor.
+            var bg = (BgObject*)node;
+            bg->CleanupRender();
+            bg->Dtor(1);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                $"NativeWorldObjectPort: destroying {address:X} failed: {ex.Message}");
+        }
+    }
+
     /// <summary>The one address check every read and write goes through: a
     /// non-null pointer that still answers BgObject. An address that has
     /// stopped being one is inert rather than written blind.</summary>

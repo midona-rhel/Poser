@@ -170,7 +170,12 @@ Windows each have ONE job. No mode may change what a window IS.
   library" on a group (head menu, selection menu, Selection page)
   writes a .xivg group entry — the actor entry's plural, listed in
   the library's Objects tab, spawning its members with the group
-  when activated.
+  when activated. A WORLD OBJECT saves to the library too (.xivw,
+  menu and pane): the entry is a SPAWNABLE COPY — Brio's
+  spawn-by-path under it — created anywhere, any zone, owned by
+  Poser (Destroy, never Release), rebasing with the scene where
+  borrowed originals never move. Object names persist through scene
+  saves for borrowed and spawned alike.
 - **Tree drag-and-drop** — entity rows and group heads drag (never
   bones or categories); a held press that travels is the drag, the
   release is the drop, and the row under the pointer is the live
