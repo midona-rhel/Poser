@@ -242,6 +242,11 @@ public sealed class AdoptedWorldObject
     /// this pause.</summary>
     internal bool AnimGateHoldLogged;
 
+    /// <summary>The placement the pause froze; re-written every draw
+    /// while the pause stands. A drag updates it through the transform
+    /// setter, so a paused object still moves where the user says.</summary>
+    internal Transform? HeldPause;
+
     /// <summary>Live debug access to the base object's 64-bit flag word.
     /// </summary>
     public ulong? DebugObjectFlags
@@ -313,6 +318,10 @@ public sealed class AdoptedWorldObject
             if (_released)
                 return;
             _placement = value;
+            // A paused object still goes where the user drags it: the
+            // hold re-writes THIS value from then on.
+            if (HeldPause is not null)
+                HeldPause = value;
             _owner.WritePlacement(this, value);
         }
     }
@@ -394,23 +403,6 @@ public sealed class WorldObjectService : IDisposable
                         handle.Address,
                         handle.AnimationPaused ? 0f : 1f))
                     handle.AnimationPauseRetries = 0;
-            }
-            // The pause LOCK: object-flags bit 1 is re-applied by the
-            // game every frame, so the pause re-clears it every frame —
-            // held, exactly like an adopted object's dressing.
-            if (!handle.IsVfx && handle.AnimationPaused
-                && handle.AnimGateKind is null
-                && _port.ReadBgObjectFlags(handle.Address) is { } held
-                && (held & 0x2UL) != 0)
-            {
-                _port.WriteBgObjectFlags(handle.Address, held & ~0x2UL);
-                if (!handle.AnimGateHoldLogged)
-                {
-                    handle.AnimGateHoldLogged = true;
-                    _log.Debug(
-                        "[WorldObject] pause lock: holding object-flags "
-                        + "bit 1 clear");
-                }
             }
             // An adopted object's held dressing: the zone's layout keeps
             // re-writing its own instances, so the user's choice is
@@ -599,19 +591,44 @@ public sealed class WorldObjectService : IDisposable
             }
             else
             {
-                // The bit-1 LOCK (user-observed 2026-09-01): the game
-                // re-applies object-flags bit 1 every frame, so a single
-                // write can never hold — the tick re-clears it for as
-                // long as the pause stands.
-                handle.AnimGateHoldLogged = false;
+                // The TRANSFORM HOLD: the game re-writes an animated
+                // transform every frame, and only a write that lands
+                // LATE in the frame wins — the drag proved it
+                // (user-observed 2026-09-01). The captured placement is
+                // re-written from the overlay's draw for as long as the
+                // pause stands.
+                handle.HeldPause =
+                    _port.TryRead(handle.Address, out var frozen)
+                        ? frozen
+                        : handle.Transform;
             }
         }
         else
         {
             if (_animHunt == handle)
                 _animHunt = null;
+            handle.HeldPause = null;
             if (handle.AnimGateKind is { } gate)
                 ApplyLever(handle, gate, paused: false);
+        }
+    }
+
+    /// <summary>Re-writes every paused object's captured placement — the
+    /// pause's whole mechanism, called from the overlay's DRAW so the
+    /// write lands after the game's own animation writer, exactly where
+    /// a drag's writes land. A framework-tick write loses that race
+    /// (proved on object-flags bit 1, 2026-09-01).</summary>
+    public void HoldPausedAnimations()
+    {
+        if (_disposed)
+            return;
+        foreach (var handle in _adopted)
+        {
+            if (handle.IsVfx || !handle.AnimationPaused
+                || handle.HeldPause is not { } held
+                || !_port.IsAlive(handle.Address))
+                continue;
+            _port.Write(handle.Address, held);
         }
     }
 

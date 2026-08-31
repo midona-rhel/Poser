@@ -372,6 +372,11 @@ public sealed class WorldAdoptionSource
     /// finishes any adoption whose entity the scene has now bound.</summary>
     public void Tick()
     {
+        // The pause's transform hold rides THIS pump because it runs at
+        // DRAW time — the only moment a write beats the game's own
+        // animation writer (the drag proved it). It must run before the
+        // Enabled early-out: pausing needs no adoption class shown.
+        _worldObjects.HoldPausedAnimations();
         ReconcilePending();
         if (!Enabled)
         {
