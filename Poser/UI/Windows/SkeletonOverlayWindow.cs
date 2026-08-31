@@ -1372,14 +1372,16 @@ public class SkeletonOverlayWindow : Window
     }
 
     /// <summary>Sides of the polygon that says which class a handle stands
-    /// for: five for an actor, three for a light, four for a map object —
-    /// Ktisis' own shapes (SceneDraw.cs:208 draws the map object as a 4-gon,
-    /// :251 the actor as a 5-gon, :296 the light as a 3-gon).</summary>
+    /// for: a CIRCLE for an actor (ruled 2026-09-01), three for a light,
+    /// four for a map object (Ktisis' shapes, SceneDraw.cs), five for a
+    /// world effect — four classes, four shapes.</summary>
     private static int AdoptSides(WorldAdoptionKind kind) => kind switch
     {
         WorldAdoptionKind.Light => 3,
         WorldAdoptionKind.WorldObject => 4,
-        _ => 5,
+        WorldAdoptionKind.Effect => 5,
+        // Zero segments is ImGui's auto-tessellated round circle.
+        _ => 0,
     };
 
     private static void DrawAdoptionHandles(
