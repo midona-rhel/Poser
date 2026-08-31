@@ -162,7 +162,10 @@ public sealed class SpawnBrowserWindow : Window
         Game.Scene.SceneLifecycleHistory lifecycle,
         ITextureProvider textures,
         UserNotices notices,
-        ReferenceImageSession referenceImages)
+        ReferenceImageSession referenceImages,
+        global::Poser.Library.IPoseLibraryService library,
+        Game.Scene.SceneWorkflow scenes,
+        Game.Scene.PlacementAnchorSource anchors)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -184,6 +187,9 @@ public sealed class SpawnBrowserWindow : Window
         _lifecycle = lifecycle;
         _notices = notices;
         _referenceImages = referenceImages;
+        _library = library;
+        _scenes = scenes;
+        _anchors = anchors;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -227,6 +233,13 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
+        // A save-to-library between opens re-lists the saved objects.
+        if (_library.Snapshot.Revision != _libraryRevision)
+        {
+            _built = false;
+            _vm.Rows.Clear();
+            _rowTabs.Clear();
+        }
         BuildRows();
         RefreshWorldLights();
         // The query is a DRAFT: it means nothing outside the open surface, so
@@ -450,6 +463,7 @@ public sealed class SpawnBrowserWindow : Window
         // The prop library follows: every spawnable weapon-model prop, filed
         // under Props beside the plain test prop above.
         var models = _propService.Catalog;
+        _propEntryCount = models.Count;
         for (int i = 0; i < models.Count; i++)
         {
             rows.Add(new SpawnBrowserRow(
@@ -463,12 +477,69 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
+        // The SAVED objects close the list: every .xivw the library holds,
+        // spawnable from here by name — the whole point of saving one.
+        var snapshot = _library.Snapshot;
+        _libraryRevision = snapshot.Revision;
+        _savedObjects.Clear();
+        for (int i = 0; i < snapshot.Entries.Count; i++)
+        {
+            var entry = snapshot.Entries[i];
+            if (entry.Kind != global::Poser.Library.PoseLibraryEntryKind.WorldObject)
+                continue;
+            _savedObjects.Add((entry.Name, entry.FilePath));
+            rows.Add(new SpawnBrowserRow(
+                "##spawn-saved-" + i.ToString(CultureInfo.InvariantCulture),
+                entry.Name,
+                entry.NameLower,
+                TablerIcon.Square,
+                0u,
+                "Saved",
+                false));
+            _rowTabs.Add(SpawnBrowserTab.Props);
+        }
+
         _refilter = true;
     }
 
     /// <summary>How many creature-catalog rows precede the prop library in
     /// the row list; activation splits the shared range on it.</summary>
     private int _actorEntryCount;
+
+    private readonly global::Poser.Library.IPoseLibraryService _library;
+    private readonly Game.Scene.SceneWorkflow _scenes;
+    private readonly Game.Scene.PlacementAnchorSource _anchors;
+
+    /// <summary>Saved-object entries (.xivw) the row list carries after the
+    /// prop models, parallel by index. The library revision the list was
+    /// built from gates the rebuild: a new save re-lists on the next
+    /// open.</summary>
+    private readonly List<(string Label, string Path)> _savedObjects = new();
+    private int _propEntryCount;
+    private int _libraryRevision = -1;
+
+    /// <summary>Spawns one saved object where the player stands, through
+    /// the same load every library entry uses. No anchor (no local player)
+    /// falls back to the entry's saved placement.</summary>
+    private void SpawnSavedObject((string Label, string Path) saved)
+    {
+        var options = new Game.Scene.SceneLoadOptions();
+        if (_anchors.TryCurrentFor(
+                global::Poser.Files.ObjectPlacementMode.RelativeToSelectedActor,
+                out var anchorPosition, out var anchorYaw, out _))
+            options = new Game.Scene.SceneLoadOptions
+            {
+                Placement =
+                    global::Poser.Files.ObjectPlacementMode.RelativeToSelectedActor,
+                PlacementPosition = anchorPosition,
+                PlacementYaw = anchorYaw,
+            };
+        var started = _scenes.BeginLoad(saved.Path, options);
+        if (!started.Success)
+            _notices.Failed(
+                started.Detail
+                ?? $"'{saved.Label}' could not be spawned.");
+    }
 
     private static SpawnBrowserRow ActionRow(
         string id, string label, TablerIcon glyph, bool disabled = false,
@@ -702,8 +773,18 @@ public sealed class SpawnBrowserWindow : Window
         // weapon model as a scene prop, listed under the PROPS section.
         if (index - ActionRows >= _actorEntryCount)
         {
-            var models = _propService.Catalog;
             int modelIndex = index - ActionRows - _actorEntryCount;
+            // Saved objects follow the prop models: each spawns its .xivw
+            // through the same placement-anchored load the library uses,
+            // standing where you are.
+            if (modelIndex >= _propEntryCount)
+            {
+                int savedIndex = modelIndex - _propEntryCount;
+                if (savedIndex >= 0 && savedIndex < _savedObjects.Count)
+                    SpawnSavedObject(_savedObjects[savedIndex]);
+                return;
+            }
+            var models = _propService.Catalog;
             if (modelIndex >= 0 && modelIndex < models.Count &&
                 _lifecycle.SpawnProp(models[modelIndex]) == null)
                 _notices.Failed(SpawnFailedNote);

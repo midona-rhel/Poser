@@ -82,7 +82,10 @@ public sealed record SceneSaveOptions
     public bool WorldObjectsAsSpawned { get; init; }
 
     /// <summary>The world-object-entry save: one object as a spawnable
-    /// copy — path and placement, no map identity to match.</summary>
+    /// copy — path and placement, no map identity to match. Overlays stay
+    /// INCLUDED even though none survive the key prune: the save policy
+    /// couples <c>scene.WorldObjects</c> to the overlays flag, and setting
+    /// it false shipped empty entries.</summary>
     public static SceneSaveOptions WorldObjectEntry(Guid key) => new()
     {
         IncludeActors = false,
@@ -90,7 +93,6 @@ public sealed record SceneSaveOptions
         IncludeLights = false,
         IncludeCameras = false,
         IncludeEnvironment = false,
-        IncludeOverlays = false,
         IncludeStructure = false,
         OnlyEntityKeys = new[] { key },
         WorldObjectsAsSpawned = true,
