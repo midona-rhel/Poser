@@ -112,9 +112,11 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance;
         public bool IsHovered;
         public float Opacity;
-        /// <summary>In a named group: the handle draws reduced — only the
-        /// inner circle — so the group dot carries the set's presence.</summary>
-        public bool InGroup;
+        /// <summary>The grouped-child rule's middle state: the child's
+        /// GROUP is selected as a whole, so the handle draws as only the
+        /// inner ring — smaller, present, less important. A child-level
+        /// selection puts every sibling back at full size.</summary>
+        public bool Reduced;
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
@@ -130,9 +132,9 @@ public class SkeletonOverlayWindow : Window
         public bool IsSelected;
         public ILight? Live;
         public bool IsHovered;
-        /// <summary>In a named group: the handle sheds its rim ring, the
-        /// grouped-child rule every kind follows.</summary>
-        public bool InGroup;
+        /// <summary>The grouped-child middle state — see
+        /// <see cref="ActorDisplayData.Reduced"/>.</summary>
+        public bool Reduced;
     }
 
     /// <summary>One thing the world holds that the scene does not. It carries
@@ -379,6 +381,10 @@ public class SkeletonOverlayWindow : Window
 
         // Which groups are ENGAGED this frame decides which member handles
         // exist at all, so it resolves before any collection loop runs.
+        // THE RULE (2026-08-31): children hidden while their group is
+        // unengaged; only the inner ring while the GROUP is the selection;
+        // full size while a CHILD is the selection.
+        var wholeGroup = _groups.ActiveSelection(_selection.Selected)?.Id;
         _engagedGroups.Clear();
         foreach (var group in _groups.All)
         {
@@ -466,7 +472,8 @@ public class SkeletonOverlayWindow : Window
                     cameraPosition, lightTransform.Position),
                 IsSelected = lightSelected,
                 Live = resolved.Success ? resolved.Value : null,
-                InGroup = _groups.GroupOf(lightSelectionId) != null,
+                Reduced = _groups.GroupOf(lightSelectionId) is { } lightGroup
+                    && lightGroup.Id == wholeGroup,
             });
         }
 
@@ -494,7 +501,8 @@ public class SkeletonOverlayWindow : Window
                 // A prop belongs to no actor, so the actor fade has nothing to
                 // say about it.
                 Opacity = 1f,
-                InGroup = _groups.GroupOf(propSelectionId) != null,
+                Reduced = _groups.GroupOf(propSelectionId) is { } propGroup
+                    && propGroup.Id == wholeGroup,
             });
         }
 
@@ -520,7 +528,8 @@ public class SkeletonOverlayWindow : Window
                 CameraDistance = Vector3.Distance(
                     cameraPosition, worldTransform.Position),
                 Opacity = 1f,
-                InGroup = _groups.GroupOf(worldSelectionId) != null,
+                Reduced = _groups.GroupOf(worldSelectionId) is { } worldGroup
+                    && worldGroup.Id == wholeGroup,
             });
         }
 
@@ -551,7 +560,8 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
                     Opacity = ActorOpacity(actor.Id, activeLineage),
-                    InGroup = _groups.GroupOf(actorSelectionId) != null,
+                    Reduced = _groups.GroupOf(actorSelectionId) is { } actorGroup
+                        && actorGroup.Id == wholeGroup,
                 });
             }
         }
@@ -656,8 +666,8 @@ public class SkeletonOverlayWindow : Window
             adopt.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
-        // The group dot is ACTOR-SIZED (ruled 2026-08-31) — its two inner
-        // rings are what say "group", not extra bulk.
+        // Handles are NORMALIZED (2026-08-31): every kind, the group
+        // dot included, wears the actor handle's exact size and look.
         float groupRadius = actorRadius;
         foreach (ref var groupDot in CollectionsMarshal.AsSpan(groupDots))
             groupDot.IsHovered = !pointerBlocked
@@ -731,12 +741,12 @@ public class SkeletonOverlayWindow : Window
             if (actor.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * actor.Opacity);
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
-            if (actor.InGroup)
+            if (actor.Reduced)
             {
-                // A grouped child sheds its OUTERMOST circle (the rim
-                // ring): full-size but quieter, visible yet less
-                // important than the group's own dot.
-                drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
+                // Group-as-whole selected: the child is only its inner
+                // ring — smaller, with the highlight centred on it.
+                drawList.AddCircleFilled(
+                    actor.ScreenPos, radius * 0.45f, color, 16);
                 drawList.AddCircle(actor.ScreenPos, radius * 0.45f,
                     OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
                 continue;
@@ -746,21 +756,20 @@ public class SkeletonOverlayWindow : Window
             drawList.AddCircle(actor.ScreenPos, radius * 0.45f, OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
         }
 
-        // A group's handle is a larger ringed dot at the membership's
-        // centroid: one grab for the whole set. Engaged wears the accent.
+        // The group's handle at the membership's centroid: one grab for
+        // the whole set, drawn as a NORMAL handle — the standard fill,
+        // rim ring, inner ring at actor size. Engaged wears the accent.
         foreach (var dot in groupDots)
         {
             uint groupColor = dot.IsEngaged ? SelectedBoneColor : BoneColor;
             float dotRadius = dot.IsEngaged || dot.IsHovered
                 ? groupRadius + 2f
                 : groupRadius;
-            // No rim ring — the OUTERMOST circle is what the group dot
-            // sheds (ruled 2026-08-31); its two inner rings say "group".
-            drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 24);
-            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.62f, OutlineColor,
-                20, 1f * ImGuiHelpers.GlobalScale);
-            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.3f, OutlineColor,
-                12, 1f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 20);
+            drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 20,
+                2f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.45f, OutlineColor,
+                16, 1f * ImGuiHelpers.GlobalScale);
         }
 
         DrawLights(drawList, viewportPos, lights, actorRadius);
@@ -1742,13 +1751,21 @@ public class SkeletonOverlayWindow : Window
             uint dot = light.IsSelected
                 ? SelectedBoneColor
                 : ImGui.ColorConvertFloat4ToU32(color);
-            drawList.AddCircleFilled(light.ScreenPos, radius, dot, 20);
-            // A grouped light sheds its rim ring, the grouped-child rule;
-            // selection and hover keep their usual growth and accent.
-            if (!light.InGroup)
+            if (light.Reduced)
+            {
+                // Group-as-whole selected: the grouped-child middle
+                // state, the same inner-ring-only form every kind wears.
+                drawList.AddCircleFilled(
+                    light.ScreenPos, radius * 0.45f, dot, 16);
                 drawList.AddCircle(
-                    light.ScreenPos, radius, OutlineColor, 20,
-                    2f * ImGuiHelpers.GlobalScale);
+                    light.ScreenPos, radius * 0.45f, OutlineColor, 16,
+                    1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
+            drawList.AddCircleFilled(light.ScreenPos, radius, dot, 20);
+            drawList.AddCircle(
+                light.ScreenPos, radius, OutlineColor, 20,
+                2f * ImGuiHelpers.GlobalScale);
             // The inner ring reads as an aperture, which is what separates a
             // light handle from an actor's transform point at a glance.
             drawList.AddCircle(

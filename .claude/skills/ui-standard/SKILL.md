@@ -172,16 +172,17 @@ Windows each have ONE job. No mode may change what a window IS.
   (2026-08-31) a group is one larger ringed dot at its members' live
   centroid — clicking it selects the membership and makes it the
   active group, exactly the sidebar head-click — and MEMBER handles
-  hide until the group is engaged (head active, or a member or a
-  member's bone selected), so a grouped set reads as one thing until
-  the user steps inside. When they DO show, what both shed is the
-  OUTERMOST circle — the rim ring (ruled 2026-08-31, superseding the
-  same day's inner-circle-only try): the group dot is fill + two
-  inner rings, a grouped child of EVERY kind — lights included — is
-  its full-size fill minus the rim, visible but less important than
-  the group's own dot. The group dot itself is ACTOR-SIZED; its
-  rings, not bulk, are what say "group". Selection and hover keep
-  their usual growth and accent on every reduced form. World objects carry the same named dot as
+  hide until the group is engaged. THE HANDLE RULE (final,
+  2026-08-31, after two wrong readings the same day): handles are
+  NORMALIZED — every kind, the group dot included, wears the actor
+  handle's exact size and look (fill, rim ring, inner ring). The
+  group dot always shows at that normal size. Its children have
+  three states: HIDDEN while the group is unengaged; only the INNER
+  RING (smaller, highlight centred on it) while the group is
+  selected as a whole; FULL SIZE the moment one child is selected
+  individually. Applies to every member kind, lights included;
+  selection and hover keep their usual growth and accent in every
+  state. World objects carry the same named dot as
   props: the handle is the one viewport route to selecting either.
   The Selection page
   and titles wear the group's name when the selection IS the group;
