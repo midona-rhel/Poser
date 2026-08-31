@@ -314,6 +314,22 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     /// </summary>
     private const int BgNightStateOffset = 0xCD;
 
+    /// <summary>Whether this BG model can take dye at all. The stain
+    /// buffer exists only on models BUILT for staining (housing-style
+    /// dyeable parts) — on anything else TrySetStainColor can never land
+    /// (both lamp twins carried a null buffer, 2026-09-01). Null while
+    /// the model is still streaming.</summary>
+    public bool? CanDyeBg(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return false;
+        var bg = (BgObject*)node;
+        if (!RenderReady(bg))
+            return null;
+        return bg->StainBuffer != null;
+    }
+
     public bool? ReadBgNightState(nint address)
     {
         var node = Resolve(address);

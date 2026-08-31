@@ -161,6 +161,10 @@ public interface IWorldObjectPort
 
     /// <summary>The instance's day/night state byte: true = night (a raw
     /// spawn's default). Null for effects.</summary>
+    /// <summary>Whether the BG model can take dye (its stain buffer
+    /// exists); null while it is still streaming.</summary>
+    bool? CanDyeBg(nint address);
+
     bool? ReadBgNightState(nint address);
 
     void WriteBgNightState(nint address, bool night);

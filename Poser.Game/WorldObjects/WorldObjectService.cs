@@ -165,6 +165,12 @@ public sealed class AdoptedWorldObject
 
     private Vector3? _tint;
 
+    /// <summary>Whether the model can take the dye at all: effects always
+    /// tint; a BG model only when it was built for staining. Null while
+    /// the model streams.</summary>
+    public bool? Dyeable =>
+        _released ? false : _owner.CanDye(this);
+
     /// <summary>When the loop refresh next recreates this effect. Internal
     /// to the service's tick.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
@@ -311,6 +317,9 @@ public sealed class WorldObjectService : IDisposable
             _pendingStains.RemoveWhere(pending =>
                 !_adopted.Contains(pending)
                 || !_port.IsAlive(pending.Address)
+                // A model that CANNOT take dye retires its retry — the
+                // buffer will never appear (undyeable models have none).
+                || _port.CanDyeBg(pending.Address) == false
                 || _port.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
@@ -446,6 +455,13 @@ public sealed class WorldObjectService : IDisposable
     /// stain buffer to exist; retried on the framework tick, exactly
     /// Stagehand's poll.</summary>
     private readonly HashSet<AdoptedWorldObject> _pendingStains = new();
+
+    internal bool? CanDye(AdoptedWorldObject handle) =>
+        _disposed || !_port.IsAlive(handle.Address)
+            ? false
+            : handle.IsVfx
+                ? true
+                : _port.CanDyeBg(handle.Address);
 
     internal void WriteNightState(AdoptedWorldObject handle)
     {

@@ -215,26 +215,38 @@ public sealed class WorldObjectsPane
                 1f,
                 next => worldObject.Opacity = next,
                 help: "Fade the whole object"));
-        form.ColorWells("Tint", wells =>
+        var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
+        if (worldObject.IsVfx)
         {
-            var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
-            wells.Well(
+            form.ColorWells("Tint", wells => wells.Well(
                 "Tint",
                 new Vector4(tint, 1f),
                 value => worldObject.Tint =
-                    new Vector3(value.X, value.Y, value.Z));
-        }, help: worldObject.IsVfx
-            ? "Multiply the effect's colours"
-            : "Dye the model");
-        if (!worldObject.IsVfx)
+                    new Vector3(value.X, value.Y, value.Z)),
+                help: "Multiply the effect's colours");
+        }
+        else
         {
-            // The model's two dressings: lamps glow at night. Off (day)
-            // is the default everywhere a state is undefined.
-            form.Switch(
+            // The dye beside the dressing: lamps glow at night, and off
+            // (day) is the default everywhere a state is undefined.
+            bool undyeable = worldObject.Dyeable == false;
+            form.Pair(
+                "Tint",
+                cell => cell.ColorWell(
+                    "##world-object-tint",
+                    new Vector4(tint, 1f),
+                    value => worldObject.Tint =
+                        new Vector3(value.X, value.Y, value.Z),
+                    disabled: undyeable,
+                    help: undyeable
+                        ? "This model takes no dye"
+                        : "Dye the model"),
                 "Night",
-                worldObject.NightState,
-                next => worldObject.NightState = next,
-                help: "The night look — lamps lit");
+                cell => cell.Switch(
+                    "##world-object-night",
+                    worldObject.NightState,
+                    next => worldObject.NightState = next,
+                    help: "The night look — lamps lit"));
         }
         if (worldObject.IsVfx)
         {

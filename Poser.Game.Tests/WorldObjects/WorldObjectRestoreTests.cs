@@ -129,6 +129,7 @@ private sealed class World
         public bool WriteBgTint(
             nint address, System.Numerics.Vector3? tint) => true;
         public bool IsBgReady(nint address) => true;
+        public bool? CanDyeBg(nint address) => null;
         public bool? ReadBgNightState(nint address) => null;
         public void WriteBgNightState(nint address, bool night) { }
         public void SetVfxIntensity(nint address, float intensity) { }
