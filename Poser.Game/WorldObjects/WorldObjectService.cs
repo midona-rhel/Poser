@@ -238,6 +238,10 @@ public sealed class AdoptedWorldObject
     internal ulong AnimGateMask;
     internal ulong AnimGateOriginal;
 
+    /// <summary>Whether the bit-1 lock has said hello in the log for
+    /// this pause.</summary>
+    internal bool AnimGateHoldLogged;
+
     /// <summary>Live debug access to the base object's 64-bit flag word.
     /// </summary>
     public ulong? DebugObjectFlags
@@ -390,6 +394,23 @@ public sealed class WorldObjectService : IDisposable
                         handle.Address,
                         handle.AnimationPaused ? 0f : 1f))
                     handle.AnimationPauseRetries = 0;
+            }
+            // The pause LOCK: object-flags bit 1 is re-applied by the
+            // game every frame, so the pause re-clears it every frame —
+            // held, exactly like an adopted object's dressing.
+            if (!handle.IsVfx && handle.AnimationPaused
+                && handle.AnimGateKind is null
+                && _port.ReadBgObjectFlags(handle.Address) is { } held
+                && (held & 0x2UL) != 0)
+            {
+                _port.WriteBgObjectFlags(handle.Address, held & ~0x2UL);
+                if (!handle.AnimGateHoldLogged)
+                {
+                    handle.AnimGateHoldLogged = true;
+                    _log.Debug(
+                        "[WorldObject] pause lock: holding object-flags "
+                        + "bit 1 clear");
+                }
             }
             // An adopted object's held dressing: the zone's layout keeps
             // re-writing its own instances, so the user's choice is
@@ -578,13 +599,11 @@ public sealed class WorldObjectService : IDisposable
             }
             else
             {
-                _animHunt = handle;
-                _animHuntStep = -1;
-                _animHuntTicks = BaselineTicks;
-                _animHuntMotion = 0f;
-                _animHuntLast = null;
-                _log.Debug(
-                    "[WorldObject] anim hunt: measuring baseline motion");
+                // The bit-1 LOCK (user-observed 2026-09-01): the game
+                // re-applies object-flags bit 1 every frame, so a single
+                // write can never hold — the tick re-clears it for as
+                // long as the pause stands.
+                handle.AnimGateHoldLogged = false;
             }
         }
         else
