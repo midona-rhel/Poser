@@ -163,6 +163,10 @@ public interface IWorldObjectPort
     /// <summary>Whether a BG object's model has fully streamed in.</summary>
     bool IsBgReady(nint address);
 
+    /// <summary>Diagnostic: copies one instance byte range between two BG
+    /// objects (0xC0..0xE0 only).</summary>
+    bool CopyBgBytes(nint from, nint to, int offset, int count);
+
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);

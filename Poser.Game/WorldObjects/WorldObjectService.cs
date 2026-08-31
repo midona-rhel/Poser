@@ -284,6 +284,7 @@ public sealed class WorldObjectService : IDisposable
                 || !_port.IsAlive(pending.Address)
                 || _port.WriteBgTint(pending.Address, pending.Tint));
         var now = DateTime.UtcNow;
+        RunStateHunt(now);
         foreach (var handle in _adopted)
         {
             if (handle.DumpPending && _port.IsBgReady(handle.Address))
@@ -292,6 +293,8 @@ public sealed class WorldObjectService : IDisposable
                 _log.Debug(
                     "[WorldObject] spawn bytes " + handle.Path + ": "
                     + _port.DescribeBgBytes(handle.Address));
+                _huntNextStep = DateTime.UtcNow + TimeSpan.FromSeconds(4);
+                _huntStep = 0;
             }
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
                 || handle.VfxPaused)
@@ -301,6 +304,58 @@ public sealed class WorldObjectService : IDisposable
             Respawn(handle, handle.Path, out _);
             return;
         }
+    }
+
+    // ── The day/night state hunt (2026-09-01, diagnostic) ───────────
+    // While a lit SPAWN and a dark ADOPTED twin of the same model stand
+    // together, the undocumented tail bytes that differed in the dumps
+    // are copied dark→lit one range at a time, four seconds apart, each
+    // step logged. Whichever step changes the lamp names the mechanism.
+    private static readonly (int Offset, int Count)[] HuntRanges =
+    [
+        (0xC6, 2),
+        (0xCB, 1),
+        (0xCC, 2),
+        (0xD6, 2),
+        (0xDF, 1),
+    ];
+
+    private int _huntStep = -1;
+    private DateTime _huntNextStep = DateTime.MaxValue;
+
+    private void RunStateHunt(DateTime now)
+    {
+        if (_huntStep < 0 || _huntStep >= HuntRanges.Length
+            || now < _huntNextStep)
+            return;
+        AdoptedWorldObject? lit = null;
+        AdoptedWorldObject? dark = null;
+        foreach (var candidate in _adopted)
+        {
+            if (candidate.IsVfx)
+                continue;
+            if (candidate.Spawned)
+                lit ??= candidate;
+        }
+        foreach (var candidate in _adopted)
+            if (!candidate.IsVfx && !candidate.Spawned
+                && lit != null && candidate.Path == lit.Path)
+                dark ??= candidate;
+        if (lit == null || dark == null)
+        {
+            _huntStep = -1;
+            return;
+        }
+        var (offset, count) = HuntRanges[_huntStep];
+        bool copied = _port.CopyBgBytes(
+            dark.Address, lit.Address, offset, count);
+        _log.Debug(
+            $"[WorldObject] hunt step {_huntStep + 1}/{HuntRanges.Length}: "
+            + $"copied 0x{offset:X2}+{count} dark->lit ({copied})");
+        _huntStep++;
+        _huntNextStep = now + TimeSpan.FromSeconds(4);
+        if (_huntStep >= HuntRanges.Length)
+            _log.Debug("[WorldObject] hunt complete");
     }
 
     /// <summary>Recreates one SPAWNED object from the stated path, keeping

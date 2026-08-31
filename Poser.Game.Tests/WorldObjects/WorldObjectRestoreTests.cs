@@ -130,6 +130,8 @@ private sealed class World
             nint address, System.Numerics.Vector3? tint) => true;
         public string DescribeBgBytes(nint address) => string.Empty;
         public bool IsBgReady(nint address) => true;
+        public bool CopyBgBytes(
+            nint from, nint to, int offset, int count) => true;
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address) { }
         public void ResumeVfx(nint address, float speed) { }

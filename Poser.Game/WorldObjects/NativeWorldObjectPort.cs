@@ -327,6 +327,28 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             && RenderReady((BgObject*)node);
     }
 
+    /// <summary>The day/night hunt's staged copy: one byte range from a
+    /// dark adopted twin onto a lit spawn. Diagnostic only.</summary>
+    public bool CopyBgBytes(nint from, nint to, int offset, int count)
+    {
+        var source = Resolve(from);
+        var target = Resolve(to);
+        if (source == null || target == null
+            || source->GetObjectType() == ObjectType.VfxObject
+            || target->GetObjectType() == ObjectType.VfxObject
+            || offset < 0xC0 || offset + count > 0xE0)
+            return false;
+        for (int i = 0; i < count; i++)
+            *((byte*)target + offset + i) = *((byte*)source + offset + i);
+        var bg = (BgObject*)target;
+        if (RenderReady(bg))
+        {
+            bg->UpdateCulling();
+            bg->UpdateTransforms(false);
+        }
+        return true;
+    }
+
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
         var node = Resolve(address);
