@@ -49,6 +49,7 @@ public enum PoseLibraryEntryKind : byte
     /// <summary>An <c>.xivw</c> world-object entry: one object saved as a
     /// spawnable copy. Read through the same codec as a scene.</summary>
     WorldObject,
+    Prop,
 }
 
 /// <summary>

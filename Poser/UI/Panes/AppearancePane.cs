@@ -778,7 +778,9 @@ public sealed class AppearancePane
             loaded.Success ? null : loaded.Detail);
     }
 
-    private void OpenMcdfImport(ActorId actor)
+    /// <summary>Public for the portal's "Actor from MCDF" row: the pane
+    /// owns and pumps the dialog either way.</summary>
+    public void OpenMcdfImport(ActorId actor)
     {
         _mcdfActor = actor;
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>

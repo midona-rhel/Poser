@@ -983,6 +983,7 @@ public sealed class PoseLibraryPane
                 case PoseLibraryEntryKind.Overlay:
                 case PoseLibraryEntryKind.Group:
                 case PoseLibraryEntryKind.WorldObject:
+                case PoseLibraryEntryKind.Prop:
                 case PoseLibraryEntryKind.Light:
                 case PoseLibraryEntryKind.Camera:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
@@ -1092,6 +1093,7 @@ public sealed class PoseLibraryPane
             case PoseLibraryEntryKind.Actor:
             case PoseLibraryEntryKind.Group:
             case PoseLibraryEntryKind.WorldObject:
+            case PoseLibraryEntryKind.Prop:
             case PoseLibraryEntryKind.Light:
             case PoseLibraryEntryKind.Camera:
                 var actorMode = EffectiveMode();
@@ -1952,7 +1954,8 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
                     PoseLibraryEntryKind.Group => TablerIcon.Folder,
-                    PoseLibraryEntryKind.WorldObject => TablerIcon.Square,
+                    PoseLibraryEntryKind.WorldObject => TablerIcon.Plant,
+                    PoseLibraryEntryKind.Prop => TablerIcon.Moneybag,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2447,6 +2450,7 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Overlay
                 or PoseLibraryEntryKind.Group
                 or PoseLibraryEntryKind.WorldObject
+                or PoseLibraryEntryKind.Prop
             : entryKind == primary;
 
     private static IEnumerable<PoseLibraryEntry> Ordered(

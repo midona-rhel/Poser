@@ -34,6 +34,8 @@ namespace Poser.UI;
 public sealed class ScenePane
 {
     private readonly SceneWorkflow _workflow;
+    private readonly PlacementAnchorSource _anchors;
+    private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
     private readonly LibraryConfiguration _libraryConfig;
@@ -44,6 +46,21 @@ public sealed class ScenePane
         new("Load Scene", new[] { SceneFile.Extension });
     private readonly Crystarium.FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
+
+    /// <summary>ONE dialog serves every "from file" row in the portal: an
+    /// entry's kind lives in its extension, and the load takes any of
+    /// them through the same placement-anchored BeginLoad.</summary>
+    private readonly Crystarium.FileDialog _entryBrowser =
+        new("Add from file", new[]
+        {
+            SceneFile.ActorEntryExtension,
+            SceneFile.PropEntryExtension,
+            SceneFile.WorldObjectEntryExtension,
+            SceneFile.OverlayEntryExtension,
+            SceneFile.GroupEntryExtension,
+            SceneFile.LightEntryExtension,
+            SceneFile.CameraEntryExtension,
+        });
 
     /// <summary>
     /// Where the browsers open. It starts at the library's SCENES root — the
@@ -245,6 +262,24 @@ public sealed class ScenePane
         return result.Success;
     }
 
+    /// <summary>The prop page's "Save to library": one spawned prop —
+    /// model, dyes, pose variant — written as a .xivp.</summary>
+    public bool SavePropEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.PropEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null,
+            SceneSaveOptions.PropEntry(logicalId)
+                with { EntryName = displayName });
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The prop could not be saved to the library.");
+        return result.Success;
+    }
+
     /// <summary>The world-object menus' "Save to library": the object as
     /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
     public bool SaveWorldObjectEntry(Guid logicalId, string displayName)
@@ -261,6 +296,29 @@ public sealed class ScenePane
                 result.Detail ??
                 "The object could not be saved to the library.");
         return result.Success;
+    }
+
+    /// <summary>The portal's "from file" rows: pick ANY entry file and
+    /// load it through the standing placement rule — the same
+    /// anchored BeginLoad a library activation runs.</summary>
+    public void OpenEntryLoad()
+    {
+        _entryBrowser.Open(_lastPath, path =>
+        {
+            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            var options = new SceneLoadOptions();
+            var mode = _config.Config.DefaultSpawnPlacement;
+            if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
+                && _anchors.TryCurrentFor(
+                    mode, out var position, out var yaw, out _))
+                options = options with
+                {
+                    Placement = mode,
+                    PlacementPosition = position,
+                    PlacementYaw = yaw,
+                };
+            _workflow.BeginLoad(path, options);
+        });
     }
 
     public bool SaveActorEntry(Guid logicalId, string displayName)
@@ -285,8 +343,11 @@ public sealed class ScenePane
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
-        UserNotices notices)
+        UserNotices notices,
+        PlacementAnchorSource anchors)
     {
+        _anchors = anchors;
+        _config = config;
         _preferences = preferences;
         _workflow = workflow;
         _snapshots = snapshots;
@@ -454,6 +515,7 @@ public sealed class ScenePane
         DrawLibrarySaveModal();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+        _entryBrowser.Draw();
 
         // The notification is pumped HERE, not from the page, for the same
         // reason the dialogs are: a scene load finishes while the user is on

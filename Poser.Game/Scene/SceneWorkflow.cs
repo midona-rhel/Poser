@@ -547,6 +547,8 @@ public sealed class SceneWorkflow : IDisposable
                     namedGroups[0].Name = entryName;
                 else if (scene.WorldObjects is { Count: 1 } namedObjects)
                     namedObjects[0].Name = entryName;
+                else if (scene.Props is { Count: 1 } namedProps)
+                    namedProps[0].Name = entryName;
                 else if (scene.Lights is { Count: 1 } namedLights
                     && namedLights[0].Light is { } lightDocument)
                     lightDocument.Name = entryName;

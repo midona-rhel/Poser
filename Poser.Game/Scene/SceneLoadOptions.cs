@@ -132,6 +132,19 @@ public sealed record SceneSaveOptions
     /// (.xivo) save. Same contract as the actor filter.</summary>
     public Guid? OnlyOverlayKey { get; init; }
 
+    /// <summary>The prop-entry save: one spawned prop — model, dyes,
+    /// pose variant, placement — nothing else.</summary>
+    public static SceneSaveOptions PropEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
     /// <summary>The overlay-entry save: one overlay node, nothing else.
     /// </summary>
     public static SceneSaveOptions OverlayEntry(Guid key) => new()

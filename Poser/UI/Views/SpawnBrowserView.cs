@@ -19,6 +19,12 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
+    /// <summary>The SCENE objects: the map's own BG models — the whole
+    /// 103k catalog plus saved .xivw entries. Split from Props
+    /// (user 2026-08-31): a weapon prop and a map model are different
+    /// natives with different powers, and the tabs say so.</summary>
+    SceneObjects,
+
     /// <summary>Every world effect in the game data, inline — the VFX
     /// catalog IS the tab (user 2026-08-31): no opener row, just 8k
     /// searchable flame rows.</summary>
@@ -190,6 +196,7 @@ public static class SpawnBrowserView
         "Actors",
         "Lights",
         "Cameras",
+        "Props",
         "Objects",
         "Effects",
         "Overlays",
@@ -203,7 +210,8 @@ public static class SpawnBrowserView
         TablerIcon.User,
         TablerIcon.Bulb,
         TablerIcon.Camera,
-        TablerIcon.Diamond,
+        TablerIcon.Moneybag,
+        TablerIcon.Plant,
         TablerIcon.Fire,
         TablerIcon.Message,
     ];

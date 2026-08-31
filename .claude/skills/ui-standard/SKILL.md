@@ -172,6 +172,13 @@ Windows each have ONE job. No mode may change what a window IS.
   condition). Search fields select their whole text on focus
   (2026-08-31), so a re-focused query is replaced by typing. The portal lists every
   SAVED library entry under its kind's tab with a "Saved" badge. Its kind
+  PROPS (weapon models, Moneybag icon) and SCENE OBJECTS (map
+  models, Plant icon) are separate tabs (ruled 2026-08-31) — they
+  are different natives with different powers and the tabs say so.
+  Every kind carries a "from file" row (one shared entry dialog
+  through the placement-anchored load), and Actors add "from MCDF"
+  (spawn a fresh body, then the character-file dialog). Prop entries
+  are .xivp. The kind
   strip is the MIXED segmented variant: the kinds wear their icons
   (six text tabs made the window super wide) and only "All" keeps
   its word — short, and no glyph says it better; the kind names

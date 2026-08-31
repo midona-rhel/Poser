@@ -40,21 +40,27 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActor = 0;
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
-    private const int RowProp = 3;
-    private const int RowOverlayTalk = 4;
-    private const int RowOverlayBalloon = 5;
-    private const int RowOverlayStatus = 6;
-    private const int RowLightSpot = 7;
-    private const int RowLightPoint = 8;
-    private const int RowLightArea = 9;
-    private const int RowLightDirectional = 10;
-    private const int RowLightFromFile = 11;
-    private const int RowWorldLight = 12;
-    private const int RowCameraGame = 13;
-    private const int RowCameraFree = 14;
-    private const int RowCameraFromFile = 15;
-    private const int RowReferenceImage = 16;
-    private const int ActionRows = 17;
+    private const int RowActorFromFile = 3;
+    private const int RowActorFromMcdf = 4;
+    private const int RowProp = 5;
+    private const int RowPropFromFile = 6;
+    private const int RowObjectFromFile = 7;
+    private const int RowVfxFromFile = 8;
+    private const int RowOverlayTalk = 9;
+    private const int RowOverlayBalloon = 10;
+    private const int RowOverlayStatus = 11;
+    private const int RowOverlayFromFile = 12;
+    private const int RowLightSpot = 13;
+    private const int RowLightPoint = 14;
+    private const int RowLightArea = 15;
+    private const int RowLightDirectional = 16;
+    private const int RowLightFromFile = 17;
+    private const int RowWorldLight = 18;
+    private const int RowCameraGame = 19;
+    private const int RowCameraFree = 20;
+    private const int RowCameraFromFile = 21;
+    private const int RowReferenceImage = 22;
+    private const int ActionRows = 23;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -170,7 +176,9 @@ public sealed class SpawnBrowserWindow : Window
         Game.WorldObjects.WorldAssetCatalog assets,
         global::Poser.Application.Appearance.ModelCatalog modelCatalog,
         Game.Appearance.ModelCatalogLoader modelLoader,
-        global::Poser.Application.Appearance.ActorModelIdSession model)
+        global::Poser.Application.Appearance.ActorModelIdSession model,
+        ScenePane scenePane,
+        AppearancePane appearancePane)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -200,6 +208,8 @@ public sealed class SpawnBrowserWindow : Window
         _modelCatalog = modelCatalog;
         _modelLoader = modelLoader;
         _model = model;
+        _scenePane = scenePane;
+        _appearance = appearancePane;
         _icons = new GameIconResolver(textures);
 
         // The catalog rows mint OFF-THREAD, immediately: pure data from
@@ -509,7 +519,22 @@ public sealed class SpawnBrowserWindow : Window
             TablerIcon.Paw));
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
-        rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
+        rows.Add(ActionRow(
+            "##spawn-actor-file", "Actor from file", TablerIcon.File,
+            help: "Load a saved actor entry"));
+        rows.Add(ActionRow(
+            "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserCircle,
+            help: "Spawn a fresh actor and dress it from a character file"));
+        rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Moneybag));
+        rows.Add(ActionRow(
+            "##spawn-prop-file", "Prop from file", TablerIcon.File,
+            help: "Load a saved prop entry"));
+        rows.Add(ActionRow(
+            "##spawn-object-file", "Object from file", TablerIcon.File,
+            help: "Load a saved object entry"));
+        rows.Add(ActionRow(
+            "##spawn-vfx-file", "VFX from file", TablerIcon.File,
+            help: "Load a saved effect entry"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -526,6 +551,9 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-overlay-status", "Status line", TablerIcon.Star,
             noOverlays,
             help: "One line of the status bar: an icon and an effect name"));
+        rows.Add(ActionRow(
+            "##spawn-overlay-file", "Overlay from file", TablerIcon.File,
+            help: "Load a saved overlay entry"));
         // Both light entries need the native lighting signatures; without them
         // a spawn is a silent no-op, so they read as disabled rather than
         // doing nothing. Availability is fixed for the session.
@@ -582,15 +610,17 @@ public sealed class SpawnBrowserWindow : Window
         // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i == RowProp
-                ? SpawnBrowserTab.Props
-                : i < RowProp
-                    ? SpawnBrowserTab.Actors
-                    : i <= RowOverlayStatus || i == RowReferenceImage
-                        ? SpawnBrowserTab.Overlays
-                        : i <= RowWorldLight
-                            ? SpawnBrowserTab.Lights
-                            : SpawnBrowserTab.Cameras);
+            _rowTabs.Add(i switch
+            {
+                <= RowActorFromMcdf => SpawnBrowserTab.Actors,
+                RowProp or RowPropFromFile => SpawnBrowserTab.Props,
+                RowObjectFromFile => SpawnBrowserTab.SceneObjects,
+                RowVfxFromFile => SpawnBrowserTab.Effects,
+                <= RowOverlayFromFile => SpawnBrowserTab.Overlays,
+                <= RowWorldLight => SpawnBrowserTab.Lights,
+                RowReferenceImage => SpawnBrowserTab.Overlays,
+                _ => SpawnBrowserTab.Cameras,
+            });
 
         var entries = _catalog.Entries;
         _actorEntryCount = entries.Count;
@@ -643,7 +673,9 @@ public sealed class SpawnBrowserWindow : Window
                 global::Poser.Library.PoseLibraryEntryKind.Group =>
                     (TablerIcon.Folder, SpawnBrowserTab.Actors),
                 global::Poser.Library.PoseLibraryEntryKind.WorldObject =>
-                    (TablerIcon.Square, SpawnBrowserTab.Props),
+                    (TablerIcon.Plant, SpawnBrowserTab.SceneObjects),
+                global::Poser.Library.PoseLibraryEntryKind.Prop =>
+                    (TablerIcon.Moneybag, SpawnBrowserTab.Props),
                 global::Poser.Library.PoseLibraryEntryKind.Light =>
                     (TablerIcon.Bulb, SpawnBrowserTab.Lights),
                 global::Poser.Library.PoseLibraryEntryKind.Camera =>
@@ -679,7 +711,7 @@ public sealed class SpawnBrowserWindow : Window
                 _rowTabs.Add(SpawnBrowserTab.Effects);
             rows.AddRange(minted.Models);
             for (int i = 0; i < minted.Models.Length; i++)
-                _rowTabs.Add(SpawnBrowserTab.Props);
+                _rowTabs.Add(SpawnBrowserTab.SceneObjects);
         }
 
         // Named NPCs close the Actors seats: every event NPC the model
@@ -740,6 +772,12 @@ public sealed class SpawnBrowserWindow : Window
         _npcEntries = new();
     private int _modelCatalogVersion = -1;
     private (IActor Actor, int ModelCharaId)? _pendingNpcModel;
+    private readonly ScenePane _scenePane;
+    private readonly AppearancePane _appearance;
+
+    /// <summary>The MCDF spawn's second half: the fresh body opens the
+    /// character-file dialog once the actor binds.</summary>
+    private IActor? _pendingMcdfImport;
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
@@ -948,6 +986,30 @@ public sealed class SpawnBrowserWindow : Window
                 if (_lifecycle.SpawnProp() == null)
                     _notices.Failed(SpawnFailedNote);
                 return;
+            case RowActorFromFile:
+            case RowPropFromFile:
+            case RowObjectFromFile:
+            case RowVfxFromFile:
+            case RowOverlayFromFile:
+                // ONE dialog serves every entry kind; the pane owns and
+                // pumps it, so it outlives this window closing.
+                _scenePane.OpenEntryLoad();
+                return;
+            case RowActorFromMcdf:
+            {
+                var body = _lifecycle.SpawnActor(
+                    "Add actor from MCDF",
+                    () => _spawnService.SpawnNewActor(
+                        reserveCompanionSlot: false));
+                if (body == null)
+                {
+                    _notices.Failed(SpawnFailedNote);
+                    return;
+                }
+                _pendingMcdfImport = body;
+                SelectSpawned(body);
+                return;
+            }
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:
@@ -1151,6 +1213,13 @@ public sealed class SpawnBrowserWindow : Window
         {
             _selection.Select(SelectionId.ForLight(lightId));
             _pendingSelectSpawnedLight = null;
+        }
+
+        if (_pendingMcdfImport is { } dressing
+            && _bindings.GetActorId(dressing) is { } dressActor)
+        {
+            _appearance.OpenMcdfImport(dressActor);
+            _pendingMcdfImport = null;
         }
 
         // The NPC spawn's second half: the fresh body takes the model

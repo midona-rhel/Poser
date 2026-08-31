@@ -49,13 +49,20 @@ public sealed class PropsPane
         SceneSession scene,
         StableBindingRegistry bindings,
         SceneLifecycleHistory lifecycle,
-        StainCatalog stains)
+        StainCatalog stains,
+        ScenePane scenePane,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
         _stains = stains;
+        _scenePane = scenePane;
+        _names = names;
     }
+
+    private readonly ScenePane _scenePane;
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -171,6 +178,18 @@ public sealed class PropsPane
             });
         if (_status.Length > 0)
             form.Status(_status, warning: true);
+        form.Actions("Library", actions =>
+            actions.Button(
+                "Save to library",
+                () => _names.Open(
+                    "Save prop to library", prop.Name,
+                    name =>
+                    {
+                        if (_bindings.GetPropId(prop) is { } entryId)
+                            _scenePane.SavePropEntry(
+                                entryId.LogicalId, name);
+                    }),
+                help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
             // Destroy is THE destruction verb — Delete and Remove were

@@ -84,6 +84,10 @@ public class SceneFile
     /// </summary>
     public const string WorldObjectEntryExtension = ".xivw";
 
+    /// <summary>A prop entry: one spawned weapon-model prop — its model
+    /// triple, dyes, and pose variant — as a scene container.</summary>
+    public const string PropEntryExtension = ".xivp";
+
     /// <summary>
     /// A light library entry. ONE pipeline for every entry (ruled
     /// 2026-08-31): the scene container restricted to one light, saved
