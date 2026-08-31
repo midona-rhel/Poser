@@ -192,6 +192,28 @@ public sealed class PoseLibraryPane
         RebuildAfterFilterChange();
     }
 
+    /// <summary>The reset toggle: back to no filter, everything shown.
+    /// </summary>
+    public void ClearKindFilter()
+    {
+        if (_kindFilter.Count == 0)
+            return;
+        _kindFilter.Clear();
+        RebuildAfterFilterChange();
+    }
+
+    /// <summary>The all toggle: every stated kind latched at once.</summary>
+    public void SetKindFilterAll(
+        IEnumerable<PoseLibraryEntryKind> kinds)
+    {
+        _kindFilter.Clear();
+        foreach (var kind in kinds)
+            _kindFilter.Add(kind);
+        RebuildAfterFilterChange();
+    }
+
+    public int KindFilterCount => _kindFilter.Count;
+
     /// <summary>The portal's from-library rows: exactly one kind shown,
     /// or none for the whole tab.</summary>
     public void SetOnlyKindFilter(PoseLibraryEntryKind? kind)
