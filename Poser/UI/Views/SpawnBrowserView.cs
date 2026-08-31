@@ -141,7 +141,9 @@ public static class SpawnBrowserView
 
     /// <summary>The window's width floor: room for the search row's field
     /// plus its two icons even if the tab strip ever narrows.</summary>
-    private const float MinWidth = 320f;
+    // Widened for the catalog rows: a derived label plus a where-from
+    // badge needs the room (user 2026-08-31: "make it a bit wider").
+    private const float MinWidth = 400f;
 
     /// <summary>The window is BUILT AROUND the tab strip: its logical width
     /// is the strip plus the content inset each side (user 2026-08-11:

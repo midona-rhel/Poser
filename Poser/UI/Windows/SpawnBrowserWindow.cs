@@ -41,21 +41,20 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowProp = 3;
-    private const int RowWorldModel = 4;
-    private const int RowOverlayTalk = 5;
-    private const int RowOverlayBalloon = 6;
-    private const int RowOverlayStatus = 7;
-    private const int RowLightSpot = 8;
-    private const int RowLightPoint = 9;
-    private const int RowLightArea = 10;
-    private const int RowLightDirectional = 11;
-    private const int RowLightFromFile = 12;
-    private const int RowWorldLight = 13;
-    private const int RowCameraGame = 14;
-    private const int RowCameraFree = 15;
-    private const int RowCameraFromFile = 16;
-    private const int RowReferenceImage = 17;
-    private const int ActionRows = 18;
+    private const int RowOverlayTalk = 4;
+    private const int RowOverlayBalloon = 5;
+    private const int RowOverlayStatus = 6;
+    private const int RowLightSpot = 7;
+    private const int RowLightPoint = 8;
+    private const int RowLightArea = 9;
+    private const int RowLightDirectional = 10;
+    private const int RowLightFromFile = 11;
+    private const int RowWorldLight = 12;
+    private const int RowCameraGame = 13;
+    private const int RowCameraFree = 14;
+    private const int RowCameraFromFile = 15;
+    private const int RowReferenceImage = 16;
+    private const int ActionRows = 17;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -461,10 +460,6 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow("##spawn-prop", "Object", TablerIcon.Diamond));
-        rows.Add(ActionRow(
-            "##spawn-world-model", "World object", TablerIcon.Square,
-            !_worldObjects.IsAvailable,
-            help: "Any BG model in the game, searched by name"));
         // The three game-UI overlays. Without the node library a create is a
         // silent no-op, so they read as disabled rather than doing nothing.
         bool noOverlays = !_overlayService.IsAvailable;
@@ -537,7 +532,7 @@ public sealed class SpawnBrowserWindow : Window
         // All it still reads last.
         _rowTabs.Clear();
         for (int i = 0; i < ActionRows; i++)
-            _rowTabs.Add(i is RowProp or RowWorldModel
+            _rowTabs.Add(i == RowProp
                 ? SpawnBrowserTab.Props
                 : i < RowProp
                     ? SpawnBrowserTab.Actors
@@ -637,6 +632,24 @@ public sealed class SpawnBrowserWindow : Window
                 effects[i].Context,
                 false));
             _rowTabs.Add(SpawnBrowserTab.Effects);
+        }
+
+        // And the whole MODEL catalog closes the list under Objects, the
+        // same inline treatment: every BG model, named by the vocabulary,
+        // badged by where it is from. The separate picker row died with
+        // this — the portal IS the browser.
+        var worldModels = _assets.Models;
+        for (int i = 0; i < worldModels.Count; i++)
+        {
+            rows.Add(new SpawnBrowserRow(
+                "##spawn-model-" + i.ToString(CultureInfo.InvariantCulture),
+                worldModels[i].Label,
+                worldModels[i].Label.ToLowerInvariant(),
+                TablerIcon.Square,
+                0u,
+                worldModels[i].Context,
+                false));
+            _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
         _refilter = true;
@@ -859,9 +872,6 @@ public sealed class SpawnBrowserWindow : Window
                 if (_lifecycle.SpawnProp() == null)
                     _notices.Failed(SpawnFailedNote);
                 return;
-            case RowWorldModel:
-                OpenAssetPicker("world-model", _assets.Models);
-                return;
             case RowOverlayTalk:
             case RowOverlayBalloon:
             case RowOverlayStatus:
@@ -966,11 +976,19 @@ public sealed class SpawnBrowserWindow : Window
                     SpawnSavedObject(_savedObjects[savedIndex]);
                     return;
                 }
-                // The effect catalog closes the list.
+                // The effect catalog follows the saved seats, and the
+                // model catalog closes the list.
                 int effectIndex = savedIndex - _savedObjects.Count;
                 var effects = _assets.Effects;
                 if (effectIndex >= 0 && effectIndex < effects.Count)
+                {
                     SpawnWorldAsset(effects[effectIndex].Path);
+                    return;
+                }
+                int worldIndex = effectIndex - effects.Count;
+                var worldModels = _assets.Models;
+                if (worldIndex >= 0 && worldIndex < worldModels.Count)
+                    SpawnWorldAsset(worldModels[worldIndex].Path);
                 return;
             }
             var models = _propService.Catalog;
