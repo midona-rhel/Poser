@@ -41,26 +41,37 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
     private const int RowActorFromMcdf = 3;
-    private const int RowActorFromFile = 4;
-    private const int RowProp = 5;
-    private const int RowPropFromFile = 6;
-    private const int RowObjectFromFile = 7;
-    private const int RowVfxFromFile = 8;
-    private const int RowOverlayTalk = 9;
-    private const int RowOverlayBalloon = 10;
-    private const int RowOverlayStatus = 11;
-    private const int RowReferenceImage = 12;
-    private const int RowOverlayFromFile = 13;
-    private const int RowLightSpot = 14;
-    private const int RowLightPoint = 15;
-    private const int RowLightArea = 16;
-    private const int RowLightDirectional = 17;
-    private const int RowWorldLight = 18;
-    private const int RowLightFromFile = 19;
-    private const int RowCameraGame = 20;
-    private const int RowCameraFree = 21;
-    private const int RowCameraFromFile = 22;
-    private const int ActionRows = 23;
+    private const int RowActorFromLibrary = 4;
+    private const int RowActorFromFile = 5;
+    private const int RowProp = 6;
+    private const int RowPropFromLibrary = 7;
+    private const int RowPropFromFile = 8;
+    private const int RowObjectFromLibrary = 9;
+    private const int RowObjectFromFile = 10;
+    private const int RowVfxFromLibrary = 11;
+    private const int RowVfxFromFile = 12;
+    private const int RowOverlayTalk = 13;
+    private const int RowOverlayBalloon = 14;
+    private const int RowOverlayStatus = 15;
+    private const int RowReferenceImage = 16;
+    private const int RowOverlayFromLibrary = 17;
+    private const int RowOverlayFromFile = 18;
+    private const int RowLightSpot = 19;
+    private const int RowLightPoint = 20;
+    private const int RowLightArea = 21;
+    private const int RowLightDirectional = 22;
+    private const int RowWorldLight = 23;
+    private const int RowLightFromLibrary = 24;
+    private const int RowLightFromFile = 25;
+    private const int RowCameraGame = 26;
+    private const int RowCameraFree = 27;
+    private const int RowCameraFromLibrary = 28;
+    private const int RowCameraFromFile = 29;
+    private const int ActionRows = 30;
+
+    /// <summary>Opens the library window on its Objects tab — the
+    /// from-library rows' one act, wired by the window set.</summary>
+    public Action? OnLibraryRequested;
 
     /// <summary>Double-click is a supported gesture on a single-click list, so
     /// a second activation of the SAME row inside this window is swallowed
@@ -239,7 +250,7 @@ public sealed class SpawnBrowserWindow : Window
                         CultureInfo.InvariantCulture),
                     modelAssets[i].Label,
                     modelAssets[i].Label.ToLowerInvariant(),
-                    TablerIcon.Square,
+                    TablerIcon.Plant,
                     0u,
                     modelAssets[i].Context,
                     false);
@@ -533,7 +544,7 @@ public sealed class SpawnBrowserWindow : Window
         _rowTabs.Clear();
         _vm.Visible.Clear();
         rows.Add(ActionRow(
-            "##spawn-new-actor", "Actor", TablerIcon.UserPlus));
+            "##spawn-new-actor", "Actor", TablerIcon.User));
         rows.Add(ActionRow(
             "##spawn-new-actor-companion",
             "Actor with companion slot",
@@ -541,20 +552,36 @@ public sealed class SpawnBrowserWindow : Window
         rows.Add(ActionRow(
             "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
         rows.Add(ActionRow(
-            "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserCircle,
+            "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserPlus,
             help: "Spawn a fresh actor and dress it from a character file"));
+        rows.Add(ActionRow(
+            "##spawn-actor-library", "Actor from library",
+            TablerIcon.UserFromFile,
+            help: "Browse the library's saved actors"));
         rows.Add(ActionRow(
             "##spawn-actor-file", "Actor from file", TablerIcon.UserFromFile,
             help: "Load a saved actor entry"));
         rows.Add(ActionRow("##spawn-prop", "Prop", TablerIcon.Moneybag));
         rows.Add(ActionRow(
+            "##spawn-prop-library", "Prop from library",
+            TablerIcon.MoneybagFromFile,
+            help: "Browse the library's saved props"));
+        rows.Add(ActionRow(
             "##spawn-prop-file", "Prop from file",
             TablerIcon.MoneybagFromFile,
             help: "Load a saved prop entry"));
         rows.Add(ActionRow(
+            "##spawn-object-library", "Object from library",
+            TablerIcon.PlantFromFile,
+            help: "Browse the library's saved objects"));
+        rows.Add(ActionRow(
             "##spawn-object-file", "Object from file",
             TablerIcon.PlantFromFile,
             help: "Load a saved object entry"));
+        rows.Add(ActionRow(
+            "##spawn-vfx-library", "VFX from library",
+            TablerIcon.FireFromFile,
+            help: "Browse the library's saved effects"));
         rows.Add(ActionRow(
             "##spawn-vfx-file", "VFX from file", TablerIcon.FireFromFile,
             help: "Load a saved effect entry"));
@@ -578,6 +605,10 @@ public sealed class SpawnBrowserWindow : Window
             "##spawn-reference-image", "Reference image", TablerIcon.Photo,
             help: "Pin a picture over the game to pose against — it keeps "
                 + "its place across GPose and reloads"));
+        rows.Add(ActionRow(
+            "##spawn-overlay-library", "Overlay from library",
+            TablerIcon.MessageFromFile,
+            help: "Browse the library's saved overlays"));
         rows.Add(ActionRow(
             "##spawn-overlay-file", "Overlay from file",
             TablerIcon.MessageFromFile,
@@ -606,6 +637,10 @@ public sealed class SpawnBrowserWindow : Window
             noLights,
             help: "Copy a light the world places here and edit it"));
         rows.Add(ActionRow(
+            "##spawn-light-library", "Light from library",
+            TablerIcon.BulbFromFile, noLights,
+            help: "Browse the library's saved lights"));
+        rows.Add(ActionRow(
             "##spawn-light-file", "Light from file", TablerIcon.BulbFromFile,
             noLights));
         // The camera entries follow the light rule: without the native camera
@@ -619,6 +654,10 @@ public sealed class SpawnBrowserWindow : Window
             noCameras,
             help: "A camera that flies free of the orbit, on WASD and "
                 + "right-drag"));
+        rows.Add(ActionRow(
+            "##spawn-camera-library", "Camera from library",
+            TablerIcon.CameraFromFile, noCameras,
+            help: "Browse the library's saved cameras"));
         rows.Add(ActionRow(
             "##spawn-camera-file", "Camera from file",
             TablerIcon.CameraFromFile,
@@ -636,9 +675,9 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(i switch
             {
                 <= RowActorFromFile => SpawnBrowserTab.Actors,
-                RowProp or RowPropFromFile => SpawnBrowserTab.Props,
-                RowObjectFromFile => SpawnBrowserTab.SceneObjects,
-                RowVfxFromFile => SpawnBrowserTab.Effects,
+                <= RowPropFromFile => SpawnBrowserTab.Props,
+                <= RowObjectFromFile => SpawnBrowserTab.SceneObjects,
+                <= RowVfxFromFile => SpawnBrowserTab.Effects,
                 <= RowOverlayFromFile => SpawnBrowserTab.Overlays,
                 <= RowLightFromFile => SpawnBrowserTab.Lights,
                 _ => SpawnBrowserTab.Cameras,
@@ -670,9 +709,9 @@ public sealed class SpawnBrowserWindow : Window
                 "##spawn-prop-" + i.ToString(CultureInfo.InvariantCulture),
                 models[i].Name,
                 models[i].Name.ToLowerInvariant(),
-                TablerIcon.Diamond,
+                TablerIcon.Moneybag,
                 0u,
-                "Object",
+                "Prop",
                 false));
             _rowTabs.Add(SpawnBrowserTab.Props);
         }
@@ -1004,6 +1043,15 @@ public sealed class SpawnBrowserWindow : Window
             case RowProp:
                 if (_lifecycle.SpawnProp() == null)
                     _notices.Failed(SpawnFailedNote);
+                return;
+            case RowActorFromLibrary:
+            case RowPropFromLibrary:
+            case RowObjectFromLibrary:
+            case RowVfxFromLibrary:
+            case RowOverlayFromLibrary:
+            case RowLightFromLibrary:
+            case RowCameraFromLibrary:
+                OnLibraryRequested?.Invoke();
                 return;
             case RowActorFromFile:
             case RowPropFromFile:

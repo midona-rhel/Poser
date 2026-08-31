@@ -74,6 +74,13 @@ public sealed class UiWindowSet : IDisposable
         System.AddWindow(InspectorPart);
         LibraryPart = new LibraryWindow(main);
         System.AddWindow(LibraryPart);
+        spawnBrowser.OnLibraryRequested = () =>
+        {
+            Main.LibraryPane.SelectType(
+                (int)PoseLibraryPane.LibraryType.Objects);
+            LibraryPart.IsOpen = true;
+            LibraryPart.BringToFront();
+        };
         Main.OnLibraryWindowRequested += () =>
         {
             LibraryPart.IsOpen = true;

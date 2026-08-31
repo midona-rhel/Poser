@@ -134,7 +134,7 @@ public sealed class WorldObjectsPane
                 Glyph = static asset => asset.Path.EndsWith(
                     ".avfx", StringComparison.OrdinalIgnoreCase)
                     ? TablerIcon.Fire
-                    : TablerIcon.Square,
+                    : TablerIcon.Plant,
                 Badge = static asset => asset.Context,
             });
     }

@@ -2511,7 +2511,7 @@ public class MainWindow : Window
         Label = prop.Name,
         Draggable = true,
         Count = "",
-        Icon = TablerIcon.Diamond,
+        Icon = TablerIcon.Moneybag,
         Depth = depth,
         ForceIcon = depth > 0,
         Tag = SelectionId.ForProp(prop.Id),
@@ -2525,11 +2525,11 @@ public class MainWindow : Window
         Label = worldObject.Name,
         Draggable = true,
         Count = "",
-        // World objects use the square row mark; a VFX burns instead.
+        // World objects wear the plant row mark; a VFX burns instead.
         Icon = worldObject.Path.EndsWith(
             ".avfx", StringComparison.OrdinalIgnoreCase)
             ? TablerIcon.Fire
-            : TablerIcon.Square,
+            : TablerIcon.Plant,
         Depth = depth,
         ForceIcon = depth > 0,
         Tag = SelectionId.ForWorldObject(worldObject.Id),
