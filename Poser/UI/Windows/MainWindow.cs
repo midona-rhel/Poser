@@ -449,6 +449,7 @@ public class MainWindow : Window
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
+        Controls.EntityNameModal names,
         Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         Game.Viewport.ViewportProjection viewportProjection,
@@ -484,6 +485,7 @@ public class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _names = names;
         _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
@@ -5080,14 +5082,12 @@ public class MainWindow : Window
     private PropId? _ctxPropId;
     private bool _propCtxOpenRequested;
 
-    /// <summary>The entity rename modal's state: lights, cameras and props
-    /// carry their name on the entity, so one modal writes whichever apply
-    /// hook the opening menu handed it — unlike the actor modal, which writes
-    /// a nickname beside a name the game owns.</summary>
-    private bool _entityRenameOpen;
-    private string _entityRenameValue = "";
-    private string _entityRenameTitle = "";
-    private Action<string>? _entityRenameApply;
+    /// <summary>THE naming prompt, shared with every pane: lights,
+    /// cameras and props carry their name on the entity, so one modal
+    /// writes whichever apply hook the opener handed it — unlike the
+    /// actor modal, which writes a nickname beside a name the game
+    /// owns.</summary>
+    private readonly Controls.EntityNameModal _names;
 
     /// <summary>Right-click light menu: the lifetime verbs the actor menu
     /// gives its rows, spoken in the light's vocabulary — the eye, the file,
@@ -5762,53 +5762,13 @@ public class MainWindow : Window
     }
 
     private void OpenEntityRename(
-        string title, string current, Action<string> apply)
-    {
-        _entityRenameTitle = title;
-        _entityRenameValue = current;
-        _entityRenameApply = apply;
-        _entityRenameOpen = true;
-    }
+        string title, string current, Action<string> apply) =>
+        _names.Open(title, current, apply);
 
     /// <summary>The light/camera rename modal. The apply hook captured the
     /// live entity at open; a stale entity write is a no-op on an invalid
     /// native, exactly as the pane's own name row would be.</summary>
-    private void DrawEntityRenameModal()
-    {
-        if (!_entityRenameOpen || _entityRenameApply is not { } apply)
-            return;
-        // Footer idiom, not body buttons: the footer bar right-aligns its
-        // children, and the height fits one input with no dead band.
-        Crystarium.Modal(
-            "##rename-entity",
-            _entityRenameOpen,
-            next => _entityRenameOpen = next,
-            _entityRenameTitle,
-            height: NamePromptHeight,
-            body: () => Crystarium.TextInput(
-                "##rename-entity-input", _entityRenameValue,
-                next => _entityRenameValue = next),
-            footer: () =>
-        {
-            // Enter is the blue button: the modal is one input, and done is
-            // done.
-            bool submit =
-                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
-                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
-            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
-                _entityRenameOpen = false;
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button(
-                    "Save",
-                    variant: ButtonVariant.Primary,
-                    id: "rename-entity-save") || submit)
-            {
-                if (_entityRenameValue.Trim() is { Length: > 0 } trimmed)
-                    apply(trimmed);
-                _entityRenameOpen = false;
-            }
-        });
-    }
+    private void DrawEntityRenameModal() => _names.Draw();
 
     /// <summary>One text input between the two bars: header 44 + padded
     /// input row + footer 44.</summary>

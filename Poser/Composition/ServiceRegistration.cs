@@ -444,6 +444,7 @@ internal static class ServiceRegistration
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();
         services.AddSingleton<WorldObjectsPane>();
+        services.AddSingleton<global::Poser.UI.Controls.EntityNameModal>();
         services.AddSingleton<OverlayPane>();
         services.AddSingleton<LightPane>();
         services.AddSingleton<CameraPane>();

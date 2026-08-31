@@ -115,6 +115,8 @@ public sealed class LightPane
     private static readonly string[] FalloffOptions =
         ["Linear", "Quadratic", "Cubic"];
 
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+
     public LightPane(
         SceneSession scene,
         StableBindingRegistry bindings,
@@ -127,8 +129,10 @@ public sealed class LightPane
         Game.Viewport.ViewportProjection viewport,
         ICameraService camera,
         ITextureProvider textures,
-        UserNotices notices)
+        UserNotices notices,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
+        _names = names;
         _notices = notices;
         _scene = scene;
         _bindings = bindings;
@@ -710,7 +714,10 @@ public sealed class LightPane
         {
             actions.Button("Save", () => OpenSave(light),
                 help: "Save this light to a file");
-            actions.Button("To library", () => SaveToLibrary(light),
+            actions.Button("Save to library",
+                () => _names.Open(
+                    "Save light to library", light.Name,
+                    name => SaveToLibrary(light, name)),
                 help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a light from a file to the scene");

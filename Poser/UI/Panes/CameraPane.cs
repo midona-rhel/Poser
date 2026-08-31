@@ -75,6 +75,8 @@ public sealed class CameraPane
     // has bound it, exactly like a spawned light.
     private IVirtualCamera? _pendingSelect;
 
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+
     public CameraPane(
         SceneSession scene,
         StableBindingRegistry bindings,
@@ -84,8 +86,10 @@ public sealed class CameraPane
         ICameraFileService cameraFiles,
         Game.Scene.PlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,
-        UserNotices notices)
+        UserNotices notices,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
+        _names = names;
         _anchors = anchors;
         _placement = placement;
         _scene = scene;
@@ -745,15 +749,19 @@ public sealed class CameraPane
         {
             actions.Button("Save", () => OpenSave(camera),
                 help: "Save this camera to a file");
-            actions.Button("To library", () => SaveToLibrary(camera),
+            actions.Button("Save to library",
+                () => _names.Open(
+                    "Save camera to library", camera.Name,
+                    name => SaveToLibrary(camera, name)),
                 help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene");
         });
     }
 
-    /// <summary>One click, no dialog: the camera lands in the objects home,
-    /// which is exactly what the library's Objects tab scans.</summary>
+    /// <summary>The naming prompt precedes this everywhere (ruled
+    /// 2026-08-31); the entry lands in the objects home, which is exactly
+    /// what the library's Objects tab scans.</summary>
     public void SaveToLibrary(IVirtualCamera camera, string? name = null)
     {
         var root = Config.ConfigurationService.Instance.Config.Library

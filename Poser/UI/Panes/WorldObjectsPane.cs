@@ -38,12 +38,16 @@ public sealed class WorldObjectsPane
 
     private Action? _pending;
 
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+
     public WorldObjectsPane(
         SceneSession scene,
         StableBindingRegistry bindings,
         SceneLifecycleHistory lifecycle,
-        ScenePane scenePane)
+        ScenePane scenePane,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
+        _names = names;
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
@@ -101,12 +105,15 @@ public sealed class WorldObjectsPane
         form.Actions("Library", actions =>
             actions.Button(
                 "Save to library",
-                () => _pending = () =>
-                {
-                    if (_bindings.GetWorldObjectId(worldObject) is { } entryId)
-                        _scenePane.SaveWorldObjectEntry(
-                            entryId.LogicalId, worldObject.Name);
-                },
+                () => _names.Open(
+                    "Save object to library", worldObject.Name,
+                    name =>
+                    {
+                        if (_bindings.GetWorldObjectId(worldObject)
+                            is { } entryId)
+                            _scenePane.SaveWorldObjectEntry(
+                                entryId.LogicalId, name);
+                    }),
                 help: "Save a spawnable copy of this object"));
         form.Actions(worldObject.Spawned ? "Lifetime" : "Claim", actions =>
         {
