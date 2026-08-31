@@ -156,6 +156,13 @@ public interface IWorldObjectPort
     /// </summary>
     bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
 
+    /// <summary>Diagnostic: the raw BG instance bytes, for the day/night
+    /// state hunt.</summary>
+    string DescribeBgBytes(nint address);
+
+    /// <summary>Whether a BG object's model has fully streamed in.</summary>
+    bool IsBgReady(nint address);
+
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);

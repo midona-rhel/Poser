@@ -297,6 +297,36 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return bg->TrySetStainColor(color);
     }
 
+    /// <summary>The day/night hunt's probe: the raw BG instance bytes,
+    /// logged at spawn and adoption so a spawned lamp and the zone's own
+    /// identical lamp can be diffed field by field. Diagnostic only.
+    /// </summary>
+    public string DescribeBgBytes(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return "(not a BG object)";
+        var text = new System.Text.StringBuilder(0xE0 * 3 + 16);
+        byte* bytes = (byte*)node;
+        for (int i = 0; i < 0xE0; i++)
+        {
+            if (i > 0 && i % 16 == 0)
+                text.Append(i % 64 == 0 ? " | " : " ");
+            text.Append(bytes[i].ToString("x2"));
+        }
+        return text.ToString();
+    }
+
+    /// <summary>Whether a BG object's model has fully streamed in — the
+    /// moment its bytes are worth dumping.</summary>
+    public bool IsBgReady(nint address)
+    {
+        var node = Resolve(address);
+        return node != null
+            && node->GetObjectType() != ObjectType.VfxObject
+            && RenderReady((BgObject*)node);
+    }
+
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
         var node = Resolve(address);

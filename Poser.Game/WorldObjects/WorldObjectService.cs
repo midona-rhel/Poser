@@ -169,6 +169,10 @@ public sealed class AdoptedWorldObject
     /// to the service's tick.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
 
+    /// <summary>Whether the day/night byte dump is still owed, once the
+    /// model streams in. Diagnostic only.</summary>
+    internal bool DumpPending;
+
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
@@ -282,6 +286,13 @@ public sealed class WorldObjectService : IDisposable
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
+            if (handle.DumpPending && _port.IsBgReady(handle.Address))
+            {
+                handle.DumpPending = false;
+                _log.Debug(
+                    "[WorldObject] spawn bytes " + handle.Path + ": "
+                    + _port.DescribeBgBytes(handle.Address));
+            }
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
                 || handle.VfxPaused)
                 continue;
@@ -539,6 +550,10 @@ public sealed class WorldObjectService : IDisposable
             handle.Visible = false;
         if (handle.IsVfx)
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+        else
+            // The day/night hunt: dump the instance bytes once the model
+            // streams in, so a spawn diffs against an adopted twin.
+            handle.DumpPending = true;
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
@@ -572,6 +587,12 @@ public sealed class WorldObjectService : IDisposable
             flags,
             visible);
         _adopted.Add(handle);
+        // The day/night hunt (2026-09-01): an adopted zone object carries
+        // whatever state the layout gave it — logged so it can be diffed
+        // against a raw spawn of the same model.
+        _log.Debug(
+            "[WorldObject] adopt bytes " + path + ": "
+            + _port.DescribeBgBytes(address));
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
     }
