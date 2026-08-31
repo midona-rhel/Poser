@@ -195,6 +195,11 @@ public sealed class AdoptedWorldObject
     /// streams in.</summary>
     internal bool NightStatePending;
 
+    /// <summary>Whether the user explicitly dressed an ADOPTED object.
+    /// The zone's layout keeps re-dressing its own instances, so a held
+    /// state is re-asserted on the tick until release.</summary>
+    internal bool NightStateHeld;
+
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
@@ -313,6 +318,13 @@ public sealed class WorldObjectService : IDisposable
                 handle.NightStatePending = false;
                 _port.WriteBgNightState(handle.Address, handle.NightState);
             }
+            // An adopted object's held dressing: the zone's layout keeps
+            // re-writing its own instances, so the user's choice is
+            // re-asserted whenever the game takes it back.
+            if (handle.NightStateHeld
+                && _port.ReadBgNightState(handle.Address) is { } current
+                && current != handle.NightState)
+                _port.WriteBgNightState(handle.Address, handle.NightState);
             if (!handle.Spawned || !handle.IsVfx || !handle.LoopVfx
                 || handle.VfxPaused)
                 continue;
@@ -441,6 +453,8 @@ public sealed class WorldObjectService : IDisposable
             _port.WriteBgNightState(handle.Address, handle.NightState);
         else
             handle.NightStatePending = true;
+        if (!handle.Spawned)
+            handle.NightStateHeld = true;
     }
 
     internal void WriteTint(AdoptedWorldObject handle)
