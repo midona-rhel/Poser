@@ -311,21 +311,18 @@ public sealed class WorldObjectService : IDisposable
     // together, the undocumented tail bytes that differed in the dumps
     // are copied dark→lit one range at a time, four seconds apart, each
     // step logged. Whichever step changes the lamp names the mechanism.
-    private static readonly (int Offset, int Count)[] HuntRanges =
-    [
-        (0xC6, 2),
-        (0xCB, 1),
-        (0xCC, 2),
-        (0xD6, 2),
-        (0xDF, 1),
-    ];
+    // ROUND 2: the first pass named 0xCB..0xCD. Now one byte at a time,
+    // each put back before the next, so the lamp goes dark and relights
+    // exactly once — at the byte that owns the state.
+    private static readonly int[] HuntBytes = [0xCB, 0xCC, 0xCD];
+    private byte _huntOriginal;
 
     private int _huntStep = -1;
     private DateTime _huntNextStep = DateTime.MaxValue;
 
     private void RunStateHunt(DateTime now)
     {
-        if (_huntStep < 0 || _huntStep >= HuntRanges.Length
+        if (_huntStep < 0 || _huntStep >= HuntBytes.Length
             || now < _huntNextStep)
             return;
         AdoptedWorldObject? lit = null;
@@ -346,16 +343,24 @@ public sealed class WorldObjectService : IDisposable
             _huntStep = -1;
             return;
         }
-        var (offset, count) = HuntRanges[_huntStep];
-        bool copied = _port.CopyBgBytes(
-            dark.Address, lit.Address, offset, count);
+        // The previous step's byte goes back before the next is tried,
+        // so exactly one candidate is live at a time.
+        if (_huntStep > 0)
+            _port.WriteBgByte(
+                lit.Address, HuntBytes[_huntStep - 1], _huntOriginal);
+        int offset = HuntBytes[_huntStep];
+        byte original = _port.ReadBgByte(lit.Address, offset) ?? 0;
+        byte darkValue = _port.ReadBgByte(dark.Address, offset) ?? 0;
+        _huntOriginal = original;
+        _port.WriteBgByte(lit.Address, offset, darkValue);
         _log.Debug(
-            $"[WorldObject] hunt step {_huntStep + 1}/{HuntRanges.Length}: "
-            + $"copied 0x{offset:X2}+{count} dark->lit ({copied})");
+            $"[WorldObject] hunt step {_huntStep + 1}/{HuntBytes.Length}: "
+            + $"0x{offset:X2} lit {original:x2} -> dark {darkValue:x2}");
         _huntStep++;
         _huntNextStep = now + TimeSpan.FromSeconds(4);
-        if (_huntStep >= HuntRanges.Length)
-            _log.Debug("[WorldObject] hunt complete");
+        if (_huntStep >= HuntBytes.Length)
+            _log.Debug("[WorldObject] hunt round 2 complete — the last "
+                + "applied byte stays; say which step went dark");
     }
 
     /// <summary>Recreates one SPAWNED object from the stated path, keeping

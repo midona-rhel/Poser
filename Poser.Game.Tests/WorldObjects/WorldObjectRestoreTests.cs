@@ -132,6 +132,8 @@ private sealed class World
         public bool IsBgReady(nint address) => true;
         public bool CopyBgBytes(
             nint from, nint to, int offset, int count) => true;
+        public byte? ReadBgByte(nint address, int offset) => null;
+        public void WriteBgByte(nint address, int offset, byte value) { }
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address) { }
         public void ResumeVfx(nint address, float speed) { }

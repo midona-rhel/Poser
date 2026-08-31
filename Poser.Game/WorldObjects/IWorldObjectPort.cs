@@ -167,6 +167,10 @@ public interface IWorldObjectPort
     /// objects (0xC0..0xE0 only).</summary>
     bool CopyBgBytes(nint from, nint to, int offset, int count);
 
+    byte? ReadBgByte(nint address, int offset);
+
+    void WriteBgByte(nint address, int offset, byte value);
+
     /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
     /// VFX's alpha, a BG object's dither transparency.</summary>
     void WriteOpacity(nint address, float opacity);

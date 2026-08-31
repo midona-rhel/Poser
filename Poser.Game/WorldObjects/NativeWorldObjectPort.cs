@@ -349,6 +349,32 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         return true;
     }
 
+    /// <summary>Diagnostic single-byte read/write on a BG instance's
+    /// tail (0xC0..0xE0), for the day/night hunt.</summary>
+    public byte? ReadBgByte(nint address, int offset)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || offset < 0xC0 || offset >= 0xE0)
+            return null;
+        return *((byte*)node + offset);
+    }
+
+    public void WriteBgByte(nint address, int offset, byte value)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || offset < 0xC0 || offset >= 0xE0)
+            return;
+        *((byte*)node + offset) = value;
+        var bg = (BgObject*)node;
+        if (RenderReady(bg))
+        {
+            bg->UpdateCulling();
+            bg->UpdateTransforms(false);
+        }
+    }
+
     public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
     {
         var node = Resolve(address);
