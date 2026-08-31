@@ -248,6 +248,9 @@ public sealed class KamiToolKitOverlayPort : IOverlayNodePort
                 new SeStringDrawParams
                 {
                     Font = locked.ImFont,
+                    // Outside an ImGui frame there is no cursor to anchor
+                    // on; the texture's own origin is the anchor.
+                    ScreenOffset = Vector2.Zero,
                     FontSize = request.FontSize,
                     WrapWidth = request.WrapWidth,
                     Color = PackColor(request.Color),
