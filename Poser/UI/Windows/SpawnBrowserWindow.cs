@@ -633,7 +633,8 @@ public sealed class SpawnBrowserWindow : Window
                 effects[i].Label.ToLowerInvariant(),
                 TablerIcon.Fire,
                 0u,
-                "VFX",
+                // The flame already says VFX; the badge says WHERE FROM.
+                effects[i].Context,
                 false));
             _rowTabs.Add(SpawnBrowserTab.Effects);
         }

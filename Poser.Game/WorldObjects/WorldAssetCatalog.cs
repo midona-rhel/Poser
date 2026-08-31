@@ -120,6 +120,53 @@ public sealed class WorldAssetCatalog
         ["stn"] = "Stone",
     };
 
+    /// <summary>The EFFECT vocabulary, mined from the 8k stems: FFXIV
+    /// names its world effects in a mix of English clips and romaji —
+    /// taki is a waterfall, kumo a cloud, kira a sparkle, igene/ogene
+    /// the indoor/outdoor ambient loops. Checked before the model map
+    /// for .avfx paths.</summary>
+    private static readonly Dictionary<string, string> VfxTypeNames =
+        new(StringComparer.Ordinal)
+    {
+        ["igene"] = "Ambient", ["ogene"] = "Ambient",
+        ["yuka"] = "Floor",
+        ["fire"] = "Fire", ["fir"] = "Fire",
+        ["watr"] = "Water", ["wtr"] = "Water", ["wat"] = "Water",
+        ["water"] = "Water",
+        ["bari"] = "Barrier",
+        ["mete"] = "Meteor", ["cmet"] = "Meteor",
+        ["taki"] = "Waterfall", ["tak"] = "Waterfall",
+        ["smok"] = "Smoke", ["smk"] = "Smoke", ["smoke"] = "Smoke",
+        ["sky"] = "Sky",
+        ["yug"] = "Steam",
+        ["thud"] = "Thunder", ["thd"] = "Thunder", ["thund"] = "Thunder",
+        ["kumo"] = "Cloud", ["clud"] = "Cloud", ["cloud"] = "Cloud",
+        ["kira"] = "Sparkle",
+        ["brak"] = "Debris", ["brek"] = "Debris", ["brk"] = "Debris",
+        ["fog"] = "Fog",
+        ["aet"] = "Aether",
+        ["bolt"] = "Lightning", ["elec"] = "Lightning",
+        ["mist"] = "Mist",
+        ["dust"] = "Dust",
+        ["expl"] = "Explosion",
+        ["beam"] = "Beam", ["bem"] = "Beam",
+        ["snow"] = "Snow",
+        ["iceb"] = "Ice", ["ice"] = "Ice",
+        ["scrn"] = "Screen",
+        ["elev"] = "Elevator",
+        ["swic"] = "Switch",
+        ["jump"] = "Jump",
+        ["leaf"] = "Leaves", ["lef"] = "Leaves",
+        ["bub"] = "Bubbles",
+        ["torch"] = "Torch", ["trch"] = "Torch",
+        ["wind"] = "Wind",
+        ["sand"] = "Sand",
+        ["rain"] = "Rain",
+        ["star"] = "Stars",
+        ["glow"] = "Glow",
+        ["aura"] = "Aura",
+    };
+
     /// <summary>The derived label for ANY path — the sidebar, hover, and
     /// entry names use the same words the pickers do, so a spawned thing
     /// keeps the name it was found under.</summary>
@@ -133,11 +180,13 @@ public sealed class WorldAssetCatalog
 
     private static string LabelOf(string path, string stem)
     {
-        string type = AssetTypeOf(stem);
+        bool effect = path.EndsWith(
+            ".avfx", StringComparison.OrdinalIgnoreCase);
+        string type = AssetTypeOf(stem, effect);
         return type.Length == 0 ? stem : $"{type} [{stem}]";
     }
 
-    private static string AssetTypeOf(string stem)
+    private static string AssetTypeOf(string stem, bool effect)
     {
         foreach (var part in stem.Split(
             '_', StringSplitOptions.RemoveEmptyEntries))
@@ -145,8 +194,12 @@ public sealed class WorldAssetCatalog
             int alpha = 0;
             while (alpha < part.Length && char.IsAsciiLetterLower(part[alpha]))
                 alpha++;
-            if (alpha >= 2
-                && AssetTypeNames.TryGetValue(part[..alpha], out var word))
+            if (alpha < 2)
+                continue;
+            string token = part[..alpha];
+            if (effect && VfxTypeNames.TryGetValue(token, out var vfxWord))
+                return vfxWord;
+            if (AssetTypeNames.TryGetValue(token, out var word))
                 return word;
         }
         return string.Empty;
@@ -196,6 +249,18 @@ public sealed class WorldAssetCatalog
                 assets.Add(new WorldAsset(
                     stem, line, LabelOf(line, stem), ContextOf(line)));
             }
+            // RECOGNIZED entries lead (user 2026-08-31: "sort the ones
+            // matching first"): a row with a real word sorts before a raw
+            // stem, alphabetical within each half.
+            assets.Sort(static (a, b) =>
+            {
+                bool aNamed = a.Label.Length != a.Name.Length;
+                bool bNamed = b.Label.Length != b.Name.Length;
+                if (aNamed != bNamed)
+                    return aNamed ? -1 : 1;
+                return string.Compare(
+                    a.Label, b.Label, StringComparison.OrdinalIgnoreCase);
+            });
             return assets;
         }
         catch (Exception)
