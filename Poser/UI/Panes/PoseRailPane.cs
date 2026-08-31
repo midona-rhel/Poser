@@ -210,7 +210,14 @@ public class PoseRailPane
         }
         else
         {
-            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle { Size = Crystarium.ActiveTheme.Typography.LabelSize, Color = Crystarium.ActiveTheme.FormHint });
+            // The head wears the SAME type as a selection's name, so the
+            // rail's first line never restyles between states.
+            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.BodySize,
+                Weight = FontWeight.Medium,
+                Color = Crystarium.ActiveTheme.Text,
+            });
             cursor.Y += 22f * s;
             // The verbs band stands even with nothing selected — the same
             // two seats, disabled, so a selection appearing or leaving

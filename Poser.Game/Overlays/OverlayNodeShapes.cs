@@ -92,6 +92,16 @@ internal abstract class OverlayShapeNode : OverlayNode
             ScaleX = value.Scale;
             ScaleY = value.Scale;
             RotationDegrees = value.Rotation;
+            // The game's text renderer drops the parent matrix's rotation
+            // (native UI never draws rotated text), so each text child
+            // spins ITSELF: the origin offset points at the shape's
+            // centre, making the two rotations one pivot. Experiment
+            // pending the in-game verdict (2026-08-31).
+            foreach (var text in RotatedTexts)
+            {
+                text.Origin = Origin - text.Position;
+                text.RotationDegrees = value.Rotation;
+            }
             Alpha = value.Alpha;
             IsVisible = value.Visible;
             EnableMoving = value.Draggable;
@@ -101,6 +111,11 @@ internal abstract class OverlayShapeNode : OverlayNode
     /// <summary>The status icon's resolved texture path, supplied by the port
     /// (the node layer has no texture service of its own).</summary>
     public string IconPath { get; set; } = string.Empty;
+
+    /// <summary>The shape's text children, which the rotation write must
+    /// spin individually — see the State setter.</summary>
+    protected virtual System.Collections.Generic.IEnumerable<TextNode>
+        RotatedTexts => [];
 
     protected static Vector4 Rgba(byte r, byte g, byte b) =>
         new(r / 255f, g / 255f, b / 255f, 1f);
@@ -195,6 +210,9 @@ internal sealed class TalkShapeNode : OverlayShapeNode
         _body.AttachNode(this);
         _speaker.AttachNode(this);
     }
+
+    protected override System.Collections.Generic.IEnumerable<TextNode>
+        RotatedTexts => [_body, _speaker];
 
     protected override void OnUpdate()
     {
@@ -294,6 +312,9 @@ internal sealed class BalloonShapeNode : OverlayShapeNode
         _text.AttachNode(this);
     }
 
+    protected override System.Collections.Generic.IEnumerable<TextNode>
+        RotatedTexts => [_text];
+
     private static SimpleNineGridNode Band() => new()
     {
         TexturePath = Sheet,
@@ -384,6 +405,9 @@ internal sealed class StatusShapeNode : OverlayShapeNode
         _icon.AttachNode(this);
         _text.AttachNode(this);
     }
+
+    protected override System.Collections.Generic.IEnumerable<TextNode>
+        RotatedTexts => [_text];
 
     protected override void OnUpdate()
     {

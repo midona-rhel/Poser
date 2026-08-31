@@ -1244,6 +1244,8 @@ public class MainWindow : Window
                 EntityTitle(primary.Value, "Object"),
             { Kind: SceneEntityKind.Overlay } =>
                 EntityTitle(primary.Value, "Overlay"),
+            // The empty state SAYS so, in the titlebar too.
+            null => "Nothing selected",
             _ => "Poser",
         };
     }

@@ -467,7 +467,9 @@ navigation, not a scrollbar — may shift anything.
 - Short rows PAIR two-up by design where it halves a section's height:
   Override|Weather, Swimming|Depth, Opacity|Tint, Speed|Sensitivity,
   Orthographic|Ortho zoom, Follow|Lock, Freeze water|Restore water,
-  Sections|File. Pairing is a
+  Sections|File, and the overlay pages (2026-08-31):
+  Visible|Drag on screen, Scale|Opacity, Channel|Tint,
+  Tail|Tail position, Panel|Advance mark. Pairing is a
   deliberate per-section choice at the design width, not a responsive
   behavior; selector rows and field rows keep full rows. Pair flow is
   applied by READING every row it will wrap — a Cells row is already
