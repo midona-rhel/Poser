@@ -400,6 +400,40 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         *((byte*)node + offset) = value;
     }
 
+    /// <summary>The whole undocumented tail (0xC0..0xE0) in one read —
+    /// the pause hold freezes it beside the transform, because part of
+    /// it is the instance's own animation clock (it visibly counts up)
+    /// and a held transform with a running clock JUMPS on unpause.
+    /// </summary>
+    public bool TryReadBgTail(nint address, byte[] into)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || into.Length < 0x20)
+            return false;
+        for (int i = 0; i < 0x20; i++)
+            into[i] = *((byte*)node + 0xC0 + i);
+        return true;
+    }
+
+    /// <summary>Writes a captured tail back, skipping the DOCUMENTED
+    /// bytes (night state, colour intensity, colour) so a held pause
+    /// never overwrites a choice the user makes meanwhile.</summary>
+    public void WriteBgTailHeld(nint address, byte[] values)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject
+            || values.Length < 0x20)
+            return;
+        for (int i = 0; i < 0x20; i++)
+        {
+            int offset = 0xC0 + i;
+            if (offset is 0xCD or 0xCE or >= 0xD0 and <= 0xD3)
+                continue;
+            *((byte*)node + offset) = values[i];
+        }
+    }
+
     /// <summary>The base Object's 64-bit flag word at 0x38 — the widest
     /// undocumented lever the instance carries.</summary>
     public ulong? ReadBgObjectFlags(nint address)

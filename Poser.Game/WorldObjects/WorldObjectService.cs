@@ -247,6 +247,11 @@ public sealed class AdoptedWorldObject
     /// setter, so a paused object still moves where the user says.</summary>
     internal Transform? HeldPause;
 
+    /// <summary>The instance tail the pause froze — the animation clock
+    /// lives in it, and a held transform over a running clock jumps on
+    /// unpause.</summary>
+    internal byte[]? HeldPauseTail;
+
     /// <summary>Live debug access to the base object's 64-bit flag word.
     /// </summary>
     public ulong? DebugObjectFlags
@@ -601,6 +606,11 @@ public sealed class WorldObjectService : IDisposable
                     _port.TryRead(handle.Address, out var frozen)
                         ? frozen
                         : handle.Transform;
+                var tail = new byte[0x20];
+                handle.HeldPauseTail =
+                    _port.TryReadBgTail(handle.Address, tail)
+                        ? tail
+                        : null;
             }
         }
         else
@@ -608,6 +618,7 @@ public sealed class WorldObjectService : IDisposable
             if (_animHunt == handle)
                 _animHunt = null;
             handle.HeldPause = null;
+            handle.HeldPauseTail = null;
             if (handle.AnimGateKind is { } gate)
                 ApplyLever(handle, gate, paused: false);
         }
@@ -629,6 +640,8 @@ public sealed class WorldObjectService : IDisposable
                 || !_port.IsAlive(handle.Address))
                 continue;
             _port.Write(handle.Address, held);
+            if (handle.HeldPauseTail is { } heldTail)
+                _port.WriteBgTailHeld(handle.Address, heldTail);
         }
     }
 

@@ -176,6 +176,10 @@ public interface IWorldObjectPort
 
     void WriteBgTailByte(nint address, int offset, byte value);
 
+    bool TryReadBgTail(nint address, byte[] into);
+
+    void WriteBgTailHeld(nint address, byte[] values);
+
     ulong? ReadBgObjectFlags(nint address);
 
     void WriteBgObjectFlags(nint address, ulong flags);
