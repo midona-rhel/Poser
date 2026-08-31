@@ -135,6 +135,15 @@ public interface IWorldObjectPort
     /// that is not a live VFX.</summary>
     void SetVfxSpeed(nint address, float speed);
 
+    /// <summary>Writes a VFX's colour multiplier (RGB; the effect's alpha
+    /// stays the opacity's). A no-op on a BG object — model staining needs
+    /// natives this port does not carry yet.</summary>
+    void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
+
+    /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
+    /// VFX's alpha, a BG object's dither transparency.</summary>
+    void WriteOpacity(nint address, float opacity);
+
     /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
     /// both. Never called with an adopted address — the map's own objects
     /// are always restored instead.</summary>

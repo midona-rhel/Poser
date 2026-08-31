@@ -124,6 +124,11 @@ private sealed class World
 
         public void SetVfxSpeed(nint address, float speed) { }
 
+        public void WriteVfxTint(
+            nint address, System.Numerics.Vector3 tint) { }
+
+        public void WriteOpacity(nint address, float opacity) { }
+
         public nint Spawn(string path, in Transform placement)
         {
             var address = _next++;

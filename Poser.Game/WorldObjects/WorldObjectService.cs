@@ -100,6 +100,38 @@ public sealed class AdoptedWorldObject
 
     private float _vfxSpeed = 1f;
 
+    /// <summary>The drawn opacity, 1 fully drawn: a VFX's alpha, a BG
+    /// object's dither. Composed with <see cref="Visible"/> — hiding
+    /// writes zero, showing writes this.</summary>
+    public float Opacity
+    {
+        get => _opacity;
+        set
+        {
+            _opacity = Math.Clamp(value, 0f, 1f);
+            if (!_released)
+                _owner.WriteOpacity(this);
+        }
+    }
+
+    private float _opacity = 1f;
+
+    /// <summary>The effect's colour multiplier, when the user tinted it;
+    /// null leaves the file's own colours alone. VFX only for now — BG
+    /// staining waits on natives.</summary>
+    public Vector3? Tint
+    {
+        get => _tint;
+        set
+        {
+            _tint = value;
+            if (!_released && value is { } stated)
+                _owner.WriteVfxTint(this, stated);
+        }
+    }
+
+    private Vector3? _tint;
+
     /// <summary>When the loop refresh next recreates this effect. Internal
     /// to the service's tick.</summary>
     internal DateTime NextVfxRefresh = DateTime.MaxValue;
@@ -265,8 +297,12 @@ public sealed class WorldObjectService : IDisposable
         {
             if (Math.Abs(handle.VfxSpeed - 1f) > 0.001f)
                 _port.SetVfxSpeed(fresh, handle.VfxSpeed);
+            if (handle.Tint is { } tint)
+                _port.WriteVfxTint(fresh, tint);
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
         }
+        if (handle.Opacity < 1f && visible)
+            _port.WriteOpacity(fresh, handle.Opacity);
         _events.Publish(new WorldObjectListChangedEvent());
         return true;
     }
@@ -276,6 +312,23 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || !_port.IsAlive(handle.Address))
             return;
         _port.SetVfxSpeed(handle.Address, speed);
+    }
+
+    internal void WriteVfxTint(AdoptedWorldObject handle, Vector3 tint)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address))
+            return;
+        _port.WriteVfxTint(handle.Address, tint);
+    }
+
+    /// <summary>Restates the drawn opacity from the handle's own facts —
+    /// hidden writes zero, shown writes the stated opacity.</summary>
+    internal void WriteOpacity(AdoptedWorldObject handle)
+    {
+        if (_disposed || !_port.IsAlive(handle.Address))
+            return;
+        _port.WriteOpacity(
+            handle.Address, handle.Visible ? handle.Opacity : 0f);
     }
 
     /// <summary>The live claims. It is the service's own list, so a caller
@@ -585,6 +638,10 @@ public sealed class WorldObjectService : IDisposable
         if (_disposed || !_port.IsAlive(handle.Address))
             return;
         _port.WriteVisible(handle.Address, visible);
+        // A dimmed object re-shows at ITS opacity, not full: the two facts
+        // compose here, the one place both are known.
+        if (visible && handle.Opacity < 1f)
+            _port.WriteOpacity(handle.Address, handle.Opacity);
     }
 
     // ── restore ──────────────────────────────────────────────────────────

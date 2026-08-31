@@ -269,6 +269,31 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             ((DrawObject*)node)->IsVisible = visible;
     }
 
+    public void WriteVfxTint(nint address, System.Numerics.Vector3 tint)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return;
+        var vfx = (CSVfx*)node;
+        var current = vfx->Color;
+        vfx->Color = new System.Numerics.Vector4(
+            tint.X, tint.Y, tint.Z, current.W);
+    }
+
+    public void WriteOpacity(nint address, float opacity)
+    {
+        var node = Resolve(address);
+        if (node == null)
+            return;
+        float clamped = Math.Clamp(opacity, 0f, 1f);
+        if (node->GetObjectType() == ObjectType.VfxObject)
+            *(float*)((byte*)node + VfxAlphaOffset) = clamped;
+        else
+            // The vtable's dither: 0 fully drawn, 1 gone — the opposite
+            // sense of the stated opacity.
+            ((BgObject*)node)->SetTransparency(1f - clamped);
+    }
+
     public void SetVfxSpeed(nint address, float speed)
     {
         var node = Resolve(address);

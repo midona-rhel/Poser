@@ -1086,6 +1086,16 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
                 out detail);
         if (handle != null && data.Name.Length > 0)
             handle.Name = data.Name;
+        if (handle != null)
+        {
+            if (data.Opacity < 1f)
+                handle.Opacity = data.Opacity;
+            if (data.Tint is { } tint)
+                handle.Tint = tint;
+            handle.LoopVfx = data.VfxLoop;
+            if (Math.Abs(data.VfxSpeed - 1f) > 0.001f)
+                handle.VfxSpeed = data.VfxSpeed;
+        }
         return handle;
     }
 

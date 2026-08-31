@@ -199,13 +199,32 @@ public sealed class WorldObjectsPane
             // the whole path for when the cell truncates it.
             form.ReadOnly("Model", worldObject.Path, help: worldObject.Path);
         }
-        form.Switch(
+        form.Pair(
             "Visible",
-            worldObject.Visible,
-            next => worldObject.Visible = next,
-            help: "Hide this object without moving it");
+            cell => cell.Switch(
+                "##world-object-visible",
+                worldObject.Visible,
+                next => worldObject.Visible = next,
+                help: "Hide this object without moving it"),
+            "Opacity",
+            cell => cell.Slider(
+                "##world-object-opacity",
+                worldObject.Opacity,
+                0f,
+                1f,
+                next => worldObject.Opacity = next,
+                help: "Fade the whole object"));
         if (worldObject.IsVfx)
         {
+            form.ColorWells("Tint", wells =>
+            {
+                var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
+                wells.Well(
+                    "Tint",
+                    new Vector4(tint, 1f),
+                    value => worldObject.Tint =
+                        new Vector3(value.X, value.Y, value.Z));
+            }, help: "Multiply the effect's colours");
             // The effect's own pair: whether it replays, and how fast.
             form.Pair(
                 "Loop",

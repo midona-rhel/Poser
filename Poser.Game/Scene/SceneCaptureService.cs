@@ -592,6 +592,10 @@ public sealed class SceneCaptureService
                 Visible = worldObject.Visible,
                 Spawned = worldObject.Spawned,
                 Name = worldObject.Name,
+                Opacity = worldObject.Opacity,
+                Tint = worldObject.Tint,
+                VfxLoop = worldObject.LoopVfx,
+                VfxSpeed = worldObject.VfxSpeed,
                 Transform = NormalizedTransform(
                     worldObject.Transform,
                     $"World object '{worldObject.Name}'",

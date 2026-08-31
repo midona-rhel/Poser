@@ -547,6 +547,20 @@ public class SceneWorldObject
     /// <summary>The user's name for it, when one was given; empty derives
     /// from the path as ever.</summary>
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>The drawn opacity, 1 fully drawn. Absent reads as 1 on
+    /// older files.</summary>
+    public float Opacity { get; set; } = 1f;
+
+    /// <summary>The effect's colour multiplier when the user tinted it;
+    /// null leaves the file's own colours alone (VFX only).</summary>
+    public Vector3? Tint { get; set; }
+
+    /// <summary>Whether a spawned effect replays on its interval.</summary>
+    public bool VfxLoop { get; set; } = true;
+
+    /// <summary>A spawned effect's playback speed.</summary>
+    public float VfxSpeed { get; set; } = 1f;
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's
