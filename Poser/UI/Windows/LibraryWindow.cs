@@ -373,9 +373,9 @@ public sealed class LibraryWindow : Window
                 id: "##library-kind-all");
             seat.X += buttonSide + gap;
 
-            // An admitted kind is latched (the pill's white highlight);
-            // a filtered-out kind is dim and inert — the union is the one
-            // way back on (ruled 2026-09-01).
+            // An admitted kind is latched (the pill's white highlight); a
+            // filtered-out kind is dim but still CLICKABLE — the same press
+            // re-admits it (ruled 2026-09-01, reversing same-day "inert").
             foreach (var (kind, icon, name) in KindToggles)
             {
                 bool latched = pane.KindFilterContains(kind);
@@ -384,7 +384,6 @@ public sealed class LibraryWindow : Window
                     icon,
                     latched,
                     () => pane.ToggleKindFilter(kind),
-                    disabled: !latched,
                     help: name,
                     id: "##library-kind-" + name,
                     dimmed: !latched);
