@@ -118,6 +118,42 @@ public sealed class WorldAssetCatalog
         ["dec"] = "Decoration", ["bui"] = "Building",
         ["sak"] = "Railing", ["saku"] = "Railing",
         ["stn"] = "Stone",
+        // The romaji half of the game's naming, mined from the stems the
+        // English map left unmatched (half the catalog): taru is a
+        // barrel, iwa a rock, kabe a wall — plus the clipped English the
+        // original map missed.
+        ["taru"] = "Barrel", ["iwa"] = "Rock", ["kabe"] = "Wall",
+        ["yama"] = "Mountain", ["yuka"] = "Floor", ["ita"] = "Planks",
+        ["hako"] = "Box", ["isu"] = "Chair", ["tana"] = "Shelf",
+        ["tsubo"] = "Jar", ["ishi"] = "Stone", ["kaidan"] = "Stairs",
+        ["mado"] = "Window", ["hei"] = "Fence", ["yane"] = "Roof",
+        ["fune"] = "Ship", ["take"] = "Bamboo", ["sakura"] = "Cherry tree",
+        ["matsu"] = "Pine", ["hashi"] = "Bridge", ["has"] = "Bridge",
+        ["kusa"] = "Grass", ["hana"] = "Flower", ["toge"] = "Thorns",
+        ["hou"] = "House", ["sip"] = "Ship", ["mon"] = "Gate",
+        ["wod"] = "Wood", ["cor"] = "Corridor", ["bil"] = "Building",
+        ["sta"] = "Statue", ["dai"] = "Platform", ["kin"] = "Gold",
+        ["grl"] = "Grille", ["gare"] = "Rubble", ["grk"] = "Rubble",
+        ["frm"] = "Frame", ["twr"] = "Tower",
+        ["tnt"] = "Tent", ["tent"] = "Tent",
+        ["hal"] = "Hall", ["roof"] = "Roof", ["tabl"] = "Table",
+        ["flag"] = "Flag", ["flg"] = "Flag", ["root"] = "Roots",
+        ["plan"] = "Plant", ["blk"] = "Block", ["ston"] = "Stone",
+        ["ndl"] = "Needle", ["rail"] = "Railing", ["arc"] = "Arch",
+        ["net"] = "Net", ["dom"] = "Dome", ["debr"] = "Debris",
+        ["mus"] = "Mushroom", ["xma"] = "Starlight", ["aet"] = "Aether",
+        ["evt"] = "Event", ["gmc"] = "Gimmick", ["tbx"] = "Chest",
+        ["vfog"] = "Fog", ["vfg"] = "Fog",
+        ["cas"] = "Castle", ["bri"] = "Bridge", ["stg"] = "Stage",
+        // Best-effort wave over the biggest remaining groups (user
+        // 2026-08-31: name them and kill the remainder). Guessed from
+        // context, correctable one word at a time.
+        ["fun"] = "Vent", ["gar"] = "Rubble",
+        ["all"] = "Assembly", ["emp"] = "Imperial",
+        ["rod"] = "Rod", ["cut"] = "Cinematic", ["rid"] = "Ridge",
+        ["stir"] = "Stairs", ["grd"] = "Ground", ["hng"] = "Hanging",
+        ["mist"] = "Mist", ["dust"] = "Dust", ["kumo"] = "Cloud",
+        ["lit"] = "Light",
     };
 
     /// <summary>The EFFECT vocabulary, mined from the 8k stems: FFXIV

@@ -167,7 +167,10 @@ public sealed class SpawnBrowserWindow : Window
         Game.Scene.SceneWorkflow scenes,
         Game.Scene.PlacementAnchorSource anchors,
         Game.WorldObjects.WorldObjectService worldObjects,
-        Game.WorldObjects.WorldAssetCatalog assets)
+        Game.WorldObjects.WorldAssetCatalog assets,
+        global::Poser.Application.Appearance.ModelCatalog modelCatalog,
+        Game.Appearance.ModelCatalogLoader modelLoader,
+        global::Poser.Application.Appearance.ActorModelIdSession model)
         : base($"Add to scene###{PluginConstants.PluginName}_spawn_browser",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse |
@@ -194,6 +197,9 @@ public sealed class SpawnBrowserWindow : Window
         _anchors = anchors;
         _worldObjects = worldObjects;
         _assets = assets;
+        _modelCatalog = modelCatalog;
+        _modelLoader = modelLoader;
+        _model = model;
         _icons = new GameIconResolver(textures);
 
         _vm.OnQuery = next => _vm.Query = next;
@@ -286,6 +292,11 @@ public sealed class SpawnBrowserWindow : Window
     {
         // A scan that finished while the window is open re-lists the saved
         // objects live — one int compare per frame.
+        // The NPC catalog builds in the background; its publication
+        // re-lists the rows the way a library save does.
+        _modelLoader.EnsureLoaded();
+        if (_modelCatalog.PublicationVersion != _modelCatalogVersion)
+            _built = false;
         if (_library.Snapshot.Revision != _libraryRevision)
         {
             _built = false;
@@ -652,6 +663,29 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
+        // Named NPCs close the Actors seats: every event NPC the model
+        // catalog names, spawned as a fresh actor WEARING that model —
+        // search Alphinaud, get Alphinaud.
+        _npcEntries.Clear();
+        _modelCatalogVersion = _modelCatalog.PublicationVersion;
+        foreach (var npc in _modelCatalog.Entries)
+        {
+            if (npc.Kind != global::Poser.Domain.Appearance
+                    .ModelCatalogKind.EventNpc)
+                continue;
+            _npcEntries.Add(npc);
+            rows.Add(new SpawnBrowserRow(
+                "##spawn-npc-" + _npcEntries.Count.ToString(
+                    CultureInfo.InvariantCulture),
+                npc.Name,
+                npc.Name.ToLowerInvariant(),
+                TablerIcon.User,
+                npc.Icon,
+                "NPC",
+                false));
+            _rowTabs.Add(SpawnBrowserTab.Actors);
+        }
+
         _refilter = true;
     }
 
@@ -664,6 +698,19 @@ public sealed class SpawnBrowserWindow : Window
     private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly Game.WorldObjects.WorldObjectService _worldObjects;
     private readonly Game.WorldObjects.WorldAssetCatalog _assets;
+    private readonly global::Poser.Application.Appearance.ModelCatalog
+        _modelCatalog;
+    private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
+    private readonly global::Poser.Application.Appearance.ActorModelIdSession
+        _model;
+
+    /// <summary>The named-NPC seats, parallel to their rows; and the one
+    /// spawn whose body still owes its NPC model — applied once the actor
+    /// binds, the pending-select's own rule.</summary>
+    private readonly List<global::Poser.Domain.Appearance.ModelCatalogEntry>
+        _npcEntries = new();
+    private int _modelCatalogVersion = -1;
+    private (IActor Actor, int ModelCharaId)? _pendingNpcModel;
 
     /// <summary>The whole-game asset browser: effects or models, opened by
     /// the two catalog rows below. One picker, two owners.</summary>
@@ -988,7 +1035,27 @@ public sealed class SpawnBrowserWindow : Window
                 int worldIndex = effectIndex - effects.Count;
                 var worldModels = _assets.Models;
                 if (worldIndex >= 0 && worldIndex < worldModels.Count)
+                {
                     SpawnWorldAsset(worldModels[worldIndex].Path);
+                    return;
+                }
+                // The named NPCs close the whole list.
+                int npcIndex = worldIndex - worldModels.Count;
+                if (npcIndex >= 0 && npcIndex < _npcEntries.Count)
+                {
+                    var npc = _npcEntries[npcIndex];
+                    var spawnedNpc = _lifecycle.SpawnActor(
+                        $"Add {npc.Name}",
+                        () => _spawnService.SpawnNewActor(
+                            reserveCompanionSlot: false));
+                    if (spawnedNpc == null)
+                    {
+                        _notices.Failed(SpawnFailedNote);
+                        return;
+                    }
+                    _pendingNpcModel = (spawnedNpc, npc.ModelCharaId);
+                    SelectSpawned(spawnedNpc);
+                }
                 return;
             }
             var models = _propService.Catalog;
@@ -1051,6 +1118,15 @@ public sealed class SpawnBrowserWindow : Window
         {
             _selection.Select(SelectionId.ForLight(lightId));
             _pendingSelectSpawnedLight = null;
+        }
+
+        // The NPC spawn's second half: the fresh body takes the model
+        // the row named, once the actor is bound.
+        if (_pendingNpcModel is { } owed
+            && _bindings.GetActorId(owed.Actor) is { } owedActor)
+        {
+            _model.Apply(owedActor, owed.ModelCharaId);
+            _pendingNpcModel = null;
         }
 
         if (_pendingSelectSpawned is not { } spawned)
