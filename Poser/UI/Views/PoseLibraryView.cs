@@ -279,7 +279,7 @@ public sealed class PoseLibraryViewModel
     public bool ShowSpawn = true;
 
     /// <summary>The placement choice beside the primary, when the tab has
-    /// one (the Objects tab). Null hides it.</summary>
+    /// one (Objects and Scenes). Null hides it.</summary>
     public string[]? PlacementOptions;
     public int PlacementSelected;
     public Action<int>? OnPlacement;

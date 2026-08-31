@@ -3074,16 +3074,12 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
             _type is not LibraryType.Scenes and not LibraryType.Objects;
-        if (_type == LibraryType.Objects)
+        // Scenes and objects both choose WHERE a load lands (ruled
+        // 2026-08-31): the same four-mode dropdown, the same preference.
+        // No probe here any more — nothing gates on saved anchors since
+        // the centroid fallback made every mode honourable.
+        if (_type is LibraryType.Objects or LibraryType.Scenes)
         {
-            // The choices follow the SELECTED entry: an option whose anchor
-            // the file does not record is not offered.
-            int selectedTile = _vm.Selected;
-            if (selectedTile >= 0 && selectedTile < _vm.Tiles.Count &&
-                selectedTile < _tileKinds.Count)
-                ProbeDetails(
-                    _vm.Tiles[selectedTile].ThumbKey,
-                    _tileKinds[selectedTile]);
             BuildPlacementChoices();
             _vm.PlacementOptions = _placementChoiceLabels.ToArray();
             _vm.PlacementSelected =
