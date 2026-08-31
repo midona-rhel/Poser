@@ -210,15 +210,24 @@ public class PoseRailPane
         }
         else
         {
-            // The head wears the SAME type as a selection's name, so the
-            // rail's first line never restyles between states.
-            Crystarium.TextAt(cursor, "Nothing selected", new TextStyle
+            // The empty head keeps the populated head's TWO rows — the
+            // name seat and the sub seat, each a dash — so nothing
+            // restyles or reflows when a selection lands.
+            Crystarium.TextAt(cursor, "-", new TextStyle
             {
                 Size = Crystarium.ActiveTheme.Typography.BodySize,
                 Weight = FontWeight.Medium,
                 Color = Crystarium.ActiveTheme.Text,
             });
-            cursor.Y += 22f * s;
+            Crystarium.TextAt(
+                cursor + new Vector2(0f, 17f) * s, "-",
+                new TextStyle
+                {
+                    Size = Crystarium.ActiveTheme.Typography.CaptionSize,
+                    Color = Crystarium.ActiveTheme.TextMuted,
+                    Family = FontFamily.Mono,
+                });
+            cursor.Y += 36f * s;
             // The verbs band stands even with nothing selected — the same
             // two seats, disabled, so a selection appearing or leaving
             // never reflows the rail. The gizmo below draws inert the
