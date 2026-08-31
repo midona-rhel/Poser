@@ -742,7 +742,10 @@ row's label is its whole explanation, and a row that would need a
 placeholder or an explanation is omitted, never seated disabled with
 a tooltip — a menu never holds an empty seat.
 
-A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
+A hover is a short WHAT-IT-DOES phrase and NEVER contains an em
+dash — no appended explainer clauses ("The night look — lamps lit"
+shipped and was rejected on sight, 2026-09-01; it is "Toggles night
+state"). "Preview the expression",
 "Reset the face bones", "Fade the whole actor" — a few words, verb
 first. Every labelled control HAS one; a value's units belong in it
 ("Orbit above or below, degrees"). Explanations live in the UI-contract docs and the future

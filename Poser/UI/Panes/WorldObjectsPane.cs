@@ -246,7 +246,7 @@ public sealed class WorldObjectsPane
                     "##world-object-night",
                     worldObject.NightState,
                     next => worldObject.NightState = next,
-                    help: "The night look — lamps lit"));
+                    help: "Toggles night state"));
         }
         if (worldObject.IsVfx)
         {
