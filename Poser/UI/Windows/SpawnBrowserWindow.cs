@@ -202,6 +202,37 @@ public sealed class SpawnBrowserWindow : Window
         _model = model;
         _icons = new GameIconResolver(textures);
 
+        // The catalog rows mint OFF-THREAD, immediately: pure data from
+        // the gzipped path lists, ready long before the first open.
+        _catalogRowsTask = System.Threading.Tasks.Task.Run(() =>
+        {
+            var effectAssets = _assets.Effects;
+            var effectRows = new SpawnBrowserRow[effectAssets.Count];
+            for (int i = 0; i < effectAssets.Count; i++)
+                effectRows[i] = new SpawnBrowserRow(
+                    "##spawn-effect-" + i.ToString(
+                        CultureInfo.InvariantCulture),
+                    effectAssets[i].Label,
+                    effectAssets[i].Label.ToLowerInvariant(),
+                    TablerIcon.Fire,
+                    0u,
+                    effectAssets[i].Context,
+                    false);
+            var modelAssets = _assets.Models;
+            var modelRows = new SpawnBrowserRow[modelAssets.Count];
+            for (int i = 0; i < modelAssets.Count; i++)
+                modelRows[i] = new SpawnBrowserRow(
+                    "##spawn-model-" + i.ToString(
+                        CultureInfo.InvariantCulture),
+                    modelAssets[i].Label,
+                    modelAssets[i].Label.ToLowerInvariant(),
+                    TablerIcon.Square,
+                    0u,
+                    modelAssets[i].Context,
+                    false);
+            return (effectRows, modelRows);
+        });
+
         _vm.OnQuery = next => _vm.Query = next;
         _vm.OnActivate = Activate;
         _vm.OnClose = () => IsOpen = false;
@@ -297,7 +328,10 @@ public sealed class SpawnBrowserWindow : Window
         // at its call site and not others desynced rows from their tabs
         // and crashed the filter (2026-08-31).
         _modelLoader.EnsureLoaded();
-        if (_modelCatalog.PublicationVersion != _modelCatalogVersion
+        bool cacheLanded = !_catalogRowsSeated
+            && _catalogRowsTask is { IsCompletedSuccessfully: true };
+        if (cacheLanded
+            || _modelCatalog.PublicationVersion != _modelCatalogVersion
             || _library.Snapshot.Revision != _libraryRevision)
         {
             _built = false;
@@ -632,40 +666,20 @@ public sealed class SpawnBrowserWindow : Window
             _rowTabs.Add(placed.tab);
         }
 
-        // The EFFECTS tab is the whole vfx catalog, inline: every world
-        // effect the game data holds, one flame row each, spawnable by
-        // Enter like anything else here.
-        var effects = _assets.Effects;
-        for (int i = 0; i < effects.Count; i++)
+        // The EFFECTS and MODELS catalogs, inline — copied whole from the
+        // background-minted cache. Until the mint lands the portal simply
+        // opens without them and re-lists the frame they arrive.
+        _catalogRowsSeated =
+            _catalogRowsTask is { IsCompletedSuccessfully: true };
+        if (_catalogRowsSeated)
         {
-            rows.Add(new SpawnBrowserRow(
-                "##spawn-effect-" + i.ToString(CultureInfo.InvariantCulture),
-                effects[i].Label,
-                effects[i].Label.ToLowerInvariant(),
-                TablerIcon.Fire,
-                0u,
-                // The flame already says VFX; the badge says WHERE FROM.
-                effects[i].Context,
-                false));
-            _rowTabs.Add(SpawnBrowserTab.Effects);
-        }
-
-        // And the whole MODEL catalog closes the list under Objects, the
-        // same inline treatment: every BG model, named by the vocabulary,
-        // badged by where it is from. The separate picker row died with
-        // this — the portal IS the browser.
-        var worldModels = _assets.Models;
-        for (int i = 0; i < worldModels.Count; i++)
-        {
-            rows.Add(new SpawnBrowserRow(
-                "##spawn-model-" + i.ToString(CultureInfo.InvariantCulture),
-                worldModels[i].Label,
-                worldModels[i].Label.ToLowerInvariant(),
-                TablerIcon.Square,
-                0u,
-                worldModels[i].Context,
-                false));
-            _rowTabs.Add(SpawnBrowserTab.Props);
+            var minted = _catalogRowsTask!.Result;
+            rows.AddRange(minted.Effects);
+            for (int i = 0; i < minted.Effects.Length; i++)
+                _rowTabs.Add(SpawnBrowserTab.Effects);
+            rows.AddRange(minted.Models);
+            for (int i = 0; i < minted.Models.Length; i++)
+                _rowTabs.Add(SpawnBrowserTab.Props);
         }
 
         // Named NPCs close the Actors seats: every event NPC the model
@@ -708,6 +722,16 @@ public sealed class SpawnBrowserWindow : Window
     private readonly Game.Appearance.ModelCatalogLoader _modelLoader;
     private readonly global::Poser.Application.Appearance.ActorModelIdSession
         _model;
+
+    /// <summary>The two catalog sections' rows, minted ONCE on a
+    /// background task: 111k row records with an id and a lowered label
+    /// each. Minting them on the draw thread froze the first open hard
+    /// (2026-08-31), and every library save re-paid it; a rebuild now
+    /// just copies these arrays in.</summary>
+    private System.Threading.Tasks.Task<(
+        SpawnBrowserRow[] Effects, SpawnBrowserRow[] Models)>?
+        _catalogRowsTask;
+    private bool _catalogRowsSeated;
 
     /// <summary>The named-NPC seats, parallel to their rows; and the one
     /// spawn whose body still owes its NPC model — applied once the actor
@@ -1029,23 +1053,27 @@ public sealed class SpawnBrowserWindow : Window
                     return;
                 }
                 // The effect catalog follows the saved seats, and the
-                // model catalog closes the list.
+                // model catalog closes the list — both only once seated.
+                int seatedEffects = _catalogRowsSeated
+                    ? _assets.Effects.Count
+                    : 0;
+                int seatedModels = _catalogRowsSeated
+                    ? _assets.Models.Count
+                    : 0;
                 int effectIndex = savedIndex - _savedObjects.Count;
-                var effects = _assets.Effects;
-                if (effectIndex >= 0 && effectIndex < effects.Count)
+                if (effectIndex >= 0 && effectIndex < seatedEffects)
                 {
-                    SpawnWorldAsset(effects[effectIndex].Path);
+                    SpawnWorldAsset(_assets.Effects[effectIndex].Path);
                     return;
                 }
-                int worldIndex = effectIndex - effects.Count;
-                var worldModels = _assets.Models;
-                if (worldIndex >= 0 && worldIndex < worldModels.Count)
+                int worldIndex = effectIndex - seatedEffects;
+                if (worldIndex >= 0 && worldIndex < seatedModels)
                 {
-                    SpawnWorldAsset(worldModels[worldIndex].Path);
+                    SpawnWorldAsset(_assets.Models[worldIndex].Path);
                     return;
                 }
                 // The named NPCs close the whole list.
-                int npcIndex = worldIndex - worldModels.Count;
+                int npcIndex = worldIndex - seatedModels;
                 if (npcIndex >= 0 && npcIndex < _npcEntries.Count)
                 {
                     var npc = _npcEntries[npcIndex];
