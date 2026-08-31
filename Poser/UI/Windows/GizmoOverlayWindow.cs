@@ -556,7 +556,8 @@ public class GizmoOverlayWindow : Window
     /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformTargetResolver.Resolve(
-            _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
+            _selection.Selected, _scene.Snapshot,
+            id => _groups.IsLockedChild(id, _selection.Selected));
 
     /// <summary>The live average of the targets' world positions — the
     /// group seat. Null when any member cannot answer, matching the

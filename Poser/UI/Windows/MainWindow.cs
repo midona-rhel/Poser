@@ -1535,7 +1535,8 @@ public class MainWindow : Window
         _pivotKey.AddRange(selected);
 
         var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot, _groups.IsLockedMember);
+            selected, _scene.Snapshot,
+            id => _groups.IsLockedChild(id, selected));
         _pivotPrimaryIsBone =
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
         _pivotParentAvailable = false;

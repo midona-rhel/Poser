@@ -112,6 +112,9 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance;
         public bool IsHovered;
         public float Opacity;
+        /// <summary>In a named group: the handle draws reduced — only the
+        /// inner circle — so the group dot carries the set's presence.</summary>
+        public bool InGroup;
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
@@ -487,6 +490,7 @@ public class SkeletonOverlayWindow : Window
                 // A prop belongs to no actor, so the actor fade has nothing to
                 // say about it.
                 Opacity = 1f,
+                InGroup = _groups.GroupOf(propSelectionId) != null,
             });
         }
 
@@ -512,6 +516,7 @@ public class SkeletonOverlayWindow : Window
                 CameraDistance = Vector3.Distance(
                     cameraPosition, worldTransform.Position),
                 Opacity = 1f,
+                InGroup = _groups.GroupOf(worldSelectionId) != null,
             });
         }
 
@@ -542,6 +547,7 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
                     Opacity = ActorOpacity(actor.Id, activeLineage),
+                    InGroup = _groups.GroupOf(actorSelectionId) != null,
                 });
             }
         }
@@ -719,6 +725,16 @@ public class SkeletonOverlayWindow : Window
             if (actor.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * actor.Opacity);
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
+            if (actor.InGroup)
+            {
+                // A grouped child wears only the inner circle: the group
+                // dot is the set's presence, the small dot the child's.
+                drawList.AddCircleFilled(
+                    actor.ScreenPos, radius * 0.45f, color, 16);
+                drawList.AddCircle(actor.ScreenPos, radius * 0.45f,
+                    OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
             drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
             drawList.AddCircle(actor.ScreenPos, radius, OutlineColor, 20, 2f * ImGuiHelpers.GlobalScale);
             drawList.AddCircle(actor.ScreenPos, radius * 0.45f, OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
@@ -735,8 +751,6 @@ public class SkeletonOverlayWindow : Window
             drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 24);
             drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 24,
                 2f * ImGuiHelpers.GlobalScale);
-            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.62f, OutlineColor,
-                20, 1f * ImGuiHelpers.GlobalScale);
             drawList.AddCircle(dot.ScreenPos, dotRadius * 0.3f, OutlineColor,
                 12, 1f * ImGuiHelpers.GlobalScale);
         }

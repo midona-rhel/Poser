@@ -174,7 +174,10 @@ Windows each have ONE job. No mode may change what a window IS.
   active group, exactly the sidebar head-click — and MEMBER handles
   hide until the group is engaged (head active, or a member or a
   member's bone selected), so a grouped set reads as one thing until
-  the user steps inside. World objects carry the same named dot as
+  the user steps inside. When they DO show, a grouped child wears
+  only the inner circle — the reduced dot — and the group dot keeps
+  one inner ring, not two (both ruled 2026-08-31): the group dot
+  carries the set's presence, the small dots the children's. World objects carry the same named dot as
   props: the handle is the one viewport route to selecting either.
   The Selection page
   and titles wear the group's name when the selection IS the group;
@@ -188,10 +191,13 @@ Windows each have ONE job. No mode may change what a window IS.
   "The selection IS the group" happens by EXPLICIT head click only
   (ruled 2026-08-30): hand-selecting every member stays a
   member-level selection — set-equality inference was rejected. A
-  group LOCKS (lock seat on its head row): locked protects
-  PLACEMENT — members' world transforms refuse, nothing drags in,
-  out, or around, and rename/ungroup/destroy disable in place;
-  visibility and animation stay free. The head menu carries the
+  group LOCKS (lock seat on its head row): locked freezes the
+  CHILDREN — a member selected on its own refuses world transforms,
+  nothing drags in, out, or around, and rename/ungroup/destroy
+  disable in place — while the GROUP stays movable: a selection
+  holding the whole membership moves it as one thing (ruled
+  2026-08-31; the whole-placement reading was wrong). Visibility
+  and animation stay free. The head menu carries the
   full lifetime: Rename, Save to library, Lock/Unlock, Ungroup, and
   Destroy — which destroys the members through their own seams and
   lets the emptied group dissolve.
