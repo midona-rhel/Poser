@@ -727,10 +727,10 @@ public class SkeletonOverlayWindow : Window
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
             if (actor.InGroup)
             {
-                // A grouped child wears only the inner circle: the group
-                // dot is the set's presence, the small dot the child's.
-                drawList.AddCircleFilled(
-                    actor.ScreenPos, radius * 0.45f, color, 16);
+                // A grouped child sheds its OUTERMOST circle (the rim
+                // ring): full-size but quieter, visible yet less
+                // important than the group's own dot.
+                drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
                 drawList.AddCircle(actor.ScreenPos, radius * 0.45f,
                     OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
                 continue;
@@ -748,9 +748,11 @@ public class SkeletonOverlayWindow : Window
             float dotRadius = dot.IsEngaged || dot.IsHovered
                 ? groupRadius + 2f
                 : groupRadius;
+            // No rim ring — the OUTERMOST circle is what the group dot
+            // sheds (ruled 2026-08-31); its two inner rings say "group".
             drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 24);
-            drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 24,
-                2f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.62f, OutlineColor,
+                20, 1f * ImGuiHelpers.GlobalScale);
             drawList.AddCircle(dot.ScreenPos, dotRadius * 0.3f, OutlineColor,
                 12, 1f * ImGuiHelpers.GlobalScale);
         }

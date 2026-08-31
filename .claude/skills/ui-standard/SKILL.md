@@ -174,10 +174,11 @@ Windows each have ONE job. No mode may change what a window IS.
   active group, exactly the sidebar head-click — and MEMBER handles
   hide until the group is engaged (head active, or a member or a
   member's bone selected), so a grouped set reads as one thing until
-  the user steps inside. When they DO show, a grouped child wears
-  only the inner circle — the reduced dot — and the group dot keeps
-  one inner ring, not two (both ruled 2026-08-31): the group dot
-  carries the set's presence, the small dots the children's. World objects carry the same named dot as
+  the user steps inside. When they DO show, what both shed is the
+  OUTERMOST circle — the rim ring (ruled 2026-08-31, superseding the
+  same day's inner-circle-only try): the group dot is fill + two
+  inner rings, a grouped child is its full-size fill + inner ring —
+  visible but less important than the group's own dot. World objects carry the same named dot as
   props: the handle is the one viewport route to selecting either.
   The Selection page
   and titles wear the group's name when the selection IS the group;
