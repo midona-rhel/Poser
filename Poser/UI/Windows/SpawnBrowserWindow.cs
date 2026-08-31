@@ -233,13 +233,11 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
-        // A save-to-library between opens re-lists the saved objects.
-        if (_library.Snapshot.Revision != _libraryRevision)
-        {
-            _built = false;
-            _vm.Rows.Clear();
-            _rowTabs.Clear();
-        }
+        // The library scans ON REQUEST, and only the library window used
+        // to ask — a save made with the library closed was invisible here
+        // forever. The portal asks too; the snapshot lands asynchronously
+        // and the revision check in Draw re-lists the moment it does.
+        _library.RequestScan();
         BuildRows();
         RefreshWorldLights();
         // The query is a DRAFT: it means nothing outside the open surface, so
@@ -283,6 +281,15 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void Draw()
     {
+        // A scan that finished while the window is open re-lists the saved
+        // objects live — one int compare per frame.
+        if (_library.Snapshot.Revision != _libraryRevision)
+        {
+            _built = false;
+            _vm.Rows.Clear();
+            _rowTabs.Clear();
+            BuildRows();
+        }
         ReconcilePendingSpawn();
         SyncQuery();
         if (_refilter)
