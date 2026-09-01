@@ -967,12 +967,18 @@ public sealed class AnimationPane : IDisposable
             _scrubActor = null;
             _scrubControl = null;
         }
+        // A gesture the session refused stays refused until the mouse is
+        // released; without this every remaining drag frame re-reported.
+        if (_scrubBlocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            _scrubBlocked = false;
     }
+
+    private bool _scrubBlocked;
 
     private void ScrubTo(
         ActorId actor, ScrubControlReading? control, float time, bool finish = false)
     {
-        if (control == null)
+        if (control == null || _scrubBlocked)
             return;
         if (_scrubActor is not { } scrubActor || !scrubActor.Equals(actor) ||
             _scrubControl != control.Id)
@@ -981,12 +987,25 @@ public sealed class AnimationPane : IDisposable
             if (!begun.Success)
             {
                 Report(begun, "Animation scrub");
+                _scrubBlocked = true;
                 return;
             }
             _scrubActor = actor;
             _scrubControl = control.Id;
         }
-        Report(_animation.UpdateScrub(actor, time), "Animation scrub");
+        var updated = _animation.UpdateScrub(actor, time);
+        if (!updated.Success)
+        {
+            // The session dropped the gesture (the control died mid-drag,
+            // the timeline ended): report ONCE, end the pane's gesture, and
+            // stay quiet until the next press.
+            Report(updated, "Animation scrub");
+            _animation.EndScrub();
+            _scrubActor = null;
+            _scrubControl = null;
+            _scrubBlocked = true;
+            return;
+        }
         if (finish)
         {
             _animation.EndScrub();

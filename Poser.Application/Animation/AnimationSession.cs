@@ -632,6 +632,17 @@ public sealed class AnimationSession
         ActorId actor, AnimationSlot slot, TimelineEntry? entry,
         bool playFromStart, bool resume = true)
     {
+        var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
+        Trace?.Invoke(outcome.Success
+            ? $"  PlaySelectedSlot {slot} -> ok"
+            : $"  PlaySelectedSlot {slot} -> FAIL: {outcome.Detail}");
+        return outcome;
+    }
+
+    private AnimationResult PlaySelectedSlotTraced(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume)
+    {
         bool resumedOverall = false;
         Trace?.Invoke(
             $"PlaySelectedSlot {actor} slot={slot} resume={resume} "

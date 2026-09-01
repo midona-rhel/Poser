@@ -98,6 +98,8 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
     }
 
+    private int _scrubLogCounter;
+
     /// <summary>Whether a foreign region answers a guarded read (the
     /// ReadProcessMemory import lives in the probe partial).</summary>
     private static bool RegionReadable(nint address, int size)
@@ -1247,6 +1249,16 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         if (timestamp != null)
         {
             *timestamp = Math.Clamp(time, 0f, duration) * 30f;
+            // The previous-timestamp twin too: leaving it at the old value
+            // made the next tick's delta enormous — the one-frame "way
+            // faster" blip after a scrub.
+            *(timestamp + 1) = *timestamp;
+            nint schedulerForLog = (nint)timestamp - SchedulerTimestampOffset;
+            if (++_scrubLogCounter % 45 == 1)
+                _log.Information(
+                    $"[AnimState] scrub {time:0.00}s -> {*timestamp:0.0}f; "
+                    + $"end candidates: sched+68={*(int*)(schedulerForLog + 0x68)} "
+                    + $"clipDuration={duration * 30f:0.0}f");
             // And the COMPLETION cursor, mirrored at three levels of the
             // track/clip chain in SECONDS (labeled hunt, 2026-09-01:
             // trackCtl+0x11C = track+0xAC = clip+0x5C advance together and
