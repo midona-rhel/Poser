@@ -75,6 +75,36 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     private const uint EmoteModeSleeping = 3;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
+    // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
+    // against our verified sequencer layout): per-slot SchedulerTimeline
+    // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
+    // dead), and the scheduler's own clock — TimelineController
+    // .CurrentTimestamp — at +0x34 of the pointed object. This is the
+    // second clock a real scrub must move: the havok controls are only the
+    // sampling side, and the scheduler resets the animation on ITS time.
+    private const int SequencerSchedulerHandlesOffset = 0x70;
+    private const int SchedulerTimestampOffset = 0x34;
+
+    /// <summary>The slot's live scheduler clock, or null.</summary>
+    private static float* SchedulerTimestamp(
+        ActionTimelineSequencer* sequencer, int slot)
+    {
+        if (slot is < 0 or >= 14)
+            return null;
+        var handles = (ulong*)((byte*)sequencer + SequencerSchedulerHandlesOffset);
+        var handle = (SchedulerTimelineHandle*)handles[slot];
+        if (handle == null || handle->Flags == 0 || handle->Data == 0)
+            return null;
+        return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SchedulerTimelineHandle
+    {
+        public nint Data;
+        public uint Flags;
+    }
+
     // Verified client layout: the forced id is container+0x2E0, which is
     // sequencer+0x2D0. SetTimelineId clears it, so layer writes clear first
     // and Base replay rearms it only after that native call returns.
@@ -1165,6 +1195,13 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             siblingControl->hkaAnimationControl.LocalTime =
                 Math.Clamp(time, 0f, siblingClip);
         }
+        // The SCHEDULER's clock moves with the scrub — without this the
+        // timeline layer keeps counting from the old position and resets
+        // the animation on the old schedule.
+        var timestamp = SchedulerTimestamp(
+            &character->Timeline.TimelineSequencer, control.Control);
+        if (timestamp != null)
+            *timestamp = Math.Clamp(time, 0f, duration);
         return AnimationPortResult.Ok();
     }
 

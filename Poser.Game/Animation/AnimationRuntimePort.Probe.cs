@@ -298,10 +298,19 @@ public sealed unsafe partial class AnimationRuntimePort
                 }
                 weapons.Append("  ");
             }
+            var clocks = new StringBuilder(48);
+            for (int slot = 0; slot < 4; slot++)
+            {
+                var stamp = SchedulerTimestamp(
+                    &character->Timeline.TimelineSequencer, slot);
+                clocks.Append(CultureInfo.InvariantCulture,
+                    stamp != null ? $"[{slot}]{*stamp:0.00} " : $"[{slot}]- ");
+            }
             var gameGazeMode = *(int*)(controller + 0x38);
             var gameGazePoint = *(System.Numerics.Vector3*)(controller + 0x40);
             _log.Information(
                 $"[AnimProbe] dump {actor}:\n{Describe(capture)}\n"
+                + $"  scheduler clocks: {clocks}\n"
                 + $"  game gaze: mode {gameGazeMode} at "
                 + $"({gameGazePoint.X:0.##}, {gameGazePoint.Y:0.##}, "
                 + $"{gameGazePoint.Z:0.##})\n"
