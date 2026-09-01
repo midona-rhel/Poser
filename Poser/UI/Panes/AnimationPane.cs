@@ -675,6 +675,10 @@ public sealed class AnimationPane : IDisposable
             ownedSpeed == 0f) ||
             _animation.IsPaused(actor);
         bool needsReplay = selected != 0 && live != selected;
+        // "None" has no clock: with nothing live, staged, or selected,
+        // the speed and play controls have nothing to drive.
+        bool hasAnimation = live != 0 || selected != 0
+            || _animation.SelectedFor(actor, slot) != null;
         var feed = slot switch
         {
             AnimationSlot.Base => _baseFeed,
@@ -728,7 +732,7 @@ public sealed class AnimationPane : IDisposable
                 $"{label} speed"),
             format: "0.00",
             marks: UnitMarks,
-            disabled: disabled,
+            disabled: disabled || !hasAnimation,
             actions: actions =>
             {
                 bool play = paused || needsReplay;
@@ -744,7 +748,7 @@ public sealed class AnimationPane : IDisposable
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
                     style: actionStyle,
-                    disabled: disabled || (play && !paused && selected == 0));
+                    disabled: disabled || !hasAnimation);
             },
             id: $"anim-{slot}-speed");
 

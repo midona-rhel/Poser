@@ -431,8 +431,7 @@ public sealed class AnimationSession
     }
 
     /// <summary>Whether ANYTHING on the actor is paused — the whole-actor
-    /// hold or any per-slot hold. The sidebar button reads this: it offers
-    /// play unless everything already plays.</summary>
+    /// hold or any per-slot hold.</summary>
     public bool AnyPaused(ActorId actor)
     {
         if (IsPaused(actor))
@@ -440,6 +439,26 @@ public sealed class AnimationSession
         foreach (var (_, speed) in OverridesFor(actor).SlotSpeeds)
         {
             if (speed == 0f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Whether any live layer is actually MOVING. The sidebar
+    /// button offers Pause while this is true and Resume otherwise
+    /// (ruled 2026-09-01): pause stops the stack, play overrides every
+    /// individual hold.</summary>
+    public bool AnyPlaying(ActorId actor)
+    {
+        if (IsPaused(actor))
+            return false;
+        if (Read(actor) is not { } reading)
+            return false;
+        var owned = OverridesFor(actor);
+        foreach (var slotReading in reading.Slots)
+        {
+            if (slotReading.TimelineId != 0
+                && owned.SlotSpeeds.GetValueOrDefault(slotReading.Slot, 1f) != 0f)
                 return true;
         }
         return false;
@@ -578,8 +597,21 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    public AnimationResult PauseSlot(ActorId actor, AnimationSlot slot) =>
-        SetSlotSpeedCore(actor, slot, 0f);
+    public AnimationResult PauseSlot(ActorId actor, AnimationSlot slot)
+    {
+        var held = SetSlotSpeedCore(actor, slot, 0f);
+        if (!held.Success)
+            return held;
+        // All live layers held collapses into the whole-actor pause
+        // automatically (ruled 2026-09-01) — "everything paused" has one
+        // canonical shape: overall zero.
+        if (!IsPaused(actor) && !AnyPlaying(actor))
+        {
+            Trace?.Invoke($"PauseSlot collapse: every layer held on {actor}");
+            SetSpeed(actor, 0f);
+        }
+        return held;
+    }
 
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
     /// <summary>APPLY stages, PLAY plays (ruled 2026-09-01): with
@@ -597,10 +629,14 @@ public sealed class AnimationSession
             + $"slotSpeed={OverridesFor(actor).SlotSpeeds.GetValueOrDefault(slot, float.NaN)}");
         if (SelectedFor(actor, slot) is { } selected)
         {
-            if (entry == null || entry.TimelineId != selected || entry.Slot != slot)
+            // A null entry plays the session's own selection as-is: state
+            // set outside this pane (a clone's transferred layers) has no
+            // pane-local pick, and refusing it stranded the clone
+            // ("the chosen animation identity changed").
+            if (entry != null && (entry.TimelineId != selected || entry.Slot != slot))
                 return AnimationResult.Fail("The chosen animation identity changed.");
             var played = ApplySelectedSlotCore(
-                actor, slot, playFromStart ? entry : null);
+                actor, slot, playFromStart && entry != null ? entry : null);
             if (!played.Success)
                 return played;
         }

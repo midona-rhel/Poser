@@ -268,8 +268,15 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             // CONTROLS, every frame, here after the game's own update.
             if (enforcement.SlotSpeeds.Count > 0)
             {
+                // Scaled by the container's overall: the game implements
+                // the whole-actor pause by propagating overall × slot down
+                // to the controls, and writing the raw slot value here
+                // overrode that zero every frame — "pause doesn't do
+                // anything once I've set it on an individual level".
                 ApplySlotSpeedsToControls(
-                    (Character*)owner, enforcement.SlotSpeeds);
+                    (Character*)owner,
+                    enforcement.SlotSpeeds,
+                    container->OverallSpeed);
                 result = true;
             }
         }
@@ -281,7 +288,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
     /// havok controls (control index == slot index on every partial).
     /// The per-frame half the field write cannot provide.</summary>
     private static void ApplySlotSpeedsToControls(
-        Character* character, Dictionary<int, float> slotSpeeds)
+        Character* character, Dictionary<int, float> slotSpeeds, float overall)
     {
         var drawObject = character->GameObject.DrawObject;
         if (drawObject == null ||
@@ -303,7 +310,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                 var control = animated->AnimationControls[slot].Value;
                 if (control == null)
                     continue;
-                control->PlaybackSpeed = speed;
+                control->PlaybackSpeed = speed * overall;
             }
         }
     }
