@@ -63,6 +63,7 @@ public sealed class SettingsViewModel
     public int SkeletonShape;
 
     public bool SelectedBonesOnly;
+    public bool PerBoneSymmetry;
     public int BonePickBehavior;
 
     public bool ShowSkeletonLines = true;
@@ -683,6 +684,11 @@ public static class SettingsView
                 vm.SelectedBonesOnly,
                 next => vm.SelectedBonesOnly = next,
                 "Draw the bones that are selected and nothing else");
+            form.Switch(
+                "Per-bone symmetry",
+                vm.PerBoneSymmetry,
+                next => vm.PerBoneSymmetry = next,
+                "The toolbar's Link and Mirror remember per bone");
             form.Dropdown(
                 "Bone pick behavior",
                 BonePickBehaviorLabels,

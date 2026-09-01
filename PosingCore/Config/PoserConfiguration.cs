@@ -76,6 +76,20 @@ public class PoserConfiguration : IPluginConfiguration
     public bool LinkSiblingBones { get; set; } = false;
 
     /// <summary>
+    /// The toolbar's Off | Link | Mirror remembers PER BONE: with this on,
+    /// clicking the toolbar while bones are selected states those bones'
+    /// own mode (clicking their stated value again clears it), and a bone
+    /// with no stated mode follows the toolbar as ever. Off is the
+    /// behaviour Poser has always had: one global mode.
+    /// </summary>
+    public bool PerBoneSymmetry { get; set; } = false;
+
+    /// <summary>The stated per-bone modes, by canonical bone name — only
+    /// the bones the user explicitly set.</summary>
+    public System.Collections.Generic.Dictionary<string, Poser.Services.SymmetryMode>
+        BoneSymmetryOverrides { get; set; } = new();
+
+    /// <summary>
     /// How many edits the undo history keeps, read live on every recorded edit
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the

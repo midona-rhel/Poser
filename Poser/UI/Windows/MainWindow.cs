@@ -629,7 +629,40 @@ public class MainWindow : Window
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
-        _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        _vm.OnSymmetry = i =>
+        {
+            var mode = (SymmetryMode)i;
+            var configuration =
+                Config.ConfigurationService.Instance.Config;
+            // With the per-bone sheet on, the toolbar EDITS the selected
+            // bones' own stated mode — clicking their stated value again
+            // clears it back to the toolbar's global. No bones selected
+            // (or sheet off) edits the global, as ever.
+            if (configuration.PerBoneSymmetry)
+            {
+                bool wroteAny = false;
+                foreach (var member in _scene.Selection.Selected)
+                {
+                    if (member.Bone is not { } stated)
+                        continue;
+                    wroteAny = true;
+                    if (configuration.BoneSymmetryOverrides.TryGetValue(
+                            stated.CanonicalName, out var current)
+                        && current == mode)
+                        configuration.BoneSymmetryOverrides.Remove(
+                            stated.CanonicalName);
+                    else
+                        configuration.BoneSymmetryOverrides[
+                            stated.CanonicalName] = mode;
+                }
+                if (wroteAny)
+                {
+                    Config.ConfigurationService.Instance.Save();
+                    return;
+                }
+            }
+            _editorState.SymmetryMode = mode;
+        };
         // The switch's polarity is "animation playing"; off writes a zero
         // speed override, on drops the override back to game speed.
         _vm.OnAnimation = on =>
@@ -1528,7 +1561,19 @@ public class MainWindow : Window
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
-        _vm.SymmetryMode = (int)_editorState.SymmetryMode;
+        // The seg DESCRIBES the primary selected bone when the per-bone
+        // sheet is on — its effective mode — and the global otherwise.
+        var symmetryConfig =
+            Config.ConfigurationService.Instance.Config;
+        var primaryBone = _scene.Selection.Primary?.Bone;
+        _vm.SymmetryMode = symmetryConfig.PerBoneSymmetry
+            && primaryBone is { } describedBone
+            ? (int)Core.BoneSymmetry.EffectiveMode(
+                true,
+                symmetryConfig.BoneSymmetryOverrides,
+                _editorState.SymmetryMode,
+                describedBone.CanonicalName)
+            : (int)_editorState.SymmetryMode;
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.

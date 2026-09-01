@@ -650,9 +650,9 @@ public class SkeletonOverlayWindow : Window
         }
 
         // Link (Copy) and Mirror both drive the opposite-side partner —
-        // one with the same delta, one flipped — so BOTH modes show it.
-        if (_editorState.SymmetryMode != SymmetryMode.Off)
-            MarkMirrorPartners(bones);
+        // one with the same delta, one flipped — so BOTH modes show it,
+        // resolved PER BONE through the one symmetry rule.
+        MarkMirrorPartners(bones, _editorState.SymmetryMode);
         if (_bonePosing.LinkedBonesEnabled)
             MarkLinkPartners(bones);
 
@@ -702,9 +702,12 @@ public class SkeletonOverlayWindow : Window
         CommitPendingSelection(bones, actors, lights);
         CommitPendingAdoption();
 
-        // Filter bones if ShowSelectedBonesOnly is enabled
+        // Only-selected keeps every IMPLICATED bone too: symmetry and
+        // link partners and armed IK chains still move with the
+        // selection, so they stay visible (ruled 2026-09-01).
         if (_editorState.ShowSelectedBonesOnly)
-            bones.RemoveAll(NotSelectedOrHovered);
+            bones.RemoveAll(static bone =>
+                !bone.IsHovered && !IsPriorityBone(bone));
 
         // Draw skeleton
         // The custom gizmo holds shared pointer ownership on hover AND
@@ -1562,12 +1565,20 @@ public class SkeletonOverlayWindow : Window
     /// <summary>Flags the opposite-side partners of the selected bones so
     /// Mirror symmetry shows what a transform will also move. Partners are
     /// matched inside the selected bone's own skeleton, never across actors.</summary>
-    private static void MarkMirrorPartners(List<BoneDisplayData> bones)
+    private static void MarkMirrorPartners(
+        List<BoneDisplayData> bones, SymmetryMode globalMode)
     {
+        var configuration = ConfigurationService.Instance.Config;
         HashSet<(SkeletonId, string)>? partners = null;
         foreach (var bone in bones)
         {
             if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            if (Core.BoneSymmetry.EffectiveMode(
+                    configuration.PerBoneSymmetry,
+                    configuration.BoneSymmetryOverrides,
+                    globalMode,
+                    boneId.CanonicalName) == SymmetryMode.Off)
                 continue;
             if (Core.PoseMath.GetMirrorBoneName(boneId.CanonicalName) is not { } mirror)
                 continue;

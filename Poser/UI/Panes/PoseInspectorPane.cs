@@ -2733,15 +2733,8 @@ public class PoseInspectorPane
             includeLinkedBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
                 _bonePosingService.LinkedBonesEnabled,
-            symmetry: targets[0].Kind == TransformTargetKind.Bone
-                ? _editorState.SymmetryMode switch
-                {
-                    SymmetryMode.Copy =>
-                        DomainDeltaMode.Direct,
-                    SymmetryMode.Mirror =>
-                        DomainDeltaMode.Mirrored,
-                    _ => null,
-                }
+            symmetryFor: targets[0].Kind == TransformTargetKind.Bone
+                ? SymmetryDeltaFor
                 : null,
             relativeSecondaryBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
@@ -2900,5 +2893,23 @@ public class PoseInspectorPane
         IActor { HasSkeleton: true } actor => actor.Skeleton,
         _ => null,
     };
+
+    /// <summary>The per-bone symmetry resolver, the gizmo's twin.</summary>
+    private System.Nullable<DomainDeltaMode> SymmetryDeltaFor(
+        string canonicalName)
+    {
+        var configuration =
+            Config.ConfigurationService.Instance.Config;
+        return Core.BoneSymmetry.EffectiveMode(
+            configuration.PerBoneSymmetry,
+            configuration.BoneSymmetryOverrides,
+            _editorState.SymmetryMode,
+            canonicalName) switch
+        {
+            SymmetryMode.Copy => DomainDeltaMode.Direct,
+            SymmetryMode.Mirror => DomainDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
 
 }

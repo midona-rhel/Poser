@@ -1189,14 +1189,7 @@ public class GizmoOverlayWindow : Window
                     $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
             },
             includeLinkedBones: isBone && _bonePosingService.LinkedBonesEnabled,
-            symmetry: isBone
-                ? _editorState.SymmetryMode switch
-                {
-                    SymmetryMode.Copy => TransformDeltaMode.Direct,
-                    SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
-                    _ => null,
-                }
-                : null,
+            symmetryFor: isBone ? SymmetryDeltaFor : null,
             relativeSecondaryBones: isBone &&
                 Config.ConfigurationService.Instance.Config
                     .RelativeSecondaryBones);
@@ -1446,4 +1439,24 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
     }
+    /// <summary>The per-bone symmetry resolver every gesture uses: the
+    /// bone's own stated mode when the per-bone sheet is on, the toolbar
+    /// otherwise — the one rule, from its one home.</summary>
+    private System.Nullable<TransformDeltaMode> SymmetryDeltaFor(
+        string canonicalName)
+    {
+        var configuration =
+            Config.ConfigurationService.Instance.Config;
+        return Core.BoneSymmetry.EffectiveMode(
+            configuration.PerBoneSymmetry,
+            configuration.BoneSymmetryOverrides,
+            _editorState.SymmetryMode,
+            canonicalName) switch
+        {
+            SymmetryMode.Copy => TransformDeltaMode.Direct,
+            SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
+
 }

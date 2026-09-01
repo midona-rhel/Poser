@@ -566,9 +566,15 @@ public sealed class GraphicalBonePane : IDisposable
             if (!_selection.IsSelected(id))
                 continue;
             // Link (Copy) and Mirror both drive the opposite-side
-            // partner, so BOTH toolbar modes show it — in the maps
-            // exactly as in the overlay.
-            if (_editorState.SymmetryMode != SymmetryMode.Off
+            // partner, so BOTH modes show it — resolved per bone through
+            // the one symmetry rule, in the maps exactly as the overlay.
+            var appConfig =
+                global::Poser.Config.ConfigurationService.Instance.Config;
+            if (Core.BoneSymmetry.EffectiveMode(
+                    appConfig.PerBoneSymmetry,
+                    appConfig.BoneSymmetryOverrides,
+                    _editorState.SymmetryMode,
+                    fact.CanonicalName) != SymmetryMode.Off
                 && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
                 (mirrorPartners ??= new HashSet<string>()).Add(mirror);
