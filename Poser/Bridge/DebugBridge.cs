@@ -400,7 +400,10 @@ public sealed class DebugBridge : IDisposable
                         humanEquip = string.Join(" ", he);
                         humanCust = Convert.ToHexString(new System.ReadOnlySpan<byte>(draw + 0xA20, 26));
                     }
-                    return Json(new { equipment = string.Join(" ", equips), main = $"{main.Id}.{main.Type}.{main.Variant}", customize = Convert.ToHexString(cust), humanEquip, humanCust });
+                    var glassesIds = character->DrawData.GlassesIds;
+                    string humanGlasses = draw == null ? "" : $"{*(ushort*)(draw + 0xA90)}.{draw[0xA92]} {*(ushort*)(draw + 0xA98)}.{draw[0xA9A]}";
+                    string flags = $"{*((byte*)&character->DrawData + 0x23E):X2}{*((byte*)&character->DrawData + 0x23F):X2}";
+                    return Json(new { equipment = string.Join(" ", equips), main = $"{main.Id}.{main.Type}.{main.Variant}", customize = Convert.ToHexString(cust), humanEquip, humanCust, glasses = $"{glassesIds[0]} {glassesIds[1]}", humanGlasses, flags });
                 }
             }
             case "/gamename":
@@ -454,6 +457,7 @@ public sealed class DebugBridge : IDisposable
                     if (c != null && _bindings.GetActorId(c) is { } cid)
                         _lifecycle.WhenPosable(c, copy =>
                         {
+                            _spawner.CopyDrawnAppearance(actor, (IActor)copy);
                             _spawner.CopyEquipmentVisibility(actor, (IActor)copy);
                             if (!posed)
                                 _session.AdoptBodyProfile(id, cid);

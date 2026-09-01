@@ -695,6 +695,26 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         var slots = to->DrawData.EquipmentModelIds;
         for (int i = 0; i < models.Length && i < slots.Length; i++)
             slots[i] = models[i];
+        // Facewear: its own two slots, not among the ten.
+        var glasses = from->DrawData.GlassesIds;
+        for (int i = 0; i < glasses.Length; i++)
+            to->DrawData.SetGlasses(i, glasses[i]);
+        var toDrawn = to->GameObject.DrawObject;
+        if (toDrawn != null
+            && toDrawn->Object.GetObjectType() == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
+            && ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)toDrawn)->GetModelType()
+                == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+        {
+            // Already drawn (the once-posable pass): the drawn glasses models
+            // straight across, the way the sync plugin set them.
+            var toHuman = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)toDrawn;
+            var sourceGlasses = human->GlassesModels;
+            for (uint i = 0; i < (uint)sourceGlasses.Length; i++)
+            {
+                var model = sourceGlasses[(int)i];
+                toHuman->SetGlassesSlotModel(i, &model);
+            }
+        }
         return true;
     }
 
@@ -708,6 +728,10 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         to->DrawData.HideHeadgear(0, from->DrawData.IsHatHidden);
         to->DrawData.SetVisor(from->DrawData.IsVisorToggled);
         to->DrawData.HideVieraEars(from->DrawData.VieraEarsHidden);
+        // The two flag bytes wholesale (+0x23E/+0x23F: the toggles above and
+        // the rest — facewear visibility among them).
+        *((byte*)&to->DrawData + 0x23E) = *((byte*)&from->DrawData + 0x23E);
+        *((byte*)&to->DrawData + 0x23F) = *((byte*)&from->DrawData + 0x23F);
         return true;
     }
 
@@ -1808,6 +1832,24 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 return true;
         }
         return false;
+    }
+
+    public bool CopyDrawnAppearance(IActor source, IActor target)
+    {
+        if (!OnOwnerThread || source.Address == nint.Zero || target.Address == nint.Zero)
+            return false;
+        try
+        {
+            if (_native.ResolveActor(source.Address) is not { } from
+                || !TryResolveActorForOperation(target, out var to, out _))
+                return false;
+            return _native.CopyDrawnAppearance(from, to);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorSpawnService: the drawn appearance could not be copied: {ex.Message}");
+            return false;
+        }
     }
 
     public bool CopyEquipmentVisibility(IActor source, IActor target)

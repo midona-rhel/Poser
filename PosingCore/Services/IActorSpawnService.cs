@@ -86,6 +86,11 @@ public interface IActorSpawnService : IDisposable
     /// carries the equipment, not the flags.</summary>
     bool CopyEquipmentVisibility(IActor source, IActor target) => false;
 
+    /// <summary>Copies the source's DRAWN customize, equipment and facewear
+    /// onto <paramref name="target"/>: what the source shows, whatever its
+    /// DrawData says (a sync plugin writes the draw object).</summary>
+    bool CopyDrawnAppearance(IActor source, IActor target) => false;
+
     /// <summary>
     /// Get an actor's visibility state.
     /// </summary>

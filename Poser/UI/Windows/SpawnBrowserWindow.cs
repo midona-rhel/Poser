@@ -1053,6 +1053,7 @@ public sealed class SpawnBrowserWindow : Window
             return clone;
         _lifecycle.WhenPosable(clone, c =>
         {
+            _spawnService.CopyDrawnAppearance(source, c);
             _spawnService.CopyEquipmentVisibility(source, c);
             if (adoptBodyProfile)
                 _integration.AdoptBodyProfile(sourceId, cloneId);

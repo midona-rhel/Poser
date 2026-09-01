@@ -5970,6 +5970,7 @@ public class MainWindow : Window
             return clone;
         _lifecycle.WhenPosable(clone, c =>
         {
+            _spawnService.CopyDrawnAppearance(source, c);
             _spawnService.CopyEquipmentVisibility(source, c);
             if (!adoptBodyProfile)
                 return;
