@@ -131,12 +131,22 @@ public sealed unsafe partial class AnimationRuntimePort
 
         for (int i = 0; i < n; i++)
             Track(line, ref dropped, ref watchIndex, $"c{i}", *cursorsBuffer[i]);
-        // The suspect: chara+0x1A58 read 73 = remaining frames at the pause
-        // (stale hunt 21:38). Its neighbourhood, as ints, every logged tick.
-        line.Append(" cd:");
-        for (int off = 0x1A40; off <= 0x1A70; off += 4)
-            line.Append(string.Create(CultureInfo.InvariantCulture,
-                $" {off:x}={*(int*)((nint)character + off)}"));
+        // The child timeline (ClipType 7): its frame cursor and its own
+        // controller clock — the place the old position was hiding.
+        if (n >= 2)
+        {
+            nint trackController = (nint)cursorsBuffer[1] - 0x11C;
+            nint trackPointers = *(nint*)(trackController + 0x28);
+            nint track = trackPointers != 0 ? *(nint*)trackPointers : 0;
+            nint clipPointers = track != 0 ? *(nint*)(track + 0x18) : 0;
+            nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
+            if (clip != 0 && *(int*)(clip + 0x84) == 7)
+            {
+                nint child = *(nint*)(clip + 0x130);
+                line.Append(string.Create(CultureInfo.InvariantCulture,
+                    $" childFrame={*(float*)(clip + 0xCC):0.0} childTs={(child != 0 ? *(float*)(child + 0x34) : float.NaN):0.0}"));
+            }
+        }
         if (n >= 1)
         {
             float c0 = *cursorsBuffer[0];
@@ -247,7 +257,15 @@ public sealed unsafe partial class AnimationRuntimePort
                     nint clipPointers = *(nint*)(track + 0x18);
                     nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
                     if (clip != 0)
-                        DiffObject(3, "clip", clip, 0x98);
+                    {
+                        DiffObject(3, "clip", clip, 0x160);
+                        if (*(int*)(clip + 0x84) == 7)
+                        {
+                            nint child = *(nint*)(clip + 0x130);
+                            if (child != 0)
+                                DiffObject(4, "child", child, 0x80);
+                        }
+                    }
                 }
             }
         }
@@ -440,8 +458,8 @@ public sealed unsafe partial class AnimationRuntimePort
         _log.Information(line.ToString());
     }
 
-    private readonly byte[][] _resetDiffPrev = new byte[4][];
-    private readonly nint[] _resetDiffAddr = new nint[4];
+    private readonly byte[][] _resetDiffPrev = new byte[5][];
+    private readonly nint[] _resetDiffAddr = new nint[5];
 
     /// <summary>Prints the dwords of one object that changed since the last
     /// tick, as float and int. A new address resets the baseline silently.</summary>

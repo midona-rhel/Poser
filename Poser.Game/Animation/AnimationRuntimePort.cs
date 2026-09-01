@@ -98,6 +98,39 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
     }
 
+    /// <summary>Walks a track controller's tracks and clips; every
+    /// ChildTimelineClip gets its frame cursor written and its child
+    /// controller seeked (timestamp + previous), recursively.</summary>
+    private static void SeekChildTimelines(nint trackController, float frames, int depth)
+    {
+        if (trackController == 0 || depth > 3)
+            return;
+        nint trackPointers = *(nint*)(trackController + 0x28);
+        int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+        for (int t = 0; t < trackCount && t < 8 && trackPointers != 0; t++)
+        {
+            nint track = *(nint*)(trackPointers + t * 8);
+            if (track == 0)
+                continue;
+            nint clipPointers = *(nint*)(track + 0x18);
+            int clipCount = *(ushort*)(track + 0x18 + 0xA);
+            for (int c = 0; c < clipCount && c < 8 && clipPointers != 0; c++)
+            {
+                nint clip = *(nint*)(clipPointers + c * 8);
+                if (clip == 0 || *(int*)(clip + 0x84) != 7)
+                    continue;
+                *(float*)(clip + 0xCC) = frames;   // ChildFrame
+                *(float*)(clip + 0xD0) = frames;   // PrevChildFrame
+                nint child = *(nint*)(clip + 0x130); // child TimelineController
+                if (child == 0)
+                    continue;
+                *(float*)(child + SchedulerTimestampOffset) = frames;
+                *(float*)(child + SchedulerTimestampOffset + 4) = frames;
+                SeekChildTimelines(*(nint*)(child + 0x18), frames, depth + 1);
+            }
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct SchedulerTimelineHandle
     {
@@ -1239,6 +1272,12 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                     }
                 }
             }
+            // THE CHILD TIMELINE: the slot's timeline is a PARENT whose clip
+            // (ClipType 7, Ktisis ChildTimelineClip) runs a child
+            // TimelineController with its own frame clock. Scrubbing only
+            // the parent left the child on the old position — the end is
+            // judged there, hence "dies on the old schedule" (2026-09-01).
+            SeekChildTimelines(trackController, cursor * 30f, 0);
         }
         return AnimationPortResult.Ok();
     }
