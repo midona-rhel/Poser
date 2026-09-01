@@ -142,11 +142,15 @@ public sealed class AnimationPane : IDisposable
         UserNotices notices,
         Game.Animation.AnimationRuntimePort probePort,
         global::Poser.Services.IActorSpawnService spawner,
-        Game.Scene.SceneLifecycleHistory lifecycle)
+        Game.Scene.SceneLifecycleHistory lifecycle,
+        global::Poser.Services.IGazeService gaze,
+        global::Poser.Services.IActorManager actorManager)
     {
         _probePort = probePort;
         _spawner = spawner;
         _lifecycle = lifecycle;
+        _gaze = gaze;
+        _actorManager = actorManager;
         _notices = notices;
         _animation = animation;
         _catalog = catalog;
@@ -226,6 +230,8 @@ public sealed class AnimationPane : IDisposable
     private readonly Game.Animation.AnimationRuntimePort _probePort;
     private readonly global::Poser.Services.IActorSpawnService _spawner;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Services.IActorManager _actorManager;
     private bool _openDebug;
 
     /// <summary>The ownership hunt's controls: dump, write logging, and
@@ -292,19 +298,111 @@ public sealed class AnimationPane : IDisposable
                 : ProbeSessionTransfer(source));
     }
 
-    /// <summary>The session-owned speed state — the big Animation toggle,
-    /// slot speeds — re-issued on the target through the session, so the
-    /// record matches the engine and the toggles tell the truth.</summary>
+    /// <summary>The session-owned state — the big Animation toggle, slot
+    /// speeds, held expression, lips — plus the live gaze, re-issued on the
+    /// target through the owning services, so the record matches the engine
+    /// and the toggles tell the truth. Gaze POSITIONS travel RELATIVE to
+    /// the actor (ruled 2026-09-01): the clone looks where the source
+    /// looked as seen from its own feet, not at an absolute point.</summary>
     private Action<ActorId> ProbeSessionTransfer(ActorId source)
     {
         var owned = _animation.OverridesFor(source);
+        var resolvedSource = _bindings.Resolve(source);
+        var sourceActor = resolvedSource.Success ? resolvedSource.Value : null;
+        var gaze = sourceActor != null && _gaze.IsAvailable
+            ? _gaze.GetGazeState(sourceActor)
+            : null;
+        var sourceTransform = sourceActor?.Transform;
+        nint gazeTargetAddress = sourceActor != null
+            ? _gaze.GetGazeTargetAddress(sourceActor)
+            : 0;
+        var lockedParts = new List<global::Poser.Services.GazeTargetType>();
+        if (sourceActor != null && gaze is { Mode: not global::Poser.Services.GazeTargetMode.None })
+        {
+            foreach (var part in PartOrder)
+            {
+                if (_gaze.IsPartLocked(sourceActor, part))
+                    lockedParts.Add(part);
+            }
+        }
         return target =>
         {
             if (owned.OverallSpeed is { } overall)
                 _animation.SetSpeed(target, overall);
             foreach (var (slot, speed) in owned.SlotSpeeds)
                 _animation.SetSlotSpeed(target, slot, speed);
+            if (owned.HeldExpression is { } expression)
+                _animation.HoldExpression(target, expression);
+            if (owned.Lips is { } lips)
+                _animation.SetLips(target, lips);
+            if (gaze is not { Mode: not global::Poser.Services.GazeTargetMode.None })
+                return;
+            var resolvedTarget = _bindings.Resolve(target);
+            if (!resolvedTarget.Success || resolvedTarget.Value is not { } clone)
+                return;
+            // The service's own transition order (ApplyActorGaze is the
+            // normative sequence): target/mode, parts, positions, locks.
+            if (gaze.Mode == global::Poser.Services.GazeTargetMode.Entity)
+            {
+                var followed = FindActorByAddress(gazeTargetAddress);
+                if (followed == null)
+                    return;
+                if (!_gaze.SetGazeTarget(clone, followed).Success)
+                    return;
+            }
+            else if (!_gaze.SetGazeMode(clone, gaze.Mode).Success)
+            {
+                return;
+            }
+            _gaze.SetGazeParts(clone, gaze.TargetType);
+            if (gaze.Mode == global::Poser.Services.GazeTargetMode.Position)
+            {
+                var cloneTransform = clone.Transform;
+                _gaze.SetGazePosition(clone, Rebase(gaze.Position));
+                _gaze.SetPartPosition(clone,
+                    global::Poser.Services.GazeTargetType.Eyes,
+                    Rebase(gaze.EyesPosition));
+                _gaze.SetPartPosition(clone,
+                    global::Poser.Services.GazeTargetType.Head,
+                    Rebase(gaze.HeadPosition));
+                _gaze.SetPartPosition(clone,
+                    global::Poser.Services.GazeTargetType.Body,
+                    Rebase(gaze.BodyPosition));
+
+                Vector3 Rebase(Vector3 point)
+                {
+                    if (sourceTransform is not { } from)
+                        return point;
+                    var to = cloneTransform;
+                    var relative = Vector3.Transform(
+                        point - from.Position,
+                        Quaternion.Inverse(from.Rotation));
+                    return to.Position
+                        + Vector3.Transform(relative, to.Rotation);
+                }
+            }
+            foreach (var part in lockedParts)
+                _gaze.SetPartLock(clone, part, true);
         };
+    }
+
+    private static readonly global::Poser.Services.GazeTargetType[] PartOrder =
+    [
+        global::Poser.Services.GazeTargetType.Body,
+        global::Poser.Services.GazeTargetType.Head,
+        global::Poser.Services.GazeTargetType.Eyes,
+    ];
+
+    private global::Poser.Entities.IActor? FindActorByAddress(nint address)
+    {
+        if (address == nint.Zero)
+            return null;
+        foreach (var actor in _actorManager.Actors)
+        {
+            if (actor.Address == address)
+                return actor;
+        }
+        return null;
     }
 
     /// <summary>The ownership-transfer replay: everything the session's
