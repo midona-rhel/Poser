@@ -453,6 +453,10 @@ public sealed unsafe partial class AnimationRuntimePort
         delta is (> 0.004f and < 0.12f) or (> 0.4f and < 2.5f)
             or (> 6f and < 40f);
 
+    /// <summary>An INTEGER counter advancing 1-3 per tick — invisible to
+    /// the float scan (hunt three).</summary>
+    private static bool ClockLikeIntDelta(int delta) => delta is >= 1 and <= 3;
+
     private void ProbeClockHuntTick()
     {
         if (_clockHuntActor is not { } actor)
@@ -480,6 +484,30 @@ public sealed unsafe partial class AnimationRuntimePort
                     && (value & 0x7) == 0 && !_clockPointers.Contains(value))
                     _clockPointers.Add(value);
             }
+            // The base havok control's own block joins the chase: the
+            // loop decision may live beside LocalTime (hunt three).
+            var huntDraw = character->GameObject.DrawObject;
+            if (huntDraw != null
+                && huntDraw->Object.GetObjectType() == ObjectType.CharacterBase
+                && ((CharacterBase*)huntDraw)->Skeleton != null)
+            {
+                var huntSkeleton = ((CharacterBase*)huntDraw)->Skeleton;
+                for (int hp = 0; hp < huntSkeleton->PartialSkeletonCount
+                    && _clockPointers.Count < ClockPtrMax; hp++)
+                {
+                    var huntAnimated = huntSkeleton->PartialSkeletons[hp]
+                        .GetHavokAnimatedSkeleton(0);
+                    if (huntAnimated == null)
+                        continue;
+                    for (int hc = 0; hc < huntAnimated->AnimationControls.Length
+                        && _clockPointers.Count < ClockPtrMax; hc++)
+                    {
+                        var huntControl = huntAnimated->AnimationControls[hc].Value;
+                        if (huntControl != null)
+                            _clockPointers.Add((nint)huntControl);
+                    }
+                }
+            }
             // A pointer that does not answer a guarded read is dropped
             // before the hunt starts.
             _clockPointers.RemoveAll(pointer => !TryReadClockRegion(pointer));
@@ -499,6 +527,10 @@ public sealed unsafe partial class AnimationRuntimePort
             float current = basePtr[i];
             if (ClockLikeDelta(current - _clockPrevious[i]) && float.IsFinite(current))
                 _clockScores[i]++;
+            else if (ClockLikeIntDelta(
+                ((int*)basePtr)[i]
+                - System.BitConverter.SingleToInt32Bits(_clockPrevious[i])))
+                _clockScores[i]++;
             _clockPrevious[i] = current;
         }
         for (int t = 0; t < _clockPointers.Count; t++)
@@ -511,6 +543,10 @@ public sealed unsafe partial class AnimationRuntimePort
                 int index = t * ptrFloats + i;
                 if (ClockLikeDelta(current - _clockPtrPrevious![index]) &&
                     float.IsFinite(current))
+                    _clockPtrScores![index]++;
+                else if (ClockLikeIntDelta(
+                    System.BitConverter.SingleToInt32Bits(current)
+                    - System.BitConverter.SingleToInt32Bits(_clockPtrPrevious[index])))
                     _clockPtrScores![index]++;
                 _clockPtrPrevious[index] = current;
             }
