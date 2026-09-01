@@ -1141,6 +1141,30 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
         float duration = binding.ptr->Animation.ptr->Duration;
         target->hkaAnimationControl.LocalTime = Math.Clamp(time, 0f, duration);
+        // EVERY partial runs its own control for the same slot (body,
+        // face, hair). Scrubbing only one left the others on the old
+        // schedule — one of them reaches its clip's end at the old time
+        // and the timeline layer resets the whole animation (the
+        // pause→scrub→play reset, 2026-09-01). Same index, same time,
+        // all partials, each clamped to its own clip.
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            if (p == control.Partial)
+                continue;
+            var sibling = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (sibling == null || control.Control >= sibling->AnimationControls.Length)
+                continue;
+            var siblingControl = sibling->AnimationControls[control.Control].Value;
+            if (siblingControl == null)
+                continue;
+            var siblingBinding = siblingControl->hkaAnimationControl.Binding;
+            float siblingClip =
+                siblingBinding.ptr != null && siblingBinding.ptr->Animation.ptr != null
+                    ? siblingBinding.ptr->Animation.ptr->Duration
+                    : duration;
+            siblingControl->hkaAnimationControl.LocalTime =
+                Math.Clamp(time, 0f, siblingClip);
+        }
         return AnimationPortResult.Ok();
     }
 
