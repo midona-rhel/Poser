@@ -426,7 +426,6 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             if (enforcement.OverallSpeed is { } propOverall)
                 ApplyOverallToUntrackedProps((Character*)owner, propOverall);
         }
-        ProbeSeamPass(container);
         return result;
     }
 

@@ -38,7 +38,6 @@ public sealed class DebugBridge : IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawner;
-    private readonly global::Poser.UI.AnimationPane _pane;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
@@ -56,7 +55,6 @@ public sealed class DebugBridge : IDisposable
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
         IActorSpawnService spawner,
-        global::Poser.UI.AnimationPane pane,
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
@@ -64,7 +62,6 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Services.IBonePosingService bonePosing)
     {
         _bonePosing = bonePosing;
-        _pane = pane;
         _integration = integration;
         _session = session;
         _skeletons = skeletons;
@@ -191,7 +188,7 @@ public sealed class DebugBridge : IDisposable
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
-                        "/clone?actor", "/clonea?actor (full transfer)", "/dupepose?actor",
+                        "/clone?actor", "/dupepose?actor",
                         "/log?lines=200&filter=REGEX",
                     },
                 }));
@@ -309,14 +306,6 @@ public sealed class DebugBridge : IDisposable
             {
                 var r = _animation.ResetSlot(id, Slot());
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
-            }
-            case "/attachprop":
-            {
-                if (!query.TryGetValue("model", out var m))
-                    return Json(new { error = "model (hex packed WeaponModelId) is required" });
-                ulong packed = Convert.ToUInt64(m.Replace("0x", string.Empty), 16);
-                bool ok = _port.ProbeAttachProp(id, packed);
-                return Json(new { ok, state = State(id, actor) });
             }
             case "/writelog":
                 _port.ProbeSetTimelineLogging(!query.ContainsKey("off"));
@@ -507,15 +496,6 @@ public sealed class DebugBridge : IDisposable
                     _gaze.SetGazeMode(copy!, GazeTargetMode.Detached);
                 }
                 return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
-            }
-            case "/clonea":
-            {
-                global::Poser.UI.AnimationPane.SkipCustomizePlus = query.ContainsKey("nocplus");
-                global::Poser.UI.AnimationPane.SkipWeaponDrawn = query.ContainsKey("noweapon");
-                int before = _actors.Actors.Count;
-                _pane.ProbeCloneA(id);
-                var made = _actors.Actors.Count > before ? _actors.Actors[^1] : null;
-                return Json(new { ok = made != null, name = made?.Name, id = made != null ? _bindings.GetActorId(made)?.ToString() : null });
             }
         }
         return Json(new { error = $"unknown endpoint {path}" });
