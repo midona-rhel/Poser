@@ -229,19 +229,6 @@ public sealed class AdoptedWorldObject
     /// controls, and its retries must not run forever.</summary>
     internal int AnimationPauseRetries;
 
-    /// <summary>The lever the hunt proved gates this object's transform
-    /// motion (0 = object-flags bit flip, 1 = byte zeroed, 2 = draw-flag
-    /// bit flip), with the offset/mask it names and the value it held —
-    /// written back on unpause and release.</summary>
-    internal int? AnimGateKind;
-    internal int AnimGateOffset;
-    internal ulong AnimGateMask;
-    internal ulong AnimGateOriginal;
-
-    /// <summary>Whether the bit-1 lock has said hello in the log for
-    /// this pause.</summary>
-    internal bool AnimGateHoldLogged;
-
     /// <summary>The placement the pause froze; re-written every draw
     /// while the pause stands. A drag updates it through the transform
     /// setter, so a paused object still moves where the user says.</summary>
@@ -251,6 +238,23 @@ public sealed class AdoptedWorldObject
     /// lives in it, and a held transform over a running clock jumps on
     /// unpause.</summary>
     internal byte[]? HeldPauseTail;
+
+    /// <summary>What the anchor pump last wrote, so the game's own write
+    /// is recognisable: raw differing from this without us writing IS
+    /// the animation.</summary>
+    internal Transform? LastWritten;
+
+    /// <summary>The game transform at anchor engagement. The animation's
+    /// motion is measured against it and replayed on the USER'S placement
+    /// — the object animates around wherever the user put it.</summary>
+    internal Transform? AnimRef;
+
+    /// <summary>Sets the desired placement WITHOUT writing — the unpause
+    /// hand-off: where you froze it becomes where it stands.</summary>
+    internal void SeedPlacement(Transform value) => _placement = value;
+
+    /// <summary>The user's placement, for the anchor pump.</summary>
+    internal Transform DesiredPlacement => _placement;
 
     /// <summary>Live debug access to the base object's 64-bit flag word.
     /// </summary>
@@ -327,7 +331,7 @@ public sealed class AdoptedWorldObject
             // hold re-writes THIS value from then on.
             if (HeldPause is not null)
                 HeldPause = value;
-            _owner.WritePlacement(this, value);
+            _owner.WritePlacementTracked(this, value);
         }
     }
 
@@ -392,7 +396,6 @@ public sealed class WorldObjectService : IDisposable
                 // buffer will never appear (undyeable models have none).
                 || _port.CanDyeBg(pending.Address) == false
                 || _port.WriteBgTint(pending.Address, pending.Tint));
-        RunAnimHunt();
         var now = DateTime.UtcNow;
         foreach (var handle in _adopted)
         {
@@ -455,7 +458,6 @@ public sealed class WorldObjectService : IDisposable
             return false;
         }
         var old = handle.Address;
-        _port.SetBgPaused(old, false);
         handle.Address = fresh;
         handle.Path = path.Trim();
         try
@@ -496,12 +498,7 @@ public sealed class WorldObjectService : IDisposable
             // The fresh incarnation ships lit; restate the dressing.
             handle.NightStatePending = true;
             if (handle.AnimationPaused)
-            {
                 handle.AnimationPauseRetries = AnimationPauseRetryTicks;
-                _port.SetBgPaused(old, false);
-                if (_port.EnsureBgPauseHook(fresh))
-                    _port.SetBgPaused(fresh, true);
-            }
         }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
@@ -595,262 +592,99 @@ public sealed class WorldObjectService : IDisposable
         // keep the byte that stops it (2026-09-01, user-directed).
         if (handle.AnimationPaused)
         {
-            if (handle.AnimGateKind is { } kind)
-            {
-                handle.AnimGateOriginal = ReadLever(handle, kind);
-                ApplyLever(handle, kind, paused: true);
-            }
-            else
-            {
-                // The UpdateRender skip did NOT stop the motion (proved
-                // in game 2026-09-01) — the animator is elsewhere,
-                // probably the global animation scheduler over the
-                // registered container. The hook stays as an experiment;
-                // the WORKING mechanism is the draw-time
-                // transform-and-clock hold, so it always engages.
-                if (_port.EnsureBgPauseHook(handle.Address))
-                    _port.SetBgPaused(handle.Address, true);
-                handle.HeldPause =
-                    _port.TryRead(handle.Address, out var frozen)
-                        ? frozen
-                        : handle.Transform;
-                var tail = new byte[0x20];
-                handle.HeldPauseTail =
-                    _port.TryReadBgTail(handle.Address, tail)
-                        ? tail
-                        : null;
-                _log.Debug(
-                    "[WorldObject] pause topology: "
-                    + _port.DescribeBgAnimation(handle.Address));
-            }
+            // THE MECHANISM (proved in game 2026-09-01): re-write the
+            // captured transform AND the instance tail — the animation
+            // clock lives in it — every draw. A draw-time write lands
+            // after the game's animator and wins the frame; skeleton
+            // speed, flag bits and an UpdateRender skip all did nothing.
+            handle.HeldPause =
+                _port.TryRead(handle.Address, out var frozen)
+                    ? frozen
+                    : handle.Transform;
+            var tail = new byte[0x20];
+            handle.HeldPauseTail =
+                _port.TryReadBgTail(handle.Address, tail)
+                    ? tail
+                    : null;
+            _log.Debug(
+                "[WorldObject] pause topology: "
+                + _port.DescribeBgAnimation(handle.Address));
         }
         else
         {
-            if (_animHunt == handle)
-                _animHunt = null;
+            if (handle.HeldPause is { } frozen)
+                handle.SeedPlacement(frozen);
             handle.HeldPause = null;
             handle.HeldPauseTail = null;
-            _port.SetBgPaused(handle.Address, false);
-            if (handle.AnimGateKind is { } gate)
-                ApplyLever(handle, gate, paused: false);
+            handle.LastWritten = null;
+            handle.AnimRef = null;
         }
     }
 
-    /// <summary>Re-writes every paused object's captured placement — the
-    /// pause's whole mechanism, called from the overlay's DRAW so the
-    /// write lands after the game's own animation writer, exactly where
-    /// a drag's writes land. A framework-tick write loses that race
-    /// (proved on object-flags bit 1, 2026-09-01).</summary>
+    /// <summary>The ANIMATION ANCHOR, run from the overlay's DRAW so
+    /// every write lands after the game's own animator (the only spot
+    /// that wins the frame — the drag proved it, 2026-09-01). Paused
+    /// objects re-write their frozen transform and clock. Objects the
+    /// game visibly animates get COMPOSED instead: the animation's
+    /// motion, measured against the engagement reference, is replayed
+    /// on the user's own placement — move the object and the animation
+    /// moves with it; unpause continues from the frozen phase because
+    /// the frozen pose became the base.</summary>
     public void HoldPausedAnimations()
     {
         if (_disposed)
             return;
         foreach (var handle in _adopted)
         {
-            if (handle.IsVfx || !handle.AnimationPaused
-                || handle.HeldPause is not { } held
-                || !_port.IsAlive(handle.Address))
+            if (handle.IsVfx || !_port.IsAlive(handle.Address))
                 continue;
-            _port.Write(handle.Address, held);
-            if (handle.HeldPauseTail is { } heldTail)
-                _port.WriteBgTailHeld(handle.Address, heldTail);
-        }
-    }
-
-    private ulong ReadLever(AdoptedWorldObject handle, int kind) =>
-        kind == 0
-            ? _port.ReadBgObjectFlags(handle.Address) ?? 0
-            : _port.ReadBgTailByte(handle.Address, handle.AnimGateOffset)
-                ?? 0;
-
-    private void ApplyLever(
-        AdoptedWorldObject handle, int kind, bool paused)
-    {
-        if (kind == 0)
-        {
-            ulong current = _port.ReadBgObjectFlags(handle.Address) ?? 0;
-            _port.WriteBgObjectFlags(handle.Address, paused
-                ? current ^ handle.AnimGateMask
-                : handle.AnimGateOriginal);
-            return;
-        }
-        byte value = paused
-            ? kind == 1
-                ? (byte)0
-                : (byte)((_port.ReadBgTailByte(
-                    handle.Address, handle.AnimGateOffset) ?? 0)
-                    ^ (byte)handle.AnimGateMask)
-            : (byte)handle.AnimGateOriginal;
-        _port.WriteBgTailByte(handle.Address, handle.AnimGateOffset, value);
-    }
-
-    // ── The animation-gate hunt state (one at a time) ────────────────
-    private AdoptedWorldObject? _animHunt;
-    private int _animHuntStep;
-    private int _animHuntTicks;
-    private float _animHuntMotion;
-    private float _animHuntBaseline;
-    private Transform? _animHuntLast;
-    private ulong _animHuntOriginal;
-    private readonly List<(string Label, int Kind, int Offset, ulong Mask)>
-        _animHuntSteps = new();
-
-    private const int BaselineTicks = 45;
-    private const int StepTicks = 45;
-
-    /// <summary>Total radians-plus-yalms over the baseline window that
-    /// counts as moving: ~0.3 degrees of total turn. The metric is the
-    /// SUMMED ROTATION ANGLE (the quaternion dot is quadratic in angle
-    /// and hid a slow windmill entirely, 2026-09-01) plus the position
-    /// distance.</summary>
-    private const float MovingThreshold = 0.005f;
-
-    /// <summary>Documented bytes the hunt must not touch: the night state,
-    /// the colour intensity, and the colour.</summary>
-    private static bool HuntSkips(int offset) =>
-        offset is 0xCD or 0xCE or >= 0xD0 and <= 0xD3;
-
-    /// <summary>Every lever the hunt tries, widest first: all 64 object
-    /// flag bits (flipped), the draw flag byte's bits (flipped), the
-    /// spare draw bytes and the undocumented tail (zeroed). The tail
-    /// alone answered nothing — its values churn per frame, it is live
-    /// animation state, not the gate.</summary>
-    private void BuildHuntSteps()
-    {
-        _animHuntSteps.Clear();
-        for (int bit = 0; bit < 64; bit++)
-            _animHuntSteps.Add(
-                ($"object-flags bit {bit}", 0, 0, 1UL << bit));
-        for (int bit = 0; bit < 8; bit++)
-            _animHuntSteps.Add(
-                ($"draw-flags bit {bit}", 2, 0x88, 1UL << bit));
-        for (int offset = 0x8A; offset < 0x90; offset++)
-            _animHuntSteps.Add(($"byte 0x{offset:X2}", 1, offset, 0));
-        for (int offset = 0xC0; offset < 0xE0; offset++)
-            if (!HuntSkips(offset))
-                _animHuntSteps.Add(($"byte 0x{offset:X2}", 1, offset, 0));
-    }
-
-    private void ApplyHuntStep(AdoptedWorldObject target, bool restore)
-    {
-        var (_, kind, offset, mask) = _animHuntSteps[_animHuntStep];
-        switch (kind)
-        {
-            case 0:
-                if (restore)
-                    _port.WriteBgObjectFlags(
-                        target.Address, _animHuntOriginal);
-                else
-                {
-                    _animHuntOriginal =
-                        _port.ReadBgObjectFlags(target.Address) ?? 0;
-                    _port.WriteBgObjectFlags(
-                        target.Address, _animHuntOriginal ^ mask);
-                }
-                break;
-            default:
-                if (restore)
-                    _port.WriteBgTailByte(
-                        target.Address, offset, (byte)_animHuntOriginal);
-                else
-                {
-                    _animHuntOriginal =
-                        _port.ReadBgTailByte(target.Address, offset) ?? 0;
-                    _port.WriteBgTailByte(target.Address, offset, kind == 1
-                        ? (byte)0
-                        : (byte)((byte)_animHuntOriginal ^ (byte)mask));
-                }
-                break;
-        }
-    }
-
-    private void RunAnimHunt()
-    {
-        if (_animHunt is not { } target)
-            return;
-        if (!target.AnimationPaused || !_adopted.Contains(target)
-            || !_port.IsAlive(target.Address))
-        {
-            _animHunt = null;
-            return;
-        }
-        if (!_port.TryRead(target.Address, out var placement))
-            return;
-        if (_animHuntLast is { } last)
-        {
-            float dot = Math.Min(1f, Math.Abs(
-                Quaternion.Dot(placement.Rotation, last.Rotation)));
-            _animHuntMotion += 2f * MathF.Acos(dot)
-                + Vector3.Distance(placement.Position, last.Position);
-        }
-        _animHuntLast = placement;
-        if (--_animHuntTicks > 0)
-            return;
-
-        if (_animHuntStep < 0)
-        {
-            if (_animHuntMotion < MovingThreshold)
+            if (handle.AnimationPaused)
             {
-                _log.Debug(
-                    "[WorldObject] anim hunt: the transform is not "
-                    + $"moving (motion {_animHuntMotion:e2}); no gate "
-                    + "to find");
-                _animHunt = null;
-                return;
-            }
-            _animHuntBaseline = _animHuntMotion;
-            _log.Debug(
-                $"[WorldObject] anim hunt: baseline motion "
-                + $"{_animHuntBaseline:e2}; stepping");
-            BuildHuntSteps();
-        }
-        else
-        {
-            // STOPPED is relative to how fast it was going: a tenth of
-            // the baseline over the same window.
-            if (_animHuntMotion < _animHuntBaseline * 0.1f)
-            {
-                var (label, kind, offset, mask) =
-                    _animHuntSteps[_animHuntStep];
-                _log.Information(
-                    $"[WorldObject] anim hunt: {label} gates the motion "
-                    + $"(was 0x{_animHuntOriginal:x})");
-                target.AnimGateKind = kind;
-                target.AnimGateOffset = offset;
-                target.AnimGateMask = mask;
-                target.AnimGateOriginal = _animHuntOriginal;
-                _animHunt = null;
-                return;
-            }
-            ApplyHuntStep(target, restore: true);
-        }
-
-        // Advance to the next applicable lever; zeroing an already-zero
-        // byte answers nothing.
-        while (true)
-        {
-            _animHuntStep++;
-            if (_animHuntStep >= _animHuntSteps.Count)
-            {
-                _log.Information(
-                    "[WorldObject] anim hunt: no instance lever gates "
-                    + "the motion; the driver is outside the object");
-                _animHunt = null;
-                return;
-            }
-            var (_, kind, offset, _) = _animHuntSteps[_animHuntStep];
-            if (kind == 1 && (_port.ReadBgTailByte(target.Address, offset)
-                ?? 0) == 0)
+                if (handle.HeldPause is not { } held)
+                    continue;
+                _port.Write(handle.Address, held);
+                if (handle.HeldPauseTail is { } heldTail)
+                    _port.WriteBgTailHeld(handle.Address, heldTail);
+                handle.LastWritten = held;
+                handle.AnimRef = null;
                 continue;
-            break;
+            }
+            if (!_port.TryRead(handle.Address, out var raw))
+                continue;
+            if (handle.AnimRef is { } reference)
+            {
+                var user = handle.DesiredPlacement;
+                var inverse = Quaternion.Inverse(reference.Rotation);
+                var deltaRotation = Quaternion.Normalize(
+                    inverse * raw.Rotation);
+                var deltaPosition = Vector3.Transform(
+                    raw.Position - reference.Position, inverse);
+                var composed = new Transform(
+                    user.Position
+                        + Vector3.Transform(deltaPosition, user.Rotation),
+                    Quaternion.Normalize(user.Rotation * deltaRotation),
+                    user.Scale);
+                _port.Write(handle.Address, composed);
+                handle.LastWritten = composed;
+                continue;
+            }
+            if (handle.LastWritten is { } prior
+                && (Vector3.DistanceSquared(
+                        raw.Position, prior.Position) > 0.000001f
+                    || Math.Abs(Quaternion.Dot(
+                        raw.Rotation, prior.Rotation)) < 0.999999f))
+            {
+                // The game moved it since we last wrote: the object IS
+                // animated. Engage — from here its motion replays on the
+                // user's placement.
+                handle.AnimRef = raw;
+                var user = handle.DesiredPlacement;
+                _port.Write(handle.Address, user);
+                handle.LastWritten = user;
+                continue;
+            }
+            handle.LastWritten ??= raw;
         }
-        ApplyHuntStep(target, restore: false);
-        var step = _animHuntSteps[_animHuntStep];
-        _log.Debug(
-            $"[WorldObject] anim hunt: trying {step.Label} "
-            + $"({_animHuntStep + 1}/{_animHuntSteps.Count})");
-        _animHuntTicks = StepTicks;
-        _animHuntMotion = 0f;
     }
 
     internal void WriteNightState(AdoptedWorldObject handle)
@@ -1199,6 +1033,13 @@ public sealed class WorldObjectService : IDisposable
     internal Transform ReadPlacement(AdoptedWorldObject handle, Transform fallback) =>
         _port.TryRead(handle.Address, out var placement) ? placement : fallback;
 
+    internal void WritePlacementTracked(
+        AdoptedWorldObject handle, in Transform placement)
+    {
+        handle.LastWritten = placement;
+        WritePlacement(handle, placement);
+    }
+
     internal void WritePlacement(AdoptedWorldObject handle, in Transform placement)
     {
         if (_disposed || !_port.IsAlive(handle.Address))
@@ -1231,7 +1072,6 @@ public sealed class WorldObjectService : IDisposable
         // its end is destruction.
         if (handle.Spawned)
         {
-            _port.SetBgPaused(handle.Address, false);
             try
             {
                 _port.Destroy(handle.Address);
@@ -1257,10 +1097,6 @@ public sealed class WorldObjectService : IDisposable
                     _port.WriteBgNightState(handle.Address, dressing);
                 if (handle.AnimationPaused)
                     _port.WriteBgAnimationSpeed(handle.Address, 1f);
-                _port.SetBgPaused(handle.Address, false);
-                if (handle.AnimationPaused
-                    && handle.AnimGateKind is { } animGate)
-                    ApplyLever(handle, animGate, paused: false);
                 // Written BESIDE the flags rather than left to them: whether
                 // the drawn bit lives inside that byte is the game's business,
                 // and this contract may not rest on the answer.

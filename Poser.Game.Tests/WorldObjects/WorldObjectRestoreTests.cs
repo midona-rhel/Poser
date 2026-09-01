@@ -136,8 +136,6 @@ private sealed class World
         public byte? ReadBgTailByte(nint address, int offset) => null;
         public void WriteBgTailByte(nint address, int offset, byte value) { }
         public string DescribeBgAnimation(nint address) => string.Empty;
-        public bool EnsureBgPauseHook(nint address) => false;
-        public void SetBgPaused(nint address, bool paused) { }
         public bool TryReadBgTail(nint address, byte[] into) => false;
         public void WriteBgTailHeld(nint address, byte[] values) { }
         public ulong? ReadBgObjectFlags(nint address) => null;

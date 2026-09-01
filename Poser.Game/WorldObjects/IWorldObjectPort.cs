@@ -179,14 +179,6 @@ public interface IWorldObjectPort
     /// <summary>Diagnostic: the instance's animation topology.</summary>
     string DescribeBgAnimation(nint address);
 
-    /// <summary>Installs (once) the UpdateRender pause hook from a live
-    /// BG object's vtable.</summary>
-    bool EnsureBgPauseHook(nint address);
-
-    /// <summary>Skips (or resumes) one BG address's per-frame update.
-    /// </summary>
-    void SetBgPaused(nint address, bool paused);
-
     bool TryReadBgTail(nint address, byte[] into);
 
     void WriteBgTailHeld(nint address, byte[] values);
