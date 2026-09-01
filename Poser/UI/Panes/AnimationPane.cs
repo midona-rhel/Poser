@@ -668,9 +668,12 @@ public sealed class AnimationPane : IDisposable
             choice = null;
             selected = 0;
         }
+        // The whole-actor pause pauses EVERY layer, so every row offers
+        // Play while it holds — not only Base (the old special case left
+        // other rows saying Pause over a frozen layer).
         bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f) ||
-            (slot == AnimationSlot.Base && _animation.IsPaused(actor));
+            _animation.IsPaused(actor);
         bool needsReplay = selected != 0 && live != selected;
         var feed = slot switch
         {
