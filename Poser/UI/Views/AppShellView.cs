@@ -78,10 +78,12 @@ public sealed class ShellSidebarRow
     public bool LightActions;
     public bool LightOn = true;
 
-    /// <summary>A spawned effect's row grows a third seat: pause, the
-    /// actor row's own play/pause glyph.</summary>
+    /// <summary>Every world-object row's third seat: pause, the actor
+    /// row's own play/pause glyph. Spawned SCENERY cannot be animated by
+    /// the game, so its seat is inert and slashed.</summary>
     public bool PauseAction;
     public bool Paused;
+    public bool PauseDisabled;
     /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;

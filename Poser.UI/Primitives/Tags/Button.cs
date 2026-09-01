@@ -437,20 +437,21 @@ public static partial class Crystarium
         var hit = Interactive.Reserve(
             id, size, disabled, activateOnSpace: true);
         var theme = ActiveTheme;
-        var targetBackground = hit.Active
-            ? theme.Chrome.ActiveOverlay
-            : hit.Hovered
-                ? theme.Chrome.WeakOverlay
-                : Vector4.Zero;
+        var targetBackground = selected
+            ? theme.Chrome.SegmentSelected
+            : hit.Active
+                ? theme.Chrome.ActiveOverlay
+                : hit.Hovered
+                    ? theme.Chrome.WeakOverlay
+                    : Vector4.Zero;
         // Picto's :active rule changes only the background. Opacity is
         // controlled exclusively by :hover, so dragging a held button
         // outside returns the complete element group to its resting .8.
         //
-        // A LATCHED button is the exception: its whole on-state is the glyph
-        // going SOLID in the theme's high-contrast neutral, so it sits at full
-        // presence whether or not the pointer is on it. Off is the same glyph
-        // outlined at the resting .8 — the fill and the contrast carry the
-        // state together, and neither needs a chip behind them to say it.
+        // A LATCHED button wears the pill's white highlight PLUS the solid
+        // glyph twin at full presence (ruled 2026-09-01 — the fill alone
+        // said nothing on glyphs without a solid twin, the portal's pin
+        // included).
         float targetOpacity = selected || hit.Hovered ? 1f : 0.8f;
         // One group under one identity: the background and the opacity
         // share a clock, so pressing a button that is still fading in

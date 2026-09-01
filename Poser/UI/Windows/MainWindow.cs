@@ -824,12 +824,22 @@ public class MainWindow : Window
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.WorldObject, WorldObject: { } pausedId })
                 return;
-            var effect = _bindings.Resolve(pausedId);
-            if (!effect.Success ||
-                effect.Value is not { IsValid: true } vfxHandle)
+            var paused = _bindings.Resolve(pausedId);
+            if (!paused.Success ||
+                paused.Value is not { IsValid: true } handle)
                 return;
-            vfxHandle.VfxPaused = !vfxHandle.VfxPaused;
-            row.Paused = vfxHandle.VfxPaused;
+            if (handle.IsVfx)
+            {
+                handle.VfxPaused = !handle.VfxPaused;
+                row.Paused = handle.VfxPaused;
+                return;
+            }
+            // Spawned scenery cannot be animated by the game; its seat
+            // is inert by construction.
+            if (handle.Spawned)
+                return;
+            handle.AnimationPaused = !handle.AnimationPaused;
+            row.Paused = handle.AnimationPaused;
         };
         _vm.OnLightVisibility = row =>
         {
@@ -2561,8 +2571,11 @@ public class MainWindow : Window
             Tag = SelectionId.ForWorldObject(worldObject.Id),
             LightActions = true,
             LightOn = worldObject.Visible,
-            PauseAction = isVfx,
-            Paused = worldObject.VfxPaused,
+            PauseAction = true,
+            Paused = isVfx
+                ? worldObject.VfxPaused
+                : worldObject.AnimPaused,
+            PauseDisabled = !isVfx && worldObject.Spawned,
         };
     }
 

@@ -809,8 +809,9 @@ public sealed class ShellSidebar
                         dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
 
-                // A spawned effect's third seat: the actor row's own
-                // play/pause glyph, freezing the effect mid-frame.
+                // Every world-object row's third seat: the actor row's
+                // own play/pause glyph. Spawned scenery cannot be
+                // animated by the game — its seat is inert and slashed.
                 if (row.PauseAction)
                 {
                     ImGui.SetCursorScreenPos(
@@ -821,10 +822,14 @@ public sealed class ShellSidebar
                                 : TablerIcon.PlayerPlay,
                             selected: false,
                             style: square,
-                            help: row.Paused
-                                ? "Resume the effect"
-                                : "Pause the effect",
-                            id: "##vfx-pause"))
+                            disabled: row.PauseDisabled,
+                            help: row.PauseDisabled
+                                ? "A spawned copy has no animation"
+                                : row.Paused
+                                    ? "Resume the animation"
+                                    : "Pause the animation",
+                            id: "##pause-seat",
+                            slashed: row.PauseDisabled))
                         _vm.OnRowPause?.Invoke(row);
                 }
                 return;

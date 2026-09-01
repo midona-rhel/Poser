@@ -234,8 +234,10 @@ public static class Tabler
         TablerIcon.ArrowsMove      => "arrows-move",
         TablerIcon.ArrowsMaximize  => "arrows-maximize",
         TablerIcon.ArrowsDiagonal  => "arrows-diagonal",
-        TablerIcon.PlayerPlay      => "player-play",
-        TablerIcon.PlayerPause     => "player-pause",
+        TablerIcon.PlayerPlay      => "player-play-filled",
+        // Pause and play resolve FILLED everywhere (ruled 2026-09-01):
+        // every pause button in the app is the solid glyph.
+        TablerIcon.PlayerPause     => "player-pause-filled",
         TablerIcon.Camera          => "camera",
         TablerIcon.Bulb            => "bulb",
         TablerIcon.Fire            => "flame",

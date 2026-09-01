@@ -465,7 +465,8 @@ public sealed class StableBindingRegistry
                 worldObject.Path,
                 worldObject.Visible,
                 worldObject.Spawned,
-                worldObject.VfxPaused));
+                worldObject.VfxPaused,
+                worldObject.AnimationPaused));
         }
 
         // This registry can justify native identity/topology plus the current
