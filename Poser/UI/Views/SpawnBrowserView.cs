@@ -124,6 +124,10 @@ public sealed class SpawnBrowserViewModel
     /// a stored handle.</summary>
     public Func<uint, nint>? ResolveIcon;
 
+    /// <summary>Consumed by the next rows draw: the list snaps to the
+    /// top — every open and every tab swap starts there.</summary>
+    public bool ScrollToTop;
+
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // all of these close over nothing but this model.
     internal Action<Crystarium.ScrollRegionScope>? List;
@@ -432,6 +436,11 @@ public static class SpawnBrowserView
             ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
         try
         {
+            if (vm.ScrollToTop)
+            {
+                vm.ScrollToTop = false;
+                ImGui.SetScrollY(0f);
+            }
             float pad = ListVPad * scale;
             ImGui.Dummy(new Vector2(0f, pad));
             if (vm.Visible.Count == 0)

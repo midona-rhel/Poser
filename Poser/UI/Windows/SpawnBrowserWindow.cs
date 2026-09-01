@@ -273,6 +273,7 @@ public sealed class SpawnBrowserWindow : Window
                 return;
             _vm.Tab = next;
             _refilter = true;
+            _vm.ScrollToTop = true;
         };
         _vm.OnPinToggle = () => _pinned = !_pinned;
         // The toggle IS the setting: there is no second home for it in
@@ -298,6 +299,7 @@ public sealed class SpawnBrowserWindow : Window
             _vm.Tab = (int)tab;
             _refilter = true;
         }
+        _vm.ScrollToTop = true;
         IsOpen = true;
         BringToFront();
         // Type immediately: the search takes the keyboard at open.
@@ -1026,13 +1028,27 @@ public sealed class SpawnBrowserWindow : Window
         _query = _vm.Query;
         // Lowercased ONCE per query change; the scan below compares ordinal
         // against names that were lowercased when the catalog was built.
-        _queryLower = _query.Trim().ToLowerInvariant();
+        // Under three characters the query means nothing yet — the whole
+        // tab stays, unranked (ruled 2026-09-01).
+        string trimmed = _query.Trim();
+        _queryLower = trimmed.Length >= 3
+            ? trimmed.ToLowerInvariant()
+            : string.Empty;
         _refilter = true;
     }
 
-    /// <summary>The visible list, refilled in place. A keystroke runs THIS and
-    /// nothing else; no cap, because the clipper makes the full list cheap.
-    /// </summary>
+    /// <summary>What the current Visible list was computed FROM, so a
+    /// keystroke that extends the query refines the previous matches
+    /// instead of rescanning every row.</summary>
+    private string _filteredQuery = string.Empty;
+    private int _filteredTab = -1;
+    private readonly List<int> _prefixMatches = new();
+    private readonly List<int> _containsMatches = new();
+
+    /// <summary>The visible list, refilled in place. A keystroke runs THIS
+    /// and nothing else. A live query RANKS: names the query begins lead,
+    /// alphabetical within each rank, so Crystal surfaces the closest
+    /// match instead of merely filtering (ruled 2026-09-01).</summary>
     private void Refilter()
     {
         _refilter = false;
@@ -1040,16 +1056,58 @@ public sealed class SpawnBrowserWindow : Window
         var visible = _vm.Visible;
         var rows = _vm.Rows;
         var tab = (SpawnBrowserTab)_vm.Tab;
-        visible.Clear();
-        for (int i = 0; i < rows.Count; i++)
+
+        if (_queryLower.Length == 0)
         {
-            if (tab != SpawnBrowserTab.All && _rowTabs[i] != tab)
-                continue;
-            if (_queryLower.Length == 0
-                || rows[i].LabelLower.Contains(
-                    _queryLower, StringComparison.Ordinal))
-                visible.Add(i);
+            visible.Clear();
+            for (int i = 0; i < rows.Count; i++)
+                if (tab == SpawnBrowserTab.All || _rowTabs[i] == tab)
+                    visible.Add(i);
+            _filteredQuery = string.Empty;
+            _filteredTab = (int)tab;
+            return;
         }
+
+        // An extended query on the same tab refines what already matched
+        // — the common keystroke costs the matches, not the catalog.
+        bool refine = _filteredTab == (int)tab
+            && _filteredQuery.Length > 0
+            && _queryLower.StartsWith(_filteredQuery, StringComparison.Ordinal);
+        _prefixMatches.Clear();
+        _containsMatches.Clear();
+        if (refine)
+        {
+            foreach (int i in visible)
+                RankRow(rows, i);
+        }
+        else
+        {
+            for (int i = 0; i < rows.Count; i++)
+            {
+                if (tab != SpawnBrowserTab.All && _rowTabs[i] != tab)
+                    continue;
+                RankRow(rows, i);
+            }
+        }
+        Comparison<int> alphabetical = (left, right) => string.Compare(
+            rows[left].LabelLower, rows[right].LabelLower,
+            StringComparison.Ordinal);
+        _prefixMatches.Sort(alphabetical);
+        _containsMatches.Sort(alphabetical);
+        visible.Clear();
+        visible.AddRange(_prefixMatches);
+        visible.AddRange(_containsMatches);
+        _filteredQuery = _queryLower;
+        _filteredTab = (int)tab;
+    }
+
+    private void RankRow(List<SpawnBrowserRow> rows, int index)
+    {
+        var label = rows[index].LabelLower;
+        if (label.StartsWith(_queryLower, StringComparison.Ordinal))
+            _prefixMatches.Add(index);
+        else if (label.Contains(_queryLower, StringComparison.Ordinal))
+            _containsMatches.Add(index);
     }
 
     /// <summary>Clone is the one row whose availability moves with the
