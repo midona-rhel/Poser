@@ -638,6 +638,8 @@ public sealed class SceneLifecycleHistoryTests
             return _actors.Remove((IActor)actor);
         }
 
+        public void WhenPosable(object actor, Action<object> act) => act(actor);
+
         public ActorState Read(object actor) => _states[(IActor)actor];
 
         public void Restore(object actor, ActorState state) =>

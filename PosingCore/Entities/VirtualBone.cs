@@ -97,6 +97,8 @@ public class VirtualBone : EntityBase, IBone, ITransformable
     public Transform LastTransform => Transform;
     public Transform LastRawTransform => Transform; // Virtual bones don't have reparenting
 
+    public System.Numerics.Vector3? PartialRootScale { get; set; }
+
     #endregion
 
     #region ITransformable Implementation

@@ -60,6 +60,13 @@ public interface IBone : IEntity, ITransformable
     /// </summary>
     Transform LastTransform { get; }
 
+    /// <summary>A partial root's OWN model-space scale, when something owns
+    /// it. Partial roots (the face's and hair's j_kao) follow their parent
+    /// bone every frame — position, rotation and scale — but Customize+
+    /// scales the head on the roots themselves, after that sync. A posed
+    /// duplicate carries that scale here; null follows the parent.</summary>
+    System.Numerics.Vector3? PartialRootScale { get; set; }
+
     /// <summary>
     /// Current Havok model-space baseline captured by the apply/cache pipeline.
     /// Used when an absolute editor or import target must be converted to a pose delta.

@@ -793,6 +793,10 @@ public unsafe class BonePosingService : IBonePosingService
                         scale = parent.Scale;
                     }
 
+                    // An owned root scale (a duplicate's captured head
+                    // scaling) stands in for the parent's.
+                    if (bone.PartialRootScale is { } owned)
+                        scale = owned;
                     modelSpace->Translation = *(hkVector4f*)(&pos);
                     modelSpace->Rotation = *(hkQuaternionf*)(&rot);
                     modelSpace->Scale = *(hkVector4f*)(&scale);

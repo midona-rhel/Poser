@@ -50,6 +50,7 @@ public class MainWindow : Window
     private readonly BoneVisibilityPresetService _bonePresets;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
+    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
 
     /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
@@ -457,6 +458,7 @@ public class MainWindow : Window
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
+        global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
@@ -549,6 +551,7 @@ public class MainWindow : Window
         _referenceImages = referenceImages;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
+        _integration = integration;
         _lifecycle = lifecycle;
         _notices = notices;
         _log = log;
@@ -830,10 +833,10 @@ public class MainWindow : Window
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Actor, Actor: { } actor })
                 return;
-            if (_animation.IsPaused(actor))
-                _animation.Resume(actor);
-            else
+            if (_animation.AnyPlaying(actor))
                 _animation.Pause(actor);
+            else
+                _animation.Resume(actor);
         };
         // The light's own on/off, reachable without selecting it first —
         // the same reach the actor eye has. IsOn participates in the scene
@@ -2221,7 +2224,10 @@ public class MainWindow : Window
             row.ActorVisible = resolved.Success
                 ? _spawnService.IsVisible(resolved.Value!)
                 : !state.SnapshotHidden;
-            row.ActorPaused = _animation.IsPaused(state.Id);
+            // Pause offers while ANYTHING moves; Resume otherwise —
+            // pause stops the entire stack, play overrides every
+            // individual hold (ruled 2026-09-01).
+            row.ActorPaused = !_animation.AnyPlaying(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
             string label = Config.ConfigurationService.Instance.GetDisplayName(
@@ -4627,12 +4633,18 @@ public class MainWindow : Window
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the verb the row performs: resume wears play,
             // pause wears pause.
-            new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
-                _animation.IsPaused(actorId)
+            new(!_animation.AnyPlaying(actorId) ? "Resume animation" : "Pause animation",
+                !_animation.AnyPlaying(actorId)
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy,
+                help: "A fresh copy wearing this appearance"),
+            new("Duplicate with pose", TablerIcon.Stack2,
+                disabled: !actor.HasSkeleton,
+                help: actor.HasSkeleton
+                    ? "A frozen copy in this exact pose and place"
+                    : "Needs a loaded skeleton"),
             new("Save to library", TablerIcon.Library,
                 disabled: !actor.HasSkeleton,
                 help: actor.HasSkeleton
@@ -4673,10 +4685,10 @@ public class MainWindow : Window
             () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
             () =>
             {
-                if (_animation.IsPaused(actorId))
-                    _animation.Resume(actorId);
-                else
+                if (_animation.AnyPlaying(actorId))
                     _animation.Pause(actorId);
+                else
+                    _animation.Resume(actorId);
             },
             () =>
             {
@@ -4687,14 +4699,8 @@ public class MainWindow : Window
                     actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
-            () =>
-            {
-                var clone = _lifecycle.SpawnActor(
-                    $"Clone actor '{DisplayName(actor.Name)}'",
-                    () => _spawnService.CloneActor(actor));
-                if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
-                    _selection.Select(SelectionId.ForActor(cloneId));
-            },
+            () => Duplicate(actor),
+            () => DuplicateWithPose(actor),
             () => OpenEntityRename(
                 "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
@@ -5921,6 +5927,65 @@ public class MainWindow : Window
             return;
         }
         _cameraPane.CenterOnActor(actor.Id);
+    }
+
+    /// <summary>The plain duplicate: the drawn appearance and the source's
+    /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
+    private void Duplicate(IActor actor)
+    {
+        var clone = _lifecycle.SpawnActor(
+            $"Duplicate actor '{DisplayName(actor.Name)}'",
+            () => CloneWearingCollection(actor));
+        if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
+            _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The posed duplicate: spawned wearing the collection, restored
+    /// to the source's pose and place once posable, frozen, and its gaze
+    /// frozen with it — a duplicate never animates and never tracks. No
+    /// Customize+: the captured bones already carry it.</summary>
+    private void DuplicateWithPose(IActor actor)
+    {
+        var clone = _lifecycle.SpawnActorWithPose(
+            $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
+            () => CloneWearingCollection(actor),
+            actor);
+        if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
+            return;
+        _animation.Pause(cloneId);
+        // Before the first draw: a copy that once engaged the camera look-at
+        // and was then paused froze mid blend-out, head off its neck
+        // (2026-09-02). Detached from the start, nothing ever engages.
+        FreezeGaze(clone);
+        _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The seed copy plus what the built body needs again: the
+    /// drawn look and the equipment visibility flags once posable. The
+    /// Penumbra collection is the spawn service's own inherit. Customize+ is
+    /// never applied: the posed duplicate carries the shape in its bone
+    /// scales and translations, the plain one idles as the game draws it.</summary>
+    private IActor? CloneWearingCollection(IActor source)
+    {
+        var clone = _spawnService.CloneActor(source);
+        if (clone == null)
+            return null;
+        _lifecycle.WhenPosable(clone, c =>
+        {
+            _spawnService.CopyDrawnAppearance(source, c);
+            _spawnService.CopyEquipmentVisibility(source, c);
+        });
+        return clone;
+    }
+
+    /// <summary>No gaze at all: the copy's eyes, head and body stay on
+    /// the pose. Freezing the parts only pinned where they looked, and the
+    /// game's loop kept turning the head after the camera.</summary>
+    private void FreezeGaze(IActor copy)
+    {
+        var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Detached);
+        if (!mode.Success)
+            _log.Warning($"Duplicate: the gaze could not be detached: {mode.Detail}");
     }
 
     private void OpenEntityRename(

@@ -16,9 +16,13 @@ using Poser.Game.Bindings;
 namespace Poser.Game.Animation;
 
 /// <summary>Provides native animation operations.</summary>
-public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
+public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
     private readonly IFramework _framework;
+    // Kept for the probe harness (AnimationRuntimePort.Probe.cs), which
+    // arms its own hook lazily.
+    private readonly ISigScanner _sigScanner;
+    private readonly Dalamud.Plugin.Services.IGameInteropProvider _hooking;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _posing;
@@ -71,6 +75,145 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     private const uint EmoteModeSleeping = 3;
 
     private readonly Lumina.Excel.ExcelSheet<Lumina.Excel.Sheets.ActionTimeline>? _timelineSheet;
+    // The scheduler layer (Ktisis Structs/Animation, offsets cross-checked
+    // against our verified sequencer layout): per-slot SchedulerTimeline
+    // HANDLES at sequencer+0x70 (Handle = { Data*, Flags }; Flags==0 means
+    // dead), and the scheduler's own clock — TimelineController
+    // .CurrentTimestamp — at +0x34 of the pointed object. This is the
+    // second clock a real scrub must move: the havok controls are only the
+    // sampling side, and the scheduler resets the animation on ITS time.
+    private const int SequencerSchedulerHandlesOffset = 0x70;
+    private const int SchedulerTimestampOffset = 0x34;
+
+    /// <summary>The slot's live scheduler clock, or null.</summary>
+    private static float* SchedulerTimestamp(
+        ActionTimelineSequencer* sequencer, int slot)
+    {
+        if (slot is < 0 or >= 14)
+            return null;
+        var handles = (ulong*)((byte*)sequencer + SequencerSchedulerHandlesOffset);
+        var handle = (SchedulerTimelineHandle*)handles[slot];
+        if (handle == null || handle->Flags == 0 || handle->Data == 0)
+            return null;
+        return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
+    }
+
+    private int _scrubLogCounter;
+
+    /// <summary>Whether a weapon/prop control runs on the same clock as an
+    /// actor control: clip lengths and current times both within a second.</summary>
+    private static bool TracksControl(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* prop,
+        float time, float duration, out float propDuration)
+    {
+        propDuration = -1f;
+        var binding = prop->hkaAnimationControl.Binding;
+        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+            return false;
+        propDuration = binding.ptr->Animation.ptr->Duration;
+        return Math.Abs(propDuration - duration) < 1f
+            && Math.Abs(prop->hkaAnimationControl.LocalTime - time) < 1f;
+    }
+
+    private delegate void PropControlVisitor(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
+
+    /// <summary>Visits every animation control on every attached weapon/prop
+    /// draw object.</summary>
+    private static void ForEachPropControl(Character* character, PropControlVisitor visit)
+    {
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            var draw = weapon.DrawData.DrawObject;
+            if (draw == null || draw->Object.GetObjectType() != ObjectType.CharacterBase)
+                continue;
+            var skeleton = ((CharacterBase*)draw)->Skeleton;
+            if (skeleton == null)
+                continue;
+            for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+            {
+                var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+                if (animated == null)
+                    continue;
+                for (int c = 0; c < animated->AnimationControls.Length; c++)
+                {
+                    var control = animated->AnimationControls[c].Value;
+                    if (control != null)
+                        visit(control);
+                }
+            }
+        }
+    }
+
+    private static void PropagateScrubToProps(
+        Character* character, float before, float duration, float delta)
+    {
+        ForEachPropControl(character, control =>
+        {
+            if (!TracksControl(control, before, duration, out var propDuration))
+                return;
+            float target = control->hkaAnimationControl.LocalTime + delta;
+            control->hkaAnimationControl.LocalTime =
+                Math.Clamp(target, 0f, Math.Max(0f, propDuration - 1f / 30f));
+        });
+    }
+
+    /// <summary>Whether a foreign region answers a guarded read (the
+    /// ReadProcessMemory import lives in the probe partial).</summary>
+    private static bool RegionReadable(nint address, int size)
+    {
+        if (size > 0x160)
+            return false;
+        byte* scratch = stackalloc byte[0x160];
+        return ReadProcessMemory((nint)(-1), address, scratch, size, out var read) && read == size;
+    }
+
+    /// <summary>Walks a track controller's tracks and clips; every
+    /// ChildTimelineClip gets its frame cursor written and its child
+    /// controller seeked (timestamp + previous), recursively.</summary>
+    private static void SeekChildTimelines(nint trackController, float frames, int depth)
+    {
+        if (trackController == 0 || depth > 3)
+            return;
+        nint trackPointers = *(nint*)(trackController + 0x28);
+        int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+        for (int t = 0; t < trackCount && t < 8 && trackPointers != 0; t++)
+        {
+            nint track = *(nint*)(trackPointers + t * 8);
+            if (track == 0)
+                continue;
+            nint clipPointers = *(nint*)(track + 0x18);
+            int clipCount = *(ushort*)(track + 0x18 + 0xA);
+            for (int c = 0; c < clipCount && c < 8 && clipPointers != 0; c++)
+            {
+                nint clip = *(nint*)(clipPointers + c * 8);
+                if (clip == 0 || !RegionReadable(clip, 0x160) || *(int*)(clip + 0x84) != 7)
+                    continue;
+                *(float*)(clip + 0xCC) = frames;   // ChildFrame
+                *(float*)(clip + 0xD0) = frames;   // PrevChildFrame
+                // The child controller: +0x138 in this client (Ktisis says
+                // +0x130; the addressed hunt proved +0x138 -> +0x34/38).
+                nint child = *(nint*)(clip + 0x138);
+                if (child == 0 || !RegionReadable(child, 0x80))
+                    child = *(nint*)(clip + 0x130);
+                if (child == 0 || !RegionReadable(child, 0x80))
+                    continue;
+                *(float*)(child + SchedulerTimestampOffset) = frames;
+                *(float*)(child + SchedulerTimestampOffset + 4) = frames;
+                SeekChildTimelines(*(nint*)(child + 0x18), frames, depth + 1);
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SchedulerTimelineHandle
+    {
+        public nint Data;
+        public uint Flags;
+    }
+
     // Verified client layout: the forced id is container+0x2E0, which is
     // sequencer+0x2D0. SetTimelineId clears it, so layer writes clear first
     // and Base replay rearms it only after that native call returns.
@@ -99,6 +242,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         IDataManager data)
     {
         _framework = framework;
+        _sigScanner = sigScanner;
+        _hooking = hooking;
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
         _log = log;
         _bindings = bindings;
@@ -245,15 +390,124 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return result;
         var owner = (nint)container->OwnerObject;
         if (owner != nint.Zero &&
-            _byAddress.TryGetValue(owner, out var enforcement) &&
-            enforcement.OverallSpeed is { } speed)
+            _byAddress.TryGetValue(owner, out var enforcement))
         {
-            // Run after the game's calculation so the override wins
-            // whatever the game just decided.
-            container->OverallSpeed = speed;
-            return true;
+            if (enforcement.OverallSpeed is { } speed)
+            {
+                // Run after the game's calculation so the override wins
+                // whatever the game just decided.
+                container->OverallSpeed = speed;
+                result = true;
+            }
+            // The sampler's verdict (2026-09-01 19:37): writing the
+            // slot-speed FIELD does not reliably reach the slot's havok
+            // control — on the observed click frame the control kept x1
+            // with the field at 0, and replays recreate controls at x1
+            // regardless. A slot speed is therefore enforced on the
+            // CONTROLS, every frame, here after the game's own update.
+            if (enforcement.SlotSpeeds.Count > 0)
+            {
+                // Scaled by the container's overall: the game implements
+                // the whole-actor pause by propagating overall × slot down
+                // to the controls, and writing the raw slot value here
+                // overrode that zero every frame — "pause doesn't do
+                // anything once I've set it on an individual level".
+                ApplySlotSpeedsToControls(
+                    (Character*)owner,
+                    enforcement.SlotSpeeds,
+                    container->OverallSpeed);
+                result = true;
+            }
+            // A prop that tracks NO actor control (its clock drifted past
+            // the second the tracking rule allows: a re-applied timeline
+            // left the wand at 16.96 while the layer sat at 10) followed
+            // nothing and kept playing through the pause. It follows the
+            // enforced overall speed on its own.
+            if (enforcement.OverallSpeed is { } propOverall)
+                ApplyOverallToUntrackedProps((Character*)owner, propOverall);
         }
         return result;
+    }
+
+    private static void ApplyOverallToUntrackedProps(Character* character, float overall)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null ||
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null || charaBase->Skeleton->PartialSkeletonCount == 0)
+            return;
+        var animated = charaBase->Skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
+        if (animated == null)
+            return;
+        var clocks = new List<(float Time, float Duration)>();
+        for (int i = 0; i < animated->AnimationControls.Length; i++)
+        {
+            var control = animated->AnimationControls[i].Value;
+            if (control == null)
+                continue;
+            var binding = control->hkaAnimationControl.Binding;
+            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                continue;
+            clocks.Add((control->hkaAnimationControl.LocalTime, binding.ptr->Animation.ptr->Duration));
+        }
+        ForEachPropControl(character, prop =>
+        {
+            foreach (var (time, duration) in clocks)
+                if (TracksControl(prop, time, duration, out _))
+                    return;
+            prop->PlaybackSpeed = overall;
+        });
+    }
+
+    /// <summary>Writes each enforced slot speed onto that slot's live
+    /// havok controls (control index == slot index on every partial).
+    /// The per-frame half the field write cannot provide.</summary>
+    private static void ApplySlotSpeedsToControls(
+        Character* character, Dictionary<int, float> slotSpeeds, float overall)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null ||
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return;
+        var skeleton = charaBase->Skeleton;
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (animated == null)
+                continue;
+            foreach (var (slot, speed) in slotSpeeds)
+            {
+                if (slot >= animated->AnimationControls.Length)
+                    continue;
+                var control = animated->AnimationControls[slot].Value;
+                if (control == null)
+                    continue;
+                control->PlaybackSpeed = speed * overall;
+                // The props that run on this control's clock follow its
+                // effective speed (they ignored slot speed before: the wand
+                // read x1 while the layer ran x2).
+                if (p == 0)
+                {
+                    var binding = control->hkaAnimationControl.Binding;
+                    if (binding.ptr != null && binding.ptr->Animation.ptr != null)
+                    {
+                        float time = control->hkaAnimationControl.LocalTime;
+                        float duration = binding.ptr->Animation.ptr->Duration;
+                        float effective = speed * overall;
+                        ForEachPropControl(character, prop =>
+                        {
+                            if (TracksControl(prop, time, duration, out _))
+                                prop->PlaybackSpeed = effective;
+                        });
+                    }
+                }
+            }
+        }
     }
 
     private void SlotSpeedDetour(ActionTimelineSequencer* sequencer, uint slot, float speed)
@@ -317,6 +571,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     {
         EnforceForcedLoops();
         EnforceLoops(framework);
+        ProbeTick();
     }
 
     /// <summary>Collects live animation controls.</summary>
@@ -455,6 +710,29 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             : null;
     }
 
+    /// <summary>Clears one layered slot for real: the game's CancelTimeline
+    /// takes the SLOT as its second argument and drops that layer's
+    /// scheduler and control. A container-level cancel (slot 0) left the
+    /// layer alive and the base restore re-scheduled it (reset restarted
+    /// breakfast from 0, 2026-09-01 22:4x).</summary>
+    public AnimationPortResult ClearSlotTimeline(ActorId actor, AnimationSlot slot)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        int index = (int)slot;
+        if (index is < 0 or >= 14)
+            return AnimationPortResult.Fail("Slot out of range.");
+        if (_cancelTimeline == null)
+            return AnimationPortResult.Fail(
+                "Timeline cancellation is unavailable: the game function was not found.");
+        // CancelTimeline's second argument IS the slot (bridge experiment
+        // 22:41: a2=1 dropped the upper layer, its scheduler and its havok
+        // control cleanly; a2=timeline id did nothing; a3=1 reset the base).
+        _cancelTimeline(&character->Timeline, (nint)index, nint.Zero);
+        return AnimationPortResult.Ok();
+    }
+
     /// <summary>Cancels the active container timeline.</summary>
     public AnimationPortResult CancelActiveTimeline(ActorId actor)
     {
@@ -532,7 +810,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
-        return _setTimelineId!(&character->Timeline.TimelineSequencer, timeline, nint.Zero);
+        _probeOurWrite = true;
+        try
+        {
+            return _setTimelineId!(
+                &character->Timeline.TimelineSequencer, timeline, nint.Zero);
+        }
+        finally
+        {
+            _probeOurWrite = false;
+        }
     }
 
     public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
@@ -873,6 +1160,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, speed);
+        _log.Information(
+            $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
+            + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
         return AnimationPortResult.Ok();
     }
 
@@ -891,7 +1181,37 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
 
         PruneEnforcement(actor);
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed);
+        // The props on this slot's clock were held at the override speed by
+        // the per-frame enforcement; with it gone nothing resets them, so
+        // restore them here (the wand lagged at x0.5 after a clear).
+        RestorePropSpeeds(character, (int)slot, restoreSpeed * character->Timeline.OverallSpeed);
         return AnimationPortResult.Ok();
+    }
+
+    private static void RestorePropSpeeds(Character* character, int slot, float effective)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var skeleton = ((CharacterBase*)drawObject)->Skeleton;
+        if (skeleton == null || skeleton->PartialSkeletonCount == 0)
+            return;
+        var animated = skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
+        if (animated == null || slot >= animated->AnimationControls.Length)
+            return;
+        var control = animated->AnimationControls[slot].Value;
+        if (control == null)
+            return;
+        var binding = control->hkaAnimationControl.Binding;
+        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+            return;
+        float time = control->hkaAnimationControl.LocalTime;
+        float duration = binding.ptr->Animation.ptr->Duration;
+        ForEachPropControl(character, prop =>
+        {
+            if (TracksControl(prop, time, duration, out _))
+                prop->PlaybackSpeed = effective;
+        });
     }
 
     // ── Lips, stance, weapon, position ────────────────────────────────
@@ -1068,7 +1388,100 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             return AnimationPortResult.Fail("Skeleton changed; scrub cancelled.");
 
         float duration = binding.ptr->Animation.ptr->Duration;
-        target->hkaAnimationControl.LocalTime = Math.Clamp(time, 0f, duration);
+        // Never PLACE a cursor on the last frame: a child timeline set
+        // exactly at its end fires its end events during the drag (prop
+        // released before Play) but never completes — completion needs the
+        // child to CROSS the end during an update — so the parent runs its
+        // own tail and freezes (c0 stuck at 665 with the child pinned at
+        // 585, 2026-09-01 22:03). One frame short, Play crosses it properly.
+        float lastFrame = Math.Max(0f, duration - 1f / 30f);
+        time = Math.Clamp(time, 0f, lastFrame);
+        float before = target->hkaAnimationControl.LocalTime;
+        target->hkaAnimationControl.LocalTime = time;
+        // Props: an attached weapon/prop skeleton control that runs on the
+        // same clock as this control (same clip length within a second, and
+        // its time within a second of ours — the bubble wand reads
+        // 19.33/19.50 with a fixed 0.18s lead-in) moves by the same delta,
+        // keeping its offset. Measured 2026-09-01 22:27 through the bridge.
+        PropagateScrubToProps(character, before, duration, time - before);
+        // EVERY partial runs its own control for the same slot (body,
+        // face, hair). Scrubbing only one left the others on the old
+        // schedule — one of them reaches its clip's end at the old time
+        // and the timeline layer resets the whole animation (the
+        // pause→scrub→play reset, 2026-09-01). Same index, same time,
+        // all partials, each clamped to its own clip.
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            if (p == control.Partial)
+                continue;
+            var sibling = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (sibling == null || control.Control >= sibling->AnimationControls.Length)
+                continue;
+            var siblingControl = sibling->AnimationControls[control.Control].Value;
+            if (siblingControl == null)
+                continue;
+            var siblingBinding = siblingControl->hkaAnimationControl.Binding;
+            float siblingClip =
+                siblingBinding.ptr != null && siblingBinding.ptr->Animation.ptr != null
+                    ? siblingBinding.ptr->Animation.ptr->Duration
+                    : duration;
+            siblingControl->hkaAnimationControl.LocalTime =
+                Math.Clamp(time, 0f, siblingClip);
+        }
+        // The SCHEDULER's clock moves with the scrub — without this the
+        // timeline layer keeps counting from the old position and resets
+        // the animation on the old schedule. It counts in 30fps FRAMES
+        // (dump-proven: control 1.42s ↔ clock 42.74), not seconds.
+        var timestamp = SchedulerTimestamp(
+            &character->Timeline.TimelineSequencer, control.Control);
+        if (timestamp != null)
+        {
+            *timestamp = Math.Clamp(time, 0f, duration) * 30f;
+            // The previous-timestamp twin too: leaving it at the old value
+            // made the next tick's delta enormous — the one-frame "way
+            // faster" blip after a scrub.
+            *(timestamp + 1) = *timestamp;
+            nint schedulerForLog = (nint)timestamp - SchedulerTimestampOffset;
+            if (++_scrubLogCounter % 45 == 1)
+                _log.Information(
+                    $"[AnimState] scrub {time:0.00}s -> {*timestamp:0.0}f; "
+                    + $"end candidates: sched+68={*(int*)(schedulerForLog + 0x68)} "
+                    + $"clipDuration={duration * 30f:0.0}f");
+            // THE CLOCK FAMILY (clock hunt with addresses, 22:19): during
+            // natural play six timestamp pairs mirror each other in FRAMES —
+            // scheduler +0x34/38, track controller +0x18C/190, track
+            // +0x11C/120, ChildTimelineClip +0xCC/D0, and the child
+            // controller (clip+0x138 ->) +0x34/38. A scrub that leaves ANY
+            // of them behind lets that one gate completion on the old
+            // schedule (the forward-scrub stall). tctl+0x11C / track+0xAC /
+            // clip+0x5C are per-tick DELTA fields, not clocks — untouched.
+            float frames = Math.Clamp(time, 0f, duration) * 30f;
+            nint schedulerObject = (nint)timestamp - SchedulerTimestampOffset;
+            nint trackController = *(nint*)(schedulerObject + 0x18);
+            if (trackController != 0 && RegionReadable(trackController, 0x1A0))
+            {
+                *(float*)(trackController + 0x18C) = frames;
+                *(float*)(trackController + 0x190) = frames;
+                nint trackPointers = *(nint*)(trackController + 0x28);
+                int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+                for (int trackIndex = 0;
+                    trackIndex < trackCount && trackIndex < 8 && trackPointers != 0;
+                    trackIndex++)
+                {
+                    nint track = *(nint*)(trackPointers + trackIndex * 8);
+                    if (track == 0 || !RegionReadable(track, 0x130))
+                        continue;
+                    *(float*)(track + 0x11C) = frames;
+                    *(float*)(track + 0x120) = frames;
+                }
+            }
+            // THE CHILD TIMELINE: the slot's timeline is a PARENT whose clip
+            // (ClipType 7, Ktisis ChildTimelineClip) runs a child
+            // TimelineController with its own frame clock. Scrubbing only
+            // the parent left the child on the old position — the end is
+            // judged there, hence "dies on the old schedule" (2026-09-01).
+            SeekChildTimelines(trackController, frames, 0);
+        }
         return AnimationPortResult.Ok();
     }
 
@@ -1109,6 +1522,9 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _forcedLoops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
+        _probeTimelineHook?.Dispose();
+        _probeCancelHook?.Dispose();
+        _probeLoadWeaponHook?.Dispose();
         _enforcement.Clear();
         _byAddress.Clear();
         // The session restores per-actor overrides before disposal; the

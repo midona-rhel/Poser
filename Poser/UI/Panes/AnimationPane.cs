@@ -351,10 +351,17 @@ public sealed class AnimationPane : IDisposable
             choice = null;
             selected = 0;
         }
+        // The whole-actor pause pauses EVERY layer, so every row offers
+        // Play while it holds — not only Base (the old special case left
+        // other rows saying Pause over a frozen layer).
         bool paused = (owned.SlotSpeeds.TryGetValue(slot, out var ownedSpeed) &&
             ownedSpeed == 0f) ||
-            (slot == AnimationSlot.Base && _animation.IsPaused(actor));
+            _animation.IsPaused(actor);
         bool needsReplay = selected != 0 && live != selected;
+        // "None" has no clock: with nothing live, staged, or selected,
+        // the speed and play controls have nothing to drive.
+        bool hasAnimation = live != 0 || selected != 0
+            || _animation.SelectedFor(actor, slot) != null;
         var feed = slot switch
         {
             AnimationSlot.Base => _baseFeed,
@@ -382,7 +389,8 @@ public sealed class AnimationPane : IDisposable
                             actor,
                             slot,
                             choice,
-                            _playEmoteStart),
+                            _playEmoteStart,
+                            resume: false),
                         $"{label} playback"),
                     style: actionStyle,
                     disabled: disabled || selected == 0);
@@ -407,7 +415,7 @@ public sealed class AnimationPane : IDisposable
                 $"{label} speed"),
             format: "0.00",
             marks: UnitMarks,
-            disabled: disabled,
+            disabled: disabled || !hasAnimation,
             actions: actions =>
             {
                 bool play = paused || needsReplay;
@@ -423,7 +431,7 @@ public sealed class AnimationPane : IDisposable
                             : _animation.PauseSlot(actor, slot),
                         $"{label} playback"),
                     style: actionStyle,
-                    disabled: disabled || (play && !paused && selected == 0));
+                    disabled: disabled || !hasAnimation);
             },
             id: $"anim-{slot}-speed");
 
@@ -481,6 +489,19 @@ public sealed class AnimationPane : IDisposable
         if (enabled == current)
             return;
 
+        if (enabled)
+        {
+            // ENTERING advanced is a pure view change (ruled 2026-09-01):
+            // it must not reset, replay, or release ANYTHING — the old
+            // restore-Base-first handoff restarted the base (losing scrub
+            // points and layered animations, worst on a fresh clone). The
+            // layer rows simply adopt whatever state the actor holds.
+            _generalSelections.Remove(actor);
+            _layerSelections.Remove((actor, AnimationSlot.Base));
+            _advancedActors.Add(actor);
+            return;
+        }
+
         CancelExpressionRetry(actor);
         var expression = _animation.ReleaseExpression(actor);
         if (!expression.Success)
@@ -490,31 +511,6 @@ public sealed class AnimationPane : IDisposable
         }
         _expressionSelections.Remove(actor);
         _layerSelections.Remove((actor, AnimationSlot.Facial));
-
-        if (enabled)
-        {
-            // Basic owns only Base. Restore it before exposing layer writes.
-            var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
-            if (!reset.Success)
-            {
-                Report(reset, "Advanced animation");
-                return;
-            }
-            if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
-            {
-                var loop = _animation.SetSlotLoop(
-                    actor, AnimationSlot.Base, 0, false);
-                if (!loop.Success)
-                {
-                    Report(loop, "Advanced animation");
-                    return;
-                }
-            }
-            _generalSelections.Remove(actor);
-            _layerSelections.Remove((actor, AnimationSlot.Base));
-            _advancedActors.Add(actor);
-            return;
-        }
 
         // Advanced releases every layer before Basic can issue Base commands.
         foreach (var slot in PrimaryLayers)
@@ -558,9 +554,16 @@ public sealed class AnimationPane : IDisposable
             _generalSelections.Remove(actor);
             command = null;
         }
+        // No staged pick still DESCRIBES what the actor is doing: the live
+        // base slot names a game emote (/hum) the same way the Full body
+        // layer row does. "None" means idle, never "Poser picked nothing" —
+        // so the two idle stands render as the empty value, not as names.
+        ushort liveBase = reading.TimelineFor(AnimationSlot.Base);
+        if (liveBase is AnimationTimelines.Idle or AnimationTimelines.BattleIdle)
+            liveBase = 0;
         ushort live = command is { } staged
             ? reading.TimelineFor(staged.Entry.Slot)
-            : (ushort)0;
+            : liveBase;
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
@@ -639,12 +642,18 @@ public sealed class AnimationPane : IDisposable
             _scrubActor = null;
             _scrubControl = null;
         }
+        // A gesture the session refused stays refused until the mouse is
+        // released; without this every remaining drag frame re-reported.
+        if (_scrubBlocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            _scrubBlocked = false;
     }
+
+    private bool _scrubBlocked;
 
     private void ScrubTo(
         ActorId actor, ScrubControlReading? control, float time, bool finish = false)
     {
-        if (control == null)
+        if (control == null || _scrubBlocked)
             return;
         if (_scrubActor is not { } scrubActor || !scrubActor.Equals(actor) ||
             _scrubControl != control.Id)
@@ -653,12 +662,25 @@ public sealed class AnimationPane : IDisposable
             if (!begun.Success)
             {
                 Report(begun, "Animation scrub");
+                _scrubBlocked = true;
                 return;
             }
             _scrubActor = actor;
             _scrubControl = control.Id;
         }
-        Report(_animation.UpdateScrub(actor, time), "Animation scrub");
+        var updated = _animation.UpdateScrub(actor, time);
+        if (!updated.Success)
+        {
+            // The session dropped the gesture (the control died mid-drag,
+            // the timeline ended): report ONCE, end the pane's gesture, and
+            // stay quiet until the next press.
+            Report(updated, "Animation scrub");
+            _animation.EndScrub();
+            _scrubActor = null;
+            _scrubControl = null;
+            _scrubBlocked = true;
+            return;
+        }
         if (finish)
         {
             _animation.EndScrub();

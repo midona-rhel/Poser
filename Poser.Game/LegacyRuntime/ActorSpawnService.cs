@@ -474,6 +474,19 @@ internal interface IActorSpawnNativeAdapter
     bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
 
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
+
+    /// <summary>Copies the equipment visibility flags — weapons, headgear,
+    /// visor, Viera ears — from one character onto another. The seed copy
+    /// carries the equipment but not these flags: a duplicate showed the
+    /// weapon on its back while the source hid it (2026-09-02).</summary>
+    bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
+
+    /// <summary>Seeds the target's DrawData customize and equipment from
+    /// the source's DRAWN model (Human.Customize, Human equipment models).
+    /// A sync plugin or a locked Glamourer state writes the draw object and
+    /// leaves DrawData at the game's values, so the game's own copy drew a
+    /// vanilla character next to a modded one (2026-09-02, Valya).</summary>
+    bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer
     /// revalidates — an unreadable actor is NOT an empty slot, and only the
@@ -661,6 +674,64 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         if (character == null)
             return false;
         character->Alpha = Math.Clamp(alpha, 0f, 1f);
+        return true;
+    }
+
+    public bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target)
+    {
+        var from = (Character*)Revalidate(source);
+        var to = (Character*)Revalidate(target);
+        if (from == null || to == null)
+            return false;
+        var drawn = from->GameObject.DrawObject;
+        if (drawn == null
+            || drawn->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
+            || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawn)->GetModelType()
+                != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+            return false;
+        var human = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)drawn;
+        to->DrawData.CustomizeData = human->Customize;
+        var models = human->EquipmentModels;
+        var slots = to->DrawData.EquipmentModelIds;
+        for (int i = 0; i < models.Length && i < slots.Length; i++)
+            slots[i] = models[i];
+        // Facewear: its own two slots, not among the ten.
+        var glasses = from->DrawData.GlassesIds;
+        for (int i = 0; i < glasses.Length; i++)
+            to->DrawData.SetGlasses(i, glasses[i]);
+        var toDrawn = to->GameObject.DrawObject;
+        if (toDrawn != null
+            && toDrawn->Object.GetObjectType() == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
+            && ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)toDrawn)->GetModelType()
+                == FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+        {
+            // Already drawn (the once-posable pass): the drawn glasses models
+            // straight across, the way the sync plugin set them.
+            var toHuman = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)toDrawn;
+            var sourceGlasses = human->GlassesModels;
+            for (uint i = 0; i < (uint)sourceGlasses.Length; i++)
+            {
+                var model = sourceGlasses[(int)i];
+                toHuman->SetGlassesSlotModel(i, &model);
+            }
+        }
+        return true;
+    }
+
+    public bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target)
+    {
+        var from = (Character*)Revalidate(source);
+        var to = (Character*)Revalidate(target);
+        if (from == null || to == null)
+            return false;
+        to->DrawData.HideWeapons(from->DrawData.IsWeaponHidden);
+        to->DrawData.HideHeadgear(0, from->DrawData.IsHatHidden);
+        to->DrawData.SetVisor(from->DrawData.IsVisorToggled);
+        to->DrawData.HideVieraEars(from->DrawData.VieraEarsHidden);
+        // The two flag bytes wholesale (+0x23E/+0x23F: the toggles above and
+        // the rest — facewear visibility among them).
+        *((byte*)&to->DrawData + 0x23E) = *((byte*)&from->DrawData + 0x23E);
+        *((byte*)&to->DrawData + 0x23F) = *((byte*)&from->DrawData + 0x23F);
         return true;
     }
 
@@ -1152,7 +1223,26 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 sourceAddress,
                 modelCharaId,
                 name ?? ToPoserName(descriptor.Value.Index));
-            InheritSourceCollection(ownership, sourceAddress, descriptor.Value);
+            // Penumbra cannot place the copy on the frame it is created
+            // (CollectionMissing, 00:14) and can one tick later (00:2x): the
+            // inherit runs next tick, still ahead of the draw. The flags
+            // copy is a plain field write and lands now.
+            if (sourceAddress != nint.Zero
+                && _native.ResolveActor(sourceAddress) is { } flagSource)
+            {
+                _native.CopyDrawnAppearance(flagSource, descriptor.Value);
+                _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
+            }
+            var seeded = descriptor.Value;
+            if (_framework is null)
+                InheritSourceCollection(ownership, sourceAddress, seeded);
+            else
+                _framework.RunOnTick(() =>
+                {
+                    if (_disposed)
+                        return;
+                    InheritSourceCollection(ownership, sourceAddress, seeded);
+                }, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
             _log?.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
@@ -1723,6 +1813,42 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 return true;
         }
         return false;
+    }
+
+    public bool CopyDrawnAppearance(IActor source, IActor target)
+    {
+        if (!OnOwnerThread || source.Address == nint.Zero || target.Address == nint.Zero)
+            return false;
+        try
+        {
+            if (_native.ResolveActor(source.Address) is not { } from
+                || !TryResolveActorForOperation(target, out var to, out _))
+                return false;
+            return _native.CopyDrawnAppearance(from, to);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorSpawnService: the drawn appearance could not be copied: {ex.Message}");
+            return false;
+        }
+    }
+
+    public bool CopyEquipmentVisibility(IActor source, IActor target)
+    {
+        if (!OnOwnerThread || source.Address == nint.Zero || target.Address == nint.Zero)
+            return false;
+        try
+        {
+            if (_native.ResolveActor(source.Address) is not { } from
+                || !TryResolveActorForOperation(target, out var to, out _))
+                return false;
+            return _native.CopyEquipmentVisibility(from, to);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorSpawnService: equipment visibility could not be copied: {ex.Message}");
+            return false;
+        }
     }
 
     public void SetVisibility(IActor actor, bool visible)

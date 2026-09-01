@@ -26,6 +26,11 @@ public sealed class AnimationSession
     /// <summary>Tracks the scene physics hold.</summary>
     private bool _sceneOwnsPhysics;
 
+    /// <summary>Diagnostic tap for the pause/play path — wired to the
+    /// plugin log at composition; every verb that can start or stop
+    /// motion reports through it.</summary>
+    public Action<string>? Trace { get; set; }
+
     public AnimationSession(IAnimationRuntimePort port)
     {
         _port = port;
@@ -402,11 +407,89 @@ public sealed class AnimationSession
 
     public bool IsPaused(ActorId actor) => OverridesFor(actor).IsPaused;
 
-    public AnimationResult Pause(ActorId actor) => SetSpeed(actor, 0f);
+    public AnimationResult Pause(ActorId actor)
+    {
+        Trace?.Invoke($"Pause(all) {actor}");
+        return SetSpeed(actor, 0f);
+    }
 
     /// <summary>Resume drops the override rather than writing 1, so an
     /// actor the game is driving at its own speed keeps it.</summary>
-    public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
+    /// <summary>Play-all: releases every hold — the per-slot pauses the
+    /// layer-play conversion parked, then the whole-actor speed. The
+    /// sidebar's play is the ONLY verb that releases everything (ruled
+    /// 2026-09-01).</summary>
+    public AnimationResult Resume(ActorId actor)
+    {
+        Trace?.Invoke($"Resume(all) {actor}");
+        foreach (var (slot, speed) in OverridesFor(actor).SlotSpeeds)
+        {
+            if (speed == 0f)
+                ResumeSlotSpeedCore(actor, slot);
+        }
+        return ClearSpeed(actor);
+    }
+
+    /// <summary>Whether ANYTHING on the actor is paused — the whole-actor
+    /// hold or any per-slot hold.</summary>
+    public bool AnyPaused(ActorId actor)
+    {
+        if (IsPaused(actor))
+            return true;
+        foreach (var (_, speed) in OverridesFor(actor).SlotSpeeds)
+        {
+            if (speed == 0f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Whether any live layer is actually MOVING. The sidebar
+    /// button offers Pause while this is true and Resume otherwise
+    /// (ruled 2026-09-01): pause stops the stack, play overrides every
+    /// individual hold.</summary>
+    public bool AnyPlaying(ActorId actor)
+    {
+        if (IsPaused(actor))
+            return false;
+        if (Read(actor) is not { } reading)
+            return false;
+        var owned = OverridesFor(actor);
+        foreach (var slotReading in reading.Slots)
+        {
+            if (slotReading.TimelineId != 0
+                && owned.SlotSpeeds.GetValueOrDefault(slotReading.Slot, 1f) != 0f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Playing ONE layer must not resurrect the rest (ruled
+    /// 2026-09-01): the whole-actor pause converts into per-slot holds on
+    /// every OTHER live layer, then the overall speed lifts so the played
+    /// layer can move.</summary>
+    private AnimationResult ResumeForLayerPlay(ActorId actor, AnimationSlot playing)
+    {
+        var current = OverridesFor(actor);
+        if (Read(actor) is { } reading)
+        {
+            foreach (var slotReading in reading.Slots)
+            {
+                if (slotReading.TimelineId == 0
+                    || slotReading.Slot == playing
+                    || current.SlotSpeeds.ContainsKey(slotReading.Slot))
+                    continue;
+                var held = SetSlotSpeedCore(actor, slotReading.Slot, 0f);
+                Trace?.Invoke(
+                    $"  hold slot={slotReading.Slot} (tl {slotReading.TimelineId})"
+                    + $" -> {(held.Success ? "ok" : held.Detail)}");
+                if (!held.Success)
+                    return held;
+            }
+        }
+        Trace?.Invoke($"  lift overall for {playing}");
+        return ClearSpeedCore(actor);
+    }
 
     /// <summary>
     /// Replays from the start after releasing a Poser-owned pause. A nonzero
@@ -419,7 +502,8 @@ public sealed class AnimationSession
         if (Suspended() is { } blocked) return blocked;
         if (IsPaused(actor))
         {
-            var released = ClearSpeed(actor);
+            var released = ResumeForLayerPlay(
+                actor, _port.TimelineSlot(timeline) ?? AnimationSlot.Base);
             if (!released.Success)
                 return released;
             resumed = true;
@@ -438,8 +522,25 @@ public sealed class AnimationSession
     }
 
     public AnimationResult SetSlotSpeed(
-        ActorId actor, AnimationSlot slot, float speed) =>
-        SetSlotSpeedCore(actor, slot, speed);
+        ActorId actor, AnimationSlot slot, float speed)
+    {
+        var set = SetSlotSpeedCore(actor, slot, speed);
+        if (set.Success && speed == 0f)
+            CollapseWhenNothingPlays(actor);
+        return set;
+    }
+
+    /// <summary>A slot reaching speed zero IS a pause, however it got
+    /// there — slider or button — and when the last moving layer stops,
+    /// the actor collapses into the one canonical "truly paused" shape:
+    /// overall zero (ruled 2026-09-01).</summary>
+    private void CollapseWhenNothingPlays(ActorId actor)
+    {
+        if (IsPaused(actor) || AnyPlaying(actor))
+            return;
+        Trace?.Invoke($"collapse: every layer held on {actor}");
+        SetSpeed(actor, 0f);
+    }
 
     private AnimationResult SetSlotSpeedCore(
         ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
@@ -513,32 +614,77 @@ public sealed class AnimationSession
         return AnimationResult.Ok();
     }
 
-    public AnimationResult PauseSlot(ActorId actor, AnimationSlot slot) =>
-        SetSlotSpeedCore(actor, slot, 0f);
+    public AnimationResult PauseSlot(ActorId actor, AnimationSlot slot)
+    {
+        var held = SetSlotSpeedCore(actor, slot, 0f);
+        if (!held.Success)
+            return held;
+        CollapseWhenNothingPlays(actor);
+        return held;
+    }
 
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
+    /// <summary>APPLY stages, PLAY plays (ruled 2026-09-01): with
+    /// <paramref name="resume"/> false, a paused actor takes the animation
+    /// frozen at its start and nothing moves — the layer's Play button (or
+    /// the sidebar's play-all) is what starts it.</summary>
     public AnimationResult PlaySelectedSlot(
-        ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart)
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume = true)
+    {
+        var outcome = PlaySelectedSlotTraced(actor, slot, entry, playFromStart, resume);
+        Trace?.Invoke(outcome.Success
+            ? $"  PlaySelectedSlot {slot} -> ok"
+            : $"  PlaySelectedSlot {slot} -> FAIL: {outcome.Detail}");
+        return outcome;
+    }
+
+    private AnimationResult PlaySelectedSlotTraced(
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume)
     {
         bool resumedOverall = false;
+        Trace?.Invoke(
+            $"PlaySelectedSlot {actor} slot={slot} resume={resume} "
+            + $"paused={IsPaused(actor)} "
+            + $"slotSpeed={OverridesFor(actor).SlotSpeeds.GetValueOrDefault(slot, float.NaN)}");
         if (SelectedFor(actor, slot) is { } selected)
         {
-            if (entry == null || entry.TimelineId != selected || entry.Slot != slot)
+            // A null entry plays the session's own selection as-is: state
+            // set outside this pane (a clone's transferred layers) has no
+            // pane-local pick, and refusing it stranded the clone
+            // ("the chosen animation identity changed").
+            if (entry != null && (entry.TimelineId != selected || entry.Slot != slot))
                 return AnimationResult.Fail("The chosen animation identity changed.");
-            var played = ApplySelectedSlotCore(
-                actor, slot, playFromStart ? entry : null);
-            if (!played.Success)
-                return played;
+            // RESUME, don't replay: a slot already live on the selected
+            // timeline keeps its position — re-blending spawned a crossfade
+            // control and restarted the clip from zero (the pause→play
+            // scrub reset, sampler 19:50:52).
+            bool alreadyLive = Read(actor)?.TimelineFor(slot) == selected;
+            if (!alreadyLive)
+            {
+                var played = ApplySelectedSlotCore(
+                    actor, slot, playFromStart && entry != null ? entry : null);
+                if (!played.Success)
+                    return played;
+            }
+        }
+        if (!resume && IsPaused(actor))
+        {
+            Trace?.Invoke("  staged only (paused, resume=false)");
+            return AnimationResult.Ok();
         }
         if (IsPaused(actor))
         {
-            var resumed = ClearSpeedCore(actor);
+            var resumed = ResumeForLayerPlay(actor, slot);
             if (!resumed.Success)
                 return resumed;
             resumedOverall = true;
         }
         if (OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f)
-            return ResumeSlotSpeedCore(actor, slot);
+            return resume
+                ? ResumeSlotSpeedCore(actor, slot)
+                : AnimationResult.Ok();
         return SelectedFor(actor, slot) != null || resumedOverall
             ? AnimationResult.Ok()
             : AnimationResult.Fail("Choose an animation first.");
@@ -652,9 +798,14 @@ public sealed class AnimationSession
         var current = OverridesFor(actor);
         if (!current.SlotSpeeds.TryGetValue(slot, out var speed) || speed != 0f)
             return AnimationResult.Ok();
+        // A hold parked by the layer-play conversion may never have seen
+        // a nonzero speed: fall back to the captured original, then 1.
         if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume) ||
             !float.IsFinite(resume) || resume <= 0f)
-            return AnimationResult.Fail("No previous nonzero layer speed is available.");
+            resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured)
+                && float.IsFinite(captured) && captured > 0f
+                ? captured
+                : 1f;
         return SetSlotSpeedCore(actor, slot, resume);
     }
 
@@ -682,8 +833,12 @@ public sealed class AnimationSession
 
         var failures = new List<string>();
         // Restore speed first. A failed unpin must not clear a selection
-        // whose paused native state still belongs to Poser.
-        if (OverridesFor(actor).SlotSpeedCaptures.ContainsKey(slot))
+        // whose paused native state still belongs to Poser. A ZERO speed
+        // is a pause, and resets never unpause — only the play verbs do
+        // (ruled 2026-09-01); the hold stays parked.
+        var beforeReset = OverridesFor(actor);
+        if (beforeReset.SlotSpeedCaptures.ContainsKey(slot)
+            && beforeReset.SlotSpeeds.GetValueOrDefault(slot) != 0f)
         {
             var speed = ClearSlotSpeedCore(actor, slot);
             if (!speed.Success)
@@ -850,7 +1005,9 @@ public sealed class AnimationSession
         if (reading == null)
             return AnimationPortResult.Fail("The actor is no longer available.");
         var immediateBase = _port.CaptureBase(actor);
-        var cancelled = _port.CancelActiveTimeline(actor);
+        // Zero the slot's own id entries first: a bare cancel left them and
+        // the base restore below re-scheduled the layer from them.
+        var cancelled = _port.ClearSlotTimeline(actor, slot);
         if (!cancelled.Success)
             return cancelled;
 

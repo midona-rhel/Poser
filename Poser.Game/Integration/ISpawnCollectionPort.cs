@@ -34,4 +34,5 @@ public interface ISpawnCollectionPort
     /// Must run while the clone still resolves: Penumbra keys the assignment
     /// on the object's identifier, which stops existing with the object.</summary>
     IntegrationPortResult ReleaseCollection(nint cloneAddress);
+
 }

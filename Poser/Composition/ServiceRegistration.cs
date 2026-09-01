@@ -204,7 +204,13 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationRuntimePort>();
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
-        services.AddSingleton<AnimationSession>();
+        services.AddSingleton<AnimationSession>(sp =>
+            new AnimationSession(sp.GetRequiredService<IAnimationRuntimePort>())
+            {
+                Trace = message => sp
+                    .GetRequiredService<Dalamud.Plugin.Services.IPluginLog>()
+                    .Information($"[AnimState] {message}"),
+            });
         return services;
     }
 
@@ -452,6 +458,9 @@ internal static class ServiceRegistration
         services.AddSingleton<SelectionSection>();
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
+#if DEBUG
+        services.AddSingleton<global::Poser.Bridge.DebugBridge>();
+#endif
         services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();

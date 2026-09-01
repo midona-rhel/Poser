@@ -52,6 +52,10 @@ public interface IAnimationRuntimePort
     /// native operation is container-wide rather than slot-specific.</summary>
     AnimationPortResult CancelActiveTimeline(ActorId actor);
 
+    /// <summary>Clears one layered slot: its sequencer id entries and the
+    /// active timeline, so a following base write cannot re-schedule it.</summary>
+    AnimationPortResult ClearSlotTimeline(ActorId actor, AnimationSlot slot);
+
     // ── Loops ───────────────────────────────────────────
     /// <summary>Arms exact-slot replay for verified Base or Upper ownership.</summary>
     AnimationPortResult SetSlotLoop(ActorId actor, AnimationSlot slot, ushort timeline);

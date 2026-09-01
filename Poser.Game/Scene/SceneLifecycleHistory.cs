@@ -90,7 +90,18 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
 internal readonly record struct ActorState(
     Transform Placement,
     bool Visible,
-    PoseFile? Pose);
+    PoseFile? Pose)
+{
+    /// <summary>Partial-root scales by "partial:bone", the head scaling a
+    /// pose file cannot carry (its bones are keyed by name and the roots
+    /// share the body's). Applied after the pose lands.</summary>
+    public IReadOnlyDictionary<string, System.Numerics.Vector3>? PartialRootScales { get; init; }
+
+    /// <summary>Physics bones by "partial:bone": what sits on them beyond
+    /// the simulation (Customize+ offset, rotation, scale; Poser transforms)
+    /// as final-minus-raw deltas, applied on the copy's own raw.</summary>
+    public IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)>? PhysicsDeltas { get; init; }
+}
 
 /// <summary>
 /// The actor half of <see cref="SceneLifecycleHistory"/>. An actor's restore
@@ -108,6 +119,11 @@ internal interface IActorLifecycle
     bool Destroy(object actor);
 
     ActorState Read(object actor);
+
+    /// <summary>Runs <paramref name="act"/> once the actor's body is
+    /// posable — the same wait a restore gets — or reports that it never
+    /// became so.</summary>
+    void WhenPosable(object actor, Action<object> act);
 
     /// <summary>Puts <paramref name="state"/> back onto a JUST-RESPAWNED
     /// actor. Placement and pose land once the body is posable, so this
@@ -370,14 +386,15 @@ public sealed class SceneLifecycleHistory
         WorldObjectService worldObjects,
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        Bindings.StableBindingRegistry bindings)
+        Bindings.StableBindingRegistry bindings,
+        IBonePosingService bonePosing)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings),
+                gaze, integration, bindings, bonePosing),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
@@ -692,6 +709,43 @@ public sealed class SceneLifecycleHistory
             return null;
         var slot = SlotFor(actor);
         slot.Respawn = spawn;
+        slot.HasRespawn = true;
+        _history.Append(new SceneLifecyclePatch(
+            description,
+            () => RemoveActor(slot),
+            () => RestoreActor(slot)));
+        return actor;
+    }
+
+    /// <summary>
+    /// A duplicate WITH the source's pose and placement: the source is read
+    /// the way a despawn reads it (placement, visibility, whole-skeleton
+    /// pose), the copy is spawned, and that state is restored onto it once
+    /// its body is posable — the same waiting restore a respawn gets. The
+    /// live animation is not carried: duplication is a pose snapshot, by
+    /// decision (2026-09-02); the caller freezes the copy. Redo replays the
+    /// snapshot, so the copy comes back posed, not idling.
+    /// </summary>
+    /// <summary>See <see cref="IActorLifecycle.WhenPosable"/>.</summary>
+    public void WhenPosable(IActor actor, Action<IActor> act) =>
+        _actors.WhenPosable(actor, a => act((IActor)a));
+
+    public IActor? SpawnActorWithPose(
+        string description, Func<IActor?> spawn, IActor source)
+    {
+        var state = _actors.Read(source);
+        IActor? Posed()
+        {
+            var copy = spawn();
+            if (copy != null)
+                _actors.Restore(copy, state);
+            return copy;
+        }
+        var actor = Posed();
+        if (actor == null)
+            return null;
+        var slot = SlotFor(actor);
+        slot.Respawn = Posed;
         slot.HasRespawn = true;
         _history.Append(new SceneLifecyclePatch(
             description,

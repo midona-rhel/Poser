@@ -17,7 +17,11 @@ public enum GazeTargetMode
     /// <summary>Look at another actor, targeted by stable game-object id.</summary>
     Entity,
     /// <summary>Look at a fixed world point (Brio Position mode / Ktisis gizmo target).</summary>
-    Position
+    Position,
+    /// <summary>No target on any part, every frame: the eyes, head and
+    /// body stay where the animation or pose put them. A duplicate's gaze —
+    /// a paused copy turned its head after the camera (2026-09-02).</summary>
+    Detached
 }
 
 /// <summary>

@@ -731,8 +731,13 @@ public sealed class PoseImportCapture : IPoseImportLifecycleControl, IDisposable
                     entry.Components,
                     forceNewStack: true) == null)
             {
-                import.Failure ??=
-                    $"{bone.BoneName} produced a non-finite import delta.";
+                // One degenerate bone (a zero-scaled prop helper such as
+                // nf_handprop_k_l on an actor without a prop) is not the
+                // pose: it is skipped and named, the rest lands. Failing the
+                // whole import here left every duplicate of such an actor
+                // idling (2026-09-02).
+                _log.Warning(
+                    $"Pose import: {bone.BoneName} produced a non-finite delta and was skipped.");
                 return;
             }
             import.Written.Add(entry.Target);
