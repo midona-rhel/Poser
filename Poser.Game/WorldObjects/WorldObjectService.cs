@@ -268,17 +268,6 @@ public sealed class AdoptedWorldObject
     /// pump engages on the spot, writing the base that same frame.</summary>
     internal bool EngageNext;
 
-    /// <summary>A SPAWNED copy of transform-animated scenery cannot be
-    /// animated by the game — the layout drives only its own instances —
-    /// so the copy PUPPETS a live original of the same path: its motion,
-    /// measured against the reference below, replays on the copy's base.
-    /// Zero when no original stands in the zone; the copy then simply
-    /// stands still.</summary>
-    internal nint MotionSource;
-
-    /// <summary>The source's transform at engagement.</summary>
-    internal Transform? MotionRef;
-
     /// <summary>Sets the desired placement WITHOUT writing — the unpause
     /// hand-off: where you froze it becomes where it stands.</summary>
     internal void SeedPlacement(Transform value) => _placement = value;
@@ -544,8 +533,6 @@ public sealed class WorldObjectService : IDisposable
                 WriteTint(handle);
             // The fresh incarnation ships lit; restate the dressing.
             handle.NightStatePending = true;
-            handle.MotionRef = null;
-            handle.MotionSource = FindMotionSource(handle);
             if (handle.AnimationPaused)
                 handle.AnimationPauseRetries = AnimationPauseRetryTicks;
         }
@@ -680,7 +667,6 @@ public sealed class WorldObjectService : IDisposable
             handle.HeldPauseTail = null;
             handle.LastWritten = null;
             handle.AnimRef = null;
-            handle.MotionRef = null;
             if (handle.WasAnchored)
                 handle.EngageNext = true;
         }
@@ -725,34 +711,6 @@ public sealed class WorldObjectService : IDisposable
             }
             if (!_port.TryRead(handle.Address, out var raw))
                 continue;
-            if (handle.Spawned && handle.MotionSource is not 0 and var source)
-            {
-                if (!_port.TryRead(source, out var sourceRaw))
-                {
-                    // The original streamed out; the copy stands still
-                    // where the user has it until a respawn re-picks.
-                    handle.MotionSource = nint.Zero;
-                    handle.MotionRef = null;
-                    continue;
-                }
-                var sourceRef = handle.MotionRef ??= sourceRaw;
-                var user = handle.DesiredPlacement;
-                var inverse = Quaternion.Inverse(sourceRef.Rotation);
-                var composed = new Transform(
-                    user.Position + Vector3.Transform(
-                        Vector3.Transform(
-                            sourceRaw.Position - sourceRef.Position,
-                            inverse),
-                        user.Rotation),
-                    Quaternion.Normalize(
-                        user.Rotation
-                        * Quaternion.Normalize(
-                            inverse * sourceRaw.Rotation)),
-                    user.Scale);
-                _port.Write(handle.Address, composed);
-                handle.LastWritten = composed;
-                continue;
-            }
             if (handle.EngageNext)
             {
                 // The unpause hand-off: engage on the game's fresh value
@@ -978,33 +936,12 @@ public sealed class WorldObjectService : IDisposable
         if (handle.IsVfx)
             handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
         else
-        {
             // The raw native object ships lit; the default dressing is
             // day, written once the model streams in.
             handle.NightStatePending = true;
-            handle.MotionSource = FindMotionSource(handle);
-        }
         _adopted.Add(handle);
         _events.Publish(new WorldObjectListChangedEvent());
         return handle;
-    }
-
-    /// <summary>A live SAME-PATH instance the map owns, for a spawned
-    /// copy to puppet. Claimed and Poser-made instances are excluded —
-    /// puppeting another static copy would mimic stillness.</summary>
-    private nint FindMotionSource(AdoptedWorldObject handle)
-    {
-        foreach (var row in _port.Enumerate())
-        {
-            if (row.IsEffect
-                || row.Address == handle.Address
-                || IsAdopted(row.Address))
-                continue;
-            if (string.Equals(
-                    row.Path, handle.Path, StringComparison.Ordinal))
-                return row.Address;
-        }
-        return nint.Zero;
     }
 
     public AdoptedWorldObject? Adopt(nint address)
