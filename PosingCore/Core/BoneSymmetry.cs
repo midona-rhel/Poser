@@ -4,12 +4,13 @@ using Poser.Services;
 namespace Poser.Core;
 
 /// <summary>
-/// The per-bone symmetry rule, in its one home. The toolbar's Off | Link |
-/// Mirror is a GLOBAL mode; with per-bone symmetry enabled, a bone the user
-/// explicitly stated keeps its own mode instead — set by clicking the
-/// toolbar while that bone is selected, cleared by clicking its stated
-/// value again. Bones with no stated mode always follow the toolbar
-/// (ruled 2026-09-01).
+/// The per-bone symmetry rule, in its one home, three tiers: a bone the
+/// user EXPLICITLY stated keeps its own mode (per-bone symmetry on, set by
+/// clicking the toolbar with the bone selected, cleared by clicking its
+/// stated value again); otherwise a bone the paired catalog names — the
+/// eyes and the Viera ear groups, the trusted always-move-together list —
+/// defaults to Link when auto-link is on; every other bone follows the
+/// toolbar (ruled 2026-09-01).
 /// </summary>
 public static class BoneSymmetry
 {
@@ -17,9 +18,17 @@ public static class BoneSymmetry
     public static SymmetryMode EffectiveMode(
         bool perBoneEnabled,
         IReadOnlyDictionary<string, SymmetryMode> stated,
+        bool autoLinkPaired,
         SymmetryMode global,
-        string canonicalName) =>
-        perBoneEnabled && stated.TryGetValue(canonicalName, out var own)
-            ? own
-            : global;
+        string canonicalName)
+    {
+        if (perBoneEnabled
+            && stated.TryGetValue(canonicalName, out var own))
+            return own;
+        if (autoLinkPaired
+            && Poser.Domain.Posing.BoneLinkCatalog
+                .GetLinked(canonicalName).Count > 0)
+            return SymmetryMode.Copy;
+        return global;
+    }
 }

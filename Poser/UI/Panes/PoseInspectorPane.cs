@@ -2903,6 +2903,7 @@ public class PoseInspectorPane
         return Core.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,
+            configuration.AutoLinkPairedBones,
             _editorState.SymmetryMode,
             canonicalName) switch
         {

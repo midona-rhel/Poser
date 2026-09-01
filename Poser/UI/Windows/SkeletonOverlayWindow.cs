@@ -595,6 +595,33 @@ public class SkeletonOverlayWindow : Window
             var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
 
+            // The anchor rule extends to IMPLICATED bones: partners the
+            // selection's symmetry or link will also move, and armed IK
+            // chain members, collect even while the armature is hidden
+            // or filtered — marking can only tint a collected bone.
+            var symmetryConfig = ConfigurationService.Instance.Config;
+            HashSet<string>? implicated =
+                armedIkBones != null ? new(armedIkBones) : null;
+            foreach (var bone in descriptors)
+            {
+                if (!selectedIds.Contains(SelectionId.ForBone(bone.Id)))
+                    continue;
+                var canonical = bone.Id.CanonicalName;
+                if (Core.BoneSymmetry.EffectiveMode(
+                        symmetryConfig.PerBoneSymmetry,
+                        symmetryConfig.BoneSymmetryOverrides,
+                        symmetryConfig.AutoLinkPairedBones,
+                        _editorState.SymmetryMode,
+                        canonical) != SymmetryMode.Off
+                    && Core.PoseMath.GetMirrorBoneName(canonical)
+                        is { } mirror)
+                    (implicated ??= new()).Add(mirror);
+                if (_bonePosing.LinkedBonesEnabled)
+                    foreach (var linked in global::Poser.Domain.Posing
+                        .BoneLinkCatalog.GetLinked(canonical))
+                        (implicated ??= new()).Add(linked);
+            }
+
             var boneScreenPositions = _boneScreenPositions;
             var boneWorldPositions = _boneWorldPositions;
             boneScreenPositions.Clear();
@@ -607,8 +634,11 @@ public class SkeletonOverlayWindow : Window
                 // handle.
                 bool shown = UserVisible && _presentation.IsVisible(bone.Id);
                 if (bone.IsHidden
-                    || (!shown && !selectedIds.Contains(
-                        SelectionId.ForBone(bone.Id))))
+                    || (!shown
+                        && !selectedIds.Contains(
+                            SelectionId.ForBone(bone.Id))
+                        && implicated?.Contains(bone.Id.CanonicalName)
+                            != true))
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
@@ -1577,6 +1607,7 @@ public class SkeletonOverlayWindow : Window
             if (Core.BoneSymmetry.EffectiveMode(
                     configuration.PerBoneSymmetry,
                     configuration.BoneSymmetryOverrides,
+                    configuration.AutoLinkPairedBones,
                     globalMode,
                     boneId.CanonicalName) == SymmetryMode.Off)
                 continue;

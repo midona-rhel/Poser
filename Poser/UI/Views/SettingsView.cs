@@ -64,6 +64,7 @@ public sealed class SettingsViewModel
 
     public bool SelectedBonesOnly;
     public bool PerBoneSymmetry;
+    public bool AutoLinkPairedBones;
     public int BonePickBehavior;
 
     public bool ShowSkeletonLines = true;
@@ -689,6 +690,11 @@ public static class SettingsView
                 vm.PerBoneSymmetry,
                 next => vm.PerBoneSymmetry = next,
                 "The toolbar's Link and Mirror remember per bone");
+            form.Switch(
+                "Auto-link paired bones",
+                vm.AutoLinkPairedBones,
+                next => vm.AutoLinkPairedBones = next,
+                "Eyes and paired ears move together");
             form.Dropdown(
                 "Bone pick behavior",
                 BonePickBehaviorLabels,

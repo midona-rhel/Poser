@@ -1450,6 +1450,7 @@ public class GizmoOverlayWindow : Window
         return Core.BoneSymmetry.EffectiveMode(
             configuration.PerBoneSymmetry,
             configuration.BoneSymmetryOverrides,
+            configuration.AutoLinkPairedBones,
             _editorState.SymmetryMode,
             canonicalName) switch
         {

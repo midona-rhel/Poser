@@ -1561,16 +1561,16 @@ public class MainWindow : Window
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
-        // The seg DESCRIBES the primary selected bone when the per-bone
-        // sheet is on — its effective mode — and the global otherwise.
+        // The seg DESCRIBES the primary selected bone — its effective
+        // mode through the one three-tier rule — and the global otherwise.
         var symmetryConfig =
             Config.ConfigurationService.Instance.Config;
         var primaryBone = _scene.Selection.Primary?.Bone;
-        _vm.SymmetryMode = symmetryConfig.PerBoneSymmetry
-            && primaryBone is { } describedBone
+        _vm.SymmetryMode = primaryBone is { } describedBone
             ? (int)Core.BoneSymmetry.EffectiveMode(
-                true,
+                symmetryConfig.PerBoneSymmetry,
                 symmetryConfig.BoneSymmetryOverrides,
+                symmetryConfig.AutoLinkPairedBones,
                 _editorState.SymmetryMode,
                 describedBone.CanonicalName)
             : (int)_editorState.SymmetryMode;

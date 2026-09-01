@@ -573,6 +573,7 @@ public sealed class GraphicalBonePane : IDisposable
             if (Core.BoneSymmetry.EffectiveMode(
                     appConfig.PerBoneSymmetry,
                     appConfig.BoneSymmetryOverrides,
+                    appConfig.AutoLinkPairedBones,
                     _editorState.SymmetryMode,
                     fact.CanonicalName) != SymmetryMode.Off
                 && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)

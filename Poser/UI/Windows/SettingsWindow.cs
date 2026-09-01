@@ -125,6 +125,7 @@ public class SettingsWindow : Window
             BoneDotRadius = c.Skeleton.BoneDotRadius,
             MapDotRadius = c.Skeleton.MapDotRadius,
             PerBoneSymmetry = c.PerBoneSymmetry,
+            AutoLinkPairedBones = c.AutoLinkPairedBones,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
             OverlayHovered = ImGui.ColorConvertU32ToFloat4(c.Skeleton.HoveredBoneColor),
             OverlayInactive = ImGui.ColorConvertU32ToFloat4(c.Skeleton.BoneColor),
@@ -316,6 +317,7 @@ public class SettingsWindow : Window
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
         c.Skeleton.MapDotRadius = _vm.MapDotRadius;
         c.PerBoneSymmetry = _vm.PerBoneSymmetry;
+        c.AutoLinkPairedBones = _vm.AutoLinkPairedBones;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
         c.Skeleton.HoveredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayHovered);
         c.Skeleton.BoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);
