@@ -197,6 +197,16 @@ public sealed unsafe partial class AnimationRuntimePort
         foreach (var control in CollectControls(character, out _))
             capture.Controls.Add(
                 (control.Id, control.Time, control.PlaybackSpeed));
+        // The FIELD lies about paused speed: Poser's pause is the speed
+        // hook rewriting the value after the game's calculation, so a
+        // read here catches the game's x1. The enforcement is the truth.
+        if (_enforcement.TryGetValue(actor, out var enforced))
+        {
+            if (enforced.OverallSpeed is { } overall)
+                capture.OverallSpeed = overall;
+            foreach (var (slot, speed) in enforced.SlotSpeeds)
+                capture.SlotSpeeds[slot] = speed;
+        }
         return capture;
     }
 
@@ -331,11 +341,15 @@ public sealed unsafe partial class AnimationRuntimePort
                                 (CharacterModes)capture.Mode,
                                 (byte)capture.ModeParam);
                     }
+                    var after = Resolve(target, out _);
+                    uint retained = after != null
+                        ? after->EmoteController.EmoteId : 0u;
                     _log.Information(
                         $"[AnimProbe] Verbs: replayed EMOTE {capture.EmoteId} "
                         + $"mode {capture.Mode}/{capture.ModeParam} "
                         + $"on {target}: "
-                        + (emote.Success ? "ok." : emote.Detail));
+                        + (emote.Success ? "ok" : emote.Detail)
+                        + $" (controller now reads emote {retained}).");
                     ProbeArmControlHold(target, capture);
                     break;
                 }
@@ -415,6 +429,17 @@ public sealed unsafe partial class AnimationRuntimePort
                 break;
             }
         }
+        // Speeds travel as ENFORCEMENT on the target, not field writes:
+        // that is what makes pause carry and SURVIVE — the same hook that
+        // holds the source's pause now holds the clone's.
+        if (Math.Abs(capture.OverallSpeed - 1f) > 0.001f)
+            SetOverallSpeed(target, capture.OverallSpeed);
+        foreach (var (slotIndex, speed) in capture.SlotSpeeds)
+        {
+            if (Math.Abs(speed - 1f) > 0.001f
+                && AnimationSlots.IsKnown(slotIndex))
+                SetSlotSpeed(target, (AnimationSlot)slotIndex, speed);
+        }
         pending.WaitTicks = 0;
         pending.VerifyIn.Add(2);
         pending.VerifyIn.Add(15);
@@ -472,18 +497,14 @@ public sealed unsafe partial class AnimationRuntimePort
         // Run two: raw-writing EmoteLoop mode onto a mid-init clone left
         // it INVISIBLE (the game recovered the mode; the render never
         // did). Emote modes go through the emote machinery or not at all.
-        if ((CharacterModes)capture.Mode == CharacterModes.EmoteLoop
-            && character->Mode != CharacterModes.EmoteLoop)
-        {
-            _log.Information(
-                "[AnimProbe] raw fields: SKIPPED EmoteLoop mode write "
-                + "(render hazard, run two).");
-        }
-        else
+        if ((CharacterModes)capture.Mode != CharacterModes.EmoteLoop
+            || character->Mode == CharacterModes.EmoteLoop)
         {
             character->Mode = (CharacterModes)capture.Mode;
             WriteModeParam(character, capture.ModeParam);
         }
+        // An EmoteLoop mode raw-written onto a non-emoting actor is
+        // skipped silently: proven render-killer (run two).
         character->Timeline.BaseOverride = capture.BaseOverride;
         character->Timeline.LipsOverride = capture.LipsOverride;
         character->Timeline.OverallSpeed = capture.OverallSpeed;

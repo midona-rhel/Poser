@@ -668,9 +668,16 @@ public sealed class AnimationPane : IDisposable
             _generalSelections.Remove(actor);
             command = null;
         }
+        // No staged pick still DESCRIBES what the actor is doing: the live
+        // base slot names a game emote (/hum) the same way the Full body
+        // layer row does. "None" means idle, never "Poser picked nothing" —
+        // so the two idle stands render as the empty value, not as names.
+        ushort liveBase = reading.TimelineFor(AnimationSlot.Base);
+        if (liveBase is AnimationTimelines.Idle or AnimationTimelines.BattleIdle)
+            liveBase = 0;
         ushort live = command is { } staged
             ? reading.TimelineFor(staged.Entry.Slot)
-            : (ushort)0;
+            : liveBase;
         var selectionStyle = FixedSelectionStyle();
         form.ReadOnlyWithActions(
             "Animation",
