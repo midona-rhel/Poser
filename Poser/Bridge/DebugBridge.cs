@@ -176,6 +176,8 @@ public sealed class DebugBridge : IDisposable
                 }));
             case "/log":
                 return Task.FromResult(TailLog(query));
+            case "/peek":
+                return Task.FromResult(Peek(query));
             default:
                 return _framework.RunOnFrameworkThread(() => RouteOnFramework(path, query));
         }
@@ -353,6 +355,31 @@ public sealed class DebugBridge : IDisposable
                 overallSpeed = owned.OverallSpeed,
             },
         };
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = false)]
+    private static extern unsafe bool ReadProcessMemory(
+        nint process, nint address, void* buffer, nint size, out nint read);
+
+    /// <summary>Guarded read of any address: floats and ints per dword.</summary>
+    private static unsafe string Peek(Dictionary<string, string> query)
+    {
+        if (!query.TryGetValue("addr", out var a))
+            return Json(new { error = "addr (hex) is required" });
+        nint address = (nint)Convert.ToInt64(a.Replace("0x", string.Empty), 16);
+        int size = query.TryGetValue("n", out var n)
+            && int.TryParse(n, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? Math.Min(v, 0x800) : 0x40;
+        var buffer = new byte[size];
+        bool ok;
+        nint read;
+        fixed (byte* dst = buffer)
+            ok = ReadProcessMemory((nint)(-1), address, dst, size, out read) && read == size;
+        if (!ok)
+            return Json(new { error = "unreadable", address = $"0x{address:X}" });
+        var words = new List<object>();
+        for (int off = 0; off + 4 <= size; off += 4)
+            words.Add(new { off = $"{off:x3}", f = BitConverter.ToSingle(buffer, off), i = BitConverter.ToInt32(buffer, off) });
+        return Json(new { address = $"0x{address:X}", words });
     }
 
     private static string TailLog(Dictionary<string, string> query)

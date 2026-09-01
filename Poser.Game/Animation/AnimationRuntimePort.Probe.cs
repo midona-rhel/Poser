@@ -507,7 +507,7 @@ public sealed unsafe partial class AnimationRuntimePort
     private float[]? _clockPtrPrevious;
     private int[]? _clockPtrScores;
     private const int ClockPtrBytes = 0x280;
-    private const int ClockPtrMax = 24;
+    private const int ClockPtrMax = 64;
     private readonly float[] _clockPtrBuffer = new float[ClockPtrBytes / 4];
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = false)]
@@ -590,7 +590,7 @@ public sealed unsafe partial class AnimationRuntimePort
             // their track controllers, tracks, and CLIPS (Ktisis
             // Structs/Animation layout): the completion cursor lives in
             // the clip layer if nowhere shallower.
-            for (int huntSlot = 0; huntSlot < 4; huntSlot++)
+            foreach (int huntSlot in new[] { 1, 0, 2, 3 })
             {
                 var stamp = SchedulerTimestamp(
                     &character->Timeline.TimelineSequencer, huntSlot);
@@ -634,9 +634,34 @@ public sealed unsafe partial class AnimationRuntimePort
                             continue;
                         _clockPointers.Add(clip);
                         // ClipType at clip+0x84 (Ktisis BaseClip).
+                        int clipType = *(int*)(clip + 0x84);
                         _clockLabels.Add(
                             $"clip{huntSlot}.{trackIndex}.{clipIndex}"
-                            + $"t{*(int*)(clip + 0x84)}");
+                            + $"t{clipType}");
+                        // A child clip (type 7) references its child
+                        // controller somewhere in 0x98..0x160: chase every
+                        // pointer-looking qword there, guarded. The hidden
+                        // child clock that gates completion lives behind
+                        // one of them (forward-scrub stall, 22:18).
+                        if (clipType == 7 && TryReadClockRegion(clip))
+                        {
+                            for (int off = 0x98; off + 8 <= 0x160
+                                && _clockPointers.Count < ClockPtrMax; off += 8)
+                            {
+                                nint target;
+                                fixed (float* raw = _clockPtrBuffer)
+                                    target = *(nint*)((byte*)raw + off);
+                                if (target > 0x10000 && target < 0x7FFF_FFFF_FFFF
+                                    && (target & 0x7) == 0
+                                    && !_clockPointers.Contains(target))
+                                {
+                                    _clockPointers.Add(target);
+                                    _clockLabels.Add(
+                                        $"clip{huntSlot}.{trackIndex}.{clipIndex}"
+                                        + $"+{off:x}->");
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -734,7 +759,7 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 if (_clockPtrScores![t * ptrFloats + i] >= 150)
                     found.Append(CultureInfo.InvariantCulture,
-                        $"{_clockLabels[t]}+{i * 4:x3}"
+                        $"{_clockLabels[t]}(0x{_clockPointers[t]:X})+{i * 4:x3}"
                         + $"={_clockPtrPrevious![t * ptrFloats + i]:0.00} ");
             }
         }

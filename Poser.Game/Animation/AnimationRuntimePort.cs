@@ -133,7 +133,11 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                     continue;
                 *(float*)(clip + 0xCC) = frames;   // ChildFrame
                 *(float*)(clip + 0xD0) = frames;   // PrevChildFrame
-                nint child = *(nint*)(clip + 0x130); // child TimelineController
+                // The child controller: +0x138 in this client (Ktisis says
+                // +0x130; the addressed hunt proved +0x138 -> +0x34/38).
+                nint child = *(nint*)(clip + 0x138);
+                if (child == 0 || !RegionReadable(child, 0x80))
+                    child = *(nint*)(clip + 0x130);
                 if (child == 0 || !RegionReadable(child, 0x80))
                     continue;
                 *(float*)(child + SchedulerTimestampOffset) = frames;
@@ -1267,39 +1271,32 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                     $"[AnimState] scrub {time:0.00}s -> {*timestamp:0.0}f; "
                     + $"end candidates: sched+68={*(int*)(schedulerForLog + 0x68)} "
                     + $"clipDuration={duration * 30f:0.0}f");
-            // And the COMPLETION cursor, mirrored at three levels of the
-            // track/clip chain in SECONDS (labeled hunt, 2026-09-01:
-            // trackCtl+0x11C = track+0xAC = clip+0x5C advance together and
-            // reset each loop) — the timer that kept firing the reset on
-            // the old schedule after every other clock moved.
-            float cursor = Math.Clamp(time, 0f, duration);
+            // THE CLOCK FAMILY (clock hunt with addresses, 22:19): during
+            // natural play six timestamp pairs mirror each other in FRAMES —
+            // scheduler +0x34/38, track controller +0x18C/190, track
+            // +0x11C/120, ChildTimelineClip +0xCC/D0, and the child
+            // controller (clip+0x138 ->) +0x34/38. A scrub that leaves ANY
+            // of them behind lets that one gate completion on the old
+            // schedule (the forward-scrub stall). tctl+0x11C / track+0xAC /
+            // clip+0x5C are per-tick DELTA fields, not clocks — untouched.
+            float frames = Math.Clamp(time, 0f, duration) * 30f;
             nint schedulerObject = (nint)timestamp - SchedulerTimestampOffset;
             nint trackController = *(nint*)(schedulerObject + 0x18);
-            if (trackController != 0)
+            if (trackController != 0 && RegionReadable(trackController, 0x1A0))
             {
-                *(float*)(trackController + 0x11C) = cursor;
+                *(float*)(trackController + 0x18C) = frames;
+                *(float*)(trackController + 0x190) = frames;
                 nint trackPointers = *(nint*)(trackController + 0x28);
                 int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
                 for (int trackIndex = 0;
-                    trackIndex < trackCount && trackIndex < 8
-                        && trackPointers != 0;
+                    trackIndex < trackCount && trackIndex < 8 && trackPointers != 0;
                     trackIndex++)
                 {
                     nint track = *(nint*)(trackPointers + trackIndex * 8);
-                    if (track == 0)
+                    if (track == 0 || !RegionReadable(track, 0x130))
                         continue;
-                    *(float*)(track + 0xAC) = cursor;
-                    nint clipPointers = *(nint*)(track + 0x18);
-                    int clipCount = *(ushort*)(track + 0x18 + 0xA);
-                    for (int clipIndex = 0;
-                        clipIndex < clipCount && clipIndex < 8
-                            && clipPointers != 0;
-                        clipIndex++)
-                    {
-                        nint clip = *(nint*)(clipPointers + clipIndex * 8);
-                        if (clip != 0)
-                            *(float*)(clip + 0x5C) = cursor;
-                    }
+                    *(float*)(track + 0x11C) = frames;
+                    *(float*)(track + 0x120) = frames;
                 }
             }
             // THE CHILD TIMELINE: the slot's timeline is a PARENT whose clip
@@ -1307,7 +1304,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             // TimelineController with its own frame clock. Scrubbing only
             // the parent left the child on the old position — the end is
             // judged there, hence "dies on the old schedule" (2026-09-01).
-            SeekChildTimelines(trackController, cursor * 30f, 0);
+            SeekChildTimelines(trackController, frames, 0);
         }
         return AnimationPortResult.Ok();
     }
