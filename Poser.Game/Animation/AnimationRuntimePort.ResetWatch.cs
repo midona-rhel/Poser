@@ -20,16 +20,16 @@ public sealed unsafe partial class AnimationRuntimePort
 {
     private ActorId? _resetWatchActor;
     private int _resetWatchTicks;
-    private readonly float[] _resetWatchPrev = new float[16];
+    private readonly float[] _resetWatchPrev = new float[32];
 
-    /// <summary>Arms the per-frame clock log on this actor for ~6 seconds.</summary>
+    /// <summary>Arms the per-frame clock log on this actor for ~20 seconds.</summary>
     public void ProbeWatchReset(ActorId actor)
     {
         _resetWatchActor = actor;
-        _resetWatchTicks = 360;
+        _resetWatchTicks = 1200;
         for (int i = 0; i < _resetWatchPrev.Length; i++)
             _resetWatchPrev[i] = float.NaN;
-        _log.Information($"[AnimReset] watch armed on {actor} for 6s.");
+        _log.Information($"[AnimReset] watch armed on {actor} for 20s.");
     }
 
     /// <summary>The clip/track/track-controller cursor addresses for a slot,
@@ -88,44 +88,73 @@ public sealed unsafe partial class AnimationRuntimePort
         float** cursorsBuffer = stackalloc float*[12];
         int n = ResolveResetCursors(character, slot, cursorsBuffer, 12);
 
-        // The slot's own havok control time (first partial that has it).
-        float controlTime = float.NaN;
+        var line = new StringBuilder(256);
+        line.Append(CultureInfo.InvariantCulture,
+            $"[AnimReset] slot{slot} tl={character->Timeline.TimelineSequencer.TimelineIds[slot]}");
+        bool dropped = false;
+        int watchIndex = 0;
+
+        // EVERY partial's control for this slot: LocalTime and the control's
+        // second time field (+0x190, seen advancing in the hunt).
         var draw = character->GameObject.DrawObject;
         if (draw != null && draw->Object.GetObjectType() == ObjectType.CharacterBase
             && ((CharacterBase*)draw)->Skeleton != null)
         {
             var skele = ((CharacterBase*)draw)->Skeleton;
-            for (int p = 0; p < skele->PartialSkeletonCount && float.IsNaN(controlTime); p++)
+            for (int p = 0; p < skele->PartialSkeletonCount; p++)
             {
                 var animated = skele->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
                 if (animated == null || slot >= animated->AnimationControls.Length)
                     continue;
                 var ctl = animated->AnimationControls[slot].Value;
-                if (ctl != null)
-                    controlTime = ctl->hkaAnimationControl.LocalTime;
+                if (ctl == null)
+                    continue;
+                float local = ctl->hkaAnimationControl.LocalTime;
+                float second = *(float*)((byte*)ctl + 0x190);
+                Track(line, ref dropped, ref watchIndex, $"p{p}", local);
+                Track(line, ref dropped, ref watchIndex, $"p{p}b", second);
             }
         }
 
-        var line = new StringBuilder(160);
-        line.Append(CultureInfo.InvariantCulture,
-            $"[AnimReset] slot{slot} ctl={controlTime:0.00}");
-        bool dropped = false;
-        for (int i = 0; i < n && i < _resetWatchPrev.Length; i++)
+        for (int i = 0; i < n; i++)
+            Track(line, ref dropped, ref watchIndex, $"c{i}", *cursorsBuffer[i]);
+
+        // The limits the cursors are measured against (read-only, static).
+        if (n >= 2)
         {
-            float value = *cursorsBuffer[i];
-            float prev = _resetWatchPrev[i];
-            // A BACKWARD jump (not a per-frame advance) is the reset.
-            bool back = !float.IsNaN(prev) && value < prev - 1.0f;
-            line.Append(CultureInfo.InvariantCulture, $" c{i}={value:0.0}");
-            if (back)
+            nint trackController = (nint)cursorsBuffer[1] - 0x11C;
+            nint trackPointers = *(nint*)(trackController + 0x28);
+            if (trackPointers != 0)
             {
-                line.Append("<RESET");
-                dropped = true;
+                nint track = *(nint*)trackPointers;
+                nint clipPointers = track != 0 ? *(nint*)(track + 0x18) : 0;
+                nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
+                if (clip != 0)
+                    line.Append(CultureInfo.InvariantCulture,
+                        $" trackTotal={*(float*)(clip + 0x54):0.0}"
+                        + $" clipStart={*(float*)(clip + 0x64):0.0}"
+                        + $" clipTotal={*(float*)(clip + 0x68):0.0}");
             }
-            _resetWatchPrev[i] = value;
         }
-        // One line per frame is a lot; log only movement frames and resets.
-        if (dropped || _resetWatchTicks % 6 == 0)
+
+        if (dropped || _resetWatchTicks % 10 == 0)
             _log.Information(line.ToString());
+    }
+
+    /// <summary>Appends one clock and flags a BACKWARD jump as the reset.</summary>
+    private void Track(StringBuilder line, ref bool dropped, ref int index, string name, float value)
+    {
+        if (index >= _resetWatchPrev.Length)
+            return;
+        float prev = _resetWatchPrev[index];
+        bool back = !float.IsNaN(prev) && value < prev - 0.5f;
+        line.Append(CultureInfo.InvariantCulture, $" {name}={value:0.00}");
+        if (back)
+        {
+            line.Append("<RESET");
+            dropped = true;
+        }
+        _resetWatchPrev[index] = value;
+        index++;
     }
 }
