@@ -37,6 +37,8 @@ public sealed class DebugBridge : IDisposable
     private readonly StableBindingRegistry _bindings;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawner;
+    private readonly global::Poser.UI.AnimationPane _pane;
+    private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -48,8 +50,12 @@ public sealed class DebugBridge : IDisposable
         IActorManager actors,
         StableBindingRegistry bindings,
         Game.Scene.SceneLifecycleHistory lifecycle,
-        IActorSpawnService spawner)
+        IActorSpawnService spawner,
+        global::Poser.UI.AnimationPane pane,
+        global::Poser.Application.Integration.IIntegrationRuntimePort integration)
     {
+        _pane = pane;
+        _integration = integration;
         _framework = framework;
         _log = log;
         _animation = animation;
@@ -172,7 +178,7 @@ public sealed class DebugBridge : IDisposable
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
-                        "/clone?actor",
+                        "/clone?actor", "/clonea?actor (full transfer)",
                         "/log?lines=200&filter=REGEX",
                     },
                 }));
@@ -276,6 +282,14 @@ public sealed class DebugBridge : IDisposable
                 var r = _animation.ClearSlotSpeed(id, Slot());
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
             }
+            case "/cancel":
+            {
+                // Experiment: which cancel arguments stop ONE layer?
+                nint a2 = query.TryGetValue("a2", out var x2) ? (nint)long.Parse(x2, CultureInfo.InvariantCulture) : 0;
+                nint a3 = query.TryGetValue("a3", out var x3) ? (nint)long.Parse(x3, CultureInfo.InvariantCulture) : 0;
+                var r = _port.ProbeCancel(id, a2, a3);
+                return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
+            }
             case "/reset":
             {
                 var r = _animation.ResetSlot(id, Slot());
@@ -294,6 +308,13 @@ public sealed class DebugBridge : IDisposable
             {
                 var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor));
                 return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
+            }
+            case "/clonea":
+            {
+                int before = _actors.Actors.Count;
+                _pane.ProbeCloneA(id);
+                var made = _actors.Actors.Count > before ? _actors.Actors[^1] : null;
+                return Json(new { ok = made != null, name = made?.Name, id = made != null ? _bindings.GetActorId(made)?.ToString() : null });
             }
         }
         return Json(new { error = $"unknown endpoint {path}" });
@@ -362,6 +383,10 @@ public sealed class DebugBridge : IDisposable
             baseOverride = reading?.BaseTimeline,
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
+            weaponHidden = snapshot?.WeaponHidden,
+            hatHidden = snapshot?.HatHidden,
+            visorToggled = snapshot?.VisorToggled,
+            bodyProfile = BodyProfile(id),
             schedulerFrames = snapshot?.SchedulerFrames,
             childFrames = snapshot?.ChildFrames,
             slots,
@@ -400,6 +425,18 @@ public sealed class DebugBridge : IDisposable
         for (int off = 0; off + 4 <= size; off += 4)
             words.Add(new { off = $"{off:x3}", f = BitConverter.ToSingle(buffer, off), i = BitConverter.ToInt32(buffer, off) });
         return Json(new { address = $"0x{address:X}", words });
+    }
+
+    private object BodyProfile(ActorId id)
+    {
+        var probe = _integration.ProbeBodyProfile(id);
+        return new
+        {
+            ok = probe.Success,
+            detail = probe.Detail,
+            active = probe.Value?.ActiveProfile?.ToString(),
+            saved = probe.Value?.ActiveIsSaved,
+        };
     }
 
     private static string TailLog(Dictionary<string, string> query)

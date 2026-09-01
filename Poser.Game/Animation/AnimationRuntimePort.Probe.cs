@@ -6,6 +6,7 @@ using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using Poser.Application.Animation;
 using Poser.Domain.Animation;
 using Poser.Domain.Identity;
 
@@ -121,6 +122,21 @@ public sealed unsafe partial class AnimationRuntimePort
 
     public bool ProbeLogging => _probeTimelineHook?.IsEnabled == true;
 
+    /// <summary>A trace line from callers that have no log of their own.</summary>
+    public void ProbeTrace(string message) => _log.Information($"[AnimProbe] {message}");
+
+    /// <summary>Experiment: CancelTimeline with chosen a2/a3.</summary>
+    public AnimationPortResult ProbeCancel(ActorId actor, nint a2, nint a3)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        if (_cancelTimeline == null)
+            return AnimationPortResult.Fail("CancelTimeline unavailable.");
+        _cancelTimeline(&character->Timeline, a2, a3);
+        return AnimationPortResult.Ok();
+    }
+
     /// <summary>The native facts the debug bridge reports beside the
     /// session's view: emote, mode, the scheduler clocks (frames) and the
     /// child timeline cursors for the base and upper slots.</summary>
@@ -130,6 +146,9 @@ public sealed unsafe partial class AnimationRuntimePort
         public byte Mode { get; set; }
         public float?[] SchedulerFrames { get; set; } = new float?[4];
         public float?[] ChildFrames { get; set; } = new float?[2];
+        public bool WeaponHidden { get; set; }
+        public bool HatHidden { get; set; }
+        public bool VisorToggled { get; set; }
     }
 
     public ProbeState? ProbeSnapshot(ActorId actor)
@@ -141,6 +160,9 @@ public sealed unsafe partial class AnimationRuntimePort
         {
             EmoteId = character->EmoteController.EmoteId,
             Mode = (byte)character->Mode,
+            WeaponHidden = character->DrawData.IsWeaponHidden,
+            HatHidden = character->DrawData.IsHatHidden,
+            VisorToggled = character->DrawData.IsVisorToggled,
         };
         for (int slot = 0; slot < 4; slot++)
         {

@@ -281,6 +281,10 @@ public sealed class AnimationPane : IDisposable
         });
     }
 
+    /// <summary>The bridge's Clone A: the full transfer path.</summary>
+    public void ProbeCloneA(ActorId source) =>
+        ProbeClone(source, Game.Animation.ProbeMethod.Verbs);
+
     private void ProbeClone(ActorId source, Game.Animation.ProbeMethod method)
     {
         if (_probePort.ProbeCapture(source) is not { } capture)
@@ -372,8 +376,12 @@ public sealed class AnimationPane : IDisposable
                 _animation.SetSlotSpeed(target, slot, speed);
             if (owned.Lips is { } lips)
                 _animation.SetLips(target, lips);
-            if (bodyProfileJson != null)
-                _integrationPort.ApplyTemporaryBodyProfile(target, bodyProfileJson);
+            // Customize+ waits for the second pass: the IPC accepts the
+            // profile on a fresh clone but the model has not settled, and the
+            // body never shows it (report 2026-09-01 22:3x).
+            if (bodyProfileJson == null)
+                _probePort.ProbeTrace(
+                    $"C+ copy skipped: probe ok={bodyProbe.Success} active={bodyProbe.Value?.ActiveProfile} saved={bodyProbe.Value?.ActiveIsSaved} detail={bodyProbe.Detail}");
             var resolvedTarget = _bindings.Resolve(target);
             if (!resolvedTarget.Success || resolvedTarget.Value is not { } clone)
                 return;
@@ -453,6 +461,15 @@ public sealed class AnimationPane : IDisposable
     private Action<ActorId>? ProbeSecondPass(ActorId source)
     {
         var owned = _animation.OverridesFor(source);
+        string? bodyProfileJson = null;
+        var bodyProbe = _integrationPort.ProbeBodyProfile(source);
+        if (bodyProbe.Success
+            && bodyProbe.Value is { ActiveProfile: { } activeProfile, ActiveIsSaved: true })
+        {
+            var profileJson = _integrationPort.GetBodyProfileJson(activeProfile);
+            if (profileJson.Success)
+                bodyProfileJson = profileJson.Value;
+        }
         // Weapon state is layered too: setting it in the first pass, the
         // base/emote engagement wiped it (report: clone wore the weapon
         // on its back while the source held it drawn).
@@ -468,7 +485,8 @@ public sealed class AnimationPane : IDisposable
             selections.Remove(slot);
         if (selections.Count == 0
             && owned.HeldExpression == null
-            && weaponDrawn is null or false)
+            && weaponDrawn is null or false
+            && bodyProfileJson == null)
             return null;
         return target =>
         {
@@ -485,6 +503,12 @@ public sealed class AnimationPane : IDisposable
                 _animation.HoldExpression(target, expression);
             if (weaponDrawn is { } drawn)
                 _animation.SetWeaponDrawn(target, drawn);
+            if (bodyProfileJson != null)
+            {
+                var applied = _integrationPort.ApplyTemporaryBodyProfile(target, bodyProfileJson);
+                _probePort.ProbeTrace(
+                    $"C+ copy (second pass) to {target}: {(applied.Success ? "ok " + applied.Value : "FAIL " + applied.Detail)}");
+            }
         };
     }
 

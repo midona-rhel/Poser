@@ -672,6 +672,29 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             : null;
     }
 
+    /// <summary>Clears one layered slot for real: the game's CancelTimeline
+    /// takes the SLOT as its second argument and drops that layer's
+    /// scheduler and control. A container-level cancel (slot 0) left the
+    /// layer alive and the base restore re-scheduled it (reset restarted
+    /// breakfast from 0, 2026-09-01 22:4x).</summary>
+    public AnimationPortResult ClearSlotTimeline(ActorId actor, AnimationSlot slot)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+            return AnimationPortResult.Fail(detail!);
+        int index = (int)slot;
+        if (index is < 0 or >= 14)
+            return AnimationPortResult.Fail("Slot out of range.");
+        if (_cancelTimeline == null)
+            return AnimationPortResult.Fail(
+                "Timeline cancellation is unavailable: the game function was not found.");
+        // CancelTimeline's second argument IS the slot (bridge experiment
+        // 22:41: a2=1 dropped the upper layer, its scheduler and its havok
+        // control cleanly; a2=timeline id did nothing; a3=1 reset the base).
+        _cancelTimeline(&character->Timeline, (nint)index, nint.Zero);
+        return AnimationPortResult.Ok();
+    }
+
     /// <summary>Cancels the active container timeline.</summary>
     public AnimationPortResult CancelActiveTimeline(ActorId actor)
     {

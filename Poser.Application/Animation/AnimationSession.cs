@@ -1005,7 +1005,9 @@ public sealed class AnimationSession
         if (reading == null)
             return AnimationPortResult.Fail("The actor is no longer available.");
         var immediateBase = _port.CaptureBase(actor);
-        var cancelled = _port.CancelActiveTimeline(actor);
+        // Zero the slot's own id entries first: a bare cancel left them and
+        // the base restore below re-scheduled the layer from them.
+        var cancelled = _port.ClearSlotTimeline(actor, slot);
         if (!cancelled.Success)
             return cancelled;
 
