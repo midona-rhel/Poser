@@ -178,7 +178,7 @@ public sealed class DebugBridge : IDisposable
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/reset?actor&slot=1",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
-                        "/clone?actor", "/clonea?actor (full transfer)",
+                        "/clone?actor", "/clonea?actor (full transfer)", "/dupepose?actor",
                         "/log?lines=200&filter=REGEX",
                     },
                 }));
@@ -324,6 +324,15 @@ public sealed class DebugBridge : IDisposable
             {
                 var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor));
                 return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
+            }
+            case "/dupepose":
+            {
+                var copy = _lifecycle.SpawnActorWithPose(
+                    $"Duplicate actor '{actor.Name}' with pose", () => _spawner.CloneActor(actor), actor);
+                var copyId = copy != null ? _bindings.GetActorId(copy) : null;
+                if (copyId is { } cid)
+                    _animation.Pause(cid);
+                return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
             }
             case "/clonea":
             {

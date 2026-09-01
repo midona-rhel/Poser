@@ -40,33 +40,34 @@ public sealed class SpawnBrowserWindow : Window
     private const int RowNewActor = 0;
     private const int RowNewActorCompanion = 1;
     private const int RowCloneActor = 2;
-    private const int RowActorFromMcdf = 3;
-    private const int RowActorFromLibrary = 4;
-    private const int RowActorFromFile = 5;
-    private const int RowProp = 6;
-    private const int RowPropFromLibrary = 7;
-    private const int RowPropFromFile = 8;
-    private const int RowObjectFromLibrary = 9;
-    private const int RowObjectFromFile = 10;
-    private const int RowVfxFromLibrary = 11;
-    private const int RowVfxFromFile = 12;
-    private const int RowOverlayTalk = 13;
-    private const int RowOverlayBalloon = 14;
-    private const int RowOverlayStatus = 15;
-    private const int RowReferenceImage = 16;
-    private const int RowOverlayFromLibrary = 17;
-    private const int RowOverlayFromFile = 18;
-    private const int RowLightSpot = 19;
-    private const int RowLightPoint = 20;
-    private const int RowLightArea = 21;
-    private const int RowLightDirectional = 22;
-    private const int RowWorldLight = 23;
-    private const int RowLightFromLibrary = 24;
-    private const int RowLightFromFile = 25;
-    private const int RowCameraGame = 26;
-    private const int RowCameraFree = 27;
-    private const int RowCameraFromLibrary = 28;
-    private const int RowCameraFromFile = 29;
+    private const int RowCloneActorPosed = 3;
+    private const int RowActorFromMcdf = 4;
+    private const int RowActorFromLibrary = 5;
+    private const int RowActorFromFile = 6;
+    private const int RowProp = 7;
+    private const int RowPropFromLibrary = 8;
+    private const int RowPropFromFile = 9;
+    private const int RowObjectFromLibrary = 10;
+    private const int RowObjectFromFile = 11;
+    private const int RowVfxFromLibrary = 12;
+    private const int RowVfxFromFile = 13;
+    private const int RowOverlayTalk = 14;
+    private const int RowOverlayBalloon = 15;
+    private const int RowOverlayStatus = 16;
+    private const int RowReferenceImage = 17;
+    private const int RowOverlayFromLibrary = 18;
+    private const int RowOverlayFromFile = 19;
+    private const int RowLightSpot = 20;
+    private const int RowLightPoint = 21;
+    private const int RowLightArea = 22;
+    private const int RowLightDirectional = 23;
+    private const int RowWorldLight = 24;
+    private const int RowLightFromLibrary = 25;
+    private const int RowLightFromFile = 26;
+    private const int RowCameraGame = 27;
+    private const int RowCameraFree = 28;
+    private const int RowCameraFromLibrary = 29;
+    private const int RowCameraFromFile = 30;
     private const int ActionRows = 30;
 
     /// <summary>Opens the library window on its Objects tab, filtered to
@@ -540,7 +541,11 @@ public sealed class SpawnBrowserWindow : Window
             "Actor with companion slot",
             TablerIcon.Paw));
         rows.Add(ActionRow(
-            "##spawn-clone-actor", "Clone selected actor", TablerIcon.Copy));
+            "##spawn-clone-actor", "Duplicate selected actor", TablerIcon.Copy));
+        rows.Add(ActionRow(
+            "##spawn-clone-actor-posed", "Duplicate selected actor with pose",
+            TablerIcon.Stack2,
+            help: "A frozen copy in the same pose and place"));
         rows.Add(ActionRow(
             "##spawn-actor-mcdf", "Actor from MCDF", TablerIcon.UserPlus,
             help: "Spawn a fresh actor and dress it from a character file"));
@@ -1041,6 +1046,10 @@ public sealed class SpawnBrowserWindow : Window
         var row = _vm.Rows[RowCloneActor];
         if (row.Disabled != disabled)
             _vm.Rows[RowCloneActor] = row with { Disabled = disabled };
+        bool posedDisabled = SelectedActor() is not { HasSkeleton: true };
+        var posed = _vm.Rows[RowCloneActorPosed];
+        if (posed.Disabled != posedDisabled)
+            _vm.Rows[RowCloneActorPosed] = posed with { Disabled = posedDisabled };
     }
 
     private void SyncStatus()
@@ -1083,8 +1092,20 @@ public sealed class SpawnBrowserWindow : Window
             case RowCloneActor:
                 if (SelectedActor() is { } source)
                     SelectSpawned(_lifecycle.SpawnActor(
-                        "Clone actor",
+                        "Duplicate actor",
                         () => _spawnService.CloneActor(source)));
+                return;
+            case RowCloneActorPosed:
+                if (SelectedActor() is { } posedSource)
+                {
+                    var copy = _lifecycle.SpawnActorWithPose(
+                        "Duplicate actor with pose",
+                        () => _spawnService.CloneActor(posedSource),
+                        posedSource);
+                    if (copy != null && _bindings.GetActorId(copy) is { } copyId)
+                        _animation.Pause(copyId);
+                    SelectSpawned(copy);
+                }
                 return;
             case RowProp:
                 if (_lifecycle.SpawnProp() == null)

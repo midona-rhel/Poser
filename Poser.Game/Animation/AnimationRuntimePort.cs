@@ -418,9 +418,48 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                     container->OverallSpeed);
                 result = true;
             }
+            // A prop that tracks NO actor control (its clock drifted past
+            // the second the tracking rule allows: a re-applied timeline
+            // left the wand at 16.96 while the layer sat at 10) followed
+            // nothing and kept playing through the pause. It follows the
+            // enforced overall speed on its own.
+            if (enforcement.OverallSpeed is { } propOverall)
+                ApplyOverallToUntrackedProps((Character*)owner, propOverall);
         }
         ProbeSeamPass(container);
         return result;
+    }
+
+    private static void ApplyOverallToUntrackedProps(Character* character, float overall)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null ||
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null || charaBase->Skeleton->PartialSkeletonCount == 0)
+            return;
+        var animated = charaBase->Skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
+        if (animated == null)
+            return;
+        var clocks = new List<(float Time, float Duration)>();
+        for (int i = 0; i < animated->AnimationControls.Length; i++)
+        {
+            var control = animated->AnimationControls[i].Value;
+            if (control == null)
+                continue;
+            var binding = control->hkaAnimationControl.Binding;
+            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                continue;
+            clocks.Add((control->hkaAnimationControl.LocalTime, binding.ptr->Animation.ptr->Duration));
+        }
+        ForEachPropControl(character, prop =>
+        {
+            foreach (var (time, duration) in clocks)
+                if (TracksControl(prop, time, duration, out _))
+                    return;
+            prop->PlaybackSpeed = overall;
+        });
     }
 
     /// <summary>Writes each enforced slot speed onto that slot's live

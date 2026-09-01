@@ -4635,7 +4635,13 @@ public class MainWindow : Window
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
-            new("Clone", TablerIcon.Copy),
+            new("Duplicate", TablerIcon.Copy,
+                help: "A fresh copy wearing this appearance"),
+            new("Duplicate with pose", TablerIcon.Stack2,
+                disabled: !actor.HasSkeleton,
+                help: actor.HasSkeleton
+                    ? "A frozen copy in this exact pose and place"
+                    : "Needs a loaded skeleton"),
             new("Save to library", TablerIcon.Library,
                 disabled: !actor.HasSkeleton,
                 help: actor.HasSkeleton
@@ -4693,11 +4699,12 @@ public class MainWindow : Window
             () =>
             {
                 var clone = _lifecycle.SpawnActor(
-                    $"Clone actor '{DisplayName(actor.Name)}'",
+                    $"Duplicate actor '{DisplayName(actor.Name)}'",
                     () => _spawnService.CloneActor(actor));
                 if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForActor(cloneId));
             },
+            () => DuplicateWithPose(actor),
             () => OpenEntityRename(
                 "Save actor to library",
                 Config.ConfigurationService.Instance.GetDisplayName(
@@ -5924,6 +5931,20 @@ public class MainWindow : Window
             return;
         }
         _cameraPane.CenterOnActor(actor.Id);
+    }
+
+    /// <summary>The posed duplicate: spawned, restored to the source's pose
+    /// and place once posable, and frozen — a duplicate never animates.</summary>
+    private void DuplicateWithPose(IActor actor)
+    {
+        var clone = _lifecycle.SpawnActorWithPose(
+            $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
+            () => _spawnService.CloneActor(actor),
+            actor);
+        if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
+            return;
+        _animation.Pause(cloneId);
+        _selection.Select(SelectionId.ForActor(cloneId));
     }
 
     private void OpenEntityRename(

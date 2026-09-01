@@ -701,6 +701,39 @@ public sealed class SceneLifecycleHistory
     }
 
     /// <summary>
+    /// A duplicate WITH the source's pose and placement: the source is read
+    /// the way a despawn reads it (placement, visibility, whole-skeleton
+    /// pose), the copy is spawned, and that state is restored onto it once
+    /// its body is posable — the same waiting restore a respawn gets. The
+    /// live animation is not carried: duplication is a pose snapshot, by
+    /// decision (2026-09-02); the caller freezes the copy. Redo replays the
+    /// snapshot, so the copy comes back posed, not idling.
+    /// </summary>
+    public IActor? SpawnActorWithPose(
+        string description, Func<IActor?> spawn, IActor source)
+    {
+        var state = _actors.Read(source);
+        IActor? Posed()
+        {
+            var copy = spawn();
+            if (copy != null)
+                _actors.Restore(copy, state);
+            return copy;
+        }
+        var actor = Posed();
+        if (actor == null)
+            return null;
+        var slot = SlotFor(actor);
+        slot.Respawn = Posed;
+        slot.HasRespawn = true;
+        _history.Append(new SceneLifecyclePatch(
+            description,
+            () => RemoveActor(slot),
+            () => RestoreActor(slot)));
+        return actor;
+    }
+
+    /// <summary>
     /// Despawns one actor, as a step of the user's history when it can be
     /// one. Spawning an actor was undoable and despawning it was not, which
     /// made the pair asymmetric in the direction that costs the user work.
