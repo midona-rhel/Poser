@@ -139,6 +139,70 @@ public sealed unsafe partial class AnimationRuntimePort
 
         if (dropped || _resetWatchTicks % 10 == 0)
             _log.Information(line.ToString());
+
+        // The field diff: every dword that changed since last tick across the
+        // scheduler object, its track controller, the first track and clip.
+        // Units-agnostic — the counter that finishes on the OLD schedule is
+        // the one that does not start at zero after a scrub to zero.
+        if (n >= 1)
+        {
+            nint schedulerObject = (nint)cursorsBuffer[0] - SchedulerTimestampOffset;
+            DiffObject(0, "sched", schedulerObject, 0x274);
+            if (n >= 2)
+            {
+                nint trackController = (nint)cursorsBuffer[1] - 0x11C;
+                DiffObject(1, "tctl", trackController, 0x130);
+                nint trackPointers = *(nint*)(trackController + 0x28);
+                nint track = trackPointers != 0 ? *(nint*)trackPointers : 0;
+                if (track != 0)
+                {
+                    DiffObject(2, "track", track, 0xC0);
+                    nint clipPointers = *(nint*)(track + 0x18);
+                    nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
+                    if (clip != 0)
+                        DiffObject(3, "clip", clip, 0x98);
+                }
+            }
+        }
+    }
+
+    private readonly byte[][] _resetDiffPrev = new byte[4][];
+    private readonly nint[] _resetDiffAddr = new nint[4];
+
+    /// <summary>Prints the dwords of one object that changed since the last
+    /// tick, as float and int. A new address resets the baseline silently.</summary>
+    private void DiffObject(int index, string name, nint address, int size)
+    {
+        var prev = _resetDiffPrev[index];
+        if (prev == null || prev.Length != size || _resetDiffAddr[index] != address)
+        {
+            prev = new byte[size];
+            _resetDiffPrev[index] = prev;
+            _resetDiffAddr[index] = address;
+            fixed (byte* dst = prev)
+                Buffer.MemoryCopy((void*)address, dst, size, size);
+            return;
+        }
+        StringBuilder? line = null;
+        int printed = 0;
+        for (int offset = 0; offset + 4 <= size; offset += 4)
+        {
+            int now = *(int*)(address + offset);
+            int was = BitConverter.ToInt32(prev, offset);
+            if (now == was)
+                continue;
+            if (printed++ < 24)
+            {
+                line ??= new StringBuilder(200).Append("[AnimReset] ").Append(name);
+                float asFloat = BitConverter.Int32BitsToSingle(now);
+                line.Append(CultureInfo.InvariantCulture,
+                    $" +{offset:x3}={asFloat:0.###}/i{now}");
+            }
+        }
+        fixed (byte* dst = prev)
+            Buffer.MemoryCopy((void*)address, dst, size, size);
+        if (line != null)
+            _log.Information(line.ToString());
     }
 
     /// <summary>Appends one clock and flags a BACKWARD jump as the reset.</summary>
