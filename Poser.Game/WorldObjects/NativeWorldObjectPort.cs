@@ -412,6 +412,42 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         *((byte*)node + offset) = value;
     }
 
+    /// <summary>The animation topology, for the pause investigation:
+    /// whether animation data, a render skeleton and Havok controls
+    /// exist at all on this instance.</summary>
+    public string DescribeBgAnimation(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return "(not a BG object)";
+        var bg = (BgObject*)node;
+        var animation = bg->LoadedAnimationData;
+        if (animation == null)
+            return "no animation data";
+        var parts = new System.Text.StringBuilder("animation data");
+        if (animation->AsyncSkeletonResourceHandle != null)
+            parts.Append(", sklb handle");
+        if (animation->AsyncPapResourceHandle != null)
+            parts.Append(", pap handle");
+        var skeleton = animation->RenderSkeleton;
+        if (skeleton == null)
+            return parts.Append(", no render skeleton").ToString();
+        parts.Append($", skeleton with {skeleton->PartialSkeletonCount} partials");
+        int controls = 0;
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var animated =
+                skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (animated == null)
+                continue;
+            for (int c = 0; c < animated->AnimationControls.Length; c++)
+                if (animated->AnimationControls[c].Value != null)
+                    controls++;
+        }
+        parts.Append($", {controls} controls");
+        return parts.ToString();
+    }
+
     /// <summary>Installs the pause hook from a LIVE object's vtable —
     /// every BgObject shares it, so one address teaches us the slot.
     /// Idempotent; false when the address resolves to nothing.</summary>

@@ -600,18 +600,16 @@ public sealed class WorldObjectService : IDisposable
                 handle.AnimGateOriginal = ReadLever(handle, kind);
                 ApplyLever(handle, kind, paused: true);
             }
-            else if (_port.EnsureBgPauseHook(handle.Address))
-            {
-                // The pause at its SOURCE: skip this object's
-                // UpdateRender, and the clock and the transform both
-                // stop with nothing to fight per frame.
-                _port.SetBgPaused(handle.Address, true);
-            }
             else
             {
-                // FALLBACK when the hook could not install: the draw-time
-                // transform-and-clock hold — a write that lands late in
-                // the frame wins (the drag proved it, 2026-09-01).
+                // The UpdateRender skip did NOT stop the motion (proved
+                // in game 2026-09-01) — the animator is elsewhere,
+                // probably the global animation scheduler over the
+                // registered container. The hook stays as an experiment;
+                // the WORKING mechanism is the draw-time
+                // transform-and-clock hold, so it always engages.
+                if (_port.EnsureBgPauseHook(handle.Address))
+                    _port.SetBgPaused(handle.Address, true);
                 handle.HeldPause =
                     _port.TryRead(handle.Address, out var frozen)
                         ? frozen
@@ -621,6 +619,9 @@ public sealed class WorldObjectService : IDisposable
                     _port.TryReadBgTail(handle.Address, tail)
                         ? tail
                         : null;
+                _log.Debug(
+                    "[WorldObject] pause topology: "
+                    + _port.DescribeBgAnimation(handle.Address));
             }
         }
         else
