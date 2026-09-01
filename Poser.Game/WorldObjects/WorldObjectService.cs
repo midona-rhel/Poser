@@ -249,6 +249,18 @@ public sealed class AdoptedWorldObject
     /// — the object animates around wherever the user put it.</summary>
     internal Transform? AnimRef;
 
+    /// <summary>Whether the anchor ever engaged on this object — an
+    /// unpause then re-engages IMMEDIATELY instead of waiting to detect
+    /// motion again. The detection wait left a frame window that
+    /// rendered the game's raw value (the unpause blip) and let a quick
+    /// re-pause capture the raw ORIGINAL place instead of the base.
+    /// </summary>
+    internal bool WasAnchored;
+
+    /// <summary>Set on unpause of a previously anchored object: the next
+    /// pump engages on the spot, writing the base that same frame.</summary>
+    internal bool EngageNext;
+
     /// <summary>Sets the desired placement WITHOUT writing — the unpause
     /// hand-off: where you froze it becomes where it stands.</summary>
     internal void SeedPlacement(Transform value) => _placement = value;
@@ -336,7 +348,8 @@ public sealed class AdoptedWorldObject
             // Moving an ANIMATED object pauses it first (ruled
             // 2026-09-01): a drag against a running animation is two
             // writers on one value.
-            if (!IsVfx && !_animationPaused && AnimRef is not null)
+            if (!IsVfx && !_animationPaused
+                && (AnimRef is not null || EngageNext))
                 AnimationPaused = true;
             _placement = value;
             // A paused object still goes where the user drags it: the
@@ -609,10 +622,15 @@ public sealed class WorldObjectService : IDisposable
             // clock lives in it — every draw. A draw-time write lands
             // after the game's animator and wins the frame; skeleton
             // speed, flag bits and an UpdateRender skip all did nothing.
-            handle.HeldPause =
-                _port.TryRead(handle.Address, out var frozen)
+            // A pause landing in the unpause hand-off window captures
+            // the BASE — the live value is the game's raw original
+            // place for a frame or two.
+            handle.HeldPause = handle.EngageNext
+                ? handle.DesiredPlacement
+                : _port.TryRead(handle.Address, out var frozen)
                     ? frozen
                     : handle.Transform;
+            handle.EngageNext = false;
             var tail = new byte[0x20];
             handle.HeldPauseTail =
                 _port.TryReadBgTail(handle.Address, tail)
@@ -630,6 +648,8 @@ public sealed class WorldObjectService : IDisposable
             handle.HeldPauseTail = null;
             handle.LastWritten = null;
             handle.AnimRef = null;
+            if (handle.WasAnchored)
+                handle.EngageNext = true;
         }
     }
 
@@ -672,6 +692,17 @@ public sealed class WorldObjectService : IDisposable
             }
             if (!_port.TryRead(handle.Address, out var raw))
                 continue;
+            if (handle.EngageNext)
+            {
+                // The unpause hand-off: engage on the game's fresh value
+                // and write the base THIS frame, so no raw frame renders.
+                handle.EngageNext = false;
+                handle.AnimRef = raw;
+                var resumed = handle.DesiredPlacement;
+                _port.Write(handle.Address, resumed);
+                handle.LastWritten = resumed;
+                continue;
+            }
             if (handle.AnimRef is { } reference)
             {
                 var user = handle.DesiredPlacement;
@@ -699,6 +730,7 @@ public sealed class WorldObjectService : IDisposable
                 // animated. Engage — from here its motion replays on the
                 // user's placement.
                 handle.AnimRef = raw;
+                handle.WasAnchored = true;
                 var user = handle.DesiredPlacement;
                 _port.Write(handle.Address, user);
                 handle.LastWritten = user;
