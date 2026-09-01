@@ -70,6 +70,12 @@ public sealed unsafe partial class AnimationRuntimePort
         public RawTimelineCapture Capture = null!;
         public ProbeMethod Method;
         public Action<ActorId>? Apply;
+        // A second, narrower application ~half a second after the first:
+        // holding an expression on a PAUSED actor needs a later
+        // evaluation edge (issue #75's shape), and the pane's own apply
+        // schedules the same delayed replay.
+        public Action<ActorId>? Reapply;
+        public int ReapplyIn;
         public int WaitTicks;
         public readonly List<int> VerifyIn = new();
         // The slot-0/mode watch: iteration one showed the base slot
@@ -220,6 +226,29 @@ public sealed unsafe partial class AnimationRuntimePort
             _log.Information($"[AnimProbe] dump: {actor} did not answer a read.");
             return;
         }
+        var character = Resolve(actor, out _);
+        if (character != null)
+        {
+            // The game's own gaze lives in the look-at controller; the
+            // hex block is for twin-diffing (game-gazing vs idle) until
+            // the channel offsets are proven.
+            var controller = (byte*)&character->LookAt.Controller;
+            var hex = new StringBuilder(0x160 * 3 + 64);
+            for (int offset = 0; offset < 0x160; offset++)
+            {
+                if (offset % 16 == 0)
+                    hex.Append(CultureInfo.InvariantCulture,
+                        $"\n  +{offset:x3} ");
+                hex.Append(controller[offset].ToString(
+                    "x2", CultureInfo.InvariantCulture));
+                if (offset % 4 == 3)
+                    hex.Append(' ');
+            }
+            _log.Information(
+                $"[AnimProbe] dump {actor}:\n{Describe(capture)}\n"
+                + $"  look-at controller:{hex}");
+            return;
+        }
         _log.Information($"[AnimProbe] dump {actor}:\n{Describe(capture)}");
     }
 
@@ -254,7 +283,7 @@ public sealed unsafe partial class AnimationRuntimePort
     /// the chosen method, then logs verification compares.</summary>
     public void ProbeSchedule(
         ActorId target, RawTimelineCapture capture, ProbeMethod method,
-        Action<ActorId>? apply = null)
+        Action<ActorId>? apply = null, Action<ActorId>? reapply = null)
     {
         _probePending.Add(new ProbePending
         {
@@ -262,6 +291,7 @@ public sealed unsafe partial class AnimationRuntimePort
             Capture = capture,
             Method = method,
             Apply = apply,
+            Reapply = reapply,
             WaitTicks = ProbeWaitTicks,
         });
         _log.Information(
@@ -287,6 +317,8 @@ public sealed unsafe partial class AnimationRuntimePort
             if (pending.VerifyIn.Count > 0)
             {
                 ProbeWatch(pending);
+                if (pending.ReapplyIn > 0 && --pending.ReapplyIn == 0)
+                    pending.Reapply?.Invoke(pending.Target);
                 for (int v = pending.VerifyIn.Count - 1; v >= 0; v--)
                 {
                     if (--pending.VerifyIn[v] > 0)
@@ -433,6 +465,8 @@ public sealed unsafe partial class AnimationRuntimePort
         // toggle describing it — is right. Port-level enforcement alone
         // paused the engine while the session said "playing".
         pending.Apply?.Invoke(target);
+        if (pending.Reapply != null)
+            pending.ReapplyIn = 30;
         pending.WaitTicks = 0;
         pending.VerifyIn.Add(2);
         pending.VerifyIn.Add(15);

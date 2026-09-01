@@ -291,11 +291,15 @@ public sealed class AnimationPane : IDisposable
             _notices.Failed("Probe: the clone did not spawn.");
             return;
         }
+        var ownedForRetry = _animation.OverridesFor(source);
         _probePort.ProbeSchedule(
             cloneId, capture, method,
             method == Game.Animation.ProbeMethod.Owned
                 ? ProbeOwnedReplay(source)
-                : ProbeSessionTransfer(source));
+                : ProbeSessionTransfer(source),
+            ownedForRetry.HeldExpression is { } heldExpression
+                ? t => _animation.HoldExpression(t, heldExpression)
+                : null);
     }
 
     /// <summary>The session-owned state — the big Animation toggle, slot
@@ -327,6 +331,19 @@ public sealed class AnimationPane : IDisposable
         }
         return target =>
         {
+            // The advanced per-slot state: base pick, armed loops, layer
+            // selections — replayed exactly as the Owned method does.
+            if (owned.BaseTimeline is { } baseTimeline)
+                _animation.PlayBase(target, baseTimeline);
+            foreach (var (slot, timeline) in owned.LoopedSlots)
+                _animation.SetSlotLoop(target, slot, timeline, true);
+            foreach (var (slot, timeline) in owned.SelectedSlots)
+            {
+                if (owned.LoopedSlots.ContainsKey(slot))
+                    continue;
+                _animation.ChooseSlot(target, slot, timeline);
+                _animation.Replay(target, timeline, out _);
+            }
             if (owned.OverallSpeed is { } overall)
                 _animation.SetSpeed(target, overall);
             foreach (var (slot, speed) in owned.SlotSpeeds)
