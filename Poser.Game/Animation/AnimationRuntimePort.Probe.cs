@@ -423,6 +423,7 @@ public sealed unsafe partial class AnimationRuntimePort
     // clocks (hunt one), so the scheduler's clock lives behind one of
     // these or counts in frames/ms — hunt two watches for all three.
     private readonly List<nint> _clockPointers = new();
+    private readonly List<string> _clockLabels = new();
     private float[]? _clockPtrPrevious;
     private int[]? _clockPtrScores;
     private const int ClockPtrBytes = 0x280;
@@ -453,6 +454,7 @@ public sealed unsafe partial class AnimationRuntimePort
     public void ProbeFindClocks(ActorId actor)
     {
         _clockHuntActor = actor;
+        _clockLabels.Clear();
         _clockPrevious = null;
         _clockScores = null;
         _clockTicks = 0;
@@ -499,7 +501,10 @@ public sealed unsafe partial class AnimationRuntimePort
                 nint value = qwords[q];
                 if (value > 0x10000 && value < 0x7FFF_FFFF_FFFF
                     && (value & 0x7) == 0 && !_clockPointers.Contains(value))
+                {
                     _clockPointers.Add(value);
+                    _clockLabels.Add($"qword{q * 8:x}");
+                }
             }
             // The per-slot SchedulerTimeline objects come FIRST, then
             // their track controllers, tracks, and CLIPS (Ktisis
@@ -513,11 +518,13 @@ public sealed unsafe partial class AnimationRuntimePort
                     continue;
                 nint scheduler = (nint)stamp - SchedulerTimestampOffset;
                 _clockPointers.Add(scheduler);
+                _clockLabels.Add($"sched{huntSlot}");
                 // TimelineController.TrackController at +0x18.
                 nint trackController = *(nint*)(scheduler + 0x18);
                 if (trackController == 0)
                     continue;
                 _clockPointers.Add(trackController);
+                _clockLabels.Add($"trackCtl{huntSlot}");
                 // PtrList<TimelineTrack> at +0x28: { T** Pointers,
                 // ushort Capacity, ushort Length }.
                 nint trackPointers = *(nint*)(trackController + 0x28);
@@ -532,6 +539,7 @@ public sealed unsafe partial class AnimationRuntimePort
                     if (track == 0)
                         continue;
                     _clockPointers.Add(track);
+                    _clockLabels.Add($"track{huntSlot}.{trackIndex}");
                     // PtrList<BaseClip> at track+0x18.
                     nint clipPointers = *(nint*)(track + 0x18);
                     int clipCount = *(ushort*)(track + 0x18 + 0xA);
@@ -542,8 +550,13 @@ public sealed unsafe partial class AnimationRuntimePort
                         clipIndex++)
                     {
                         nint clip = *(nint*)(clipPointers + clipIndex * 8);
-                        if (clip != 0)
-                            _clockPointers.Add(clip);
+                        if (clip == 0)
+                            continue;
+                        _clockPointers.Add(clip);
+                        // ClipType at clip+0x84 (Ktisis BaseClip).
+                        _clockLabels.Add(
+                            $"clip{huntSlot}.{trackIndex}.{clipIndex}"
+                            + $"t{*(int*)(clip + 0x84)}");
                     }
                 }
             }
@@ -566,14 +579,23 @@ public sealed unsafe partial class AnimationRuntimePort
                         && _clockPointers.Count < ClockPtrMax; hc++)
                     {
                         var huntControl = huntAnimated->AnimationControls[hc].Value;
-                        if (huntControl != null)
-                            _clockPointers.Add((nint)huntControl);
+                        if (huntControl == null)
+                            continue;
+                        _clockPointers.Add((nint)huntControl);
+                        _clockLabels.Add($"hka{hp}.{hc}");
                     }
                 }
             }
             // A pointer that does not answer a guarded read is dropped
-            // before the hunt starts.
-            _clockPointers.RemoveAll(pointer => !TryReadClockRegion(pointer));
+            // before the hunt starts (label kept in step).
+            for (int drop = _clockPointers.Count - 1; drop >= 0; drop--)
+            {
+                if (!TryReadClockRegion(_clockPointers[drop]))
+                {
+                    _clockPointers.RemoveAt(drop);
+                    _clockLabels.RemoveAt(drop);
+                }
+            }
             _clockPtrPrevious = new float[_clockPointers.Count * ptrFloats];
             _clockPtrScores = new int[_clockPointers.Count * ptrFloats];
             for (int t = 0; t < _clockPointers.Count; t++)
@@ -629,7 +651,7 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 if (_clockPtrScores![t * ptrFloats + i] >= 150)
                     found.Append(CultureInfo.InvariantCulture,
-                        $"p{t}(0x{_clockPointers[t]:X})+{i * 4:x3}"
+                        $"{_clockLabels[t]}+{i * 4:x3}"
                         + $"={_clockPtrPrevious![t * ptrFloats + i]:0.00} ");
             }
         }
