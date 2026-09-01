@@ -145,6 +145,23 @@ private sealed class World
         public void PauseVfx(nint address) { }
         public void ResumeVfx(nint address, float speed) { }
         public bool IsVfxActive(nint address) => true;
+        public bool TryReadVfxState(
+            nint address,
+            out System.Numerics.Vector4 color,
+            out System.Numerics.Vector3 intensity,
+            out float speed)
+        {
+            color = System.Numerics.Vector4.One;
+            intensity = System.Numerics.Vector3.One;
+            speed = 1f;
+            return false;
+        }
+        public void RestoreVfxState(
+            nint address,
+            System.Numerics.Vector4 color,
+            System.Numerics.Vector3 intensity,
+            float speed,
+            bool resume) { }
 
         public void WriteOpacity(nint address, float opacity) { }
 

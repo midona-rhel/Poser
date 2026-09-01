@@ -593,6 +593,59 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             _vfxSetSpeed(instance, speed);
     }
 
+    /// <summary>The effect state an adoption may edit — captured at
+    /// adopt so the release can hand the ZONE's effect back exactly as
+    /// found. Tint, intensity, speed and pause otherwise stick on the
+    /// zone's own effect until a zone reload.</summary>
+    public bool TryReadVfxState(
+        nint address,
+        out System.Numerics.Vector4 color,
+        out System.Numerics.Vector3 intensity,
+        out float speed)
+    {
+        color = System.Numerics.Vector4.One;
+        intensity = System.Numerics.Vector3.One;
+        speed = 1f;
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return false;
+        var vfx = (CSVfx*)node;
+        color = vfx->Color;
+        var instance = (nint)vfx->VfxResourceInstance;
+        if (instance == nint.Zero)
+            return false;
+        intensity =
+            *(System.Numerics.Vector3*)(instance + VfxIntensityOffset);
+        speed = *(float*)(instance + 0x70);
+        return true;
+    }
+
+    /// <summary>Puts a captured effect state back — the adopted release's
+    /// other half. Resume replays only when the adoption paused it.</summary>
+    public void RestoreVfxState(
+        nint address,
+        System.Numerics.Vector4 color,
+        System.Numerics.Vector3 intensity,
+        float speed,
+        bool resume)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return;
+        var vfx = (CSVfx*)node;
+        vfx->Color = color;
+        var instance = (nint)vfx->VfxResourceInstance;
+        if (instance != nint.Zero)
+            *(System.Numerics.Vector3*)(instance + VfxIntensityOffset) =
+                intensity;
+        if (resume && _vfxReady && _vfxPlayStatic != null)
+            _vfxPlayStatic((nint)vfx, 0f, 0xFFFFFFFF);
+        if (instance != nint.Zero && _vfxSetSpeed != null)
+            _vfxSetSpeed(instance, speed);
+        vfx->NotifyTransformChanged();
+        vfx->UpdateCulling();
+    }
+
     /// <summary>Whether the effect is still playing — Brio's
     /// IsActiveStatic native, with the resource instance's own flags
     /// (Brio's struct: ActiveFlag bit 0, or a live job) as the fallback

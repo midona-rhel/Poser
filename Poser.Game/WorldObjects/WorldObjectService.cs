@@ -199,6 +199,13 @@ public sealed class AdoptedWorldObject
     /// </summary>
     internal bool? InitialNightState;
 
+    /// <summary>An adopted EFFECT's own colour, intensity and speed,
+    /// put back on release — otherwise a tint or a pause sticks on the
+    /// zone's effect until the zone reloads (the stuck-glow report).
+    /// </summary>
+    internal (Vector4 Color, Vector3 Intensity, float Speed)?
+        InitialVfxState;
+
     /// <summary>Whether the state write is still owed, once the model
     /// streams in.</summary>
     internal bool NightStatePending;
@@ -290,10 +297,6 @@ public sealed class AdoptedWorldObject
         if (!_released)
             _owner.WriteDebugByte(this, offset, value);
     }
-
-    /// <summary>Destroys this ADOPTED object outright — the stray-effect
-    /// cleanup verb.</summary>
-    public bool DestroyOutright() => _owner.DestroyAdopted(this);
 
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
@@ -956,6 +959,11 @@ public sealed class WorldObjectService : IDisposable
         // The original's own dressing, put back on release; the handle
         // starts from the same value so the buttons read true.
         handle.InitialNightState = _port.ReadBgNightState(address);
+        if (handle.IsVfx
+            && _port.TryReadVfxState(
+                address, out var vfxColor, out var vfxIntensity,
+                out var vfxSpeed))
+            handle.InitialVfxState = (vfxColor, vfxIntensity, vfxSpeed);
         if (handle.InitialNightState is { } adoptedState)
             handle.SeedNightState(adoptedState);
         _adopted.Add(handle);
@@ -1071,29 +1079,6 @@ public sealed class WorldObjectService : IDisposable
     /// (there is nothing left to restore onto), because leaving it in the list
     /// would leave the user holding a row that can never be given back.
     /// </summary>
-    /// <summary>Destroys an ADOPTED object outright — the stray-effect
-    /// cleanup: an effect leaked by a crash has no owner to give it back
-    /// to, so a release would leave it playing forever. Not journalled;
-    /// gone is gone.</summary>
-    public bool DestroyAdopted(AdoptedWorldObject? handle)
-    {
-        if (_disposed || handle == null || !_adopted.Contains(handle))
-            return false;
-        try
-        {
-            _port.Destroy(handle.Address);
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(
-                $"WorldObjectService: destroying an adopted object failed: {ex.Message}");
-        }
-        handle.MarkReleased(handle.InitialPlacement);
-        _adopted.Remove(handle);
-        _events.Publish(new WorldObjectListChangedEvent());
-        return true;
-    }
-
     public bool Release(AdoptedWorldObject? handle)
     {
         if (handle == null)
@@ -1189,6 +1174,13 @@ public sealed class WorldObjectService : IDisposable
                     _port.WriteBgNightState(handle.Address, dressing);
                 if (handle.AnimationPaused)
                     _port.WriteBgAnimationSpeed(handle.Address, 1f);
+                if (handle.InitialVfxState is { } effect)
+                    _port.RestoreVfxState(
+                        handle.Address,
+                        effect.Color,
+                        effect.Intensity,
+                        effect.Speed,
+                        resume: handle.VfxPaused);
                 // Written BESIDE the flags rather than left to them: whether
                 // the drawn bit lives inside that byte is the game's business,
                 // and this contract may not rest on the answer.

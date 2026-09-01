@@ -155,6 +155,21 @@ public interface IWorldObjectPort
     /// <summary>Whether the effect is still playing.</summary>
     bool IsVfxActive(nint address);
 
+    /// <summary>Captures the effect state an adoption may edit.</summary>
+    bool TryReadVfxState(
+        nint address,
+        out System.Numerics.Vector4 color,
+        out System.Numerics.Vector3 intensity,
+        out float speed);
+
+    /// <summary>Puts a captured effect state back on release.</summary>
+    void RestoreVfxState(
+        nint address,
+        System.Numerics.Vector4 color,
+        System.Numerics.Vector3 intensity,
+        float speed,
+        bool resume);
+
     /// <summary>Dyes a BG object; null clears to white. False while the
     /// model has not produced its stain buffer yet — retry next tick.
     /// </summary>
