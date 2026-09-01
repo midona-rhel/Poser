@@ -152,6 +152,9 @@ public interface IWorldObjectPort
     /// <summary>Plays a paused effect again at the stated speed.</summary>
     void ResumeVfx(nint address, float speed);
 
+    /// <summary>Whether the effect is still playing.</summary>
+    bool IsVfxActive(nint address);
+
     /// <summary>Dyes a BG object; null clears to white. False while the
     /// model has not produced its stain buffer yet — retry next tick.
     /// </summary>

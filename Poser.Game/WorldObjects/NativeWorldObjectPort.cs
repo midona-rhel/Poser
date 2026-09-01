@@ -47,6 +47,7 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     private unsafe delegate* unmanaged<nint, float, uint, nint> _vfxPlayStatic;
     private unsafe delegate* unmanaged<nint, void> _vfxPause;
     private unsafe delegate* unmanaged<nint, float, void> _vfxSetSpeed;
+    private unsafe delegate* unmanaged<nint, bool> _vfxIsActive;
 
     private delegate nint VfxResourceLoadDelegate(
         void* job, nint unk1, byte* filePath, byte* avfxData, uint dataSize,
@@ -76,6 +77,10 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             _vfxSetSpeed = (delegate* unmanaged<nint, float, void>)
                 sigScanner.ScanText(
                     "48 89 5C 24 08 57 48 83 EC 30 48 8B 59 60");
+            _vfxIsActive = (delegate* unmanaged<nint, bool>)
+                sigScanner.ScanText(
+                    "E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8B 4B 28 48 8B 01 FF "
+                    + "50 68 48 8B C8 0F 57 C9 E8");
             _vfxResourceLoad = gameInterop.HookFromAddress<
                 VfxResourceLoadDelegate>(
                 sigScanner.ScanText(
@@ -586,6 +591,27 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         var instance = (nint)vfx->VfxResourceInstance;
         if (instance != nint.Zero && _vfxSetSpeed != null)
             _vfxSetSpeed(instance, speed);
+    }
+
+    /// <summary>Whether the effect is still playing — Brio's
+    /// IsActiveStatic native, with the resource instance's own flags
+    /// (Brio's struct: ActiveFlag bit 0, or a live job) as the fallback
+    /// when the signature is gone. A looping effect that reports
+    /// inactive is REPLAYED in place, never respawned — the respawn
+    /// loop visibly blinked the effect off and on.</summary>
+    public bool IsVfxActive(nint address)
+    {
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() != ObjectType.VfxObject)
+            return false;
+        var vfx = (CSVfx*)node;
+        if (_vfxIsActive != null)
+            return _vfxIsActive((nint)vfx);
+        var instance = (nint)vfx->VfxResourceInstance;
+        if (instance == nint.Zero)
+            return false;
+        return (*(uint*)(instance + 0xC4) & 1) != 0
+            || *(ulong*)(instance + 0x60) != 0;
     }
 
     public void SetVfxSpeed(nint address, float speed)

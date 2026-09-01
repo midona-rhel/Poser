@@ -383,11 +383,12 @@ public sealed class WorldObjectService : IDisposable
     private int _nextId;
     private bool _disposed;
 
-    /// <summary>Brio's cadence: a looping world effect is recreated on
-    /// this interval, because a played-out avfx does not restart itself.
-    /// </summary>
+    /// <summary>How often a looping effect is even CHECKED for having
+    /// run out. The loop replays the same instance in place (Brio's
+    /// active check + play) — the old recreate-on-interval visibly
+    /// blinked the effect off and on.</summary>
     private static readonly TimeSpan VfxRefreshInterval =
-        TimeSpan.FromSeconds(15);
+        TimeSpan.FromSeconds(1);
 
     public WorldObjectService(
         IWorldObjectPort port,
@@ -449,8 +450,11 @@ public sealed class WorldObjectService : IDisposable
                 continue;
             if (now < handle.NextVfxRefresh)
                 continue;
-            Respawn(handle, handle.Path, out _);
-            return;
+            handle.NextVfxRefresh = now + VfxRefreshInterval;
+            // Replay the SAME instance only once it actually ran out —
+            // no recreate, so nothing blinks.
+            if (!_port.IsVfxActive(handle.Address))
+                _port.ResumeVfx(handle.Address, handle.VfxSpeed);
         }
     }
 
@@ -557,7 +561,7 @@ public sealed class WorldObjectService : IDisposable
         else
         {
             _port.ResumeVfx(handle.Address, handle.VfxSpeed);
-            handle.NextVfxRefresh = DateTime.UtcNow + VfxRefreshInterval;
+            handle.NextVfxRefresh = DateTime.UtcNow;
         }
     }
 

@@ -144,6 +144,7 @@ private sealed class World
         public void SetVfxIntensity(nint address, float intensity) { }
         public void PauseVfx(nint address) { }
         public void ResumeVfx(nint address, float speed) { }
+        public bool IsVfxActive(nint address) => true;
 
         public void WriteOpacity(nint address, float opacity) { }
 
