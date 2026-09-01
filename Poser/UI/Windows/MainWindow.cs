@@ -245,12 +245,23 @@ public class MainWindow : Window
             },
             WorldAdoptionKind.WorldObject => new ShellWorldClass
             {
-                Icon = TablerIcon.Square,
+                // The kind's own mark, as everywhere (Square shipped and
+                // was an imprecise leftover).
+                Icon = TablerIcon.Plant,
                 Id = "##world-class-objects",
                 ShowHelp =
                     "Mark the map's own objects — click a mark to borrow it "
                     + "into the scene; releasing it puts it back",
                 HideHelp = "Stop marking the map's own objects",
+            },
+            WorldAdoptionKind.Effect => new ShellWorldClass
+            {
+                Icon = TablerIcon.Fire,
+                Id = "##world-class-effects",
+                ShowHelp =
+                    "Mark the world's playing effects — click a mark to "
+                    + "borrow it into the scene; releasing it puts it back",
+                HideHelp = "Stop marking the world's playing effects",
             },
             _ => new ShellWorldClass
             {
@@ -449,6 +460,7 @@ public class MainWindow : Window
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
+        Controls.EntityNameModal names,
         Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
         Game.Viewport.ViewportProjection viewportProjection,
@@ -484,6 +496,7 @@ public class MainWindow : Window
         _workspace = new ShellWorkspaceSelection(_selection);
         _workspace.Left += OnWorkspaceLeft;
         _bindings = bindings;
+        _names = names;
         _sceneWorkflow = sceneWorkflow;
         _editorState = editorState;
         _cleanTransforms = cleanTransforms;
@@ -583,6 +596,8 @@ public class MainWindow : Window
         // Static shell wiring (rebuilt data lives in BuildViewModel each frame).
         _vm.OnTab = OnTabClicked;
         _vm.OnRowDrop = OnRowDropped;
+        // A click on the tree's open space drops the whole selection.
+        _vm.OnEmptyClick = () => _selection.Clear();
         _vm.DragGhostText = DragGhostFor;
         // Brio's Bullseye (CameraEditor.cs recenter_on_selected): the seat
         // RETARGETS this camera's tracking onto the currently selected
@@ -614,7 +629,40 @@ public class MainWindow : Window
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
-        _vm.OnSymmetry = i => _editorState.SymmetryMode = (SymmetryMode)i;
+        _vm.OnSymmetry = i =>
+        {
+            var mode = (SymmetryMode)i;
+            var configuration =
+                Config.ConfigurationService.Instance.Config;
+            // With the per-bone sheet on, the toolbar EDITS the selected
+            // bones' own stated mode — clicking their stated value again
+            // clears it back to the toolbar's global. No bones selected
+            // (or sheet off) edits the global, as ever.
+            if (configuration.PerBoneSymmetry)
+            {
+                bool wroteAny = false;
+                foreach (var member in _scene.Selection.Selected)
+                {
+                    if (member.Bone is not { } stated)
+                        continue;
+                    wroteAny = true;
+                    if (configuration.BoneSymmetryOverrides.TryGetValue(
+                            stated.CanonicalName, out var current)
+                        && current == mode)
+                        configuration.BoneSymmetryOverrides.Remove(
+                            stated.CanonicalName);
+                    else
+                        configuration.BoneSymmetryOverrides[
+                            stated.CanonicalName] = mode;
+                }
+                if (wroteAny)
+                {
+                    Config.ConfigurationService.Instance.Save();
+                    return;
+                }
+            }
+            _editorState.SymmetryMode = mode;
+        };
         // The switch's polarity is "animation playing"; off writes a zero
         // speed override, on drops the override back to game speed.
         _vm.OnAnimation = on =>
@@ -801,6 +849,30 @@ public class MainWindow : Window
         {
             if (row.Tag is SelectionId handleId)
                 _overlayPresentation.ToggleHandle(handleId);
+        };
+        // The effect row's pause seat: the same freeze the properties
+        // page states, reachable without selecting first.
+        _vm.OnRowPause = row =>
+        {
+            if (row.Tag is not SelectionId
+                { Kind: SceneEntityKind.WorldObject, WorldObject: { } pausedId })
+                return;
+            var paused = _bindings.Resolve(pausedId);
+            if (!paused.Success ||
+                paused.Value is not { IsValid: true } handle)
+                return;
+            if (handle.IsVfx)
+            {
+                handle.VfxPaused = !handle.VfxPaused;
+                row.Paused = handle.VfxPaused;
+                return;
+            }
+            // Spawned scenery cannot be animated by the game; its seat
+            // is inert by construction.
+            if (handle.Spawned)
+                return;
+            handle.AnimationPaused = !handle.AnimationPaused;
+            row.Paused = handle.AnimationPaused;
         };
         _vm.OnLightVisibility = row =>
         {
@@ -1230,12 +1302,51 @@ public class MainWindow : Window
                     : "Poser",
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
-            { Kind: SceneEntityKind.Camera } => "Camera",
-            { Kind: SceneEntityKind.Prop } => "Object",
-            { Kind: SceneEntityKind.WorldObject } => "Object",
-            { Kind: SceneEntityKind.Overlay } => "Overlay",
+            // The titlebar says the THING's name — "Balloon 1", never the
+            // kind label (ruled 2026-08-31).
+            { Kind: SceneEntityKind.Camera } =>
+                EntityTitle(primary.Value, "Camera"),
+            { Kind: SceneEntityKind.Prop } =>
+                EntityTitle(primary.Value, "Object"),
+            { Kind: SceneEntityKind.WorldObject } =>
+                EntityTitle(primary.Value, "Object"),
+            { Kind: SceneEntityKind.Overlay } =>
+                EntityTitle(primary.Value, "Overlay"),
+            // The empty state SAYS so, in the titlebar too.
+            null => "Nothing selected",
             _ => "Poser",
         };
+    }
+
+    /// <summary>The selected entity's own name from the snapshot, by kind;
+    /// the kind label only when the snapshot no longer holds it.</summary>
+    private string EntityTitle(SelectionId id, string fallback)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Camera, Camera: { } cameraId }:
+                foreach (var camera in _scene.Snapshot.Cameras)
+                    if (camera.Id.Equals(cameraId))
+                        return camera.Name;
+                break;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                foreach (var prop in _scene.Snapshot.Props)
+                    if (prop.Id.Equals(propId))
+                        return prop.Name;
+                break;
+            case { Kind: SceneEntityKind.WorldObject,
+                WorldObject: { } worldId }:
+                foreach (var worldObject in _scene.Snapshot.WorldObjects)
+                    if (worldObject.Id.Equals(worldId))
+                        return worldObject.Name;
+                break;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                foreach (var overlay in _scene.Snapshot.Overlays)
+                    if (overlay.Id.Equals(overlayId))
+                        return overlay.Name;
+                break;
+        }
+        return fallback;
     }
 
     private string LightTitle(SelectionId id)
@@ -1450,7 +1561,19 @@ public class MainWindow : Window
         _vm.GizmoOperation = (int)_editorState.TransformTool;
         _vm.GizmoSpace = (int)_editorState.TransformOrientation;
         _vm.RotationPivot = (int)_editorState.RotationPivot;
-        _vm.SymmetryMode = (int)_editorState.SymmetryMode;
+        // The seg DESCRIBES the primary selected bone — its effective
+        // mode through the one three-tier rule — and the global otherwise.
+        var symmetryConfig =
+            Config.ConfigurationService.Instance.Config;
+        var primaryBone = _scene.Selection.Primary?.Bone;
+        _vm.SymmetryMode = primaryBone is { } describedBone
+            ? (int)Core.BoneSymmetry.EffectiveMode(
+                symmetryConfig.PerBoneSymmetry,
+                symmetryConfig.BoneSymmetryOverrides,
+                symmetryConfig.AutoLinkPairedBones,
+                _editorState.SymmetryMode,
+                describedBone.CanonicalName)
+            : (int)_editorState.SymmetryMode;
         // The pivot selector appears only where pivot choice changes the
         // active transform meaning: Rotate tool with a resolvable bone
         // selection. Parent needs a valid parent on the effective primary.
@@ -1533,7 +1656,8 @@ public class MainWindow : Window
         _pivotKey.AddRange(selected);
 
         var effective = Application.Transforms.TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot, _groups.IsLockedMember);
+            selected, _scene.Snapshot,
+            id => _groups.IsLockedChild(id, selected));
         _pivotPrimaryIsBone =
             effective is { Primary.Kind: Domain.Identity.TransformTargetKind.Bone };
         _pivotParentAvailable = false;
@@ -2467,7 +2591,7 @@ public class MainWindow : Window
         Label = prop.Name,
         Draggable = true,
         Count = "",
-        Icon = TablerIcon.Diamond,
+        Icon = TablerIcon.Moneybag,
         Depth = depth,
         ForceIcon = depth > 0,
         Tag = SelectionId.ForProp(prop.Id),
@@ -2476,19 +2600,29 @@ public class MainWindow : Window
     };
 
     private ShellSidebarRow WorldObjectRow(
-        WorldObjectDescriptor worldObject, int depth) => new()
+        WorldObjectDescriptor worldObject, int depth)
     {
-        Label = worldObject.Name,
-        Draggable = true,
-        Count = "",
-        // World objects use the square row mark.
-        Icon = TablerIcon.Square,
-        Depth = depth,
-        ForceIcon = depth > 0,
-        Tag = SelectionId.ForWorldObject(worldObject.Id),
-        LightActions = true,
-        LightOn = worldObject.Visible,
-    };
+        bool isVfx = worldObject.Path.EndsWith(
+            ".avfx", StringComparison.OrdinalIgnoreCase);
+        return new ShellSidebarRow
+        {
+            Label = worldObject.Name,
+            Draggable = true,
+            Count = "",
+            // World objects wear the plant row mark; a VFX burns instead.
+            Icon = isVfx ? TablerIcon.Fire : TablerIcon.Plant,
+            Depth = depth,
+            ForceIcon = depth > 0,
+            Tag = SelectionId.ForWorldObject(worldObject.Id),
+            LightActions = true,
+            LightOn = worldObject.Visible,
+            PauseAction = true,
+            Paused = isVfx
+                ? worldObject.VfxPaused
+                : worldObject.AnimPaused,
+            PauseDisabled = !isVfx && worldObject.Spawned,
+        };
+    }
 
     private ShellSidebarRow LightRow(LightDescriptor light, int depth) => new()
     {
@@ -3543,6 +3677,14 @@ public class MainWindow : Window
             _activeTab = "Selection";
             return _multiselectTabs;
         }
+        // NOTHING selected: no strip and no tabs — the content side says
+        // so instead of showing an ownerless actor page.
+        if (primary == null)
+        {
+            _activeStrip = "none";
+            _activeTab = string.Empty;
+            return [];
+        }
         // The strip is a function of the selection type: the environment's
         // tabs are its own, a light's are its own, and nothing else shares
         // either — neither entity has a pose, an animation or an appearance.
@@ -4163,6 +4305,24 @@ public class MainWindow : Window
         // Inspector-owned selection state drives IK and must be current even
         // when another tab owns the centre pane.
         _poseInspector.SetSelection(_selection.Primary);
+
+        // The properties panel's empty state: one centred line.
+        if (_selection.Primary == null
+            && !global::Poser.Application.Selection.EntitySelection
+                .IsMultiEntity(_selection.Selected))
+        {
+            var emptyStyle = new TextStyle
+            {
+                Size = Crystarium.ActiveTheme.Typography.LabelSize,
+                Color = Crystarium.ActiveTheme.FormHint,
+            };
+            var measured = Crystarium.MeasureText(
+                "Nothing selected", emptyStyle);
+            Crystarium.TextAt(
+                origin + (size - measured) * 0.5f,
+                "Nothing selected", emptyStyle);
+            return;
+        }
 
         if (_activeTab == "Selection")
         {
@@ -5080,14 +5240,12 @@ public class MainWindow : Window
     private PropId? _ctxPropId;
     private bool _propCtxOpenRequested;
 
-    /// <summary>The entity rename modal's state: lights, cameras and props
-    /// carry their name on the entity, so one modal writes whichever apply
-    /// hook the opening menu handed it — unlike the actor modal, which writes
-    /// a nickname beside a name the game owns.</summary>
-    private bool _entityRenameOpen;
-    private string _entityRenameValue = "";
-    private string _entityRenameTitle = "";
-    private Action<string>? _entityRenameApply;
+    /// <summary>THE naming prompt, shared with every pane: lights,
+    /// cameras and props carry their name on the entity, so one modal
+    /// writes whichever apply hook the opener handed it — unlike the
+    /// actor modal, which writes a nickname beside a name the game
+    /// owns.</summary>
+    private readonly Controls.EntityNameModal _names;
 
     /// <summary>Right-click light menu: the lifetime verbs the actor menu
     /// gives its rows, spoken in the light's vocabulary — the eye, the file,
@@ -5126,7 +5284,7 @@ public class MainWindow : Window
             // modal renames use, with the light's name as the start.
             () => OpenEntityRename(
                 "Save light to library", light.Name,
-                name => _lightPane.SaveToLibrary(light, name)),
+                name => _scenePane.SaveLightEntry(lightId.LogicalId, name)),
             null, // separator
         };
         if (light.Ownership == LightOwnership.Spawned)
@@ -5189,6 +5347,7 @@ public class MainWindow : Window
                 prop.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new("Rename", TablerIcon.Edit),
             new("Clone", TablerIcon.Copy),
+            new("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
             new("Destroy", TablerIcon.Trash, danger: true),
         };
@@ -5203,6 +5362,9 @@ public class MainWindow : Window
                     _bindings.GetPropId(clone) is { } cloneId)
                     _selection.Select(SelectionId.ForProp(cloneId));
             },
+            () => OpenEntityRename(
+                "Save prop to library", prop.Name,
+                name => _scenePane.SavePropEntry(propId.LogicalId, name)),
             null, // separator
             () =>
             {
@@ -5290,7 +5452,7 @@ public class MainWindow : Window
             () => _cameraPane.OpenSave(camera),
             () => OpenEntityRename(
                 "Save camera to library", camera.Name,
-                name => _cameraPane.SaveToLibrary(camera, name)),
+                name => _scenePane.SaveCameraEntry(cameraId.LogicalId, name)),
             () => _cameraPane.ResetCameraTransform(cameraId),
             () => camera.ResetProperties(),
         };
@@ -5345,8 +5507,14 @@ public class MainWindow : Window
             new ContextMenuItem(worldObject.Visible ? "Hide" : "Show",
                 worldObject.Visible ? TablerIcon.EyeOff : TablerIcon.Eye),
             new ContextMenuItem("Rename", TablerIcon.Edit),
+            new ContextMenuItem("Save to library", TablerIcon.Library),
             ContextMenuItem.Separator,
-            new ContextMenuItem("Release", TablerIcon.X),
+            // A spawned object is Poser's own and DESTROYS; a borrowed
+            // one is the map's and goes back where it stood.
+            worldObject.Spawned
+                ? new ContextMenuItem("Destroy", TablerIcon.Trash,
+                    danger: true)
+                : new ContextMenuItem("Release", TablerIcon.X),
         };
         var actions = new Action?[]
         {
@@ -5354,6 +5522,10 @@ public class MainWindow : Window
             () => OpenEntityRename(
                 "Rename object", worldObject.Name,
                 next => worldObject.Name = next),
+            () => OpenEntityRename(
+                "Save object to library", worldObject.Name,
+                name => _scenePane.SaveWorldObjectEntry(
+                    worldObjectId.LogicalId, name)),
             null, // separator
             () =>
             {
@@ -5752,53 +5924,13 @@ public class MainWindow : Window
     }
 
     private void OpenEntityRename(
-        string title, string current, Action<string> apply)
-    {
-        _entityRenameTitle = title;
-        _entityRenameValue = current;
-        _entityRenameApply = apply;
-        _entityRenameOpen = true;
-    }
+        string title, string current, Action<string> apply) =>
+        _names.Open(title, current, apply);
 
     /// <summary>The light/camera rename modal. The apply hook captured the
     /// live entity at open; a stale entity write is a no-op on an invalid
     /// native, exactly as the pane's own name row would be.</summary>
-    private void DrawEntityRenameModal()
-    {
-        if (!_entityRenameOpen || _entityRenameApply is not { } apply)
-            return;
-        // Footer idiom, not body buttons: the footer bar right-aligns its
-        // children, and the height fits one input with no dead band.
-        Crystarium.Modal(
-            "##rename-entity",
-            _entityRenameOpen,
-            next => _entityRenameOpen = next,
-            _entityRenameTitle,
-            height: NamePromptHeight,
-            body: () => Crystarium.TextInput(
-                "##rename-entity-input", _entityRenameValue,
-                next => _entityRenameValue = next),
-            footer: () =>
-        {
-            // Enter is the blue button: the modal is one input, and done is
-            // done.
-            bool submit =
-                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
-                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
-            if (Crystarium.Button("Cancel", id: "rename-entity-cancel"))
-                _entityRenameOpen = false;
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button(
-                    "Save",
-                    variant: ButtonVariant.Primary,
-                    id: "rename-entity-save") || submit)
-            {
-                if (_entityRenameValue.Trim() is { Length: > 0 } trimmed)
-                    apply(trimmed);
-                _entityRenameOpen = false;
-            }
-        });
-    }
+    private void DrawEntityRenameModal() => _names.Draw();
 
     /// <summary>One text input between the two bars: header 44 + padded
     /// input row + footer 44.</summary>

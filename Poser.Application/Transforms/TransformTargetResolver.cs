@@ -28,9 +28,11 @@ public static class TransformTargetResolver
         SceneSnapshot snapshot,
         Func<SelectionId, bool>? isLocked = null)
     {
-        // A locked group protects its placement: locked members leave the
-        // resolution entirely — no target, no gizmo seat — before any
-        // branch runs, so every selection shape honors the lock.
+        // The lock predicate is selection-aware at the call sites: a
+        // locked group's child refuses INDIVIDUALLY, while a selection
+        // holding the whole membership moves the group as one. Whatever
+        // the predicate refuses leaves the resolution — no target, no
+        // gizmo seat — before any branch runs.
         if (isLocked != null && AnyLocked(selected, isLocked))
         {
             var free = new List<SelectionId>();

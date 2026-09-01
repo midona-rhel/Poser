@@ -11,11 +11,13 @@ public sealed class SceneGroup
     public required string Name { get; set; }
     public required List<SelectionId> Members { get; init; }
 
-    /// <summary>A locked group protects its PLACEMENT: members' world
-    /// transforms refuse, nothing drags in, out, or around, and the
-    /// structure verbs (rename, ungroup, destroy) wait for the unlock.
-    /// Visibility and animation stay free — the lock guards where things
-    /// stand, not what they do.</summary>
+    /// <summary>A locked group freezes its CHILDREN: a member selected
+    /// on its own refuses world transforms, nothing drags in, out, or
+    /// around, and the structure verbs (rename, ungroup, destroy) wait
+    /// for the unlock. The GROUP itself stays movable — a selection
+    /// holding the whole membership moves it as one thing (ruled
+    /// 2026-08-31; the whole-placement reading was wrong). Visibility
+    /// and animation stay free.</summary>
     public bool Locked { get; set; }
 }
 
@@ -297,9 +299,24 @@ public sealed class SceneGroups
     }
 
     /// <summary>Whether the entity belongs to a locked group — the
-    /// transform machinery's one question.</summary>
+    /// STRUCTURE question (drag, rename, dissolve).</summary>
     public bool IsLockedMember(SelectionId member) =>
         GroupOf(member) is { Locked: true };
+
+    /// <summary>The TRANSFORM question, selection-aware: a locked group
+    /// freezes its children individually, but a selection holding the
+    /// whole membership is the group moving as one — the lock never
+    /// refuses the group itself.</summary>
+    public bool IsLockedChild(
+        SelectionId member, IReadOnlyList<SelectionId> selected)
+    {
+        if (GroupOf(member) is not { Locked: true } group)
+            return false;
+        foreach (var one in group.Members)
+            if (!ContainsEntity(selected, one))
+                return true;
+        return false;
+    }
 
     /// <summary>Drops members the snapshot no longer contains. Returns
     /// whether anything changed (the caller already rebuilds).</summary>

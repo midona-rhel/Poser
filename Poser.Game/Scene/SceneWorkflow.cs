@@ -126,28 +126,37 @@ public sealed class SceneWorkflow : IDisposable
         Poser.Library.IMcdfHashIndex mcdfHashes,
         Poser.Application.Selection.SelectionSession selection,
         Poser.Application.Scene.SceneGroups sceneGroups,
+        Poser.Library.IPoseLibraryService library,
         Dalamud.Plugin.Services.IPluginLog log)
         : this(new SceneRuntimeAdapter(
             framework, sessions, capture, poses, spawns, skeletons, posing,
             props, overlays, lighting, cameras, environment, bindings,
             animation, gaze, integration, rendering, actors, objects,
-            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups)
+            worldObjects, place, mcdfHashes, selection, log), log, sceneGroups,
+            library)
     {
     }
 
     internal SceneWorkflow(
         ISceneRuntime runtime,
         Dalamud.Plugin.Services.IPluginLog? log = null,
-        Poser.Application.Scene.SceneGroups? groups = null)
+        Poser.Application.Scene.SceneGroups? groups = null,
+        Poser.Library.IPoseLibraryService? library = null)
     {
         _runtime = runtime;
         _log = log;
         _groups = groups;
+        _library = library;
     }
 
     /// <summary>The sidebar's structure store — null only under the test
     /// runtime, where saves simply carry no structure.</summary>
     private readonly Poser.Application.Scene.SceneGroups? _groups;
+
+    /// <summary>The library index — a completed save tells it, so a fresh
+    /// entry lists without anyone rescanning by hand. Null under the test
+    /// runtime.</summary>
+    private readonly Poser.Library.IPoseLibraryService? _library;
 
     /// <summary>What including modded appearance would add to a save right
     /// now, in bytes. Read every frame by the save surface, so it stays a
@@ -512,14 +521,47 @@ public sealed class SceneWorkflow : IDisposable
                     + (scene.WorldObjects?.Count ?? 0) == 0)
                 {
                     Finish(false,
-                        "None of the group's members were in the capture; "
-                        + "they may have just been removed. Nothing was "
+                        "Nothing the entry names was in the capture; it "
+                        + "may have just been removed. Nothing was "
                         + "saved.");
                     return;
                 }
                 actorIdentities = actorIdentities
                     .Where(pair => keep.Contains(pair.Key))
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
+            }
+
+            // A document NEVER carries a borrow (ruled 2026-09-01): every
+            // world object saves as a SPAWNABLE copy, so anything saved
+            // loads in any map at any position. Borrowing stays a
+            // live-session act only.
+            if (scene.WorldObjects != null)
+                foreach (var spawnable in scene.WorldObjects)
+                    spawnable.Spawned = true;
+
+            // The entry's name IS the thing's name: Stone rail spawns a
+            // Stone rail. A group entry names the GROUP and its children
+            // keep their own saved names, so the group check leads.
+            if (options.EntryName is { Length: > 0 } entryName)
+            {
+                if (scene.Groups is { Count: 1 } namedGroups)
+                    namedGroups[0].Name = entryName;
+                else if (scene.WorldObjects is { Count: 1 } namedObjects)
+                    namedObjects[0].Name = entryName;
+                else if (scene.Props is { Count: 1 } namedProps)
+                    namedProps[0].Name = entryName;
+                else if (scene.Lights is { Count: 1 } namedLights
+                    && namedLights[0].Light is { } lightDocument)
+                    lightDocument.Name = entryName;
+                else if (scene.Cameras is { Count: 1 } namedCameras
+                    && namedCameras[0].Camera is { } cameraDocument)
+                    cameraDocument.Name = entryName;
+                else if (scene.Overlays is { Count: 1 } namedOverlays
+                    && namedOverlays[0].Node is { } nodeDocument)
+                    namedOverlays[0].Node =
+                        nodeDocument with { Name = entryName };
+                else if (scene.Actors is { Count: 1 } namedActors)
+                    namedActors[0].Name = entryName;
             }
 
             // Appearance is sealed BEFORE the policy narrows the document:
@@ -570,7 +612,11 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
-            var written = _runtime.WriteScene(scene, path);
+            // A .json path exports a Stagehand Stage; what a Stage cannot
+            // carry lands in the notes.
+            var written = Poser.Files.StageFile.IsStagePath(path)
+                ? Poser.Files.StageFile.Write(scene, path, notes)
+                : _runtime.WriteScene(scene, path);
             // The writer has streamed every payload into the container, so the
             // packages sealing created are the caller's to drop now — and only
             // now: deleting them earlier would delete the bytes being saved.
@@ -618,6 +664,9 @@ public sealed class SceneWorkflow : IDisposable
             }
 
             Finish(true, summary, notes);
+            // The file exists NOW: tell the index, so the entry lists in
+            // the library and the portal without a hand-driven refresh.
+            _library?.RequestScan();
         }
         catch (Exception ex)
         {
@@ -692,7 +741,11 @@ public sealed class SceneWorkflow : IDisposable
             // Phase 1 — read and validate the WHOLE document off-thread.
             // Nothing native has happened yet; a corrupt, oversized, or
             // future file is a pure typed refusal.
-            var read = _runtime.ReadScene(path);
+            // A .json path is a Stagehand Stage: the read translates it
+            // into a scene document and the rest of the load never knows.
+            var read = Poser.Files.StageFile.IsStagePath(path)
+                ? Poser.Files.StageFile.Read(path, notes)
+                : _runtime.ReadScene(path);
             if (!read.Succeeded || read.Scene is not { } scene)
             {
                 // Nothing native has run, so there is nothing to roll back:
@@ -700,6 +753,15 @@ public sealed class SceneWorkflow : IDisposable
                 Finish(OperationReceiptState.Failed, read.Failure!.Detail);
                 return;
             }
+
+            // BORROWING NEVER PERSISTS (ruled 2026-09-01): the borrow is a
+            // live-session act — the footer's four marks — and a document
+            // always carries spawnable copies, loadable in any map at any
+            // position. Files saved before the rule carry borrowed
+            // entries; every one loads as a spawn.
+            if (scene.WorldObjects != null)
+                foreach (var entry in scene.WorldObjects)
+                    entry.Spawned = true;
 
             // The per-category views. An excluded category is an EMPTY view
             // rather than a flag consulted at each of its phases: every phase
@@ -713,31 +775,8 @@ public sealed class SceneWorkflow : IDisposable
             var overlays = options.IncludeOverlays
                 ? (IReadOnlyList<SceneOverlay>)(scene.Overlays ?? [])
                 : Array.Empty<SceneOverlay>();
-            // A borrowed map object is the one entity whose view is decided by
-            // WHERE THE SESSION IS rather than by an option. It is not a thing
-            // the load can create: it can only take back an object this map is
-            // already standing. The gate runs here, before any native work, so
-            // a scene loaded in the wrong zone refuses its borrowed entries by
-            // name and lands everything else.
             var worldObjects = (IReadOnlyList<SceneWorldObject>)(
                 scene.WorldObjects ?? []);
-            uint currentTerritory = worldObjects.Count == 0
-                ? 0u
-                : await _runtime.OnFramework(_runtime.CurrentTerritoryId);
-            if (worldObjects.Count > 0 &&
-                (currentTerritory == 0 || currentTerritory != scene.TerritoryId))
-            {
-                string where = string.IsNullOrWhiteSpace(scene.PlaceName)
-                    ? $"territory {scene.TerritoryId}"
-                    : scene.PlaceName;
-                notes.Add(
-                    $"This scene borrowed {worldObjects.Count} map " +
-                    $"{(worldObjects.Count == 1 ? "object" : "objects")} in " +
-                    $"{where}, which is not where you are. " +
-                    $"{(worldObjects.Count == 1 ? "It was" : "They were")} " +
-                    "left alone.");
-                worldObjects = Array.Empty<SceneWorldObject>();
-            }
             var lights = options.IncludeLights
                 ? (IReadOnlyList<SceneLight>)scene.Lights
                 : Array.Empty<SceneLight>();
@@ -782,15 +821,6 @@ public sealed class SceneWorkflow : IDisposable
                     return;
                 }
                 notes.Add("Placed relative to where you are standing.");
-
-                // The rebase moved everything Poser places. It did NOT move the
-                // map's own objects, because it cannot: they are matched by the
-                // point the map stands them at.
-                if (worldObjects.Count > 0)
-                    notes.Add(
-                        $"The {worldObjects.Count} borrowed map " +
-                        $"{(worldObjects.Count == 1 ? "object stays" : "objects stay")} " +
-                        "where the map has them; only what Poser placed moved.");
             }
 
             // The object-entry placement: the caller resolved the CURRENT
@@ -799,30 +829,76 @@ public sealed class SceneWorkflow : IDisposable
             // touched.
             if (options.Placement != Poser.Files.ObjectPlacementMode.AsSaved)
             {
-                var savedAnchor = options.Placement ==
-                    Poser.Files.ObjectPlacementMode.RelativeToCamera
-                        ? scene.CameraAnchor
-                        : scene.ActorAnchor;
-                if (savedAnchor is null)
+                Poser.Files.PlacementAnchorData? savedAnchor;
+                if (options.Placement ==
+                    Poser.Files.ObjectPlacementMode.InFrontOfCamera)
                 {
-                    Finish(
-                        OperationReceiptState.Failed,
-                        "This entry records no anchor for that placement. " +
-                        "Load it as saved instead.");
-                    return;
+                    // The anchor is the content ITSELF: its centroid moves
+                    // to the point in front of the camera, no turn — the
+                    // light spawn's behavior, generalized. An entry that
+                    // places nothing simply loads as saved.
+                    savedAnchor = SceneContentCentroid(scene) is { } centroid
+                        ? new Poser.Files.PlacementAnchorData
+                        {
+                            Position = centroid,
+                            Yaw = options.PlacementYaw,
+                        }
+                        : null;
+                    if (savedAnchor is null)
+                        notes.Add(
+                            "The entry places nothing, so it loaded as "
+                            + "saved.");
                 }
-                if (ScenePlacementRebase.Rebase(
-                        scene, savedAnchor,
-                        options.PlacementPosition, options.PlacementYaw)
-                    is { } placementRefusal)
+                else
                 {
-                    Finish(OperationReceiptState.Failed, placementRefusal);
-                    return;
+                    savedAnchor = options.Placement ==
+                        Poser.Files.ObjectPlacementMode.RelativeToCamera
+                            ? scene.CameraAnchor
+                            : scene.ActorAnchor;
+                    // No saved anchor is no longer a refusal (ruled
+                    // 2026-08-31): the content's CENTROID stands in, so
+                    // the content lands ON the current camera or actor —
+                    // no turn — instead of keeping an offset the entry
+                    // never recorded.
+                    if (savedAnchor is null)
+                    {
+                        savedAnchor =
+                            SceneContentCentroid(scene) is { } centre
+                                ? new Poser.Files.PlacementAnchorData
+                                {
+                                    Position = centre,
+                                    Yaw = options.PlacementYaw,
+                                }
+                                : null;
+                        if (savedAnchor is null)
+                            notes.Add(
+                                "The entry places nothing, so it loaded as "
+                                + "saved.");
+                        else
+                            notes.Add(
+                                "No saved anchor: the content's centre "
+                                + "lands on the anchor instead.");
+                    }
                 }
-                notes.Add(options.Placement ==
-                    Poser.Files.ObjectPlacementMode.RelativeToCamera
-                        ? "Placed relative to the camera."
-                        : "Placed relative to the actor.");
+                if (savedAnchor is { } anchor)
+                {
+                    if (ScenePlacementRebase.Rebase(
+                            scene, anchor,
+                            options.PlacementPosition, options.PlacementYaw)
+                        is { } placementRefusal)
+                    {
+                        Finish(OperationReceiptState.Failed, placementRefusal);
+                        return;
+                    }
+                    notes.Add(options.Placement switch
+                    {
+                        Poser.Files.ObjectPlacementMode.RelativeToCamera =>
+                            "Placed relative to the camera.",
+                        Poser.Files.ObjectPlacementMode.InFrontOfCamera =>
+                            "Placed in front of the camera.",
+                        _ => "Placed relative to the actor.",
+                    });
+                }
             }
 
             total = actors.Count + props.Count +
@@ -1168,6 +1244,12 @@ public sealed class SceneWorkflow : IDisposable
                     if (camera.IsDefault)
                     {
                         detail = _runtime.ApplyDefaultCamera(camera);
+                        // The default camera mints a structure token too:
+                        // without one, a saved group that held the Main
+                        // Camera silently lost it on every load.
+                        if (detail == null
+                            && _runtime.DefaultCameraToken() is { } main)
+                            cameraTokens[camera.Key] = main;
                     }
                     else
                     {
@@ -1522,6 +1604,46 @@ public sealed class SceneWorkflow : IDisposable
             scene.Groups = null;
             scene.RootOrder = null;
         }
+    }
+
+    /// <summary>The average position of everything the document PLACES —
+    /// actors, props, unattached lights, spawned world objects, free
+    /// cameras. Null when it places nothing.</summary>
+    private static System.Numerics.Vector3? SceneContentCentroid(
+        SceneFile scene)
+    {
+        var sum = System.Numerics.Vector3.Zero;
+        int counted = 0;
+        foreach (var actor in scene.Actors)
+            if (actor.ModelTransform is { } placement)
+            {
+                sum += placement.Position;
+                counted++;
+            }
+        foreach (var prop in scene.Props)
+        {
+            sum += prop.Transform.Position;
+            counted++;
+        }
+        foreach (var light in scene.Lights)
+            if (light.Attachment is null && light.Light is { } document)
+            {
+                sum += document.Transform.Position;
+                counted++;
+            }
+        foreach (var worldObject in scene.WorldObjects ?? [])
+            if (worldObject.Spawned)
+            {
+                sum += worldObject.Transform.Position;
+                counted++;
+            }
+        foreach (var camera in scene.Cameras)
+            if (camera.Camera is { Kind: global::Poser.Domain.Scene.CameraKind.Free } document)
+            {
+                sum += document.Position;
+                counted++;
+            }
+        return counted == 0 ? null : sum / counted;
     }
 
     /// <summary>One line stating a category the user left out, and only when

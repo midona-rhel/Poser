@@ -21,6 +21,12 @@
 
 
 	<ItemGroup>
+		<!-- Stagehand's Stage file format, for the Stage import/export seam;
+		     tracks their format as it evolves. -->
+		<PackageReference Include="Stagehand.Definitions" Version="0.4.10" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<!-- Domain value types (PoseSlot) are shared so slot identity has ONE
 		     representation across the transitional entities and the clean core. -->
 		<ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />

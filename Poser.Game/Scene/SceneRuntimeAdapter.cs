@@ -1066,18 +1066,36 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     /// <summary>
-    /// Re-borrows one of the map's own objects. Nothing is created — the object
-    /// belongs to the map and was already standing there — so this MATCHES
-    /// rather than spawns, and a match that does not come off is a refusal
-    /// naming the model rather than a claim on something else.
+    /// Restores one world-object entry by SPAWNING its path anew — any
+    /// zone, any position. A document never carries a borrow (ruled
+    /// 2026-09-01): borrowing is a live-session act, and the load owes
+    /// nothing to whatever the map may or may not be standing.
     /// </summary>
-    public object? AdoptWorldObject(SceneWorldObject data, out string? detail) =>
-        _worldObjects.AdoptByIdentity(
-            data.Path,
-            data.MapPosition,
-            data.Transform,
-            data.Visible,
-            out detail);
+    public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
+    {
+        var handle = _worldObjects.Spawn(
+            data.Path, data.Transform, data.Visible, out detail);
+        if (handle != null && data.Name.Length > 0)
+            handle.Name = data.Name;
+        if (handle != null)
+        {
+            if (data.Opacity < 1f)
+                handle.Opacity = data.Opacity;
+            if (data.Tint is { } tint)
+                handle.Tint = tint;
+            handle.LoopVfx = data.VfxLoop;
+            if (Math.Abs(data.VfxSpeed - 1f) > 0.001f)
+                handle.VfxSpeed = data.VfxSpeed;
+            if (Math.Abs(data.VfxIntensity - 1f) > 0.001f)
+                handle.VfxIntensity = data.VfxIntensity;
+            if (data.VfxPaused)
+                handle.VfxPaused = true;
+            handle.NightState = data.NightState;
+            if (data.AnimPaused)
+                handle.AnimationPaused = true;
+        }
+        return handle;
+    }
 
     public void ReleaseWorldObject(object token) =>
         _worldObjects.Release((WorldObjects.AdoptedWorldObject)token);
@@ -1085,7 +1103,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     public object? SpawnProp(SceneProp data, out string? detail)
     {
         var handle = _props.SpawnProp(new PropModel(
-            data.Name, data.Model, data.Submodel, data.Variant, string.Empty));
+            data.Name, data.Model, data.Submodel, data.Variant, string.Empty,
+            data.Stain0, data.Stain1, data.AnimationVariant));
         if (handle is null)
         {
             detail = "The object spawn failed.";
@@ -1163,6 +1182,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
 
     private IVirtualCamera? DefaultCamera =>
         _cameras.Cameras.FirstOrDefault(camera => camera.IsDefault);
+
+    public object? DefaultCameraToken() => DefaultCamera;
 
     public CameraFile CaptureDefaultCameraState() =>
         DefaultCamera is { } camera

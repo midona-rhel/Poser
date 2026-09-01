@@ -108,6 +108,17 @@ public sealed class PlacementAnchorSource
                 position = actor.Position;
                 yaw = actor.Yaw;
                 return true;
+            case ObjectPlacementMode.InFrontOfCamera:
+                var forward = _camera.GetLookDirection();
+                if (forward == Vector3.Zero)
+                {
+                    refusal =
+                        "The camera could not be read for placement.";
+                    return false;
+                }
+                position = _camera.GetCameraPosition() + forward * 3f;
+                yaw = ObjectPlacement.YawOf(forward);
+                return true;
             default:
                 return true;
         }

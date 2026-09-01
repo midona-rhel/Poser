@@ -20,6 +20,12 @@ public enum ObjectPlacementMode
 
     /// <summary>The same rule anchored on the selected actor.</summary>
     RelativeToSelectedActor,
+
+    /// <summary>The content's CENTROID lands a short reach in front of the
+    /// current camera, no turn — the light spawn's own behavior,
+    /// generalized to every entry and made THE default (ruled 2026-08-31).
+    /// Needs no saved anchor, so it is never unavailable.</summary>
+    InFrontOfCamera,
 }
 
 /// <summary>

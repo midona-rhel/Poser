@@ -36,6 +36,17 @@ public enum TablerIcon
     PlayerPause,
     Camera,
     Bulb,
+    Fire,
+    Moneybag,
+    Plant,
+    LayersUnion,
+    UserFromFile,
+    MoneybagFromFile,
+    PlantFromFile,
+    FireFromFile,
+    MessageFromFile,
+    BulbFromFile,
+    CameraFromFile,
     Sun,
     Square,
     ChevronRight,
@@ -130,7 +141,21 @@ public static class Tabler
         if (_custom.TryGetValue(name, out var custom)) xml = custom;
         else if (PoserIconSources.Sources.TryGetValue(name, out var own)) xml = own;
         else if (TablerSvgSources.Sources.TryGetValue(name, out var src)) xml = src;
-        if (xml == null) { _parsed[name] = null; return null; }
+        if (xml == null)
+        {
+            // A "<base>+file" name derives the from-file badge from its
+            // base glyph — clipped corner, appended plus.
+            if (name.EndsWith("+file", StringComparison.Ordinal)
+                && Get(name[..^5]) is { } baseDoc)
+            {
+                var derived = baseDoc.WithCornerPlus();
+                _parsed[name] = derived;
+                _names[derived.CacheId] = name;
+                return derived;
+            }
+            _parsed[name] = null;
+            return null;
+        }
         try
         {
             var doc = SvgDocument.Parse(xml);
@@ -209,10 +234,23 @@ public static class Tabler
         TablerIcon.ArrowsMove      => "arrows-move",
         TablerIcon.ArrowsMaximize  => "arrows-maximize",
         TablerIcon.ArrowsDiagonal  => "arrows-diagonal",
-        TablerIcon.PlayerPlay      => "player-play",
-        TablerIcon.PlayerPause     => "player-pause",
+        TablerIcon.PlayerPlay      => "player-play-filled",
+        // Pause and play resolve FILLED everywhere (ruled 2026-09-01):
+        // every pause button in the app is the solid glyph.
+        TablerIcon.PlayerPause     => "player-pause-filled",
         TablerIcon.Camera          => "camera",
         TablerIcon.Bulb            => "bulb",
+        TablerIcon.Fire            => "flame",
+        TablerIcon.Moneybag        => "moneybag",
+        TablerIcon.Plant           => "plant-2",
+        TablerIcon.LayersUnion     => "layers-union",
+        TablerIcon.UserFromFile    => "user+file",
+        TablerIcon.MoneybagFromFile => "moneybag+file",
+        TablerIcon.PlantFromFile   => "plant-2+file",
+        TablerIcon.FireFromFile    => "flame+file",
+        TablerIcon.MessageFromFile => "message+file",
+        TablerIcon.BulbFromFile    => "bulb+file",
+        TablerIcon.CameraFromFile  => "camera+file",
         TablerIcon.Sun             => "sun",
         TablerIcon.Square          => "square",
         TablerIcon.ChevronRight    => "chevron-right",

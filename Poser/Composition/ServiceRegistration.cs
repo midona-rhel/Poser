@@ -298,7 +298,12 @@ internal static class ServiceRegistration
     {
         services.AddSingleton<CleanSceneLifecycle>();
         services.AddSingleton<Game.Scene.PlacementAnchorSource>();
-        services.AddSingleton<global::Poser.Files.ObjectPlacementPreferences>();
+        services.AddSingleton(sp => new global::Poser.Files.ObjectPlacementPreferences
+        {
+            // The session's live choice starts at the configured default.
+            Mode = sp.GetRequiredService<ConfigurationService>()
+                .Config.DefaultSpawnPlacement,
+        });
         services.AddSingleton<TargetSyncService>();
         services.AddSingleton<IEditorState, EditorState>();
         return services;
@@ -342,7 +347,12 @@ internal static class ServiceRegistration
             var config = sp.GetRequiredService<ConfigurationService>();
             // Create every configured library root before the first scan.
             config.Config.Library.EnsureHomeRootsExist();
-            return new Library.PoseLibraryService(config);
+            var library = new Library.PoseLibraryService(config);
+            // ONE scan at startup; after it, Poser knows what it saves —
+            // every entry save requests its own rescan, and the refresh
+            // button covers files changed outside Poser.
+            library.RequestScan();
+            return library;
         });
         return services;
     }
@@ -367,6 +377,8 @@ internal static class ServiceRegistration
             Game.WorldObjects.IWorldObjectPort,
             Game.WorldObjects.NativeWorldObjectPort>();
         services.AddSingleton<Game.WorldObjects.WorldObjectService>();
+        services.AddSingleton<Game.WorldObjects.WorldAssetCatalog>();
+        services.AddSingleton<Game.StainCatalog>();
         return services;
     }
 
@@ -444,6 +456,7 @@ internal static class ServiceRegistration
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();
         services.AddSingleton<WorldObjectsPane>();
+        services.AddSingleton<global::Poser.UI.Controls.EntityNameModal>();
         services.AddSingleton<OverlayPane>();
         services.AddSingleton<LightPane>();
         services.AddSingleton<CameraPane>();

@@ -75,6 +75,10 @@ public sealed class CameraPane
     // has bound it, exactly like a spawned light.
     private IVirtualCamera? _pendingSelect;
 
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+
+    private readonly ScenePane _scenePane;
+
     public CameraPane(
         SceneSession scene,
         StableBindingRegistry bindings,
@@ -84,12 +88,16 @@ public sealed class CameraPane
         ICameraFileService cameraFiles,
         Game.Scene.PlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,
-        UserNotices notices)
+        UserNotices notices,
+        global::Poser.UI.Controls.EntityNameModal names,
+        ScenePane scenePane)
     {
+        _names = names;
         _anchors = anchors;
         _placement = placement;
         _scene = scene;
         _bindings = bindings;
+        _scenePane = scenePane;
         _cameras = cameras;
         _spawnService = spawnService;
         _lifecycle = lifecycle;
@@ -112,32 +120,6 @@ public sealed class CameraPane
             _scene.Selection.Select(SelectionId.ForCamera(cameraId));
             _pendingSelect = null;
         }
-    }
-
-    /// <summary>The library tile's import: placed by the shared mode,
-    /// recorded for undo, selected once bound. Outcomes post here so every
-    /// caller reads the same.</summary>
-    public bool ImportFromLibrary(string path, ObjectPlacementMode mode)
-    {
-        string name = System.IO.Path.GetFileNameWithoutExtension(path);
-        if (!_anchors.TryCurrentFor(
-                mode, out var position, out var yaw, out var refusal))
-        {
-            _notices.Refused(refusal!);
-            return false;
-        }
-        var imported = _lifecycle.RecordSpawnedCamera(
-            $"Add camera '{name}' from the library",
-            _cameraFiles.ImportCamera(
-                path, mode, position, yaw, out refusal));
-        if (imported == null)
-        {
-            _notices.Refused(refusal ?? "The camera file could not be read.");
-            return false;
-        }
-        _pendingSelect = imported;
-        _notices.Done($"Created camera from '{name}'.");
-        return true;
     }
 
     /// <summary>Opens the load dialog from outside the pane — the cameras
@@ -745,28 +727,19 @@ public sealed class CameraPane
         {
             actions.Button("Save", () => OpenSave(camera),
                 help: "Save this camera to a file");
-            actions.Button("To library", () => SaveToLibrary(camera),
+            actions.Button("Save to library",
+                () => _names.Open(
+                    "Save camera to library", camera.Name,
+                    name =>
+                    {
+                        if (_bindings.GetCameraId(camera) is { } entryId)
+                            _scenePane.SaveCameraEntry(
+                                entryId.LogicalId, name);
+                    }),
                 help: "Save into the library");
             actions.Button("Load", OpenLoad,
                 help: "Add a camera from a file to the scene");
         });
-    }
-
-    /// <summary>One click, no dialog: the camera lands in the objects home,
-    /// which is exactly what the library's Objects tab scans.</summary>
-    public void SaveToLibrary(IVirtualCamera camera, string? name = null)
-    {
-        var root = Config.ConfigurationService.Instance.Config.Library
-            .EnsureObjectsRootExists();
-        var entryName = string.IsNullOrWhiteSpace(name) ? camera.Name : name!;
-        var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
-            root, entryName, ".xivc");
-        if (_cameraFiles.ExportCamera(
-                camera, path,
-                _anchors.CameraAnchorNow(), _anchors.ActorAnchorNow()))
-            _notices.Done($"Saved '{entryName}' to the library.");
-        else
-            _notices.Failed("The camera file could not be written.");
     }
 
     private void ActionRows(Crystarium.FormScope form, IVirtualCamera camera)

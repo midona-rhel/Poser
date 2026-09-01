@@ -77,6 +77,30 @@ public class SceneFile
     /// </summary>
     public const string GroupEntryExtension = ".xivg";
 
+    /// <summary>
+    /// A world-object library entry: the scene container restricted to one
+    /// world object saved as a SPAWNABLE copy — the entry carries the model
+    /// path marked spawned, so activation creates it anywhere, any zone.
+    /// </summary>
+    public const string WorldObjectEntryExtension = ".xivw";
+
+    /// <summary>A prop entry: one spawned weapon-model prop — its model
+    /// triple, dyes, and pose variant — as a scene container.</summary>
+    public const string PropEntryExtension = ".xivp";
+
+    /// <summary>
+    /// A light library entry. ONE pipeline for every entry (ruled
+    /// 2026-08-31): the scene container restricted to one light, saved
+    /// through the workflow and restored through the load — the pane-direct
+    /// LightFile write this replaced left old-format entries behind, which
+    /// read as unreadable and are re-saved.
+    /// </summary>
+    public const string LightEntryExtension = ".xivl";
+
+    /// <summary>The camera's twin of <see cref="LightEntryExtension"/>.
+    /// </summary>
+    public const string CameraEntryExtension = ".xivc";
+
     public string TypeName { get; set; } = "XIV Scene";
     public int FileVersion { get; set; } = CurrentVersion;
 
@@ -456,6 +480,13 @@ public class SceneProp
     public ushort Model { get; set; }
     public ushort Submodel { get; set; }
     public byte Variant { get; set; }
+
+    /// <summary>The two dye channels and the pose variant, exactly the
+    /// facts the native create bakes in. Absent reads undyed.</summary>
+    public byte Stain0 { get; set; }
+    public byte Stain1 { get; set; }
+    public byte AnimationVariant { get; set; }
+
     public bool Visible { get; set; } = true;
     public LightFile.TransformData Transform { get; set; } =
         LightFile.TransformData.Identity;
@@ -516,6 +547,45 @@ public class SceneWorldObject
         LightFile.TransformData.Identity;
 
     public bool Visible { get; set; } = true;
+
+    /// <summary>Whether POSER created this object rather than borrowing it
+    /// from the map. A spawned entry restores by SPAWNING its path — any
+    /// zone, no map identity to match — where a borrowed one re-adopts the
+    /// object the map is standing. Absent on older files, which only ever
+    /// borrowed.</summary>
+    public bool Spawned { get; set; }
+
+    /// <summary>The user's name for it, when one was given; empty derives
+    /// from the path as ever.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The drawn opacity, 1 fully drawn. Absent reads as 1 on
+    /// older files.</summary>
+    public float Opacity { get; set; } = 1f;
+
+    /// <summary>The effect's colour multiplier when the user tinted it;
+    /// null leaves the file's own colours alone (VFX only).</summary>
+    public Vector3? Tint { get; set; }
+
+    /// <summary>Whether a spawned effect replays on its interval.</summary>
+    public bool VfxLoop { get; set; } = true;
+
+    /// <summary>A spawned effect's playback speed.</summary>
+    public float VfxSpeed { get; set; } = 1f;
+
+    /// <summary>A spawned effect's uniform brightness, 1 as authored.
+    /// </summary>
+    public float VfxIntensity { get; set; } = 1f;
+
+    /// <summary>Whether a spawned effect is frozen mid-frame.</summary>
+    public bool VfxPaused { get; set; }
+
+    /// <summary>The model's day/night dressing. Absent reads DAY (off)
+    /// — the ruled default for anything undefined.</summary>
+    public bool NightState { get; set; }
+
+    /// <summary>Whether an animated model's motion is frozen.</summary>
+    public bool AnimPaused { get; set; }
 }
 
 /// <summary>Exact bone identity inside a saved scene: the owning actor's

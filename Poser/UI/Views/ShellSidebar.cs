@@ -252,7 +252,7 @@ public sealed class ShellSidebar
                     Trunks(row.TreeLines),
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
-                        : row.LightActions ? 2
+                        : row.LightActions ? (row.PauseAction ? 3 : 2)
                         : row.GroupActions ? 1
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
@@ -479,6 +479,14 @@ public sealed class ShellSidebar
                 _dropTarget = null;
                 _dirty = true;
             }
+        }
+        else if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)
+            && ImGui.IsWindowHovered()
+            && ImGui.GetMousePos().Y > origin.Y + _totalHeight * scale)
+        {
+            // A click on the open space below the last row DESELECTS —
+            // the tree's own background is the "nothing" target.
+            _vm.OnEmptyClick?.Invoke();
         }
 
         // The tail band preserves the exact scroll extent.
@@ -800,6 +808,30 @@ public sealed class ShellSidebar
                         id: "##light-on",
                         dimmed: !row.LightOn))
                     _vm.OnLightVisibility?.Invoke(row);
+
+                // Every world-object row's third seat: the actor row's
+                // own play/pause glyph. Spawned scenery cannot be
+                // animated by the game — its seat is inert and slashed.
+                if (row.PauseAction)
+                {
+                    ImGui.SetCursorScreenPos(
+                        origin + new Vector2(step * 2f, 0f));
+                    if (Crystarium.TemporaryIconToggle(
+                            row.Paused
+                                ? TablerIcon.PlayerPause
+                                : TablerIcon.PlayerPlay,
+                            selected: false,
+                            style: square,
+                            disabled: row.PauseDisabled,
+                            help: row.PauseDisabled
+                                ? "A spawned copy has no animation"
+                                : row.Paused
+                                    ? "Resume the animation"
+                                    : "Pause the animation",
+                            id: "##pause-seat",
+                            slashed: row.PauseDisabled))
+                        _vm.OnRowPause?.Invoke(row);
+                }
                 return;
             }
 

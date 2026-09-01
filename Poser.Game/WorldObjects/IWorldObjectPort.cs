@@ -17,7 +17,8 @@ public readonly record struct WorldObjectRow(
     nint Address,
     string Path,
     Transform Placement,
-    byte Flags);
+    byte Flags,
+    bool IsEffect = false);
 
 /// <summary>
 /// One BG object the world holds and the scene has not adopted, as an
@@ -42,8 +43,10 @@ public readonly record struct WorldObjectCandidate(
 /// finds. Nothing else in Poser touches a map object.
 ///
 /// <para>Enumeration may read the whole graph, but writes are reached only
-/// through an adopted handle. Poser never creates or destroys BG objects, and
-/// restores each object before forgetting its handle.</para>
+/// through an adopted or spawned handle. The map's own objects are never
+/// created or destroyed — each is restored before its handle is forgotten.
+/// Objects POSER spawned are the one exception: they are Poser's to destroy,
+/// and are never restored onto.</para>
 ///
 /// <para>Every implementation must:</para>
 /// <list type="number">
@@ -121,6 +124,97 @@ public interface IWorldObjectPort
     /// the byte carries more than the colour, so what a hover puts back is
     /// what the hover found.</summary>
     void WriteOutline(nint address, byte outline);
+
+    /// <summary>Creates a NEW BG object from a model path at the given
+    /// placement — Brio's spawn-by-path (<c>BgObject.Create</c>), the way
+    /// its world-object clone works. Zero when the game refuses. A spawned
+    /// object is Poser's own: destroyed through <see cref="Destroy"/>,
+    /// never restored.</summary>
+    nint Spawn(string path, in Transform placement);
+
+    /// <summary>Sets a spawned VFX's playback speed. A no-op on anything
+    /// that is not a live VFX.</summary>
+    void SetVfxSpeed(nint address, float speed);
+
+    /// <summary>Writes a VFX's colour multiplier (RGB; the effect's alpha
+    /// stays the opacity's). A no-op on a BG object — model staining needs
+    /// natives this port does not carry yet.</summary>
+    void WriteVfxTint(nint address, System.Numerics.Vector3 tint);
+
+    /// <summary>One uniform brightness on the effect's intensity triple.
+    /// </summary>
+    void SetVfxIntensity(nint address, float intensity);
+
+    /// <summary>Freezes the effect mid-frame (pause native + speed 0).
+    /// </summary>
+    void PauseVfx(nint address);
+
+    /// <summary>Plays a paused effect again at the stated speed.</summary>
+    void ResumeVfx(nint address, float speed);
+
+    /// <summary>Whether the effect is still playing.</summary>
+    bool IsVfxActive(nint address);
+
+    /// <summary>Captures the effect state an adoption may edit.</summary>
+    bool TryReadVfxState(
+        nint address,
+        out System.Numerics.Vector4 color,
+        out System.Numerics.Vector3 intensity,
+        out float speed);
+
+    /// <summary>Puts a captured effect state back on release.</summary>
+    void RestoreVfxState(
+        nint address,
+        System.Numerics.Vector4 color,
+        System.Numerics.Vector3 intensity,
+        float speed,
+        bool resume);
+
+    /// <summary>Dyes a BG object; null clears to white. False while the
+    /// model has not produced its stain buffer yet — retry next tick.
+    /// </summary>
+    bool WriteBgTint(nint address, System.Numerics.Vector3? tint);
+
+    /// <summary>Whether a BG object's model has fully streamed in.</summary>
+    bool IsBgReady(nint address);
+
+    /// <summary>The instance's day/night state byte: true = night (a raw
+    /// spawn's default). Null for effects.</summary>
+    /// <summary>Whether the BG model can take dye (its stain buffer
+    /// exists); null while it is still streaming.</summary>
+    bool? CanDyeBg(nint address);
+
+    bool? ReadBgNightState(nint address);
+
+    /// <summary>Sets an animated BG object's playback speed; false until
+    /// its skeleton's controls exist.</summary>
+    bool WriteBgAnimationSpeed(nint address, float speed);
+
+    byte? ReadBgTailByte(nint address, int offset);
+
+    void WriteBgTailByte(nint address, int offset, byte value);
+
+    /// <summary>Diagnostic: the instance's animation topology.</summary>
+    string DescribeBgAnimation(nint address);
+
+    bool TryReadBgTail(nint address, byte[] into);
+
+    void WriteBgTailHeld(nint address, byte[] values);
+
+    ulong? ReadBgObjectFlags(nint address);
+
+    void WriteBgObjectFlags(nint address, ulong flags);
+
+    void WriteBgNightState(nint address, bool night);
+
+    /// <summary>Writes the drawn opacity, 1 fully drawn through 0 gone: a
+    /// VFX's alpha, a BG object's dither transparency.</summary>
+    void WriteOpacity(nint address, float opacity);
+
+    /// <summary>Destroys a spawned object — BG or VFX; the vtable serves
+    /// both. Never called with an adopted address — the map's own objects
+    /// are always restored instead.</summary>
+    void Destroy(nint address);
 }
 
 /// <summary>

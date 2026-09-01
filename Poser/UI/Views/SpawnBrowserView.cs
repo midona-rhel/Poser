@@ -19,6 +19,17 @@ public enum SpawnBrowserTab
     Cameras,
     Props,
 
+    /// <summary>The SCENE objects: the map's own BG models — the whole
+    /// 103k catalog plus saved .xivw entries. Split from Props
+    /// (user 2026-08-31): a weapon prop and a map model are different
+    /// natives with different powers, and the tabs say so.</summary>
+    SceneObjects,
+
+    /// <summary>Every world effect in the game data, inline — the VFX
+    /// catalog IS the tab (user 2026-08-31): no opener row, just 8k
+    /// searchable flame rows.</summary>
+    Effects,
+
     /// <summary>Everything this browser lays OVER the game rather than into
     /// the scene: the three game-UI overlay nodes — the dialogue panel, the
     /// chat bubble and the status line — and the reference picture, which is
@@ -83,6 +94,19 @@ public sealed class SpawnBrowserViewModel
 
     public Action? OnFrozenToggle;
 
+    /// <summary>Focus the search on the next frame — set at open and after
+    /// a keyboard spawn, so typing continues without a click.</summary>
+    public bool FocusSearch;
+
+    /// <summary>The ROW index the keyboard highlight stands on; -1 none.
+    /// Arrow keys move it, Enter activates it, a refilter re-seats it on
+    /// the first match.</summary>
+    public int HighlightRow = -1;
+
+    /// <summary>The frame's footer band, published for the window's drag
+    /// grab.</summary>
+    public WindowFrameRect FooterRect;
+
     /// <summary>The footer caption: the honest count, or the note explaining
     /// why the last activation did nothing.</summary>
     public string Status = string.Empty;
@@ -99,6 +123,10 @@ public sealed class SpawnBrowserViewModel
     /// shared texture wraps must be re-resolved, so this can never answer with
     /// a stored handle.</summary>
     public Func<uint, nint>? ResolveIcon;
+
+    /// <summary>Consumed by the next rows draw: the list snaps to the
+    /// top — every open and every tab swap starts there.</summary>
+    public bool ScrollToTop;
 
     // Hoisted once per model: the frame's chrome must not mint a closure, and
     // all of these close over nothing but this model.
@@ -123,7 +151,9 @@ public static class SpawnBrowserView
 
     /// <summary>The window's width floor: room for the search row's field
     /// plus its two icons even if the tab strip ever narrows.</summary>
-    private const float MinWidth = 320f;
+    // Widened for the catalog rows: a derived label plus a where-from
+    // badge needs the room (user 2026-08-31: "make it a bit wider").
+    private const float MinWidth = 400f;
 
     /// <summary>The window is BUILT AROUND the tab strip: its logical width
     /// is the strip plus the content inset each side (user 2026-08-11:
@@ -170,7 +200,9 @@ public static class SpawnBrowserView
         "Actors",
         "Lights",
         "Cameras",
+        "Props",
         "Objects",
+        "Effects",
         "Overlays",
     ];
 
@@ -182,7 +214,9 @@ public static class SpawnBrowserView
         TablerIcon.User,
         TablerIcon.Bulb,
         TablerIcon.Camera,
-        TablerIcon.Diamond,
+        TablerIcon.Moneybag,
+        TablerIcon.Plant,
+        TablerIcon.Fire,
         TablerIcon.Message,
     ];
 
@@ -288,9 +322,14 @@ public static class SpawnBrowserView
 
         DrawTabs(vm, rects.Band, scale, theme);
         DrawBody(vm, rects.Body, scale, theme);
+        vm.FooterRect = rects.Footer;
 
         if (submit)
-            ActivateFirstEnabled(vm);
+        {
+            ActivateHighlighted(vm);
+            // Another round: the search keeps the keyboard.
+            vm.FocusSearch = true;
+        }
     }
 
     /// <summary>The tab strip row, under the search. The strip SPANS the
@@ -340,6 +379,11 @@ public static class SpawnBrowserView
         ImGui.SetCursorScreenPos(bar.Min + new Vector2(
             margin * scale,
             (bar.Size.Y - SearchBandHeight * scale) * 0.5f));
+        if (vm.FocusSearch)
+        {
+            vm.FocusSearch = false;
+            ImGui.SetKeyboardFocusHere();
+        }
         Crystarium.FilterPill(
             SearchId,
             vm.Query,
@@ -379,6 +423,11 @@ public static class SpawnBrowserView
             ImGuiStyleVar.ItemSpacing, new Vector2(spacing.X, 0f));
         try
         {
+            if (vm.ScrollToTop)
+            {
+                vm.ScrollToTop = false;
+                ImGui.SetScrollY(0f);
+            }
             float pad = ListVPad * scale;
             ImGui.Dummy(new Vector2(0f, pad));
             if (vm.Visible.Count == 0)
@@ -434,7 +483,16 @@ public static class SpawnBrowserView
         ImGui.SetCursorScreenPos(
             new Vector2(bandMin.X, bandMin.Y + RowPitch * scale));
 
-        if (hit.Hovered || hit.Active)
+        // The keyboard highlight wears the selected fill; hover keeps its
+        // own weaker one.
+        if (index == vm.HighlightRow)
+            draw.AddRectFilled(
+                pillMin,
+                pillMin + pillSize,
+                ImGui.ColorConvertFloat4ToU32(
+                    ColorEx.ApplyAlpha(theme.Chrome.SidebarSelected)),
+                theme.Radii.Control * scale);
+        else if (hit.Hovered || hit.Active)
             draw.AddRectFilled(
                 pillMin,
                 pillMin + pillSize,
@@ -560,8 +618,17 @@ public static class SpawnBrowserView
                 TextAlign.Start, besideIcon: true);
     }
 
-    private static void ActivateFirstEnabled(SpawnBrowserViewModel vm)
+    /// <summary>Enter spawns the KEYBOARD HIGHLIGHT when one stands on a
+    /// visible enabled row, else the first enabled match.</summary>
+    private static void ActivateHighlighted(SpawnBrowserViewModel vm)
     {
+        if (vm.HighlightRow >= 0
+            && vm.Visible.Contains(vm.HighlightRow)
+            && !vm.Rows[vm.HighlightRow].Disabled)
+        {
+            vm.OnActivate?.Invoke(vm.HighlightRow);
+            return;
+        }
         for (int i = 0; i < vm.Visible.Count; i++)
         {
             int index = vm.Visible[i];

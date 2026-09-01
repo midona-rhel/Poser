@@ -36,6 +36,33 @@ public sealed class LibraryWindow : Window
     private static readonly string[] StripLabels =
         ["Poses", "Auto-saves", "Objects", "MCDF", "Scenes"];
 
+    /// <summary>The Objects tab's kind toggles, in the SPAWN PORTAL's
+    /// tab order — actors, lights, cameras, props, objects, overlays —
+    /// with the kinds the portal has no tab for (environments, groups)
+    /// last (ruled 2026-09-01). Each wears its kind's own mark.</summary>
+    private static readonly
+        (global::Poser.Library.PoseLibraryEntryKind Kind, TablerIcon Icon,
+            string Name)[]
+        KindToggles =
+    [
+        (global::Poser.Library.PoseLibraryEntryKind.Actor, TablerIcon.User,
+            "Actors"),
+        (global::Poser.Library.PoseLibraryEntryKind.Light, TablerIcon.Bulb,
+            "Lights"),
+        (global::Poser.Library.PoseLibraryEntryKind.Camera, TablerIcon.Camera,
+            "Cameras"),
+        (global::Poser.Library.PoseLibraryEntryKind.Prop, TablerIcon.Moneybag,
+            "Props"),
+        (global::Poser.Library.PoseLibraryEntryKind.WorldObject, TablerIcon.Plant,
+            "Objects"),
+        (global::Poser.Library.PoseLibraryEntryKind.Overlay, TablerIcon.Message,
+            "Overlays"),
+        (global::Poser.Library.PoseLibraryEntryKind.Environment, TablerIcon.Sun,
+            "Environments"),
+        (global::Poser.Library.PoseLibraryEntryKind.Group, TablerIcon.Folder,
+            "Groups"),
+    ];
+
     /// <summary>The preview column, logical: the old 280 rail less a
     /// fifth.</summary>
     private const float PreviewColumnWidth = 224f;
@@ -317,6 +344,56 @@ public sealed class LibraryWindow : Window
                 if (index >= 0 && index < StripOrder.Length)
                     pane.SelectType((int)StripOrder[index]);
             });
+
+        // The KIND toggles, right-aligned in the same band — Objects tab
+        // only, where many kinds share one grid. Each is an icon button
+        // that latches; several can be on at once, and the tiles show the
+        // union (ruled 2026-08-31).
+        if ((PoseLibraryPane.LibraryType)pane.SelectedType
+            == PoseLibraryPane.LibraryType.Objects)
+        {
+            float buttonSide =
+                Crystarium.ActiveTheme.Controls.ShellIconAction * s;
+            float gap = theme.Spacing.Three * s;
+            // The union leads; the kinds follow. No reset — all-on IS the
+            // neutral state, and the union restores it (ruled 2026-09-01).
+            int seats = KindToggles.Length + 1;
+            float cluster = seats * buttonSide + (seats - 1) * gap;
+            var seat = new Vector2(
+                max.X - inset - cluster,
+                top + (height - buttonSide) * 0.5f);
+            bool allActive = true;
+            foreach (var (kind, _, _) in KindToggles)
+                allActive &= pane.KindFilterContains(kind);
+
+            // The union is a true toggle: all on, or — pressed again while
+            // everything is on — all off (ruled 2026-09-01).
+            ImGui.SetCursorScreenPos(seat);
+            Crystarium.TemporaryIconToggle(
+                TablerIcon.LayersUnion,
+                allActive,
+                allActive ? pane.SetKindFilterNone : pane.SetKindFilterAll,
+                help: "Show every kind",
+                id: "##library-kind-all");
+            seat.X += buttonSide + gap;
+
+            // An admitted kind is latched (the pill's white highlight); a
+            // filtered-out kind is dim but still CLICKABLE — the same press
+            // re-admits it (ruled 2026-09-01, reversing same-day "inert").
+            foreach (var (kind, icon, name) in KindToggles)
+            {
+                bool latched = pane.KindFilterContains(kind);
+                ImGui.SetCursorScreenPos(seat);
+                Crystarium.TemporaryIconToggle(
+                    icon,
+                    latched,
+                    () => pane.ToggleKindFilter(kind),
+                    help: name,
+                    id: "##library-kind-" + name,
+                    dimmed: !latched);
+                seat.X += buttonSide + gap;
+            }
+        }
 
         float rule = MathF.Max(1f, s);
         dl.AddRectFilled(

@@ -28,7 +28,7 @@
     <!-- The game-UI node library behind the overlay nodes (Poser.Game/Overlays).
          Pinned to the version Ktisis ships, which is the implementation those
          nodes are transcribed from. -->
-    <PackageReference Include="KamiToolKit" Version="1.1.17" />
+    <PackageReference Include="KamiToolKit" Version="2.2.27" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Lighting\Data\gobos.csv" />
@@ -37,6 +37,11 @@
     <!-- Curated spawnable prop models: name + weapon model triple (Ktisis's
          community props library, Data/Library/props.json). -->
     <EmbeddedResource Include="Data\props.json" />
+    <!-- The community path dump's spawnable subsets (Stagehand's
+         paths.json): every BG model and every world effect, one path per
+         line, gzipped. -->
+    <EmbeddedResource Include="Data\WorldModelPaths.txt.gz" />
+    <EmbeddedResource Include="Data\VfxPaths.txt.gz" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Poser.Domain\Poser.Domain.csproj" />

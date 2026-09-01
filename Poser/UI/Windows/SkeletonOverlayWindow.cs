@@ -30,8 +30,10 @@ public class SkeletonOverlayWindow : Window
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly IBonePosingService _bonePosing;
     private readonly StableBindingRegistry _bindings;
     private readonly WorldAdoptionSource _adoption;
+    private readonly Application.Scene.SceneGroups _groups;
     // Only for the inactive-actor fade: "active" can mean the GAME's target,
     // and the overlay has no other route to it.
     private readonly IActorManager _actorManager;
@@ -111,6 +113,11 @@ public class SkeletonOverlayWindow : Window
         public float CameraDistance;
         public bool IsHovered;
         public float Opacity;
+        /// <summary>The grouped-child rule's middle state: the child's
+        /// GROUP is selected as a whole, so the handle draws as only the
+        /// inner ring — smaller, present, less important. A child-level
+        /// selection puts every sibling back at full size.</summary>
+        public bool Reduced;
     }
 
     /// <summary>One light's handle in the world. Lights carry no skeleton and
@@ -126,6 +133,9 @@ public class SkeletonOverlayWindow : Window
         public bool IsSelected;
         public ILight? Live;
         public bool IsHovered;
+        /// <summary>The grouped-child middle state — see
+        /// <see cref="ActorDisplayData.Reduced"/>.</summary>
+        public bool Reduced;
     }
 
     /// <summary>One thing the world holds that the scene does not. It carries
@@ -142,11 +152,28 @@ public class SkeletonOverlayWindow : Window
         public bool IsHovered;
     }
 
+    /// <summary>One group's handle: a single dot at the membership's
+    /// centroid, the whole-group grab. Engaged = its head is the active
+    /// group, or a member (or a member's bone) is selected; MEMBER handles
+    /// hide while their group is not engaged, so a grouped set reads as
+    /// one thing until the user steps inside.</summary>
+    private struct GroupDisplayData
+    {
+        public string Name;
+        public Guid Id;
+        public Vector2 ScreenPos;
+        public float CameraDistance;
+        public bool IsHovered;
+        public bool IsEngaged;
+    }
+
     private readonly HashSet<SelectionId> _selectedIds = new();
     private readonly List<BoneDisplayData> _bones = new();
     private readonly List<ActorDisplayData> _actors = new();
     private readonly List<LightDisplayData> _lights = new();
     private readonly List<AdoptDisplayData> _adopts = new();
+    private readonly List<GroupDisplayData> _groupDots = new();
+    private readonly HashSet<Guid> _engagedGroups = new();
     private readonly Dictionary<BoneId, Vector2> _boneScreenPositions = new();
     private readonly Dictionary<BoneId, Vector3> _boneWorldPositions = new();
     private readonly List<BoneDisplayData> _hoverCandidates = new();
@@ -165,6 +192,7 @@ public class SkeletonOverlayWindow : Window
     private PendingSelection? _pendingSelection;
     private WorldAdoptionCandidate? _pressedAdoptTarget;
     private PendingAdoption? _pendingAdoption;
+    private Guid? _pressedGroupTarget;
     private const string HoverListOwnerId = "##skeleton-overlay-bones";
 
     private readonly record struct PendingSelection(
@@ -182,6 +210,7 @@ public class SkeletonOverlayWindow : Window
         Vector2 ReleasePoint);
 
     public SkeletonOverlayWindow(
+        IBonePosingService bonePosing,
         SceneSession scene,
         Game.Viewport.ViewportProjection viewport,
         ICameraService cameraService,
@@ -190,6 +219,7 @@ public class SkeletonOverlayWindow : Window
         Application.Posing.IIkConfigurationPort ikPort,
         StableBindingRegistry bindings,
         WorldAdoptionSource adoption,
+        Application.Scene.SceneGroups groups,
         IActorManager actorManager,
         Dalamud.Plugin.Services.IPluginLog log)
         : base("##poser_skeleton_overlay",
@@ -210,8 +240,10 @@ public class SkeletonOverlayWindow : Window
         _editorState = editorState;
         _presentation = presentation;
         _ikPort = ikPort;
+        _bonePosing = bonePosing;
         _bindings = bindings;
         _adoption = adoption;
+        _groups = groups;
         _actorManager = actorManager;
         _log = log;
 
@@ -317,6 +349,7 @@ public class SkeletonOverlayWindow : Window
         if (io.KeyAlt)
         {
             _pressedAdoptTarget = null;
+            _pressedGroupTarget = null;
             return;
         }
 
@@ -349,6 +382,54 @@ public class SkeletonOverlayWindow : Window
         adopts.Clear();
         var cameraPosition = _cameraService.GetCameraPosition();
 
+        // Which groups are ENGAGED this frame decides which member handles
+        // exist at all, so it resolves before any collection loop runs.
+        // THE RULE (2026-08-31): children hidden while their group is
+        // unengaged; only the inner ring while the GROUP is the selection;
+        // full size while a CHILD is the selection.
+        var wholeGroup = _groups.ActiveSelection(_selection.Selected)?.Id;
+        _engagedGroups.Clear();
+        foreach (var group in _groups.All)
+        {
+            bool engaged = _groups.ActiveGroupId == group.Id;
+            foreach (var id in _selection.Selected)
+            {
+                if (engaged)
+                    break;
+                engaged = group.Members.Contains(id)
+                    || (id.Bone is { } engagedBone && group.Members.Contains(
+                        SelectionId.ForActor(engagedBone.Skeleton.Actor)));
+            }
+            if (engaged)
+                _engagedGroups.Add(group.Id);
+        }
+        var groupDots = _groupDots;
+        groupDots.Clear();
+        foreach (var group in _groups.All)
+        {
+            var memberSum = Vector3.Zero;
+            int placed = 0;
+            foreach (var member in group.Members)
+                if (MemberWorldPosition(member) is { } memberAt)
+                {
+                    memberSum += memberAt;
+                    placed++;
+                }
+            if (placed == 0)
+                continue;
+            var centroid = memberSum / placed;
+            if (!_cameraService.WorldToScreen(centroid, out var groupScreen))
+                continue;
+            groupDots.Add(new GroupDisplayData
+            {
+                Name = group.Name,
+                Id = group.Id,
+                ScreenPos = viewportPos + groupScreen,
+                CameraDistance = Vector3.Distance(cameraPosition, centroid),
+                IsEngaged = _engagedGroups.Contains(group.Id),
+            });
+        }
+
         // Adoption handles: everything the world holds that the scene does
         // not. They sit UNDER the scene's own handles, in paint and in
         // pointer priority alike — what the scene already holds is what a
@@ -376,7 +457,8 @@ public class SkeletonOverlayWindow : Window
         foreach (var light in _scene.Snapshot.Lights)
         {
             var lightSelectionId = SelectionId.ForLight(light.Id);
-            if (!_presentation.IsHandleShown(lightSelectionId))
+            if (!_presentation.IsHandleShown(lightSelectionId)
+                || HiddenByGroup(lightSelectionId))
                 continue;
             if (_viewport.GetLightTransform(light.Id) is not { } lightTransform ||
                 !_cameraService.WorldToScreen(lightTransform.Position, out var lightScreen))
@@ -393,6 +475,8 @@ public class SkeletonOverlayWindow : Window
                     cameraPosition, lightTransform.Position),
                 IsSelected = lightSelected,
                 Live = resolved.Success ? resolved.Value : null,
+                Reduced = _groups.GroupOf(lightSelectionId) is { } lightGroup
+                    && lightGroup.Id == wholeGroup,
             });
         }
 
@@ -403,7 +487,8 @@ public class SkeletonOverlayWindow : Window
         foreach (var prop in _scene.Snapshot.Props)
         {
             var propSelectionId = SelectionId.ForProp(prop.Id);
-            if (!_presentation.IsHandleShown(propSelectionId))
+            if (!_presentation.IsHandleShown(propSelectionId)
+                || HiddenByGroup(propSelectionId))
                 continue;
             if (_viewport.GetPropTransform(prop.Id) is not { } propTransform ||
                 !_cameraService.WorldToScreen(
@@ -419,6 +504,35 @@ public class SkeletonOverlayWindow : Window
                 // A prop belongs to no actor, so the actor fade has nothing to
                 // say about it.
                 Opacity = 1f,
+                Reduced = _groups.GroupOf(propSelectionId) is { } propGroup
+                    && propGroup.Id == wholeGroup,
+            });
+        }
+
+        // A world object's handle is likewise the one viewport route to
+        // selecting it — the model takes no clicks — so it rides the same
+        // named-dot pipeline as a prop.
+        foreach (var worldObject in _scene.Snapshot.WorldObjects)
+        {
+            var worldSelectionId = SelectionId.ForWorldObject(worldObject.Id);
+            if (!_presentation.IsHandleShown(worldSelectionId)
+                || HiddenByGroup(worldSelectionId))
+                continue;
+            if (_viewport.GetWorldObjectTransform(worldObject.Id)
+                    is not { } worldTransform ||
+                !_cameraService.WorldToScreen(
+                    worldTransform.Position, out var worldScreen))
+                continue;
+            actors.Add(new ActorDisplayData
+            {
+                Name = worldObject.Name,
+                Id = worldSelectionId,
+                ScreenPos = viewportPos + worldScreen,
+                CameraDistance = Vector3.Distance(
+                    cameraPosition, worldTransform.Position),
+                Opacity = 1f,
+                Reduced = _groups.GroupOf(worldSelectionId) is { } worldGroup
+                    && worldGroup.Id == wholeGroup,
             });
         }
 
@@ -434,6 +548,7 @@ public class SkeletonOverlayWindow : Window
         {
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             if (_presentation.IsHandleShown(actorSelectionId) &&
+                !HiddenByGroup(actorSelectionId) &&
                 _viewport.GetActorTransform(actor.Id) is { } actorTransform &&
                 _cameraService.WorldToScreen(actorTransform.Position, out var actorScreen))
             {
@@ -448,6 +563,8 @@ public class SkeletonOverlayWindow : Window
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
                     Opacity = ActorOpacity(actor.Id, activeLineage),
+                    Reduced = _groups.GroupOf(actorSelectionId) is { } actorGroup
+                        && actorGroup.Id == wholeGroup,
                 });
             }
         }
@@ -478,6 +595,33 @@ public class SkeletonOverlayWindow : Window
             var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
 
+            // The anchor rule extends to IMPLICATED bones: partners the
+            // selection's symmetry or link will also move, and armed IK
+            // chain members, collect even while the armature is hidden
+            // or filtered — marking can only tint a collected bone.
+            var symmetryConfig = ConfigurationService.Instance.Config;
+            HashSet<string>? implicated =
+                armedIkBones != null ? new(armedIkBones) : null;
+            foreach (var bone in descriptors)
+            {
+                if (!selectedIds.Contains(SelectionId.ForBone(bone.Id)))
+                    continue;
+                var canonical = bone.Id.CanonicalName;
+                if (Core.BoneSymmetry.EffectiveMode(
+                        symmetryConfig.PerBoneSymmetry,
+                        symmetryConfig.BoneSymmetryOverrides,
+                        symmetryConfig.AutoLinkPairedBones,
+                        _editorState.SymmetryMode,
+                        canonical) != SymmetryMode.Off
+                    && Core.PoseMath.GetMirrorBoneName(canonical)
+                        is { } mirror)
+                    (implicated ??= new()).Add(mirror);
+                if (_bonePosing.LinkedBonesEnabled)
+                    foreach (var linked in global::Poser.Domain.Posing
+                        .BoneLinkCatalog.GetLinked(canonical))
+                        (implicated ??= new()).Add(linked);
+            }
+
             var boneScreenPositions = _boneScreenPositions;
             var boneWorldPositions = _boneWorldPositions;
             boneScreenPositions.Clear();
@@ -490,8 +634,11 @@ public class SkeletonOverlayWindow : Window
                 // handle.
                 bool shown = UserVisible && _presentation.IsVisible(bone.Id);
                 if (bone.IsHidden
-                    || (!shown && !selectedIds.Contains(
-                        SelectionId.ForBone(bone.Id))))
+                    || (!shown
+                        && !selectedIds.Contains(
+                            SelectionId.ForBone(bone.Id))
+                        && implicated?.Contains(bone.Id.CanonicalName)
+                            != true))
                     continue;
                 if (!showNsfw && Core.BoneInfo.BoneInfoService.IsNsfw(bone.Id.CanonicalName))
                     continue;
@@ -532,8 +679,12 @@ public class SkeletonOverlayWindow : Window
             }
         }
 
-        if (_editorState.SymmetryMode == SymmetryMode.Mirror)
-            MarkMirrorPartners(bones);
+        // Link (Copy) and Mirror both drive the opposite-side partner —
+        // one with the same delta, one flipped — so BOTH modes show it,
+        // resolved PER BONE through the one symmetry rule.
+        MarkMirrorPartners(bones, _editorState.SymmetryMode);
+        if (_bonePosing.LinkedBonesEnabled)
+            MarkLinkPartners(bones);
 
         // No armature filter here anymore: every entry above was already
         // gated by its sidebar manip toggle at collection, and a masked
@@ -552,6 +703,13 @@ public class SkeletonOverlayWindow : Window
             adopt.IsHovered = !pointerBlocked
                 && !listTravel
                 && IsHoveringDot(adopt.ScreenPos, adopt.Radius);
+        // Handles are NORMALIZED (2026-08-31): every kind, the group
+        // dot included, wears the actor handle's exact size and look.
+        float groupRadius = actorRadius;
+        foreach (ref var groupDot in CollectionsMarshal.AsSpan(groupDots))
+            groupDot.IsHovered = !pointerBlocked
+                && !listTravel
+                && IsHoveringDot(groupDot.ScreenPos, groupRadius);
 
         // Update hover state. Brio's Posing_DisableSkeleton — a held modifier
         // that leaves the dots painted and stops them answering the pointer,
@@ -574,9 +732,12 @@ public class SkeletonOverlayWindow : Window
         CommitPendingSelection(bones, actors, lights);
         CommitPendingAdoption();
 
-        // Filter bones if ShowSelectedBonesOnly is enabled
+        // Only-selected keeps every IMPLICATED bone too: symmetry and
+        // link partners and armed IK chains still move with the
+        // selection, so they stay visible (ruled 2026-09-01).
         if (_editorState.ShowSelectedBonesOnly)
-            bones.RemoveAll(NotSelectedOrHovered);
+            bones.RemoveAll(static bone =>
+                !bone.IsHovered && !IsPriorityBone(bone));
 
         // Draw skeleton
         // The custom gizmo holds shared pointer ownership on hover AND
@@ -620,19 +781,48 @@ public class SkeletonOverlayWindow : Window
             if (actor.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * actor.Opacity);
             float radius = selected || actor.IsHovered ? actorRadius + 2f : actorRadius;
+            if (actor.Reduced)
+            {
+                // Group-as-whole selected: the child is only its inner
+                // ring — smaller, with the highlight centred on it.
+                drawList.AddCircleFilled(
+                    actor.ScreenPos, radius * 0.45f, color, 16);
+                drawList.AddCircle(actor.ScreenPos, radius * 0.45f,
+                    OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
             drawList.AddCircleFilled(actor.ScreenPos, radius, color, 20);
             drawList.AddCircle(actor.ScreenPos, radius, OutlineColor, 20, 2f * ImGuiHelpers.GlobalScale);
             drawList.AddCircle(actor.ScreenPos, radius * 0.45f, OutlineColor, 16, 1f * ImGuiHelpers.GlobalScale);
+        }
+
+        // The group's handle at the membership's centroid: one grab for
+        // the whole set, drawn as a NORMAL handle — the standard fill,
+        // rim ring, inner ring at actor size. Engaged wears the accent.
+        foreach (var dot in groupDots)
+        {
+            uint groupColor = dot.IsEngaged ? SelectedBoneColor : BoneColor;
+            float dotRadius = dot.IsEngaged || dot.IsHovered
+                ? groupRadius + 2f
+                : groupRadius;
+            drawList.AddCircleFilled(dot.ScreenPos, dotRadius, groupColor, 20);
+            drawList.AddCircle(dot.ScreenPos, dotRadius, OutlineColor, 20,
+                2f * ImGuiHelpers.GlobalScale);
+            drawList.AddCircle(dot.ScreenPos, dotRadius * 0.45f, OutlineColor,
+                16, 1f * ImGuiHelpers.GlobalScale);
         }
 
         DrawLights(drawList, viewportPos, lights, actorRadius);
 
         int hoveredActorIndex = NearestHovered(actors);
         int hoveredLightIndex = NearestHovered(lights);
+        int hoveredGroupIndex = NearestHoveredGroup(groupDots);
         bool hasHoveredActor = hoveredActorIndex >= 0;
         bool hasHoveredLight = hoveredLightIndex >= 0;
+        bool hasHoveredGroup = hoveredGroupIndex >= 0;
         // An adoption handle answers only where no scene handle does.
         int hoveredAdoptIndex = hasHoveredActor || hasHoveredLight
+            || hasHoveredGroup
             ? -1
             : NearestHovered(adopts);
         bool hasHoveredAdopt = hoveredAdoptIndex >= 0;
@@ -670,6 +860,14 @@ public class SkeletonOverlayWindow : Window
             Crystarium.HoverHelp.Preview("sow-light",
                 overlayMouse - new Vector2(4f, 4f), overlayMouse + new Vector2(4f, 4f),
                 lights[hoveredLightIndex].Name, animated: false);
+        }
+        else if (hasHoveredGroup && !pointerBlocked)
+        {
+            var overlayMouse = ImGui.GetMousePos();
+            Crystarium.HoverHelp.Preview("sow-group",
+                overlayMouse - new Vector2(4f, 4f),
+                overlayMouse + new Vector2(4f, 4f),
+                groupDots[hoveredGroupIndex].Name, animated: false);
         }
         else if (hasHoveredActor && !pointerBlocked)
         {
@@ -725,13 +923,17 @@ public class SkeletonOverlayWindow : Window
         // A light handle sits in front of everything else it overlaps: it is
         // the only route to a light from the viewport, and a bone dot behind it
         // is still reachable from the sidebar.
+        // The group dot outranks the member dots it may overlap — but
+        // lights stay in front of everything, the standing rule.
         var worldTarget = hasHoveredLight
             ? lights[hoveredLightIndex].Id
-            : hasHoveredActor
-                ? actors[hoveredActorIndex].Id
-                : hasWorldBone && _hoveredBones.Count > 0
-                    ? _hoveredBones[_hoverIndex].Id
-                    : (SelectionId?)null;
+            : hasHoveredGroup
+                ? (SelectionId?)null
+                : hasHoveredActor
+                    ? actors[hoveredActorIndex].Id
+                    : hasWorldBone && _hoveredBones.Count > 0
+                        ? _hoveredBones[_hoverIndex].Id
+                        : (SelectionId?)null;
         // Dalamud routes every click ImGui has not claimed BEFORE the press
         // to the game — an unclaimed pointer means the press never reaches
         // ImGui at all (no IsMouseClicked, ever). Claiming on hover is what
@@ -742,7 +944,8 @@ public class SkeletonOverlayWindow : Window
             ? candidates[adopts[hoveredAdoptIndex].Candidate]
             : (WorldAdoptionCandidate?)null;
         if (worldTarget != null || _pressedWorldTarget != null
-            || adoptTarget != null || _pressedAdoptTarget != null)
+            || adoptTarget != null || _pressedAdoptTarget != null
+            || hasHoveredGroup || _pressedGroupTarget != null)
         {
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
@@ -761,6 +964,9 @@ public class SkeletonOverlayWindow : Window
             worldTarget,
             pointerBlocked || dotsSuppressed
                 || (listTravel && !hasWorldBone));
+        UpdateGroupPress(
+            hasHoveredGroup ? groupDots[hoveredGroupIndex].Id : (Guid?)null,
+            pointerBlocked || dotsSuppressed || listTravel);
         UpdateAdoptPress(adoptTarget, pointerBlocked || listTravel);
         if (_hoveredBones.Count > 0)
             DrawHoverList();
@@ -1080,6 +1286,78 @@ public class SkeletonOverlayWindow : Window
             && point.Y >= bridgeMin.Y && point.Y < bridgeMax.Y;
     }
 
+    /// <summary>The group dot's press: press and release on the SAME
+    /// group selects its whole membership and makes it the active group —
+    /// the sidebar head-click, from the viewport.</summary>
+    private void UpdateGroupPress(Guid? target, bool pointerBlocked)
+    {
+        if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
+        {
+            _pressedGroupTarget = null;
+            return;
+        }
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _pressedGroupTarget = target;
+        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            return;
+        if (_pressedGroupTarget is { } pressed
+            && target is { } released
+            && pressed == released
+            && !Interactive.PointerOccluded(
+                InteractionOwner.World, ImGui.GetMousePos())
+            && _groups.Find(released) is { Members.Count: > 0 } group)
+        {
+            _selection.Select(group.Members[0]);
+            for (int i = 1; i < group.Members.Count; i++)
+                _selection.Add(group.Members[i]);
+            _groups.ActiveGroupId = group.Id;
+        }
+        _pressedGroupTarget = null;
+    }
+
+    /// <summary>Whether this member's handle hides behind its group — in a
+    /// group, and the group not engaged this frame.</summary>
+    private bool HiddenByGroup(SelectionId id) =>
+        _groups.GroupOf(id) is { } group
+        && !_engagedGroups.Contains(group.Id);
+
+    /// <summary>A member's world position for the centroid, by kind; null
+    /// for kinds without one here (a camera, an overlay).</summary>
+    private Vector3? MemberWorldPosition(SelectionId id)
+    {
+        if (id is { Kind: SceneEntityKind.Actor, Actor: { } actor })
+            return _viewport.GetActorTransform(actor) is { } actorAt
+                ? actorAt.Position : null;
+        if (id is { Kind: SceneEntityKind.Prop, Prop: { } prop })
+            return _viewport.GetPropTransform(prop) is { } propAt
+                ? propAt.Position : null;
+        if (id is { Kind: SceneEntityKind.Light, Light: { } light })
+            return _viewport.GetLightTransform(light) is { } lightAt
+                ? lightAt.Position : null;
+        if (id is { Kind: SceneEntityKind.WorldObject,
+                WorldObject: { } worldObject })
+            return _viewport.GetWorldObjectTransform(worldObject) is { } at
+                ? at.Position : null;
+        return null;
+    }
+
+    /// <summary>Index of the hovered group dot nearest the camera, or -1 —
+    /// the NearestHovered rule for the group list.</summary>
+    private static int NearestHoveredGroup(List<GroupDisplayData> groups)
+    {
+        int best = -1;
+        float bestDistance = float.MaxValue;
+        for (int i = 0; i < groups.Count; i++)
+        {
+            if (!groups[i].IsHovered
+                || groups[i].CameraDistance >= bestDistance)
+                continue;
+            best = i;
+            bestDistance = groups[i].CameraDistance;
+        }
+        return best;
+    }
+
     private void UpdateWorldPress(
         SelectionId? target,
         bool pointerBlocked)
@@ -1134,14 +1412,16 @@ public class SkeletonOverlayWindow : Window
     }
 
     /// <summary>Sides of the polygon that says which class a handle stands
-    /// for: five for an actor, three for a light, four for a map object —
-    /// Ktisis' own shapes (SceneDraw.cs:208 draws the map object as a 4-gon,
-    /// :251 the actor as a 5-gon, :296 the light as a 3-gon).</summary>
+    /// for: a CIRCLE for an actor (ruled 2026-09-01), three for a light,
+    /// four for a map object (Ktisis' shapes, SceneDraw.cs), five for a
+    /// world effect — four classes, four shapes.</summary>
     private static int AdoptSides(WorldAdoptionKind kind) => kind switch
     {
         WorldAdoptionKind.Light => 3,
         WorldAdoptionKind.WorldObject => 4,
-        _ => 5,
+        WorldAdoptionKind.Effect => 5,
+        // Zero segments is ImGui's auto-tessellated round circle.
+        _ => 0,
     };
 
     private static void DrawAdoptionHandles(
@@ -1315,12 +1595,21 @@ public class SkeletonOverlayWindow : Window
     /// <summary>Flags the opposite-side partners of the selected bones so
     /// Mirror symmetry shows what a transform will also move. Partners are
     /// matched inside the selected bone's own skeleton, never across actors.</summary>
-    private static void MarkMirrorPartners(List<BoneDisplayData> bones)
+    private static void MarkMirrorPartners(
+        List<BoneDisplayData> bones, SymmetryMode globalMode)
     {
+        var configuration = ConfigurationService.Instance.Config;
         HashSet<(SkeletonId, string)>? partners = null;
         foreach (var bone in bones)
         {
             if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            if (Core.BoneSymmetry.EffectiveMode(
+                    configuration.PerBoneSymmetry,
+                    configuration.BoneSymmetryOverrides,
+                    configuration.AutoLinkPairedBones,
+                    globalMode,
+                    boneId.CanonicalName) == SymmetryMode.Off)
                 continue;
             if (Core.PoseMath.GetMirrorBoneName(boneId.CanonicalName) is not { } mirror)
                 continue;
@@ -1336,6 +1625,35 @@ public class SkeletonOverlayWindow : Window
                 continue;
             bone.IsMirrorPartner = partners.Contains(
                 (boneId.Skeleton, boneId.CanonicalName));
+        }
+    }
+
+    /// <summary>Flags the LINKED partners of the selected bones — the
+    /// eye and Viera-ear same-delta groups — so Link shows what a
+    /// transform will also move, exactly as Mirror shows its partners.
+    /// The shared also-moves flag wears the mirrored color.</summary>
+    private static void MarkLinkPartners(List<BoneDisplayData> bones)
+    {
+        HashSet<(SkeletonId, string)>? partners = null;
+        foreach (var bone in bones)
+        {
+            if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            foreach (var linked in global::Poser.Domain.Posing
+                .BoneLinkCatalog.GetLinked(boneId.CanonicalName))
+            {
+                partners ??= new HashSet<(SkeletonId, string)>();
+                partners.Add((boneId.Skeleton, linked));
+            }
+        }
+        if (partners == null)
+            return;
+        foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
+        {
+            if (bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            if (partners.Contains((boneId.Skeleton, boneId.CanonicalName)))
+                bone.IsMirrorPartner = true;
         }
     }
 
@@ -1355,17 +1673,43 @@ public class SkeletonOverlayWindow : Window
         return fallback;
     }
 
+    /// <summary>Whether a bone carries state the eye must find: it draws
+    /// ON TOP of the plain skeleton, and its line draws bolder. Purely a
+    /// PAINT order — hit testing never consults it.</summary>
+    private static bool IsPriorityBone(in BoneDisplayData bone) =>
+        bone.IsSelected || bone.IsHovered || bone.IsIkChain
+        || bone.IsMirrorPartner;
+
     private void DrawLines(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
+    {
+        // Two passes: the plain skeleton first, then the bones that carry
+        // state — selected, IK, mirror — so their colors are never buried
+        // under white lines, and bolder so they read at a glance.
+        DrawLinePass(drawList, bones, opacity, priority: false);
+        DrawLinePass(drawList, bones, opacity, priority: true);
+    }
+
+    private void DrawLinePass(
+        ImDrawListPtr drawList,
+        List<BoneDisplayData> bones,
+        float opacity,
+        bool priority)
     {
         bool toCircle = LineToCircle;
         float radius = DotRadius;
+        float thickness = priority ? LineThickness * 1.75f : LineThickness;
 
         foreach (var bone in bones)
         {
             if (bone.ParentScreenPos == null) continue;
-            // Ktisis style: bone color with opacity, times the owning actor's
-            // inactive fade.
-            var color = SetAlpha(BoneColor, opacity * bone.Opacity);
+            if (IsPriorityBone(bone) != priority) continue;
+            // Ktisis style: the BONE'S resolved color with opacity, times
+            // the owning actor's inactive fade — lines carry the IK-chain
+            // and mirror colors exactly as the dots do (#98 bullet 3: the
+            // plain bone color left the settings swatches dead on lines).
+            var color = SetAlpha(
+                ResolveBoneColor(bone, useHover: false, BoneColor),
+                opacity * bone.Opacity);
             var from = bone.ParentScreenPos.Value;
             var to = bone.ScreenPos;
             if (toCircle)
@@ -1381,7 +1725,7 @@ public class SkeletonOverlayWindow : Window
                 from = shortened.From;
                 to = shortened.To;
             }
-            drawList.AddLine(from, to, color, LineThickness);
+            drawList.AddLine(from, to, color, thickness);
         }
     }
 
@@ -1402,12 +1746,22 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawDots(ImDrawListPtr drawList, List<BoneDisplayData> bones)
     {
+        // Same two passes as the lines: stateful dots paint over plain
+        // ones. Paint order only — clicks resolve exactly as before.
+        DrawDotPass(drawList, bones, priority: false);
+        DrawDotPass(drawList, bones, priority: true);
+    }
+
+    private void DrawDotPass(
+        ImDrawListPtr drawList, List<BoneDisplayData> bones, bool priority)
+    {
         // Ktisis style: filled circle with bone color, black outline
         // Selected: radius +1, outline thickness 2.5
         // Normal: outline thickness 1.0
 
         foreach (var bone in bones)
         {
+            if (IsPriorityBone(bone) != priority) continue;
             var radius = DotRadius;
             float outlineThickness;
             var color = ResolveBoneColor(bone, useHover: false, BoneColor);
@@ -1513,6 +1867,17 @@ public class SkeletonOverlayWindow : Window
             uint dot = light.IsSelected
                 ? SelectedBoneColor
                 : ImGui.ColorConvertFloat4ToU32(color);
+            if (light.Reduced)
+            {
+                // Group-as-whole selected: the grouped-child middle
+                // state, the same inner-ring-only form every kind wears.
+                drawList.AddCircleFilled(
+                    light.ScreenPos, radius * 0.45f, dot, 16);
+                drawList.AddCircle(
+                    light.ScreenPos, radius * 0.45f, OutlineColor, 16,
+                    1f * ImGuiHelpers.GlobalScale);
+                continue;
+            }
             drawList.AddCircleFilled(light.ScreenPos, radius, dot, 20);
             drawList.AddCircle(
                 light.ScreenPos, radius, OutlineColor, 20,
@@ -1614,10 +1979,15 @@ public class SkeletonOverlayWindow : Window
             case LightKind.Point:
                 // Omnidirectional: there is no facing to indicate, so the
                 // handle dot is the whole mark. Selection adds one ring around
-                // it, in screen space with the dot it belongs to.
+                // it, in screen space with the dot it belongs to — and a
+                // REDUCED dot's ring shrinks with it, staying centred on
+                // the smaller form.
                 if (selected)
                     drawList.AddCircle(
-                        light.ScreenPos, dotRadius + 5f * uiScale,
+                        light.ScreenPos,
+                        light.Reduced
+                            ? (dotRadius + 5f * uiScale) * 0.45f
+                            : dotRadius + 5f * uiScale,
                         ImGui.ColorConvertFloat4ToU32(stroke), 24, thickness);
                 break;
             case LightKind.Spot:

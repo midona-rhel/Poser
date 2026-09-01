@@ -24,6 +24,11 @@ public enum WorldAdoptionKind
     /// class clones and the light class copies, while this one takes the map's
     /// own object and gives it back on release.</summary>
     WorldObject,
+
+    /// <summary>A world effect the map plays — its own class (effects are
+    /// separate from objects everywhere), adopted by reference exactly
+    /// like a map object.</summary>
+    Effect,
 }
 
 /// <summary>The kinds this source can actually list, in the order the shell
@@ -39,6 +44,7 @@ public static class WorldAdoptionClasses
         WorldAdoptionKind.Actor,
         WorldAdoptionKind.Light,
         WorldAdoptionKind.WorldObject,
+        WorldAdoptionKind.Effect,
     ];
 }
 
@@ -209,6 +215,8 @@ public sealed class WorldAdoptionSource
     /// furniture handles is exactly what the class filters are for.</summary>
     public bool ShowWorldObjects { get; set; }
 
+    public bool ShowEffects { get; set; }
+
     /// <summary>
     /// Whether the layer draws at all — DERIVED from the class filters rather
     /// than held beside them. A master switch over exactly two filters is a
@@ -216,7 +224,8 @@ public sealed class WorldAdoptionSource
     /// draws, or off while both classes read on, and the sidebar then has two
     /// answers to one question.
     /// </summary>
-    public bool Enabled => ShowActors || ShowLights || ShowWorldObjects;
+    public bool Enabled =>
+        ShowActors || ShowLights || ShowWorldObjects || ShowEffects;
 
     /// <summary>One class's filter, as one call so no caller restates the
     /// mapping.</summary>
@@ -224,6 +233,7 @@ public sealed class WorldAdoptionSource
     {
         WorldAdoptionKind.Light => ShowLights,
         WorldAdoptionKind.WorldObject => ShowWorldObjects,
+        WorldAdoptionKind.Effect => ShowEffects,
         _ => ShowActors,
     };
 
@@ -238,6 +248,9 @@ public sealed class WorldAdoptionSource
                 break;
             case WorldAdoptionKind.WorldObject:
                 ShowWorldObjects = shown;
+                break;
+            case WorldAdoptionKind.Effect:
+                ShowEffects = shown;
                 break;
             default:
                 ShowActors = shown;
@@ -256,6 +269,7 @@ public sealed class WorldAdoptionSource
         ShowActors = false;
         ShowLights = false;
         ShowWorldObjects = false;
+        ShowEffects = false;
         // Before the listing goes, because clearing the hover needs the thing
         // it is painted on to still be nameable.
         SetHovered(null);
@@ -306,6 +320,7 @@ public sealed class WorldAdoptionSource
             switch (previous.Kind)
             {
                 case WorldAdoptionKind.WorldObject:
+                case WorldAdoptionKind.Effect:
                     _worldObjects?.WriteOutline(
                         previous.WorldObject, _hoveredOutline);
                     break;
@@ -325,6 +340,7 @@ public sealed class WorldAdoptionSource
         switch (next.Kind)
         {
             case WorldAdoptionKind.WorldObject:
+            case WorldAdoptionKind.Effect:
                 if (_worldObjects == null ||
                     !_worldObjects.TryReadOutline(
                         next.WorldObject, out _hoveredOutline))
@@ -356,6 +372,12 @@ public sealed class WorldAdoptionSource
     /// finishes any adoption whose entity the scene has now bound.</summary>
     public void Tick()
     {
+        // The FALLBACK pump: the anchor normally rides the camera's
+        // render seam, and this draw-time seat only runs when that hook
+        // is gone. It must run before the Enabled early-out: pausing
+        // needs no adoption class shown.
+        if (!_worldObjects.AnchorPumpedFromRender)
+            _worldObjects.HoldPausedAnimations();
         ReconcilePending();
         if (!Enabled)
         {
@@ -387,6 +409,7 @@ public sealed class WorldAdoptionSource
                 AdoptLight(candidate.Light);
                 break;
             case WorldAdoptionKind.WorldObject:
+            case WorldAdoptionKind.Effect:
                 AdoptWorldObject(candidate.WorldObject);
                 break;
         }
@@ -549,6 +572,22 @@ public sealed class WorldAdoptionSource
                     worldObject.Position,
                     range,
                     WorldObject: worldObject.Address));
+            }
+        }
+
+        if (ShowEffects)
+        {
+            foreach (var effect in _worldObjects.GetEffectCandidates())
+            {
+                float range = HorizontalDistance(effect.Position, eye);
+                if (range > RangeYalms)
+                    continue;
+                _candidates.Add(new WorldAdoptionCandidate(
+                    WorldAdoptionKind.Effect,
+                    effect.Name,
+                    effect.Position,
+                    range,
+                    WorldObject: effect.Address));
             }
         }
 

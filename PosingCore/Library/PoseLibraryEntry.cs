@@ -45,6 +45,11 @@ public enum PoseLibraryEntryKind : byte
     /// restricted to one named group's members, the group riding along.
     /// Read through the same codec as a scene.</summary>
     Group,
+
+    /// <summary>An <c>.xivw</c> world-object entry: one object saved as a
+    /// spawnable copy. Read through the same codec as a scene.</summary>
+    WorldObject,
+    Prop,
 }
 
 /// <summary>

@@ -712,12 +712,33 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         return _cameraCollisionHook!.Original(camera, a2, a3, a4, a5, a6);
     }
 
+    /// <summary>Whether the scene-update detour is live — the frame slot
+    /// between the game's world update and the render, which other
+    /// systems (the world-object animation anchor) borrow through
+    /// <see cref="AfterSceneUpdate"/>.</summary>
+    public bool SceneUpdateHookLive => _cameraSceneUpdateHook != null;
+
+    /// <summary>Runs every frame inside the scene-update detour, after
+    /// the game's own pass: writes made here land before the render
+    /// consumes them — the one slot where a per-frame transform write
+    /// neither flickers nor lags a frame.</summary>
+    public Action? AfterSceneUpdate;
+
     /// <summary>Brio's scene-update detour: while a free camera is live the
     /// frame's view matrix is replaced with the fly-cam's and loaded into the
     /// render camera.</summary>
     private nint CameraSceneUpdateDetour(SceneCamera* camera)
     {
         var result = _cameraSceneUpdateHook!.Original(camera);
+        try
+        {
+            AfterSceneUpdate?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(
+                $"VirtualCameraService: an AfterSceneUpdate borrower failed: {ex}");
+        }
         try
         {
             if (!_gPose.IsGPosing ||

@@ -170,12 +170,15 @@ internal sealed class OverlayServiceLifecycle : IOverlayLifecycle
         ((OverlayNodeHandle)overlay).State;
 }
 
-/// <summary>What an ADOPTED WORLD OBJECT entry has to put back: the address the
-/// claim was taken at, plus the placement and drawn state the user gave it. The
-/// address is the whole of its identity — a BG object is the map's, so there is
-/// nothing to re-create, only a claim to take again.</summary>
+/// <summary>What a WORLD OBJECT entry has to put back. A BORROWED
+/// object's identity is the address the claim was taken at — the map's
+/// own thing, re-claimed. A SPAWNED one was DESTROYED by its release, so
+/// its undo re-creates the path anew; re-adopting its freed address
+/// dereferenced a dead vtable and crashed (2026-09-01).</summary>
 internal readonly record struct WorldObjectState(
     nint Address,
+    string Path,
+    bool Spawned,
     Transform Placement,
     bool Visible);
 
@@ -192,6 +195,14 @@ internal interface IWorldObjectLifecycle
     IReadOnlyList<object> WorldObjects { get; }
 
     object? Adopt(nint address);
+
+    /// <summary>Re-creates a spawned entry from its recorded path.</summary>
+    object? Spawn(string path, Transform placement, bool visible);
+
+    /// <summary>Whether the world graph still stands this address — the
+    /// deref guard before any re-adopt: a streamed-out or destroyed
+    /// object's memory is not readable.</summary>
+    bool AddressLive(nint address);
 
     bool IsLive(object worldObject);
 
@@ -222,6 +233,17 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
 
     public object? Adopt(nint address) => _worldObjects.Adopt(address);
 
+    public object? Spawn(string path, Transform placement, bool visible) =>
+        _worldObjects.Spawn(path, placement, visible, out _);
+
+    public bool AddressLive(nint address)
+    {
+        foreach (var row in _worldObjects.EnumerateWorld())
+            if (row.Address == address)
+                return true;
+        return false;
+    }
+
     public bool IsLive(object worldObject) =>
         ((AdoptedWorldObject)worldObject).IsValid;
 
@@ -232,7 +254,8 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
     {
         var handle = (AdoptedWorldObject)worldObject;
         return new WorldObjectState(
-            handle.Address, handle.Transform, handle.Visible);
+            handle.Address, handle.Path, handle.Spawned,
+            handle.Transform, handle.Visible);
     }
 
     public void Apply(object worldObject, WorldObjectState state)
@@ -1131,7 +1154,18 @@ public sealed class SceneLifecycleHistory
             return true;
         if (!slot.HasDocument)
             return false;
-        var worldObject = _worldObjects.Adopt(slot.Document.Address);
+        // A spawned entry was destroyed — its undo re-creates the path.
+        // A borrowed one re-claims its address, but only after the world
+        // walk confirms the object still stands: dereferencing a
+        // streamed-out address is the crash, not a refusal.
+        var worldObject = slot.Document.Spawned
+            ? _worldObjects.Spawn(
+                slot.Document.Path,
+                slot.Document.Placement,
+                slot.Document.Visible)
+            : _worldObjects.AddressLive(slot.Document.Address)
+                ? _worldObjects.Adopt(slot.Document.Address)
+                : null;
         if (worldObject == null)
             return false;
         _worldObjects.Apply(worldObject, slot.Document);

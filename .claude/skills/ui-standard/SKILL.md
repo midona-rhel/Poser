@@ -77,7 +77,23 @@ Windows each have ONE job. No mode may change what a window IS.
   the navigator, never over the preview, which stays visible while
   the options are worked. The
   seat exists ONLY for the types that have import options — no
-  options, no button.
+  options, no button. The Objects tab's strip band carries the KIND
+  toggles right-aligned (ruled 2026-09-01): the filter holds the
+  ADMITTED kinds and starts full; an admitted kind is a latched
+  persistent toggle (the pill's white highlight — `SegmentSelected`
+  via `TemporaryIconToggle`, NEVER an accent chip), a filtered-out
+  kind draws dim but stays CLICKABLE — the same press re-admits it
+  (an inert off-state shipped and was reversed the same day) — and
+  the layers-union button (Tabler's real merged-silhouette glyph,
+  not layers-intersect) leading the cluster is a TRUE toggle: press
+  re-admits everything, press again while all-on clears everything.
+  Toggle order is the SPAWN PORTAL's tab order — actors, lights,
+  cameras, props, objects, overlays — with the kinds the portal has
+  no tab for (environments, groups) last.
+  There is NO reset button (all-on IS the neutral state; a reset
+  shipped and was rescinded the same day). The right column's
+  metadata rails render property VALUES in the mono family
+  (`ReadOnly(..., mono: true)`) — both rails, not just Objects.
 - **The SIDEBAR folds; the INSPECTOR only splits** (ruled
   2026-08-31, reversing the 2026-08-30 "sidebar never hides"): the
   sidebar column folds behind a chevron in its titlebar cell (the
@@ -125,7 +141,71 @@ Windows each have ONE job. No mode may change what a window IS.
   titlebar never hosts the gizmo cluster. It carries the brand,
   burger, undo/redo, spawn, project, and the gizmo clusters; new
   global buttons earn a place there.
-- **Spawn browser (the portal)** — the add-to-scene window. Its kind
+- **THE PLACEMENT RULE** (2026-08-31): every saved entry — actor,
+  group, object, light, camera, scene — obeys the four placement
+  modes through the ONE load: in front of the camera (the content's
+  centroid a short reach ahead, no turn — the light spawn's own
+  behavior and THE default), as saved, relative to the saved
+  camera, relative to the saved actor. The default is a settings
+  dropdown (General → Spawning); the library footer overrides per
+  activation; the portal spawns by the default. Front-of-camera
+  needs no saved anchor and is never absent — and as of the same
+  day, NO mode refuses: an entry without a saved anchor anchors on
+  its content's CENTROID instead, landing the content on the current
+  camera or actor, no turn. The footer offers all four modes always.
+- **THE KIND CONTRACT** (defining, 2026-08-31): EVERY scene-object
+  kind owes all six of these, and a kind missing one is incomplete:
+  (1) a spawnable catalog of readily identifiable things — named
+  NPCs, scenery by vocabulary, curated props; (2) Save to library,
+  from BOTH its properties page and its row context menu, through
+  the named-entry pipeline; (3) a properties page that edits it;
+  (4) an inspector with the transformations appropriate to it (ball,
+  joystick, or pad by nature); (5) a from-file row in the portal
+  through the one shared entry dialog; (6) the best attempt at
+  naming — sheet names, curated names, or the derived vocabulary,
+  the same words at spawn, sidebar, hover, and entry alike.
+- **VFX ARE WORLD OBJECTS** (2026-08-31): a world effect (.avfx) is
+  not its own entity kind — it rides the whole world-object slice
+  (Brio's own shape: its StaticVfxObject IS a WorldObject). One
+  spawn/identity/sidebar/gizmo/scene/library/group story, dispatched
+  by the path's extension at the native port. VFX rows wear
+  TablerIcon.Fire (the Tabler "flame" glyph); the portal's VFX row
+  and World object rows open the WHOLE-GAME catalog picker (the
+  community path dump both references ship, bundled gzipped: 103k BG
+  models, 8k effects, searched by file name, glyphs telling the kinds
+  apart); picking spawns at the configured placement. The spawned
+  object's Model field stays the raw route (explicit-apply Respawn,
+  with Browse opening the same picker — also how a spawned BG object
+  re-models). VFX get a Loop|Speed pair on the
+  object page; looping recreates the effect every 15s (Brio's
+  cadence) with the handle, id, and name surviving the churn. World
+  objects also carry Visible|Opacity and (VFX) a Tint well; props
+  carry Dye|Dye 2 (the game's stain sheet, picked by name — a dye
+  edit is a respawn because stains bake at creation) and a Pose
+  variant that applies on release. All of it rides scene documents
+  and every entry kind (2026-08-31).
+- **THE ENTRY-NAME RULE** (2026-08-31): the name a save modal takes
+  IS the spawned thing's name — "Stone rail" spawns a Stone rail. A
+  group entry names the GROUP; its children keep their own saved
+  names. Applied at save (the document is renamed), so the load path
+  needs no special case.
+- **Spawn browser (the portal)** — the add-to-scene window. It
+  belongs to the KEYBOARD: the search focuses at open and again
+  after every Enter, arrows walk the visible rows (selected-fill
+  highlight, wrapping), Enter spawns the highlight (first match
+  when none), and the footer band is the drag grab — a pinned
+  portal is a palette and a palette moves (the drag mutates the
+  Dalamud-held Position; an ImGui-side move loses to the Always
+  condition). Search fields select their whole text on focus
+  (2026-08-31), so a re-focused query is replaced by typing. The portal lists every
+  SAVED library entry under its kind's tab with a "Saved" badge. Its kind
+  PROPS (weapon models, Moneybag icon) and SCENE OBJECTS (map
+  models, Plant icon) are separate tabs (ruled 2026-08-31) — they
+  are different natives with different powers and the tabs say so.
+  Every kind carries a "from file" row (one shared entry dialog
+  through the placement-anchored load), and Actors add "from MCDF"
+  (spawn a fresh body, then the character-file dialog). Prop entries
+  are .xivp. The kind
   strip is the MIXED segmented variant: the kinds wear their icons
   (six text tabs made the window super wide) and only "All" keeps
   its word — short, and no glyph says it better; the kind names
@@ -145,7 +225,23 @@ Windows each have ONE job. No mode may change what a window IS.
   group: one depth only (a group never contains a group), one home
   per entity, folder rows first in the tree with members nested one
   level in, and a group row's click selects the whole membership —
-  the multiselect machinery does everything else. The Selection page
+  the multiselect machinery does everything else. In the VIEWPORT
+  (2026-08-31) a group is one larger ringed dot at its members' live
+  centroid — clicking it selects the membership and makes it the
+  active group, exactly the sidebar head-click — and MEMBER handles
+  hide until the group is engaged. THE HANDLE RULE (final,
+  2026-08-31, after two wrong readings the same day): handles are
+  NORMALIZED — every kind, the group dot included, wears the actor
+  handle's exact size and look (fill, rim ring, inner ring). The
+  group dot always shows at that normal size. Its children have
+  three states: HIDDEN while the group is unengaged; only the INNER
+  RING (smaller, highlight centred on it) while the group is
+  selected as a whole; FULL SIZE the moment one child is selected
+  individually. Applies to every member kind, lights included;
+  selection and hover keep their usual growth and accent in every
+  state. World objects carry the same named dot as
+  props: the handle is the one viewport route to selecting either.
+  The Selection page
   and titles wear the group's name when the selection IS the group;
   its NAME is the page's first field, edited inline (the camera's
   own pattern); Group… and Ungroup live on that page, and Ungroup
@@ -157,10 +253,13 @@ Windows each have ONE job. No mode may change what a window IS.
   "The selection IS the group" happens by EXPLICIT head click only
   (ruled 2026-08-30): hand-selecting every member stays a
   member-level selection — set-equality inference was rejected. A
-  group LOCKS (lock seat on its head row): locked protects
-  PLACEMENT — members' world transforms refuse, nothing drags in,
-  out, or around, and rename/ungroup/destroy disable in place;
-  visibility and animation stay free. The head menu carries the
+  group LOCKS (lock seat on its head row): locked freezes the
+  CHILDREN — a member selected on its own refuses world transforms,
+  nothing drags in, out, or around, and rename/ungroup/destroy
+  disable in place — while the GROUP stays movable: a selection
+  holding the whole membership moves it as one thing (ruled
+  2026-08-31; the whole-placement reading was wrong). Visibility
+  and animation stay free. The head menu carries the
   full lifetime: Rename, Save to library, Lock/Unlock, Ungroup, and
   Destroy — which destroys the members through their own seams and
   lets the emptied group dissolve.
@@ -170,7 +269,12 @@ Windows each have ONE job. No mode may change what a window IS.
   library" on a group (head menu, selection menu, Selection page)
   writes a .xivg group entry — the actor entry's plural, listed in
   the library's Objects tab, spawning its members with the group
-  when activated.
+  when activated. A WORLD OBJECT saves to the library too (.xivw,
+  menu and pane): the entry is a SPAWNABLE COPY — Brio's
+  spawn-by-path under it — created anywhere, any zone, owned by
+  Poser (Destroy, never Release), rebasing with the scene where
+  borrowed originals never move. Object names persist through scene
+  saves for borrowed and spawned alike.
 - **Tree drag-and-drop** — entity rows and group heads drag (never
   bones or categories); a held press that travels is the drag, the
   release is the drop, and the row under the pointer is the live
@@ -420,7 +524,9 @@ navigation, not a scrollbar — may shift anything.
 - Short rows PAIR two-up by design where it halves a section's height:
   Override|Weather, Swimming|Depth, Opacity|Tint, Speed|Sensitivity,
   Orthographic|Ortho zoom, Follow|Lock, Freeze water|Restore water,
-  Sections|File. Pairing is a
+  Sections|File, and the overlay pages (2026-08-31):
+  Visible|Drag on screen, Scale|Opacity, Channel|Tint,
+  Tail|Tail position, Panel|Advance mark, Reads as|Icon. Pairing is a
   deliberate per-section choice at the design width, not a responsive
   behavior; selector rows and field rows keep full rows. Pair flow is
   applied by READING every row it will wrap — a Cells row is already
@@ -547,7 +653,23 @@ ball. A camera gets the JOYSTICK ORB instead — ring semantics were
 tried on the camera 2026-08-28 and rejected: the DISC is a joystick
 (grab anywhere inside, leniency by design; deflection pans the camera
 at a deliberate rate; the knob springs home on release), and the
-WHITE RING drags camera roll directly.
+WHITE RING drags camera roll directly. An OVERLAY (dialogue panel,
+bubble, status line) gets the PAD in the same slot (2026-08-31): the
+whole disc is a ONE-TO-ONE mover — drag a hundred pixels and the
+overlay moves a hundred pixels; screen things move in screen pixels,
+never at a joystick rate — and no ring. OVERLAYS DO NOT ROTATE
+(final, 2026-08-31): the game's glyph renderer drops node rotation —
+native UI never draws rotated text, and GaugeOMatic keeps its text
+outside every rotated container for exactly this. The texture route
+(SeString-rendered text as an image) was built, shipped, and dropped
+the same day for text quality; do not reintroduce rotation without a
+new ruling. KamiToolKit stays 2.x — the bump survives the drop.
+With NOTHING selected the rail keeps its skeleton: "Nothing
+selected", the same two verb seats disabled, and the inert ball — no
+reflow when a selection appears. The properties panel's empty state
+is one centred "Nothing selected" line with no tabs, and the titlebar
+names the THING itself — "Balloon 1", never the kind label. A click
+on the sidebar's open space below the last row deselects.
 
 ## Texture selection
 
@@ -620,7 +742,10 @@ row's label is its whole explanation, and a row that would need a
 placeholder or an explanation is omitted, never seated disabled with
 a tooltip — a menu never holds an empty seat.
 
-A hover is a short WHAT-IT-DOES phrase: "Preview the expression",
+A hover is a short WHAT-IT-DOES phrase and NEVER contains an em
+dash — no appended explainer clauses ("The night look — lamps lit"
+shipped and was rejected on sight, 2026-09-01; it is "Toggles night
+state"). "Preview the expression",
 "Reset the face bones", "Fade the whole actor" — a few words, verb
 first. Every labelled control HAS one; a value's units belong in it
 ("Orbit above or below, degrees"). Explanations live in the UI-contract docs and the future

@@ -145,6 +145,7 @@ public sealed class AppearancePane
     /// <summary>Pumps MCDF dialogs at window level so they survive tab changes.</summary>
     public void DrawBrowsers()
     {
+        ReconcileMcdfSpawn();
         _mcdfImportBrowser.Draw();
         _mcdfExportBrowser.Draw();
     }
@@ -778,7 +779,41 @@ public sealed class AppearancePane
             loaded.Success ? null : loaded.Detail);
     }
 
-    private void OpenMcdfImport(ActorId actor)
+    /// <summary>The portal's "Actor from MCDF" row, FILE FIRST (user
+    /// 2026-08-31): the dialog opens, the pick spawns the fresh body, and
+    /// the import begins the moment the actor binds. The pane owns the
+    /// dialog and the pending, so the flow survives the portal closing.
+    /// </summary>
+    public void OpenMcdfSpawn(Func<global::Poser.Entities.IActor?> spawn)
+    {
+        _mcdfImportBrowser.Open(_mcdfPath, chosen =>
+        {
+            _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
+            var body = spawn();
+            if (body == null)
+                return;
+            _pendingMcdfDress = (body, chosen);
+        });
+    }
+
+    /// <summary>The spawn whose body still owes its character file.</summary>
+    private (global::Poser.Entities.IActor Body, string Path)?
+        _pendingMcdfDress;
+
+    /// <summary>Second half of <see cref="OpenMcdfSpawn"/>, pumped with the
+    /// browsers: once the fresh body binds, the import begins.</summary>
+    private void ReconcileMcdfSpawn()
+    {
+        if (_pendingMcdfDress is not { } dress
+            || _bindings.GetActorId(dress.Body) is not { } bound)
+            return;
+        _pendingMcdfDress = null;
+        var begun = _integration.BeginImport(bound, dress.Path);
+        if (!begun.Success)
+            _notices.Failed($"Import: {begun.Detail}");
+    }
+
+    public void OpenMcdfImport(ActorId actor)
     {
         _mcdfActor = actor;
         _mcdfImportBrowser.Open(_mcdfPath, chosen =>

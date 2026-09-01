@@ -172,14 +172,18 @@ public sealed class EnvironmentPane
     private sealed record WeatherOption(
         uint Id, string Name, uint IconId, string Key);
 
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
+
     public EnvironmentPane(
         IEnvironmentService environment,
         IWorldRenderingService rendering,
         IFestivalService festivals,
         ITextureProvider textures,
         SceneWorkflow workflow,
-        UserNotices notices)
+        UserNotices notices,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
+        _names = names;
         _workflow = workflow;
         _notices = notices;
         _environment = environment;
@@ -1047,20 +1051,24 @@ public sealed class EnvironmentPane
             help: "Release held sections when GPose ends");
         form.Actions("File", actions =>
         {
-            actions.Button("Save to library", SaveToLibrary,
+            actions.Button("Save to library",
+                () => _names.Open(
+                    "Save environment to library", "Environment",
+                    SaveToLibrary),
                 help: "Save the environment into the library");
         });
     }
 
-    /// <summary>One click, no dialog: the environment lands in the objects
-    /// home as an .xive — a scene save restricted to the environment, so it
-    /// restores through the same load every scene uses.</summary>
-    private void SaveToLibrary()
+    /// <summary>The naming prompt precedes this (ruled 2026-08-31); the
+    /// entry lands in the objects home as an .xive — a scene save
+    /// restricted to the environment, restoring through the same load
+    /// every scene uses.</summary>
+    private void SaveToLibrary(string name)
     {
         var root = Config.ConfigurationService.Instance.Config.Library
             .EnsureObjectsRootExists();
         var path = global::Poser.Library.LibraryConfiguration.NewEntryPath(
-            root, "Environment", SceneFile.EnvironmentEntryExtension);
+            root, name, SceneFile.EnvironmentEntryExtension);
         var result = _workflow.BeginSave(
             path, null, SceneSaveOptions.EnvironmentEntry);
         if (!result.Success)

@@ -25,6 +25,10 @@ public sealed class PoseLibraryService : IPoseLibraryService
         SceneFile.EnvironmentEntryExtension;
     private static readonly string GroupExtension =
         SceneFile.GroupEntryExtension;
+    private static readonly string WorldObjectExtension =
+        SceneFile.WorldObjectEntryExtension;
+    private static readonly string PropExtension =
+        SceneFile.PropEntryExtension;
     private static readonly string OverlayExtension =
         SceneFile.OverlayEntryExtension;
 
@@ -404,6 +408,8 @@ public sealed class PoseLibraryService : IPoseLibraryService
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
                 case PoseLibraryEntryKind.Group:
+                case PoseLibraryEntryKind.WorldObject:
+                case PoseLibraryEntryKind.Prop:
                     node.ObjectsCount++;
                     break;
                 default:
@@ -491,7 +497,11 @@ public sealed class PoseLibraryService : IPoseLibraryService
         if (kind is PoseLibraryEntryKind.Scene or PoseLibraryEntryKind.Actor
             or PoseLibraryEntryKind.Environment
             or PoseLibraryEntryKind.Overlay
-            or PoseLibraryEntryKind.Group)
+            or PoseLibraryEntryKind.Group
+            or PoseLibraryEntryKind.WorldObject
+            or PoseLibraryEntryKind.Prop
+            or PoseLibraryEntryKind.Light
+            or PoseLibraryEntryKind.Camera)
         {
             var metadata = SceneFileStore.Default.ReadMetadata(filePath);
             if (metadata.Succeeded)
@@ -583,7 +593,9 @@ public sealed class PoseLibraryService : IPoseLibraryService
             || extension.Equals(CameraExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(EnvironmentExtension, StringComparison.OrdinalIgnoreCase)
             || extension.Equals(OverlayExtension, StringComparison.OrdinalIgnoreCase)
-            || extension.Equals(GroupExtension, StringComparison.OrdinalIgnoreCase);
+            || extension.Equals(GroupExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(WorldObjectExtension, StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(PropExtension, StringComparison.OrdinalIgnoreCase);
     }
 
     private static PoseLibraryEntryKind KindOf(string path)
@@ -605,6 +617,10 @@ public sealed class PoseLibraryService : IPoseLibraryService
             return PoseLibraryEntryKind.Overlay;
         if (extension.Equals(GroupExtension, StringComparison.OrdinalIgnoreCase))
             return PoseLibraryEntryKind.Group;
+        if (extension.Equals(WorldObjectExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.WorldObject;
+        if (extension.Equals(PropExtension, StringComparison.OrdinalIgnoreCase))
+            return PoseLibraryEntryKind.Prop;
         return PoseLibraryEntryKind.Pose;
     }
 

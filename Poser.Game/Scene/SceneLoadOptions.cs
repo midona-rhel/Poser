@@ -76,9 +76,68 @@ public sealed record SceneSaveOptions
         OnlyEntityKeys = memberKeys,
     };
 
+    /// <summary>The name the save modal took: it lands ON the entry's one
+    /// thing — Stone rail spawns a Stone rail. A group entry names the
+    /// GROUP; children keep their own saved names.</summary>
+    public string? EntryName { get; init; }
+
+    /// <summary>The light-entry save: one light, nothing else — the same
+    /// container and key filter every entry uses.</summary>
+    public static SceneSaveOptions LightEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
+    /// <summary>The camera-entry save: one camera, nothing else.</summary>
+    public static SceneSaveOptions CameraEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
+    /// <summary>The world-object-entry save: one object as a spawnable
+    /// copy — path and placement, no map identity to match. Overlays stay
+    /// INCLUDED even though none survive the key prune: the save policy
+    /// couples <c>scene.WorldObjects</c> to the overlays flag, and setting
+    /// it false shipped empty entries.</summary>
+    public static SceneSaveOptions WorldObjectEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeProps = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
+
     /// <summary>Restricts the save to one overlay — the overlay-entry
     /// (.xivo) save. Same contract as the actor filter.</summary>
     public Guid? OnlyOverlayKey { get; init; }
+
+    /// <summary>The prop-entry save: one spawned prop — model, dyes,
+    /// pose variant, placement — nothing else.</summary>
+    public static SceneSaveOptions PropEntry(Guid key) => new()
+    {
+        IncludeActors = false,
+        IncludeLights = false,
+        IncludeCameras = false,
+        IncludeEnvironment = false,
+        IncludeOverlays = false,
+        IncludeStructure = false,
+        OnlyEntityKeys = new[] { key },
+    };
 
     /// <summary>The overlay-entry save: one overlay node, nothing else.
     /// </summary>
@@ -255,6 +314,11 @@ public static class SceneRelativePlacement
         foreach (var prop in scene.Props)
             prop.Transform.Position += offset;
 
+        // Every world object moves: a document only carries spawnable
+        // copies (borrowing never persists, ruled 2026-09-01).
+        foreach (var worldObject in scene.WorldObjects ?? [])
+            worldObject.Transform.Position += offset;
+
         foreach (var light in scene.Lights)
         {
             // An attached light's transform is stated against its bone, and
@@ -328,6 +392,16 @@ public static class ScenePlacementRebase
             prop.Transform.Position = Move(prop.Transform.Position);
             prop.Transform.Rotation = System.Numerics.Quaternion.Normalize(
                 turn * prop.Transform.Rotation);
+        }
+        // Every world object moves: a document only carries spawnable
+        // copies (borrowing never persists, ruled 2026-09-01).
+        foreach (var worldObject in scene.WorldObjects ?? [])
+        {
+            worldObject.Transform.Position =
+                Move(worldObject.Transform.Position);
+            worldObject.Transform.Rotation =
+                System.Numerics.Quaternion.Normalize(
+                    turn * worldObject.Transform.Rotation);
         }
         foreach (var light in scene.Lights)
         {

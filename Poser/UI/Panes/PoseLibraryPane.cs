@@ -144,7 +144,8 @@ public sealed class PoseLibraryPane
 
     /// <summary>Positional against <see cref="ObjectPlacementMode"/>.</summary>
     private static readonly string[] PlacementModeLabels =
-        ["As saved", "Relative to camera", "Relative to actor"];
+        ["As saved", "Relative to camera", "Relative to actor",
+         "In front of camera"];
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
 
@@ -175,6 +176,70 @@ public sealed class PoseLibraryPane
     /// browsing mode, not a preference, so it is never persisted and every
     /// entry starts on the poses.</summary>
     private LibraryType _type;
+
+    /// <summary>The Objects tab's KIND filter: the ADMITTED kinds. It
+    /// starts full — every kind allowed — and each strip toggle removes
+    /// or re-adds its kind (ruled 2026-09-01).</summary>
+    private readonly HashSet<PoseLibraryEntryKind> _kindFilter =
+        new(Enum.GetValues<PoseLibraryEntryKind>());
+
+    public bool KindFilterContains(PoseLibraryEntryKind kind) =>
+        _kindFilter.Contains(kind);
+
+    public void ToggleKindFilter(PoseLibraryEntryKind kind)
+    {
+        if (!_kindFilter.Add(kind))
+            _kindFilter.Remove(kind);
+        RebuildAfterFilterChange();
+    }
+
+    /// <summary>The union toggle's off half: nothing admitted, so the
+    /// tab shows nothing until a kind comes back.</summary>
+    public void SetKindFilterNone()
+    {
+        if (_kindFilter.Count == 0)
+            return;
+        _kindFilter.Clear();
+        RebuildAfterFilterChange();
+    }
+
+    /// <summary>The union toggle: every kind admitted again — this IS
+    /// the neutral state, so there is no separate reset.</summary>
+    public void SetKindFilterAll()
+    {
+        foreach (var kind in Enum.GetValues<PoseLibraryEntryKind>())
+            _kindFilter.Add(kind);
+        RebuildAfterFilterChange();
+    }
+
+    /// <summary>The portal's from-library rows: exactly one kind shown,
+    /// or none for the whole tab.</summary>
+    public void SetOnlyKindFilter(PoseLibraryEntryKind? kind)
+    {
+        _kindFilter.Clear();
+        if (kind is { } stated)
+            _kindFilter.Add(stated);
+        else
+            foreach (var all in Enum.GetValues<PoseLibraryEntryKind>())
+                _kindFilter.Add(all);
+        RebuildAfterFilterChange();
+    }
+
+    private void RebuildAfterFilterChange()
+    {
+        _lastAppliedTile = -1;
+        _vm.Selected = -1;
+        _seenRevision = -1;
+        _autoDirty = true;
+        _refilter = true;
+    }
+
+    /// <summary>Whether the kind passes the Objects tab's toggle filter.
+    /// Every other tab is one kind and ignores it.</summary>
+    private bool KindAdmitted(
+        PoseLibraryEntryKind entryKind, PoseLibraryEntryKind primary) =>
+        primary != PoseLibraryEntryKind.Actor
+        || _kindFilter.Contains(entryKind);
 
     /// <summary>The action row's import components, one set per tab. SESSION
     /// state like the FILES section's own toggles. The poses tab starts
@@ -804,9 +869,10 @@ public sealed class PoseLibraryPane
     private bool _detailsHasCameraAnchor;
     private bool _detailsHasActorAnchor;
 
-    /// <summary>The modes the SELECTED entry can honour, positional against
-    /// the dropdown. As-saved always; a relative mode only when the entry
-    /// records its anchor.</summary>
+    /// <summary>The modes on offer, positional against the dropdown. ALL
+    /// four, always (ruled 2026-08-31): an entry without a saved anchor no
+    /// longer refuses a relative mode — the load anchors on the content's
+    /// centroid, landing it on the current camera or actor.</summary>
     private readonly List<ObjectPlacementMode> _placementChoices = [];
     private readonly List<string> _placementChoiceLabels = [];
 
@@ -814,18 +880,14 @@ public sealed class PoseLibraryPane
     {
         _placementChoices.Clear();
         _placementChoiceLabels.Clear();
+        _placementChoices.Add(ObjectPlacementMode.InFrontOfCamera);
+        _placementChoiceLabels.Add(PlacementModeLabels[3]);
         _placementChoices.Add(ObjectPlacementMode.AsSaved);
         _placementChoiceLabels.Add(PlacementModeLabels[0]);
-        if (_detailsHasCameraAnchor)
-        {
-            _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
-            _placementChoiceLabels.Add(PlacementModeLabels[1]);
-        }
-        if (_detailsHasActorAnchor)
-        {
-            _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
-            _placementChoiceLabels.Add(PlacementModeLabels[2]);
-        }
+        _placementChoices.Add(ObjectPlacementMode.RelativeToCamera);
+        _placementChoiceLabels.Add(PlacementModeLabels[1]);
+        _placementChoices.Add(ObjectPlacementMode.RelativeToSelectedActor);
+        _placementChoiceLabels.Add(PlacementModeLabels[2]);
     }
 
     /// <summary>What this spawn actually uses: the preference when the
@@ -884,13 +946,29 @@ public sealed class PoseLibraryPane
             new Vector2(origin.X, cursor.Y), size.X, true, null,
             form =>
             {
-                form.ReadOnly("Saved", _tileModified[selected]);
+                form.ReadOnly("Saved", _tileModified[selected],
+                    mono: true);
                 if (!string.IsNullOrEmpty(tile.Author))
-                    form.ReadOnly("Author", tile.Author!);
+                    form.ReadOnly("Author", tile.Author!, mono: true);
+                // Contents are PER-KIND rows — "Actors 2", "Lights 3" —
+                // never one truncating line (ruled 2026-08-31). The
+                // pre-minted one-liner splits on its own separator.
                 if (_tileContents[selected].Length > 0)
-                    form.ReadOnly("Contents", _tileContents[selected]);
+                    foreach (var part in _tileContents[selected].Split(", "))
+                    {
+                        int space = part.IndexOf(' ');
+                        if (space > 0 && int.TryParse(
+                                part[..space], out _))
+                            form.ReadOnly(
+                                char.ToUpperInvariant(part[space + 1])
+                                    + part[(space + 2)..],
+                                part[..space], mono: true);
+                        else
+                            form.ReadOnly("Contents", part, mono: true);
+                    }
                 if (tile.Tags.Count > 0)
-                    form.ReadOnly("Tags", string.Join(", ", tile.Tags));
+                    form.ReadOnly("Tags", string.Join(", ", tile.Tags),
+                        mono: true);
                 if (tile.Flagged)
                     form.Status(tile.StatusText);
             },
@@ -948,7 +1026,7 @@ public sealed class PoseLibraryPane
                     });
                 }
                 foreach (var (label, value) in _detailsRows)
-                    form.ReadOnly(label, value);
+                    form.ReadOnly(label, value, mono: true);
             },
             divider: false, dense: true);
     }
@@ -966,58 +1044,23 @@ public sealed class PoseLibraryPane
         {
             switch (kind)
             {
-                case PoseLibraryEntryKind.Light:
-                    if (LightFile.Load(path) is { } light)
-                    {
-                        _detailsRows.Add(("Kind", light.Kind.ToString()));
-                        _detailsRows.Add(("Intensity", light.Intensity
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("Range", light.Range
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("Anchors", Anchors(
-                            light.CameraAnchor, light.ActorAnchor)));
-                        _detailsColor = light.Color;
-                        _detailsHasCameraAnchor = light.CameraAnchor is not null;
-                        _detailsHasActorAnchor = light.ActorAnchor is not null;
-                    }
-                    break;
-                case PoseLibraryEntryKind.Camera:
-                    if (CameraFile.Load(path) is { } camera)
-                    {
-                        _detailsRows.Add(("Kind", camera.Kind.ToString()));
-                        _detailsRows.Add(("Zoom", camera.Zoom
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        _detailsRows.Add(("FoV", camera.FoV
-                            .ToString("0.##", CultureInfo.InvariantCulture)));
-                        // Only a FREE camera places relatively at all.
-                        bool freeCamera = camera.Kind ==
-                            global::Poser.Domain.Scene.CameraKind.Free;
-                        _detailsHasCameraAnchor =
-                            freeCamera && camera.CameraAnchor is not null;
-                        _detailsHasActorAnchor =
-                            freeCamera && camera.ActorAnchor is not null;
-                        if (freeCamera)
-                            _detailsRows.Add(("Anchors", Anchors(
-                                camera.CameraAnchor, camera.ActorAnchor)));
-                    }
-                    break;
                 case PoseLibraryEntryKind.Actor:
                 case PoseLibraryEntryKind.Environment:
                 case PoseLibraryEntryKind.Overlay:
                 case PoseLibraryEntryKind.Group:
+                case PoseLibraryEntryKind.WorldObject:
+                case PoseLibraryEntryKind.Prop:
+                case PoseLibraryEntryKind.Light:
+                case PoseLibraryEntryKind.Camera:
                     var metadata = SceneFileStore.Default.ReadMetadata(path);
                     if (metadata.Succeeded)
                     {
                         if (!string.IsNullOrEmpty(metadata.PlaceName))
                             _detailsRows.Add(("Place", metadata.PlaceName!));
                         // A group entry says what it HOLDS — the one fact
-                        // its tile cannot.
+                        // its tile cannot — as per-kind rows.
                         if (kind == PoseLibraryEntryKind.Group)
-                        {
-                            string contents = ContentsSummary(metadata);
-                            if (contents.Length > 0)
-                                _detailsRows.Add(("Contents", contents));
-                        }
+                            AppendContentsRows(metadata, _detailsRows);
                         if (kind == PoseLibraryEntryKind.Environment)
                         {
                             // The name travels in the file when the capture
@@ -1063,21 +1106,24 @@ public sealed class PoseLibraryPane
             _detailsRows.Add(("Details", "none recorded"));
     }
 
-    private static string ContentsSummary(SceneMetadataReadOutcome metadata)
+    /// <summary>The entry's contents as PER-KIND rows — "Actors 2",
+    /// "Lights 3" — never one truncating line.</summary>
+    private static void AppendContentsRows(
+        SceneMetadataReadOutcome metadata,
+        List<(string Label, string Value)> rows)
     {
-        var parts = new List<string>();
-        void Part(int count, string one, string many)
+        void Part(int count, string label)
         {
             if (count > 0)
-                parts.Add($"{count} {(count == 1 ? one : many)}");
+                rows.Add((label,
+                    count.ToString(CultureInfo.InvariantCulture)));
         }
-        Part(metadata.ActorCount, "actor", "actors");
-        Part(metadata.PropCount, "object", "objects");
-        Part(metadata.WorldObjectCount, "borrowed object", "borrowed objects");
-        Part(metadata.LightCount, "light", "lights");
-        Part(metadata.CameraCount, "camera", "cameras");
-        Part(metadata.OverlayCount, "overlay", "overlays");
-        return string.Join(" · ", parts);
+        Part(metadata.ActorCount, "Actors");
+        Part(metadata.PropCount, "Objects");
+        Part(metadata.WorldObjectCount, "Borrowed objects");
+        Part(metadata.LightCount, "Lights");
+        Part(metadata.CameraCount, "Cameras");
+        Part(metadata.OverlayCount, "Overlays");
     }
 
     private static string Anchors(
@@ -1107,10 +1153,15 @@ public sealed class PoseLibraryPane
         var name = _vm.Tiles[index].Label;
         switch (_tileKinds[index])
         {
-            // A group entry is the actor entry's plural: the same container,
-            // the same placement-anchored load, several entities at once.
+            // ONE pipeline: every container entry — actor, group, object,
+            // light, camera — spawns through the same placement-anchored
+            // load.
             case PoseLibraryEntryKind.Actor:
             case PoseLibraryEntryKind.Group:
+            case PoseLibraryEntryKind.WorldObject:
+            case PoseLibraryEntryKind.Prop:
+            case PoseLibraryEntryKind.Light:
+            case PoseLibraryEntryKind.Camera:
                 var actorMode = EffectiveMode();
                 if (!_anchors.TryCurrentFor(
                         actorMode, out var anchorPosition,
@@ -1162,15 +1213,6 @@ public sealed class PoseLibraryPane
                         applied.Detail ??
                         "The environment could not be applied.");
                 break;
-            case PoseLibraryEntryKind.Light:
-                // The light pane owns the whole placed import: the undo
-                // recording and the outcome notices; the mode is the one
-                // the dropdown showed for THIS entry.
-                _lightPane.ImportFromLibrary(path, EffectiveMode());
-                break;
-            case PoseLibraryEntryKind.Camera:
-                _cameraPane.ImportFromLibrary(path, EffectiveMode());
-                break;
         }
     }
 
@@ -1181,8 +1223,22 @@ public sealed class PoseLibraryPane
     {
         if (index < 0 || index >= _vm.Tiles.Count)
             return;
+        // Scenes obey the placement rule like every entry (ruled
+        // 2026-08-31): the standing load options, plus wherever the
+        // footer's choice puts the content.
+        var sceneLoad = _sceneOptions.Options;
+        var sceneMode = EffectiveMode();
+        if (sceneMode != ObjectPlacementMode.AsSaved
+            && _anchors.TryCurrentFor(
+                sceneMode, out var scenePoint, out var sceneYaw, out _))
+            sceneLoad = sceneLoad with
+            {
+                Placement = sceneMode,
+                PlacementPosition = scenePoint,
+                PlacementYaw = sceneYaw,
+            };
         var started = _scenes.BeginLoad(
-            _vm.Tiles[index].ThumbKey, _sceneOptions.Options);
+            _vm.Tiles[index].ThumbKey, sceneLoad);
         if (!started.Success)
             _notices.Failed(
                 started.Detail ?? "The scene could not be loaded.");
@@ -1842,7 +1898,8 @@ public sealed class PoseLibraryPane
         int favored = 0;
         for (int i = 0; i < entries.Count; i++)
         {
-            if (!InTab(entries[i].Kind, kind))
+            if (!InTab(entries[i].Kind, kind)
+                || !KindAdmitted(entries[i].Kind, kind))
                 continue;
             total++;
             if (favorites.Contains(entries[i].FilePath))
@@ -1964,6 +2021,8 @@ public sealed class PoseLibraryPane
                     PoseLibraryEntryKind.Environment => TablerIcon.Sun,
                     PoseLibraryEntryKind.Overlay => TablerIcon.Message,
                     PoseLibraryEntryKind.Group => TablerIcon.Folder,
+                    PoseLibraryEntryKind.WorldObject => TablerIcon.Plant,
+                    PoseLibraryEntryKind.Prop => TablerIcon.Moneybag,
                     _ => entry.IsLegacy
                         ? TablerIcon.File
                         : TablerIcon.Armature,
@@ -2457,12 +2516,15 @@ public sealed class PoseLibraryPane
                 or PoseLibraryEntryKind.Environment
                 or PoseLibraryEntryKind.Overlay
                 or PoseLibraryEntryKind.Group
+                or PoseLibraryEntryKind.WorldObject
+                or PoseLibraryEntryKind.Prop
             : entryKind == primary;
 
-    private static IEnumerable<PoseLibraryEntry> Ordered(
+    private IEnumerable<PoseLibraryEntry> Ordered(
         IReadOnlyList<PoseLibraryEntry> entries, PoseLibraryEntryKind kind)
     {
-        var matching = entries.Where(entry => InTab(entry.Kind, kind));
+        var matching = entries.Where(entry =>
+            InTab(entry.Kind, kind) && KindAdmitted(entry.Kind, kind));
         return kind == PoseLibraryEntryKind.Scene
             ? matching
                 .OrderByDescending(entry => SceneDay(entry).Date)
@@ -3084,16 +3146,12 @@ public sealed class PoseLibraryPane
         // scenes are found rather than behind a menu.
         _vm.ShowSpawn =
             _type is not LibraryType.Scenes and not LibraryType.Objects;
-        if (_type == LibraryType.Objects)
+        // Scenes and objects both choose WHERE a load lands (ruled
+        // 2026-08-31): the same four-mode dropdown, the same preference.
+        // No probe here any more — nothing gates on saved anchors since
+        // the centroid fallback made every mode honourable.
+        if (_type is LibraryType.Objects or LibraryType.Scenes)
         {
-            // The choices follow the SELECTED entry: an option whose anchor
-            // the file does not record is not offered.
-            int selectedTile = _vm.Selected;
-            if (selectedTile >= 0 && selectedTile < _vm.Tiles.Count &&
-                selectedTile < _tileKinds.Count)
-                ProbeDetails(
-                    _vm.Tiles[selectedTile].ThumbKey,
-                    _tileKinds[selectedTile]);
             BuildPlacementChoices();
             _vm.PlacementOptions = _placementChoiceLabels.ToArray();
             _vm.PlacementSelected =

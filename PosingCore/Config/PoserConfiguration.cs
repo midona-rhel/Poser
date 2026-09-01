@@ -76,6 +76,28 @@ public class PoserConfiguration : IPluginConfiguration
     public bool LinkSiblingBones { get; set; } = false;
 
     /// <summary>
+    /// The toolbar's Off | Link | Mirror remembers PER BONE: with this on,
+    /// clicking the toolbar while bones are selected states those bones'
+    /// own mode (clicking their stated value again clears it), and a bone
+    /// with no stated mode follows the toolbar as ever. Off is the
+    /// behaviour Poser has always had: one global mode.
+    /// </summary>
+    public bool PerBoneSymmetry { get; set; } = false;
+
+    /// <summary>
+    /// Paired bones — the eyes and the Viera ear groups, the same trusted
+    /// catalog the link expansion uses — default to LINK without being
+    /// stated, unless the user states them otherwise. An option, as
+    /// ruled; the explicit per-bone statement always outranks it.
+    /// </summary>
+    public bool AutoLinkPairedBones { get; set; } = true;
+
+    /// <summary>The stated per-bone modes, by canonical bone name — only
+    /// the bones the user explicitly set.</summary>
+    public System.Collections.Generic.Dictionary<string, Poser.Services.SymmetryMode>
+        BoneSymmetryOverrides { get; set; } = new();
+
+    /// <summary>
     /// How many edits the undo history keeps, read live on every recorded edit
     /// (Brio's <c>Posing.UndoStackSize</c>, same zero-means-off semantics —
     /// <c>HistoryService.cs:17-24</c>). Poser's own long-standing depth is the
@@ -93,6 +115,12 @@ public class PoserConfiguration : IPluginConfiguration
     /// is what writes this, so the persisted value IS that toggle's state.
     /// </summary>
     public bool SpawnFrozen { get; set; } = false;
+
+    /// <summary>Where spawned entries land by default — the rule every
+    /// saved thing obeys. In front of the camera unless the user says
+    /// otherwise.</summary>
+    public Poser.Files.ObjectPlacementMode DefaultSpawnPlacement { get; set; }
+        = Poser.Files.ObjectPlacementMode.InFrontOfCamera;
 
     /// <summary>
     /// The revision of the first-run notice this config has accepted (see

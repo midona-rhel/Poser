@@ -28,6 +28,46 @@ public sealed class SvgDocument
     internal int CacheId { get; } =
         System.Threading.Interlocked.Increment(ref _nextCacheId);
 
+    /// <summary>This icon with the FROM-FILE badge: strokes clipped out
+    /// of the bottom-right badge box, the plus appended in the base's own
+    /// paint. See <see cref="SvgCornerPlus"/>.</summary>
+    internal SvgDocument WithCornerPlus()
+    {
+        var derived = new SvgDocument
+        {
+            ViewBoxMin = ViewBoxMin,
+            ViewBoxSize = ViewBoxSize,
+        };
+        SvgPath? paint = null;
+        foreach (var path in Paths)
+        {
+            var copy = new SvgPath
+            {
+                Fill = path.Fill,
+                Stroke = path.Stroke,
+                StrokeWidth = path.StrokeWidth,
+                EvenOddFill = path.EvenOddFill,
+                RoundCaps = path.RoundCaps,
+                RoundJoins = path.RoundJoins,
+            };
+            SvgCornerPlus.Apply(path.SubPaths, copy.SubPaths, out _);
+            if (copy.SubPaths.Count > 0)
+                derived.Paths.Add(copy);
+            if (paint == null && path.Stroke != null)
+                paint = path;
+        }
+        var plus = new SvgPath
+        {
+            Stroke = paint?.Stroke ?? new Vector4(1f, 1f, 1f, 1f),
+            StrokeWidth = paint?.StrokeWidth ?? 2f,
+            RoundCaps = true,
+            RoundJoins = true,
+        };
+        plus.SubPaths.AddRange(SvgCornerPlus.PlusStrokes());
+        derived.Paths.Add(plus);
+        return derived;
+    }
+
     /// <summary>Parse SVG XML text.</summary>
     public static SvgDocument Parse(string xml)
     {

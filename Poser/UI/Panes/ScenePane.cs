@@ -34,6 +34,8 @@ namespace Poser.UI;
 public sealed class ScenePane
 {
     private readonly SceneWorkflow _workflow;
+    private readonly PlacementAnchorSource _anchors;
+    private readonly ConfigurationService _config;
     private readonly SceneAutoSaveService _snapshots;
     private readonly IPoseLibraryService _library;
     private readonly LibraryConfiguration _libraryConfig;
@@ -44,6 +46,30 @@ public sealed class ScenePane
         new("Load Scene", new[] { SceneFile.Extension });
     private readonly Crystarium.FileDialog _snapshotBrowser =
         new("Load Snapshot", new[] { SceneFile.Extension });
+
+    // The Stagehand seam: a Stage is a plain .json in Documents\Stages,
+    // and both dialogs open there so the two plugins read one folder.
+    private readonly Crystarium.FileDialog _stageSaveBrowser =
+        new("Export Stage", new[] { global::Poser.Files.StageFile.Extension },
+            isSaveMode: true);
+    private readonly Crystarium.FileDialog _stageLoadBrowser =
+        new("Import Stage", new[] { global::Poser.Files.StageFile.Extension });
+
+    /// <summary>ONE dialog serves every "from file" row in the portal: an
+    /// entry's kind lives in its extension, and the load takes any of
+    /// them through the same placement-anchored BeginLoad.</summary>
+    private readonly Crystarium.FileDialog _entryBrowser =
+        new("Add from file", new[]
+        {
+            SceneFile.ActorEntryExtension,
+            SceneFile.PropEntryExtension,
+            SceneFile.WorldObjectEntryExtension,
+            SceneFile.OverlayEntryExtension,
+            SceneFile.GroupEntryExtension,
+            SceneFile.LightEntryExtension,
+            SceneFile.CameraEntryExtension,
+            SceneFile.EnvironmentEntryExtension,
+        });
 
     /// <summary>
     /// Where the browsers open. It starts at the library's SCENES root — the
@@ -149,7 +175,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.OverlayEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.OverlayEntry(logicalKey));
+            path, null,
+            SceneSaveOptions.OverlayEntry(logicalKey)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
@@ -196,12 +224,110 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.GroupEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.GroupEntry(keys));
+            path, null,
+            SceneSaveOptions.GroupEntry(keys)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ??
                 "The group could not be saved to the library.");
         return result.Success;
+    }
+
+    /// <summary>The light menus' "Save to library": one light through the
+    /// SAME workflow pipeline as every entry (ruled 2026-08-31 — the
+    /// pane-direct LightFile write built legacy).</summary>
+    public bool SaveLightEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.LightEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null,
+            SceneSaveOptions.LightEntry(logicalId)
+                with { EntryName = displayName });
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The light could not be saved to the library.");
+        return result.Success;
+    }
+
+    /// <summary>The camera menus' "Save to library" — the light save's
+    /// twin.</summary>
+    public bool SaveCameraEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.CameraEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null,
+            SceneSaveOptions.CameraEntry(logicalId)
+                with { EntryName = displayName });
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The camera could not be saved to the library.");
+        return result.Success;
+    }
+
+    /// <summary>The prop page's "Save to library": one spawned prop —
+    /// model, dyes, pose variant — written as a .xivp.</summary>
+    public bool SavePropEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.PropEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null,
+            SceneSaveOptions.PropEntry(logicalId)
+                with { EntryName = displayName });
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The prop could not be saved to the library.");
+        return result.Success;
+    }
+
+    /// <summary>The world-object menus' "Save to library": the object as
+    /// a SPAWNABLE copy, written into the objects home as a .xivw.</summary>
+    public bool SaveWorldObjectEntry(Guid logicalId, string displayName)
+    {
+        var root = _libraryConfig.EnsureObjectsRootExists();
+        var path = LibraryConfiguration.NewEntryPath(
+            root, displayName, SceneFile.WorldObjectEntryExtension);
+        var result = _workflow.BeginSave(
+            path, null,
+            SceneSaveOptions.WorldObjectEntry(logicalId)
+                with { EntryName = displayName });
+        if (!result.Success)
+            _notices.Refused(
+                result.Detail ??
+                "The object could not be saved to the library.");
+        return result.Success;
+    }
+
+    /// <summary>The portal's "from file" rows: pick ANY entry file and
+    /// load it through the standing placement rule — the same
+    /// anchored BeginLoad a library activation runs.</summary>
+    public void OpenEntryLoad()
+    {
+        _entryBrowser.Open(_lastPath, path =>
+        {
+            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
+            var options = new SceneLoadOptions();
+            var mode = _config.Config.DefaultSpawnPlacement;
+            if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
+                && _anchors.TryCurrentFor(
+                    mode, out var position, out var yaw, out _))
+                options = options with
+                {
+                    Placement = mode,
+                    PlacementPosition = position,
+                    PlacementYaw = yaw,
+                };
+            _workflow.BeginLoad(path, options);
+        });
     }
 
     public bool SaveActorEntry(Guid logicalId, string displayName)
@@ -210,7 +336,9 @@ public sealed class ScenePane
         var path = LibraryConfiguration.NewEntryPath(
             root, displayName, SceneFile.ActorEntryExtension);
         var result = _workflow.BeginSave(
-            path, null, SceneSaveOptions.ActorEntry(logicalId));
+            path, null,
+            SceneSaveOptions.ActorEntry(logicalId)
+                with { EntryName = displayName });
         if (!result.Success)
             _notices.Refused(
                 result.Detail ?? "The actor could not be saved to the library.");
@@ -224,8 +352,11 @@ public sealed class ScenePane
         ConfigurationService config,
         IPlaceService place,
         SceneLoadPreferences preferences,
-        UserNotices notices)
+        UserNotices notices,
+        PlacementAnchorSource anchors)
     {
+        _anchors = anchors;
+        _config = config;
         _preferences = preferences;
         _workflow = workflow;
         _snapshots = snapshots;
@@ -393,6 +524,9 @@ public sealed class ScenePane
         DrawLibrarySaveModal();
         _loadBrowser.Draw();
         _snapshotBrowser.Draw();
+        _stageSaveBrowser.Draw();
+        _stageLoadBrowser.Draw();
+        _entryBrowser.Draw();
 
         // The notification is pumped HERE, not from the page, for the same
         // reason the dialogs are: a scene load finishes while the user is on
@@ -486,6 +620,24 @@ public sealed class ScenePane
                         help: busy ? BusyHelp
                             : snapshots ? "Automatic snapshots"
                             : "None taken yet");
+                });
+                // The Stagehand seam: their Stage .json, both ways. Objects,
+                // props, effects and lights travel; the receipt names what
+                // cannot.
+                form.Actions("Stage", actions =>
+                {
+                    actions.Button(
+                        "Export…",
+                        OpenStageExport,
+                        disabled: busy,
+                        help: busy ? BusyHelp
+                            : "Write a Stagehand Stage file");
+                    actions.Button(
+                        "Import…",
+                        OpenStageImport,
+                        disabled: busy,
+                        help: busy ? BusyHelp
+                            : "Load a Stagehand Stage file");
                 });
             },
             divider: false);
@@ -1112,6 +1264,43 @@ public sealed class ScenePane
         _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         BeginLoad(path);
     });
+
+    /// <summary>Both Stage dialogs start in Stagehand's own folder, so the
+    /// two plugins read and write one place. It is created on export so the
+    /// dialog has somewhere to land.</summary>
+    private static string StageFolder()
+    {
+        string folder = global::Poser.Files.StageFile.DefaultFolder;
+        try
+        {
+            Directory.CreateDirectory(folder);
+        }
+        catch (Exception)
+        {
+            folder = Environment.GetFolderPath(
+                Environment.SpecialFolder.MyDocuments);
+        }
+        return folder;
+    }
+
+    private void OpenStageExport() => _stageSaveBrowser.Open(
+        StageFolder(), path =>
+    {
+        if (!path.EndsWith(
+                global::Poser.Files.StageFile.Extension,
+                StringComparison.OrdinalIgnoreCase))
+            path += global::Poser.Files.StageFile.Extension;
+        var started = _workflow.BeginSave(
+            path,
+            string.IsNullOrWhiteSpace(_description) ? null : _description,
+            SaveOptions with { IncludeModdedAppearance = false });
+        if (!started.Success)
+            _notices.Failed(
+                started.Detail ?? "The Stage could not be exported.");
+    });
+
+    private void OpenStageImport() =>
+        _stageLoadBrowser.Open(StageFolder(), BeginLoad);
 
     private void OpenSnapshots() =>
         _snapshotBrowser.Open(_snapshots.RootDirectory, BeginLoad);

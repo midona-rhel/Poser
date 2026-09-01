@@ -235,7 +235,14 @@ public static partial class Crystarium
         }
 
         string next = value;
-        bool changed = ImGui.InputText(id, ref next, NativeInputMaxBytes);
+        // A search field selects its whole text on focus, so a re-focused
+        // query is REPLACED by typing rather than appended to — the
+        // portal's spawn-again flow (ruled 2026-08-31).
+        bool changed = ImGui.InputText(
+            id, ref next, NativeInputMaxBytes,
+            search
+                ? ImGuiInputTextFlags.AutoSelectAll
+                : ImGuiInputTextFlags.None);
         if (caretClipped)
             draw.PopClipRect();
 

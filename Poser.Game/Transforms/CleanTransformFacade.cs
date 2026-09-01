@@ -51,14 +51,14 @@ public sealed class CleanTransformFacade
         Vector3? customPivot = null,
         string description = "Transform",
         bool includeLinkedBones = false,
-        TransformDeltaMode? symmetry = null,
+        Func<string, TransformDeltaMode?>? symmetryFor = null,
         bool relativeSecondaryBones = false)
     {
         var targets = new List<TransformTargetId>(targetIds);
         if (includeLinkedBones)
             AddLinkedBoneTargets(targets);
-        var targetModes = symmetry is { } symmetryMode
-            ? AddSymmetryTargets(targets, symmetryMode)
+        var targetModes = symmetryFor != null
+            ? AddSymmetryTargets(targets, symmetryFor)
             : null;
         return _gestures.Begin(new BeginTransformGesture(
             targets.Distinct().ToArray(),
@@ -143,7 +143,7 @@ public sealed class CleanTransformFacade
     private IReadOnlyDictionary<TransformTargetId, TransformDeltaMode>
         AddSymmetryTargets(
             ICollection<TransformTargetId> targets,
-            TransformDeltaMode mode)
+            Func<string, TransformDeltaMode?> symmetryFor)
     {
         var modes =
             new Dictionary<TransformTargetId, TransformDeltaMode>();
@@ -151,6 +151,10 @@ public sealed class CleanTransformFacade
         foreach (var target in targets.ToArray())
         {
             if (target.Bone is not { } bone)
+                continue;
+            // Resolved PER SOURCE BONE: with per-bone symmetry, one drag
+            // can mirror one bone, link another, and leave a third alone.
+            if (symmetryFor(bone.CanonicalName) is not { } mode)
                 continue;
             var partnerName = MirrorName(bone.CanonicalName);
             if (partnerName == null)

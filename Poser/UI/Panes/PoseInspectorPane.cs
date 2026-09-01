@@ -257,7 +257,8 @@ public class PoseInspectorPane
         _effectiveKey.Clear();
         _effectiveKey.AddRange(selected);
         _effective = TransformTargetResolver.Resolve(
-            selected, _scene.Snapshot, _groups.IsLockedMember);
+            selected, _scene.Snapshot,
+            id => _groups.IsLockedChild(id, selected));
         return _effective;
     }
 
@@ -585,7 +586,7 @@ public class PoseInspectorPane
             var resolved = global::Poser.Application.Transforms
                 .TransformTargetResolver.Resolve(
                     _selection.Selected, _scene.Snapshot,
-                    _groups.IsLockedMember);
+                    id => _groups.IsLockedChild(id, _selection.Selected));
             if (resolved is not { } selection)
                 return;
             var begin = _cleanTransforms.Begin(
@@ -612,7 +613,7 @@ public class PoseInspectorPane
         var resolved = global::Poser.Application.Transforms
             .TransformTargetResolver.Resolve(
                 _selection.Selected, _scene.Snapshot,
-                _groups.IsLockedMember);
+                id => _groups.IsLockedChild(id, _selection.Selected));
         if (resolved is not { } selection)
             return;
         var sum = Vector3.Zero;
@@ -2537,6 +2538,11 @@ public class PoseInspectorPane
     public bool IsOverlaySelection =>
         _primary is { Kind: SceneEntityKind.Overlay };
 
+    /// <summary>The rail pad's overlay node — the camera ball's idiom.
+    /// </summary>
+    public Game.Overlays.OverlayNodeHandle? RailOverlayNode() =>
+        _overlayPane.RailNode;
+
     public bool IsActorSelection =>
         _primary is { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget };
 
@@ -2727,15 +2733,8 @@ public class PoseInspectorPane
             includeLinkedBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
                 _bonePosingService.LinkedBonesEnabled,
-            symmetry: targets[0].Kind == TransformTargetKind.Bone
-                ? _editorState.SymmetryMode switch
-                {
-                    SymmetryMode.Copy =>
-                        DomainDeltaMode.Direct,
-                    SymmetryMode.Mirror =>
-                        DomainDeltaMode.Mirrored,
-                    _ => null,
-                }
+            symmetryFor: targets[0].Kind == TransformTargetKind.Bone
+                ? SymmetryDeltaFor
                 : null,
             relativeSecondaryBones:
                 targets[0].Kind == TransformTargetKind.Bone &&
@@ -2894,5 +2893,24 @@ public class PoseInspectorPane
         IActor { HasSkeleton: true } actor => actor.Skeleton,
         _ => null,
     };
+
+    /// <summary>The per-bone symmetry resolver, the gizmo's twin.</summary>
+    private System.Nullable<DomainDeltaMode> SymmetryDeltaFor(
+        string canonicalName)
+    {
+        var configuration =
+            Config.ConfigurationService.Instance.Config;
+        return Core.BoneSymmetry.EffectiveMode(
+            configuration.PerBoneSymmetry,
+            configuration.BoneSymmetryOverrides,
+            configuration.AutoLinkPairedBones,
+            _editorState.SymmetryMode,
+            canonicalName) switch
+        {
+            SymmetryMode.Copy => DomainDeltaMode.Direct,
+            SymmetryMode.Mirror => DomainDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
 
 }

@@ -50,6 +50,11 @@ public sealed class OverlayPane
     private readonly List<StatusIconChoice> _iconChoices = new();
 
     private bool _openPlacement = true;
+
+    /// <summary>Whether remove-all confirmation is armed — the camera
+    /// pane's destroy-all idiom: a whole-set destroyer takes two presses.
+    /// </summary>
+    private bool _removeAllArmed;
     private bool _openContent = true;
     private bool _openActions = true;
 
@@ -74,14 +79,21 @@ public sealed class OverlayPane
         StableBindingRegistry bindings,
         StatusIconCatalog statusIcons,
         SceneLifecycleHistory lifecycle,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        ScenePane scenePane,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
         _scene = scene;
         _bindings = bindings;
         _statusIcons = statusIcons;
         _lifecycle = lifecycle;
         _icons = new GameIconResolver(textures);
+        _scenePane = scenePane;
+        _names = names;
     }
+
+    private readonly ScenePane _scenePane;
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     /// <summary>Selects a node some other surface just created — the spawn
     /// browser's rows and this pane's own duplicate. The scene has not
@@ -156,28 +168,39 @@ public sealed class OverlayPane
             placeholder: "Overlay",
             help: "What the sidebar calls this overlay — never the text it "
                 + "draws");
-        form.Switch(
+        // Short rows pair two-up (the standard): the switches share a
+        // line, and so do the two scale-ish sliders.
+        form.Pair(
             "Visible",
-            node.Visible,
-            next => node.Visible = next,
-            help: "Hide this overlay without destroying it");
-        DraggableRow(form, node);
+            cell => cell.Switch(
+                "##overlay-visible",
+                node.Visible,
+                next => node.Visible = next,
+                help: "Hide the overlay without destroying it"),
+            "Drag on screen",
+            cell => cell.Switch(
+                "##overlay-draggable",
+                node.Draggable,
+                next => node.Draggable = next,
+                help: "Grab the overlay itself and drag it"));
         ScreenPointRows(form, node);
-
-        form.NumericSlider(
+        form.Pair(
             "Scale",
-            node.Scale,
-            OverlayNodeLimits.MinScale,
-            OverlayNodeLimits.MaxScale,
-            next => node.Scale = next,
-            perPixel: 0.01f);
-        form.NumericSlider(
+            cell => cell.Slider(
+                "##overlay-scale",
+                node.Scale,
+                OverlayNodeLimits.MinScale,
+                OverlayNodeLimits.MaxScale,
+                next => node.Scale = next,
+                help: "Draw the overlay larger or smaller"),
             "Opacity",
-            node.Alpha,
-            0f,
-            1f,
-            next => node.Alpha = next,
-            perPixel: 0.01f);
+            cell => cell.Slider(
+                "##overlay-opacity",
+                node.Alpha,
+                0f,
+                1f,
+                next => node.Alpha = next,
+                help: "Fade the whole overlay"));
 
         form.Actions("Position", actions =>
         {
@@ -203,6 +226,10 @@ public sealed class OverlayPane
     /// the pane that owns the entity rather than resolving it a second
     /// time.</summary>
     public bool HasRailNode => SelectedNode() != null;
+
+    /// <summary>The rail pad's node — the camera pane's BallCamera idiom:
+    /// the rail asks the pane that owns the entity.</summary>
+    public OverlayNodeHandle? RailNode => SelectedNode();
 
     /// <summary>
     /// The rail's section for an overlay node — the three facts a node is
@@ -265,9 +292,7 @@ public sealed class OverlayPane
             "Drag on screen",
             node.Draggable,
             next => node.Draggable = next,
-            help: "Grab the overlay anywhere on its face and drag it. Off by "
-                + "default: a draggable overlay eats clicks meant for the "
-                + "scene.");
+            help: "Grab the overlay itself and drag it");
     }
 
     /// <summary>The node's own words. The LABEL is the kind's, because "Line"
@@ -320,19 +345,21 @@ public sealed class OverlayPane
             placeholder: "What they say",
             help: "The panel's body, up to "
                 + OverlayNodeLimits.MaxTextCharacters + " characters");
-        form.Dropdown(
+        form.Pair(
             "Panel",
-            TalkBackgroundLabels,
-            (int)node.TalkBackground,
-            next => node.TalkBackground = (TalkBackground)next,
-            help: "Which of the game's own dialogue plates to draw on");
-        form.Dropdown(
+            cell => cell.Dropdown(
+                "##talk-panel",
+                TalkBackgroundLabels,
+                (int)node.TalkBackground,
+                next => node.TalkBackground = (TalkBackground)next,
+                help: "Which dialogue plate to draw on"),
             "Advance mark",
-            TalkCursorLabels,
-            (int)node.TalkCursor,
-            next => node.TalkCursor = (TalkCursor)next,
-            help: "The mark in the panel's corner: the page-turn pin, the "
-                + "continue loop, or none");
+            cell => cell.Dropdown(
+                "##talk-cursor",
+                TalkCursorLabels,
+                (int)node.TalkCursor,
+                next => node.TalkCursor = (TalkCursor)next,
+                help: "The mark in the panel's corner"));
         FontSizeRow(form, node);
     }
 
@@ -346,33 +373,38 @@ public sealed class OverlayPane
             placeholder: "What they say",
             help: "The bubble holds one line; longer text is cut with an "
                 + "ellipsis, exactly as the game's own bubbles are");
-        form.Dropdown(
+        form.Pair(
             "Channel",
-            BalloonChannelLabels,
-            (int)node.BalloonChannel,
-            next => node.BalloonChannel = (BalloonChannel)next,
-            help: "Which chat channel's frame to wear");
-        form.Dropdown(
+            cell => cell.Dropdown(
+                "##balloon-channel",
+                BalloonChannelLabels,
+                (int)node.BalloonChannel,
+                next => node.BalloonChannel = (BalloonChannel)next,
+                help: "Which chat channel's frame to wear"),
             "Tint",
-            BalloonGradientLabels,
-            (int)node.BalloonGradient,
-            next => node.BalloonGradient = (BalloonGradient)next,
-            help: "The colour over the bubble's gradient band — the same set "
-                + "the chat colour settings offer");
-        form.Switch(
+            cell => cell.Dropdown(
+                "##balloon-tint",
+                BalloonGradientLabels,
+                (int)node.BalloonGradient,
+                next => node.BalloonGradient = (BalloonGradient)next,
+                help: "The colour over the gradient band"));
+        form.Pair(
             "Tail",
-            node.ArrowVisible,
-            next => node.ArrowVisible = next,
-            help: "The point that marks who is speaking");
-        form.NumericSlider(
+            cell => cell.Switch(
+                "##balloon-tail",
+                node.ArrowVisible,
+                next => node.ArrowVisible = next,
+                help: "The point that marks who is speaking"),
             "Tail position",
-            node.ArrowX,
-            OverlayNodeLimits.MinArrowX,
-            OverlayNodeLimits.MaxArrowX,
-            next => node.ArrowX = next,
-            perPixel: 0.5f,
-            format: "0",
-            disabled: !node.ArrowVisible);
+            cell => cell.Slider(
+                "##balloon-tail-position",
+                node.ArrowX,
+                OverlayNodeLimits.MinArrowX,
+                OverlayNodeLimits.MaxArrowX,
+                next => node.ArrowX = next,
+                format: "0",
+                disabled: !node.ArrowVisible,
+                help: "Where along the bottom edge the tail sits"));
         FontSizeRow(form, node);
     }
 
@@ -384,24 +416,26 @@ public sealed class OverlayPane
             next => node.Text = next,
             placeholder: "What the effect is called",
             help: "The name the status bar shows");
-        form.Dropdown(
-            "Reads as",
-            StatusKindLabels,
-            (int)node.StatusKind,
-            next => node.StatusKind = (StatusKind)next,
-            help: "Gained effects read as additions and expiring ones as "
-                + "subtractions, in the game's own green, red and grey");
-
         string current = _statusIcons.NameFor(node.StatusIconId);
-        form.Picker(
+        form.Pair(
+            "Reads as",
+            cell => cell.Dropdown(
+                "##status-kind",
+                StatusKindLabels,
+                (int)node.StatusKind,
+                next => node.StatusKind = (StatusKind)next,
+                help: "Gained reads as an addition, expiring as a "
+                    + "subtraction"),
             "Icon",
-            current.Length > 0
-                ? current
-                : node.StatusIconId == 0
-                    ? "None"
-                    : "Icon " + node.StatusIconId,
-            () => OpenIconPicker(node),
-            help: "Any status icon the game declares");
+            cell => cell.Picker(
+                "##status-icon-pick",
+                current.Length > 0
+                    ? current
+                    : node.StatusIconId == 0
+                        ? "None"
+                        : "Icon " + node.StatusIconId,
+                () => OpenIconPicker(node),
+                help: "Any status icon the game declares"));
     }
 
     private static void FontSizeRow(
@@ -414,12 +448,25 @@ public sealed class OverlayPane
             OverlayNodeLimits.MaxFontSize,
             next => node.FontSize = (uint)MathF.Round(next),
             perPixel: 0.2f,
-            format: "0");
+            format: "0",
+            help: "Point size of the drawn text");
     }
 
     private void LifetimeRows(
         Crystarium.FormScope form, OverlayNodeHandle node)
     {
+        form.Actions("Library", actions =>
+            actions.Button(
+                "Save to library",
+                () => _names.Open(
+                    "Save overlay to library", node.Name,
+                    name =>
+                    {
+                        if (_bindings.GetOverlayId(node) is { } entryId)
+                            _scenePane.SaveOverlayEntry(
+                                entryId.LogicalId, name);
+                    }),
+                help: "Save this overlay as a library entry"));
         form.Actions("Overlay", actions =>
         {
             actions.Button(
@@ -436,9 +483,15 @@ public sealed class OverlayPane
                 variant: ButtonVariant.Danger,
                 help: "Take this overlay off the screen");
             actions.Button(
-                "Remove all",
+                _removeAllArmed ? "Confirm remove all" : "Remove all",
                 () => _pending = () =>
                 {
+                    if (!_removeAllArmed)
+                    {
+                        _removeAllArmed = true;
+                        return;
+                    }
+                    _removeAllArmed = false;
                     _lifecycle.DestroyAllOverlays();
                     _scene.Selection.Clear();
                 },
@@ -558,9 +611,10 @@ public sealed class OverlayPane
 
     private static string ContentTitle(OverlayNodeKind kind) => kind switch
     {
-        OverlayNodeKind.Balloon => "BUBBLE",
-        OverlayNodeKind.Status => "STATUS",
-        _ => "DIALOGUE",
+        // Sentence case, the header rule.
+        OverlayNodeKind.Balloon => "Bubble",
+        OverlayNodeKind.Status => "Status",
+        _ => "Dialogue",
     };
 
     // The label sets are positional against their enums, minted once: a

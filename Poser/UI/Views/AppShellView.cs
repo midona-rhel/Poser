@@ -77,6 +77,13 @@ public sealed class ShellSidebarRow
     /// </summary>
     public bool LightActions;
     public bool LightOn = true;
+
+    /// <summary>Every world-object row's third seat: pause, the actor
+    /// row's own play/pause glyph. Spawned SCENERY cannot be animated by
+    /// the game, so its seat is inert and slashed.</summary>
+    public bool PauseAction;
+    public bool Paused;
+    public bool PauseDisabled;
     /// <summary>A camera row exposes its live and edit-lock states.</summary>
     public bool CameraActions;
     public bool CameraLive;
@@ -298,6 +305,10 @@ public sealed class AppShellViewModel
     /// <c>target</c> (null target = open space, which un-groups).</summary>
     public Action<ShellSidebarRow, ShellSidebarRow?, RowDropPosition>? OnRowDrop;
 
+    /// <summary>A click on the tree's open space below the last row — the
+    /// "nothing" target: the shell clears the selection.</summary>
+    public Action? OnEmptyClick;
+
     /// <summary>The drag ghost's text for a row — "N selected" when the
     /// dragged row carries the whole selection with it.</summary>
     public Func<ShellSidebarRow, string>? DragGhostText;
@@ -309,6 +320,7 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnActorVisibility;
     public Action<ShellSidebarRow>? OnActorPause;
     public Action<ShellSidebarRow>? OnLightVisibility;
+    public Action<ShellSidebarRow>? OnRowPause;
     public Action<ShellSidebarRow>? OnCameraLive;
     public Action<ShellSidebarRow>? OnCameraLock;
     public Action<ShellSidebarRow>? OnOverlayVisibility;

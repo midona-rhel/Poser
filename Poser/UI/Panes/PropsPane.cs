@@ -22,6 +22,16 @@ public sealed class PropsPane
 {
     private readonly SceneSession _scene;
     private readonly StableBindingRegistry _bindings;
+    private readonly StainCatalog _stains;
+
+    /// <summary>The dye sheet's picker; the owner string carries which of
+    /// the two channels is being chosen.</summary>
+    private readonly Crystarium.SearchPicker<StainEntry> _dyePicker =
+        new("prop-dye");
+
+    private string _status = string.Empty;
+    private PropHandle? _animDraftFor;
+    private float _animDraft;
 
     /// <summary>Destroying a prop is a scene-lifecycle act, so it goes through
     /// the seam that files one in the same history the transforms use — not
@@ -38,12 +48,21 @@ public sealed class PropsPane
     public PropsPane(
         SceneSession scene,
         StableBindingRegistry bindings,
-        SceneLifecycleHistory lifecycle)
+        SceneLifecycleHistory lifecycle,
+        StainCatalog stains,
+        ScenePane scenePane,
+        global::Poser.UI.Controls.EntityNameModal names)
     {
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
+        _stains = stains;
+        _scenePane = scenePane;
+        _names = names;
     }
+
+    private readonly ScenePane _scenePane;
+    private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -65,9 +84,41 @@ public sealed class PropsPane
                 divider: false);
         });
 
+        // Pumped after the page — the overlay pane's rule.
+        if (_dyePicker.Draw() is { } picked
+            && SelectedProp() is { } target)
+        {
+            int channel = picked.Owner.EndsWith("1", StringComparison.Ordinal)
+                ? 1
+                : 0;
+            var next = channel == 0
+                ? target.Model with { Stain0 = picked.Item.Id }
+                : target.Model with { Stain1 = picked.Item.Id };
+            _status = target.Respawn(next, out var refusal)
+                ? string.Empty
+                : refusal ?? "The dye could not be applied.";
+        }
+
         var pending = _pending;
         _pending = null;
         pending?.Invoke();
+    }
+
+    private void OpenDyePicker(PropHandle prop, int channel)
+    {
+        byte current = channel == 0
+            ? prop.Model.Stain0
+            : prop.Model.Stain1;
+        _dyePicker.Open(
+            "prop-dye-" + channel,
+            _stains.Entries,
+            static stain => stain.Name,
+            static stain => stain.Id.ToString(
+                System.Globalization.CultureInfo.InvariantCulture),
+            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            loadError: _stains.Entries.Count <= 1
+                ? "The dye sheet could not be read."
+                : null);
     }
 
     // ── sections ─────────────────────────────────────────────────────────
@@ -86,6 +137,59 @@ public sealed class PropsPane
             prop.Visible,
             next => prop.Visible = next,
             help: "Hide this object without destroying it");
+        // The dyes bake at creation, so choosing one respawns the weapon
+        // in place — handle, name, and placement survive.
+        form.Pair(
+            "Dye",
+            cell => cell.Picker(
+                "##prop-dye-0",
+                _stains.NameOf(prop.Model.Stain0),
+                () => OpenDyePicker(prop, channel: 0),
+                help: "Dye the model's first channel"),
+            "Dye 2",
+            cell => cell.Picker(
+                "##prop-dye-1",
+                _stains.NameOf(prop.Model.Stain1),
+                () => OpenDyePicker(prop, channel: 1),
+                help: "Dye the model's second channel"));
+        // The variant edits a DRAFT and applies on release — a respawn
+        // per drag tick would churn the weapon.
+        if (!ReferenceEquals(_animDraftFor, prop))
+        {
+            _animDraftFor = prop;
+            _animDraft = prop.Model.AnimationVariant;
+        }
+        form.Number(
+            "Pose variant",
+            _animDraft,
+            next => _animDraft = MathF.Round(Math.Clamp(next, 0f, 255f)),
+            perPixel: 0.05f,
+            format: "0",
+            help: "The model's animation variant; applies on release",
+            onCommit: () =>
+            {
+                byte stated = (byte)_animDraft;
+                if (stated != prop.Model.AnimationVariant)
+                    _status = prop.Respawn(
+                        prop.Model with { AnimationVariant = stated },
+                        out var refusal)
+                        ? string.Empty
+                        : refusal ?? "The variant could not be applied.";
+            });
+        if (_status.Length > 0)
+            form.Status(_status, warning: true);
+        form.Actions("Library", actions =>
+            actions.Button(
+                "Save to library",
+                () => _names.Open(
+                    "Save prop to library", prop.Name,
+                    name =>
+                    {
+                        if (_bindings.GetPropId(prop) is { } entryId)
+                            _scenePane.SavePropEntry(
+                                entryId.LogicalId, name);
+                    }),
+                help: "Save a spawnable copy of this prop"));
         form.Actions("Lifetime", actions =>
         {
             // Destroy is THE destruction verb — Delete and Remove were

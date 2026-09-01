@@ -1287,7 +1287,7 @@ public static partial class Crystarium
         /// control cell's own icon slot; 0 is no mark and costs the value no
         /// width.</param>
         public void ReadOnly(string label, string value, string? help = null,
-            bool unavailable = false, nint icon = 0)
+            bool unavailable = false, nint icon = 0, bool mono = false)
         {
             string id = Id(label);
             var row = _page.BeginRow(label);
@@ -1324,6 +1324,7 @@ public static partial class Crystarium
                 {
                     Size = ActiveTheme.Typography.BodySize,
                     Color = unavailable ? FormHintColor : FormValueColor,
+                    Family = mono ? FontFamily.Mono : default,
                 });
             _page.EndRow(row, id, help);
         }
@@ -2126,6 +2127,33 @@ public static partial class Crystarium
                 Center(ActiveTheme.Controls.WorkspaceHeight));
             Crystarium.TextInput(
                 id, value, onChange, style, placeholder, disabled);
+        }
+
+        /// <summary>The cell's picker: the value-showing button that
+        /// opens the choice surface, filling its track — the form-level
+        /// Picker's cell form.</summary>
+        public void Picker(
+            string id, string value, Action select,
+            bool disabled = false, string? help = null)
+        {
+            var style = Constrain(ControlStyle.Workspace with
+            {
+                Width = UiWidth.Fixed(MathF.Max(1f, Width / Scale)),
+            });
+            float controlHeight = ControlSizing.Height(
+                style.Height, ActiveTheme.Controls.WorkspaceHeight);
+            ImGui.SetCursorScreenPos(Center(controlHeight));
+            Crystarium.Button(
+                Crystarium.TruncateText(
+                    value,
+                    new TextStyle { Size = ActiveTheme.Typography.LabelSize },
+                    MathF.Max(
+                        1f, Width - ActiveTheme.Spacing.Six * 2f * Scale)),
+                select,
+                style: style,
+                disabled: disabled,
+                help: help,
+                id: id);
         }
 
         /// <summary>The cell's enum picker, filling its track.</summary>

@@ -556,7 +556,8 @@ public class GizmoOverlayWindow : Window
     /// <summary>Resolves the effective transform selection.</summary>
     private EffectiveTransformSelection? EffectiveSelection() =>
         TransformTargetResolver.Resolve(
-            _selection.Selected, _scene.Snapshot, _groups.IsLockedMember);
+            _selection.Selected, _scene.Snapshot,
+            id => _groups.IsLockedChild(id, _selection.Selected));
 
     /// <summary>The live average of the targets' world positions — the
     /// group seat. Null when any member cannot answer, matching the
@@ -1188,14 +1189,7 @@ public class GizmoOverlayWindow : Window
                     $"Transform {targets.Count} actor{(targets.Count == 1 ? "" : "s")}",
             },
             includeLinkedBones: isBone && _bonePosingService.LinkedBonesEnabled,
-            symmetry: isBone
-                ? _editorState.SymmetryMode switch
-                {
-                    SymmetryMode.Copy => TransformDeltaMode.Direct,
-                    SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
-                    _ => null,
-                }
-                : null,
+            symmetryFor: isBone ? SymmetryDeltaFor : null,
             relativeSecondaryBones: isBone &&
                 Config.ConfigurationService.Instance.Config
                     .RelativeSecondaryBones);
@@ -1445,4 +1439,25 @@ public class GizmoOverlayWindow : Window
                 ScaleFactor(start.Scale.Y, desired.Scale.Y),
                 ScaleFactor(start.Scale.Z, desired.Scale.Z)));
     }
+    /// <summary>The per-bone symmetry resolver every gesture uses: the
+    /// bone's own stated mode when the per-bone sheet is on, the toolbar
+    /// otherwise — the one rule, from its one home.</summary>
+    private System.Nullable<TransformDeltaMode> SymmetryDeltaFor(
+        string canonicalName)
+    {
+        var configuration =
+            Config.ConfigurationService.Instance.Config;
+        return Core.BoneSymmetry.EffectiveMode(
+            configuration.PerBoneSymmetry,
+            configuration.BoneSymmetryOverrides,
+            configuration.AutoLinkPairedBones,
+            _editorState.SymmetryMode,
+            canonicalName) switch
+        {
+            SymmetryMode.Copy => TransformDeltaMode.Direct,
+            SymmetryMode.Mirror => TransformDeltaMode.Mirrored,
+            _ => null,
+        };
+    }
+
 }

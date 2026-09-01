@@ -22,6 +22,7 @@ public sealed class SettingsViewModel
 {
     public int Category = 1;
     public float BoneDotRadius = 5f;
+    public float MapDotRadius = 6f;
     public Vector4 OverlaySelected =
         Crystarium.ActiveTheme.Palette.Primary;
     public Vector4 OverlayHovered = Vector4.Lerp(
@@ -62,6 +63,8 @@ public sealed class SettingsViewModel
     public int SkeletonShape;
 
     public bool SelectedBonesOnly;
+    public bool PerBoneSymmetry;
+    public bool AutoLinkPairedBones;
     public int BonePickBehavior;
 
     public bool ShowSkeletonLines = true;
@@ -96,6 +99,7 @@ public sealed class SettingsViewModel
     public bool CameraConsumeAllInput;
     public bool CameraFlipPastNinety;
     public bool CameraLookThroughSelected;
+    public int DefaultSpawnPlacement;
 
     public bool DetachedShell;
     public bool TreeGuides = true;
@@ -107,6 +111,7 @@ public sealed class SettingsViewModel
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
     public string PoseFolder = "";
+    public string ObjectsFolder = "";
     public string SceneFolder = "";
     public string McdfFolder = "";
     public string AutoSaveFolderDraft = "";
@@ -199,6 +204,11 @@ public static class SettingsView
     private const float NavigationIconMargin = 2f;
 
     private const float NavigationPillRadius = 5f;
+
+    /// <summary>Positional against <c>ObjectPlacementMode</c>.</summary>
+    private static readonly string[] SpawnPlacementLabels =
+        ["Where they were saved", "Relative to the saved camera",
+         "Relative to the saved actor", "In front of the camera"];
 
     private static readonly (TablerIcon Icon, string Label)[] Nav =
     {
@@ -382,6 +392,13 @@ public static class SettingsView
         SettingsViewModel vm,
         Crystarium.PageScope page)
     {
+        page.Section("Spawning", form =>
+            form.Dropdown(
+                "Place spawned things",
+                SpawnPlacementLabels,
+                vm.DefaultSpawnPlacement,
+                next => vm.DefaultSpawnPlacement = next,
+                help: "Where a spawned entry lands by default"));
         page.Section("Behavior", form =>
         {
             form.Switch(
@@ -554,6 +571,14 @@ public static class SettingsView
                 12f,
                 next => vm.BoneDotRadius = next,
                 format: "0 px");
+            form.Slider(
+                "Map dot radius",
+                vm.MapDotRadius,
+                3f,
+                12f,
+                next => vm.MapDotRadius = next,
+                format: "0 px",
+                help: "Circle size on the body and face maps");
             form.ColorWells("Overlay colors", wells =>
             {
                 wells.Well(
@@ -660,6 +685,16 @@ public static class SettingsView
                 vm.SelectedBonesOnly,
                 next => vm.SelectedBonesOnly = next,
                 "Draw the bones that are selected and nothing else");
+            form.Switch(
+                "Per-bone symmetry",
+                vm.PerBoneSymmetry,
+                next => vm.PerBoneSymmetry = next,
+                "The toolbar's Link and Mirror remember per bone");
+            form.Switch(
+                "Auto-link paired bones",
+                vm.AutoLinkPairedBones,
+                next => vm.AutoLinkPairedBones = next,
+                "Eyes and paired ears move together");
             form.Dropdown(
                 "Bone pick behavior",
                 BonePickBehaviorLabels,
@@ -1132,6 +1167,11 @@ public static class SettingsView
                 next => vm.PoseFolder = next,
                 LibraryConfiguration.DefaultPoseRoot,
                 "Where saved poses go, and the folder the Poses tab scans");
+            HomeFolder(
+                form, vm, "Objects", vm.ObjectsFolder,
+                next => vm.ObjectsFolder = next,
+                LibraryConfiguration.DefaultObjectsRoot,
+                "Where saved objects, props, lights, cameras and overlays go, and the folder the Objects tab scans");
             HomeFolder(
                 form, vm, "Scenes", vm.SceneFolder,
                 next => vm.SceneFolder = next,

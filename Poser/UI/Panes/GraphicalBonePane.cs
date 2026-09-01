@@ -25,7 +25,6 @@ namespace Poser.UI;
 /// </summary>
 public sealed class GraphicalBonePane : IDisposable
 {
-    private const float CircleRadius = 6f;
     private const float HitRadius = 18f;
 
     private readonly SelectionSession _selection;
@@ -77,14 +76,24 @@ public sealed class GraphicalBonePane : IDisposable
     // binding registry.
     private readonly Dictionary<(string Canonical, int PartialId), SelectionId> _dotIds = new();
 
+    private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly IEditorState _editorState;
+    private readonly IBonePosingService _bonePosing;
+
     public GraphicalBonePane(
         SceneSession scene,
         StableBindingRegistry bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
         ITextureProvider textureProvider,
-        ICustomizeReadRuntimePort customizeRead)
+        ICustomizeReadRuntimePort customizeRead,
+        Application.Posing.IIkConfigurationPort ikPort,
+        IEditorState editorState,
+        IBonePosingService bonePosing)
     {
+        _ikPort = ikPort;
+        _editorState = editorState;
+        _bonePosing = bonePosing;
         _scene = scene;
         _selection = scene.Selection;
         _bindings = bindings;
@@ -109,6 +118,9 @@ public sealed class GraphicalBonePane : IDisposable
         _hoveredDotIndex = -1;
         _frameDots.Clear();
         _dotCandidates.Clear();
+        _dotKeys.Clear();
+        _dotParents.Clear();
+        _currentSection = 0;
         _dotIds.Clear();
 
         var (actor, actorId) = GetSelectedActor();
@@ -428,6 +440,7 @@ public sealed class GraphicalBonePane : IDisposable
         var sourceSize = new Vector2(texture.Width, texture.Height);
         var scalingFactors = size / sourceSize;
 
+        _currentSection++;
         foreach (var graphicBone in section.Bones)
         {
             var bone = skeleton.GetBone(graphicBone.Name);
@@ -464,6 +477,16 @@ public sealed class GraphicalBonePane : IDisposable
         if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
             return;
         bool matches = MatchesFilter(bone.Name, bone.BoneName);
+        // Brio's line rule, copied whole: a connector goes to the DIRECT
+        // parent only, and only when that parent has a dot on the SAME
+        // panel — an ancestor walk wired panels together into insanity
+        // (2026-09-01).
+        (int, string, int)? parentKey = bone.ParentBone is { } parent
+            ? (_currentSection, parent.BoneName, parent.PartialId)
+            : null;
+        _dotKeys[(_currentSection, bone.BoneName, bone.PartialId)] =
+            screenPos;
+        _dotParents.Add(parentKey);
         _dotCandidates.Add((selectionId, screenPos, bone.Name, matches));
         // A filtered-out dot is outside the marquee too: dragging a box over
         // the map must select what the map is offering, not what it is
@@ -492,6 +515,11 @@ public sealed class GraphicalBonePane : IDisposable
         return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
+    private readonly Dictionary<(int, string, int), Vector2> _dotKeys =
+        new();
+    private readonly List<(int, string, int)?> _dotParents = new();
+    private int _currentSection;
+
     private void ResolveAndDrawDots()
     {
         float s = ImGuiHelpers.GlobalScale;
@@ -512,33 +540,110 @@ public sealed class GraphicalBonePane : IDisposable
 
         var drawList = ImGui.GetWindowDrawList();
         string? hoveredName = null;
+        // The overlay's own facts, on the map (#98 bullet 3): armed IK
+        // chains wear the IK color and the selection's opposite-side
+        // partners wear the mirror color — same swatches, same priority
+        // (selected > hovered > IK > mirror), body and face alike.
+        var skeletonColors =
+            global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+        HashSet<string>? armedIk = null;
+        HashSet<string>? mirrorPartners = null;
+        foreach (var (id, _, _, _) in _dotCandidates)
+        {
+            if (id.Bone is not { } fact)
+                continue;
+            if (armedIk == null)
+            {
+                armedIk = new HashSet<string>();
+                foreach (var chain in _ikPort.Chains(fact.Skeleton))
+                {
+                    if (!chain.Config.Enabled)
+                        continue;
+                    foreach (var chainBone in chain.Bones)
+                        armedIk.Add(chainBone);
+                }
+            }
+            if (!_selection.IsSelected(id))
+                continue;
+            // Link (Copy) and Mirror both drive the opposite-side
+            // partner, so BOTH modes show it — resolved per bone through
+            // the one symmetry rule, in the maps exactly as the overlay.
+            var appConfig =
+                global::Poser.Config.ConfigurationService.Instance.Config;
+            if (Core.BoneSymmetry.EffectiveMode(
+                    appConfig.PerBoneSymmetry,
+                    appConfig.BoneSymmetryOverrides,
+                    appConfig.AutoLinkPairedBones,
+                    _editorState.SymmetryMode,
+                    fact.CanonicalName) != SymmetryMode.Off
+                && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
+                    is { } mirror)
+                (mirrorPartners ??= new HashSet<string>()).Add(mirror);
+            if (_bonePosing.LinkedBonesEnabled)
+                foreach (var linked in global::Poser.Domain.Posing
+                    .BoneLinkCatalog.GetLinked(fact.CanonicalName))
+                    (mirrorPartners ??= new HashSet<string>()).Add(linked);
+        }
+        float circleRadius = skeletonColors.MapDotRadius;
+        // Colors resolve FIRST so the connector lines can wear the child
+        // dot's own color and draw UNDER every circle.
+        Span<uint> colors = _dotCandidates.Count <= 512
+            ? stackalloc uint[_dotCandidates.Count]
+            : new uint[_dotCandidates.Count];
         for (int i = 0; i < _dotCandidates.Count; i++)
         {
             var candidate = _dotCandidates[i];
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
+            string? canonical = candidate.Id.Bone?.CanonicalName;
             // Selection is the THEME's primary, not ImGui's style checkmark.
             uint circleColor = isSelected
                 ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                     Crystarium.ActiveTheme.Chrome.Primary))
                 : isHovered
                     ? ImGui.GetColorU32(ImGuiCol.Text)
-                    : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                    : canonical != null && armedIk?.Contains(canonical) == true
+                        ? skeletonColors.IkChainColor
+                        : canonical != null
+                            && mirrorPartners?.Contains(canonical) == true
+                            ? skeletonColors.MirroredBoneColor
+                            : ImGui.GetColorU32(ImGuiCol.TextDisabled);
             // A dot the filter rejects keeps its place — the map is a
             // drawing and its dots ARE the anatomy — and goes faint, which
             // is a map's way of saying what a list says by not listing a row.
             if (!candidate.Matches)
                 circleColor = FadeU32(circleColor, FilteredDotOpacity);
+            colors[i] = circleColor;
+        }
+        // The connector lines the maps were missing (#98): each dot to its
+        // nearest on-map ancestor, in the child's own color, faded so the
+        // anatomy stays a drawing, under every circle.
+        for (int i = 0; i < _dotCandidates.Count
+            && i < _dotParents.Count; i++)
+        {
+            if (_dotParents[i] is not { } parentKey
+                || !_dotKeys.TryGetValue(parentKey, out var parentPos))
+                continue;
+            drawList.AddLine(
+                _dotCandidates[i].Pos, parentPos,
+                FadeU32(colors[i], 0.55f), 1f * s);
+        }
+        for (int i = 0; i < _dotCandidates.Count; i++)
+        {
+            var candidate = _dotCandidates[i];
+            bool isSelected = _selection.IsSelected(candidate.Id);
+            bool isHovered = i == _hoveredDotIndex;
+            uint circleColor = colors[i];
             drawList.AddCircleFilled(
-                candidate.Pos, CircleRadius * s,
+                candidate.Pos, circleRadius * s,
                 ImGui.GetColorU32(ImGuiCol.ChildBg));
             drawList.AddCircle(
-                candidate.Pos, CircleRadius * s, circleColor);
+                candidate.Pos, circleRadius * s, circleColor);
             if (isSelected || isHovered)
             {
                 drawList.AddCircleFilled(
                     candidate.Pos,
-                    (CircleRadius - 3f) * s,
+                    (circleRadius - 3f) * s,
                     isSelected
                         ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                             Crystarium.ActiveTheme.Chrome.Primary))

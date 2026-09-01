@@ -123,6 +123,9 @@ public class SettingsWindow : Window
             AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
+            MapDotRadius = c.Skeleton.MapDotRadius,
+            PerBoneSymmetry = c.PerBoneSymmetry,
+            AutoLinkPairedBones = c.AutoLinkPairedBones,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
             OverlayHovered = ImGui.ColorConvertU32ToFloat4(c.Skeleton.HoveredBoneColor),
             OverlayInactive = ImGui.ColorConvertU32ToFloat4(c.Skeleton.BoneColor),
@@ -171,6 +174,7 @@ public class SettingsWindow : Window
             CameraConsumeAllInput = c.Camera.ConsumeAllGameInput,
             CameraFlipPastNinety = c.Camera.FlipBindsPastNinety,
             CameraLookThroughSelected = c.Camera.LookThroughSelectedCamera,
+            DefaultSpawnPlacement = (int)c.DefaultSpawnPlacement,
 
             DetachedShell = c.UI.DetachedShell,
             TreeGuides = c.UI.ShowTreeGuides,
@@ -184,6 +188,7 @@ public class SettingsWindow : Window
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
             PoseFolder = c.Library.ResolvePoseRoot(),
+            ObjectsFolder = c.Library.ResolveObjectsRoot(),
             SceneFolder = c.Library.ResolveSceneRoot(),
             McdfFolder = c.Library.ResolveMcdfRoot(),
             AutoSaveFolderDraft = c.AutoSave.RootDirectory,
@@ -310,6 +315,9 @@ public class SettingsWindow : Window
             c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture);
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
+        c.Skeleton.MapDotRadius = _vm.MapDotRadius;
+        c.PerBoneSymmetry = _vm.PerBoneSymmetry;
+        c.AutoLinkPairedBones = _vm.AutoLinkPairedBones;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
         c.Skeleton.HoveredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayHovered);
         c.Skeleton.BoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);
@@ -372,6 +380,8 @@ public class SettingsWindow : Window
         c.Camera.ConsumeAllGameInput = _vm.CameraConsumeAllInput;
         c.Camera.FlipBindsPastNinety = _vm.CameraFlipPastNinety;
         c.Camera.LookThroughSelectedCamera = _vm.CameraLookThroughSelected;
+        c.DefaultSpawnPlacement =
+            (global::Poser.Files.ObjectPlacementMode)_vm.DefaultSpawnPlacement;
 
         c.UI.DetachedShell = _vm.DetachedShell;
         c.UI.ShowTreeGuides = _vm.TreeGuides;
@@ -394,12 +404,6 @@ public class SettingsWindow : Window
         // The objects home has no folder row here, so the rebuild below
         // must carry its configured path across — dropping it stranded
         // every entry save in a folder no tab scanned.
-        string? objectsFolder = null;
-        foreach (var source in c.Library.Sources)
-            if (string.Equals(
-                    source.Name, LibraryConfiguration.ObjectsSourceName,
-                    StringComparison.Ordinal))
-                objectsFolder = source.Path;
         c.Library.Sources.Clear();
         c.Library.SetHomeRoot(
             LibraryConfiguration.PoseSourceName,
@@ -408,7 +412,7 @@ public class SettingsWindow : Window
         c.Library.SetHomeRoot(
             LibraryConfiguration.ObjectsSourceName,
             LibraryConfiguration.DefaultObjectsRoot,
-            objectsFolder);
+            _vm.ObjectsFolder);
         c.Library.SetHomeRoot(
             LibraryConfiguration.SceneSourceName,
             LibraryConfiguration.DefaultSceneRoot,
