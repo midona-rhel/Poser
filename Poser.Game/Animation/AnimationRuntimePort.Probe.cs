@@ -121,6 +121,47 @@ public sealed unsafe partial class AnimationRuntimePort
 
     public bool ProbeLogging => _probeTimelineHook?.IsEnabled == true;
 
+    /// <summary>The native facts the debug bridge reports beside the
+    /// session's view: emote, mode, the scheduler clocks (frames) and the
+    /// child timeline cursors for the base and upper slots.</summary>
+    public sealed class ProbeState
+    {
+        public uint EmoteId { get; set; }
+        public byte Mode { get; set; }
+        public float?[] SchedulerFrames { get; set; } = new float?[4];
+        public float?[] ChildFrames { get; set; } = new float?[2];
+    }
+
+    public ProbeState? ProbeSnapshot(ActorId actor)
+    {
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return null;
+        var state = new ProbeState
+        {
+            EmoteId = character->EmoteController.EmoteId,
+            Mode = (byte)character->Mode,
+        };
+        for (int slot = 0; slot < 4; slot++)
+        {
+            var stamp = SchedulerTimestamp(&character->Timeline.TimelineSequencer, slot);
+            state.SchedulerFrames[slot] = stamp != null ? *stamp : null;
+            if (slot >= 2 || stamp == null)
+                continue;
+            // First track, first clip; ChildFrame when it is a child clip.
+            nint sched = (nint)stamp - SchedulerTimestampOffset;
+            nint tctl = *(nint*)(sched + 0x18);
+            if (tctl == 0) continue;
+            nint tracks = *(nint*)(tctl + 0x28);
+            nint track = tracks != 0 ? *(nint*)tracks : 0;
+            nint clips = track != 0 ? *(nint*)(track + 0x18) : 0;
+            nint clip = clips != 0 ? *(nint*)clips : 0;
+            if (clip != 0 && TryReadClockRegion(clip) && *(int*)(clip + 0x84) == 7)
+                state.ChildFrames[slot] = *(float*)(clip + 0xCC);
+        }
+        return state;
+    }
+
     /// <summary>The GAME's window-owned gaze, read from the look-at
     /// controller: GPose's face-camera writes LookMode.Position (3) at
     /// controller+0x38 and, at +0x40, the world point the camera held

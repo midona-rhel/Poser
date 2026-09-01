@@ -458,6 +458,9 @@ internal static class ServiceRegistration
         services.AddSingleton<SelectionSection>();
         services.AddSingleton<PoseRailPane>();
         services.AddSingleton<AnimationPane>();
+#if DEBUG
+        services.AddSingleton<global::Poser.Bridge.DebugBridge>();
+#endif
         services.AddSingleton<CompanionSection>();
         services.AddSingleton<AppearancePane>();
         services.AddSingleton<PropsPane>();

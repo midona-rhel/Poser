@@ -102,6 +102,10 @@ public class Poser : IDalamudPlugin
         _ = _serviceProvider.GetRequiredService<Game.Bindings.StableBindingRegistry>();
         log.Debug("Load link: animation");
         _ = _serviceProvider.GetRequiredService<Application.Animation.AnimationSession>();
+#if DEBUG
+        log.Debug("Load link: debug bridge");
+        _ = _serviceProvider.GetRequiredService<global::Poser.Bridge.DebugBridge>();
+#endif
         log.Debug("Load link: gaze");
         _ = _serviceProvider.GetRequiredService<IGazeService>();
         log.Debug("Load link: integration");
