@@ -649,7 +649,9 @@ public class SkeletonOverlayWindow : Window
             }
         }
 
-        if (_editorState.SymmetryMode == SymmetryMode.Mirror)
+        // Link (Copy) and Mirror both drive the opposite-side partner —
+        // one with the same delta, one flipped — so BOTH modes show it.
+        if (_editorState.SymmetryMode != SymmetryMode.Off)
             MarkMirrorPartners(bones);
         if (_bonePosing.LinkedBonesEnabled)
             MarkLinkPartners(bones);

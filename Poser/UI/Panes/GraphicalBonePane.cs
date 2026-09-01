@@ -565,10 +565,10 @@ public sealed class GraphicalBonePane : IDisposable
             }
             if (!_selection.IsSelected(id))
                 continue;
-            // Mirror partners show while Mirror is ON; linked partners
-            // (eyes, Viera ears) while Link is ON — both wear the mirror
-            // color, in the maps exactly as in the overlay.
-            if (_editorState.SymmetryMode == SymmetryMode.Mirror
+            // Link (Copy) and Mirror both drive the opposite-side
+            // partner, so BOTH toolbar modes show it — in the maps
+            // exactly as in the overlay.
+            if (_editorState.SymmetryMode != SymmetryMode.Off
                 && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
                 (mirrorPartners ??= new HashSet<string>()).Add(mirror);
