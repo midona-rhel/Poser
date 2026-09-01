@@ -22,19 +22,22 @@ public sealed unsafe partial class AnimationRuntimePort
     private int _resetWatchTicks;
     private readonly float[] _resetWatchPrev = new float[32];
 
-    /// <summary>Arms the per-frame clock log on this actor for ~20 seconds.</summary>
+    /// <summary>Arms the per-frame clock log on this actor for ~60 seconds.</summary>
     public void ProbeWatchReset(ActorId actor)
     {
         _resetWatchActor = actor;
-        _resetWatchTicks = 1200;
+        _resetWatchTicks = 3600;
         _resetConstantsDumped = false;
         _containerPrev = null;
         _lastStableFrames = float.NaN;
         _oldPositionFrames = float.NaN;
-        _staleScanDone = false;
+        _oldTotalFrames = float.NaN;
+        _lastStableSlot = -1;
+        _staleScansLeft = 0;
+        _staleScanCountdown = 0;
         for (int i = 0; i < _resetWatchPrev.Length; i++)
             _resetWatchPrev[i] = float.NaN;
-        _log.Information($"[AnimReset] watch armed on {actor} for 20s.");
+        _log.Information($"[AnimReset] watch armed on {actor} for 60s.");
     }
 
     /// <summary>The clip/track/track-controller cursor addresses for a slot,
@@ -126,9 +129,29 @@ public sealed unsafe partial class AnimationRuntimePort
         if (n >= 1)
         {
             float c0 = *cursorsBuffer[0];
-            if (!float.IsNaN(_lastStableFrames) && c0 < _lastStableFrames - 5f && float.IsNaN(_oldPositionFrames))
+            // A slot switch is not a scrub: only a backward jump within the
+            // SAME slot marks the old position, and every scrub re-arms the
+            // hunt (a few scans, spaced, so a reference written at Play is
+            // caught too).
+            if (_lastStableSlot == slot && !float.IsNaN(_lastStableFrames)
+                && c0 < _lastStableFrames - 5f)
+            {
                 _oldPositionFrames = _lastStableFrames;
+                nint clipForTotal = 0;
+                if (n >= 2)
+                {
+                    nint trackController = (nint)cursorsBuffer[1] - 0x11C;
+                    nint trackPointers = *(nint*)(trackController + 0x28);
+                    nint track = trackPointers != 0 ? *(nint*)trackPointers : 0;
+                    nint clipPointers = track != 0 ? *(nint*)(track + 0x18) : 0;
+                    clipForTotal = clipPointers != 0 ? *(nint*)clipPointers : 0;
+                }
+                _oldTotalFrames = clipForTotal != 0 ? *(float*)(clipForTotal + 0x54) : float.NaN;
+                _staleScansLeft = 4;
+                _staleScanCountdown = 1;
+            }
             _lastStableFrames = c0;
+            _lastStableSlot = slot;
             ScanForStalePosition(character);
         }
 
@@ -150,7 +173,7 @@ public sealed unsafe partial class AnimationRuntimePort
             }
         }
 
-        if (dropped || _resetWatchTicks % 10 == 0)
+        if (dropped || _resetWatchTicks % 30 == 0)
             _log.Information(line.ToString());
 
         // The per-actor clock hunt: any float in the TimelineContainer that
@@ -276,7 +299,10 @@ public sealed unsafe partial class AnimationRuntimePort
     private bool _resetConstantsDumped;
     private float _lastStableFrames = float.NaN;
     private float _oldPositionFrames = float.NaN;
-    private bool _staleScanDone;
+    private float _oldTotalFrames = float.NaN;
+    private int _lastStableSlot = -1;
+    private int _staleScansLeft;
+    private int _staleScanCountdown;
 
     /// <summary>After a scrub (a backward jump of the scheduler clock) the
     /// pre-scrub position is the value to hunt: any field on the Character or
@@ -284,13 +310,19 @@ public sealed unsafe partial class AnimationRuntimePort
     /// int — is the reference the old schedule is judged from.</summary>
     private void ScanForStalePosition(Character* character)
     {
-        if (float.IsNaN(_oldPositionFrames) || _staleScanDone)
+        if (float.IsNaN(_oldPositionFrames) || _staleScansLeft <= 0)
             return;
-        _staleScanDone = true;
+        if (--_staleScanCountdown > 0)
+            return;
+        _staleScansLeft--;
+        _staleScanCountdown = 60;
         float frames = _oldPositionFrames;
         float seconds = frames / 30f;
+        // The remaining time is the other shape a deadline can take.
+        float remaining = float.IsNaN(_oldTotalFrames) ? float.NaN : _oldTotalFrames - frames;
+        float remainingSeconds = remaining / 30f;
         var line = new StringBuilder(400).Append(CultureInfo.InvariantCulture,
-            $"[AnimReset] stale hunt for {frames:0.0}f/{seconds:0.00}s:");
+            $"[AnimReset] stale hunt for {frames:0.0}f/{seconds:0.00}s rem {remaining:0.0}f/{remainingSeconds:0.00}s:");
         int printed = 0;
         void Scan(string name, nint address, int size)
         {
@@ -300,8 +332,10 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (raw == 0)
                     continue;
                 float f = BitConverter.Int32BitsToSingle(raw);
-                bool hit = float.IsFinite(f) && (Math.Abs(f - frames) <= 2f || Math.Abs(f - seconds) <= 0.07f);
-                bool intHit = Math.Abs(raw - (int)Math.Round(frames)) <= 2;
+                bool hit = float.IsFinite(f) && (Math.Abs(f - frames) <= 2f || Math.Abs(f - seconds) <= 0.07f
+                    || (!float.IsNaN(remaining) && (Math.Abs(f - remaining) <= 2f || Math.Abs(f - remainingSeconds) <= 0.07f)));
+                bool intHit = Math.Abs(raw - (int)Math.Round(frames)) <= 2
+                    || (!float.IsNaN(remaining) && Math.Abs(raw - (int)Math.Round(remaining)) <= 2);
                 if (!hit && !intHit)
                     continue;
                 line.Append(hit
