@@ -289,7 +289,22 @@ public sealed class AnimationPane : IDisposable
             cloneId, capture, method,
             method == Game.Animation.ProbeMethod.Owned
                 ? ProbeOwnedReplay(source)
-                : null);
+                : ProbeSessionTransfer(source));
+    }
+
+    /// <summary>The session-owned speed state — the big Animation toggle,
+    /// slot speeds — re-issued on the target through the session, so the
+    /// record matches the engine and the toggles tell the truth.</summary>
+    private Action<ActorId> ProbeSessionTransfer(ActorId source)
+    {
+        var owned = _animation.OverridesFor(source);
+        return target =>
+        {
+            if (owned.OverallSpeed is { } overall)
+                _animation.SetSpeed(target, overall);
+            foreach (var (slot, speed) in owned.SlotSpeeds)
+                _animation.SetSlotSpeed(target, slot, speed);
+        };
     }
 
     /// <summary>The ownership-transfer replay: everything the session's

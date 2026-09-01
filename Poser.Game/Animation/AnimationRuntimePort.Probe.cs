@@ -422,24 +422,17 @@ public sealed unsafe partial class AnimationRuntimePort
             }
             case ProbeMethod.Owned:
             {
-                pending.Apply?.Invoke(target);
                 _log.Information($"[AnimProbe] Owned: replayed the session "
                     + $"record onto {target}.");
                 ProbeArmControlHold(target, capture);
                 break;
             }
         }
-        // Speeds travel as ENFORCEMENT on the target, not field writes:
-        // that is what makes pause carry and SURVIVE — the same hook that
-        // holds the source's pause now holds the clone's.
-        if (Math.Abs(capture.OverallSpeed - 1f) > 0.001f)
-            SetOverallSpeed(target, capture.OverallSpeed);
-        foreach (var (slotIndex, speed) in capture.SlotSpeeds)
-        {
-            if (Math.Abs(speed - 1f) > 0.001f
-                && AnimationSlots.IsKnown(slotIndex))
-                SetSlotSpeed(target, (AnimationSlot)slotIndex, speed);
-        }
+        // The caller's transfer runs for EVERY method: speeds and pause
+        // travel through the SESSION so the owned record — and every
+        // toggle describing it — is right. Port-level enforcement alone
+        // paused the engine while the session said "playing".
+        pending.Apply?.Invoke(target);
         pending.WaitTicks = 0;
         pending.VerifyIn.Add(2);
         pending.VerifyIn.Add(15);
