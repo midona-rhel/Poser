@@ -645,10 +645,18 @@ public sealed class AnimationSession
             // ("the chosen animation identity changed").
             if (entry != null && (entry.TimelineId != selected || entry.Slot != slot))
                 return AnimationResult.Fail("The chosen animation identity changed.");
-            var played = ApplySelectedSlotCore(
-                actor, slot, playFromStart && entry != null ? entry : null);
-            if (!played.Success)
-                return played;
+            // RESUME, don't replay: a slot already live on the selected
+            // timeline keeps its position — re-blending spawned a crossfade
+            // control and restarted the clip from zero (the pause→play
+            // scrub reset, sampler 19:50:52).
+            bool alreadyLive = Read(actor)?.TimelineFor(slot) == selected;
+            if (!alreadyLive)
+            {
+                var played = ApplySelectedSlotCore(
+                    actor, slot, playFromStart && entry != null ? entry : null);
+                if (!played.Success)
+                    return played;
+            }
         }
         if (!resume && IsPaused(actor))
         {
