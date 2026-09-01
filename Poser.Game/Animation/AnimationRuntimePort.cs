@@ -260,16 +260,52 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                 container->OverallSpeed = speed;
                 result = true;
             }
-            // Brio's CheckAndResetDirtySlots half: reporting the container
-            // dirty makes the game RE-APPLY slot speeds this frame, which
-            // routes them through SlotSpeedDetour where the per-slot
-            // override wins. Without it a slot hold is a one-shot write
-            // the game recalculates away.
+            // The sampler's verdict (2026-09-01 19:37): writing the
+            // slot-speed FIELD does not reliably reach the slot's havok
+            // control — on the observed click frame the control kept x1
+            // with the field at 0, and replays recreate controls at x1
+            // regardless. A slot speed is therefore enforced on the
+            // CONTROLS, every frame, here after the game's own update.
             if (enforcement.SlotSpeeds.Count > 0)
+            {
+                ApplySlotSpeedsToControls(
+                    (Character*)owner, enforcement.SlotSpeeds);
                 result = true;
+            }
         }
         ProbeSeamPass(container);
         return result;
+    }
+
+    /// <summary>Writes each enforced slot speed onto that slot's live
+    /// havok controls (control index == slot index on every partial).
+    /// The per-frame half the field write cannot provide.</summary>
+    private static void ApplySlotSpeedsToControls(
+        Character* character, Dictionary<int, float> slotSpeeds)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null ||
+            drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var charaBase = (CharacterBase*)drawObject;
+        if (charaBase->Skeleton == null)
+            return;
+        var skeleton = charaBase->Skeleton;
+        for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+        {
+            var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+            if (animated == null)
+                continue;
+            foreach (var (slot, speed) in slotSpeeds)
+            {
+                if (slot >= animated->AnimationControls.Length)
+                    continue;
+                var control = animated->AnimationControls[slot].Value;
+                if (control == null)
+                    continue;
+                control->PlaybackSpeed = speed;
+            }
+        }
     }
 
     private void SlotSpeedDetour(ActionTimelineSequencer* sequencer, uint slot, float speed)
