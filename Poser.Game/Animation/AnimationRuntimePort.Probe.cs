@@ -261,6 +261,43 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (offset % 4 == 3)
                     hex.Append(' ');
             }
+            // The prop hunt: emote props (held bread) ride the weapon
+            // slots; each attached draw object carries its OWN skeleton
+            // and animation clocks, which the actor's scrub never touches.
+            var weapons = new StringBuilder(128);
+            for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+            {
+                ref var weapon = ref character->DrawData.Weapon(
+                    (DrawDataContainer.WeaponSlot)slotIndex);
+                weapons.Append(CultureInfo.InvariantCulture,
+                    $"[{slotIndex}] id {weapon.ModelId.Id}"
+                    + $".{weapon.ModelId.Type}.{weapon.ModelId.Variant}");
+                var weaponDraw = weapon.DrawData.DrawObject;
+                if (weaponDraw != null
+                    && weaponDraw->Object.GetObjectType()
+                        == ObjectType.CharacterBase
+                    && ((CharacterBase*)weaponDraw)->Skeleton != null)
+                {
+                    var weaponSkeleton = ((CharacterBase*)weaponDraw)->Skeleton;
+                    for (int p = 0; p < weaponSkeleton->PartialSkeletonCount; p++)
+                    {
+                        var animated = weaponSkeleton->PartialSkeletons[p]
+                            .GetHavokAnimatedSkeleton(0);
+                        if (animated == null)
+                            continue;
+                        for (int c = 0; c < animated->AnimationControls.Length; c++)
+                        {
+                            var control = animated->AnimationControls[c].Value;
+                            if (control == null)
+                                continue;
+                            weapons.Append(CultureInfo.InvariantCulture,
+                                $" {p}.{c}@{control->hkaAnimationControl.LocalTime:0.00}"
+                                + $"x{control->PlaybackSpeed:0.##}");
+                        }
+                    }
+                }
+                weapons.Append("  ");
+            }
             var gameGazeMode = *(int*)(controller + 0x38);
             var gameGazePoint = *(System.Numerics.Vector3*)(controller + 0x40);
             _log.Information(
@@ -268,6 +305,7 @@ public sealed unsafe partial class AnimationRuntimePort
                 + $"  game gaze: mode {gameGazeMode} at "
                 + $"({gameGazePoint.X:0.##}, {gameGazePoint.Y:0.##}, "
                 + $"{gameGazePoint.Z:0.##})\n"
+                + $"  weapons: {weapons}\n"
                 + $"  look-at controller:{hex}");
             return;
         }

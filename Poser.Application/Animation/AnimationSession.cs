@@ -406,7 +406,57 @@ public sealed class AnimationSession
 
     /// <summary>Resume drops the override rather than writing 1, so an
     /// actor the game is driving at its own speed keeps it.</summary>
-    public AnimationResult Resume(ActorId actor) => ClearSpeed(actor);
+    /// <summary>Play-all: releases every hold — the per-slot pauses the
+    /// layer-play conversion parked, then the whole-actor speed. The
+    /// sidebar's play is the ONLY verb that releases everything (ruled
+    /// 2026-09-01).</summary>
+    public AnimationResult Resume(ActorId actor)
+    {
+        foreach (var (slot, speed) in OverridesFor(actor).SlotSpeeds)
+        {
+            if (speed == 0f)
+                ResumeSlotSpeedCore(actor, slot);
+        }
+        return ClearSpeed(actor);
+    }
+
+    /// <summary>Whether ANYTHING on the actor is paused — the whole-actor
+    /// hold or any per-slot hold. The sidebar button reads this: it offers
+    /// play unless everything already plays.</summary>
+    public bool AnyPaused(ActorId actor)
+    {
+        if (IsPaused(actor))
+            return true;
+        foreach (var (_, speed) in OverridesFor(actor).SlotSpeeds)
+        {
+            if (speed == 0f)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>Playing ONE layer must not resurrect the rest (ruled
+    /// 2026-09-01): the whole-actor pause converts into per-slot holds on
+    /// every OTHER live layer, then the overall speed lifts so the played
+    /// layer can move.</summary>
+    private AnimationResult ResumeForLayerPlay(ActorId actor, AnimationSlot playing)
+    {
+        var current = OverridesFor(actor);
+        if (Read(actor) is { } reading)
+        {
+            foreach (var slotReading in reading.Slots)
+            {
+                if (slotReading.TimelineId == 0
+                    || slotReading.Slot == playing
+                    || current.SlotSpeeds.ContainsKey(slotReading.Slot))
+                    continue;
+                var held = SetSlotSpeedCore(actor, slotReading.Slot, 0f);
+                if (!held.Success)
+                    return held;
+            }
+        }
+        return ClearSpeedCore(actor);
+    }
 
     /// <summary>
     /// Replays from the start after releasing a Poser-owned pause. A nonzero
@@ -419,7 +469,8 @@ public sealed class AnimationSession
         if (Suspended() is { } blocked) return blocked;
         if (IsPaused(actor))
         {
-            var released = ClearSpeed(actor);
+            var released = ResumeForLayerPlay(
+                actor, _port.TimelineSlot(timeline) ?? AnimationSlot.Base);
             if (!released.Success)
                 return released;
             resumed = true;
@@ -532,7 +583,7 @@ public sealed class AnimationSession
         }
         if (IsPaused(actor))
         {
-            var resumed = ClearSpeedCore(actor);
+            var resumed = ResumeForLayerPlay(actor, slot);
             if (!resumed.Success)
                 return resumed;
             resumedOverall = true;

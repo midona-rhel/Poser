@@ -144,13 +144,15 @@ public sealed class AnimationPane : IDisposable
         global::Poser.Services.IActorSpawnService spawner,
         Game.Scene.SceneLifecycleHistory lifecycle,
         global::Poser.Services.IGazeService gaze,
-        global::Poser.Services.IActorManager actorManager)
+        global::Poser.Services.IActorManager actorManager,
+        Application.Integration.IIntegrationRuntimePort integrationPort)
     {
         _probePort = probePort;
         _spawner = spawner;
         _lifecycle = lifecycle;
         _gaze = gaze;
         _actorManager = actorManager;
+        _integrationPort = integrationPort;
         _notices = notices;
         _animation = animation;
         _catalog = catalog;
@@ -232,6 +234,7 @@ public sealed class AnimationPane : IDisposable
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
     private readonly global::Poser.Services.IGazeService _gaze;
     private readonly global::Poser.Services.IActorManager _actorManager;
+    private readonly Application.Integration.IIntegrationRuntimePort _integrationPort;
     private bool _openDebug;
 
     /// <summary>The ownership hunt's controls: dump, write logging, and
@@ -323,6 +326,19 @@ public sealed class AnimationPane : IDisposable
         var gameGaze = gaze is { Mode: global::Poser.Services.GazeTargetMode.None }
             ? _probePort.ProbeGameGaze(source)
             : null;
+        bool? weaponDrawn = _animation.Read(source)?.WeaponDrawn;
+        // The clone shares the source's Customize+ body: the active SAVED
+        // profile copies as a temporary one. A temporary profile on the
+        // source cannot be read back through the IPC and is skipped.
+        string? bodyProfileJson = null;
+        var bodyProbe = _integrationPort.ProbeBodyProfile(source);
+        if (bodyProbe.Success
+            && bodyProbe.Value is { ActiveProfile: { } activeProfile, ActiveIsSaved: true })
+        {
+            var profileJson = _integrationPort.GetBodyProfileJson(activeProfile);
+            if (profileJson.Success)
+                bodyProfileJson = profileJson.Value;
+        }
         var lockedParts = new List<global::Poser.Services.GazeTargetType>();
         if (sourceActor != null && gaze is { Mode: not global::Poser.Services.GazeTargetMode.None })
         {
@@ -349,6 +365,10 @@ public sealed class AnimationPane : IDisposable
                 _animation.SetSlotSpeed(target, slot, speed);
             if (owned.Lips is { } lips)
                 _animation.SetLips(target, lips);
+            if (weaponDrawn is { } drawn)
+                _animation.SetWeaponDrawn(target, drawn);
+            if (bodyProfileJson != null)
+                _integrationPort.ApplyTemporaryBodyProfile(target, bodyProfileJson);
             var resolvedTarget = _bindings.Resolve(target);
             if (!resolvedTarget.Success || resolvedTarget.Value is not { } clone)
                 return;
