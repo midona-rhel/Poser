@@ -462,6 +462,35 @@ public sealed unsafe partial class AnimationRuntimePort
         };
     }
 
+    /// <summary>Whether every PAUSED stored control's live time already
+    /// holds its stored value. Playing controls advance by design and are
+    /// exempt; no paused controls means trivially held.</summary>
+    private bool ProbePausedControlsHold(ActorId target, RawTimelineCapture capture)
+    {
+        var character = Resolve(target, out _);
+        if (character == null)
+            return false;
+        List<ScrubControlReading>? live = null;
+        foreach (var (id, time, speed) in capture.Controls)
+        {
+            if (Math.Abs(speed) >= 0.001f)
+                continue;
+            live ??= CollectControls(character, out _);
+            bool held = false;
+            foreach (var control in live)
+            {
+                if (control.Id == id)
+                {
+                    held = Math.Abs(control.Time - time) <= 0.05f;
+                    break;
+                }
+            }
+            if (!held)
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>Logs every base-slot or mode flip on a watched target with
     /// its tick offset — the second-writer instrument.</summary>
     private void ProbeWatch(ProbePending pending)
@@ -566,7 +595,13 @@ public sealed unsafe partial class AnimationRuntimePort
             }
             if (arm.ControlsOnly)
             {
-                if (arm.ControlsLanded >= arm.Capture.Controls.Count)
+                // "Wrote once" is not landed: an emote transitions
+                // intro->loop a few ticks in and the loop RECREATES the
+                // control at the same index, restarting at 0 — the write
+                // went into the corpse. Landed = every control was written
+                // AND every PAUSED control's read-back holds its time.
+                if (arm.ControlsLanded >= arm.Capture.Controls.Count
+                    && ProbePausedControlsHold(target, arm.Capture))
                 {
                     _log.Information(
                         $"[AnimProbe] ControlHold: {target} landed all "
