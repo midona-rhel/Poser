@@ -1044,19 +1044,15 @@ public sealed class SpawnBrowserWindow : Window
             _containsMatches.Add(index);
     }
 
-    private IActor? CloneWearingCollection(IActor source, bool adoptBodyProfile)
+    private IActor? CloneWearingCollection(IActor source)
     {
         var clone = _spawnService.CloneActor(source);
-        if (clone == null
-            || _bindings.GetActorId(source) is not { } sourceId
-            || _bindings.GetActorId(clone) is not { } cloneId)
-            return clone;
+        if (clone == null)
+            return null;
         _lifecycle.WhenPosable(clone, c =>
         {
             _spawnService.CopyDrawnAppearance(source, c);
             _spawnService.CopyEquipmentVisibility(source, c);
-            if (adoptBodyProfile)
-                _integration.AdoptBodyProfile(sourceId, cloneId);
         });
         return clone;
     }
@@ -1116,19 +1112,19 @@ public sealed class SpawnBrowserWindow : Window
                 if (SelectedActor() is { } source)
                     SelectSpawned(_lifecycle.SpawnActor(
                         "Duplicate actor",
-                        () => CloneWearingCollection(source, adoptBodyProfile: true)));
+                        () => CloneWearingCollection(source)));
                 return;
             case RowCloneActorPosed:
                 if (SelectedActor() is { } posedSource)
                 {
                     var copy = _lifecycle.SpawnActorWithPose(
                         "Duplicate actor with pose",
-                        () => CloneWearingCollection(posedSource, adoptBodyProfile: false),
+                        () => CloneWearingCollection(posedSource),
                         posedSource);
                     if (copy != null && _bindings.GetActorId(copy) is { } copyId)
                     {
                         _animation.Pause(copyId);
-                        _lifecycle.WhenPosable(copy, c => _gaze.SetGazeMode(c, GazeTargetMode.Detached));
+                        _gaze.SetGazeMode(copy, GazeTargetMode.Detached);
                     }
                     SelectSpawned(copy);
                 }

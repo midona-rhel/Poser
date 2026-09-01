@@ -108,40 +108,6 @@ public sealed class ActorIntegrationSession : IDisposable
                 $"The collection was assigned, but the redraw failed: {redraw.Detail}");
     }
 
-    /// <summary>A plain duplicate takes the source's saved Customize+
-    /// profile as a temporary one (Customize+ ignores Poser's spawns: it
-    /// listens for Brio's). NOT for the posed duplicate — the captured
-    /// bones already carry the scaling, and applying it again doubles it.</summary>
-    public IntegrationResult AdoptBodyProfile(ActorId source, ActorId copy)
-    {
-        // A profile Poser itself put on the source (its own selector, or an
-        // MCDF import) is not a saved one Customize+ would report: copy its
-        // json straight across.
-        var owned = OverridesFor(source);
-        string? ownedJson = owned.BodyProfileJson ?? owned.Mcdf?.AppliedProfileJson;
-        if (ownedJson != null)
-        {
-            var applied = _port.ApplyTemporaryBodyProfile(copy, ownedJson);
-            if (!applied.Success || applied.Value == default)
-                return IntegrationResult.Fail(applied.Detail ?? "The temporary profile could not be applied.");
-            var current = OverridesFor(copy);
-            Mutate(copy, current with
-            {
-                Baseline = current.Baseline with { BodyProfileCaptured = true },
-                TemporaryBodyProfile = applied.Value,
-                BodyProfileName = owned.BodyProfileName ?? "Duplicated profile",
-                BodyProfileJson = ownedJson,
-            });
-            return IntegrationResult.Ok();
-        }
-        var probe = _port.ProbeBodyProfile(source);
-        if (!probe.Success || probe.Value is not { } bodyState)
-            return IntegrationResult.Fail(probe.Detail ?? "The source's Customize+ state could not be read.");
-        if (!bodyState.ActiveIsSaved || bodyState.ActiveProfile is not { } profile)
-            return IntegrationResult.Ok();
-        return SetBodyProfile(copy, profile, "Duplicated profile");
-    }
-
     public IntegrationResult ResetCollection(ActorId actor)
     {
         var current = OverridesFor(actor);

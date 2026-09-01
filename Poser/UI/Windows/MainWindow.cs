@@ -5929,13 +5929,13 @@ public class MainWindow : Window
         _cameraPane.CenterOnActor(actor.Id);
     }
 
-    /// <summary>The plain duplicate: the appearance, the source's Penumbra
-    /// collection, and its saved Customize+ profile once the body is there.</summary>
+    /// <summary>The plain duplicate: the drawn appearance and the source's
+    /// Penumbra collection, idling. No Customize+ (decision 2026-09-02).</summary>
     private void Duplicate(IActor actor)
     {
         var clone = _lifecycle.SpawnActor(
             $"Duplicate actor '{DisplayName(actor.Name)}'",
-            () => CloneWearingCollection(actor, adoptBodyProfile: true));
+            () => CloneWearingCollection(actor));
         if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
             _selection.Select(SelectionId.ForActor(cloneId));
     }
@@ -5948,35 +5948,32 @@ public class MainWindow : Window
     {
         var clone = _lifecycle.SpawnActorWithPose(
             $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
-            () => CloneWearingCollection(actor, adoptBodyProfile: false),
+            () => CloneWearingCollection(actor),
             actor);
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
             return;
         _animation.Pause(cloneId);
-        _lifecycle.WhenPosable(clone, FreezeGaze);
+        // Before the first draw: a copy that once engaged the camera look-at
+        // and was then paused froze mid blend-out, head off its neck
+        // (2026-09-02). Detached from the start, nothing ever engages.
+        FreezeGaze(clone);
         _selection.Select(SelectionId.ForActor(cloneId));
     }
 
-    /// <summary>The seed copy plus what it does not carry: the equipment
-    /// visibility flags once the body is there, and (plain duplicates
-    /// only) the source's saved Customize+ profile. The Penumbra collection
-    /// is the spawn service's own inherit.</summary>
-    private IActor? CloneWearingCollection(IActor source, bool adoptBodyProfile)
+    /// <summary>The seed copy plus what the built body needs again: the
+    /// drawn look and the equipment visibility flags once posable. The
+    /// Penumbra collection is the spawn service's own inherit. Customize+ is
+    /// never applied: the posed duplicate carries the shape in its bone
+    /// scales and translations, the plain one idles as the game draws it.</summary>
+    private IActor? CloneWearingCollection(IActor source)
     {
         var clone = _spawnService.CloneActor(source);
-        if (clone == null
-            || _bindings.GetActorId(source) is not { } sourceId
-            || _bindings.GetActorId(clone) is not { } cloneId)
-            return clone;
+        if (clone == null)
+            return null;
         _lifecycle.WhenPosable(clone, c =>
         {
             _spawnService.CopyDrawnAppearance(source, c);
             _spawnService.CopyEquipmentVisibility(source, c);
-            if (!adoptBodyProfile)
-                return;
-            var body = _integration.AdoptBodyProfile(sourceId, cloneId);
-            if (!body.Success)
-                _log.Warning($"Duplicate: the body profile was not adopted: {body.Detail}");
         });
         return clone;
     }

@@ -354,80 +354,20 @@ public sealed class DebugBridge : IDisposable
                         if (bone.BoneName == name)
                         {
                             var t = bone.LastTransform;
-                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z } });
+                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W } });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/gazemode":
+            {
+                var mode = Enum.Parse<GazeTargetMode>(query["mode"], true);
+                var r = _gaze.SetGazeMode(actor, mode);
+                return Json(new { ok = r.Success, r.Detail, mode = _gaze.GetGazeState(actor).Mode.ToString() });
             }
             case "/gaze":
             {
                 var g = _gaze.GetGazeState(actor);
                 return Json(new { mode = g.Mode.ToString() });
-            }
-            case "/setbody":
-            {
-                int from = query.TryGetValue("from", out var f) ? int.Parse(f) : 0;
-                var sourceActor = _actors.Actors[from];
-                if (_bindings.GetActorId(sourceActor) is not { } s)
-                    return Json(new { error = "no source id" });
-                var r = _session.AdoptBodyProfile(s, id);
-                return Json(new { ok = r.Success, r.Detail, probe = BodyProfile(id) });
-            }
-            case "/equip":
-            {
-                unsafe
-                {
-                    var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
-                    if (character == null)
-                        return Json(new { error = "no character" });
-                    var equips = new List<string>();
-                    var ids = character->DrawData.EquipmentModelIds;
-                    for (int i = 0; i < ids.Length; i++)
-                        equips.Add($"{ids[i].Id}.{ids[i].Variant}.{ids[i].Stain0}");
-                    var main = character->DrawData.Weapon(FFXIVClientStructs.FFXIV.Client.Game.Character.DrawDataContainer.WeaponSlot.MainHand).ModelId;
-                    var cust = new System.ReadOnlySpan<byte>((byte*)&character->DrawData.CustomizeData, 26);
-                    // The drawn model's own copies (Human +0xA20 customize, +0xA40
-                    // ten equipment models): what is on screen, whatever DrawData says.
-                    string? humanEquip = null, humanCust = null;
-                    var draw = (byte*)character->GameObject.DrawObject;
-                    if (draw != null)
-                    {
-                        var he = new List<string>();
-                        for (int i = 0; i < 10; i++)
-                        {
-                            byte* e = draw + 0xA40 + i * 4;
-                            he.Add($"{*(ushort*)e}.{e[2]}.{e[3]}");
-                        }
-                        humanEquip = string.Join(" ", he);
-                        humanCust = Convert.ToHexString(new System.ReadOnlySpan<byte>(draw + 0xA20, 26));
-                    }
-                    var glassesIds = character->DrawData.GlassesIds;
-                    string humanGlasses = draw == null ? "" : $"{*(ushort*)(draw + 0xA90)}.{draw[0xA92]} {*(ushort*)(draw + 0xA98)}.{draw[0xA9A]}";
-                    string flags = $"{*((byte*)&character->DrawData + 0x23E):X2}{*((byte*)&character->DrawData + 0x23F):X2}";
-                    return Json(new { equipment = string.Join(" ", equips), main = $"{main.Id}.{main.Type}.{main.Variant}", customize = Convert.ToHexString(cust), humanEquip, humanCust, glasses = $"{glassesIds[0]} {glassesIds[1]}", humanGlasses, flags });
-                }
-            }
-            case "/gamename":
-            {
-                if (!query.TryGetValue("name", out var newName))
-                    return Json(new { error = "name is required" });
-                unsafe
-                {
-                    var obj = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)actor.Address;
-                    if (obj == null)
-                        return Json(new { error = "no object" });
-                    int x = 0;
-                    for (; x < newName.Length && x < 63; x++)
-                        obj->Name[x] = (byte)newName[x];
-                    obj->Name[x] = 0;
-                    var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)obj;
-                    if (query.TryGetValue("from", out var fromIndex))
-                    {
-                        var from = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)_actors.Actors[int.Parse(fromIndex)].Address;
-                        character->HomeWorld = from->HomeWorld;
-                        character->CurrentWorld = from->CurrentWorld;
-                    }
-                    return Json(new { ok = true, homeWorld = character->HomeWorld, currentWorld = character->CurrentWorld });
-                }
             }
             case "/redraw":
             {
@@ -459,8 +399,6 @@ public sealed class DebugBridge : IDisposable
                         {
                             _spawner.CopyDrawnAppearance(actor, (IActor)copy);
                             _spawner.CopyEquipmentVisibility(actor, (IActor)copy);
-                            if (!posed)
-                                _session.AdoptBodyProfile(id, cid);
                         });
                     return c;
                 }
@@ -471,7 +409,7 @@ public sealed class DebugBridge : IDisposable
                 if (posed && copyId is { } pid)
                 {
                     _animation.Pause(pid);
-                    _lifecycle.WhenPosable(copy!, c => _gaze.SetGazeMode((IActor)c, GazeTargetMode.Detached));
+                    _gaze.SetGazeMode(copy!, GazeTargetMode.Detached);
                 }
                 return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
             }
