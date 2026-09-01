@@ -37,7 +37,12 @@ public sealed unsafe partial class AnimationRuntimePort
         _staleScanCountdown = 0;
         for (int i = 0; i < _resetWatchPrev.Length; i++)
             _resetWatchPrev[i] = float.NaN;
-        _log.Information($"[AnimReset] watch armed on {actor} for 60s.");
+        var armed = Resolve(actor, out _);
+        string layout = armed != null
+            ? string.Create(CultureInfo.InvariantCulture,
+                $" container at chara+{(nint)(&armed->Timeline) - (nint)armed:x} size {TimelineContainerSize:x}")
+            : string.Empty;
+        _log.Information($"[AnimReset] watch armed on {actor} for 60s.{layout}");
     }
 
     /// <summary>The clip/track/track-controller cursor addresses for a slot,
@@ -126,6 +131,12 @@ public sealed unsafe partial class AnimationRuntimePort
 
         for (int i = 0; i < n; i++)
             Track(line, ref dropped, ref watchIndex, $"c{i}", *cursorsBuffer[i]);
+        // The suspect: chara+0x1A58 read 73 = remaining frames at the pause
+        // (stale hunt 21:38). Its neighbourhood, as ints, every logged tick.
+        line.Append(" cd:");
+        for (int off = 0x1A40; off <= 0x1A70; off += 4)
+            line.Append(string.Create(CultureInfo.InvariantCulture,
+                $" {off:x}={*(int*)((nint)character + off)}"));
         if (n >= 1)
         {
             float c0 = *cursorsBuffer[0];
@@ -173,7 +184,7 @@ public sealed unsafe partial class AnimationRuntimePort
             }
         }
 
-        if (dropped || _resetWatchTicks % 30 == 0)
+        if (dropped || _resetWatchTicks % 5 == 0)
             _log.Information(line.ToString());
 
         // The per-actor clock hunt: any float in the TimelineContainer that
@@ -209,6 +220,7 @@ public sealed unsafe partial class AnimationRuntimePort
             }
             // The sequencer's own per-slot arrays, as floats.
             DumpConstants("seq", (nint)(&character->Timeline.TimelineSequencer), 0x2E0);
+            DumpConstants("chara1a", (nint)character + 0x1A00, 0x100);
             nint groupObj = *(nint*)(schedulerObject + 0x90);
             nint resourceObj = *(nint*)(schedulerObject + 0x98);
             if (groupObj != 0) DumpConstants("group", groupObj, 0x200);
