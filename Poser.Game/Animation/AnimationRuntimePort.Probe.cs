@@ -64,6 +64,13 @@ public sealed unsafe partial class AnimationRuntimePort
         public readonly List<(ScrubControlId Id, float Time, float Speed)>
             Controls = new();
         public readonly Dictionary<ScrubControlId, float> ControlDurations = new();
+        // Prop controls (attached weapon skeletons): clip length + time, so
+        // a clone's props can be seeked by clip once they attach.
+        public readonly List<(float Duration, float Time, float Speed)> Props = new();
+        // Weapon slots (packed WeaponModelId per slot index): the clone
+        // attaches its prop itself on frame one instead of waiting for
+        // the timeline event.
+        public readonly ulong[] WeaponModels = new ulong[3];
     }
 
     private sealed class ProbePending
@@ -78,10 +85,14 @@ public sealed unsafe partial class AnimationRuntimePort
         // schedules the same delayed replay.
         public Action<ActorId>? Reapply;
         public int ReapplyIn;
-        // The first pass (pause, speeds, gaze) waits a few ticks after the
-        // timelines start: props attach through an early timeline event
-        // that needs real frames to finish; pausing on the same tick froze
-        // the wand created-but-hidden-and-unbound (22:59).
+        // Props bind through a timeline event the layer clock has to CROSS
+        // while ticking (the 0.18s lead-in of 8136: bound only after
+        // running past it, 23:14; LoadWeapon alone draws an unbound prop).
+        // So when the source had bound props, the first pass (pause,
+        // speeds) and the control hold wait until the clone's prop is
+        // bound — or PropWaitTicks — instead of a fixed breathing room.
+        public bool PropsPending;
+        public int PropWaitTicks;
         public int ApplyIn;
         public int WaitTicks;
         public readonly List<int> VerifyIn = new();
@@ -122,6 +133,7 @@ public sealed unsafe partial class AnimationRuntimePort
     /// <summary>How long a probe waits for a fresh clone to answer reads
     /// before giving up, in ticks.</summary>
     private const int ProbeWaitTicks = 240;
+    private const int PropWaitTicks = 40;
 
     /// <summary>How many frames the seam method keeps imposing state.</summary>
     private const int SeamFrames = 600;
@@ -166,6 +178,27 @@ public sealed unsafe partial class AnimationRuntimePort
         character->DrawData.HideWeapons(hidden);
         _log.Information($"[AnimProbe] weapon load requested on {actor}: {requested} slot(s); hidden={hidden}.");
         return requested;
+    }
+
+    /// <summary>Attaches a prop the way the timeline's own event does
+    /// (logged 23:04): LoadWeapon(System, model, 0, 1, 0, 0, false).</summary>
+    public bool ProbeAttachProp(ActorId actor, ulong packedModel)
+    {
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return false;
+        var model = *(WeaponModelId*)&packedModel;
+        _probeOurWrite = true;
+        try
+        {
+            character->DrawData.LoadWeapon(
+                DrawDataContainer.WeaponSlot.System, model, 0, 1, 0, 0, false);
+        }
+        finally
+        {
+            _probeOurWrite = false;
+        }
+        return true;
     }
 
     /// <summary>Trace helper: "step -> flags".</summary>
@@ -294,20 +327,58 @@ public sealed unsafe partial class AnimationRuntimePort
                 _log.Error($"[AnimProbe] cancel hook failed: {ex.Message}");
             }
         }
+        if (enabled && _probeLoadWeaponHook == null)
+        {
+            try
+            {
+                _probeLoadWeaponHook = _hooking.HookFromAddress<LoadWeaponDelegate>(
+                    DrawDataContainer.Addresses.LoadWeapon.Value, ProbeLoadWeaponDetour);
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"[AnimProbe] LoadWeapon hook failed: {ex.Message}");
+            }
+        }
         if (enabled)
         {
             _probeTimelineHook.Enable();
             _probeCancelHook?.Enable();
+            _probeLoadWeaponHook?.Enable();
         }
         else
         {
             _probeTimelineHook.Disable();
             _probeCancelHook?.Disable();
+            _probeLoadWeaponHook?.Disable();
         }
         _log.Information($"[AnimProbe] timeline write logging {(enabled ? "ON" : "off")}");
     }
 
     private Hook<CancelTimelineDelegate>? _probeCancelHook;
+
+    // LoadWeapon logger: the game's prop attach goes through here; the
+    // exact arguments are what a direct attach must reproduce.
+    private delegate void LoadWeaponDelegate(
+        DrawDataContainer* container, DrawDataContainer.WeaponSlot slot, ulong modelId,
+        byte a4, byte a5, byte a6, byte a7, bool a8);
+    private Hook<LoadWeaponDelegate>? _probeLoadWeaponHook;
+
+    private void ProbeLoadWeaponDetour(
+        DrawDataContainer* container, DrawDataContainer.WeaponSlot slot, ulong modelId,
+        byte a4, byte a5, byte a6, byte a7, bool a8)
+    {
+        try
+        {
+            _log.Information(
+                $"[AnimProbe] LoadWeapon on container 0x{(nint)container:X} slot={slot} model=0x{modelId:X} "
+                + $"a4={a4} a5={a5} a6={a6} a7={a7} a8={a8} "
+                + (_probeOurWrite ? "by POSER" : "by the game"));
+        }
+        catch
+        {
+        }
+        _probeLoadWeaponHook!.Original(container, slot, modelId, a4, a5, a6, a7, a8);
+    }
 
     /// <summary>Log-only: does the slot death route through the game's
     /// CancelTimeline, or is it a silent natural completion?</summary>
@@ -381,6 +452,23 @@ public sealed unsafe partial class AnimationRuntimePort
                 (control.Id, control.Time, control.PlaybackSpeed));
             capture.ControlDurations[control.Id] = control.Duration;
         }
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            var model = weapon.ModelId;
+            capture.WeaponModels[slotIndex] = *(ulong*)&model;
+        }
+        ForEachPropControl(character, prop =>
+        {
+            var binding = prop->hkaAnimationControl.Binding;
+            if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                return;
+            capture.Props.Add((
+                binding.ptr->Animation.ptr->Duration,
+                prop->hkaAnimationControl.LocalTime,
+                prop->PlaybackSpeed));
+        });
         // The FIELD lies about paused speed: Poser's pause is the speed
         // hook rewriting the value after the game's calculation, so a
         // read here catches the game's x1. The enforcement is the truth.
@@ -882,6 +970,19 @@ public sealed unsafe partial class AnimationRuntimePort
             if (pending.VerifyIn.Count > 0)
             {
                 ProbeWatch(pending);
+                if (pending.PropsPending)
+                {
+                    bool bound = ProbePropBound(pending.Target);
+                    if (bound || --pending.PropWaitTicks <= 0)
+                    {
+                        pending.PropsPending = false;
+                        _log.Information(
+                            $"[AnimProbe] prop wait on {pending.Target}: "
+                            + (bound ? "bound" : "gave up") + $" with {pending.PropWaitTicks} tick(s) left.");
+                        ProbeArmControlHold(pending.Target, pending.Capture);
+                        pending.ApplyIn = pending.Apply != null ? 1 : 0;
+                    }
+                }
                 if (pending.ApplyIn > 0 && --pending.ApplyIn == 0)
                 {
                     ProbeStep(pending.Target, "before session transfer");
@@ -987,7 +1088,10 @@ public sealed unsafe partial class AnimationRuntimePort
                 _log.Information(
                     $"[AnimProbe] Verbs: played {played} timeline(s) on {target}.");
                 ProbeStep(target, "verbs:played");
-                ProbeArmControlHold(target, capture);
+                if (capture.Props.Count > 0)
+                    pending.PropsPending = true;
+                else
+                    ProbeArmControlHold(target, capture);
                 break;
             }
             case ProbeMethod.RawOnce:
@@ -1050,19 +1154,36 @@ public sealed unsafe partial class AnimationRuntimePort
         // travel through the SESSION so the owned record — and every
         // toggle describing it — is right. Port-level enforcement alone
         // paused the engine while the session said "playing".
-        pending.ApplyIn = pending.Apply != null ? 20 : 0;
+        pending.ApplyIn = pending.PropsPending ? 0 : pending.Apply != null ? 1 : 0;
+        pending.PropWaitTicks = PropWaitTicks;
         if (pending.Reapply != null)
-            pending.ReapplyIn = 50;
+            pending.ReapplyIn = 30 + (pending.PropsPending ? PropWaitTicks : 0);
         pending.WaitTicks = 0;
-        pending.VerifyIn.Add(25);
-        pending.VerifyIn.Add(40);
-        pending.VerifyIn.Add(80);
+        pending.VerifyIn.Add(2);
+        pending.VerifyIn.Add(15);
+        pending.VerifyIn.Add(60);
         pending.VerifyIn.Add(240);
     }
 
     /// <summary>Arms a controls-only seam hold: stored scrub times and
     /// speeds written at the seam until every control exists and took a
     /// write, then disarms and logs how long it took.</summary>
+    private bool ProbePropBound(ActorId target)
+    {
+        var character = Resolve(target, out _);
+        if (character == null)
+            return false;
+        bool bound = false;
+        ForEachPropControl(character, _ => bound = true);
+        if (!bound)
+            return false;
+        // Bound is one tick early: the game shows the prop a beat after
+        // binding it, and freezing on the bind tick left it drawn hidden
+        // (23:17). Ready = bound AND the System slot's draw object visible.
+        var propDraw = character->DrawData.Weapon(DrawDataContainer.WeaponSlot.System).DrawData.DrawObject;
+        return propDraw != null && propDraw->IsVisible;
+    }
+
     private void ProbeArmControlHold(ActorId target, RawTimelineCapture capture)
     {
         if (capture.Controls.Count == 0)
@@ -1323,6 +1444,29 @@ public sealed unsafe partial class AnimationRuntimePort
                 _log.Information(
                     $"[AnimProbe] settle seek {id}{(mapped == id ? "" : "->" + mapped)} -> {time:0.00}: "
                     + (sought.Success ? "ok" : $"FAIL {sought.Detail}"));
+            }
+            // Props by clip: each verify tick re-seeks every bound prop to
+            // the captured time (the bind itself is the timeline's event;
+            // see PropsPending).
+            var cloneCharacter = Resolve(target, out _);
+            if (cloneCharacter != null && capture.Props.Count > 0)
+            {
+                ForEachPropControl(cloneCharacter, prop =>
+                {
+                    var binding = prop->hkaAnimationControl.Binding;
+                    if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+                        return;
+                    float duration = binding.ptr->Animation.ptr->Duration;
+                    foreach (var (d, t, _) in capture.Props)
+                    {
+                        if (Math.Abs(d - duration) < 0.05f)
+                        {
+                            prop->hkaAnimationControl.LocalTime =
+                                Math.Clamp(t, 0f, Math.Max(0f, duration - 1f / 30f));
+                            break;
+                        }
+                    }
+                });
             }
         }
         bool match = ProbeMatches(target, capture, log: true, method);

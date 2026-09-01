@@ -1486,6 +1486,7 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         _slotSpeedHook?.Dispose();
         _probeTimelineHook?.Dispose();
         _probeCancelHook?.Dispose();
+        _probeLoadWeaponHook?.Dispose();
         _enforcement.Clear();
         _byAddress.Clear();
         // The session restores per-actor overrides before disposal; the

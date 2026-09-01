@@ -295,6 +295,17 @@ public sealed class DebugBridge : IDisposable
                 var r = _animation.ResetSlot(id, Slot());
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
             }
+            case "/attachprop":
+            {
+                if (!query.TryGetValue("model", out var m))
+                    return Json(new { error = "model (hex packed WeaponModelId) is required" });
+                ulong packed = Convert.ToUInt64(m.Replace("0x", string.Empty), 16);
+                bool ok = _port.ProbeAttachProp(id, packed);
+                return Json(new { ok, state = State(id, actor) });
+            }
+            case "/writelog":
+                _port.ProbeSetTimelineLogging(!query.ContainsKey("off"));
+                return Json(new { ok = true, logging = _port.ProbeLogging });
             case "/watch":
                 _port.ProbeWatchReset(id);
                 return Json(new { ok = true });
