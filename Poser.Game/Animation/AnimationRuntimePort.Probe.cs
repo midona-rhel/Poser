@@ -78,6 +78,11 @@ public sealed unsafe partial class AnimationRuntimePort
         // schedules the same delayed replay.
         public Action<ActorId>? Reapply;
         public int ReapplyIn;
+        // The first pass (pause, speeds, gaze) waits a few ticks after the
+        // timelines start: props attach through an early timeline event
+        // that needs real frames to finish; pausing on the same tick froze
+        // the wand created-but-hidden-and-unbound (22:59).
+        public int ApplyIn;
         public int WaitTicks;
         public readonly List<int> VerifyIn = new();
         // The slot-0/mode watch: iteration one showed the base slot
@@ -425,10 +430,12 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 ref var weapon = ref character->DrawData.Weapon(
                     (DrawDataContainer.WeaponSlot)slotIndex);
-                weapons.Append(CultureInfo.InvariantCulture,
-                    $"[{slotIndex}] id {weapon.ModelId.Id}"
-                    + $".{weapon.ModelId.Type}.{weapon.ModelId.Variant}");
                 var weaponDraw = weapon.DrawData.DrawObject;
+                weapons.Append(string.Create(CultureInfo.InvariantCulture,
+                    $"[{slotIndex}] id {weapon.ModelId.Id}.{weapon.ModelId.Type}.{weapon.ModelId.Variant}"));
+                weapons.Append(weaponDraw == null
+                    ? " nodraw"
+                    : weaponDraw->IsVisible ? " draw+visible" : " draw+hidden");
                 if (weaponDraw != null
                     && weaponDraw->Object.GetObjectType()
                         == ObjectType.CharacterBase
@@ -875,6 +882,12 @@ public sealed unsafe partial class AnimationRuntimePort
             if (pending.VerifyIn.Count > 0)
             {
                 ProbeWatch(pending);
+                if (pending.ApplyIn > 0 && --pending.ApplyIn == 0)
+                {
+                    ProbeStep(pending.Target, "before session transfer");
+                    pending.Apply?.Invoke(pending.Target);
+                    ProbeStep(pending.Target, "after session transfer");
+                }
                 if (pending.ReapplyIn > 0 && --pending.ReapplyIn == 0)
                 {
                     ProbeStep(pending.Target, "before second pass");
@@ -1037,15 +1050,13 @@ public sealed unsafe partial class AnimationRuntimePort
         // travel through the SESSION so the owned record — and every
         // toggle describing it — is right. Port-level enforcement alone
         // paused the engine while the session said "playing".
-        ProbeStep(target, "before session transfer");
-        pending.Apply?.Invoke(target);
-        ProbeStep(target, "after session transfer");
+        pending.ApplyIn = pending.Apply != null ? 20 : 0;
         if (pending.Reapply != null)
-            pending.ReapplyIn = 30;
+            pending.ReapplyIn = 50;
         pending.WaitTicks = 0;
-        pending.VerifyIn.Add(2);
-        pending.VerifyIn.Add(15);
-        pending.VerifyIn.Add(60);
+        pending.VerifyIn.Add(25);
+        pending.VerifyIn.Add(40);
+        pending.VerifyIn.Add(80);
         pending.VerifyIn.Add(240);
     }
 
