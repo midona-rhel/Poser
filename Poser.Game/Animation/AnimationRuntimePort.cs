@@ -16,9 +16,13 @@ using Poser.Game.Bindings;
 namespace Poser.Game.Animation;
 
 /// <summary>Provides native animation operations.</summary>
-public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
+public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort, IDisposable
 {
     private readonly IFramework _framework;
+    // Kept for the probe harness (AnimationRuntimePort.Probe.cs), which
+    // arms its own hook lazily.
+    private readonly ISigScanner _sigScanner;
+    private readonly Dalamud.Plugin.Services.IGameInteropProvider _hooking;
     private readonly IPluginLog _log;
     private readonly StableBindingRegistry _bindings;
     private readonly PosingService _posing;
@@ -99,6 +103,8 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         IDataManager data)
     {
         _framework = framework;
+        _sigScanner = sigScanner;
+        _hooking = hooking;
         _timelineSheet = data.GetExcelSheet<Lumina.Excel.Sheets.ActionTimeline>();
         _log = log;
         _bindings = bindings;
@@ -251,8 +257,10 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             // Run after the game's calculation so the override wins
             // whatever the game just decided.
             container->OverallSpeed = speed;
+            ProbeSeamPass(container);
             return true;
         }
+        ProbeSeamPass(container);
         return result;
     }
 
@@ -317,6 +325,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
     {
         EnforceForcedLoops();
         EnforceLoops(framework);
+        ProbeTick();
     }
 
     /// <summary>Collects live animation controls.</summary>
@@ -532,7 +541,16 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
             character->ModeParam = 0;
             character->Timeline.BaseOverride = 0;
         }
-        return _setTimelineId!(&character->Timeline.TimelineSequencer, timeline, nint.Zero);
+        _probeOurWrite = true;
+        try
+        {
+            return _setTimelineId!(
+                &character->Timeline.TimelineSequencer, timeline, nint.Zero);
+        }
+        finally
+        {
+            _probeOurWrite = false;
+        }
     }
 
     public AnimationPortResult RestoreBase(ActorId actor, BaseAnimationCapture capture)
@@ -1109,6 +1127,7 @@ public sealed unsafe class AnimationRuntimePort : IAnimationRuntimePort, IDispos
         _forcedLoops.Clear();
         _speedHook?.Dispose();
         _slotSpeedHook?.Dispose();
+        _probeTimelineHook?.Dispose();
         _enforcement.Clear();
         _byAddress.Clear();
         // The session restores per-actor overrides before disposal; the

@@ -139,8 +139,14 @@ public sealed class AnimationPane : IDisposable
         ISessionGenerationSource sessionGeneration,
         ITextureProvider textures,
         SceneSession scene,
-        UserNotices notices)
+        UserNotices notices,
+        Game.Animation.AnimationRuntimePort probePort,
+        global::Poser.Services.IActorSpawnService spawner,
+        Game.Scene.SceneLifecycleHistory lifecycle)
     {
+        _probePort = probePort;
+        _spawner = spawner;
+        _lifecycle = lifecycle;
         _notices = notices;
         _animation = animation;
         _catalog = catalog;
@@ -204,11 +210,79 @@ public sealed class AnimationPane : IDisposable
                 next => _openAnimationLayers = next,
                 form => DrawAnimationLayers(
                     form, actor, reading, owned, advanced));
+            page.Section(
+                "Debug",
+                _openDebug,
+                next => _openDebug = next,
+                form => DebugRows(form, actor));
         });
 
         DrawPicker();
     }
 
+
+    // ── The animation ownership probe (debug harness) ─────────────────
+
+    private readonly Game.Animation.AnimationRuntimePort _probePort;
+    private readonly global::Poser.Services.IActorSpawnService _spawner;
+    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private bool _openDebug;
+
+    /// <summary>The ownership hunt's controls: dump, write logging, and
+    /// the three clone-with-animation strategies. Everything reports to
+    /// the plugin log; findings drive the ownership design, then this
+    /// section goes away.</summary>
+    private void DebugRows(Crystarium.FormScope form, ActorId actor)
+    {
+        form.Switch(
+            "Log timeline writes",
+            _probePort.ProbeLogging,
+            next => _probePort.ProbeSetTimelineLogging(next),
+            "Log every native timeline write and who made it");
+        form.Actions("Probe", actions =>
+        {
+            actions.Button(
+                "Dump",
+                () => _probePort.ProbeDump(actor),
+                help: "Log this actor's animation state");
+            actions.Button(
+                "Clone A",
+                () => ProbeClone(actor, Game.Animation.ProbeMethod.Verbs),
+                help: "Clone; apply animation via play verbs");
+            actions.Button(
+                "Clone B",
+                () => ProbeClone(actor, Game.Animation.ProbeMethod.RawOnce),
+                help: "Clone; apply animation via raw writes, once");
+            actions.Button(
+                "Clone C",
+                () => ProbeClone(actor, Game.Animation.ProbeMethod.Seam),
+                help: "Clone; hold animation at the update seam");
+        });
+    }
+
+    private void ProbeClone(ActorId source, Game.Animation.ProbeMethod method)
+    {
+        if (_probePort.ProbeCapture(source) is not { } capture)
+        {
+            _notices.Failed("Probe: the source did not answer a read.");
+            return;
+        }
+        var resolved = _bindings.Resolve(source);
+        if (!resolved.Success || resolved.Value is not { } sourceActor)
+        {
+            _notices.Failed("Probe: the source actor did not resolve.");
+            return;
+        }
+        var clone = _lifecycle.SpawnActor(
+            $"Probe clone ({method})",
+            () => _spawner.CloneActor(sourceActor));
+        if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
+        {
+            _notices.Failed("Probe: the clone did not spawn.");
+            return;
+        }
+        _probePort.ProbeSchedule(cloneId, capture, method);
+    }
 
     private void DrawStance(
         Crystarium.FormScope form,
