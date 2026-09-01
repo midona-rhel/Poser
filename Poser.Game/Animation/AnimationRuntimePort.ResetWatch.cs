@@ -29,6 +29,9 @@ public sealed unsafe partial class AnimationRuntimePort
         _resetWatchTicks = 1200;
         _resetConstantsDumped = false;
         _containerPrev = null;
+        _lastStableFrames = float.NaN;
+        _oldPositionFrames = float.NaN;
+        _staleScanDone = false;
         for (int i = 0; i < _resetWatchPrev.Length; i++)
             _resetWatchPrev[i] = float.NaN;
         _log.Information($"[AnimReset] watch armed on {actor} for 20s.");
@@ -120,6 +123,14 @@ public sealed unsafe partial class AnimationRuntimePort
 
         for (int i = 0; i < n; i++)
             Track(line, ref dropped, ref watchIndex, $"c{i}", *cursorsBuffer[i]);
+        if (n >= 1)
+        {
+            float c0 = *cursorsBuffer[0];
+            if (!float.IsNaN(_lastStableFrames) && c0 < _lastStableFrames - 5f && float.IsNaN(_oldPositionFrames))
+                _oldPositionFrames = _lastStableFrames;
+            _lastStableFrames = c0;
+            ScanForStalePosition(character);
+        }
 
         // The limits the cursors are measured against (read-only, static).
         if (n >= 2)
@@ -263,6 +274,46 @@ public sealed unsafe partial class AnimationRuntimePort
     }
 
     private bool _resetConstantsDumped;
+    private float _lastStableFrames = float.NaN;
+    private float _oldPositionFrames = float.NaN;
+    private bool _staleScanDone;
+
+    /// <summary>After a scrub (a backward jump of the scheduler clock) the
+    /// pre-scrub position is the value to hunt: any field on the Character or
+    /// its timeline container still holding it — as frames, seconds, or an
+    /// int — is the reference the old schedule is judged from.</summary>
+    private void ScanForStalePosition(Character* character)
+    {
+        if (float.IsNaN(_oldPositionFrames) || _staleScanDone)
+            return;
+        _staleScanDone = true;
+        float frames = _oldPositionFrames;
+        float seconds = frames / 30f;
+        var line = new StringBuilder(400).Append(CultureInfo.InvariantCulture,
+            $"[AnimReset] stale hunt for {frames:0.0}f/{seconds:0.00}s:");
+        int printed = 0;
+        void Scan(string name, nint address, int size)
+        {
+            for (int off = 0; off + 4 <= size && printed < 40; off += 4)
+            {
+                int raw = *(int*)(address + off);
+                if (raw == 0)
+                    continue;
+                float f = BitConverter.Int32BitsToSingle(raw);
+                bool hit = float.IsFinite(f) && (Math.Abs(f - frames) <= 2f || Math.Abs(f - seconds) <= 0.07f);
+                bool intHit = Math.Abs(raw - (int)Math.Round(frames)) <= 2;
+                if (!hit && !intHit)
+                    continue;
+                line.Append(hit
+                    ? string.Create(CultureInfo.InvariantCulture, $" {name}+{off:x3}={f:0.##}f")
+                    : string.Create(CultureInfo.InvariantCulture, $" {name}+{off:x3}={raw}i"));
+                printed++;
+            }
+        }
+        Scan("chara", (nint)character, 0x2000);
+        Scan("cont", (nint)(&character->Timeline), TimelineContainerSize);
+        _log.Information(printed == 0 ? line.Append(" nothing").ToString() : line.ToString());
+    }
 
     /// <summary>Prints the plausible durations/positions on one object:
     /// floats in [0.5, 5000] and ints in [1, 100000] that are not pointers.</summary>
