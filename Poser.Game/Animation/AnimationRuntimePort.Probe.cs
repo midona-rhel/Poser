@@ -402,9 +402,70 @@ public sealed unsafe partial class AnimationRuntimePort
         }
     }
 
+    private ActorId? _clockHuntActor;
+    private float[]? _clockPrevious;
+    private int[]? _clockScores;
+    private int _clockTicks;
+
+    /// <summary>The clock hunt: watches every float in the actor's
+    /// TimelineContainer for ~3 seconds and reports the offsets that
+    /// advance like a clock each tick. The scheduler's elapsed time — the
+    /// second clock a real scrub must move — lives at one of them.</summary>
+    public void ProbeFindClocks(ActorId actor)
+    {
+        _clockHuntActor = actor;
+        _clockPrevious = null;
+        _clockScores = null;
+        _clockTicks = 0;
+        _log.Information($"[AnimProbe] clock hunt armed on {actor}.");
+    }
+
+    private void ProbeClockHuntTick()
+    {
+        if (_clockHuntActor is not { } actor)
+            return;
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return;
+        int size = TimelineContainerSize / 4;
+        var basePtr = (float*)&character->Timeline;
+        if (_clockPrevious == null || _clockScores == null)
+        {
+            _clockPrevious = new float[size];
+            _clockScores = new int[size];
+            for (int i = 0; i < size; i++)
+                _clockPrevious[i] = basePtr[i];
+            return;
+        }
+        for (int i = 0; i < size; i++)
+        {
+            float current = basePtr[i];
+            float delta = current - _clockPrevious[i];
+            if (delta is > 0.004f and < 0.12f && float.IsFinite(current))
+                _clockScores[i]++;
+            _clockPrevious[i] = current;
+        }
+        if (++_clockTicks < 180)
+            return;
+        var found = new StringBuilder(128);
+        for (int i = 0; i < size; i++)
+        {
+            if (_clockScores[i] >= 150)
+                found.Append(CultureInfo.InvariantCulture,
+                    $"+{i * 4:x3}={basePtr[i]:0.00} ");
+        }
+        _log.Information(
+            "[AnimProbe] clock hunt done: "
+            + (found.Length > 0 ? found.ToString() : "no steady clocks found."));
+        _clockHuntActor = null;
+        _clockPrevious = null;
+        _clockScores = null;
+    }
+
     /// <summary>Runs from the port's framework tick.</summary>
     private void ProbeTick()
     {
+        ProbeClockHuntTick();
         ProbeSampleSpeedHolds();
         if (_probePending.Count > 0)
             ProbePendingPass();

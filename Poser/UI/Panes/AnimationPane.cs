@@ -255,6 +255,10 @@ public sealed class AnimationPane : IDisposable
                 () => _probePort.ProbeDump(actor),
                 help: "Log this actor's animation state");
             actions.Button(
+                "Find clocks",
+                () => _probePort.ProbeFindClocks(actor),
+                help: "Log which timeline offsets advance like clocks");
+            actions.Button(
                 "Clone A",
                 () => ProbeClone(actor, Game.Animation.ProbeMethod.Verbs),
                 help: "Clone; apply animation via play verbs");
