@@ -260,10 +260,6 @@ public static class SpawnBrowserView
 
     private static readonly Action<string> IgnoreQuery = static _ => { };
 
-    /// <summary>The last draw's band costs, for the window's open-frame
-    /// log: the chrome frame, the tab strip, the scroll body.</summary>
-    public static double LastFrameMs, LastTabsMs, LastBodyMs;
-
     public static void Draw(SpawnBrowserViewModel vm, Vector2 origin)
     {
         ArgumentNullException.ThrowIfNull(vm);
@@ -309,7 +305,6 @@ public static class SpawnBrowserView
         // field IS the title-bar content now, the tab strip is the band,
         // and the frame owns every rule, fill and hover treatment (user
         // 2026-08-11: the hand-drawn chassis "doesn't look quite right").
-        var frameClock = System.Diagnostics.Stopwatch.StartNew();
         var rects = Crystarium.WindowFrame(
             "spawn-browser",
             origin,
@@ -325,16 +320,8 @@ public static class SpawnBrowserView
                 FooterLeft = vm.Footer,
             });
 
-        frameClock.Stop();
-        LastFrameMs = frameClock.Elapsed.TotalMilliseconds;
-        var tabsClock = System.Diagnostics.Stopwatch.StartNew();
         DrawTabs(vm, rects.Band, scale, theme);
-        tabsClock.Stop();
-        LastTabsMs = tabsClock.Elapsed.TotalMilliseconds;
-        var bodyClock = System.Diagnostics.Stopwatch.StartNew();
         DrawBody(vm, rects.Body, scale, theme);
-        bodyClock.Stop();
-        LastBodyMs = bodyClock.Elapsed.TotalMilliseconds;
         vm.FooterRect = rects.Footer;
 
         if (submit)

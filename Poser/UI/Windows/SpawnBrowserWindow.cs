@@ -231,7 +231,6 @@ public sealed class SpawnBrowserWindow : Window
         // the gzipped path lists, ready long before the first open.
         _catalogRowsTask = System.Threading.Tasks.Task.Run(() =>
         {
-            var mintClock = System.Diagnostics.Stopwatch.StartNew();
             var effectAssets = _assets.Effects;
             var effectRows = new SpawnBrowserRow[effectAssets.Count];
             for (int i = 0; i < effectAssets.Count; i++)
@@ -256,10 +255,6 @@ public sealed class SpawnBrowserWindow : Window
                     0u,
                     modelAssets[i].Context,
                     false);
-            mintClock.Stop();
-            _log?.Information(
-                $"[SpawnBrowser] catalog mint finished off-thread in "
-                + $"{mintClock.ElapsedMilliseconds}ms");
             return (effectRows, modelRows);
         });
 
@@ -308,7 +303,6 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void OnOpen()
     {
-        var openClock = System.Diagnostics.Stopwatch.StartNew();
         // No rescan here: the index scans once at startup and every save
         // tells it — the Draw revision check re-lists whenever it moves.
         BuildRows();
@@ -324,16 +318,7 @@ public sealed class SpawnBrowserWindow : Window
         // Re-read rather than trust the cached toggle: a config reset is not
         // routed through this window.
         _vm.Frozen = _configuration.Config.SpawnFrozen;
-        openClock.Stop();
-        _log?.Information(
-            $"[SpawnBrowser] OnOpen took {openClock.Elapsed.TotalMilliseconds:F1}ms");
-        _framesToLog = 3;
     }
-
-    /// <summary>The first frames after an open log their WHOLE cost
-    /// unconditionally — the stutter hunt needs the number even when it
-    /// is under the warning gate.</summary>
-    private int _framesToLog;
 
     public override void PreDraw()
     {
@@ -364,52 +349,7 @@ public sealed class SpawnBrowserWindow : Window
 
     public override void PostDraw() => ImGui.PopStyleVar(2);
 
-    public override void Draw()
-    {
-        var frameClock = System.Diagnostics.Stopwatch.StartNew();
-        int gen0 = GC.CollectionCount(0);
-        int gen1 = GC.CollectionCount(1);
-        int gen2 = GC.CollectionCount(2);
-        _viewMs = 0;
-        try
-        {
-            DrawPortal();
-        }
-        finally
-        {
-            frameClock.Stop();
-            double ms = frameClock.Elapsed.TotalMilliseconds;
-            if (_framesToLog > 0)
-            {
-                _framesToLog--;
-                _log?.Information(
-                    $"[SpawnBrowser] open frame {3 - _framesToLog}: "
-                    + $"{ms:F1}ms (view {_viewMs:F1}ms — frame "
-                    + $"{SpawnBrowserView.LastFrameMs:F1} tabs "
-                    + $"{SpawnBrowserView.LastTabsMs:F1} body "
-                    + $"{SpawnBrowserView.LastBodyMs:F1}, gc "
-                    + $"{GC.CollectionCount(0) - gen0}/"
-                    + $"{GC.CollectionCount(1) - gen1}/"
-                    + $"{GC.CollectionCount(2) - gen2}, "
-                    + $"rows {_vm.Rows.Count}, "
-                    + $"visible {_vm.Visible.Count})");
-            }
-            else if (ms > 8)
-            {
-                _log?.Warning(
-                    $"[SpawnBrowser] frame took {ms:F1}ms "
-                    + $"(view {_viewMs:F1}ms, gc "
-                    + $"{GC.CollectionCount(0) - gen0}/"
-                    + $"{GC.CollectionCount(1) - gen1}/"
-                    + $"{GC.CollectionCount(2) - gen2}, "
-                    + $"rows {_vm.Rows.Count}, visible {_vm.Visible.Count})");
-            }
-        }
-    }
-
-    /// <summary>The view draw's share of the frame, for the open-frame
-    /// log's split.</summary>
-    private double _viewMs;
+    public override void Draw() => DrawPortal();
 
     private void DrawPortal()
     {
@@ -427,26 +367,12 @@ public sealed class SpawnBrowserWindow : Window
             || _library.Snapshot.Revision != _libraryRevision)
         {
             _built = false;
-            var rebuildClock = System.Diagnostics.Stopwatch.StartNew();
             BuildRows();
-            rebuildClock.Stop();
-            if (rebuildClock.ElapsedMilliseconds > 8)
-                _log?.Warning(
-                    $"[SpawnBrowser] rebuild took {rebuildClock.ElapsedMilliseconds}ms "
-                    + $"(rows {_vm.Rows.Count})");
         }
         ReconcilePendingSpawn();
         SyncQuery();
         if (_refilter)
-        {
-            var filterClock = System.Diagnostics.Stopwatch.StartNew();
             Refilter();
-            filterClock.Stop();
-            if (filterClock.ElapsedMilliseconds > 8)
-                _log?.Warning(
-                    $"[SpawnBrowser] refilter took {filterClock.ElapsedMilliseconds}ms "
-                    + $"(visible {_vm.Visible.Count})");
-        }
         if (_reseatHighlight)
         {
             _reseatHighlight = false;
@@ -502,10 +428,7 @@ public sealed class SpawnBrowserWindow : Window
             min + ImGui.GetWindowSize());
         try
         {
-            var viewClock = System.Diagnostics.Stopwatch.StartNew();
             SpawnBrowserView.Draw(_vm, min);
-            viewClock.Stop();
-            _viewMs = viewClock.Elapsed.TotalMilliseconds;
 
             // The footer band is the window's GRAB: pinned, the portal is
             // a palette, and a palette must be movable.
