@@ -406,6 +406,15 @@ public sealed unsafe partial class AnimationRuntimePort
     private float[]? _clockPrevious;
     private int[]? _clockScores;
     private int _clockTicks;
+    // One-level pointer chase: heap objects the container references,
+    // snapshotted at arm time. The container itself held no steady
+    // clocks (hunt one), so the scheduler's clock lives behind one of
+    // these or counts in frames/ms — hunt two watches for all three.
+    private readonly List<nint> _clockPointers = new();
+    private float[]? _clockPtrPrevious;
+    private int[]? _clockPtrScores;
+    private const int ClockPtrBytes = 0x140;
+    private const int ClockPtrMax = 24;
 
     /// <summary>The clock hunt: watches every float in the actor's
     /// TimelineContainer for ~3 seconds and reports the offsets that
@@ -420,6 +429,12 @@ public sealed unsafe partial class AnimationRuntimePort
         _log.Information($"[AnimProbe] clock hunt armed on {actor}.");
     }
 
+    /// <summary>A per-tick advance that reads as a clock in any unit:
+    /// seconds (~dt), frames (~1), or milliseconds (~16).</summary>
+    private static bool ClockLikeDelta(float delta) =>
+        delta is (> 0.004f and < 0.12f) or (> 0.4f and < 2.5f)
+            or (> 6f and < 40f);
+
     private void ProbeClockHuntTick()
     {
         if (_clockHuntActor is not { } actor)
@@ -429,30 +444,72 @@ public sealed unsafe partial class AnimationRuntimePort
             return;
         int size = TimelineContainerSize / 4;
         var basePtr = (float*)&character->Timeline;
+        int ptrFloats = ClockPtrBytes / 4;
         if (_clockPrevious == null || _clockScores == null)
         {
             _clockPrevious = new float[size];
             _clockScores = new int[size];
             for (int i = 0; i < size; i++)
                 _clockPrevious[i] = basePtr[i];
+            // Arm the pointer chase: plausible heap pointers inside the
+            // container, deduplicated, capped.
+            _clockPointers.Clear();
+            var qwords = (nint*)basePtr;
+            for (int q = 0; q < size / 2 && _clockPointers.Count < ClockPtrMax; q++)
+            {
+                nint value = qwords[q];
+                if (value > 0x10000 && value < 0x7FFF_FFFF_FFFF
+                    && (value & 0x7) == 0 && !_clockPointers.Contains(value))
+                    _clockPointers.Add(value);
+            }
+            _clockPtrPrevious = new float[_clockPointers.Count * ptrFloats];
+            _clockPtrScores = new int[_clockPointers.Count * ptrFloats];
+            for (int t = 0; t < _clockPointers.Count; t++)
+            {
+                var target = (float*)_clockPointers[t];
+                for (int i = 0; i < ptrFloats; i++)
+                    _clockPtrPrevious[t * ptrFloats + i] = target[i];
+            }
             return;
         }
         for (int i = 0; i < size; i++)
         {
             float current = basePtr[i];
-            float delta = current - _clockPrevious[i];
-            if (delta is > 0.004f and < 0.12f && float.IsFinite(current))
+            if (ClockLikeDelta(current - _clockPrevious[i]) && float.IsFinite(current))
                 _clockScores[i]++;
             _clockPrevious[i] = current;
         }
+        for (int t = 0; t < _clockPointers.Count; t++)
+        {
+            var target = (float*)_clockPointers[t];
+            for (int i = 0; i < ptrFloats; i++)
+            {
+                float current = target[i];
+                int index = t * ptrFloats + i;
+                if (ClockLikeDelta(current - _clockPtrPrevious![index]) &&
+                    float.IsFinite(current))
+                    _clockPtrScores![index]++;
+                _clockPtrPrevious[index] = current;
+            }
+        }
         if (++_clockTicks < 180)
             return;
-        var found = new StringBuilder(128);
+        var found = new StringBuilder(192);
         for (int i = 0; i < size; i++)
         {
             if (_clockScores[i] >= 150)
                 found.Append(CultureInfo.InvariantCulture,
-                    $"+{i * 4:x3}={basePtr[i]:0.00} ");
+                    $"base+{i * 4:x3}={basePtr[i]:0.00} ");
+        }
+        for (int t = 0; t < _clockPointers.Count; t++)
+        {
+            var target = (float*)_clockPointers[t];
+            for (int i = 0; i < ptrFloats; i++)
+            {
+                if (_clockPtrScores![t * ptrFloats + i] >= 150)
+                    found.Append(CultureInfo.InvariantCulture,
+                        $"p{t}(0x{_clockPointers[t]:X})+{i * 4:x3}={target[i]:0.00} ");
+            }
         }
         _log.Information(
             "[AnimProbe] clock hunt done: "
@@ -460,6 +517,9 @@ public sealed unsafe partial class AnimationRuntimePort
         _clockHuntActor = null;
         _clockPrevious = null;
         _clockScores = null;
+        _clockPtrPrevious = null;
+        _clockPtrScores = null;
+        _clockPointers.Clear();
     }
 
     /// <summary>Runs from the port's framework tick.</summary>
