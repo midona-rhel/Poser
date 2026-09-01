@@ -534,44 +534,62 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
 
     // ── Penumbra: spawn collection inheritance ───────────────────────────
 
+    // The duplicate's own temporary collection per clone address: deleted
+    // with the clone, so no identity mapping outlives it (a foreign
+    // temporary assignment cannot be undone through the API, and one left
+    // on "Poser Six" fed the next Poser Six another actor's meta, 00:5x).
+    private readonly Dictionary<nint, Guid> _duplicateCollections = new();
+
+    /// <summary>Gives the clone a Poser-owned temporary collection built from
+    /// the source's LIVE resolution: every loaded resource that resolves off
+    /// its game path, plus the source's meta manipulations. That is exactly
+    /// what the source draws with — whether its own collection is a saved
+    /// one, another plugin's temporary one, or nothing — and the copy's
+    /// meta and race-specific models follow (the ordinary assignment left a
+    /// Miqo'te copy on Midlander fallback models).</summary>
     public IntegrationPortResult InheritCollection(nint sourceAddress, nint cloneAddress) =>
         Guarded(Penumbra, "Inherit collection", () =>
         {
             if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
                 return refusal;
-            // The source's EFFECTIVE collection: Penumbra answers the
-            // individual assignment when there is one and the collection it
-            // actually resolves otherwise, which is what "looks the same"
-            // means. A temporary collection from another plugin (a Mare
-            // sync, say) answers here too but is not in Penumbra's storage,
-            // so the assignment below refuses with CollectionMissing rather
-            // than silently half-applying.
-            var (valid, _, (id, name)) =
-                _getCollectionForObject.InvokeFunc(IndexOf(sourceAddress));
-            if (!valid)
+            int sourceIndex = IndexOf(sourceAddress);
+            int cloneIndex = IndexOf(cloneAddress);
+            var trees = _getResourcePaths.InvokeFunc(new[] { (ushort)sourceIndex });
+            if (trees.Length == 0 || trees[0] is not { } tree)
+                return IntegrationPortResult.Fail("Penumbra reported no resources for the source.");
+            var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (resolved, gamePaths) in tree)
+                foreach (var gamePath in gamePaths)
+                    if (!string.Equals(gamePath, resolved, StringComparison.OrdinalIgnoreCase))
+                        redirects[gamePath] = resolved;
+            string manipulations = _getMetaManipulations.InvokeFunc(sourceIndex) ?? string.Empty;
+            var (createEc, collection) = _createTemporaryCollection.InvokeFunc(
+                "Poser", $"Poser duplicate {cloneIndex}");
+            if (createEc != PenumbraEcSuccess)
                 return IntegrationPortResult.Fail(
-                    "Penumbra cannot identify the actor this clone was copied from.");
-            var (ec, _) = _setCollectionForObject.InvokeFunc(
-                IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
-            // A TEMPORARY collection (an MCDF import's, Mare's) is not in the
-            // ordinary assignment's book: Penumbra answers CollectionMissing
-            // (code 2, Valya 00:29). Those are placed by their own call.
-            if (ec == 2)
-                ec = _assignTemporaryCollection.InvokeFunc(id, IndexOf(cloneAddress), /*forceAssignment*/ true);
-            return PenumbraResult(ec, $"assigning the source's collection \"{name}\" to the clone");
-        });
-
-    public IntegrationPortResult InheritAppearance(nint sourceAddress, nint cloneAddress) =>
-        Guarded(Glamourer, "Inherit appearance", () =>
-        {
-            if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
-                return refusal;
-            var (readEc, state) = _getStateBase64.InvokeFunc(IndexOf(sourceAddress), 0u);
-            if (readEc != 0 || string.IsNullOrEmpty(state))
-                return IntegrationPortResult.Fail($"Glamourer would not give the source's state (code {readEc}).");
-            int ec = _applyState.InvokeFunc(
-                state, IndexOf(cloneAddress), LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
-            return GlamourerResult(ec, "applying the source's appearance to the clone");
+                    $"Penumbra failed creating the duplicate's collection (code {createEc}).");
+            if (redirects.Count > 0 || manipulations.Length > 0)
+            {
+                int modEc = _addTemporaryMod.InvokeFunc(
+                    "PoserDuplicate", collection, redirects, manipulations, 0);
+                if (modEc != PenumbraEcSuccess)
+                {
+                    _deleteTemporaryCollection.InvokeFunc(collection);
+                    return IntegrationPortResult.Fail(
+                        $"Penumbra failed filling the duplicate's collection (code {modEc}).");
+                }
+            }
+            int assignEc = _assignTemporaryCollection.InvokeFunc(collection, cloneIndex, /*forceAssignment*/ true);
+            if (assignEc != PenumbraEcSuccess)
+            {
+                _deleteTemporaryCollection.InvokeFunc(collection);
+                return IntegrationPortResult.Fail(
+                    $"Penumbra failed assigning the duplicate's collection (code {assignEc}).");
+            }
+            if (_duplicateCollections.Remove(cloneAddress, out var stale))
+                _deleteTemporaryCollection.InvokeFunc(stale);
+            _duplicateCollections[cloneAddress] = collection;
+            return IntegrationPortResult.Ok();
         });
 
     public IntegrationPortResult ReleaseCollection(nint cloneAddress) =>
@@ -579,9 +597,10 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
         {
             if (AddressPair(cloneAddress, cloneAddress) is { } refusal)
                 return refusal;
-            // Null collection with allowDelete removes Poser's individual
-            // assignment outright; NothingChanged means it is already gone,
-            // which is a completed release.
+            // The duplicate's own collection goes with it; deleting it drops
+            // its assignment too.
+            if (_duplicateCollections.Remove(cloneAddress, out var own))
+                _deleteTemporaryCollection.InvokeFunc(own);
             var (ec, _) = _setCollectionForObject.InvokeFunc(
                 IndexOf(cloneAddress), null, /*allowCreateNew*/ false, /*allowDelete*/ true);
             return PenumbraResult(ec, "releasing the clone's collection assignment");

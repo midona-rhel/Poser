@@ -349,14 +349,40 @@ public sealed class DebugBridge : IDisposable
             case "/bone":
             {
                 string name = query.TryGetValue("name", out var bn) ? bn : "j_kosi";
+                int wantPartial = query.TryGetValue("partial", out var wp) ? int.Parse(wp) : -1;
                 foreach (var skeleton in _skeletons.GetSkeletons(actor))
                     foreach (var bone in skeleton.Bones)
-                        if (bone.BoneName == name)
+                        if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
                             var t = bone.LastTransform;
                             return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W } });
                         }
                 return Json(new { error = "no such bone" });
+            }
+            case "/bonediff":
+            {
+                var other = _actors.Actors[int.Parse(query["other"])];
+                var mine = new Dictionary<string, (int Partial, global::Poser.Transform T)>();
+                foreach (var sk in _skeletons.GetSkeletons(actor))
+                    foreach (var b in sk.Bones)
+                        mine[$"{b.PartialId}:{b.BoneName}"] = (b.PartialId, b.LastTransform);
+                var missing = new List<string>(); var differ = new List<string>(); int same = 0;
+                var perPartial = new Dictionary<int, (int Same, int Diff)>();
+                foreach (var sk in _skeletons.GetSkeletons(other))
+                    foreach (var b in sk.Bones)
+                    {
+                        string key = $"{b.PartialId}:{b.BoneName}";
+                        if (!mine.TryGetValue(key, out var m)) { missing.Add(key); continue; }
+                        var t = b.LastTransform;
+                        bool eq = (t.Position - m.T.Position).Length() < 0.002f
+                            && (t.Scale - m.T.Scale).Length() < 0.002f
+                            && MathF.Abs(System.Numerics.Quaternion.Dot(t.Rotation, m.T.Rotation)) > 0.9999f;
+                        var pp = perPartial.GetValueOrDefault(b.PartialId);
+                        perPartial[b.PartialId] = eq ? (pp.Same + 1, pp.Diff) : (pp.Same, pp.Diff + 1);
+                        if (eq) same++; else differ.Add($"{key} dp={(t.Position - m.T.Position).Length():0.000} ds={(t.Scale - m.T.Scale).Length():0.000} dq={1 - MathF.Abs(System.Numerics.Quaternion.Dot(t.Rotation, m.T.Rotation)):0.0000}");
+                    }
+                var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
+                return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
             }
             case "/gazemode":
             {
@@ -368,6 +394,56 @@ public sealed class DebugBridge : IDisposable
             {
                 var g = _gaze.GetGazeState(actor);
                 return Json(new { mode = g.Mode.ToString() });
+            }
+            case "/equip":
+            {
+                unsafe
+                {
+                    var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
+                    if (character == null)
+                        return Json(new { error = "no character" });
+                    var equips = new List<string>();
+                    var ids = character->DrawData.EquipmentModelIds;
+                    for (int i = 0; i < ids.Length; i++)
+                        equips.Add($"{ids[i].Id}.{ids[i].Variant}.{ids[i].Stain0}");
+                    var main = character->DrawData.Weapon(FFXIVClientStructs.FFXIV.Client.Game.Character.DrawDataContainer.WeaponSlot.MainHand).ModelId;
+                    var cust = new System.ReadOnlySpan<byte>((byte*)&character->DrawData.CustomizeData, 26);
+                    string? humanEquip = null, humanCust = null, raceSex = null;
+                    var draw = (byte*)character->GameObject.DrawObject;
+                    if (draw != null)
+                    {
+                        var he = new List<string>();
+                        for (int i = 0; i < 10; i++)
+                        {
+                            byte* e = draw + 0xA40 + i * 4;
+                            he.Add($"{*(ushort*)e}.{e[2]}.{e[3]}");
+                        }
+                        humanEquip = string.Join(" ", he);
+                        humanCust = Convert.ToHexString(new System.ReadOnlySpan<byte>(draw + 0xA20, 26));
+                        raceSex = $"{*(ushort*)(draw + 0xAA0):X4}";
+                    }
+                    var glassesIds = character->DrawData.GlassesIds;
+                    string flags = $"{*((byte*)&character->DrawData + 0x23E):X2}{*((byte*)&character->DrawData + 0x23F):X2}";
+                    return Json(new
+                    {
+                        equipment = string.Join(" ", equips),
+                        main = $"{main.Id}.{main.Type}.{main.Variant}",
+                        customize = Convert.ToHexString(cust),
+                        humanEquip, humanCust, raceSex,
+                        glasses = $"{glassesIds[0]} {glassesIds[1]}",
+                        flags,
+                        modelCharaId = character->ModelContainer.ModelCharaId,
+                        skeletonId = character->ModelContainer.ModelSkeletonId,
+                        drawObject = $"0x{(nint)draw:X}",
+                    });
+                }
+            }
+            case "/meta":
+            {
+                var meta = _integration.GetActorMetaManipulations(id);
+                if (!meta.Success || meta.Value is not { } m)
+                    return Json(new { error = meta.Detail });
+                return Json(new { length = m.Length, hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(m)))[..12] });
             }
             case "/redraw":
             {

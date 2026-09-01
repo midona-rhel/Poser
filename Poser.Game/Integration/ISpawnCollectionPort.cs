@@ -35,11 +35,4 @@ public interface ISpawnCollectionPort
     /// on the object's identifier, which stops existing with the object.</summary>
     IntegrationPortResult ReleaseCollection(nint cloneAddress);
 
-    /// <summary>Puts the source's Glamourer state — what it actually wears
-    /// and looks like, automation and syncs included — onto the clone,
-    /// applied once and unlocked. The seed copy carries the game's own
-    /// gear: a synced actor's copy wore vanilla rings where the source wore
-    /// bracelets (2026-09-02).</summary>
-    IntegrationPortResult InheritAppearance(nint sourceAddress, nint cloneAddress) =>
-        IntegrationPortResult.Ok();
 }

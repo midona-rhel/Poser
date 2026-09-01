@@ -1242,7 +1242,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
                     if (_disposed)
                         return;
                     InheritSourceCollection(ownership, sourceAddress, seeded);
-                    InheritSourceAppearance(sourceAddress, seeded);
                 }, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
@@ -1538,24 +1537,6 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// assignment would land on the SOURCE's identifier and rewrite the
     /// user's own character collection.
     /// </summary>
-    private void InheritSourceAppearance(nint sourceAddress, SpawnNativeDescriptor descriptor)
-    {
-        if (_collections is null || sourceAddress == nint.Zero)
-            return;
-        try
-        {
-            var result = _collections.InheritAppearance(sourceAddress, descriptor.Address);
-            if (!result.Success)
-                _log?.Warning(
-                    $"ActorSpawnService: the clone could not inherit the source's appearance: {result.Detail}");
-        }
-        catch (Exception ex)
-        {
-            _log?.Warning(
-                $"ActorSpawnService: the clone could not inherit the source's appearance: {ex.Message}");
-        }
-    }
-
     private void InheritSourceCollection(
         SpawnOwnershipRecord ownership,
         nint sourceAddress,

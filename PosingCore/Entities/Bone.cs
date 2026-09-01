@@ -58,6 +58,8 @@ public class Bone : EntityBase, IBone
     /// </summary>
     public Transform LastRawTransform { get; internal set; } = Transform.Identity;
 
+    public System.Numerics.Vector3? PartialRootScale { get; set; }
+
     #region ITransformable
 
     /// <summary>

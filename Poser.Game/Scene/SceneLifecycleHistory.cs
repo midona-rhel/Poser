@@ -90,7 +90,13 @@ internal sealed class PropServiceLifecycle : IPropLifecycle
 internal readonly record struct ActorState(
     Transform Placement,
     bool Visible,
-    PoseFile? Pose);
+    PoseFile? Pose)
+{
+    /// <summary>Partial-root scales by "partial:bone", the head scaling a
+    /// pose file cannot carry (its bones are keyed by name and the roots
+    /// share the body's). Applied after the pose lands.</summary>
+    public IReadOnlyDictionary<string, System.Numerics.Vector3>? PartialRootScales { get; init; }
+}
 
 /// <summary>
 /// The actor half of <see cref="SceneLifecycleHistory"/>. An actor's restore

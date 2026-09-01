@@ -131,10 +131,70 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     public ActorState Read(object actor)
     {
         var target = (IActor)actor;
+        var pose = CapturePose(target);
+        var rootScales = CapturePartialRootScales(target, pose);
         return new ActorState(
             _posing.GetEffectiveTransform(target),
             _spawns.IsVisible(target),
-            CapturePose(target));
+            pose)
+        {
+            PartialRootScales = rootScales,
+        };
+    }
+
+    /// <summary>The partial roots' own scales, and the file's child bones
+    /// divided by each root's factor over its parent: the import applies a
+    /// bone as a delta against the RAW animation, which never carries an
+    /// owned root scale, so a child captured at 1.077 under a 1.077 root
+    /// came back at 1.164 (01:3x). Divided out, the child's delta is 1 and
+    /// the owned root supplies the scale once.</summary>
+    private IReadOnlyDictionary<string, System.Numerics.Vector3>? CapturePartialRootScales(
+        IActor actor, PoseFile? pose)
+    {
+        try
+        {
+            var scales = new Dictionary<string, System.Numerics.Vector3>();
+            foreach (var skeleton in _skeletons.GetSkeletons(actor))
+            {
+                var factors = new Dictionary<int, System.Numerics.Vector3>();
+                foreach (var bone in skeleton.Bones)
+                {
+                    if (!bone.IsPartialRoot || bone.IsSkeletonRoot)
+                        continue;
+                    var own = bone.LastTransform.Scale;
+                    scales[$"{bone.PartialId}:{bone.BoneName}"] = own;
+                    var parent = bone.ParentBone?.LastTransform.Scale ?? System.Numerics.Vector3.One;
+                    factors[bone.PartialId] = new System.Numerics.Vector3(
+                        parent.X == 0 ? 1f : own.X / parent.X,
+                        parent.Y == 0 ? 1f : own.Y / parent.Y,
+                        parent.Z == 0 ? 1f : own.Z / parent.Z);
+                }
+                if (pose == null || skeleton.Slot != global::Poser.Domain.Identity.PoseSlot.Character)
+                    continue;
+                foreach (var bone in skeleton.Bones)
+                {
+                    if (bone.IsPartialRoot || !factors.TryGetValue(bone.PartialId, out var factor)
+                        || !pose.Bones.TryGetValue(bone.BoneName, out var data))
+                        continue;
+                    data.Scale = new System.Numerics.Vector3(
+                        data.Scale.X / factor.X, data.Scale.Y / factor.Y, data.Scale.Z / factor.Z);
+                }
+            }
+            return scales.Count == 0 ? null : scales;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void ApplyPartialRootScales(IActor actor, IReadOnlyDictionary<string, System.Numerics.Vector3> scales)
+    {
+        foreach (var skeleton in _skeletons.GetSkeletons(actor))
+            foreach (var bone in skeleton.Bones)
+                if (bone.IsPartialRoot && !bone.IsSkeletonRoot
+                    && scales.TryGetValue($"{bone.PartialId}:{bone.BoneName}", out var scale))
+                    bone.PartialRootScale = scale;
     }
 
     /// <summary>
@@ -249,6 +309,12 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
 
         if (state.Pose is not { } pose)
             return;
+        // Root scales one tick BEFORE the import: the import measures each
+        // child against its root as the last posing pass left it, and a
+        // root owned in the same tick compounded the face bones (1.077
+        // twice, 01:2x). Own the roots, let a pass run, then import.
+        if (state.PartialRootScales is { } rootScales)
+            ApplyPartialRootScales(actor, rootScales);
         var restored = _poses.ImportPose(
             actor, pose, RestoreOptions, $"Restore pose for {actor.Name}");
         if (!restored.Success)
