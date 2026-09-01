@@ -415,6 +415,24 @@ public sealed unsafe partial class AnimationRuntimePort
     private int[]? _clockPtrScores;
     private const int ClockPtrBytes = 0x140;
     private const int ClockPtrMax = 24;
+    private readonly float[] _clockPtrBuffer = new float[ClockPtrBytes / 4];
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = false)]
+    private static extern bool ReadProcessMemory(
+        nint process, nint address, void* buffer, nint size, out nint read);
+
+    /// <summary>Reads a chased pointer's region through ReadProcessMemory
+    /// so a freed or unmapped object fails the read instead of faulting
+    /// the game — the 20:11 crash was a raw dereference here.</summary>
+    private bool TryReadClockRegion(nint address)
+    {
+        fixed (float* buffer = _clockPtrBuffer)
+        {
+            return ReadProcessMemory(
+                (nint)(-1), address, buffer, ClockPtrBytes, out var read)
+                && read == ClockPtrBytes;
+        }
+    }
 
     /// <summary>The clock hunt: watches every float in the actor's
     /// TimelineContainer for ~3 seconds and reports the offsets that
@@ -462,13 +480,17 @@ public sealed unsafe partial class AnimationRuntimePort
                     && (value & 0x7) == 0 && !_clockPointers.Contains(value))
                     _clockPointers.Add(value);
             }
+            // A pointer that does not answer a guarded read is dropped
+            // before the hunt starts.
+            _clockPointers.RemoveAll(pointer => !TryReadClockRegion(pointer));
             _clockPtrPrevious = new float[_clockPointers.Count * ptrFloats];
             _clockPtrScores = new int[_clockPointers.Count * ptrFloats];
             for (int t = 0; t < _clockPointers.Count; t++)
             {
-                var target = (float*)_clockPointers[t];
+                if (!TryReadClockRegion(_clockPointers[t]))
+                    continue;
                 for (int i = 0; i < ptrFloats; i++)
-                    _clockPtrPrevious[t * ptrFloats + i] = target[i];
+                    _clockPtrPrevious[t * ptrFloats + i] = _clockPtrBuffer[i];
             }
             return;
         }
@@ -481,10 +503,11 @@ public sealed unsafe partial class AnimationRuntimePort
         }
         for (int t = 0; t < _clockPointers.Count; t++)
         {
-            var target = (float*)_clockPointers[t];
+            if (!TryReadClockRegion(_clockPointers[t]))
+                continue;
             for (int i = 0; i < ptrFloats; i++)
             {
-                float current = target[i];
+                float current = _clockPtrBuffer[i];
                 int index = t * ptrFloats + i;
                 if (ClockLikeDelta(current - _clockPtrPrevious![index]) &&
                     float.IsFinite(current))
@@ -503,12 +526,12 @@ public sealed unsafe partial class AnimationRuntimePort
         }
         for (int t = 0; t < _clockPointers.Count; t++)
         {
-            var target = (float*)_clockPointers[t];
             for (int i = 0; i < ptrFloats; i++)
             {
                 if (_clockPtrScores![t * ptrFloats + i] >= 150)
                     found.Append(CultureInfo.InvariantCulture,
-                        $"p{t}(0x{_clockPointers[t]:X})+{i * 4:x3}={target[i]:0.00} ");
+                        $"p{t}(0x{_clockPointers[t]:X})+{i * 4:x3}"
+                        + $"={_clockPtrPrevious![t * ptrFloats + i]:0.00} ");
             }
         }
         _log.Information(
