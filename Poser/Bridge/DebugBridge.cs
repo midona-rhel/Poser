@@ -170,6 +170,7 @@ public sealed class DebugBridge : IDisposable
                         "/scrub?actor&slot=1&time=SECONDS",
                         "/loop?actor&slot=1&on=1|0",
                         "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
+                        "/reset?actor&slot=1",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor",
                         "/log?lines=200&filter=REGEX",
@@ -273,6 +274,11 @@ public sealed class DebugBridge : IDisposable
             case "/clearspeed":
             {
                 var r = _animation.ClearSlotSpeed(id, Slot());
+                return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
+            }
+            case "/reset":
+            {
+                var r = _animation.ResetSlot(id, Slot());
                 return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
             }
             case "/watch":
