@@ -596,6 +596,9 @@ public sealed unsafe partial class AnimationRuntimePort
                     _clockLabels.RemoveAt(drop);
                 }
             }
+            _log.Information(
+                "[AnimProbe] clock hunt chasing: "
+                + string.Join(" ", _clockLabels));
             _clockPtrPrevious = new float[_clockPointers.Count * ptrFloats];
             _clockPtrScores = new int[_clockPointers.Count * ptrFloats];
             for (int t = 0; t < _clockPointers.Count; t++)
