@@ -859,6 +859,12 @@ public sealed class WorldObjectService : IDisposable
         _port.WriteOutline(address, outline);
     }
 
+    /// <summary>The port's world walk, for callers that must verify an
+    /// address still stands before touching it (the undo journal's
+    /// re-adopt guard).</summary>
+    public IReadOnlyList<WorldObjectRow> EnumerateWorld() =>
+        _disposed ? Array.Empty<WorldObjectRow>() : _port.Enumerate();
+
     /// <summary>Whether this address is already claimed.</summary>
     public bool IsAdopted(nint address)
     {

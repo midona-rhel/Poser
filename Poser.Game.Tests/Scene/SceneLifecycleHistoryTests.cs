@@ -101,7 +101,8 @@ public sealed class SceneLifecycleHistoryTests
         var world = new World();
         var address = world.WorldObjects.Place(0x1000, MapStood);
         var claim = world.Lifecycle.AdoptWorldObject(address)!;
-        world.WorldObjects.Apply(claim, new WorldObjectState(address, UserPut, false));
+        world.WorldObjects.Apply(claim, new WorldObjectState(
+            address, "bg/fake.mdl", false, UserPut, false));
 
         Assert.True(world.Undo());
         Assert.Empty(world.WorldObjects.Live);
@@ -439,12 +440,28 @@ public sealed class SceneLifecycleHistoryTests
             var claim = new FakeWorldObject
             {
                 Owner = this,
-                State = new WorldObjectState(address, _map[address], true),
+                State = new WorldObjectState(
+                    address, "bg/fake.mdl", false, _map[address], true),
                 MapPlacement = _map[address],
             };
             _adopted.Add(claim);
             return claim;
         }
+
+        public object? Spawn(string path, Transform placement, bool visible)
+        {
+            var claim = new FakeWorldObject
+            {
+                Owner = this,
+                State = new WorldObjectState(
+                    nint.Zero, path, true, placement, visible),
+                MapPlacement = placement,
+            };
+            _adopted.Add(claim);
+            return claim;
+        }
+
+        public bool AddressLive(nint address) => _map.ContainsKey(address);
 
         public bool IsLive(object worldObject) =>
             ((FakeWorldObject)worldObject).IsValid;
