@@ -501,15 +501,51 @@ public sealed unsafe partial class AnimationRuntimePort
                     && (value & 0x7) == 0 && !_clockPointers.Contains(value))
                     _clockPointers.Add(value);
             }
-            // The per-slot SchedulerTimeline objects come FIRST: the
-            // completion countdown almost certainly lives inside one.
+            // The per-slot SchedulerTimeline objects come FIRST, then
+            // their track controllers, tracks, and CLIPS (Ktisis
+            // Structs/Animation layout): the completion cursor lives in
+            // the clip layer if nowhere shallower.
             for (int huntSlot = 0; huntSlot < 4; huntSlot++)
             {
                 var stamp = SchedulerTimestamp(
                     &character->Timeline.TimelineSequencer, huntSlot);
-                if (stamp != null)
-                    _clockPointers.Add(
-                        (nint)stamp - SchedulerTimestampOffset);
+                if (stamp == null)
+                    continue;
+                nint scheduler = (nint)stamp - SchedulerTimestampOffset;
+                _clockPointers.Add(scheduler);
+                // TimelineController.TrackController at +0x18.
+                nint trackController = *(nint*)(scheduler + 0x18);
+                if (trackController == 0)
+                    continue;
+                _clockPointers.Add(trackController);
+                // PtrList<TimelineTrack> at +0x28: { T** Pointers,
+                // ushort Capacity, ushort Length }.
+                nint trackPointers = *(nint*)(trackController + 0x28);
+                int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+                for (int trackIndex = 0;
+                    trackIndex < trackCount && trackIndex < 8
+                        && trackPointers != 0
+                        && _clockPointers.Count < ClockPtrMax;
+                    trackIndex++)
+                {
+                    nint track = *(nint*)(trackPointers + trackIndex * 8);
+                    if (track == 0)
+                        continue;
+                    _clockPointers.Add(track);
+                    // PtrList<BaseClip> at track+0x18.
+                    nint clipPointers = *(nint*)(track + 0x18);
+                    int clipCount = *(ushort*)(track + 0x18 + 0xA);
+                    for (int clipIndex = 0;
+                        clipIndex < clipCount && clipIndex < 8
+                            && clipPointers != 0
+                            && _clockPointers.Count < ClockPtrMax;
+                        clipIndex++)
+                    {
+                        nint clip = *(nint*)(clipPointers + clipIndex * 8);
+                        if (clip != 0)
+                            _clockPointers.Add(clip);
+                    }
+                }
             }
             // The base havok control's own block joins the chase: the
             // loop decision may live beside LocalTime (hunt three).
