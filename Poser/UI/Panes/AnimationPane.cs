@@ -291,15 +291,12 @@ public sealed class AnimationPane : IDisposable
             _notices.Failed("Probe: the clone did not spawn.");
             return;
         }
-        var ownedForRetry = _animation.OverridesFor(source);
         _probePort.ProbeSchedule(
             cloneId, capture, method,
             method == Game.Animation.ProbeMethod.Owned
                 ? ProbeOwnedReplay(source)
                 : ProbeSessionTransfer(source),
-            ownedForRetry.HeldExpression is { } heldExpression
-                ? t => _animation.HoldExpression(t, heldExpression)
-                : null);
+            ProbeSecondPass(source));
     }
 
     /// <summary>The session-owned state — the big Animation toggle, slot
@@ -337,25 +334,19 @@ public sealed class AnimationPane : IDisposable
         }
         return target =>
         {
-            // The advanced per-slot state: base pick, armed loops, layer
-            // selections — replayed exactly as the Owned method does.
+            // Base identity and speeds land on the first pass. LAYERED
+            // state (upper body, expression) waits for the second pass:
+            // the base/emote engagement a few ticks in wipes whatever
+            // layer was set in the same breath (slot[1] 0!=7356, run
+            // nine) — the same second-evaluation-edge rule as #75.
             if (owned.BaseTimeline is { } baseTimeline)
                 _animation.PlayBase(target, baseTimeline);
             foreach (var (slot, timeline) in owned.LoopedSlots)
                 _animation.SetSlotLoop(target, slot, timeline, true);
-            foreach (var (slot, timeline) in owned.SelectedSlots)
-            {
-                if (owned.LoopedSlots.ContainsKey(slot))
-                    continue;
-                _animation.ChooseSlot(target, slot, timeline);
-                _animation.Replay(target, timeline, out _);
-            }
             if (owned.OverallSpeed is { } overall)
                 _animation.SetSpeed(target, overall);
             foreach (var (slot, speed) in owned.SlotSpeeds)
                 _animation.SetSlotSpeed(target, slot, speed);
-            if (owned.HeldExpression is { } expression)
-                _animation.HoldExpression(target, expression);
             if (owned.Lips is { } lips)
                 _animation.SetLips(target, lips);
             var resolvedTarget = _bindings.Resolve(target);
@@ -427,6 +418,41 @@ public sealed class AnimationPane : IDisposable
             }
             foreach (var part in lockedParts)
                 _gaze.SetPartLock(clone, part, true);
+        };
+    }
+
+    /// <summary>The transfer's SECOND PASS, ~half a second after the
+    /// first: layered slot selections and the held expression, applied
+    /// once the base or emote has settled — then the speeds re-asserted,
+    /// because Replay on a paused actor resumes it first.</summary>
+    private Action<ActorId>? ProbeSecondPass(ActorId source)
+    {
+        var owned = _animation.OverridesFor(source);
+        var selections =
+            new Dictionary<AnimationSlot, ushort>(owned.SelectedSlots);
+        foreach (var (slot, timeline) in owned.AppliedSlots)
+        {
+            if (!selections.ContainsKey(slot))
+                selections[slot] = timeline;
+        }
+        foreach (var slot in owned.LoopedSlots.Keys)
+            selections.Remove(slot);
+        if (selections.Count == 0
+            && owned.HeldExpression == null)
+            return null;
+        return target =>
+        {
+            foreach (var (slot, timeline) in selections)
+            {
+                _animation.ChooseSlot(target, slot, timeline);
+                _animation.Replay(target, timeline, out _);
+            }
+            if (owned.OverallSpeed is { } overall)
+                _animation.SetSpeed(target, overall);
+            foreach (var (slot, speed) in owned.SlotSpeeds)
+                _animation.SetSlotSpeed(target, slot, speed);
+            if (owned.HeldExpression is { } expression)
+                _animation.HoldExpression(target, expression);
         };
     }
 
