@@ -27,6 +27,8 @@ public sealed unsafe partial class AnimationRuntimePort
     {
         _resetWatchActor = actor;
         _resetWatchTicks = 1200;
+        _resetConstantsDumped = false;
+        _containerPrev = null;
         for (int i = 0; i < _resetWatchPrev.Length; i++)
             _resetWatchPrev[i] = float.NaN;
         _log.Information($"[AnimReset] watch armed on {actor} for 20s.");
@@ -147,6 +149,34 @@ public sealed unsafe partial class AnimationRuntimePort
         // reference the old schedule is measured from.
         WatchContainerClock(character, n >= 1 ? (nint)cursorsBuffer[0] - SchedulerTimestampOffset : 0);
 
+        // ARM-TIME CONSTANTS: everything on the scheduler chain that looks
+        // like a duration, position or deadline. Armed after a scrub to zero
+        // but before Play, a field still holding the OLD position is the
+        // stale reference the end is judged from.
+        if (!_resetConstantsDumped && n >= 1)
+        {
+            _resetConstantsDumped = true;
+            nint schedulerObject = (nint)cursorsBuffer[0] - SchedulerTimestampOffset;
+            DumpConstants("sched", schedulerObject, 0x274);
+            if (n >= 2)
+            {
+                nint trackController = (nint)cursorsBuffer[1] - 0x11C;
+                DumpConstants("tctl", trackController, 0x130);
+                nint trackPointers = *(nint*)(trackController + 0x28);
+                nint track = trackPointers != 0 ? *(nint*)trackPointers : 0;
+                if (track != 0)
+                {
+                    DumpConstants("track", track, 0xC0);
+                    nint clipPointers = *(nint*)(track + 0x18);
+                    nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
+                    if (clip != 0)
+                        DumpConstants("clip", clip, 0x98);
+                }
+            }
+            // The sequencer's own per-slot arrays, as floats.
+            DumpConstants("seq", (nint)(&character->Timeline.TimelineSequencer), 0x2E0);
+        }
+
         // The field diff: every dword that changed since last tick across the
         // scheduler object, its track controller, the first track and clip.
         // Units-agnostic — the counter that finishes on the OLD schedule is
@@ -194,11 +224,25 @@ public sealed unsafe partial class AnimationRuntimePort
             float now = basePtr[i];
             float delta = now - _containerPrev[i];
             _containerPrev[i] = now;
-            if (!float.IsFinite(now) || delta == 0f)
+            if (delta == 0f)
                 continue;
+            // Integer frame counters: a +1..+40 step reads as a denormal
+            // float delta, so test the int view too.
+            int nowInt = BitConverter.SingleToInt32Bits(now);
+            int wasInt = BitConverter.SingleToInt32Bits(_containerPrev[i] + delta - delta) ;
+            int intDelta = nowInt - BitConverter.SingleToInt32Bits(now - delta);
+            bool intLike = Math.Abs(intDelta) >= 1 && Math.Abs(intDelta) <= 40
+                && Math.Abs(nowInt) < 10_000_000;
             float size2 = Math.Abs(delta);
-            if (size2 < 0.002f || size2 > 40f)
+            bool floatLike = float.IsFinite(now) && size2 >= 0.002f && size2 <= 40f;
+            if (!floatLike && !intLike)
                 continue;
+            if (intLike && !floatLike)
+            {
+                line ??= new StringBuilder(200).Append("[AnimReset] cclock");
+                line.Append(CultureInfo.InvariantCulture, $" +{i * 4:x3}=i{nowInt}(d{intDelta})");
+                continue;
+            }
             line ??= new StringBuilder(200).Append("[AnimReset] cclock");
             line.Append(CultureInfo.InvariantCulture, $" +{i * 4:x3}={now:0.##}(d{delta:0.###})");
             // Scheduler constants within reach of this clock: start refs.
@@ -216,6 +260,34 @@ public sealed unsafe partial class AnimationRuntimePort
         }
         if (line != null && _containerReports++ < 40)
             _log.Information(line.ToString());
+    }
+
+    private bool _resetConstantsDumped;
+
+    /// <summary>Prints the plausible durations/positions on one object:
+    /// floats in [0.5, 5000] and ints in [1, 100000] that are not pointers.</summary>
+    private void DumpConstants(string name, nint address, int size)
+    {
+        var line = new StringBuilder(400).Append("[AnimReset] const ").Append(name);
+        int printed = 0;
+        for (int offset = 0; offset + 4 <= size && printed < 48; offset += 4)
+        {
+            int raw = *(int*)(address + offset);
+            if (raw == 0)
+                continue;
+            float f = BitConverter.Int32BitsToSingle(raw);
+            if (float.IsFinite(f) && f >= 0.5f && f <= 5000f && Math.Abs(f - Math.Round(f)) < 0.01f || (float.IsFinite(f) && f >= 0.5f && f <= 5000f))
+            {
+                line.Append(CultureInfo.InvariantCulture, $" +{offset:x3}={f:0.##}f");
+                printed++;
+            }
+            else if (raw >= 1 && raw <= 100000)
+            {
+                line.Append(CultureInfo.InvariantCulture, $" +{offset:x3}={raw}i");
+                printed++;
+            }
+        }
+        _log.Information(line.ToString());
     }
 
     private readonly byte[][] _resetDiffPrev = new byte[4][];

@@ -162,11 +162,50 @@ public sealed unsafe partial class AnimationRuntimePort
         }
         if (_probeTimelineHook == null)
             return;
+        if (enabled && _probeCancelHook == null)
+        {
+            try
+            {
+                var cancelAddress = _sigScanner.ScanText("E8 ?? ?? ?? ?? 80 7B 17 01");
+                _probeCancelHook = _hooking.HookFromAddress<CancelTimelineDelegate>(
+                    cancelAddress, ProbeCancelDetour);
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"[AnimProbe] cancel hook failed: {ex.Message}");
+            }
+        }
         if (enabled)
+        {
             _probeTimelineHook.Enable();
+            _probeCancelHook?.Enable();
+        }
         else
+        {
             _probeTimelineHook.Disable();
+            _probeCancelHook?.Disable();
+        }
         _log.Information($"[AnimProbe] timeline write logging {(enabled ? "ON" : "off")}");
+    }
+
+    private Hook<CancelTimelineDelegate>? _probeCancelHook;
+
+    /// <summary>Log-only: does the slot death route through the game's
+    /// CancelTimeline, or is it a silent natural completion?</summary>
+    private nint ProbeCancelDetour(TimelineContainer* container, nint a2, nint a3)
+    {
+        try
+        {
+            var owner = container != null ? container->OwnerObject : null;
+            string name = owner != null ? owner->GameObject.NameString : "<no owner>";
+            _log.Information(
+                $"[AnimProbe] CancelTimeline on {name} a2=0x{a2:X} a3=0x{a3:X} "
+                + (_probeOurWrite ? "by POSER" : "by the game"));
+        }
+        catch
+        {
+        }
+        return _probeCancelHook!.Original(container, a2, a3);
     }
 
     private bool ProbeTimelineDetour(
