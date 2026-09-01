@@ -522,8 +522,25 @@ public sealed class AnimationSession
     }
 
     public AnimationResult SetSlotSpeed(
-        ActorId actor, AnimationSlot slot, float speed) =>
-        SetSlotSpeedCore(actor, slot, speed);
+        ActorId actor, AnimationSlot slot, float speed)
+    {
+        var set = SetSlotSpeedCore(actor, slot, speed);
+        if (set.Success && speed == 0f)
+            CollapseWhenNothingPlays(actor);
+        return set;
+    }
+
+    /// <summary>A slot reaching speed zero IS a pause, however it got
+    /// there — slider or button — and when the last moving layer stops,
+    /// the actor collapses into the one canonical "truly paused" shape:
+    /// overall zero (ruled 2026-09-01).</summary>
+    private void CollapseWhenNothingPlays(ActorId actor)
+    {
+        if (IsPaused(actor) || AnyPlaying(actor))
+            return;
+        Trace?.Invoke($"collapse: every layer held on {actor}");
+        SetSpeed(actor, 0f);
+    }
 
     private AnimationResult SetSlotSpeedCore(
         ActorId actor, AnimationSlot slot, float speed, float? firstCapture = null)
@@ -602,14 +619,7 @@ public sealed class AnimationSession
         var held = SetSlotSpeedCore(actor, slot, 0f);
         if (!held.Success)
             return held;
-        // All live layers held collapses into the whole-actor pause
-        // automatically (ruled 2026-09-01) — "everything paused" has one
-        // canonical shape: overall zero.
-        if (!IsPaused(actor) && !AnyPlaying(actor))
-        {
-            Trace?.Invoke($"PauseSlot collapse: every layer held on {actor}");
-            SetSpeed(actor, 0f);
-        }
+        CollapseWhenNothingPlays(actor);
         return held;
     }
 
