@@ -251,14 +251,22 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             return result;
         var owner = (nint)container->OwnerObject;
         if (owner != nint.Zero &&
-            _byAddress.TryGetValue(owner, out var enforcement) &&
-            enforcement.OverallSpeed is { } speed)
+            _byAddress.TryGetValue(owner, out var enforcement))
         {
-            // Run after the game's calculation so the override wins
-            // whatever the game just decided.
-            container->OverallSpeed = speed;
-            ProbeSeamPass(container);
-            return true;
+            if (enforcement.OverallSpeed is { } speed)
+            {
+                // Run after the game's calculation so the override wins
+                // whatever the game just decided.
+                container->OverallSpeed = speed;
+                result = true;
+            }
+            // Brio's CheckAndResetDirtySlots half: reporting the container
+            // dirty makes the game RE-APPLY slot speeds this frame, which
+            // routes them through SlotSpeedDetour where the per-slot
+            // override wins. Without it a slot hold is a one-shot write
+            // the game recalculates away.
+            if (enforcement.SlotSpeeds.Count > 0)
+                result = true;
         }
         ProbeSeamPass(container);
         return result;

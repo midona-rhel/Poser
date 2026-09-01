@@ -703,9 +703,14 @@ public sealed class AnimationSession
         var current = OverridesFor(actor);
         if (!current.SlotSpeeds.TryGetValue(slot, out var speed) || speed != 0f)
             return AnimationResult.Ok();
+        // A hold parked by the layer-play conversion may never have seen
+        // a nonzero speed: fall back to the captured original, then 1.
         if (!current.SlotResumeSpeeds.TryGetValue(slot, out var resume) ||
             !float.IsFinite(resume) || resume <= 0f)
-            return AnimationResult.Fail("No previous nonzero layer speed is available.");
+            resume = current.SlotSpeedCaptures.TryGetValue(slot, out var captured)
+                && float.IsFinite(captured) && captured > 0f
+                ? captured
+                : 1f;
         return SetSlotSpeedCore(actor, slot, resume);
     }
 
@@ -733,8 +738,12 @@ public sealed class AnimationSession
 
         var failures = new List<string>();
         // Restore speed first. A failed unpin must not clear a selection
-        // whose paused native state still belongs to Poser.
-        if (OverridesFor(actor).SlotSpeedCaptures.ContainsKey(slot))
+        // whose paused native state still belongs to Poser. A ZERO speed
+        // is a pause, and resets never unpause — only the play verbs do
+        // (ruled 2026-09-01); the hold stays parked.
+        var beforeReset = OverridesFor(actor);
+        if (beforeReset.SlotSpeedCaptures.ContainsKey(slot)
+            && beforeReset.SlotSpeeds.GetValueOrDefault(slot) != 0f)
         {
             var speed = ClearSlotSpeedCore(actor, slot);
             if (!speed.Success)
