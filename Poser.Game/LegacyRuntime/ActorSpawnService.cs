@@ -480,6 +480,13 @@ internal interface IActorSpawnNativeAdapter
     /// carries the equipment but not these flags: a duplicate showed the
     /// weapon on its back while the source hid it (2026-09-02).</summary>
     bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
+
+    /// <summary>Seeds the target's DrawData customize and equipment from
+    /// the source's DRAWN model (Human.Customize, Human equipment models).
+    /// A sync plugin or a locked Glamourer state writes the draw object and
+    /// leaves DrawData at the game's values, so the game's own copy drew a
+    /// vanilla character next to a modded one (2026-09-02, Valya).</summary>
+    bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer
     /// revalidates — an unreadable actor is NOT an empty slot, and only the
@@ -667,6 +674,27 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         if (character == null)
             return false;
         character->Alpha = Math.Clamp(alpha, 0f, 1f);
+        return true;
+    }
+
+    public bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target)
+    {
+        var from = (Character*)Revalidate(source);
+        var to = (Character*)Revalidate(target);
+        if (from == null || to == null)
+            return false;
+        var drawn = from->GameObject.DrawObject;
+        if (drawn == null
+            || drawn->Object.GetObjectType() != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.ObjectType.CharacterBase
+            || ((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)drawn)->GetModelType()
+                != FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase.ModelType.Human)
+            return false;
+        var human = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Human*)drawn;
+        to->DrawData.CustomizeData = human->Customize;
+        var models = human->EquipmentModels;
+        var slots = to->DrawData.EquipmentModelIds;
+        for (int i = 0; i < models.Length && i < slots.Length; i++)
+            slots[i] = models[i];
         return true;
     }
 
@@ -1177,15 +1205,20 @@ public unsafe class ActorSpawnService : IActorSpawnService
             // copy is a plain field write and lands now.
             if (sourceAddress != nint.Zero
                 && _native.ResolveActor(sourceAddress) is { } flagSource)
+            {
+                _native.CopyDrawnAppearance(flagSource, descriptor.Value);
                 _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
+            }
             var seeded = descriptor.Value;
             if (_framework is null)
                 InheritSourceCollection(ownership, sourceAddress, seeded);
             else
                 _framework.RunOnTick(() =>
                 {
-                    if (!_disposed)
-                        InheritSourceCollection(ownership, sourceAddress, seeded);
+                    if (_disposed)
+                        return;
+                    InheritSourceCollection(ownership, sourceAddress, seeded);
+                    InheritSourceAppearance(sourceAddress, seeded);
                 }, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
@@ -1481,6 +1514,24 @@ public unsafe class ActorSpawnService : IActorSpawnService
     /// assignment would land on the SOURCE's identifier and rewrite the
     /// user's own character collection.
     /// </summary>
+    private void InheritSourceAppearance(nint sourceAddress, SpawnNativeDescriptor descriptor)
+    {
+        if (_collections is null || sourceAddress == nint.Zero)
+            return;
+        try
+        {
+            var result = _collections.InheritAppearance(sourceAddress, descriptor.Address);
+            if (!result.Success)
+                _log?.Warning(
+                    $"ActorSpawnService: the clone could not inherit the source's appearance: {result.Detail}");
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning(
+                $"ActorSpawnService: the clone could not inherit the source's appearance: {ex.Message}");
+        }
+    }
+
     private void InheritSourceCollection(
         SpawnOwnershipRecord ownership,
         nint sourceAddress,

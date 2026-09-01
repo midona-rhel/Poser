@@ -41,6 +41,8 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.UI.AnimationPane _pane;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
+    private readonly global::Poser.Services.ISkeletonService _skeletons;
+    private readonly global::Poser.Services.IGazeService _gaze;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -55,11 +57,15 @@ public sealed class DebugBridge : IDisposable
         IActorSpawnService spawner,
         global::Poser.UI.AnimationPane pane,
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
-        global::Poser.Application.Integration.ActorIntegrationSession session)
+        global::Poser.Application.Integration.ActorIntegrationSession session,
+        global::Poser.Services.ISkeletonService skeletons,
+        global::Poser.Services.IGazeService gaze)
     {
         _pane = pane;
         _integration = integration;
         _session = session;
+        _skeletons = skeletons;
+        _gaze = gaze;
         _framework = framework;
         _log = log;
         _animation = animation;
@@ -330,6 +336,96 @@ public sealed class DebugBridge : IDisposable
                 var r = _integration.SetIndividualCollection(id, guid);
                 return Json(new { ok = r.Success, r.Detail, tried = guid.ToString(), was = $"{cur.EffectiveName} {cur.EffectiveId} individual={cur.HasIndividualAssignment}" });
             }
+            case "/resources":
+            {
+                var paths = _integration.GetActorResourcePaths(id);
+                if (!paths.Success || paths.Value is not { } tree)
+                    return Json(new { error = paths.Detail });
+                var modded = tree.Where(p => !p.Value.Contains(p.Key)).Select(p => p.Key).ToArray();
+                if (query.ContainsKey("full"))
+                    return Json(new { total = tree.Count, entries = tree.Select(p => new { resolved = p.Key, game = p.Value }).ToArray() });
+                return Json(new { total = tree.Count, modded = modded.Length, sample = modded.Take(4).Select(m => m.Length > 90 ? m[^90..] : m).ToArray() });
+            }
+            case "/bone":
+            {
+                string name = query.TryGetValue("name", out var bn) ? bn : "j_kosi";
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name)
+                        {
+                            var t = bone.LastTransform;
+                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z } });
+                        }
+                return Json(new { error = "no such bone" });
+            }
+            case "/gaze":
+            {
+                var g = _gaze.GetGazeState(actor);
+                return Json(new { mode = g.Mode.ToString() });
+            }
+            case "/setbody":
+            {
+                int from = query.TryGetValue("from", out var f) ? int.Parse(f) : 0;
+                var sourceActor = _actors.Actors[from];
+                if (_bindings.GetActorId(sourceActor) is not { } s)
+                    return Json(new { error = "no source id" });
+                var r = _session.AdoptBodyProfile(s, id);
+                return Json(new { ok = r.Success, r.Detail, probe = BodyProfile(id) });
+            }
+            case "/equip":
+            {
+                unsafe
+                {
+                    var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
+                    if (character == null)
+                        return Json(new { error = "no character" });
+                    var equips = new List<string>();
+                    var ids = character->DrawData.EquipmentModelIds;
+                    for (int i = 0; i < ids.Length; i++)
+                        equips.Add($"{ids[i].Id}.{ids[i].Variant}.{ids[i].Stain0}");
+                    var main = character->DrawData.Weapon(FFXIVClientStructs.FFXIV.Client.Game.Character.DrawDataContainer.WeaponSlot.MainHand).ModelId;
+                    var cust = new System.ReadOnlySpan<byte>((byte*)&character->DrawData.CustomizeData, 26);
+                    // The drawn model's own copies (Human +0xA20 customize, +0xA40
+                    // ten equipment models): what is on screen, whatever DrawData says.
+                    string? humanEquip = null, humanCust = null;
+                    var draw = (byte*)character->GameObject.DrawObject;
+                    if (draw != null)
+                    {
+                        var he = new List<string>();
+                        for (int i = 0; i < 10; i++)
+                        {
+                            byte* e = draw + 0xA40 + i * 4;
+                            he.Add($"{*(ushort*)e}.{e[2]}.{e[3]}");
+                        }
+                        humanEquip = string.Join(" ", he);
+                        humanCust = Convert.ToHexString(new System.ReadOnlySpan<byte>(draw + 0xA20, 26));
+                    }
+                    return Json(new { equipment = string.Join(" ", equips), main = $"{main.Id}.{main.Type}.{main.Variant}", customize = Convert.ToHexString(cust), humanEquip, humanCust });
+                }
+            }
+            case "/gamename":
+            {
+                if (!query.TryGetValue("name", out var newName))
+                    return Json(new { error = "name is required" });
+                unsafe
+                {
+                    var obj = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)actor.Address;
+                    if (obj == null)
+                        return Json(new { error = "no object" });
+                    int x = 0;
+                    for (; x < newName.Length && x < 63; x++)
+                        obj->Name[x] = (byte)newName[x];
+                    obj->Name[x] = 0;
+                    var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)obj;
+                    if (query.TryGetValue("from", out var fromIndex))
+                    {
+                        var from = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)_actors.Actors[int.Parse(fromIndex)].Address;
+                        character->HomeWorld = from->HomeWorld;
+                        character->CurrentWorld = from->CurrentWorld;
+                    }
+                    return Json(new { ok = true, homeWorld = character->HomeWorld, currentWorld = character->CurrentWorld });
+                }
+            }
             case "/redraw":
             {
                 var r = _integration.RequestRedraw(id);
@@ -369,7 +465,10 @@ public sealed class DebugBridge : IDisposable
                     : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing);
                 var copyId = copy != null ? _bindings.GetActorId(copy) : null;
                 if (posed && copyId is { } pid)
+                {
                     _animation.Pause(pid);
+                    _lifecycle.WhenPosable(copy!, c => _gaze.SetGazeMode((IActor)c, GazeTargetMode.Detached));
+                }
                 return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
             }
             case "/clonea":
@@ -450,12 +549,14 @@ public sealed class DebugBridge : IDisposable
             mode = snapshot?.Mode,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
+            drawObject = DrawObjectAddress(actor),
             drawObjectVisible = snapshot?.DrawObjectVisible,
             weaponDrawn = snapshot?.WeaponDrawn,
             weaponHidden = snapshot?.WeaponHidden,
             hatHidden = snapshot?.HatHidden,
             visorToggled = snapshot?.VisorToggled,
             bodyProfile = BodyProfile(id),
+            integration = Owned(id),
             collection = _session.ReadCollection(id) is { Success: true, Value: { } c } ? $"{c.EffectiveName} {c.EffectiveId} individual={c.HasIndividualAssignment}" : null,
             schedulerFrames = snapshot?.SchedulerFrames,
             childFrames = snapshot?.ChildFrames,
@@ -519,6 +620,18 @@ public sealed class DebugBridge : IDisposable
             words.Add(new { off = $"{off:x3}", f = float.IsFinite(f) ? f : (float?)null, i = BitConverter.ToInt32(buffer, off) });
         }
         return Json(new { address = $"0x{address:X}", words });
+    }
+
+    private object Owned(ActorId id)
+    {
+        var o = _session.OverridesFor(id);
+        return new { o.CollectionOwned, o.CollectionName, o.DesignOwned, tempBody = o.TemporaryBodyProfile?.ToString(), bodyJson = o.BodyProfileJson?.Length, mcdf = o.Mcdf?.FileName, mcdfBody = o.Mcdf?.AppliedProfileJson?.Length, mcdfCollection = o.Mcdf?.TemporaryCollection?.ToString() };
+    }
+
+    private static unsafe string DrawObjectAddress(IActor actor)
+    {
+        var character = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actor.Address;
+        return character == null ? "0" : $"0x{(nint)character->GameObject.DrawObject:X}";
     }
 
     private object BodyProfile(ActorId id)

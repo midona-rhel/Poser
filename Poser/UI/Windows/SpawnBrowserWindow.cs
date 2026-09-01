@@ -1127,15 +1127,7 @@ public sealed class SpawnBrowserWindow : Window
                     if (copy != null && _bindings.GetActorId(copy) is { } copyId)
                     {
                         _animation.Pause(copyId);
-                        _lifecycle.WhenPosable(copy, c =>
-                        {
-                            if (_gaze.SetGazeMode(c, GazeTargetMode.Position).Success)
-                            {
-                                _gaze.SetGazeParts(c, GazeTargetType.All);
-                                foreach (var part in new[] { GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes })
-                                    _gaze.SetPartLock(c, part, true);
-                            }
-                        });
+                        _lifecycle.WhenPosable(copy, c => _gaze.SetGazeMode(c, GazeTargetMode.Detached));
                     }
                     SelectSpawned(copy);
                 }

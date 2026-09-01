@@ -393,6 +393,7 @@ public sealed class ActorSpawnServiceOwnershipTests
         }
 
         public bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target) => true;
+        public bool CopyDrawnAppearance(SpawnNativeDescriptor source, SpawnNativeDescriptor target) => true;
 
         public bool? IsReadyToDraw(SpawnNativeDescriptor descriptor) =>
             Gate(descriptor) ? ReadyToDraw : null;

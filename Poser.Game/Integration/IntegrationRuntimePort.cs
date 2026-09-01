@@ -553,7 +553,25 @@ public sealed class IntegrationRuntimePort : IIntegrationRuntimePort, ISpawnColl
                     "Penumbra cannot identify the actor this clone was copied from.");
             var (ec, _) = _setCollectionForObject.InvokeFunc(
                 IndexOf(cloneAddress), id, /*allowCreateNew*/ true, /*allowDelete*/ false);
+            // A TEMPORARY collection (an MCDF import's, Mare's) is not in the
+            // ordinary assignment's book: Penumbra answers CollectionMissing
+            // (code 2, Valya 00:29). Those are placed by their own call.
+            if (ec == 2)
+                ec = _assignTemporaryCollection.InvokeFunc(id, IndexOf(cloneAddress), /*forceAssignment*/ true);
             return PenumbraResult(ec, $"assigning the source's collection \"{name}\" to the clone");
+        });
+
+    public IntegrationPortResult InheritAppearance(nint sourceAddress, nint cloneAddress) =>
+        Guarded(Glamourer, "Inherit appearance", () =>
+        {
+            if (AddressPair(sourceAddress, cloneAddress) is { } refusal)
+                return refusal;
+            var (readEc, state) = _getStateBase64.InvokeFunc(IndexOf(sourceAddress), 0u);
+            if (readEc != 0 || string.IsNullOrEmpty(state))
+                return IntegrationPortResult.Fail($"Glamourer would not give the source's state (code {readEc}).");
+            int ec = _applyState.InvokeFunc(
+                state, IndexOf(cloneAddress), LockKey, ApplyOnce | ApplyEquipment | ApplyCustomization);
+            return GlamourerResult(ec, "applying the source's appearance to the clone");
         });
 
     public IntegrationPortResult ReleaseCollection(nint cloneAddress) =>

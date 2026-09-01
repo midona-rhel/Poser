@@ -489,6 +489,18 @@ public unsafe class GazeService : IGazeService, IDisposable
                     if (mode == GazeTargetMode.None)
                         return _actorLookAtLoop!.Original(args);
 
+                    if (mode == GazeTargetMode.Detached)
+                    {
+                        // The game's loop re-aims at the camera each frame;
+                        // "no target" written on every part right before it
+                        // is what keeps the parts on the animation.
+                        var none = new LookAtTarget { LookMode = LookMode.None };
+                        _updateLookAt(lookAtController, &none, LookAtIndex_Body, 0);
+                        _updateLookAt(lookAtController, &none, LookAtIndex_Head, 0);
+                        _updateLookAt(lookAtController, &none, LookAtIndex_Eyes, 0);
+                        return _actorLookAtLoop!.Original(args);
+                    }
+
                     // Camera and Forward are position sources refreshed each
                     // loop for unlocked parts; Entity carries the target id in
                     // the union and needs no per-loop position poll; Position

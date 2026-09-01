@@ -5980,19 +5980,14 @@ public class MainWindow : Window
         return clone;
     }
 
-    /// <summary>Every gaze part frozen where it points: the copy tracks
-    /// neither the camera nor anything else.</summary>
+    /// <summary>No gaze at all: the copy's eyes, head and body stay on
+    /// the pose. Freezing the parts only pinned where they looked, and the
+    /// game's loop kept turning the head after the camera.</summary>
     private void FreezeGaze(IActor copy)
     {
-        var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Position);
+        var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Detached);
         if (!mode.Success)
-        {
-            _log.Warning($"Duplicate: the gaze could not be frozen: {mode.Detail}");
-            return;
-        }
-        _gazeService.SetGazeParts(copy, GazeTargetType.All);
-        foreach (var part in new[] { GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes })
-            _gazeService.SetPartLock(copy, part, true);
+            _log.Warning($"Duplicate: the gaze could not be detached: {mode.Detail}");
     }
 
     private void OpenEntityRename(
