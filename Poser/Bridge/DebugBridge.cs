@@ -43,6 +43,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly global::Poser.Services.ISkeletonService _skeletons;
     private readonly global::Poser.Services.IGazeService _gaze;
+    private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -59,8 +60,10 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Application.Integration.IIntegrationRuntimePort integration,
         global::Poser.Application.Integration.ActorIntegrationSession session,
         global::Poser.Services.ISkeletonService skeletons,
-        global::Poser.Services.IGazeService gaze)
+        global::Poser.Services.IGazeService gaze,
+        global::Poser.Services.IBonePosingService bonePosing)
     {
+        _bonePosing = bonePosing;
         _pane = pane;
         _integration = integration;
         _session = session;
@@ -354,8 +357,10 @@ public sealed class DebugBridge : IDisposable
                     foreach (var bone in skeleton.Bones)
                         if (bone.BoneName == name && (wantPartial < 0 || bone.PartialId == wantPartial))
                         {
-                            var t = bone.LastTransform;
-                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W } });
+                            var t = bone.LastTransform; var rw = bone.LastRawTransform;
+                            return Json(new { name, partial = bone.PartialId, scale = new { t.Scale.X, t.Scale.Y, t.Scale.Z }, position = new { t.Position.X, t.Position.Y, t.Position.Z }, rotation = new { t.Rotation.X, t.Rotation.Y, t.Rotation.Z, t.Rotation.W },
+                                raw = new { scale = rw.Scale.X, pos = new { rw.Position.X, rw.Position.Y, rw.Position.Z }, rot = new { rw.Rotation.X, rw.Rotation.Y, rw.Rotation.Z, rw.Rotation.W } },
+                                modification = _bonePosing.GetModification(bone) is { } m ? new { scale = m.Scale.X, rotW = m.Rotation.W, pos = m.Position.Y } : null });
                         }
                 return Json(new { error = "no such bone" });
             }
@@ -383,6 +388,20 @@ public sealed class DebugBridge : IDisposable
                     }
                 var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
                 return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
+            }
+            case "/scalebone":
+            {
+                string name = query["name"]; int part = int.Parse(query["partial"]); float sc = float.Parse(query["s"], CultureInfo.InvariantCulture);
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            var raw = bone.LastRawTransform;
+                            var wanted = new global::Poser.Transform(raw.Position, raw.Rotation, new System.Numerics.Vector3(sc, sc, sc));
+                            _bonePosing.ApplyTransform(bone, wanted, raw);
+                            return Json(new { ok = true, raw = new { raw.Scale.X, raw.Rotation.W }, modification = _bonePosing.GetModification(bone)?.Scale.X });
+                        }
+                return Json(new { error = "no such bone" });
             }
             case "/gazemode":
             {
@@ -567,6 +586,7 @@ public sealed class DebugBridge : IDisposable
             mode = snapshot?.Mode,
             renderFlags = snapshot?.RenderFlags,
             hasDrawObject = snapshot?.HasDrawObject,
+            physicsFrozen = _port.IsPhysicsFrozen,
             drawObject = DrawObjectAddress(actor),
             drawObjectVisible = snapshot?.DrawObjectVisible,
             weaponDrawn = snapshot?.WeaponDrawn,

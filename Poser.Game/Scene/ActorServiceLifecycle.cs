@@ -60,6 +60,15 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
     private readonly Poser.Application.Integration.ActorIntegrationSession
         _integration;
     private readonly Bindings.StableBindingRegistry _bindings;
+    private readonly IBonePosingService _bonePosing;
+
+    // Physics-driven bones (hair, clothing, the body-mod physics bones):
+    // the game simulates them, so a captured pose must leave them alone —
+    // pinning the source's momentary sway on a copy left its hair 35
+    // degrees off and never settling (2026-09-02). A bone the user HAS
+    // transformed on the source carries that transform across.
+    private static readonly string[] PhysicsPrefixes =
+        { "j_ex_h", "j_kami_", "j_ex_met_va", "j_sk_", "j_ex_top_", "j_ex_met_a", "j_ex_met_b", "j_ex_met_c", "j_ex_met_d", "j_zacc", "n_hijisoubi_", "n_hizasoubi_", "n_kataarmor_" };
 
     public ActorServiceLifecycle(
         IActorSpawnService spawns,
@@ -71,8 +80,10 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         IPluginLog log,
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        Bindings.StableBindingRegistry bindings)
+        Bindings.StableBindingRegistry bindings,
+        IBonePosingService bonePosing)
     {
+        _bonePosing = bonePosing;
         _spawns = spawns;
         _posing = posing;
         _skeletons = skeletons;
@@ -139,6 +150,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
             pose)
         {
             PartialRootScales = rootScales,
+            PhysicsDeltas = CapturePhysicsDeltas(target),
         };
     }
 
@@ -209,13 +221,131 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         try
         {
             var slots = _skeletons.GetSkeletons(actor);
-            return slots.Count == 0 ? null : _poseFiles.CreatePoseFile(slots);
+            return slots.Count == 0 ? null : _poseFiles.CreatePoseFile(slots, PoseBoneWanted);
         }
         catch (Exception ex)
         {
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' pose could not be captured before the despawn: {ex.Message}");
             return null;
+        }
+    }
+
+    private static bool PoseBoneWanted(IBone bone) => !IsPhysicsDriven(bone.BoneName);
+
+    private static bool IsPhysicsDriven(string name)
+    {
+        if (name.Contains("_phys", StringComparison.Ordinal) || name.Contains("_phy_", StringComparison.Ordinal))
+            return true;
+        foreach (var prefix in PhysicsPrefixes)
+            if (name.StartsWith(prefix, StringComparison.Ordinal))
+                return true;
+        return false;
+    }
+
+    /// <summary>A physics bone's LOCAL scale and offset against its parent
+    /// on the source — where Customize+ puts its edits, inheritance and all,
+    /// since every bone is read after propagation. Raw equals final on a
+    /// foreign actor (Customize+ runs before Poser reads), so a delta cannot
+    /// be read; the local frame can. Rotation stays with the simulation.</summary>
+    private IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)>?
+        CapturePhysicsDeltas(IActor actor)
+    {
+        try
+        {
+            var locals = new Dictionary<string, (System.Numerics.Vector3, System.Numerics.Quaternion, System.Numerics.Vector3)>();
+            foreach (var skeleton in _skeletons.GetSkeletons(actor))
+            {
+                if (skeleton.Slot != global::Poser.Domain.Identity.PoseSlot.Character)
+                    continue;
+                foreach (var bone in skeleton.Bones)
+                {
+                    if (!IsPhysicsDriven(bone.BoneName) || bone.IsPartialRoot)
+                        continue;
+                    var parent = bone.ParentBone;
+                    if (parent == null)
+                        continue;
+                    var final = bone.LastTransform;
+                    var parentFinal = parent.LastTransform;
+                    var localScale = new System.Numerics.Vector3(
+                        parentFinal.Scale.X == 0 ? 1f : final.Scale.X / parentFinal.Scale.X,
+                        parentFinal.Scale.Y == 0 ? 1f : final.Scale.Y / parentFinal.Scale.Y,
+                        parentFinal.Scale.Z == 0 ? 1f : final.Scale.Z / parentFinal.Scale.Z);
+                    var offset = System.Numerics.Vector3.Transform(
+                        final.Position - parentFinal.Position,
+                        System.Numerics.Quaternion.Inverse(parentFinal.Rotation));
+                    var localOffset = new System.Numerics.Vector3(
+                        parentFinal.Scale.X == 0 ? offset.X : offset.X / parentFinal.Scale.X,
+                        parentFinal.Scale.Y == 0 ? offset.Y : offset.Y / parentFinal.Scale.Y,
+                        parentFinal.Scale.Z == 0 ? offset.Z : offset.Z / parentFinal.Scale.Z);
+                    locals[$"{bone.PartialId}:{bone.BoneName}"] = (localOffset, System.Numerics.Quaternion.Identity, localScale);
+                }
+            }
+            return locals.Count == 0 ? null : locals;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>One pass per tick: a child's target is computed from its
+    /// parent as the LAST pass left it, so a chain settles a link per pass.</summary>
+    private void ApplyPhysicsDeltasOver(
+        IActor actor,
+        IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)> locals,
+        int passes)
+    {
+        ApplyPhysicsDeltas(actor, locals);
+        if (passes <= 1)
+            return;
+        try
+        {
+            _framework.RunOnTick(() =>
+            {
+                if (actor.Address != nint.Zero)
+                    ApplyPhysicsDeltasOver(actor, locals, passes - 1);
+            }, delayTicks: 1);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning($"SceneLifecycleHistory: physics frames on '{actor.Name}' could not continue: {ex.Message}");
+        }
+    }
+
+    /// <summary>Puts each physics bone where the source's local frame says,
+    /// against the COPY's parent: scale and offset owned as a modification
+    /// on the bone's own simulated raw, rotation left to the simulation.
+    /// A bone whose local frame already matches gets no modification.</summary>
+    private void ApplyPhysicsDeltas(
+        IActor actor,
+        IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)> locals)
+    {
+        foreach (var skeleton in _skeletons.GetSkeletons(actor))
+        {
+            if (skeleton.Slot != global::Poser.Domain.Identity.PoseSlot.Character)
+                continue;
+            // Targets resolved top-down within the pass: a chain's deeper
+            // links build on the parent's TARGET, not on where the last
+            // frame left it (one link per pass otherwise, and it stalled).
+            var targets = new Dictionary<IBone, Transform>();
+            foreach (var bone in skeleton.Bones)
+            {
+                var parent = bone.ParentBone;
+                if (parent == null
+                    || !locals.TryGetValue($"{bone.PartialId}:{bone.BoneName}", out var local))
+                    continue;
+                var raw = bone.LastRawTransform;
+                var parentNow = targets.TryGetValue(parent, out var parentTarget) ? parentTarget : parent.LastTransform;
+                var targetScale = parentNow.Scale * local.Scale;
+                var targetPosition = parentNow.Position + System.Numerics.Vector3.Transform(
+                    local.Position * parentNow.Scale, parentNow.Rotation);
+                var target = new Transform(targetPosition, raw.Rotation, targetScale);
+                targets[bone] = target;
+                if ((targetScale - raw.Scale).Length() < 0.001f && (targetPosition - raw.Position).Length() < 0.0005f)
+                    continue;
+                _bonePosing.ApplyTransform(bone, target, raw);
+            }
         }
     }
 
@@ -320,5 +450,7 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
         if (!restored.Success)
             _log.Warning(
                 $"SceneLifecycleHistory: '{actor.Name}' came back but its pose was refused: {restored.Detail}");
+        if (state.PhysicsDeltas is { } physicsDeltas)
+            ApplyPhysicsDeltasOver(actor, physicsDeltas, passes: 4);
     }
 }

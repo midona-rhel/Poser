@@ -96,6 +96,11 @@ internal readonly record struct ActorState(
     /// pose file cannot carry (its bones are keyed by name and the roots
     /// share the body's). Applied after the pose lands.</summary>
     public IReadOnlyDictionary<string, System.Numerics.Vector3>? PartialRootScales { get; init; }
+
+    /// <summary>Physics bones by "partial:bone": what sits on them beyond
+    /// the simulation (Customize+ offset, rotation, scale; Poser transforms)
+    /// as final-minus-raw deltas, applied on the copy's own raw.</summary>
+    public IReadOnlyDictionary<string, (System.Numerics.Vector3 Position, System.Numerics.Quaternion Rotation, System.Numerics.Vector3 Scale)>? PhysicsDeltas { get; init; }
 }
 
 /// <summary>
@@ -381,14 +386,15 @@ public sealed class SceneLifecycleHistory
         WorldObjectService worldObjects,
         IGazeService gaze,
         Poser.Application.Integration.ActorIntegrationSession integration,
-        Bindings.StableBindingRegistry bindings)
+        Bindings.StableBindingRegistry bindings,
+        IBonePosingService bonePosing)
         : this(
             history,
             lighting,
             cameras,
             new ActorServiceLifecycle(
                 actors, posing, skeletons, poseFiles, poses, framework, log,
-                gaze, integration, bindings),
+                gaze, integration, bindings, bonePosing),
             new PropServiceLifecycle(props),
             new OverlayServiceLifecycle(overlays),
             new WorldObjectServiceLifecycle(worldObjects))
