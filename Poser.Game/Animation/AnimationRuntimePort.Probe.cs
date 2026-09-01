@@ -425,7 +425,7 @@ public sealed unsafe partial class AnimationRuntimePort
     private readonly List<nint> _clockPointers = new();
     private float[]? _clockPtrPrevious;
     private int[]? _clockPtrScores;
-    private const int ClockPtrBytes = 0x140;
+    private const int ClockPtrBytes = 0x280;
     private const int ClockPtrMax = 24;
     private readonly float[] _clockPtrBuffer = new float[ClockPtrBytes / 4];
 
@@ -461,9 +461,14 @@ public sealed unsafe partial class AnimationRuntimePort
 
     /// <summary>A per-tick advance that reads as a clock in any unit:
     /// seconds (~dt), frames (~1), or milliseconds (~16).</summary>
-    private static bool ClockLikeDelta(float delta) =>
-        delta is (> 0.004f and < 0.12f) or (> 0.4f and < 2.5f)
+    private static bool ClockLikeDelta(float delta)
+    {
+        // A COUNTDOWN decrements clock-like — the completion timer that
+        // survived three hunts scored only positive deltas (hunt four).
+        float size = Math.Abs(delta);
+        return size is (> 0.004f and < 0.12f) or (> 0.4f and < 2.5f)
             or (> 6f and < 40f);
+    }
 
     /// <summary>An INTEGER counter advancing 1-3 per tick — invisible to
     /// the float scan (hunt three).</summary>
@@ -495,6 +500,16 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (value > 0x10000 && value < 0x7FFF_FFFF_FFFF
                     && (value & 0x7) == 0 && !_clockPointers.Contains(value))
                     _clockPointers.Add(value);
+            }
+            // The per-slot SchedulerTimeline objects come FIRST: the
+            // completion countdown almost certainly lives inside one.
+            for (int huntSlot = 0; huntSlot < 4; huntSlot++)
+            {
+                var stamp = SchedulerTimestamp(
+                    &character->Timeline.TimelineSequencer, huntSlot);
+                if (stamp != null)
+                    _clockPointers.Add(
+                        (nint)stamp - SchedulerTimestampOffset);
             }
             // The base havok control's own block joins the chase: the
             // loop decision may live beside LocalTime (hunt three).
