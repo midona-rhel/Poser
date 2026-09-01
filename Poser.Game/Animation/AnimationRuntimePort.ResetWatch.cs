@@ -140,11 +140,15 @@ public sealed unsafe partial class AnimationRuntimePort
             nint track = trackPointers != 0 ? *(nint*)trackPointers : 0;
             nint clipPointers = track != 0 ? *(nint*)(track + 0x18) : 0;
             nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
-            if (clip != 0 && *(int*)(clip + 0x84) == 7)
+            if (clip != 0 && TryCopyRegion(clip, 0x160)
+                && BitConverter.ToInt32(_guardBuffer, 0x84) == 7)
             {
-                nint child = *(nint*)(clip + 0x130);
+                float childFrame = BitConverter.ToSingle(_guardBuffer, 0xCC);
+                nint child = (nint)BitConverter.ToInt64(_guardBuffer, 0x130);
+                float childTs = child != 0 && TryCopyRegion(child, 0x40)
+                    ? BitConverter.ToSingle(_guardBuffer, 0x34) : float.NaN;
                 line.Append(string.Create(CultureInfo.InvariantCulture,
-                    $" childFrame={*(float*)(clip + 0xCC):0.0} childTs={(child != 0 ? *(float*)(child + 0x34) : float.NaN):0.0}"));
+                    $" childFrame={childFrame:0.0} childTs={childTs:0.0}"));
             }
         }
         if (n >= 1)
@@ -256,12 +260,13 @@ public sealed unsafe partial class AnimationRuntimePort
                     DiffObject(2, "track", track, 0xC0);
                     nint clipPointers = *(nint*)(track + 0x18);
                     nint clip = clipPointers != 0 ? *(nint*)clipPointers : 0;
-                    if (clip != 0)
+                    if (clip != 0 && TryCopyRegion(clip, 0x98))
                     {
-                        DiffObject(3, "clip", clip, 0x160);
-                        if (*(int*)(clip + 0x84) == 7)
+                        bool isChildClip = BitConverter.ToInt32(_guardBuffer, 0x84) == 7;
+                        DiffObject(3, "clip", clip, isChildClip ? 0x160 : 0x98);
+                        if (isChildClip && TryCopyRegion(clip, 0x160))
                         {
-                            nint child = *(nint*)(clip + 0x130);
+                            nint child = (nint)BitConverter.ToInt64(_guardBuffer, 0x130);
                             if (child != 0)
                                 DiffObject(4, "child", child, 0x80);
                         }
@@ -346,6 +351,18 @@ public sealed unsafe partial class AnimationRuntimePort
     }
 
     private bool _resetConstantsDumped;
+    private readonly byte[] _guardBuffer = new byte[0x400];
+
+    /// <summary>A guarded copy of a foreign region: a dead or short object
+    /// fails the read instead of faulting the game (the 21:42 crash was an
+    /// unguarded 0x160 read of a smaller clip).</summary>
+    private bool TryCopyRegion(nint address, int size)
+    {
+        if (address == 0 || size > _guardBuffer.Length)
+            return false;
+        fixed (byte* dst = _guardBuffer)
+            return ReadProcessMemory((nint)(-1), address, dst, size, out var read) && read == size;
+    }
     private float _lastStableFrames = float.NaN;
     private float _oldPositionFrames = float.NaN;
     private float _oldTotalFrames = float.NaN;
@@ -436,11 +453,13 @@ public sealed unsafe partial class AnimationRuntimePort
     /// floats in [0.5, 5000] and ints in [1, 100000] that are not pointers.</summary>
     private void DumpConstants(string name, nint address, int size)
     {
+        if (!TryCopyRegion(address, size))
+            return;
         var line = new StringBuilder(400).Append("[AnimReset] const ").Append(name);
         int printed = 0;
         for (int offset = 0; offset + 4 <= size && printed < 48; offset += 4)
         {
-            int raw = *(int*)(address + offset);
+            int raw = BitConverter.ToInt32(_guardBuffer, offset);
             if (raw == 0)
                 continue;
             float f = BitConverter.Int32BitsToSingle(raw);
@@ -465,21 +484,22 @@ public sealed unsafe partial class AnimationRuntimePort
     /// tick, as float and int. A new address resets the baseline silently.</summary>
     private void DiffObject(int index, string name, nint address, int size)
     {
+        if (!TryCopyRegion(address, size))
+            return;
         var prev = _resetDiffPrev[index];
         if (prev == null || prev.Length != size || _resetDiffAddr[index] != address)
         {
             prev = new byte[size];
             _resetDiffPrev[index] = prev;
             _resetDiffAddr[index] = address;
-            fixed (byte* dst = prev)
-                Buffer.MemoryCopy((void*)address, dst, size, size);
+            Buffer.BlockCopy(_guardBuffer, 0, prev, 0, size);
             return;
         }
         StringBuilder? line = null;
         int printed = 0;
         for (int offset = 0; offset + 4 <= size; offset += 4)
         {
-            int now = *(int*)(address + offset);
+            int now = BitConverter.ToInt32(_guardBuffer, offset);
             int was = BitConverter.ToInt32(prev, offset);
             if (now == was)
                 continue;
@@ -491,8 +511,7 @@ public sealed unsafe partial class AnimationRuntimePort
                     $" +{offset:x3}={asFloat:0.###}/i{now}");
             }
         }
-        fixed (byte* dst = prev)
-            Buffer.MemoryCopy((void*)address, dst, size, size);
+        Buffer.BlockCopy(_guardBuffer, 0, prev, 0, size);
         if (line != null)
             _log.Information(line.ToString());
     }

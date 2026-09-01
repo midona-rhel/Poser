@@ -98,6 +98,16 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         return (float*)((byte*)handle->Data + SchedulerTimestampOffset);
     }
 
+    /// <summary>Whether a foreign region answers a guarded read (the
+    /// ReadProcessMemory import lives in the probe partial).</summary>
+    private static bool RegionReadable(nint address, int size)
+    {
+        if (size > 0x160)
+            return false;
+        byte* scratch = stackalloc byte[0x160];
+        return ReadProcessMemory((nint)(-1), address, scratch, size, out var read) && read == size;
+    }
+
     /// <summary>Walks a track controller's tracks and clips; every
     /// ChildTimelineClip gets its frame cursor written and its child
     /// controller seeked (timestamp + previous), recursively.</summary>
@@ -117,12 +127,12 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             for (int c = 0; c < clipCount && c < 8 && clipPointers != 0; c++)
             {
                 nint clip = *(nint*)(clipPointers + c * 8);
-                if (clip == 0 || *(int*)(clip + 0x84) != 7)
+                if (clip == 0 || !RegionReadable(clip, 0x160) || *(int*)(clip + 0x84) != 7)
                     continue;
                 *(float*)(clip + 0xCC) = frames;   // ChildFrame
                 *(float*)(clip + 0xD0) = frames;   // PrevChildFrame
                 nint child = *(nint*)(clip + 0x130); // child TimelineController
-                if (child == 0)
+                if (child == 0 || !RegionReadable(child, 0x80))
                     continue;
                 *(float*)(child + SchedulerTimestampOffset) = frames;
                 *(float*)(child + SchedulerTimestampOffset + 4) = frames;
