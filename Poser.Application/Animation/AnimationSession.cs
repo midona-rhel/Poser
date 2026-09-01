@@ -568,8 +568,13 @@ public sealed class AnimationSession
         SetSlotSpeedCore(actor, slot, 0f);
 
     /// <summary>Applies Selected; only Base may use the emote lifecycle.</summary>
+    /// <summary>APPLY stages, PLAY plays (ruled 2026-09-01): with
+    /// <paramref name="resume"/> false, a paused actor takes the animation
+    /// frozen at its start and nothing moves — the layer's Play button (or
+    /// the sidebar's play-all) is what starts it.</summary>
     public AnimationResult PlaySelectedSlot(
-        ActorId actor, AnimationSlot slot, TimelineEntry? entry, bool playFromStart)
+        ActorId actor, AnimationSlot slot, TimelineEntry? entry,
+        bool playFromStart, bool resume = true)
     {
         bool resumedOverall = false;
         if (SelectedFor(actor, slot) is { } selected)
@@ -581,6 +586,8 @@ public sealed class AnimationSession
             if (!played.Success)
                 return played;
         }
+        if (!resume && IsPaused(actor))
+            return AnimationResult.Ok();
         if (IsPaused(actor))
         {
             var resumed = ResumeForLayerPlay(actor, slot);
@@ -589,7 +596,9 @@ public sealed class AnimationSession
             resumedOverall = true;
         }
         if (OverridesFor(actor).SlotSpeeds.TryGetValue(slot, out var speed) && speed == 0f)
-            return ResumeSlotSpeedCore(actor, slot);
+            return resume
+                ? ResumeSlotSpeedCore(actor, slot)
+                : AnimationResult.Ok();
         return SelectedFor(actor, slot) != null || resumedOverall
             ? AnimationResult.Ok()
             : AnimationResult.Fail("Choose an animation first.");

@@ -326,7 +326,6 @@ public sealed class AnimationPane : IDisposable
         var gameGaze = gaze is { Mode: global::Poser.Services.GazeTargetMode.None }
             ? _probePort.ProbeGameGaze(source)
             : null;
-        bool? weaponDrawn = _animation.Read(source)?.WeaponDrawn;
         // The clone shares the source's Customize+ body: the active SAVED
         // profile copies as a temporary one. A temporary profile on the
         // source cannot be read back through the IPC and is skipped.
@@ -365,8 +364,6 @@ public sealed class AnimationPane : IDisposable
                 _animation.SetSlotSpeed(target, slot, speed);
             if (owned.Lips is { } lips)
                 _animation.SetLips(target, lips);
-            if (weaponDrawn is { } drawn)
-                _animation.SetWeaponDrawn(target, drawn);
             if (bodyProfileJson != null)
                 _integrationPort.ApplyTemporaryBodyProfile(target, bodyProfileJson);
             var resolvedTarget = _bindings.Resolve(target);
@@ -448,6 +445,10 @@ public sealed class AnimationPane : IDisposable
     private Action<ActorId>? ProbeSecondPass(ActorId source)
     {
         var owned = _animation.OverridesFor(source);
+        // Weapon state is layered too: setting it in the first pass, the
+        // base/emote engagement wiped it (report: clone wore the weapon
+        // on its back while the source held it drawn).
+        bool? weaponDrawn = _animation.Read(source)?.WeaponDrawn;
         var selections =
             new Dictionary<AnimationSlot, ushort>(owned.SelectedSlots);
         foreach (var (slot, timeline) in owned.AppliedSlots)
@@ -458,7 +459,8 @@ public sealed class AnimationPane : IDisposable
         foreach (var slot in owned.LoopedSlots.Keys)
             selections.Remove(slot);
         if (selections.Count == 0
-            && owned.HeldExpression == null)
+            && owned.HeldExpression == null
+            && weaponDrawn is null or false)
             return null;
         return target =>
         {
@@ -473,6 +475,8 @@ public sealed class AnimationPane : IDisposable
                 _animation.SetSlotSpeed(target, slot, speed);
             if (owned.HeldExpression is { } expression)
                 _animation.HoldExpression(target, expression);
+            if (weaponDrawn is { } drawn)
+                _animation.SetWeaponDrawn(target, drawn);
         };
     }
 
@@ -695,7 +699,8 @@ public sealed class AnimationPane : IDisposable
                             actor,
                             slot,
                             choice,
-                            _playEmoteStart),
+                            _playEmoteStart,
+                            resume: false),
                         $"{label} playback"),
                     style: actionStyle,
                     disabled: disabled || selected == 0);
@@ -794,6 +799,19 @@ public sealed class AnimationPane : IDisposable
         if (enabled == current)
             return;
 
+        if (enabled)
+        {
+            // ENTERING advanced is a pure view change (ruled 2026-09-01):
+            // it must not reset, replay, or release ANYTHING — the old
+            // restore-Base-first handoff restarted the base (losing scrub
+            // points and layered animations, worst on a fresh clone). The
+            // layer rows simply adopt whatever state the actor holds.
+            _generalSelections.Remove(actor);
+            _layerSelections.Remove((actor, AnimationSlot.Base));
+            _advancedActors.Add(actor);
+            return;
+        }
+
         CancelExpressionRetry(actor);
         var expression = _animation.ReleaseExpression(actor);
         if (!expression.Success)
@@ -803,31 +821,6 @@ public sealed class AnimationPane : IDisposable
         }
         _expressionSelections.Remove(actor);
         _layerSelections.Remove((actor, AnimationSlot.Facial));
-
-        if (enabled)
-        {
-            // Basic owns only Base. Restore it before exposing layer writes.
-            var reset = _animation.ResetSlot(actor, AnimationSlot.Base);
-            if (!reset.Success)
-            {
-                Report(reset, "Advanced animation");
-                return;
-            }
-            if (_animation.LoopWantedFor(actor, AnimationSlot.Base))
-            {
-                var loop = _animation.SetSlotLoop(
-                    actor, AnimationSlot.Base, 0, false);
-                if (!loop.Success)
-                {
-                    Report(loop, "Advanced animation");
-                    return;
-                }
-            }
-            _generalSelections.Remove(actor);
-            _layerSelections.Remove((actor, AnimationSlot.Base));
-            _advancedActors.Add(actor);
-            return;
-        }
 
         // Advanced releases every layer before Basic can issue Base commands.
         foreach (var slot in PrimaryLayers)

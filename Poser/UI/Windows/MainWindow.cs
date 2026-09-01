@@ -830,7 +830,7 @@ public class MainWindow : Window
             if (row.Tag is not SelectionId
                 { Kind: SceneEntityKind.Actor, Actor: { } actor })
                 return;
-            if (_animation.AnyPaused(actor))
+            if (_animation.IsPaused(actor))
                 _animation.Resume(actor);
             else
                 _animation.Pause(actor);
@@ -2221,7 +2221,10 @@ public class MainWindow : Window
             row.ActorVisible = resolved.Success
                 ? _spawnService.IsVisible(resolved.Value!)
                 : !state.SnapshotHidden;
-            row.ActorPaused = _animation.AnyPaused(state.Id);
+            // Resume offers only from the WHOLE-actor pause; the moment
+            // any layer plays, the button offers Pause — pause always
+            // stops the entire stack (ruled 2026-09-01).
+            row.ActorPaused = _animation.IsPaused(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
             string label = Config.ConfigurationService.Instance.GetDisplayName(
@@ -4627,8 +4630,8 @@ public class MainWindow : Window
             new(!_spawnService.IsVisible(actor) ? "Show" : "Hide", !_spawnService.IsVisible(actor) ? TablerIcon.Eye : TablerIcon.EyeOff),
             // The icon carries the verb the row performs: resume wears play,
             // pause wears pause.
-            new(_animation.AnyPaused(actorId) ? "Resume animation" : "Pause animation",
-                _animation.AnyPaused(actorId)
+            new(_animation.IsPaused(actorId) ? "Resume animation" : "Pause animation",
+                _animation.IsPaused(actorId)
                     ? TablerIcon.PlayerPlay
                     : TablerIcon.PlayerPause),
             new("Rename", TablerIcon.Edit),
@@ -4673,7 +4676,7 @@ public class MainWindow : Window
             () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
             () =>
             {
-                if (_animation.AnyPaused(actorId))
+                if (_animation.IsPaused(actorId))
                     _animation.Resume(actorId);
                 else
                     _animation.Pause(actorId);
