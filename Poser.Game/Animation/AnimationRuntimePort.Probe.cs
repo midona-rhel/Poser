@@ -597,18 +597,28 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 // "Wrote once" is not landed: an emote transitions
                 // intro->loop a few ticks in and the loop RECREATES the
-                // control at the same index, restarting at 0 — the write
-                // went into the corpse. Landed = every control was written
-                // AND every PAUSED control's read-back holds its time.
+                // control at the same index — the SAME ScrubControlId —
+                // restarting at 0, so a single good read-back can be the
+                // dying intro control. Landed = every control written AND
+                // every paused control's read-back holds its time for
+                // CONSECUTIVE ticks, riding out the handoff.
                 if (arm.ControlsLanded >= arm.Capture.Controls.Count
                     && ProbePausedControlsHold(target, arm.Capture))
                 {
-                    _log.Information(
-                        $"[AnimProbe] ControlHold: {target} landed all "
-                        + $"{arm.ControlsLanded} control(s) after "
-                        + $"{arm.FramesWritten} frame(s); disarming.");
-                    (done ??= new()).Add(target);
-                    continue;
+                    if (++arm.HeldTicks >= SeamHoldTicks)
+                    {
+                        _log.Information(
+                            $"[AnimProbe] ControlHold: {target} held all "
+                            + $"{arm.ControlsLanded} control(s) for "
+                            + $"{SeamHoldTicks} tick(s) after "
+                            + $"{arm.FramesWritten} frame(s); disarming.");
+                        (done ??= new()).Add(target);
+                        continue;
+                    }
+                }
+                else
+                {
+                    arm.HeldTicks = 0;
                 }
             }
             else if (ProbeMatches(target, arm.Capture, log: false))
