@@ -325,11 +325,16 @@ public sealed class WorldObjectsPane
                     worldObject.NightState,
                     next => worldObject.NightState = next,
                     help: "Toggles night state"));
-            form.Switch(
-                "Paused",
-                worldObject.AnimationPaused,
-                next => worldObject.AnimationPaused = next,
-                help: "Pauses the animation");
+            // BORROWED scenery only: a spawned copy cannot be animated
+            // by the game (the layout drives only its own instances), so
+            // a pause switch on one would toggle nothing (ruled
+            // 2026-09-01).
+            if (!worldObject.Spawned)
+                form.Switch(
+                    "Paused",
+                    worldObject.AnimationPaused,
+                    next => worldObject.AnimationPaused = next,
+                    help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
         {
