@@ -125,6 +125,17 @@ public sealed unsafe partial class AnimationRuntimePort
     /// <summary>A trace line from callers that have no log of their own.</summary>
     public void ProbeTrace(string message) => _log.Information($"[AnimProbe] {message}");
 
+    /// <summary>Render flags for step tracing (0 = visible).</summary>
+    public int ProbeRenderFlags(ActorId actor)
+    {
+        var character = Resolve(actor, out _);
+        return character == null ? -1 : (int)character->GameObject.RenderFlags;
+    }
+
+    /// <summary>Trace helper: "step -> flags".</summary>
+    public void ProbeStep(ActorId actor, string step) =>
+        _log.Information($"[AnimProbe] step {step} -> render {ProbeRenderFlags(actor)}");
+
     /// <summary>Experiment: CancelTimeline with chosen a2/a3.</summary>
     public AnimationPortResult ProbeCancel(ActorId actor, nint a2, nint a3)
     {
@@ -149,6 +160,10 @@ public sealed unsafe partial class AnimationRuntimePort
         public bool WeaponHidden { get; set; }
         public bool HatHidden { get; set; }
         public bool VisorToggled { get; set; }
+        public int RenderFlags { get; set; }
+        public bool HasDrawObject { get; set; }
+        public bool DrawObjectVisible { get; set; }
+        public bool WeaponDrawn { get; set; }
     }
 
     public ProbeState? ProbeSnapshot(ActorId actor)
@@ -163,6 +178,11 @@ public sealed unsafe partial class AnimationRuntimePort
             WeaponHidden = character->DrawData.IsWeaponHidden,
             HatHidden = character->DrawData.IsHatHidden,
             VisorToggled = character->DrawData.IsVisorToggled,
+            RenderFlags = (int)character->GameObject.RenderFlags,
+            HasDrawObject = character->GameObject.DrawObject != null,
+            DrawObjectVisible = character->GameObject.DrawObject != null
+                && character->GameObject.DrawObject->IsVisible,
+            WeaponDrawn = character->Timeline.IsWeaponDrawn,
         };
         for (int slot = 0; slot < 4; slot++)
         {
@@ -822,7 +842,11 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 ProbeWatch(pending);
                 if (pending.ReapplyIn > 0 && --pending.ReapplyIn == 0)
+                {
+                    ProbeStep(pending.Target, "before second pass");
                     pending.Reapply?.Invoke(pending.Target);
+                    ProbeStep(pending.Target, "after second pass");
+                }
                 for (int v = pending.VerifyIn.Count - 1; v >= 0; v--)
                 {
                     if (--pending.VerifyIn[v] > 0)
@@ -835,8 +859,11 @@ public sealed unsafe partial class AnimationRuntimePort
                 continue;
             }
 
-            // Still waiting for the target to answer.
-            if (Read(pending.Target) == null)
+            // Still waiting for the target to answer AND to render: a fresh
+            // clone answers reads while still loading (render flags 0x900),
+            // and acting on it then leaves the model-hidden bit stuck (the
+            // invisible clones, 2026-09-01 22:46). Ready = flags 0.
+            if (Read(pending.Target) == null || ProbeRenderFlags(pending.Target) != 0)
             {
                 if (--pending.WaitTicks <= 0)
                 {
@@ -860,6 +887,7 @@ public sealed unsafe partial class AnimationRuntimePort
         {
             case ProbeMethod.Verbs:
             {
+                ProbeStep(target, "verbs:start");
                 if (capture.EmoteId != 0)
                 {
                     var emote = PlayEmote(target, capture.EmoteId);
@@ -905,6 +933,7 @@ public sealed unsafe partial class AnimationRuntimePort
                 }
                 _log.Information(
                     $"[AnimProbe] Verbs: played {played} timeline(s) on {target}.");
+                ProbeStep(target, "verbs:played");
                 ProbeArmControlHold(target, capture);
                 break;
             }
@@ -968,7 +997,9 @@ public sealed unsafe partial class AnimationRuntimePort
         // travel through the SESSION so the owned record — and every
         // toggle describing it — is right. Port-level enforcement alone
         // paused the engine while the session said "playing".
+        ProbeStep(target, "before session transfer");
         pending.Apply?.Invoke(target);
+        ProbeStep(target, "after session transfer");
         if (pending.Reapply != null)
             pending.ReapplyIn = 30;
         pending.WaitTicks = 0;
@@ -1206,6 +1237,19 @@ public sealed unsafe partial class AnimationRuntimePort
     private void ProbeVerify(
         ActorId target, RawTimelineCapture capture, ProbeMethod method)
     {
+        // The settle seek: the scheduler and clip clocks re-derive a havok
+        // control's time, so a bare LocalTime hold cannot land a scrub on a
+        // clone (upper stuck at 2.0 vs the source's 10, 22:48). Seek every
+        // stored slot control through the full-family scrub write instead,
+        // on each verify tick, while the clone settles.
+        if (method != ProbeMethod.Seam)
+        {
+            foreach (var (id, time, _) in capture.Controls)
+            {
+                if (id.Partial == 0)
+                    SetControlTime(target, id, time, 0);
+            }
+        }
         bool match = ProbeMatches(target, capture, log: true, method);
         _log.Information(
             $"[AnimProbe] verify {method} on {target}: "

@@ -311,6 +311,8 @@ public sealed class DebugBridge : IDisposable
             }
             case "/clonea":
             {
+                global::Poser.UI.AnimationPane.SkipCustomizePlus = query.ContainsKey("nocplus");
+                global::Poser.UI.AnimationPane.SkipWeaponDrawn = query.ContainsKey("noweapon");
                 int before = _actors.Actors.Count;
                 _pane.ProbeCloneA(id);
                 var made = _actors.Actors.Count > before ? _actors.Actors[^1] : null;
@@ -383,6 +385,10 @@ public sealed class DebugBridge : IDisposable
             baseOverride = reading?.BaseTimeline,
             emoteId = snapshot?.EmoteId,
             mode = snapshot?.Mode,
+            renderFlags = snapshot?.RenderFlags,
+            hasDrawObject = snapshot?.HasDrawObject,
+            drawObjectVisible = snapshot?.DrawObjectVisible,
+            weaponDrawn = snapshot?.WeaponDrawn,
             weaponHidden = snapshot?.WeaponHidden,
             hatHidden = snapshot?.HatHidden,
             visorToggled = snapshot?.VisorToggled,

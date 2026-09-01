@@ -285,6 +285,10 @@ public sealed class AnimationPane : IDisposable
     public void ProbeCloneA(ActorId source) =>
         ProbeClone(source, Game.Animation.ProbeMethod.Verbs);
 
+    /// <summary>Bisect switches for the transfer (bridge-driven).</summary>
+    public static bool SkipCustomizePlus;
+    public static bool SkipWeaponDrawn;
+
     private void ProbeClone(ActorId source, Game.Animation.ProbeMethod method)
     {
         if (_probePort.ProbeCapture(source) is not { } capture)
@@ -501,9 +505,9 @@ public sealed class AnimationPane : IDisposable
                 _animation.SetSlotSpeed(target, slot, speed);
             if (owned.HeldExpression is { } expression)
                 _animation.HoldExpression(target, expression);
-            if (weaponDrawn is { } drawn)
+            if (weaponDrawn is { } drawn && !SkipWeaponDrawn)
                 _animation.SetWeaponDrawn(target, drawn);
-            if (bodyProfileJson != null)
+            if (bodyProfileJson != null && !SkipCustomizePlus)
             {
                 var applied = _integrationPort.ApplyTemporaryBodyProfile(target, bodyProfileJson);
                 _probePort.ProbeTrace(
