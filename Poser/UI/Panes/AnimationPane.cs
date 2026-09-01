@@ -494,10 +494,15 @@ public sealed class AnimationPane : IDisposable
             return null;
         return target =>
         {
+            var live = _animation.Read(target);
             foreach (var (slot, timeline) in selections)
             {
                 _animation.ChooseSlot(target, slot, timeline);
-                _animation.Replay(target, timeline, out _);
+                // Same rule as Play: a slot already live on this timeline is
+                // resumed, never re-blended — the re-blend left a duplicate
+                // instance frozen at 0 that the face showed (22:55).
+                if (live?.TimelineFor(slot) != timeline)
+                    _animation.Replay(target, timeline, out _);
             }
             if (owned.OverallSpeed is { } overall)
                 _animation.SetSpeed(target, overall);

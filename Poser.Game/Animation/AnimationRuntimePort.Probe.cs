@@ -133,6 +133,36 @@ public sealed unsafe partial class AnimationRuntimePort
         return character == null ? -1 : (int)character->GameObject.RenderFlags;
     }
 
+    /// <summary>Asks the game to load the draw objects for every weapon
+    /// slot whose model id is set: a clone copies the ids but the game
+    /// loads weapons lazily, so a transferred clone stood without its
+    /// back weapon and prop (22:55). Returns how many were requested.</summary>
+    public int ProbeLoadWeapons(ActorId actor)
+    {
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return 0;
+        int requested = 0;
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            // Only slots with an id but no draw object: the PROP the intro
+            // would have loaded. The main hand is already loaded.
+            if (weapon.ModelId.Id == 0 || weapon.DrawData.DrawObject != null)
+                continue;
+            character->DrawData.LoadWeapon(
+                (DrawDataContainer.WeaponSlot)slotIndex, weapon.ModelId, 0, 0, 0, 0, false);
+            requested++;
+        }
+        // The hide-weapon flag copied with the clone, but its weapon draw
+        // object was created before the flag applied: re-assert it.
+        bool hidden = character->DrawData.IsWeaponHidden;
+        character->DrawData.HideWeapons(hidden);
+        _log.Information($"[AnimProbe] weapon load requested on {actor}: {requested} slot(s); hidden={hidden}.");
+        return requested;
+    }
+
     /// <summary>Trace helper: "step -> flags".</summary>
     public void ProbeStep(ActorId actor, string step) =>
         _log.Information($"[AnimProbe] step {step} -> render {ProbeRenderFlags(actor)}");
@@ -892,6 +922,7 @@ public sealed unsafe partial class AnimationRuntimePort
             case ProbeMethod.Verbs:
             {
                 ProbeStep(target, "verbs:start");
+                ProbeLoadWeapons(target);
                 if (capture.EmoteId != 0)
                 {
                     var emote = PlayEmote(target, capture.EmoteId);
