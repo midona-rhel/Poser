@@ -370,9 +370,12 @@ public sealed unsafe partial class AnimationRuntimePort
                             var control = animated->AnimationControls[c].Value;
                             if (control == null)
                                 continue;
+                            var wb = control->hkaAnimationControl.Binding;
+                            float wd = wb.ptr != null && wb.ptr->Animation.ptr != null
+                                ? wb.ptr->Animation.ptr->Duration : -1f;
                             weapons.Append(CultureInfo.InvariantCulture,
                                 $" {p}.{c}@{control->hkaAnimationControl.LocalTime:0.00}"
-                                + $"x{control->PlaybackSpeed:0.##}");
+                                + $"/{wd:0.00}x{control->PlaybackSpeed:0.##}");
                         }
                     }
                 }

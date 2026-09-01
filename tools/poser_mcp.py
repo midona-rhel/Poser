@@ -19,6 +19,8 @@ TOOLS = [
     ("poser_scrub", "Scrub a slot to a time in seconds (pauses the actor).",
      {"actor": "", "slot": "", "time": "seconds"}),
     ("poser_loop", "Arm or disarm the loop on a slot.", {"actor": "", "slot": "", "on": "1 or 0"}),
+    ("poser_speed", "Set a slot's speed override.", {"actor": "", "slot": "", "value": "e.g. 0.5"}),
+    ("poser_clearspeed", "Clear a slot's speed override.", {"actor": "", "slot": ""}),
     ("poser_watch", "Arm the 60s per-frame clock watch on an actor.", {"actor": ""}),
     ("poser_dump", "Log a full native dump of the actor.", {"actor": ""}),
     ("poser_findclocks", "Run the clock hunt on the actor.", {"actor": ""}),

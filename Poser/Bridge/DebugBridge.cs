@@ -169,6 +169,7 @@ public sealed class DebugBridge : IDisposable
                         "/pauseall?actor", "/resumeall?actor",
                         "/scrub?actor&slot=1&time=SECONDS",
                         "/loop?actor&slot=1&on=1|0",
+                        "/speed?actor&slot=1&value=0.5", "/clearspeed?actor&slot=1",
                         "/watch?actor", "/dump?actor", "/findclocks?actor",
                         "/clone?actor",
                         "/log?lines=200&filter=REGEX",
@@ -260,6 +261,19 @@ public sealed class DebugBridge : IDisposable
                     ?? _animation.Read(id)?.TimelineFor(Slot()) ?? 0;
                 var r = _animation.SetSlotLoop(id, Slot(), timeline, on);
                 return Json(new { ok = r.Success, r.Detail, timeline, state = State(id, actor) });
+            }
+            case "/speed":
+            {
+                if (!query.TryGetValue("value", out var sv)
+                    || !float.TryParse(sv, NumberStyles.Float, CultureInfo.InvariantCulture, out var speed))
+                    return Json(new { error = "value is required" });
+                var r = _animation.SetSlotSpeed(id, Slot(), speed);
+                return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
+            }
+            case "/clearspeed":
+            {
+                var r = _animation.ClearSlotSpeed(id, Slot());
+                return Json(new { ok = r.Success, r.Detail, state = State(id, actor) });
             }
             case "/watch":
                 _port.ProbeWatchReset(id);

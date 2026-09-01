@@ -100,6 +100,66 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
     private int _scrubLogCounter;
 
+    /// <summary>Whether a weapon/prop control runs on the same clock as an
+    /// actor control: clip lengths and current times both within a second.</summary>
+    private static bool TracksControl(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* prop,
+        float time, float duration, out float propDuration)
+    {
+        propDuration = -1f;
+        var binding = prop->hkaAnimationControl.Binding;
+        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+            return false;
+        propDuration = binding.ptr->Animation.ptr->Duration;
+        return Math.Abs(propDuration - duration) < 1f
+            && Math.Abs(prop->hkaAnimationControl.LocalTime - time) < 1f;
+    }
+
+    private delegate void PropControlVisitor(
+        FFXIVClientStructs.Havok.Animation.Playback.Control.Default.hkaDefaultAnimationControl* control);
+
+    /// <summary>Visits every animation control on every attached weapon/prop
+    /// draw object.</summary>
+    private static void ForEachPropControl(Character* character, PropControlVisitor visit)
+    {
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            var draw = weapon.DrawData.DrawObject;
+            if (draw == null || draw->Object.GetObjectType() != ObjectType.CharacterBase)
+                continue;
+            var skeleton = ((CharacterBase*)draw)->Skeleton;
+            if (skeleton == null)
+                continue;
+            for (int p = 0; p < skeleton->PartialSkeletonCount; p++)
+            {
+                var animated = skeleton->PartialSkeletons[p].GetHavokAnimatedSkeleton(0);
+                if (animated == null)
+                    continue;
+                for (int c = 0; c < animated->AnimationControls.Length; c++)
+                {
+                    var control = animated->AnimationControls[c].Value;
+                    if (control != null)
+                        visit(control);
+                }
+            }
+        }
+    }
+
+    private static void PropagateScrubToProps(
+        Character* character, float before, float duration, float delta)
+    {
+        ForEachPropControl(character, control =>
+        {
+            if (!TracksControl(control, before, duration, out var propDuration))
+                return;
+            float target = control->hkaAnimationControl.LocalTime + delta;
+            control->hkaAnimationControl.LocalTime =
+                Math.Clamp(target, 0f, Math.Max(0f, propDuration - 1f / 30f));
+        });
+    }
+
     /// <summary>Whether a foreign region answers a guarded read (the
     /// ReadProcessMemory import lives in the probe partial).</summary>
     private static bool RegionReadable(nint address, int size)
@@ -390,6 +450,24 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                 if (control == null)
                     continue;
                 control->PlaybackSpeed = speed * overall;
+                // The props that run on this control's clock follow its
+                // effective speed (they ignored slot speed before: the wand
+                // read x1 while the layer ran x2).
+                if (p == 0)
+                {
+                    var binding = control->hkaAnimationControl.Binding;
+                    if (binding.ptr != null && binding.ptr->Animation.ptr != null)
+                    {
+                        float time = control->hkaAnimationControl.LocalTime;
+                        float duration = binding.ptr->Animation.ptr->Duration;
+                        float effective = speed * overall;
+                        ForEachPropControl(character, prop =>
+                        {
+                            if (TracksControl(prop, time, duration, out _))
+                                prop->PlaybackSpeed = effective;
+                        });
+                    }
+                }
             }
         }
     }
@@ -1042,7 +1120,37 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
         PruneEnforcement(actor);
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, restoreSpeed);
+        // The props on this slot's clock were held at the override speed by
+        // the per-frame enforcement; with it gone nothing resets them, so
+        // restore them here (the wand lagged at x0.5 after a clear).
+        RestorePropSpeeds(character, (int)slot, restoreSpeed * character->Timeline.OverallSpeed);
         return AnimationPortResult.Ok();
+    }
+
+    private static void RestorePropSpeeds(Character* character, int slot, float effective)
+    {
+        var drawObject = character->GameObject.DrawObject;
+        if (drawObject == null || drawObject->Object.GetObjectType() != ObjectType.CharacterBase)
+            return;
+        var skeleton = ((CharacterBase*)drawObject)->Skeleton;
+        if (skeleton == null || skeleton->PartialSkeletonCount == 0)
+            return;
+        var animated = skeleton->PartialSkeletons[0].GetHavokAnimatedSkeleton(0);
+        if (animated == null || slot >= animated->AnimationControls.Length)
+            return;
+        var control = animated->AnimationControls[slot].Value;
+        if (control == null)
+            return;
+        var binding = control->hkaAnimationControl.Binding;
+        if (binding.ptr == null || binding.ptr->Animation.ptr == null)
+            return;
+        float time = control->hkaAnimationControl.LocalTime;
+        float duration = binding.ptr->Animation.ptr->Duration;
+        ForEachPropControl(character, prop =>
+        {
+            if (TracksControl(prop, time, duration, out _))
+                prop->PlaybackSpeed = effective;
+        });
     }
 
     // ── Lips, stance, weapon, position ────────────────────────────────
@@ -1227,7 +1335,14 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         // 585, 2026-09-01 22:03). One frame short, Play crosses it properly.
         float lastFrame = Math.Max(0f, duration - 1f / 30f);
         time = Math.Clamp(time, 0f, lastFrame);
+        float before = target->hkaAnimationControl.LocalTime;
         target->hkaAnimationControl.LocalTime = time;
+        // Props: an attached weapon/prop skeleton control that runs on the
+        // same clock as this control (same clip length within a second, and
+        // its time within a second of ours — the bubble wand reads
+        // 19.33/19.50 with a fixed 0.18s lead-in) moves by the same delta,
+        // keeping its offset. Measured 2026-09-01 22:27 through the bridge.
+        PropagateScrubToProps(character, before, duration, time - before);
         // EVERY partial runs its own control for the same slot (body,
         // face, hair). Scrubbing only one left the others on the old
         // schedule — one of them reaches its clip's end at the old time
