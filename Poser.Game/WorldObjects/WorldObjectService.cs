@@ -628,11 +628,19 @@ public sealed class WorldObjectService : IDisposable
             // A pause landing in the unpause hand-off window captures
             // the BASE — the live value is the game's raw original
             // place for a frame or two.
+            // On an ANCHORED object a field read LIES: the game's writer
+            // runs again after our seam write, so the fields end every
+            // frame holding ITS value while the render shows ours (the
+            // log proved it: held 127.36 vs base 125.93). The frozen pose
+            // is what we last composed, never a raw read.
             handle.HeldPause = handle.EngageNext
                 ? handle.DesiredPlacement
-                : _port.TryRead(handle.Address, out var frozen)
-                    ? frozen
-                    : handle.Transform;
+                : handle.AnimRef is not null
+                    && handle.LastWritten is { } composed
+                    ? composed
+                    : _port.TryRead(handle.Address, out var frozen)
+                        ? frozen
+                        : handle.Transform;
             handle.EngageNext = false;
             _log.Debug(
                 $"[Anchor] pause: held {P(handle.HeldPause.Value.Position)} "
