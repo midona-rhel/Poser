@@ -561,6 +561,9 @@ public sealed class WorldObjectService : IDisposable
         }
     }
 
+    private static string P(Vector3 v) =>
+        $"({v.X:F2}, {v.Y:F2}, {v.Z:F2})";
+
     /// <summary>BG objects whose stain write is waiting for the model's
     /// stain buffer to exist; retried on the framework tick, exactly
     /// Stagehand's poll.</summary>
@@ -631,6 +634,10 @@ public sealed class WorldObjectService : IDisposable
                     ? frozen
                     : handle.Transform;
             handle.EngageNext = false;
+            _log.Debug(
+                $"[Anchor] pause: held {P(handle.HeldPause.Value.Position)} "
+                + $"base {P(handle.DesiredPlacement.Position)} "
+                + $"animRef {(handle.AnimRef is { } pr ? P(pr.Position) : "none")}");
             var tail = new byte[0x20];
             handle.HeldPauseTail =
                 _port.TryReadBgTail(handle.Address, tail)
@@ -650,6 +657,10 @@ public sealed class WorldObjectService : IDisposable
             handle.AnimRef = null;
             if (handle.WasAnchored)
                 handle.EngageNext = true;
+            _log.Debug(
+                $"[Anchor] unpause: seeded base "
+                + $"{P(handle.DesiredPlacement.Position)} "
+                + $"engageNext {handle.EngageNext}");
         }
     }
 
@@ -701,6 +712,9 @@ public sealed class WorldObjectService : IDisposable
                 var resumed = handle.DesiredPlacement;
                 _port.Write(handle.Address, resumed);
                 handle.LastWritten = resumed;
+                _log.Debug(
+                    $"[Anchor] engage(handoff): raw {P(raw.Position)} "
+                    + $"base {P(resumed.Position)}");
                 continue;
             }
             if (handle.AnimRef is { } reference)
@@ -731,6 +745,9 @@ public sealed class WorldObjectService : IDisposable
                 // user's placement.
                 handle.AnimRef = raw;
                 handle.WasAnchored = true;
+                _log.Debug(
+                    $"[Anchor] engage(detect): raw {P(raw.Position)} "
+                    + $"base {P(handle.DesiredPlacement.Position)}");
                 var user = handle.DesiredPlacement;
                 _port.Write(handle.Address, user);
                 handle.LastWritten = user;
