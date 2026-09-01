@@ -63,6 +63,7 @@ public sealed unsafe partial class AnimationRuntimePort
         public readonly Dictionary<int, float> SlotSpeeds = new();
         public readonly List<(ScrubControlId Id, float Time, float Speed)>
             Controls = new();
+        public readonly Dictionary<ScrubControlId, float> ControlDurations = new();
     }
 
     private sealed class ProbePending
@@ -340,8 +341,11 @@ public sealed unsafe partial class AnimationRuntimePort
                 character->Timeline.TimelineSequencer.TimelineSpeeds[index];
         }
         foreach (var control in CollectControls(character, out _))
+        {
             capture.Controls.Add(
                 (control.Id, control.Time, control.PlaybackSpeed));
+            capture.ControlDurations[control.Id] = control.Duration;
+        }
         // The FIELD lies about paused speed: Poser's pause is the speed
         // hook rewriting the value after the game's calculation, so a
         // read here catches the game's x1. The enforcement is the truth.
@@ -921,7 +925,12 @@ public sealed unsafe partial class AnimationRuntimePort
                 var baseTimeline = capture.BaseOverride != 0
                     ? capture.BaseOverride
                     : capture.SlotIds.GetValueOrDefault(0);
-                if (baseTimeline != 0 &&
+                // Replaying the IDLE base on a clone that already idles
+                // reshuffles its havok controls (idle took control 1, the
+                // upper timeline landed on 2/3 — 22:51), breaking every
+                // index-based seek. Only a real base timeline replays.
+                if (baseTimeline is not 0 and not AnimationTimelines.Idle
+                    and not AnimationTimelines.BattleIdle &&
                     PlayBase(target, baseTimeline, null, out _).Success)
                     played++;
                 foreach (var (index, id) in capture.SlotIds)
@@ -1244,10 +1253,34 @@ public sealed unsafe partial class AnimationRuntimePort
         // on each verify tick, while the clone settles.
         if (method != ProbeMethod.Seam)
         {
+            var sourceDurations = new Dictionary<ScrubControlId, float>();
+            foreach (var (id, _, _) in capture.Controls)
+                sourceDurations[id] = capture.ControlDurations.GetValueOrDefault(id, -1f);
+            var live = EnumerateControls(target, out _);
             foreach (var (id, time, _) in capture.Controls)
             {
-                if (id.Partial == 0)
-                    SetControlTime(target, id, time, 0);
+                if (id.Partial != 0)
+                    continue;
+                // The clone's control layout can differ from the source's:
+                // map by CLIP DURATION when the same index is bound to a
+                // different clip.
+                var mapped = id;
+                float wanted = sourceDurations[id];
+                foreach (var candidate in live)
+                {
+                    if (candidate.Id == id && Math.Abs(candidate.Duration - wanted) < 0.05f)
+                    {
+                        mapped = id;
+                        break;
+                    }
+                    if (candidate.Id.Partial == 0 && wanted > 0f
+                        && Math.Abs(candidate.Duration - wanted) < 0.05f)
+                        mapped = candidate.Id;
+                }
+                var sought = SetControlTime(target, mapped, time, 0);
+                _log.Information(
+                    $"[AnimProbe] settle seek {id}{(mapped == id ? "" : "->" + mapped)} -> {time:0.00}: "
+                    + (sought.Success ? "ok" : $"FAIL {sought.Detail}"));
             }
         }
         bool match = ProbeMatches(target, capture, log: true, method);
