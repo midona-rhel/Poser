@@ -257,6 +257,10 @@ public sealed class AnimationPane : IDisposable
                 "Clone C",
                 () => ProbeClone(actor, Game.Animation.ProbeMethod.Seam),
                 help: "Clone; hold animation at the update seam");
+            actions.Button(
+                "Clone D",
+                () => ProbeClone(actor, Game.Animation.ProbeMethod.Owned),
+                help: "Clone; replay Poser's owned record");
         });
     }
 
@@ -281,7 +285,39 @@ public sealed class AnimationPane : IDisposable
             _notices.Failed("Probe: the clone did not spawn.");
             return;
         }
-        _probePort.ProbeSchedule(cloneId, capture, method);
+        _probePort.ProbeSchedule(
+            cloneId, capture, method,
+            method == Game.Animation.ProbeMethod.Owned
+                ? ProbeOwnedReplay(source)
+                : null);
+    }
+
+    /// <summary>The ownership-transfer replay: everything the session's
+    /// owned record says about the SOURCE, re-issued through the session's
+    /// own verbs on the target. What the user did, done again.</summary>
+    private Action<ActorId> ProbeOwnedReplay(ActorId source)
+    {
+        var owned = _animation.OverridesFor(source);
+        return target =>
+        {
+            if (owned.BaseTimeline is { } baseTimeline)
+                _animation.PlayBase(target, baseTimeline);
+            foreach (var (slot, timeline) in owned.LoopedSlots)
+                _animation.SetSlotLoop(target, slot, timeline, true);
+            foreach (var (slot, timeline) in owned.SelectedSlots)
+            {
+                if (owned.LoopedSlots.ContainsKey(slot))
+                    continue;
+                _animation.ChooseSlot(target, slot, timeline);
+                _animation.Replay(target, timeline, out _);
+            }
+            if (owned.OverallSpeed is { } overall)
+                _animation.SetSpeed(target, overall);
+            foreach (var (slot, speed) in owned.SlotSpeeds)
+                _animation.SetSlotSpeed(target, slot, speed);
+            if (owned.Lips is { } lips)
+                _animation.SetLips(target, lips);
+        };
     }
 
     private void DrawStance(

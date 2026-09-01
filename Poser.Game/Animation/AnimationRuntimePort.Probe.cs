@@ -26,6 +26,11 @@ public enum ProbeMethod
     /// per-frame timeline update, held until a read-back says the state
     /// stuck. The scenery-anchor pattern on an actor.</summary>
     Seam,
+
+    /// <summary>Replays Poser's OWNED record (the session overrides the
+    /// user authored on the source) through the session's own verbs —
+    /// the ownership-transfer thesis.</summary>
+    Owned,
 }
 
 /// <summary>
@@ -59,9 +64,16 @@ public sealed unsafe partial class AnimationRuntimePort
         public ActorId Target;
         public RawTimelineCapture Capture = null!;
         public ProbeMethod Method;
+        public Action<ActorId>? Apply;
         public int WaitTicks;
-        public int SeekIn = -1;
         public readonly List<int> VerifyIn = new();
+        // The slot-0/mode watch: iteration one showed the base slot
+        // reverting to idle WITHOUT a SetTimelineId call — a second
+        // writer. The watch logs the exact tick every flip happens.
+        public ushort WatchSlot0;
+        public byte WatchMode;
+        public int WatchTick;
+        public bool WatchArmed;
     }
 
     private sealed class SeamArm
@@ -69,7 +81,19 @@ public sealed unsafe partial class AnimationRuntimePort
         public RawTimelineCapture Capture = null!;
         public int FramesLeft;
         public int FramesWritten;
+        // Controls-only arms replace the old one-shot seek: iteration one
+        // wrote 0/1 because the clone's havok control did not exist yet
+        // at +2 ticks. This writes each stored control's time and speed
+        // at the seam until every one has taken a write once.
+        public bool ControlsOnly;
+        public int ControlsLanded;
+        // Full-ownership arms disarm only after the state holds this many
+        // CONSECUTIVE ticks — iteration one disarmed on a one-tick
+        // lingering match and the second writer reverted it right after.
+        public int HeldTicks;
     }
+
+    private const int SeamHoldTicks = 30;
 
     private readonly List<ProbePending> _probePending = new();
     private readonly Dictionary<ActorId, SeamArm> _probeSeams = new();
@@ -212,13 +236,15 @@ public sealed unsafe partial class AnimationRuntimePort
     /// clone). The probe waits for the target to answer reads, applies by
     /// the chosen method, then logs verification compares.</summary>
     public void ProbeSchedule(
-        ActorId target, RawTimelineCapture capture, ProbeMethod method)
+        ActorId target, RawTimelineCapture capture, ProbeMethod method,
+        Action<ActorId>? apply = null)
     {
         _probePending.Add(new ProbePending
         {
             Target = target,
             Capture = capture,
             Method = method,
+            Apply = apply,
             WaitTicks = ProbeWaitTicks,
         });
         _log.Information(
@@ -240,13 +266,10 @@ public sealed unsafe partial class AnimationRuntimePort
         {
             var pending = _probePending[i];
 
-            // Staged one-shot seek for Verbs/RawOnce.
-            if (pending.SeekIn > 0 && --pending.SeekIn == 0)
-                ProbeSeekOnce(pending.Target, pending.Capture);
-
-            // Verification compares, then retirement.
+            // Verification compares and the slot watch, then retirement.
             if (pending.VerifyIn.Count > 0)
             {
+                ProbeWatch(pending);
                 for (int v = pending.VerifyIn.Count - 1; v >= 0; v--)
                 {
                     if (--pending.VerifyIn[v] > 0)
@@ -254,7 +277,7 @@ public sealed unsafe partial class AnimationRuntimePort
                     pending.VerifyIn.RemoveAt(v);
                     ProbeVerify(pending.Target, pending.Capture, pending.Method);
                 }
-                if (pending.VerifyIn.Count == 0 && pending.SeekIn <= 0)
+                if (pending.VerifyIn.Count == 0)
                     _probePending.RemoveAt(i);
                 continue;
             }
@@ -300,7 +323,7 @@ public sealed unsafe partial class AnimationRuntimePort
                 }
                 _log.Information(
                     $"[AnimProbe] Verbs: played {played} timeline(s) on {target}.");
-                pending.SeekIn = 2;
+                ProbeArmControlHold(target, capture);
                 break;
             }
             case ProbeMethod.RawOnce:
@@ -337,7 +360,7 @@ public sealed unsafe partial class AnimationRuntimePort
                 _log.Information(
                     $"[AnimProbe] RawOnce: native-set {set} slot(s), wrote raw "
                     + $"fields on {target}.");
-                pending.SeekIn = 2;
+                ProbeArmControlHold(target, capture);
                 break;
             }
             case ProbeMethod.Seam:
@@ -351,11 +374,62 @@ public sealed unsafe partial class AnimationRuntimePort
                     $"[AnimProbe] Seam: armed {target} for {SeamFrames} frames.");
                 break;
             }
+            case ProbeMethod.Owned:
+            {
+                pending.Apply?.Invoke(target);
+                _log.Information($"[AnimProbe] Owned: replayed the session "
+                    + $"record onto {target}.");
+                ProbeArmControlHold(target, capture);
+                break;
+            }
         }
         pending.WaitTicks = 0;
         pending.VerifyIn.Add(2);
         pending.VerifyIn.Add(15);
         pending.VerifyIn.Add(60);
+        pending.VerifyIn.Add(240);
+    }
+
+    /// <summary>Arms a controls-only seam hold: stored scrub times and
+    /// speeds written at the seam until every control exists and took a
+    /// write, then disarms and logs how long it took.</summary>
+    private void ProbeArmControlHold(ActorId target, RawTimelineCapture capture)
+    {
+        if (capture.Controls.Count == 0)
+            return;
+        _probeSeams[target] = new SeamArm
+        {
+            Capture = capture,
+            FramesLeft = SeamFrames,
+            ControlsOnly = true,
+        };
+    }
+
+    /// <summary>Logs every base-slot or mode flip on a watched target with
+    /// its tick offset — the second-writer instrument.</summary>
+    private void ProbeWatch(ProbePending pending)
+    {
+        var character = Resolve(pending.Target, out _);
+        if (character == null)
+            return;
+        var slot0 = character->Timeline.TimelineSequencer.TimelineIds[0];
+        var mode = (byte)character->Mode;
+        pending.WatchTick++;
+        if (!pending.WatchArmed)
+        {
+            pending.WatchArmed = true;
+            pending.WatchSlot0 = slot0;
+            pending.WatchMode = mode;
+            return;
+        }
+        if (slot0 == pending.WatchSlot0 && mode == pending.WatchMode)
+            return;
+        _log.Information(
+            $"[AnimProbe] watch {pending.Target}: slot0 "
+            + $"{pending.WatchSlot0}->{slot0} mode "
+            + $"{pending.WatchMode}->{mode} at +{pending.WatchTick} ticks");
+        pending.WatchSlot0 = slot0;
+        pending.WatchMode = mode;
     }
 
     /// <summary>Every raw field the capture holds, written verbatim. The
@@ -373,23 +447,6 @@ public sealed unsafe partial class AnimationRuntimePort
             character->Timeline.TimelineSequencer.TimelineIds[index] = id;
         foreach (var (index, speed) in capture.SlotSpeeds)
             character->Timeline.TimelineSequencer.TimelineSpeeds[index] = speed;
-    }
-
-    /// <summary>One seek round: every stored havok control time and speed,
-    /// written once, results logged. No retries — retries are the smell
-    /// this probe exists to kill.</summary>
-    private void ProbeSeekOnce(ActorId target, RawTimelineCapture capture)
-    {
-        var character = Resolve(target, out var detail);
-        if (character == null)
-        {
-            _log.Information($"[AnimProbe] seek: {detail}");
-            return;
-        }
-        int wrote = ProbeWriteControls(character, capture);
-        _log.Information(
-            $"[AnimProbe] seek: wrote {wrote}/{capture.Controls.Count} "
-            + $"control(s) on {target}.");
     }
 
     private static int ProbeWriteControls(
@@ -432,21 +489,46 @@ public sealed unsafe partial class AnimationRuntimePort
         List<ActorId>? done = null;
         foreach (var (target, arm) in _probeSeams)
         {
+            string kind = arm.ControlsOnly ? "ControlHold" : "Seam";
             if (arm.FramesLeft <= 0)
             {
                 _log.Information(
-                    $"[AnimProbe] Seam: {target} ran out of frames after "
-                    + $"{arm.FramesWritten} written; state never held alone.");
+                    $"[AnimProbe] {kind}: {target} ran out of frames after "
+                    + $"{arm.FramesWritten} written; never completed alone.");
                 (done ??= new()).Add(target);
                 continue;
             }
-            if (ProbeMatches(target, arm.Capture, log: false))
+            if (arm.ControlsOnly)
             {
-                _log.Information(
-                    $"[AnimProbe] Seam: {target} HELD after "
-                    + $"{arm.FramesWritten} written frame(s); disarming.");
-                (done ??= new()).Add(target);
-                continue;
+                if (arm.ControlsLanded >= arm.Capture.Controls.Count)
+                {
+                    _log.Information(
+                        $"[AnimProbe] ControlHold: {target} landed all "
+                        + $"{arm.ControlsLanded} control(s) after "
+                        + $"{arm.FramesWritten} frame(s); disarming.");
+                    (done ??= new()).Add(target);
+                    continue;
+                }
+            }
+            else if (ProbeMatches(target, arm.Capture, log: false))
+            {
+                // One matching tick is a lingering write, not a hold —
+                // iteration one proved it. Demand consecutive ticks.
+                if (++arm.HeldTicks >= SeamHoldTicks)
+                {
+                    _log.Information(
+                        $"[AnimProbe] Seam: {target} HELD {SeamHoldTicks} "
+                        + $"consecutive tick(s) after {arm.FramesWritten} "
+                        + "written frame(s); disarming.");
+                    (done ??= new()).Add(target);
+                    continue;
+                }
+            }
+            else
+            {
+                arm.HeldTicks = 0;
+                if (arm.FramesWritten > 0 && arm.FramesWritten % 120 == 0)
+                    ProbeMatches(target, arm.Capture, log: true);
             }
             var character = Resolve(target, out _);
             if (character != null)
@@ -470,8 +552,9 @@ public sealed unsafe partial class AnimationRuntimePort
             !_probeSeamsByAddress.TryGetValue(owner, out var arm))
             return;
         var character = (Character*)owner;
-        ProbeWriteRawFields(character, arm.Capture);
-        ProbeWriteControls(character, arm.Capture);
+        if (!arm.ControlsOnly)
+            ProbeWriteRawFields(character, arm.Capture);
+        arm.ControlsLanded = ProbeWriteControls(character, arm.Capture);
         arm.FramesLeft--;
         arm.FramesWritten++;
     }
