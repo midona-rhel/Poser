@@ -140,6 +140,13 @@ public sealed unsafe partial class AnimationRuntimePort
         if (dropped || _resetWatchTicks % 10 == 0)
             _log.Information(line.ToString());
 
+        // The per-actor clock hunt: any float in the TimelineContainer that
+        // moves each tick (no delta windows — the old hunts had a hole at
+        // 0.3/tick, exactly a 30fps clock at ~100 ticks/s). Once found, the
+        // scheduler's CONSTANT fields near that value are the start
+        // reference the old schedule is measured from.
+        WatchContainerClock(character, n >= 1 ? (nint)cursorsBuffer[0] - SchedulerTimestampOffset : 0);
+
         // The field diff: every dword that changed since last tick across the
         // scheduler object, its track controller, the first track and clip.
         // Units-agnostic — the counter that finishes on the OLD schedule is
@@ -164,6 +171,51 @@ public sealed unsafe partial class AnimationRuntimePort
                 }
             }
         }
+    }
+
+    private float[]? _containerPrev;
+    private int _containerReports;
+
+    private void WatchContainerClock(Character* character, nint schedulerObject)
+    {
+        int size = TimelineContainerSize / 4;
+        var basePtr = (float*)&character->Timeline;
+        if (_containerPrev == null || _containerPrev.Length != size)
+        {
+            _containerPrev = new float[size];
+            for (int i = 0; i < size; i++)
+                _containerPrev[i] = basePtr[i];
+            _containerReports = 0;
+            return;
+        }
+        StringBuilder? line = null;
+        for (int i = 0; i < size; i++)
+        {
+            float now = basePtr[i];
+            float delta = now - _containerPrev[i];
+            _containerPrev[i] = now;
+            if (!float.IsFinite(now) || delta == 0f)
+                continue;
+            float size2 = Math.Abs(delta);
+            if (size2 < 0.002f || size2 > 40f)
+                continue;
+            line ??= new StringBuilder(200).Append("[AnimReset] cclock");
+            line.Append(CultureInfo.InvariantCulture, $" +{i * 4:x3}={now:0.##}(d{delta:0.###})");
+            // Scheduler constants within reach of this clock: start refs.
+            if (schedulerObject != 0 && _containerReports < 6)
+            {
+                for (int off = 0; off + 4 <= 0x274; off += 4)
+                {
+                    float value = *(float*)(schedulerObject + off);
+                    if (!float.IsFinite(value) || value == 0f)
+                        continue;
+                    if (Math.Abs(value - now) <= 200f)
+                        line.Append(CultureInfo.InvariantCulture, $" ref+{off:x3}={value:0.##}");
+                }
+            }
+        }
+        if (line != null && _containerReports++ < 40)
+            _log.Information(line.ToString());
     }
 
     private readonly byte[][] _resetDiffPrev = new byte[4][];
