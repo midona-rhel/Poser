@@ -621,9 +621,18 @@ public sealed class WorldObjectService : IDisposable
         }
     }
 
-    /// <summary>The ANIMATION ANCHOR, run from the overlay's DRAW so
-    /// every write lands after the game's own animator (the only spot
-    /// that wins the frame — the drag proved it, 2026-09-01). Paused
+    /// <summary>Whether the anchor is pumped from the render seam (the
+    /// camera scene-update detour) — the overlay's draw-time pump then
+    /// stands down. The render seam is strictly better: its writes land
+    /// BEFORE the frame renders, so nothing flickers and unpause does
+    /// not blip; the draw pump remains the fallback when the camera
+    /// signature is gone.</summary>
+    public bool AnchorPumpedFromRender { get; set; }
+
+    /// <summary>The ANIMATION ANCHOR. Best seated in the render seam
+    /// (see <see cref="AnchorPumpedFromRender"/>); otherwise the
+    /// overlay's DRAW, where a write still wins the race but shows the
+    /// game's value for one rendered frame (the flicker). Paused
     /// objects re-write their frozen transform and clock. Objects the
     /// game visibly animates get COMPOSED instead: the animation's
     /// motion, measured against the engagement reference, is replayed

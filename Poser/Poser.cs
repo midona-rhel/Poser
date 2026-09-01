@@ -83,7 +83,19 @@ public class Poser : IDalamudPlugin
         log.Debug("Load link: lighting");
         _ = _serviceProvider.GetRequiredService<ILightingService>();
         log.Debug("Load link: cameras");
-        _ = _serviceProvider.GetRequiredService<IVirtualCameraService>();
+        var virtualCameras =
+            _serviceProvider.GetRequiredService<IVirtualCameraService>();
+        // The animation anchor pumps from the render seam when the camera
+        // scene-update hook stands; the overlay draw remains its fallback.
+        if (virtualCameras is Game.Cameras.VirtualCameraService cameraHooks
+            && cameraHooks.SceneUpdateHookLive)
+        {
+            var anchoredObjects = _serviceProvider
+                .GetRequiredService<Game.WorldObjects.WorldObjectService>();
+            cameraHooks.AfterSceneUpdate =
+                anchoredObjects.HoldPausedAnimations;
+            anchoredObjects.AnchorPumpedFromRender = true;
+        }
         log.Debug("Load link: environment");
         _ = _serviceProvider.GetRequiredService<IEnvironmentService>();
         log.Debug("Load link: bindings");

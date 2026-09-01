@@ -372,11 +372,12 @@ public sealed class WorldAdoptionSource
     /// finishes any adoption whose entity the scene has now bound.</summary>
     public void Tick()
     {
-        // The pause's transform hold rides THIS pump because it runs at
-        // DRAW time — the only moment a write beats the game's own
-        // animation writer (the drag proved it). It must run before the
-        // Enabled early-out: pausing needs no adoption class shown.
-        _worldObjects.HoldPausedAnimations();
+        // The FALLBACK pump: the anchor normally rides the camera's
+        // render seam, and this draw-time seat only runs when that hook
+        // is gone. It must run before the Enabled early-out: pausing
+        // needs no adoption class shown.
+        if (!_worldObjects.AnchorPumpedFromRender)
+            _worldObjects.HoldPausedAnimations();
         ReconcilePending();
         if (!Enabled)
         {
