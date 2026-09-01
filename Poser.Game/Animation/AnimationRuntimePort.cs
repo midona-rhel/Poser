@@ -1215,7 +1215,15 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
             return AnimationPortResult.Fail("Skeleton changed; scrub cancelled.");
 
         float duration = binding.ptr->Animation.ptr->Duration;
-        target->hkaAnimationControl.LocalTime = Math.Clamp(time, 0f, duration);
+        // Never PLACE a cursor on the last frame: a child timeline set
+        // exactly at its end fires its end events during the drag (prop
+        // released before Play) but never completes — completion needs the
+        // child to CROSS the end during an update — so the parent runs its
+        // own tail and freezes (c0 stuck at 665 with the child pinned at
+        // 585, 2026-09-01 22:03). One frame short, Play crosses it properly.
+        float lastFrame = Math.Max(0f, duration - 1f / 30f);
+        time = Math.Clamp(time, 0f, lastFrame);
+        target->hkaAnimationControl.LocalTime = time;
         // EVERY partial runs its own control for the same slot (body,
         // face, hair). Scrubbing only one left the others on the old
         // schedule — one of them reaches its clip's end at the old time
