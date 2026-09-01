@@ -358,9 +358,54 @@ public sealed unsafe partial class AnimationRuntimePort
             $"[AnimProbe] scheduled {method} onto {target}:\n{Describe(capture)}");
     }
 
+    private int _speedSampleTick;
+
+    /// <summary>While any actor carries a slot-speed HOLD, one line every
+    /// second states what the engine actually does with it: the overall
+    /// field, the slot-speed fields, and the base/upper havok control
+    /// clocks. The instrument for "the slider says 0 but it plays".</summary>
+    private void ProbeSampleSpeedHolds()
+    {
+        if (++_speedSampleTick % 60 != 0)
+            return;
+        foreach (var (actor, enforcement) in _enforcement)
+        {
+            bool holds = false;
+            foreach (var (_, speed) in enforcement.SlotSpeeds)
+            {
+                if (speed == 0f)
+                {
+                    holds = true;
+                    break;
+                }
+            }
+            if (!holds)
+                continue;
+            var character = Resolve(actor, out _);
+            if (character == null)
+                continue;
+            var text = new StringBuilder(128);
+            text.Append(CultureInfo.InvariantCulture,
+                $"[AnimSpeed] {actor}: overall "
+                + $"{character->Timeline.OverallSpeed:0.##} fields ");
+            for (int slot = 0; slot < 4; slot++)
+                text.Append(CultureInfo.InvariantCulture,
+                    $"[{slot}]{character->Timeline.TimelineSequencer.TimelineSpeeds[slot]:0.##} ");
+            text.Append("controls ");
+            foreach (var control in CollectControls(character, out _))
+            {
+                if (control.Id.Partial == 0)
+                    text.Append(CultureInfo.InvariantCulture,
+                        $"{control.Id}@{control.Time:0.00}x{control.PlaybackSpeed:0.##} ");
+            }
+            _log.Information(text.ToString());
+        }
+    }
+
     /// <summary>Runs from the port's framework tick.</summary>
     private void ProbeTick()
     {
+        ProbeSampleSpeedHolds();
         if (_probePending.Count > 0)
             ProbePendingPass();
         if (_probeSeams.Count > 0)

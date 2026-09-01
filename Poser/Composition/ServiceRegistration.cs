@@ -204,7 +204,13 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Animation.AnimationRuntimePort>();
         services.AddSingleton<IAnimationRuntimePort>(
             sp => sp.GetRequiredService<Game.Animation.AnimationRuntimePort>());
-        services.AddSingleton<AnimationSession>();
+        services.AddSingleton<AnimationSession>(sp =>
+            new AnimationSession(sp.GetRequiredService<IAnimationRuntimePort>())
+            {
+                Trace = message => sp
+                    .GetRequiredService<Dalamud.Plugin.Services.IPluginLog>()
+                    .Information($"[AnimState] {message}"),
+            });
         return services;
     }
 

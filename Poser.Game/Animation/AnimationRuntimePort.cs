@@ -899,6 +899,9 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         EnforcementFor(actor).SlotSpeeds[(int)slot] = speed;
         SyncEnforcementIndex();
         character->Timeline.TimelineSequencer.SetSlotSpeed((uint)slot, speed);
+        _log.Information(
+            $"[AnimState] native SetSlotSpeed slot={(int)slot} speed={speed:0.##}; "
+            + $"field now {character->Timeline.TimelineSequencer.TimelineSpeeds[(int)slot]:0.##}");
         return AnimationPortResult.Ok();
     }
 

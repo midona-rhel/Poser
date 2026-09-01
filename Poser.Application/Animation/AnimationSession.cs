@@ -26,6 +26,11 @@ public sealed class AnimationSession
     /// <summary>Tracks the scene physics hold.</summary>
     private bool _sceneOwnsPhysics;
 
+    /// <summary>Diagnostic tap for the pause/play path — wired to the
+    /// plugin log at composition; every verb that can start or stop
+    /// motion reports through it.</summary>
+    public Action<string>? Trace { get; set; }
+
     public AnimationSession(IAnimationRuntimePort port)
     {
         _port = port;
@@ -402,7 +407,11 @@ public sealed class AnimationSession
 
     public bool IsPaused(ActorId actor) => OverridesFor(actor).IsPaused;
 
-    public AnimationResult Pause(ActorId actor) => SetSpeed(actor, 0f);
+    public AnimationResult Pause(ActorId actor)
+    {
+        Trace?.Invoke($"Pause(all) {actor}");
+        return SetSpeed(actor, 0f);
+    }
 
     /// <summary>Resume drops the override rather than writing 1, so an
     /// actor the game is driving at its own speed keeps it.</summary>
@@ -412,6 +421,7 @@ public sealed class AnimationSession
     /// 2026-09-01).</summary>
     public AnimationResult Resume(ActorId actor)
     {
+        Trace?.Invoke($"Resume(all) {actor}");
         foreach (var (slot, speed) in OverridesFor(actor).SlotSpeeds)
         {
             if (speed == 0f)
@@ -451,10 +461,14 @@ public sealed class AnimationSession
                     || current.SlotSpeeds.ContainsKey(slotReading.Slot))
                     continue;
                 var held = SetSlotSpeedCore(actor, slotReading.Slot, 0f);
+                Trace?.Invoke(
+                    $"  hold slot={slotReading.Slot} (tl {slotReading.TimelineId})"
+                    + $" -> {(held.Success ? "ok" : held.Detail)}");
                 if (!held.Success)
                     return held;
             }
         }
+        Trace?.Invoke($"  lift overall for {playing}");
         return ClearSpeedCore(actor);
     }
 
@@ -577,6 +591,10 @@ public sealed class AnimationSession
         bool playFromStart, bool resume = true)
     {
         bool resumedOverall = false;
+        Trace?.Invoke(
+            $"PlaySelectedSlot {actor} slot={slot} resume={resume} "
+            + $"paused={IsPaused(actor)} "
+            + $"slotSpeed={OverridesFor(actor).SlotSpeeds.GetValueOrDefault(slot, float.NaN)}");
         if (SelectedFor(actor, slot) is { } selected)
         {
             if (entry == null || entry.TimelineId != selected || entry.Slot != slot)
@@ -587,7 +605,10 @@ public sealed class AnimationSession
                 return played;
         }
         if (!resume && IsPaused(actor))
+        {
+            Trace?.Invoke("  staged only (paused, resume=false)");
             return AnimationResult.Ok();
+        }
         if (IsPaused(actor))
         {
             var resumed = ResumeForLayerPlay(actor, slot);
