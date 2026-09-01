@@ -899,6 +899,13 @@ public sealed class WorldObjectService : IDisposable
             detail = "The world cannot be reached right now.";
             return null;
         }
+        // The spawn-vs-borrow investigation (2026-09-01): whether Create
+        // handed back an address the map already stands, or a claim
+        // already holds.
+        bool preExisting = false;
+        foreach (var row in _port.Enumerate())
+            if (string.Equals(row.Path, path, StringComparison.Ordinal))
+                preExisting = true;
         var address = _port.Spawn(path, placement);
         if (address == nint.Zero)
         {
@@ -906,6 +913,14 @@ public sealed class WorldObjectService : IDisposable
                 + "game did not take the model.";
             return null;
         }
+        _port.TryRead(address, out var landed);
+        _log.Debug(
+            $"[WorldObject] spawn '{path}' -> {address:X} "
+            + $"(path already in world: {preExisting}, "
+            + $"already claimed: {Find(address) != null}, "
+            + $"asked ({placement.Position.X:F1}, {placement.Position.Y:F1}, "
+            + $"{placement.Position.Z:F1}) landed ({landed.Position.X:F1}, "
+            + $"{landed.Position.Y:F1}, {landed.Position.Z:F1}))");
         var handle = new AdoptedWorldObject(
             this,
             ++_nextId,
