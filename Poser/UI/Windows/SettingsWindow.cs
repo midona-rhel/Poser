@@ -185,6 +185,7 @@ public class SettingsWindow : Window
             UseLibraryWhenImporting = c.Library.UseLibraryWhenImporting,
             LibraryShowExtensions = c.Library.ShowFileExtensions,
             PoseFolder = c.Library.ResolvePoseRoot(),
+            ObjectsFolder = c.Library.ResolveObjectsRoot(),
             SceneFolder = c.Library.ResolveSceneRoot(),
             McdfFolder = c.Library.ResolveMcdfRoot(),
             AutoSaveFolderDraft = c.AutoSave.RootDirectory,
@@ -397,12 +398,6 @@ public class SettingsWindow : Window
         // The objects home has no folder row here, so the rebuild below
         // must carry its configured path across — dropping it stranded
         // every entry save in a folder no tab scanned.
-        string? objectsFolder = null;
-        foreach (var source in c.Library.Sources)
-            if (string.Equals(
-                    source.Name, LibraryConfiguration.ObjectsSourceName,
-                    StringComparison.Ordinal))
-                objectsFolder = source.Path;
         c.Library.Sources.Clear();
         c.Library.SetHomeRoot(
             LibraryConfiguration.PoseSourceName,
@@ -411,7 +406,7 @@ public class SettingsWindow : Window
         c.Library.SetHomeRoot(
             LibraryConfiguration.ObjectsSourceName,
             LibraryConfiguration.DefaultObjectsRoot,
-            objectsFolder);
+            _vm.ObjectsFolder);
         c.Library.SetHomeRoot(
             LibraryConfiguration.SceneSourceName,
             LibraryConfiguration.DefaultSceneRoot,

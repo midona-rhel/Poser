@@ -108,6 +108,7 @@ public sealed class SettingsViewModel
     public bool ShowWhenGameUiHidden;
     public List<LibrarySourceVm> LibrarySources = [];
     public string PoseFolder = "";
+    public string ObjectsFolder = "";
     public string SceneFolder = "";
     public string McdfFolder = "";
     public string AutoSaveFolderDraft = "";
@@ -1145,6 +1146,11 @@ public static class SettingsView
                 next => vm.PoseFolder = next,
                 LibraryConfiguration.DefaultPoseRoot,
                 "Where saved poses go, and the folder the Poses tab scans");
+            HomeFolder(
+                form, vm, "Objects", vm.ObjectsFolder,
+                next => vm.ObjectsFolder = next,
+                LibraryConfiguration.DefaultObjectsRoot,
+                "Where saved objects, props, lights, cameras and overlays go, and the folder the Objects tab scans");
             HomeFolder(
                 form, vm, "Scenes", vm.SceneFolder,
                 next => vm.SceneFolder = next,

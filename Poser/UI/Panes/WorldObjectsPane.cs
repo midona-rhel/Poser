@@ -391,6 +391,7 @@ public sealed class WorldObjectsPane
                     variant: ButtonVariant.Danger,
                     help: "Destroy this spawned object");
             else
+            {
                 actions.Button(
                     "Release",
                     () => _pending = () =>
@@ -399,6 +400,20 @@ public sealed class WorldObjectsPane
                         _scene.Selection.Clear();
                     },
                     help: "Give this object back to the map, where it stood");
+                // The stray cleanup: an adopted EFFECT can be destroyed
+                // outright — a crash-leaked effect has no owner to return
+                // to, and releasing it leaves it playing forever.
+                if (worldObject.IsVfx)
+                    actions.Button(
+                        "Destroy",
+                        () => _pending = () =>
+                        {
+                            worldObject.DestroyOutright();
+                            _scene.Selection.Clear();
+                        },
+                        variant: ButtonVariant.Danger,
+                        help: "Remove the effect from the world");
+            }
             actions.Button(
                 "Release all",
                 () => _pending = () =>

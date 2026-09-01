@@ -1277,6 +1277,12 @@ public sealed class SceneWorkflow : IDisposable
                     if (camera.IsDefault)
                     {
                         detail = _runtime.ApplyDefaultCamera(camera);
+                        // The default camera mints a structure token too:
+                        // without one, a saved group that held the Main
+                        // Camera silently lost it on every load.
+                        if (detail == null
+                            && _runtime.DefaultCameraToken() is { } main)
+                            cameraTokens[camera.Key] = main;
                     }
                     else
                     {

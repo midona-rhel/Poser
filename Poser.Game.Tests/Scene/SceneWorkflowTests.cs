@@ -382,6 +382,8 @@ public sealed class SceneWorkflowTests
             return null;
         }
 
+        public object? DefaultCameraToken() => null;
+
         public object? CreateCamera(SceneCamera data, out string? detail)
         {
             Record("CreateCamera");

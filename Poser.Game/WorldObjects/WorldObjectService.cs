@@ -291,6 +291,10 @@ public sealed class AdoptedWorldObject
             _owner.WriteDebugByte(this, offset, value);
     }
 
+    /// <summary>Destroys this ADOPTED object outright — the stray-effect
+    /// cleanup verb.</summary>
+    public bool DestroyOutright() => _owner.DestroyAdopted(this);
+
     /// <summary>Respawns this SPAWNED object from the stated path — the
     /// model field's apply. The old incarnation is destroyed only after
     /// the new one took, so a bad path costs nothing.</summary>
@@ -1067,6 +1071,29 @@ public sealed class WorldObjectService : IDisposable
     /// (there is nothing left to restore onto), because leaving it in the list
     /// would leave the user holding a row that can never be given back.
     /// </summary>
+    /// <summary>Destroys an ADOPTED object outright — the stray-effect
+    /// cleanup: an effect leaked by a crash has no owner to give it back
+    /// to, so a release would leave it playing forever. Not journalled;
+    /// gone is gone.</summary>
+    public bool DestroyAdopted(AdoptedWorldObject? handle)
+    {
+        if (_disposed || handle == null || !_adopted.Contains(handle))
+            return false;
+        try
+        {
+            _port.Destroy(handle.Address);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"WorldObjectService: destroying an adopted object failed: {ex.Message}");
+        }
+        handle.MarkReleased(handle.InitialPlacement);
+        _adopted.Remove(handle);
+        _events.Publish(new WorldObjectListChangedEvent());
+        return true;
+    }
+
     public bool Release(AdoptedWorldObject? handle)
     {
         if (handle == null)

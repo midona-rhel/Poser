@@ -442,6 +442,10 @@ internal interface ISceneRuntime
     /// camera; null on success.</summary>
     string? ApplyDefaultCamera(SceneCamera data);
 
+    /// <summary>The session default camera as a structure token, so a
+    /// saved group that held the Main Camera re-seats it on load.</summary>
+    object? DefaultCameraToken();
+
     /// <summary>Creates one additional camera from its document.</summary>
     object? CreateCamera(SceneCamera data, out string? detail);
 

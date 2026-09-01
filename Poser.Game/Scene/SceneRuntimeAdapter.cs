@@ -1192,6 +1192,8 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     private IVirtualCamera? DefaultCamera =>
         _cameras.Cameras.FirstOrDefault(camera => camera.IsDefault);
 
+    public object? DefaultCameraToken() => DefaultCamera;
+
     public CameraFile CaptureDefaultCameraState() =>
         DefaultCamera is { } camera
             ? CameraFileService.CreateCameraFile(camera)
