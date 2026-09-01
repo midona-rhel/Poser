@@ -1066,24 +1066,15 @@ internal sealed class SceneRuntimeAdapter : ISceneRuntime
     }
 
     /// <summary>
-    /// Re-borrows one of the map's own objects. Nothing is created — the object
-    /// belongs to the map and was already standing there — so this MATCHES
-    /// rather than spawns, and a match that does not come off is a refusal
-    /// naming the model rather than a claim on something else.
+    /// Restores one world-object entry by SPAWNING its path anew — any
+    /// zone, any position. A document never carries a borrow (ruled
+    /// 2026-09-01): borrowing is a live-session act, and the load owes
+    /// nothing to whatever the map may or may not be standing.
     /// </summary>
     public object? AdoptWorldObject(SceneWorldObject data, out string? detail)
     {
-        // A SPAWNED entry restores by creating its path anew — any zone;
-        // a borrowed one matches the object the map is standing.
-        var handle = data.Spawned
-            ? _worldObjects.Spawn(
-                data.Path, data.Transform, data.Visible, out detail)
-            : _worldObjects.AdoptByIdentity(
-                data.Path,
-                data.MapPosition,
-                data.Transform,
-                data.Visible,
-                out detail);
+        var handle = _worldObjects.Spawn(
+            data.Path, data.Transform, data.Visible, out detail);
         if (handle != null && data.Name.Length > 0)
             handle.Name = data.Name;
         if (handle != null)

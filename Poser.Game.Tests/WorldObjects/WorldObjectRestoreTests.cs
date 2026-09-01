@@ -61,34 +61,16 @@ public sealed class WorldObjectRestoreTests
         Assert.False(adopted.IsValid);
     }
 
+    // Identity re-adoption is GONE by ruling (2026-09-01): a document
+    // never carries a borrow, so a load never matches the map. The
+    // dead-address guard survives on the plain Adopt path.
     [Fact]
-    public void Saved_identity_re_adopts_by_path_and_map_point_with_tolerance()
-    {
-        var world = new World();
-        var address = world.Port.Add("bg/tree.mdl", Placed);
-        var adopted = world.Service.AdoptByIdentity(
-            "bg/tree.mdl", Placed.Position + new Vector3(.001f, -.001f, .001f),
-            Moved, visible: false, out var detail);
-
-        Assert.NotNull(adopted);
-        Assert.Null(detail);
-        Assert.Equal(address, adopted!.Address);
-        Assert.Equal(Moved, world.Port.PlacementOf(address));
-        world.Service.Release(adopted);
-        Assert.Equal(Placed, world.Port.PlacementOf(address));
-    }
-
-    [Fact]
-    public void Dead_address_or_wrong_map_point_refuses_without_writing()
+    public void Dead_address_refuses_without_writing()
     {
         var world = new World();
         var dead = world.Port.Add("bg/tree.mdl", Placed);
         world.Port.Kill(dead);
         Assert.Null(world.Service.Adopt(dead));
-
-        world.Port.Add("bg/tree.mdl", Placed with { Position = Placed.Position + new Vector3(20, 0, 0) });
-        Assert.Null(world.Service.AdoptByIdentity("bg/tree.mdl", Placed.Position, Moved, true, out var detail));
-        Assert.Contains("not standing", detail!);
         Assert.Equal(0, world.Port.Writes);
     }
 private sealed class World

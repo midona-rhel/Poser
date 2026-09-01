@@ -76,11 +76,6 @@ public sealed record SceneSaveOptions
         OnlyEntityKeys = memberKeys,
     };
 
-    /// <summary>Marks every saved world object as SPAWNED — the
-    /// world-object entry's rewrite: a borrowed original becomes a
-    /// spawnable copy on disk.</summary>
-    public bool WorldObjectsAsSpawned { get; init; }
-
     /// <summary>The name the save modal took: it lands ON the entry's one
     /// thing — Stone rail spawns a Stone rail. A group entry names the
     /// GROUP; children keep their own saved names.</summary>
@@ -125,7 +120,6 @@ public sealed record SceneSaveOptions
         IncludeEnvironment = false,
         IncludeStructure = false,
         OnlyEntityKeys = new[] { key },
-        WorldObjectsAsSpawned = true,
     };
 
     /// <summary>Restricts the save to one overlay — the overlay-entry
@@ -320,11 +314,10 @@ public static class SceneRelativePlacement
         foreach (var prop in scene.Props)
             prop.Transform.Position += offset;
 
-        // Only what POSER spawned moves; the map's own objects are matched
-        // by where the map stands them.
+        // Every world object moves: a document only carries spawnable
+        // copies (borrowing never persists, ruled 2026-09-01).
         foreach (var worldObject in scene.WorldObjects ?? [])
-            if (worldObject.Spawned)
-                worldObject.Transform.Position += offset;
+            worldObject.Transform.Position += offset;
 
         foreach (var light in scene.Lights)
         {
@@ -400,12 +393,10 @@ public static class ScenePlacementRebase
             prop.Transform.Rotation = System.Numerics.Quaternion.Normalize(
                 turn * prop.Transform.Rotation);
         }
-        // Only what POSER spawned moves; the map's own objects are matched
-        // by where the map stands them.
+        // Every world object moves: a document only carries spawnable
+        // copies (borrowing never persists, ruled 2026-09-01).
         foreach (var worldObject in scene.WorldObjects ?? [])
         {
-            if (!worldObject.Spawned)
-                continue;
             worldObject.Transform.Position =
                 Move(worldObject.Transform.Position);
             worldObject.Transform.Rotation =

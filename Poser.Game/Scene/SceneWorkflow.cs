@@ -531,10 +531,11 @@ public sealed class SceneWorkflow : IDisposable
                     .ToDictionary(pair => pair.Key, pair => pair.Value);
             }
 
-            // The world-object entry saves a SPAWNABLE copy: the load
-            // creates its path anew instead of matching the map, so the
-            // entry works in any zone.
-            if (options.WorldObjectsAsSpawned && scene.WorldObjects != null)
+            // A document NEVER carries a borrow (ruled 2026-09-01): every
+            // world object saves as a SPAWNABLE copy, so anything saved
+            // loads in any map at any position. Borrowing stays a
+            // live-session act only.
+            if (scene.WorldObjects != null)
                 foreach (var spawnable in scene.WorldObjects)
                     spawnable.Spawned = true;
 
@@ -753,6 +754,15 @@ public sealed class SceneWorkflow : IDisposable
                 return;
             }
 
+            // BORROWING NEVER PERSISTS (ruled 2026-09-01): the borrow is a
+            // live-session act — the footer's four marks — and a document
+            // always carries spawnable copies, loadable in any map at any
+            // position. Files saved before the rule carry borrowed
+            // entries; every one loads as a spawn.
+            if (scene.WorldObjects != null)
+                foreach (var entry in scene.WorldObjects)
+                    entry.Spawned = true;
+
             // The per-category views. An excluded category is an EMPTY view
             // rather than a flag consulted at each of its phases: every phase
             // then reads one list, and a category can never be half-skipped.
@@ -765,42 +775,8 @@ public sealed class SceneWorkflow : IDisposable
             var overlays = options.IncludeOverlays
                 ? (IReadOnlyList<SceneOverlay>)(scene.Overlays ?? [])
                 : Array.Empty<SceneOverlay>();
-            // A borrowed map object is the one entity whose view is decided by
-            // WHERE THE SESSION IS rather than by an option. It is not a thing
-            // the load can create: it can only take back an object this map is
-            // already standing. The gate runs here, before any native work, so
-            // a scene loaded in the wrong zone refuses its borrowed entries by
-            // name and lands everything else.
-            // SPAWNED objects are the exception to the zone gate: they are
-            // created by path, standing anywhere; only BORROWED entries can
-            // be refused for being in the wrong zone.
             var worldObjects = (IReadOnlyList<SceneWorldObject>)(
                 scene.WorldObjects ?? []);
-            int borrowedCount = 0;
-            foreach (var entry in worldObjects)
-                if (!entry.Spawned)
-                    borrowedCount++;
-            uint currentTerritory = borrowedCount == 0
-                ? 0u
-                : await _runtime.OnFramework(_runtime.CurrentTerritoryId);
-            if (borrowedCount > 0 &&
-                (currentTerritory == 0 || currentTerritory != scene.TerritoryId))
-            {
-                string where = string.IsNullOrWhiteSpace(scene.PlaceName)
-                    ? $"territory {scene.TerritoryId}"
-                    : scene.PlaceName;
-                notes.Add(
-                    $"This scene borrowed {borrowedCount} map " +
-                    $"{(borrowedCount == 1 ? "object" : "objects")} in " +
-                    $"{where}, which is not where you are. " +
-                    $"{(borrowedCount == 1 ? "It was" : "They were")} " +
-                    "left alone.");
-                var spawnedOnly = new List<SceneWorldObject>();
-                foreach (var entry in worldObjects)
-                    if (entry.Spawned)
-                        spawnedOnly.Add(entry);
-                worldObjects = spawnedOnly;
-            }
             var lights = options.IncludeLights
                 ? (IReadOnlyList<SceneLight>)scene.Lights
                 : Array.Empty<SceneLight>();
@@ -845,15 +821,6 @@ public sealed class SceneWorkflow : IDisposable
                     return;
                 }
                 notes.Add("Placed relative to where you are standing.");
-
-                // The rebase moved everything Poser places. It did NOT move the
-                // map's own objects, because it cannot: they are matched by the
-                // point the map stands them at.
-                if (worldObjects.Count > 0)
-                    notes.Add(
-                        $"The {worldObjects.Count} borrowed map " +
-                        $"{(worldObjects.Count == 1 ? "object stays" : "objects stay")} " +
-                        "where the map has them; only what Poser placed moved.");
             }
 
             // The object-entry placement: the caller resolved the CURRENT
