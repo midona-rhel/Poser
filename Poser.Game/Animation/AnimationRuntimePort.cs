@@ -1197,11 +1197,12 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         }
         // The SCHEDULER's clock moves with the scrub — without this the
         // timeline layer keeps counting from the old position and resets
-        // the animation on the old schedule.
+        // the animation on the old schedule. It counts in 30fps FRAMES
+        // (dump-proven: control 1.42s ↔ clock 42.74), not seconds.
         var timestamp = SchedulerTimestamp(
             &character->Timeline.TimelineSequencer, control.Control);
         if (timestamp != null)
-            *timestamp = Math.Clamp(time, 0f, duration);
+            *timestamp = Math.Clamp(time, 0f, duration) * 30f;
         return AnimationPortResult.Ok();
     }
 
