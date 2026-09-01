@@ -673,6 +673,7 @@ public sealed unsafe partial class AnimationRuntimePort
     private void ProbeTick()
     {
         ProbeClockHuntTick();
+        ProbeResetWatchTick();
         ProbeSampleSpeedHolds();
         if (_probePending.Count > 0)
             ProbePendingPass();

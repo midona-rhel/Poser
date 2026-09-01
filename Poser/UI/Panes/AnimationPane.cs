@@ -259,6 +259,10 @@ public sealed class AnimationPane : IDisposable
                 () => _probePort.ProbeFindClocks(actor),
                 help: "Log which timeline offsets advance like clocks");
             actions.Button(
+                "Watch reset",
+                () => _probePort.ProbeWatchReset(actor),
+                help: "Log every animation clock each frame for 6s");
+            actions.Button(
                 "Clone A",
                 () => ProbeClone(actor, Game.Animation.ProbeMethod.Verbs),
                 help: "Clone; apply animation via play verbs");
