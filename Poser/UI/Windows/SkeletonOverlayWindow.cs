@@ -1603,9 +1603,13 @@ public class SkeletonOverlayWindow : Window
         foreach (var bone in bones)
         {
             if (bone.ParentScreenPos == null) continue;
-            // Ktisis style: bone color with opacity, times the owning actor's
-            // inactive fade.
-            var color = SetAlpha(BoneColor, opacity * bone.Opacity);
+            // Ktisis style: the BONE'S resolved color with opacity, times
+            // the owning actor's inactive fade — lines carry the IK-chain
+            // and mirror colors exactly as the dots do (#98 bullet 3: the
+            // plain bone color left the settings swatches dead on lines).
+            var color = SetAlpha(
+                ResolveBoneColor(bone, useHover: false, BoneColor),
+                opacity * bone.Opacity);
             var from = bone.ParentScreenPos.Value;
             var to = bone.ScreenPos;
             if (toCircle)

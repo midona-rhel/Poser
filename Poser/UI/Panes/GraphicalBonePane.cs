@@ -77,14 +77,18 @@ public sealed class GraphicalBonePane : IDisposable
     // binding registry.
     private readonly Dictionary<(string Canonical, int PartialId), SelectionId> _dotIds = new();
 
+    private readonly Application.Posing.IIkConfigurationPort _ikPort;
+
     public GraphicalBonePane(
         SceneSession scene,
         StableBindingRegistry bindings,
         IActorManager actorManager,
         ISkeletonService skeletonService,
         ITextureProvider textureProvider,
-        ICustomizeReadRuntimePort customizeRead)
+        ICustomizeReadRuntimePort customizeRead,
+        Application.Posing.IIkConfigurationPort ikPort)
     {
+        _ikPort = ikPort;
         _scene = scene;
         _selection = scene.Selection;
         _bindings = bindings;
@@ -512,18 +516,52 @@ public sealed class GraphicalBonePane : IDisposable
 
         var drawList = ImGui.GetWindowDrawList();
         string? hoveredName = null;
+        // The overlay's own facts, on the map (#98 bullet 3): armed IK
+        // chains wear the IK color and the selection's opposite-side
+        // partners wear the mirror color — same swatches, same priority
+        // (selected > hovered > IK > mirror), body and face alike.
+        var skeletonColors =
+            global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+        HashSet<string>? armedIk = null;
+        HashSet<string>? mirrorPartners = null;
+        foreach (var (id, _, _, _) in _dotCandidates)
+        {
+            if (id.Bone is not { } fact)
+                continue;
+            if (armedIk == null)
+            {
+                armedIk = new HashSet<string>();
+                foreach (var chain in _ikPort.Chains(fact.Skeleton))
+                {
+                    if (!chain.Config.Enabled)
+                        continue;
+                    foreach (var chainBone in chain.Bones)
+                        armedIk.Add(chainBone);
+                }
+            }
+            if (_selection.IsSelected(id)
+                && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
+                    is { } mirror)
+                (mirrorPartners ??= new HashSet<string>()).Add(mirror);
+        }
         for (int i = 0; i < _dotCandidates.Count; i++)
         {
             var candidate = _dotCandidates[i];
             bool isSelected = _selection.IsSelected(candidate.Id);
             bool isHovered = i == _hoveredDotIndex;
+            string? canonical = candidate.Id.Bone?.CanonicalName;
             // Selection is the THEME's primary, not ImGui's style checkmark.
             uint circleColor = isSelected
                 ? ImGui.ColorConvertFloat4ToU32(ColorEx.ApplyAlpha(
                     Crystarium.ActiveTheme.Chrome.Primary))
                 : isHovered
                     ? ImGui.GetColorU32(ImGuiCol.Text)
-                    : ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                    : canonical != null && armedIk?.Contains(canonical) == true
+                        ? skeletonColors.IkChainColor
+                        : canonical != null
+                            && mirrorPartners?.Contains(canonical) == true
+                            ? skeletonColors.MirroredBoneColor
+                            : ImGui.GetColorU32(ImGuiCol.TextDisabled);
             // A dot the filter rejects keeps its place — the map is a
             // drawing and its dots ARE the anatomy — and goes faint, which
             // is a map's way of saying what a list says by not listing a row.
