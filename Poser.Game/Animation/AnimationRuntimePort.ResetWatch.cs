@@ -209,6 +209,10 @@ public sealed unsafe partial class AnimationRuntimePort
             }
             // The sequencer's own per-slot arrays, as floats.
             DumpConstants("seq", (nint)(&character->Timeline.TimelineSequencer), 0x2E0);
+            nint groupObj = *(nint*)(schedulerObject + 0x90);
+            nint resourceObj = *(nint*)(schedulerObject + 0x98);
+            if (groupObj != 0) DumpConstants("group", groupObj, 0x200);
+            if (resourceObj != 0) DumpConstants("res", resourceObj, 0x400);
         }
 
         // The field diff: every dword that changed since last tick across the
@@ -260,6 +264,21 @@ public sealed unsafe partial class AnimationRuntimePort
             _containerPrev[i] = now;
             if (delta == 0f)
                 continue;
+            // Doubles: an 8-byte clock shows as garbage in both 4-byte views.
+            if ((i & 1) == 0 && i + 1 < size)
+            {
+                double dNow = *(double*)(basePtr + i);
+                double dWas = BitConverter.Int64BitsToDouble(
+                    ((long)BitConverter.SingleToInt32Bits(_containerPrev[i + 1]) << 32)
+                    | (uint)BitConverter.SingleToInt32Bits(now - delta));
+                double dDelta = dNow - dWas;
+                if (double.IsFinite(dNow) && double.IsFinite(dDelta) && Math.Abs(dDelta) >= 0.002 && Math.Abs(dDelta) <= 40)
+                {
+                    line ??= new StringBuilder(200).Append("[AnimReset] cclock");
+                    line.Append(string.Create(CultureInfo.InvariantCulture, $" +{i * 4:x3}={dNow:0.###}d(d{dDelta:0.###})"));
+                    continue;
+                }
+            }
             // Integer frame counters: a +1..+40 step reads as a denormal
             // float delta, so test the int view too.
             int nowInt = BitConverter.SingleToInt32Bits(now);
@@ -318,12 +337,20 @@ public sealed unsafe partial class AnimationRuntimePort
         _staleScanCountdown = 60;
         float frames = _oldPositionFrames;
         float seconds = frames / 30f;
-        // The remaining time is the other shape a deadline can take.
-        float remaining = float.IsNaN(_oldTotalFrames) ? float.NaN : _oldTotalFrames - frames;
-        float remainingSeconds = remaining / 30f;
-        var line = new StringBuilder(400).Append(CultureInfo.InvariantCulture,
-            $"[AnimReset] stale hunt for {frames:0.0}f/{seconds:0.00}s rem {remaining:0.0}f/{remainingSeconds:0.00}s:");
+        float millis = seconds * 1000f;
+        // The remaining time is the other shape a deadline can take. Two
+        // ends: the clip total, and 584 — blow bubbles' observed timeline end
+        // (natural death at 584.48), which is NOT the clip total (665).
+        float remainingA = float.IsNaN(_oldTotalFrames) ? float.NaN : _oldTotalFrames - frames;
+        float remainingB = 584f - frames;
+        var line = new StringBuilder(500).Append(CultureInfo.InvariantCulture,
+            $"[AnimReset] stale hunt for {frames:0.0}f/{seconds:0.00}s/{millis:0}ms rem {remainingA:0.0}|{remainingB:0.0}f:");
         int printed = 0;
+        bool Near(double v, double target, double tol) => !double.IsNaN(target) && Math.Abs(v - target) <= tol;
+        bool Matches(double v) =>
+            Near(v, frames, 2) || Near(v, seconds, 0.07) || Near(v, millis, 40)
+            || Near(v, remainingA, 2) || Near(v, remainingA / 30, 0.07) || Near(v, remainingA / 30 * 1000, 40)
+            || Near(v, remainingB, 2) || Near(v, remainingB / 30, 0.07) || Near(v, remainingB / 30 * 1000, 40);
         void Scan(string name, nint address, int size)
         {
             for (int off = 0; off + 4 <= size && printed < 40; off += 4)
@@ -332,10 +359,22 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (raw == 0)
                     continue;
                 float f = BitConverter.Int32BitsToSingle(raw);
-                bool hit = float.IsFinite(f) && (Math.Abs(f - frames) <= 2f || Math.Abs(f - seconds) <= 0.07f
-                    || (!float.IsNaN(remaining) && (Math.Abs(f - remaining) <= 2f || Math.Abs(f - remainingSeconds) <= 0.07f)));
-                bool intHit = Math.Abs(raw - (int)Math.Round(frames)) <= 2
-                    || (!float.IsNaN(remaining) && Math.Abs(raw - (int)Math.Round(remaining)) <= 2);
+                bool hit = float.IsFinite(f) && Matches(f);
+                bool intHit = Matches(raw);
+                // Doubles: 8-byte aligned view.
+                bool dblHit = false;
+                double d = 0;
+                if ((off & 7) == 0 && off + 8 <= size)
+                {
+                    d = *(double*)(address + off);
+                    dblHit = double.IsFinite(d) && Matches(d);
+                }
+                if (dblHit)
+                {
+                    line.Append(string.Create(CultureInfo.InvariantCulture, $" {name}+{off:x3}={d:0.###}d"));
+                    printed++;
+                    continue;
+                }
                 if (!hit && !intHit)
                     continue;
                 line.Append(hit
@@ -346,6 +385,20 @@ public sealed unsafe partial class AnimationRuntimePort
         }
         Scan("chara", (nint)character, 0x2000);
         Scan("cont", (nint)(&character->Timeline), TimelineContainerSize);
+        var stamp = SchedulerTimestamp(&character->Timeline.TimelineSequencer, 1);
+        if (stamp == null)
+            stamp = SchedulerTimestamp(&character->Timeline.TimelineSequencer, 0);
+        if (stamp != null)
+        {
+            nint sched = (nint)stamp - SchedulerTimestampOffset;
+            Scan("sched", sched, 0x274);
+            nint group = *(nint*)(sched + 0x90);
+            nint resource = *(nint*)(sched + 0x98);
+            if (group != 0) Scan("group", group, 0x200);
+            if (resource != 0) Scan("res", resource, 0x400);
+            nint tctl = *(nint*)(sched + 0x18);
+            if (tctl != 0) Scan("tctl", tctl, 0x130);
+        }
         _log.Information(printed == 0 ? line.Append(" nothing").ToString() : line.ToString());
     }
 
