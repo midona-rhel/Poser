@@ -712,14 +712,11 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             if (bg == null)
                 return nint.Zero;
             var address = (nint)bg;
-            // The animation hook-up NO reference does: the game loads the
-            // model's own .sklb/.pap beside it (async), so a spawned copy
-            // of animated scenery moves like the map's original instead of
-            // standing frozen (found 2026-09-01: spawned copies had a
-            // ticking clock and no motion).
-            bool animated = bg->LoadAnimationData(path);
-            _log.Debug(
-                $"[WorldObject] spawn animation data for '{path}': {animated}");
+            // LoadAnimationData is deliberately NOT called: it kicked off
+            // the model's async .sklb/.pap loads on a raw spawn and the
+            // game's deferred task crashed seconds later — the completion
+            // expects layout context a bare Create never has (2026-09-01).
+            // Spawned copies of animated scenery stand still, by ruling.
             // The placement write restates render and culling exactly as
             // any placement write does.
             Write(address, placement);
