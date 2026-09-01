@@ -50,6 +50,7 @@ public class MainWindow : Window
     private readonly BoneVisibilityPresetService _bonePresets;
     private readonly WorldAdoptionSource _worldAdoption;
     private readonly IGazeService _gazeService;
+    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
 
     /// <summary>The reference-picture roster. The sidebar lists it and never
     /// owns it: a picture is not a scene entity — it needs no native
@@ -457,6 +458,7 @@ public class MainWindow : Window
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
         Game.Scene.SceneLifecycleHistory lifecycle,
+        global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
@@ -549,6 +551,7 @@ public class MainWindow : Window
         _referenceImages = referenceImages;
         _worldAdoption = worldAdoption;
         _gazeService = gazeService;
+        _integration = integration;
         _lifecycle = lifecycle;
         _notices = notices;
         _log = log;
@@ -4696,14 +4699,7 @@ public class MainWindow : Window
                     actorId.LogicalId, DisplayName(actor.Name));
                 _renameOpen = true;
             },
-            () =>
-            {
-                var clone = _lifecycle.SpawnActor(
-                    $"Duplicate actor '{DisplayName(actor.Name)}'",
-                    () => _spawnService.CloneActor(actor));
-                if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
-                    _selection.Select(SelectionId.ForActor(cloneId));
-            },
+            () => Duplicate(actor),
             () => DuplicateWithPose(actor),
             () => OpenEntityRename(
                 "Save actor to library",
@@ -5933,18 +5929,70 @@ public class MainWindow : Window
         _cameraPane.CenterOnActor(actor.Id);
     }
 
-    /// <summary>The posed duplicate: spawned, restored to the source's pose
-    /// and place once posable, and frozen — a duplicate never animates.</summary>
+    /// <summary>The plain duplicate: the appearance, the source's Penumbra
+    /// collection, and its saved Customize+ profile once the body is there.</summary>
+    private void Duplicate(IActor actor)
+    {
+        var clone = _lifecycle.SpawnActor(
+            $"Duplicate actor '{DisplayName(actor.Name)}'",
+            () => CloneWearingCollection(actor, adoptBodyProfile: true));
+        if (clone != null && _bindings.GetActorId(clone) is { } cloneId)
+            _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The posed duplicate: spawned wearing the collection, restored
+    /// to the source's pose and place once posable, frozen, and its gaze
+    /// frozen with it — a duplicate never animates and never tracks. No
+    /// Customize+: the captured bones already carry it.</summary>
     private void DuplicateWithPose(IActor actor)
     {
         var clone = _lifecycle.SpawnActorWithPose(
             $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
-            () => _spawnService.CloneActor(actor),
+            () => CloneWearingCollection(actor, adoptBodyProfile: false),
             actor);
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
             return;
         _animation.Pause(cloneId);
+        _lifecycle.WhenPosable(clone, FreezeGaze);
         _selection.Select(SelectionId.ForActor(cloneId));
+    }
+
+    /// <summary>The seed copy plus what it does not carry: the equipment
+    /// visibility flags once the body is there, and (plain duplicates
+    /// only) the source's saved Customize+ profile. The Penumbra collection
+    /// is the spawn service's own inherit.</summary>
+    private IActor? CloneWearingCollection(IActor source, bool adoptBodyProfile)
+    {
+        var clone = _spawnService.CloneActor(source);
+        if (clone == null
+            || _bindings.GetActorId(source) is not { } sourceId
+            || _bindings.GetActorId(clone) is not { } cloneId)
+            return clone;
+        _lifecycle.WhenPosable(clone, c =>
+        {
+            _spawnService.CopyEquipmentVisibility(source, c);
+            if (!adoptBodyProfile)
+                return;
+            var body = _integration.AdoptBodyProfile(sourceId, cloneId);
+            if (!body.Success)
+                _log.Warning($"Duplicate: the body profile was not adopted: {body.Detail}");
+        });
+        return clone;
+    }
+
+    /// <summary>Every gaze part frozen where it points: the copy tracks
+    /// neither the camera nor anything else.</summary>
+    private void FreezeGaze(IActor copy)
+    {
+        var mode = _gazeService.SetGazeMode(copy, GazeTargetMode.Position);
+        if (!mode.Success)
+        {
+            _log.Warning($"Duplicate: the gaze could not be frozen: {mode.Detail}");
+            return;
+        }
+        _gazeService.SetGazeParts(copy, GazeTargetType.All);
+        foreach (var part in new[] { GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes })
+            _gazeService.SetPartLock(copy, part, true);
     }
 
     private void OpenEntityRename(

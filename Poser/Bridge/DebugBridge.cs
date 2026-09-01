@@ -1,3 +1,4 @@
+using System.Linq;
 #if DEBUG
 using System;
 using System.Collections.Generic;
@@ -39,6 +40,7 @@ public sealed class DebugBridge : IDisposable
     private readonly IActorSpawnService _spawner;
     private readonly global::Poser.UI.AnimationPane _pane;
     private readonly global::Poser.Application.Integration.IIntegrationRuntimePort _integration;
+    private readonly global::Poser.Application.Integration.ActorIntegrationSession _session;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
 
@@ -52,10 +54,12 @@ public sealed class DebugBridge : IDisposable
         Game.Scene.SceneLifecycleHistory lifecycle,
         IActorSpawnService spawner,
         global::Poser.UI.AnimationPane pane,
-        global::Poser.Application.Integration.IIntegrationRuntimePort integration)
+        global::Poser.Application.Integration.IIntegrationRuntimePort integration,
+        global::Poser.Application.Integration.ActorIntegrationSession session)
     {
         _pane = pane;
         _integration = integration;
+        _session = session;
         _framework = framework;
         _log = log;
         _animation = animation;
@@ -317,6 +321,25 @@ public sealed class DebugBridge : IDisposable
             case "/findclocks":
                 _port.ProbeFindClocks(id);
                 return Json(new { ok = true });
+            case "/setcollection":
+            {
+                var read = _integration.GetCollectionAssignment(id);
+                if (!read.Success || read.Value is not { } cur)
+                    return Json(new { error = read.Detail });
+                var guid = query.TryGetValue("id", out var g) ? Guid.Parse(g) : cur.EffectiveId;
+                var r = _integration.SetIndividualCollection(id, guid);
+                return Json(new { ok = r.Success, r.Detail, tried = guid.ToString(), was = $"{cur.EffectiveName} {cur.EffectiveId} individual={cur.HasIndividualAssignment}" });
+            }
+            case "/redraw":
+            {
+                var r = _integration.RequestRedraw(id);
+                return Json(new { ok = r.Success, r.Detail });
+            }
+            case "/collections":
+            {
+                var list = _session.ListCollections();
+                return Json(new { ok = list.Success, list.Detail, items = list.Value?.Select(i => $"{i.Name} {i.Id}").ToArray() });
+            }
             case "/clips":
                 _port.ProbeClips(id);
                 return Json(new { ok = true });
@@ -326,12 +349,27 @@ public sealed class DebugBridge : IDisposable
                 return Json(new { ok = clone != null, name = clone?.Name, id = clone != null ? _bindings.GetActorId(clone)?.ToString() : null });
             }
             case "/dupepose":
+            case "/dupe":
             {
-                var copy = _lifecycle.SpawnActorWithPose(
-                    $"Duplicate actor '{actor.Name}' with pose", () => _spawner.CloneActor(actor), actor);
+                bool posed = path == "/dupepose";
+                IActor? Wearing()
+                {
+                    var c = _spawner.CloneActor(actor);
+                    if (c != null && _bindings.GetActorId(c) is { } cid)
+                        _lifecycle.WhenPosable(c, copy =>
+                        {
+                            _spawner.CopyEquipmentVisibility(actor, (IActor)copy);
+                            if (!posed)
+                                _session.AdoptBodyProfile(id, cid);
+                        });
+                    return c;
+                }
+                var copy = posed
+                    ? _lifecycle.SpawnActorWithPose($"Duplicate actor '{actor.Name}' with pose", Wearing, actor)
+                    : _lifecycle.SpawnActor($"Duplicate actor '{actor.Name}'", Wearing);
                 var copyId = copy != null ? _bindings.GetActorId(copy) : null;
-                if (copyId is { } cid)
-                    _animation.Pause(cid);
+                if (posed && copyId is { } pid)
+                    _animation.Pause(pid);
                 return Json(new { ok = copy != null, name = copy?.Name, id = copyId?.ToString() });
             }
             case "/clonea":
@@ -418,6 +456,7 @@ public sealed class DebugBridge : IDisposable
             hatHidden = snapshot?.HatHidden,
             visorToggled = snapshot?.VisorToggled,
             bodyProfile = BodyProfile(id),
+            collection = _session.ReadCollection(id) is { Success: true, Value: { } c } ? $"{c.EffectiveName} {c.EffectiveId} individual={c.HasIndividualAssignment}" : null,
             schedulerFrames = snapshot?.SchedulerFrames,
             childFrames = snapshot?.ChildFrames,
             slots,

@@ -108,6 +108,8 @@ public sealed class SpawnBrowserWindow : Window
     /// <summary>Every entity this browser adds goes through the lifecycle
     /// seam, so the add lands in the shell's undo history.</summary>
     private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly IGazeService _gaze;
+    private readonly global::Poser.Application.Integration.ActorIntegrationSession _integration;
     private readonly GameIconResolver _icons;
     private readonly SpawnBrowserViewModel _vm = new();
 
@@ -180,6 +182,8 @@ public sealed class SpawnBrowserWindow : Window
         AnimationSession animation,
         ConfigurationService configuration,
         Game.Scene.SceneLifecycleHistory lifecycle,
+        IGazeService gaze,
+        global::Poser.Application.Integration.ActorIntegrationSession integration,
         ITextureProvider textures,
         UserNotices notices,
         ReferenceImageSession referenceImages,
@@ -213,6 +217,8 @@ public sealed class SpawnBrowserWindow : Window
         _animation = animation;
         _configuration = configuration;
         _lifecycle = lifecycle;
+        _gaze = gaze;
+        _integration = integration;
         _notices = notices;
         _referenceImages = referenceImages;
         _library = library;
@@ -1038,6 +1044,22 @@ public sealed class SpawnBrowserWindow : Window
             _containsMatches.Add(index);
     }
 
+    private IActor? CloneWearingCollection(IActor source, bool adoptBodyProfile)
+    {
+        var clone = _spawnService.CloneActor(source);
+        if (clone == null
+            || _bindings.GetActorId(source) is not { } sourceId
+            || _bindings.GetActorId(clone) is not { } cloneId)
+            return clone;
+        _lifecycle.WhenPosable(clone, c =>
+        {
+            _spawnService.CopyEquipmentVisibility(source, c);
+            if (adoptBodyProfile)
+                _integration.AdoptBodyProfile(sourceId, cloneId);
+        });
+        return clone;
+    }
+
     /// <summary>Clone is the one row whose availability moves with the
     /// selection, so it is the one row rewritten per frame.</summary>
     private void SyncCloneRow()
@@ -1093,17 +1115,28 @@ public sealed class SpawnBrowserWindow : Window
                 if (SelectedActor() is { } source)
                     SelectSpawned(_lifecycle.SpawnActor(
                         "Duplicate actor",
-                        () => _spawnService.CloneActor(source)));
+                        () => CloneWearingCollection(source, adoptBodyProfile: true)));
                 return;
             case RowCloneActorPosed:
                 if (SelectedActor() is { } posedSource)
                 {
                     var copy = _lifecycle.SpawnActorWithPose(
                         "Duplicate actor with pose",
-                        () => _spawnService.CloneActor(posedSource),
+                        () => CloneWearingCollection(posedSource, adoptBodyProfile: false),
                         posedSource);
                     if (copy != null && _bindings.GetActorId(copy) is { } copyId)
+                    {
                         _animation.Pause(copyId);
+                        _lifecycle.WhenPosable(copy, c =>
+                        {
+                            if (_gaze.SetGazeMode(c, GazeTargetMode.Position).Success)
+                            {
+                                _gaze.SetGazeParts(c, GazeTargetType.All);
+                                foreach (var part in new[] { GazeTargetType.Body, GazeTargetType.Head, GazeTargetType.Eyes })
+                                    _gaze.SetPartLock(c, part, true);
+                            }
+                        });
+                    }
                     SelectSpawned(copy);
                 }
                 return;

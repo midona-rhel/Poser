@@ -108,6 +108,20 @@ public sealed class ActorIntegrationSession : IDisposable
                 $"The collection was assigned, but the redraw failed: {redraw.Detail}");
     }
 
+    /// <summary>A plain duplicate takes the source's saved Customize+
+    /// profile as a temporary one (Customize+ ignores Poser's spawns: it
+    /// listens for Brio's). NOT for the posed duplicate — the captured
+    /// bones already carry the scaling, and applying it again doubles it.</summary>
+    public IntegrationResult AdoptBodyProfile(ActorId source, ActorId copy)
+    {
+        var probe = _port.ProbeBodyProfile(source);
+        if (!probe.Success || probe.Value is not { } bodyState)
+            return IntegrationResult.Fail(probe.Detail ?? "The source's Customize+ state could not be read.");
+        if (!bodyState.ActiveIsSaved || bodyState.ActiveProfile is not { } profile)
+            return IntegrationResult.Ok();
+        return SetBodyProfile(copy, profile, "Duplicated profile");
+    }
+
     public IntegrationResult ResetCollection(ActorId actor)
     {
         var current = OverridesFor(actor);

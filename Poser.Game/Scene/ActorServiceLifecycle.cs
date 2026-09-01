@@ -170,6 +170,46 @@ internal sealed class ActorServiceLifecycle : IActorLifecycle
 
     public void Note(string detail) => _log.Warning(detail);
 
+    public void WhenPosable(object actor, Action<object> act) =>
+        ScheduleReady((IActor)actor, act, ReadyAttempts);
+
+    private void ScheduleReady(IActor actor, Action<object> act, int attempts)
+    {
+        if (attempts <= 0)
+        {
+            _log.Warning(
+                $"SceneLifecycleHistory: '{actor.Name}' never became posable, so a follow-up on it did not run.");
+            return;
+        }
+        try
+        {
+            _framework.RunOnTick(() =>
+            {
+                if (actor.Address == nint.Zero)
+                    return;
+                if (!_poses.HasPosableSkeleton(actor) || _poses.IsImportBusy)
+                {
+                    ScheduleReady(actor, act, attempts - 1);
+                    return;
+                }
+                try
+                {
+                    act(actor);
+                }
+                catch (Exception ex)
+                {
+                    _log.Warning(
+                        $"SceneLifecycleHistory: a follow-up on '{actor.Name}' failed: {ex.Message}");
+                }
+            }, delayTicks: 1);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"SceneLifecycleHistory: '{actor.Name}' follow-up could not be scheduled: {ex.Message}");
+        }
+    }
+
     private void Schedule(IActor actor, ActorState state, int attempts)
     {
         if (attempts <= 0)

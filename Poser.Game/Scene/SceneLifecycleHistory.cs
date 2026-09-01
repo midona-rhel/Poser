@@ -109,6 +109,11 @@ internal interface IActorLifecycle
 
     ActorState Read(object actor);
 
+    /// <summary>Runs <paramref name="act"/> once the actor's body is
+    /// posable — the same wait a restore gets — or reports that it never
+    /// became so.</summary>
+    void WhenPosable(object actor, Action<object> act);
+
     /// <summary>Puts <paramref name="state"/> back onto a JUST-RESPAWNED
     /// actor. Placement and pose land once the body is posable, so this
     /// returns long before the actor looks right; the restore is complete or
@@ -709,6 +714,10 @@ public sealed class SceneLifecycleHistory
     /// decision (2026-09-02); the caller freezes the copy. Redo replays the
     /// snapshot, so the copy comes back posed, not idling.
     /// </summary>
+    /// <summary>See <see cref="IActorLifecycle.WhenPosable"/>.</summary>
+    public void WhenPosable(IActor actor, Action<IActor> act) =>
+        _actors.WhenPosable(actor, a => act((IActor)a));
+
     public IActor? SpawnActorWithPose(
         string description, Func<IActor?> spawn, IActor source)
     {

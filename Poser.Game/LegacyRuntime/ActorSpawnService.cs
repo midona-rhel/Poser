@@ -474,6 +474,12 @@ internal interface IActorSpawnNativeAdapter
     bool SetAlpha(SpawnNativeDescriptor descriptor, float alpha);
 
     bool? IsReadyToDraw(SpawnNativeDescriptor descriptor);
+
+    /// <summary>Copies the equipment visibility flags — weapons, headgear,
+    /// visor, Viera ears — from one character onto another. The seed copy
+    /// carries the equipment but not these flags: a duplicate showed the
+    /// weapon on its back while the source hid it (2026-09-02).</summary>
+    bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target);
     bool HasCompanionSlot(SpawnNativeDescriptor descriptor);
     /// <summary>Reads the slot. False when the descriptor no longer
     /// revalidates — an unreadable actor is NOT an empty slot, and only the
@@ -661,6 +667,19 @@ internal unsafe sealed class ActorSpawnNativeAdapter : IActorSpawnNativeAdapter,
         if (character == null)
             return false;
         character->Alpha = Math.Clamp(alpha, 0f, 1f);
+        return true;
+    }
+
+    public bool CopyEquipmentVisibility(SpawnNativeDescriptor source, SpawnNativeDescriptor target)
+    {
+        var from = (Character*)Revalidate(source);
+        var to = (Character*)Revalidate(target);
+        if (from == null || to == null)
+            return false;
+        to->DrawData.HideWeapons(from->DrawData.IsWeaponHidden);
+        to->DrawData.HideHeadgear(0, from->DrawData.IsHatHidden);
+        to->DrawData.SetVisor(from->DrawData.IsVisorToggled);
+        to->DrawData.HideVieraEars(from->DrawData.VieraEarsHidden);
         return true;
     }
 
@@ -1152,7 +1171,22 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 sourceAddress,
                 modelCharaId,
                 name ?? ToPoserName(descriptor.Value.Index));
-            InheritSourceCollection(ownership, sourceAddress, descriptor.Value);
+            // Penumbra cannot place the copy on the frame it is created
+            // (CollectionMissing, 00:14) and can one tick later (00:2x): the
+            // inherit runs next tick, still ahead of the draw. The flags
+            // copy is a plain field write and lands now.
+            if (sourceAddress != nint.Zero
+                && _native.ResolveActor(sourceAddress) is { } flagSource)
+                _native.CopyEquipmentVisibility(flagSource, descriptor.Value);
+            var seeded = descriptor.Value;
+            if (_framework is null)
+                InheritSourceCollection(ownership, sourceAddress, seeded);
+            else
+                _framework.RunOnTick(() =>
+                {
+                    if (!_disposed)
+                        InheritSourceCollection(ownership, sourceAddress, seeded);
+                }, delayTicks: 1);
             DrawWhenReady(ownership, descriptor.Value);
 
             _log?.Debug($"ActorSpawnService: Spawned clone at index {descriptor.Value.Index}");
@@ -1723,6 +1757,24 @@ public unsafe class ActorSpawnService : IActorSpawnService
                 return true;
         }
         return false;
+    }
+
+    public bool CopyEquipmentVisibility(IActor source, IActor target)
+    {
+        if (!OnOwnerThread || source.Address == nint.Zero || target.Address == nint.Zero)
+            return false;
+        try
+        {
+            if (_native.ResolveActor(source.Address) is not { } from
+                || !TryResolveActorForOperation(target, out var to, out _))
+                return false;
+            return _native.CopyEquipmentVisibility(from, to);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning($"ActorSpawnService: equipment visibility could not be copied: {ex.Message}");
+            return false;
+        }
     }
 
     public void SetVisibility(IActor actor, bool visible)
