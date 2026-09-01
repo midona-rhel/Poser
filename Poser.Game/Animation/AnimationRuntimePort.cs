@@ -313,6 +313,8 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
                 control->PlaybackSpeed = speed * overall;
             }
         }
+        foreach (var (slot, speed) in slotSpeeds)
+            PropagateControlToWeapons(character, slot, null, speed * overall);
     }
 
     private void SlotSpeedDetour(ActionTimelineSequencer* sequencer, uint slot, float speed)
@@ -1141,7 +1143,56 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
 
         float duration = binding.ptr->Animation.ptr->Duration;
         target->hkaAnimationControl.LocalTime = Math.Clamp(time, 0f, duration);
+        // Props ride along: attached weapon draw objects carry their OWN
+        // skeletons and clocks driven by the same timeline slot, and the
+        // actor's scrub never reached them (blow bubbles' two props,
+        // 2026-09-01). Same slot index, same time.
+        PropagateControlToWeapons(character, control.Control, time, null);
         return AnimationPortResult.Ok();
+    }
+
+    /// <summary>Writes a time and/or speed onto the matching control of
+    /// every attached weapon/prop draw object. Control index == slot
+    /// index there too; each write clamps to that control's own clip.</summary>
+    private static void PropagateControlToWeapons(
+        Character* character, int controlIndex, float? time, float? speed)
+    {
+        for (int slotIndex = 0; slotIndex < 3; slotIndex++)
+        {
+            ref var weapon = ref character->DrawData.Weapon(
+                (DrawDataContainer.WeaponSlot)slotIndex);
+            var weaponDraw = weapon.DrawData.DrawObject;
+            if (weaponDraw == null ||
+                weaponDraw->Object.GetObjectType() != ObjectType.CharacterBase)
+                continue;
+            var weaponBase = (CharacterBase*)weaponDraw;
+            if (weaponBase->Skeleton == null)
+                continue;
+            var weaponSkeleton = weaponBase->Skeleton;
+            for (int p = 0; p < weaponSkeleton->PartialSkeletonCount; p++)
+            {
+                var animated = weaponSkeleton->PartialSkeletons[p]
+                    .GetHavokAnimatedSkeleton(0);
+                if (animated == null ||
+                    controlIndex >= animated->AnimationControls.Length)
+                    continue;
+                var control = animated->AnimationControls[controlIndex].Value;
+                if (control == null)
+                    continue;
+                if (time is { } seek)
+                {
+                    var weaponBinding = control->hkaAnimationControl.Binding;
+                    float clip = weaponBinding.ptr != null &&
+                        weaponBinding.ptr->Animation.ptr != null
+                        ? weaponBinding.ptr->Animation.ptr->Duration
+                        : seek;
+                    control->hkaAnimationControl.LocalTime =
+                        Math.Clamp(seek, 0f, clip);
+                }
+                if (speed is { } rate)
+                    control->PlaybackSpeed = rate;
+            }
+        }
     }
 
     private static ulong CurrentToken(
