@@ -114,6 +114,7 @@ public sealed class GraphicalBonePane : IDisposable
         _dotCandidates.Clear();
         _dotKeys.Clear();
         _dotParents.Clear();
+        _currentSection = 0;
         _dotIds.Clear();
 
         var (actor, actorId) = GetSelectedActor();
@@ -433,6 +434,7 @@ public sealed class GraphicalBonePane : IDisposable
         var sourceSize = new Vector2(texture.Width, texture.Height);
         var scalingFactors = size / sourceSize;
 
+        _currentSection++;
         foreach (var graphicBone in section.Bones)
         {
             var bone = skeleton.GetBone(graphicBone.Name);
@@ -469,21 +471,15 @@ public sealed class GraphicalBonePane : IDisposable
         if (!_dotIds.TryGetValue((bone.BoneName, bone.PartialId), out var selectionId))
             return;
         bool matches = MatchesFilter(bone.Name, bone.BoneName);
-        // The nearest ANCESTOR that also has a dot on this map, for the
-        // connector lines — the map is sparse, so the walk skips the
-        // bones the layout does not draw.
-        (string, int)? parentKey = null;
-        for (var ancestor = bone.ParentBone; ancestor != null;
-            ancestor = ancestor.ParentBone)
-        {
-            var key = (ancestor.BoneName, ancestor.PartialId);
-            if (_dotIds.ContainsKey(key))
-            {
-                parentKey = key;
-                break;
-            }
-        }
-        _dotKeys[(bone.BoneName, bone.PartialId)] = screenPos;
+        // Brio's line rule, copied whole: a connector goes to the DIRECT
+        // parent only, and only when that parent has a dot on the SAME
+        // panel — an ancestor walk wired panels together into insanity
+        // (2026-09-01).
+        (int, string, int)? parentKey = bone.ParentBone is { } parent
+            ? (_currentSection, parent.BoneName, parent.PartialId)
+            : null;
+        _dotKeys[(_currentSection, bone.BoneName, bone.PartialId)] =
+            screenPos;
         _dotParents.Add(parentKey);
         _dotCandidates.Add((selectionId, screenPos, bone.Name, matches));
         // A filtered-out dot is outside the marquee too: dragging a box over
@@ -513,8 +509,10 @@ public sealed class GraphicalBonePane : IDisposable
         return (color & 0x00FFFFFF) | (alpha << 24);
     }
 
-    private readonly Dictionary<(string, int), Vector2> _dotKeys = new();
-    private readonly List<(string, int)?> _dotParents = new();
+    private readonly Dictionary<(int, string, int), Vector2> _dotKeys =
+        new();
+    private readonly List<(int, string, int)?> _dotParents = new();
+    private int _currentSection;
 
     private void ResolveAndDrawDots()
     {

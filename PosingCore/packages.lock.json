@@ -8,6 +8,12 @@
         "resolved": "1.2.39",
         "contentHash": "fcFN01tDTIQqDuTwr1jUQK/geofiwjG5DycJQOnC72i1SsLAk1ELe+apBOuZ11UMQG8YKFZG1FgvjZPbqHyatg=="
       },
+      "Stagehand.Definitions": {
+        "type": "Direct",
+        "requested": "[0.4.10, )",
+        "resolved": "0.4.10",
+        "contentHash": "6IkxoTPrR7vshA8BQAme82wpkXAuf+lIDaNvvbuAWozRShHZr0utdZXSaYl/SVaDQEWh5poK5XBEov0yKA2oBA=="
+      },
       "poser.domain": {
         "type": "Project"
       }
