@@ -1202,7 +1202,44 @@ public sealed unsafe partial class AnimationRuntimePort : IAnimationRuntimePort,
         var timestamp = SchedulerTimestamp(
             &character->Timeline.TimelineSequencer, control.Control);
         if (timestamp != null)
+        {
             *timestamp = Math.Clamp(time, 0f, duration) * 30f;
+            // And the COMPLETION cursor, mirrored at three levels of the
+            // track/clip chain in SECONDS (labeled hunt, 2026-09-01:
+            // trackCtl+0x11C = track+0xAC = clip+0x5C advance together and
+            // reset each loop) — the timer that kept firing the reset on
+            // the old schedule after every other clock moved.
+            float cursor = Math.Clamp(time, 0f, duration);
+            nint schedulerObject = (nint)timestamp - SchedulerTimestampOffset;
+            nint trackController = *(nint*)(schedulerObject + 0x18);
+            if (trackController != 0)
+            {
+                *(float*)(trackController + 0x11C) = cursor;
+                nint trackPointers = *(nint*)(trackController + 0x28);
+                int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+                for (int trackIndex = 0;
+                    trackIndex < trackCount && trackIndex < 8
+                        && trackPointers != 0;
+                    trackIndex++)
+                {
+                    nint track = *(nint*)(trackPointers + trackIndex * 8);
+                    if (track == 0)
+                        continue;
+                    *(float*)(track + 0xAC) = cursor;
+                    nint clipPointers = *(nint*)(track + 0x18);
+                    int clipCount = *(ushort*)(track + 0x18 + 0xA);
+                    for (int clipIndex = 0;
+                        clipIndex < clipCount && clipIndex < 8
+                            && clipPointers != 0;
+                        clipIndex++)
+                    {
+                        nint clip = *(nint*)(clipPointers + clipIndex * 8);
+                        if (clip != 0)
+                            *(float*)(clip + 0x5C) = cursor;
+                    }
+                }
+            }
+        }
         return AnimationPortResult.Ok();
     }
 
