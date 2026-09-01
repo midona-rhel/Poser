@@ -317,8 +317,23 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (capture.EmoteId != 0)
                 {
                     var emote = PlayEmote(target, capture.EmoteId);
+                    // Run three: PlayEmote landed hum's timeline but the
+                    // clone stayed mode 1 and played it once — a typed
+                    // emote's LOOP is the mode (3) plus its param (46 for
+                    // hum), which the game's own emote flow sets. The
+                    // native SetMode is that flow's mode half.
+                    if (emote.Success
+                        && (CharacterModes)capture.Mode == CharacterModes.EmoteLoop)
+                    {
+                        var looper = Resolve(target, out _);
+                        if (looper != null)
+                            looper->SetMode(
+                                (CharacterModes)capture.Mode,
+                                (byte)capture.ModeParam);
+                    }
                     _log.Information(
                         $"[AnimProbe] Verbs: replayed EMOTE {capture.EmoteId} "
+                        + $"mode {capture.Mode}/{capture.ModeParam} "
                         + $"on {target}: "
                         + (emote.Success ? "ok." : emote.Detail));
                     ProbeArmControlHold(target, capture);
