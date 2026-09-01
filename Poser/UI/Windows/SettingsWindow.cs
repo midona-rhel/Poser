@@ -123,6 +123,7 @@ public class SettingsWindow : Window
             AutoSaveFolder = _autoSave.RootDirectory,
 
             BoneDotRadius = c.Skeleton.BoneDotRadius,
+            MapDotRadius = c.Skeleton.MapDotRadius,
             OverlaySelected = ImGui.ColorConvertU32ToFloat4(c.Skeleton.SelectedBoneColor),
             OverlayHovered = ImGui.ColorConvertU32ToFloat4(c.Skeleton.HoveredBoneColor),
             OverlayInactive = ImGui.ColorConvertU32ToFloat4(c.Skeleton.BoneColor),
@@ -312,6 +313,7 @@ public class SettingsWindow : Window
             c.AutoSave.MaxSceneSnapshots.ToString(CultureInfo.InvariantCulture);
 
         c.Skeleton.BoneDotRadius = _vm.BoneDotRadius;
+        c.Skeleton.MapDotRadius = _vm.MapDotRadius;
         c.Skeleton.SelectedBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlaySelected);
         c.Skeleton.HoveredBoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayHovered);
         c.Skeleton.BoneColor = ImGui.ColorConvertFloat4ToU32(_vm.OverlayInactive);

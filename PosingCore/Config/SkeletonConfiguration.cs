@@ -23,6 +23,9 @@ public class SkeletonConfiguration
 {
     // Sizes
     public float BoneDotRadius { get; set; } = 3.4f;
+
+    /// <summary>The body/face map's circle radius, logical.</summary>
+    public float MapDotRadius { get; set; } = 6f;
     public float BoneLineThickness { get; set; } = 1.0f;
     public float BoneLineOpacity { get; set; } = 0.232f;
     public float BoneLineOpacityWhileUsing { get; set; } = 0.150f;

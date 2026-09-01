@@ -1595,14 +1595,36 @@ public class SkeletonOverlayWindow : Window
         return fallback;
     }
 
+    /// <summary>Whether a bone carries state the eye must find: it draws
+    /// ON TOP of the plain skeleton, and its line draws bolder. Purely a
+    /// PAINT order — hit testing never consults it.</summary>
+    private static bool IsPriorityBone(in BoneDisplayData bone) =>
+        bone.IsSelected || bone.IsHovered || bone.IsIkChain
+        || bone.IsMirrorPartner;
+
     private void DrawLines(ImDrawListPtr drawList, List<BoneDisplayData> bones, float opacity)
+    {
+        // Two passes: the plain skeleton first, then the bones that carry
+        // state — selected, IK, mirror — so their colors are never buried
+        // under white lines, and bolder so they read at a glance.
+        DrawLinePass(drawList, bones, opacity, priority: false);
+        DrawLinePass(drawList, bones, opacity, priority: true);
+    }
+
+    private void DrawLinePass(
+        ImDrawListPtr drawList,
+        List<BoneDisplayData> bones,
+        float opacity,
+        bool priority)
     {
         bool toCircle = LineToCircle;
         float radius = DotRadius;
+        float thickness = priority ? LineThickness * 1.75f : LineThickness;
 
         foreach (var bone in bones)
         {
             if (bone.ParentScreenPos == null) continue;
+            if (IsPriorityBone(bone) != priority) continue;
             // Ktisis style: the BONE'S resolved color with opacity, times
             // the owning actor's inactive fade — lines carry the IK-chain
             // and mirror colors exactly as the dots do (#98 bullet 3: the
@@ -1625,7 +1647,7 @@ public class SkeletonOverlayWindow : Window
                 from = shortened.From;
                 to = shortened.To;
             }
-            drawList.AddLine(from, to, color, LineThickness);
+            drawList.AddLine(from, to, color, thickness);
         }
     }
 
@@ -1646,12 +1668,22 @@ public class SkeletonOverlayWindow : Window
 
     private void DrawDots(ImDrawListPtr drawList, List<BoneDisplayData> bones)
     {
+        // Same two passes as the lines: stateful dots paint over plain
+        // ones. Paint order only — clicks resolve exactly as before.
+        DrawDotPass(drawList, bones, priority: false);
+        DrawDotPass(drawList, bones, priority: true);
+    }
+
+    private void DrawDotPass(
+        ImDrawListPtr drawList, List<BoneDisplayData> bones, bool priority)
+    {
         // Ktisis style: filled circle with bone color, black outline
         // Selected: radius +1, outline thickness 2.5
         // Normal: outline thickness 1.0
 
         foreach (var bone in bones)
         {
+            if (IsPriorityBone(bone) != priority) continue;
             var radius = DotRadius;
             float outlineThickness;
             var color = ResolveBoneColor(bone, useHover: false, BoneColor);

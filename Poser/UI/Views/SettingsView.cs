@@ -22,6 +22,7 @@ public sealed class SettingsViewModel
 {
     public int Category = 1;
     public float BoneDotRadius = 5f;
+    public float MapDotRadius = 6f;
     public Vector4 OverlaySelected =
         Crystarium.ActiveTheme.Palette.Primary;
     public Vector4 OverlayHovered = Vector4.Lerp(
@@ -568,6 +569,14 @@ public static class SettingsView
                 12f,
                 next => vm.BoneDotRadius = next,
                 format: "0 px");
+            form.Slider(
+                "Map dot radius",
+                vm.MapDotRadius,
+                3f,
+                12f,
+                next => vm.MapDotRadius = next,
+                format: "0 px",
+                help: "Circle size on the body and face maps");
             form.ColorWells("Overlay colors", wells =>
             {
                 wells.Well(
