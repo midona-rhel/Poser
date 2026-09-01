@@ -303,8 +303,11 @@ public sealed unsafe partial class AnimationRuntimePort
             {
                 var stamp = SchedulerTimestamp(
                     &character->Timeline.TimelineSequencer, slot);
-                clocks.Append(CultureInfo.InvariantCulture,
-                    stamp != null ? $"[{slot}]{*stamp:0.00} " : $"[{slot}]- ");
+                clocks.Append('[').Append(slot).Append(']')
+                    .Append(stamp != null
+                        ? (*stamp).ToString("0.00", CultureInfo.InvariantCulture)
+                        : "-")
+                    .Append(' ');
             }
             var gameGazeMode = *(int*)(controller + 0x38);
             var gameGazePoint = *(System.Numerics.Vector3*)(controller + 0x40);
