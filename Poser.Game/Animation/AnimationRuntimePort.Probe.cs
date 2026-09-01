@@ -49,6 +49,11 @@ public sealed unsafe partial class AnimationRuntimePort
     {
         public byte Mode;
         public uint ModeParam;
+        // Run two: a looping game emote (/hum) lives in the
+        // EmoteController; the sequencer slots only flicker derived ids.
+        // Cloning the slots clones the flicker — the emote id is the
+        // identity that must carry.
+        public uint EmoteId;
         public ushort BaseOverride;
         public ushort Forced;
         public ushort LipsOverride;
@@ -174,6 +179,7 @@ public sealed unsafe partial class AnimationRuntimePort
         {
             Mode = (byte)character->Mode,
             ModeParam = ReadModeParam(character),
+            EmoteId = character->EmoteController.EmoteId,
             BaseOverride = character->Timeline.BaseOverride,
             Forced = TryReadForcedTimeline(&character->Timeline, out var forced)
                 ? forced : (ushort)0,
@@ -211,7 +217,8 @@ public sealed unsafe partial class AnimationRuntimePort
     {
         var text = new StringBuilder(256);
         text.Append(CultureInfo.InvariantCulture,
-            $"  mode {c.Mode} param {c.ModeParam} baseOverride {c.BaseOverride} ");
+            $"  mode {c.Mode} param {c.ModeParam} emote {c.EmoteId} "
+            + $"baseOverride {c.BaseOverride} ");
         text.AppendLine(CultureInfo.InvariantCulture,
             $"forced {c.Forced} lips {c.LipsOverride} overall x{c.OverallSpeed:0.###}");
         text.Append("  slots ");
@@ -307,6 +314,16 @@ public sealed unsafe partial class AnimationRuntimePort
         {
             case ProbeMethod.Verbs:
             {
+                if (capture.EmoteId != 0)
+                {
+                    var emote = PlayEmote(target, capture.EmoteId);
+                    _log.Information(
+                        $"[AnimProbe] Verbs: replayed EMOTE {capture.EmoteId} "
+                        + $"on {target}: "
+                        + (emote.Success ? "ok." : emote.Detail));
+                    ProbeArmControlHold(target, capture);
+                    break;
+                }
                 int played = 0;
                 var baseTimeline = capture.BaseOverride != 0
                     ? capture.BaseOverride
@@ -437,8 +454,21 @@ public sealed unsafe partial class AnimationRuntimePort
     /// method can test pure field ownership.</summary>
     private void ProbeWriteRawFields(Character* character, RawTimelineCapture capture)
     {
-        character->Mode = (CharacterModes)capture.Mode;
-        WriteModeParam(character, capture.ModeParam);
+        // Run two: raw-writing EmoteLoop mode onto a mid-init clone left
+        // it INVISIBLE (the game recovered the mode; the render never
+        // did). Emote modes go through the emote machinery or not at all.
+        if ((CharacterModes)capture.Mode == CharacterModes.EmoteLoop
+            && character->Mode != CharacterModes.EmoteLoop)
+        {
+            _log.Information(
+                "[AnimProbe] raw fields: SKIPPED EmoteLoop mode write "
+                + "(render hazard, run two).");
+        }
+        else
+        {
+            character->Mode = (CharacterModes)capture.Mode;
+            WriteModeParam(character, capture.ModeParam);
+        }
         character->Timeline.BaseOverride = capture.BaseOverride;
         character->Timeline.LipsOverride = capture.LipsOverride;
         character->Timeline.OverallSpeed = capture.OverallSpeed;
