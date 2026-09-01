@@ -705,6 +705,75 @@ public sealed unsafe partial class AnimationRuntimePort
     /// TimelineContainer for ~3 seconds and reports the offsets that
     /// advance like a clock each tick. The scheduler's elapsed time — the
     /// second clock a real scrub must move — lives at one of them.</summary>
+    /// <summary>Logs every scheduler clip per slot, recursing into child
+    /// timelines: type, track/clip start and length in frames (Ktisis
+    /// BaseClip +0x50/+0x54/+0x64/+0x68). The pap's embedded TMLB matches
+    /// this tree one for one (C031 attach = type 23, C094 fade = 78).</summary>
+    public void ProbeClips(ActorId actor)
+    {
+        var character = Resolve(actor, out var detail);
+        if (character == null)
+        {
+            _log.Information($"[AnimProbe] clips: {detail}");
+            return;
+        }
+        var sequencer = &character->Timeline.TimelineSequencer;
+        var handles = (ulong*)((byte*)sequencer + SequencerSchedulerHandlesOffset);
+        var sb = new StringBuilder(1024);
+        sb.Append($"[AnimProbe] clips on {actor}:");
+        for (int slot = 0; slot < 14; slot++)
+        {
+            var handle = (SchedulerTimelineHandle*)handles[slot];
+            if (handle == null || handle->Flags == 0 || handle->Data == 0)
+                continue;
+            nint sched = (nint)handle->Data;
+            sb.Append(string.Create(CultureInfo.InvariantCulture,
+                $"\n  slot {slot} sched 0x{sched:X} t={*(float*)(sched + SchedulerTimestampOffset):0.0}f"));
+            DumpClips(sb, *(nint*)(sched + 0x18), 1);
+        }
+        _log.Information(sb.ToString());
+    }
+
+    private static void DumpClips(StringBuilder sb, nint trackController, int depth)
+    {
+        if (trackController == 0 || depth > 4 || !RegionReadable(trackController, 0x40))
+            return;
+        nint trackPointers = *(nint*)(trackController + 0x28);
+        int trackCount = *(ushort*)(trackController + 0x28 + 0xA);
+        string pad = new(' ', depth * 2 + 2);
+        for (int t = 0; t < trackCount && t < 16 && trackPointers != 0; t++)
+        {
+            if (!RegionReadable(trackPointers + t * 8, 8))
+                return;
+            nint track = *(nint*)(trackPointers + t * 8);
+            if (track == 0 || !RegionReadable(track, 0x30))
+                continue;
+            nint clipPointers = *(nint*)(track + 0x18);
+            int clipCount = *(ushort*)(track + 0x18 + 0xA);
+            for (int c = 0; c < clipCount && c < 32 && clipPointers != 0; c++)
+            {
+                if (!RegionReadable(clipPointers + c * 8, 8))
+                    return;
+                nint clip = *(nint*)(clipPointers + c * 8);
+                if (clip == 0 || !RegionReadable(clip, 0x90))
+                    continue;
+                int type = *(int*)(clip + 0x84);
+                sb.Append(string.Create(CultureInfo.InvariantCulture,
+                    $"\n{pad}track {t} clip {c} type {type} @0x{clip:X} track {*(float*)(clip + 0x50):0.#}+{*(float*)(clip + 0x54):0.#} clip {*(float*)(clip + 0x64):0.#}+{*(float*)(clip + 0x68):0.#}"));
+                if (type != 7 || !RegionReadable(clip, 0x140))
+                    continue;
+                nint child = *(nint*)(clip + 0x138);
+                if (child == 0 || !RegionReadable(child, 0x80))
+                    child = *(nint*)(clip + 0x130);
+                if (child == 0 || !RegionReadable(child, 0x80))
+                    continue;
+                sb.Append(string.Create(CultureInfo.InvariantCulture,
+                    $" child 0x{child:X} t={*(float*)(child + SchedulerTimestampOffset):0.0}f"));
+                DumpClips(sb, *(nint*)(child + 0x18), depth + 1);
+            }
+        }
+    }
+
     public void ProbeFindClocks(ActorId actor)
     {
         _clockHuntActor = actor;

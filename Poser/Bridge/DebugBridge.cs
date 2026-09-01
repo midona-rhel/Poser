@@ -186,6 +186,8 @@ public sealed class DebugBridge : IDisposable
                 return Task.FromResult(TailLog(query));
             case "/peek":
                 return Task.FromResult(Peek(query));
+            case "/poke":
+                return Task.FromResult(Poke(query));
             default:
                 return _framework.RunOnFrameworkThread(() => RouteOnFramework(path, query));
         }
@@ -315,6 +317,9 @@ public sealed class DebugBridge : IDisposable
             case "/findclocks":
                 _port.ProbeFindClocks(id);
                 return Json(new { ok = true });
+            case "/clips":
+                _port.ProbeClips(id);
+                return Json(new { ok = true });
             case "/clone":
             {
                 var clone = _lifecycle.SpawnActor($"Bridge clone of {actor.Name}", () => _spawner.CloneActor(actor));
@@ -423,6 +428,27 @@ public sealed class DebugBridge : IDisposable
     private static extern unsafe bool ReadProcessMemory(
         nint process, nint address, void* buffer, nint size, out nint read);
 
+    /// <summary>Writes one float (f=) or int (i=) at addr — a probe tool.</summary>
+    private static unsafe string Poke(Dictionary<string, string> query)
+    {
+        if (!query.TryGetValue("addr", out var a))
+            return Json(new { error = "addr (hex) is required" });
+        nint address = (nint)Convert.ToInt64(a.Replace("0x", string.Empty), 16);
+        var probe = new byte[4];
+        fixed (byte* dst = probe)
+        {
+            if (!ReadProcessMemory((nint)(-1), address, dst, 4, out var read) || read != 4)
+                return Json(new { error = "unreadable", address = $"0x{address:X}" });
+        }
+        if (query.TryGetValue("f", out var f))
+            *(float*)address = float.Parse(f, CultureInfo.InvariantCulture);
+        else if (query.TryGetValue("i", out var i))
+            *(int*)address = int.Parse(i, CultureInfo.InvariantCulture);
+        else
+            return Json(new { error = "f= or i= is required" });
+        return Json(new { ok = true, address = $"0x{address:X}" });
+    }
+
     /// <summary>Guarded read of any address: floats and ints per dword.</summary>
     private static unsafe string Peek(Dictionary<string, string> query)
     {
@@ -440,7 +466,10 @@ public sealed class DebugBridge : IDisposable
             return Json(new { error = "unreadable", address = $"0x{address:X}" });
         var words = new List<object>();
         for (int off = 0; off + 4 <= size; off += 4)
-            words.Add(new { off = $"{off:x3}", f = BitConverter.ToSingle(buffer, off), i = BitConverter.ToInt32(buffer, off) });
+        {
+            float f = BitConverter.ToSingle(buffer, off);
+            words.Add(new { off = $"{off:x3}", f = float.IsFinite(f) ? f : (float?)null, i = BitConverter.ToInt32(buffer, off) });
+        }
         return Json(new { address = $"0x{address:X}", words });
     }
 
