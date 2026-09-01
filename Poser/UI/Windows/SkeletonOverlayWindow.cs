@@ -30,6 +30,7 @@ public class SkeletonOverlayWindow : Window
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly IBonePosingService _bonePosing;
     private readonly StableBindingRegistry _bindings;
     private readonly WorldAdoptionSource _adoption;
     private readonly Application.Scene.SceneGroups _groups;
@@ -209,6 +210,7 @@ public class SkeletonOverlayWindow : Window
         Vector2 ReleasePoint);
 
     public SkeletonOverlayWindow(
+        IBonePosingService bonePosing,
         SceneSession scene,
         Game.Viewport.ViewportProjection viewport,
         ICameraService cameraService,
@@ -238,6 +240,7 @@ public class SkeletonOverlayWindow : Window
         _editorState = editorState;
         _presentation = presentation;
         _ikPort = ikPort;
+        _bonePosing = bonePosing;
         _bindings = bindings;
         _adoption = adoption;
         _groups = groups;
@@ -648,6 +651,8 @@ public class SkeletonOverlayWindow : Window
 
         if (_editorState.SymmetryMode == SymmetryMode.Mirror)
             MarkMirrorPartners(bones);
+        if (_bonePosing.LinkedBonesEnabled)
+            MarkLinkPartners(bones);
 
         // No armature filter here anymore: every entry above was already
         // gated by its sidebar manip toggle at collection, and a masked
@@ -1576,6 +1581,35 @@ public class SkeletonOverlayWindow : Window
                 continue;
             bone.IsMirrorPartner = partners.Contains(
                 (boneId.Skeleton, boneId.CanonicalName));
+        }
+    }
+
+    /// <summary>Flags the LINKED partners of the selected bones — the
+    /// eye and Viera-ear same-delta groups — so Link shows what a
+    /// transform will also move, exactly as Mirror shows its partners.
+    /// The shared also-moves flag wears the mirrored color.</summary>
+    private static void MarkLinkPartners(List<BoneDisplayData> bones)
+    {
+        HashSet<(SkeletonId, string)>? partners = null;
+        foreach (var bone in bones)
+        {
+            if (!bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            foreach (var linked in global::Poser.Domain.Posing
+                .BoneLinkCatalog.GetLinked(boneId.CanonicalName))
+            {
+                partners ??= new HashSet<(SkeletonId, string)>();
+                partners.Add((boneId.Skeleton, linked));
+            }
+        }
+        if (partners == null)
+            return;
+        foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
+        {
+            if (bone.IsSelected || bone.Id.Bone is not { } boneId)
+                continue;
+            if (partners.Contains((boneId.Skeleton, boneId.CanonicalName)))
+                bone.IsMirrorPartner = true;
         }
     }
 

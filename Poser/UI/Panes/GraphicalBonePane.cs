@@ -77,6 +77,8 @@ public sealed class GraphicalBonePane : IDisposable
     private readonly Dictionary<(string Canonical, int PartialId), SelectionId> _dotIds = new();
 
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
+    private readonly IEditorState _editorState;
+    private readonly IBonePosingService _bonePosing;
 
     public GraphicalBonePane(
         SceneSession scene,
@@ -85,9 +87,13 @@ public sealed class GraphicalBonePane : IDisposable
         ISkeletonService skeletonService,
         ITextureProvider textureProvider,
         ICustomizeReadRuntimePort customizeRead,
-        Application.Posing.IIkConfigurationPort ikPort)
+        Application.Posing.IIkConfigurationPort ikPort,
+        IEditorState editorState,
+        IBonePosingService bonePosing)
     {
         _ikPort = ikPort;
+        _editorState = editorState;
+        _bonePosing = bonePosing;
         _scene = scene;
         _selection = scene.Selection;
         _bindings = bindings;
@@ -557,10 +563,19 @@ public sealed class GraphicalBonePane : IDisposable
                         armedIk.Add(chainBone);
                 }
             }
-            if (_selection.IsSelected(id)
+            if (!_selection.IsSelected(id))
+                continue;
+            // Mirror partners show while Mirror is ON; linked partners
+            // (eyes, Viera ears) while Link is ON — both wear the mirror
+            // color, in the maps exactly as in the overlay.
+            if (_editorState.SymmetryMode == SymmetryMode.Mirror
                 && Core.PoseMath.GetMirrorBoneName(fact.CanonicalName)
                     is { } mirror)
                 (mirrorPartners ??= new HashSet<string>()).Add(mirror);
+            if (_bonePosing.LinkedBonesEnabled)
+                foreach (var linked in global::Poser.Domain.Posing
+                    .BoneLinkCatalog.GetLinked(fact.CanonicalName))
+                    (mirrorPartners ??= new HashSet<string>()).Add(linked);
         }
         float circleRadius = skeletonColors.MapDotRadius;
         // Colors resolve FIRST so the connector lines can wear the child
