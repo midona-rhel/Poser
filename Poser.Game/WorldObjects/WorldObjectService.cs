@@ -321,11 +321,23 @@ public sealed class AdoptedWorldObject
     /// </summary>
     public Transform Transform
     {
-        get => _released ? _placement : _owner.ReadPlacement(this, _placement);
+        // An ANCHORED object's stated transform is the user's BASE, and a
+        // paused one's is the frozen pose — never the live animated value,
+        // which would spin the gizmo and save a random phase.
+        get => _released
+            ? _placement
+            : AnimRef is not null
+                ? _placement
+                : HeldPause ?? _owner.ReadPlacement(this, _placement);
         set
         {
             if (_released)
                 return;
+            // Moving an ANIMATED object pauses it first (ruled
+            // 2026-09-01): a drag against a running animation is two
+            // writers on one value.
+            if (!IsVfx && !_animationPaused && AnimRef is not null)
+                AnimationPaused = true;
             _placement = value;
             // A paused object still goes where the user drags it: the
             // hold re-writes THIS value from then on.
