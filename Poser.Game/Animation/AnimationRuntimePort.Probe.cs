@@ -121,6 +121,23 @@ public sealed unsafe partial class AnimationRuntimePort
 
     public bool ProbeLogging => _probeTimelineHook?.IsEnabled == true;
 
+    /// <summary>The GAME's window-owned gaze, read from the look-at
+    /// controller: GPose's face-camera writes LookMode.Position (3) at
+    /// controller+0x38 and, at +0x40, the world point the camera held
+    /// at the moment the toggle was flipped (a locked stare, not tracking)
+    /// (proven by the three-dump diff, 2026-09-01). Null when the game
+    /// holds no stare.</summary>
+    public System.Numerics.Vector3? ProbeGameGaze(ActorId actor)
+    {
+        var character = Resolve(actor, out _);
+        if (character == null)
+            return null;
+        var controller = (byte*)&character->LookAt.Controller;
+        if (*(int*)(controller + 0x38) != 3)
+            return null;
+        return *(System.Numerics.Vector3*)(controller + 0x40);
+    }
+
     // ── The write logger ──────────────────────────────────────────────
 
     /// <summary>Hooks the native set-timeline route and logs EVERY write
@@ -244,8 +261,13 @@ public sealed unsafe partial class AnimationRuntimePort
                 if (offset % 4 == 3)
                     hex.Append(' ');
             }
+            var gameGazeMode = *(int*)(controller + 0x38);
+            var gameGazePoint = *(System.Numerics.Vector3*)(controller + 0x40);
             _log.Information(
                 $"[AnimProbe] dump {actor}:\n{Describe(capture)}\n"
+                + $"  game gaze: mode {gameGazeMode} at "
+                + $"({gameGazePoint.X:0.##}, {gameGazePoint.Y:0.##}, "
+                + $"{gameGazePoint.Z:0.##})\n"
                 + $"  look-at controller:{hex}");
             return;
         }

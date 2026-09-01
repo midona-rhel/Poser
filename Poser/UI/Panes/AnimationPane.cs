@@ -320,6 +320,12 @@ public sealed class AnimationPane : IDisposable
         nint gazeTargetAddress = sourceActor != null
             ? _gaze.GetGazeTargetAddress(sourceActor)
             : 0;
+        // The GAME's window-owned stare (face-camera locks the point
+        // the camera held when the toggle was flipped)
+        // adopts as a Position gaze when Poser owns none of its own.
+        var gameGaze = gaze is { Mode: global::Poser.Services.GazeTargetMode.None }
+            ? _probePort.ProbeGameGaze(source)
+            : null;
         var lockedParts = new List<global::Poser.Services.GazeTargetType>();
         if (sourceActor != null && gaze is { Mode: not global::Poser.Services.GazeTargetMode.None })
         {
@@ -352,10 +358,31 @@ public sealed class AnimationPane : IDisposable
                 _animation.HoldExpression(target, expression);
             if (owned.Lips is { } lips)
                 _animation.SetLips(target, lips);
-            if (gaze is not { Mode: not global::Poser.Services.GazeTargetMode.None })
-                return;
             var resolvedTarget = _bindings.Resolve(target);
             if (!resolvedTarget.Success || resolvedTarget.Value is not { } clone)
+                return;
+            if (gameGaze is { } stare)
+            {
+                var cloneFrame = clone.Transform;
+                var rebased = sourceTransform is { } fromFrame
+                    ? cloneFrame.Position + Vector3.Transform(
+                        Vector3.Transform(
+                            stare - fromFrame.Position,
+                            Quaternion.Inverse(fromFrame.Rotation)),
+                        cloneFrame.Rotation)
+                    : stare;
+                if (_gaze.SetGazeMode(
+                        clone, global::Poser.Services.GazeTargetMode.Position)
+                    .Success)
+                {
+                    _gaze.SetGazeParts(clone,
+                        global::Poser.Services.GazeTargetType.Head
+                        | global::Poser.Services.GazeTargetType.Eyes);
+                    _gaze.SetGazePosition(clone, rebased);
+                }
+                return;
+            }
+            if (gaze is not { Mode: not global::Poser.Services.GazeTargetMode.None })
                 return;
             // The service's own transition order (ApplyActorGaze is the
             // normative sequence): target/mode, parts, positions, locks.
