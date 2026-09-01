@@ -455,6 +455,7 @@ public sealed class WorldObjectService : IDisposable
             return false;
         }
         var old = handle.Address;
+        _port.SetBgPaused(old, false);
         handle.Address = fresh;
         handle.Path = path.Trim();
         try
@@ -495,7 +496,12 @@ public sealed class WorldObjectService : IDisposable
             // The fresh incarnation ships lit; restate the dressing.
             handle.NightStatePending = true;
             if (handle.AnimationPaused)
+            {
                 handle.AnimationPauseRetries = AnimationPauseRetryTicks;
+                _port.SetBgPaused(old, false);
+                if (_port.EnsureBgPauseHook(fresh))
+                    _port.SetBgPaused(fresh, true);
+            }
         }
         if (handle.Opacity < 1f && visible)
             _port.WriteOpacity(fresh, handle.Opacity);
@@ -594,14 +600,18 @@ public sealed class WorldObjectService : IDisposable
                 handle.AnimGateOriginal = ReadLever(handle, kind);
                 ApplyLever(handle, kind, paused: true);
             }
+            else if (_port.EnsureBgPauseHook(handle.Address))
+            {
+                // The pause at its SOURCE: skip this object's
+                // UpdateRender, and the clock and the transform both
+                // stop with nothing to fight per frame.
+                _port.SetBgPaused(handle.Address, true);
+            }
             else
             {
-                // The TRANSFORM HOLD: the game re-writes an animated
-                // transform every frame, and only a write that lands
-                // LATE in the frame wins — the drag proved it
-                // (user-observed 2026-09-01). The captured placement is
-                // re-written from the overlay's draw for as long as the
-                // pause stands.
+                // FALLBACK when the hook could not install: the draw-time
+                // transform-and-clock hold — a write that lands late in
+                // the frame wins (the drag proved it, 2026-09-01).
                 handle.HeldPause =
                     _port.TryRead(handle.Address, out var frozen)
                         ? frozen
@@ -619,6 +629,7 @@ public sealed class WorldObjectService : IDisposable
                 _animHunt = null;
             handle.HeldPause = null;
             handle.HeldPauseTail = null;
+            _port.SetBgPaused(handle.Address, false);
             if (handle.AnimGateKind is { } gate)
                 ApplyLever(handle, gate, paused: false);
         }
@@ -1219,6 +1230,7 @@ public sealed class WorldObjectService : IDisposable
         // its end is destruction.
         if (handle.Spawned)
         {
+            _port.SetBgPaused(handle.Address, false);
             try
             {
                 _port.Destroy(handle.Address);
@@ -1244,6 +1256,7 @@ public sealed class WorldObjectService : IDisposable
                     _port.WriteBgNightState(handle.Address, dressing);
                 if (handle.AnimationPaused)
                     _port.WriteBgAnimationSpeed(handle.Address, 1f);
+                _port.SetBgPaused(handle.Address, false);
                 if (handle.AnimationPaused
                     && handle.AnimGateKind is { } animGate)
                     ApplyLever(handle, animGate, paused: false);

@@ -53,6 +53,16 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
         ResourceHandle* resourceHandle, uint unk2);
 
     private readonly Hook<VfxResourceLoadDelegate>? _vfxResourceLoad;
+    private readonly IGameInteropProvider _interop;
+
+    private delegate void BgUpdateRenderDelegate(nint self);
+    private Hook<BgUpdateRenderDelegate>? _bgUpdateRender;
+
+    /// <summary>Addresses whose per-frame update is SKIPPED — the pause
+    /// at its source: BgObject.UpdateRender (Object vf4) advances the
+    /// instance's animation clock and writes its transform, so not
+    /// calling it stops both, with nothing to fight per frame.</summary>
+    private readonly HashSet<nint> _pausedBg = new();
     private readonly object _handledLock = new();
     private readonly HashSet<string> _handledVfxPaths =
         new(StringComparer.OrdinalIgnoreCase);
@@ -61,9 +71,11 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
     public NativeWorldObjectPort(
         ISigScanner sigScanner,
         IGameInteropProvider gameInterop,
+        // Stored for the pause hook, installed lazily from a live vtable.
         IPluginLog log)
     {
         _log = log;
+        _interop = gameInterop;
         // Each signature is guarded on its own: a patch that breaks one
         // takes VFX away and leaves BG objects standing.
         try
@@ -398,6 +410,53 @@ public sealed unsafe class NativeWorldObjectPort : IWorldObjectPort
             || !ByteOffsetAllowed(offset))
             return;
         *((byte*)node + offset) = value;
+    }
+
+    /// <summary>Installs the pause hook from a LIVE object's vtable —
+    /// every BgObject shares it, so one address teaches us the slot.
+    /// Idempotent; false when the address resolves to nothing.</summary>
+    public bool EnsureBgPauseHook(nint address)
+    {
+        if (_bgUpdateRender != null)
+            return true;
+        var node = Resolve(address);
+        if (node == null || node->GetObjectType() == ObjectType.VfxObject)
+            return false;
+        try
+        {
+            var vtable = *(nint**)node;
+            _bgUpdateRender = _interop.HookFromAddress<
+                BgUpdateRenderDelegate>(vtable[4], BgUpdateRenderDetour);
+            _bgUpdateRender.Enable();
+            _log.Debug(
+                "NativeWorldObjectPort: BgObject.UpdateRender pause hook "
+                + "installed");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(
+                $"NativeWorldObjectPort: the pause hook did not install: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void BgUpdateRenderDetour(nint self)
+    {
+        if (_pausedBg.Contains(self))
+            return;
+        _bgUpdateRender!.Original(self);
+    }
+
+    /// <summary>Marks one BG address paused (its update skipped) or not.
+    /// The caller keeps the set honest across respawn and release — a
+    /// stale address would skip a stranger's update.</summary>
+    public void SetBgPaused(nint address, bool paused)
+    {
+        if (paused)
+            _pausedBg.Add(address);
+        else
+            _pausedBg.Remove(address);
     }
 
     /// <summary>The whole undocumented tail (0xC0..0xE0) in one read —
