@@ -206,6 +206,14 @@ public class SkeletonOverlayWindow : Window
     private readonly List<BoneDisplayData> _hoveredBones = new();
     private readonly List<string> _hoverLabels = new();
     private int _hoverIndex;
+    /// <summary>Once the wheel turns, the cluster LOCKS: its members stay
+    /// until the pointer leaves every one of them, so dots that breathe
+    /// in and out of the hit box cannot shuffle the list under the wheel.
+    /// The list's width is measured when it appears and held until it
+    /// goes, for the same reason.</summary>
+    private bool _clusterLocked;
+    private float? _listWidth;
+    private float _popupWidth;
     private SelectionId? _pressedWorldTarget;
     private PendingSelection? _pendingSelection;
     private WorldAdoptionCandidate? _pressedAdoptTarget;
@@ -960,6 +968,7 @@ public class SkeletonOverlayWindow : Window
         // (PosingOverlayWindow.HandleInput).
         if (hasWorldBone && !_popupOpen && io.MouseWheel != 0f)
         {
+            _clusterLocked = true;
             if (!brio)
                 _hoverIndex = CycleHoverIndex(
                     _hoverIndex, _hoveredBones.Count, io.MouseWheel);
@@ -1248,9 +1257,21 @@ public class SkeletonOverlayWindow : Window
     /// list them — never re-sorted, so a breathing actor cannot shuffle
     /// the list. The highlight index is Ktisis' ScrollIndex: it survives
     /// a changing cluster and only falls to zero when it runs past the
-    /// end.</summary>
+    /// end. A LOCKED cluster keeps its members while the pointer is still
+    /// over any of them.</summary>
     private void UpdateHoveredBones(List<BoneDisplayData> bones)
     {
+        if (_clusterLocked && _hoveredBones.Count > 0)
+        {
+            bool stillOver = false;
+            for (int i = 0; !stillOver && i < bones.Count; i++)
+                if (bones[i].IsHovered)
+                    for (int j = 0; !stillOver && j < _hoveredBones.Count; j++)
+                        stillOver = _hoveredBones[j].Id.Equals(bones[i].Id);
+            if (stillOver)
+                return;
+            _clusterLocked = false;
+        }
         _hoveredBones.Clear();
         _hoverLabels.Clear();
         for (int i = 0; i < bones.Count; i++)
@@ -1260,8 +1281,21 @@ public class SkeletonOverlayWindow : Window
             _hoveredBones.Add(bones[i]);
             _hoverLabels.Add(bones[i].Name);
         }
+        if (_hoveredBones.Count == 0)
+            _listWidth = null;
         if (_hoverIndex >= _hoveredBones.Count || _hoverIndex < 0)
             _hoverIndex = 0;
+    }
+
+    /// <summary>Whether this dot wears the hover colour: under Ktisis the
+    /// one the list highlights, under Brio every hovered one.</summary>
+    private bool HoverLit(in BoneDisplayData bone)
+    {
+        if (!bone.IsHovered || _hoveredBones.Count == 0)
+            return false;
+        if (Config.BonePickBehavior == BonePickBehavior.Brio)
+            return true;
+        return _hoveredBones[_hoverIndex].Id.Equals(bone.Id);
     }
 
     /// <summary>
@@ -1577,13 +1611,15 @@ public class SkeletonOverlayWindow : Window
         var anchor = brio
             ? mousePos + new Vector2(MathF.Max(0f, 15f - gap), 10f) * s
             : mousePos + new Vector2(MathF.Max(0f, 20f - gap), 0f) * s;
+        _listWidth ??= Crystarium.FloatingSurface.HoverListWidth(_hoverLabels);
         Crystarium.FloatingSurface.HoverList(
             HoverListOwnerId,
             anchor,
             _hoverLabels,
             brio ? marked : _hoverIndex,
             InteractionLayer.OverlaySurface,
-            onTop: true);
+            onTop: true,
+            width: _listWidth);
     }
 
     private void OpenPopup(Vector2 at)
@@ -1596,7 +1632,9 @@ public class SkeletonOverlayWindow : Window
             _popupLabels.Add(_hoverLabels[i]);
         }
         _popupAnchor = at;
+        _popupWidth = Crystarium.FloatingSurface.HoverListWidth(_popupLabels);
         _popupOpen = true;
+        _clusterLocked = false;
     }
 
     /// <summary>Brio's popup (PosingOverlayWindow.DrawPopup): the frozen
@@ -1624,7 +1662,8 @@ public class SkeletonOverlayWindow : Window
             _popupLabels,
             selectedIndex,
             InteractionLayer.OverlaySurface,
-            onTop: true);
+            onTop: true,
+            width: _popupWidth);
         if (clicked >= 0 && clicked < _popupItems.Count)
         {
             SelectNow(_popupItems[clicked].Id, multi);
@@ -1915,7 +1954,7 @@ public class SkeletonOverlayWindow : Window
             if (IsPriorityBone(bone) != priority) continue;
             var radius = DotRadius;
             float outlineThickness;
-            var color = ResolveBoneColor(bone, useHover: false, BoneColor);
+            var color = ResolveBoneColor(bone, useHover: HoverLit(bone), BoneColor);
             if (bone.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
 

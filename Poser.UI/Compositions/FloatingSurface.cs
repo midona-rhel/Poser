@@ -228,7 +228,8 @@ public static partial class Crystarium
             IReadOnlyList<string> items,
             int selected,
             InteractionLayer layer = InteractionLayer.HoverSurface,
-            bool onTop = false)
+            bool onTop = false,
+            float? width = null)
         {
             if (items.Count == 0)
                 return -1;
@@ -236,17 +237,10 @@ public static partial class Crystarium
             float gutter = ActiveTheme.Scrollbar.GutterWidth * 0.5f;
             float padding = gutter * scale;
             float labelSize = ActiveTheme.Typography.BodySize;
-            var labelStyle = new TextStyle
-            {
-                Size = labelSize,
-            };
-            float widest = 0f;
-            for (int i = 0; i < items.Count; i++)
-                widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
-            float width = Math.Clamp(
-                widest + padding * 2f + ActiveTheme.Spacing.Two * scale,
-                ActiveTheme.Floating.MenuMinWidth * scale,
-                ActiveTheme.Floating.MenuWidth * scale);
+            // A caller that holds the list open across changing entries
+            // passes the width it measured once, so the surface never
+            // resizes under the pointer; entries wider than it truncate.
+            float listWidth = width ?? HoverListWidth(items);
             float rowHeight = labelSize + ActiveTheme.Spacing.Two * 2f;
             int rows = Math.Min(items.Count, ActiveTheme.Picker.MaximumRows);
             float height = rows * rowHeight * scale
@@ -256,10 +250,10 @@ public static partial class Crystarium
                 0f);
             var min = PlaceAtPoint(
                 requested,
-                new Vector2(width, height),
+                new Vector2(listWidth, height),
                 scale,
                 out _);
-            var max = min + new Vector2(width, height);
+            var max = min + new Vector2(listWidth, height);
 
             ImGui.SetNextWindowPos(min);
             ImGui.SetNextWindowSize(max - min);
@@ -296,7 +290,7 @@ public static partial class Crystarium
                 ImGui.SetCursorPosX(padding);
                 ScrollRegion(
                     $"{id}-rows",
-                    (width - padding) / scale,
+                    (listWidth - padding) / scale,
                     (height - padding * 2f) / scale,
                     region =>
                     {
@@ -319,6 +313,25 @@ public static partial class Crystarium
             ImGui.End();
             ImGui.PopStyleVar();
             return clicked;
+        }
+
+        /// <summary>The width the hover list takes for these entries:
+        /// the widest label within the menu's bounds. Screen pixels.</summary>
+        public static float HoverListWidth(IReadOnlyList<string> items)
+        {
+            float scale = ImGuiHelpers.GlobalScale;
+            float padding = ActiveTheme.Scrollbar.GutterWidth * 0.5f * scale;
+            var labelStyle = new TextStyle
+            {
+                Size = ActiveTheme.Typography.BodySize,
+            };
+            float widest = 0f;
+            for (int i = 0; i < items.Count; i++)
+                widest = MathF.Max(widest, MeasureText(items[i], labelStyle).X);
+            return Math.Clamp(
+                widest + padding * 2f + ActiveTheme.Spacing.Two * scale,
+                ActiveTheme.Floating.MenuMinWidth * scale,
+                ActiveTheme.Floating.MenuWidth * scale);
         }
 
         internal static Vector2 PlaceCentered(Vector2 size) =>
