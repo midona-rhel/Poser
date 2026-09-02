@@ -599,8 +599,7 @@ public class SkeletonOverlayWindow : Window
                     // Nickname / anonymous-mask aware, like every surface. The
                     // raw object-index suffix is stripped first so the mask and
                     // nickname lookups see the same name the shell shows.
-                    Name = ConfigurationService.Instance.GetDisplayName(
-                        actor.Id.LogicalId, StripObjectIndex(actor.Name)),
+                    Name = ActorNames.Display(actor),
                     Id = actorSelectionId,
                     ScreenPos = viewportPos + actorScreen,
                     CameraDistance = Vector3.Distance(cameraPosition, actorTransform.Position),
@@ -1755,11 +1754,6 @@ public class SkeletonOverlayWindow : Window
         else
             _selection.Select(pending.Id);
     }
-
-    /// <summary>Strips the raw object-index suffix ("Name (201)"), matching
-    /// the shell's display rule.</summary>
-    private static string StripObjectIndex(string name)
-        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
 
     /// <summary>Canonical names of every member of an ARMED IK chain on this
     /// exact skeleton. Null when no chain on the skeleton is enabled. ONE port

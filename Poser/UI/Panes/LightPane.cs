@@ -99,12 +99,12 @@ public sealed class LightPane
         new("Save Light", new[] { ".xivl" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
         new("Load Light", new[] { ".xivl" });
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder =
+        new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
     // An imported light is only selectable once the scene refresh has bound
     // it, exactly like a spawned one.
-    private ILight? _pendingSelect;
+    private readonly global::Poser.UI.Composition.PendingSelection<ILight> _pendingSelect = new();
 
     /// <summary>The intensity slider's decade notches: where 1 and 10 sit on
     /// the log track, so the tiers read before dragging.</summary>
@@ -174,12 +174,11 @@ public sealed class LightPane
         _loadBrowser.Draw();
         DrawPickers();
 
-        if (_pendingSelect is { } imported &&
-            _bindings.GetLightId(imported) is { } lightId)
-        {
-            _scene.Selection.Select(SelectionId.ForLight(lightId));
-            _pendingSelect = null;
-        }
+        _pendingSelect.Reconcile(
+            imported => _bindings.GetLightId(imported) is { } id
+                ? SelectionId.ForLight(id)
+                : null,
+            _scene.Selection);
     }
 
     /// <summary>The placement band's labels, positional against
@@ -224,9 +223,8 @@ public sealed class LightPane
     /// menu's "New light from file…".</summary>
     public void OpenLoad()
     {
-        _loadBrowser.Open(_lastPath, path =>
+        _folder.Open(_loadBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // The file service owns the spawn, so the add is RECORDED rather
             // than issued here: a light that arrives from a file is still a
             // light the user added, and undo has to know it.
@@ -239,7 +237,7 @@ public sealed class LightPane
                     refusal ?? "Load: the light file could not be read.");
                 return;
             }
-            _pendingSelect = imported;
+            _pendingSelect.Arm(imported);
         });
     }
 
@@ -627,7 +625,7 @@ public sealed class LightPane
                     if (!descriptor.Id.Equals(boneId))
                         continue;
                     string label =
-                        $"{ActorName(actor)} · {descriptor.DisplayName}";
+                        $"{ActorNames.Display(actor)} · {descriptor.DisplayName}";
                     _attachLabel = (boneId, revision, label);
                     return label;
                 }
@@ -641,7 +639,7 @@ public sealed class LightPane
         _boneChoices.Clear();
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string actorName = ActorName(actor);
+            string actorName = ActorNames.Display(actor);
             foreach (var skeleton in actor.Skeletons)
             {
                 foreach (var descriptor in skeleton.Bones)
@@ -684,12 +682,6 @@ public sealed class LightPane
         _attachLabel = null;
     }
 
-    /// <summary>Nickname / anonymous-mask aware, like every other surface.
-    /// </summary>
-    private static string ActorName(ActorDescriptor actor) =>
-        ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, actor.Name);
-
     /// <summary>Save writes the selected light; load always spawns a new one,
     /// which the pending-select hook makes the selection once the scene has
     /// bound it.</summary>
@@ -718,9 +710,8 @@ public sealed class LightPane
     /// </summary>
     public void OpenSave(ILight light)
     {
-        _saveBrowser.Open(_lastPath, path =>
+        _folder.Open(_saveBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // The light is frozen at dialog open and can be destroyed while
             // the dialog is up; an invalid handle reads as spawn defaults.
             if (!light.IsValid)

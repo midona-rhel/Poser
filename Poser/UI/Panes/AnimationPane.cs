@@ -177,7 +177,7 @@ public sealed class AnimationPane : IDisposable
         PrunePaneState();
         Crystarium.Page("animation", origin, size, page =>
         {
-            if (TargetActor() is not { } actor)
+            if (_scene.Selection.PrimaryActor is not { } actor)
             {
                 page.EmptyState();
                 return;
@@ -749,7 +749,7 @@ public sealed class AnimationPane : IDisposable
                         "Bake expression",
                         () =>
                         {
-                            var descriptor = Describe(actor);
+                            var descriptor = _scene.Snapshot.FindActor(actor);
                             if (descriptor == null)
                                 _notices.Refused(
                                     "Bake expression: actor is no longer in "
@@ -1025,24 +1025,6 @@ public sealed class AnimationPane : IDisposable
         object Binding,
         long DueAt);
 
-
-    private ActorId? TargetActor() => _scene.Selection.Primary switch
-    {
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-        { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-            bone.Skeleton.Actor,
-        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
-            gazeActor,
-        _ => null,
-    };
-
-    private ActorDescriptor? Describe(ActorId id)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.Equals(id))
-                return actor;
-        return null;
-    }
 
     private static string StanceName(AnimationStance stance) => stance switch
     {

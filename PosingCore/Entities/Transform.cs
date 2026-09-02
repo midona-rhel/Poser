@@ -34,6 +34,10 @@ public struct Transform
         Scale = Vector3.One
     };
 
+    /// <summary>The legacy shape of a domain pose transform.</summary>
+    public static Transform FromPose(Poser.Domain.Transforms.PoseTransform value) =>
+        new(value.Position, value.Rotation, value.Scale);
+
     public Transform()
     {
         Position = Vector3.Zero;

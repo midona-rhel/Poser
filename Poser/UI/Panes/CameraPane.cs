@@ -68,12 +68,12 @@ public sealed class CameraPane
         new("Save Camera", new[] { ".xivc" }, isSaveMode: true);
     private readonly Crystarium.FileDialog _loadBrowser =
         new("Load Camera", new[] { ".xivc" });
-    private string _lastPath =
-        Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder =
+        new(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
     // An imported or cloned camera is only selectable once the scene refresh
     // has bound it, exactly like a spawned light.
-    private IVirtualCamera? _pendingSelect;
+    private readonly global::Poser.UI.Composition.PendingSelection<IVirtualCamera> _pendingSelect = new();
 
     private readonly global::Poser.UI.Controls.EntityNameModal _names;
 
@@ -114,21 +114,19 @@ public sealed class CameraPane
     {
         _saveBrowser.Draw();
         _loadBrowser.Draw();
-        if (_pendingSelect is { } created &&
-            _bindings.GetCameraId(created) is { } cameraId)
-        {
-            _scene.Selection.Select(SelectionId.ForCamera(cameraId));
-            _pendingSelect = null;
-        }
+        _pendingSelect.Reconcile(
+            created => _bindings.GetCameraId(created) is { } id
+                ? SelectionId.ForCamera(id)
+                : null,
+            _scene.Selection);
     }
 
     /// <summary>Opens the load dialog from outside the pane — the cameras
     /// header's "New camera from file…".</summary>
     public void OpenLoad()
     {
-        _loadBrowser.Open(_lastPath, path =>
+        _folder.Open(_loadBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             // Import creation is recorded through the lifecycle service.
             var imported = _lifecycle.RecordSpawnedCamera(
                 $"Add camera from {System.IO.Path.GetFileNameWithoutExtension(path)}",
@@ -138,14 +136,14 @@ public sealed class CameraPane
                 _notices.Failed("Load: the camera file could not be read.");
                 return;
             }
-            _pendingSelect = imported;
+            _pendingSelect.Arm(imported);
         });
     }
 
     /// <summary>Arms the created camera for selection once the refresh binds
     /// it — the header menu and the pane's own clone both route here.</summary>
     public void SelectWhenBound(IVirtualCamera camera) =>
-        _pendingSelect = camera;
+        _pendingSelect.Arm(camera);
 
     /// <summary>Frames one exact actor through the live orbit camera. The
     /// binding is resolved at invocation so a stale or despawned menu entry
@@ -480,7 +478,7 @@ public sealed class CameraPane
         var displayedId = followedId ?? nativeTargetId;
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            string name = ActorName(actor);
+            string name = ActorNames.Display(actor);
             choices.Add((actor.Id, name));
             labels.Add(name);
             if (displayedId is { } exact && actor.Id == exact)
@@ -756,7 +754,7 @@ public sealed class CameraPane
                             "Clone: the camera could not be created.");
                         return;
                     }
-                    _pendingSelect = clone;
+                    _pendingSelect.Arm(clone);
                 },
                 help: "Duplicate this camera");
             if (!camera.IsDefault)
@@ -1114,12 +1112,6 @@ public sealed class CameraPane
             camera.TrackedBones.Clear();
     }
 
-    /// <summary>Nickname / anonymous-mask aware, like every other surface.
-    /// </summary>
-    private static string ActorName(ActorDescriptor actor) =>
-        ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, actor.Name);
-
     // ── actions ──────────────────────────────────────────────────────────
 
     private void SetLive(IVirtualCamera camera, bool live)
@@ -1147,9 +1139,8 @@ public sealed class CameraPane
     /// </summary>
     public void OpenSave(IVirtualCamera camera)
     {
-        _saveBrowser.Open(_lastPath, path =>
+        _folder.Open(_saveBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             if (!camera.IsValid)
             {
                 _notices.Refused("Export: the camera no longer exists.");

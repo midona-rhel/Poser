@@ -1214,25 +1214,12 @@ public unsafe class BonePosingService : IBonePosingService
             ? state.TargetBone
             : null;
 
-    /// <summary>The bone's posed transform in the world: its cached
-    /// model-space transform through the skeleton's model matrix.</summary>
-    private static global::Poser.Transform? BoneWorld(IBone bone)
-    {
-        if (bone.Skeleton is not global::Poser.Entities.Skeleton skeleton || !skeleton.IsValid)
-            return null;
-        var world = global::Poser.Transform.FromMatrix(
-            bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
-        return AllFinite(world.Position) && AllFinite(world.Rotation)
-            ? world
-            : null;
-    }
-
     /// <summary>World mode's capture: the tip's world position and
     /// rotation now, with the authored deltas they were taken under.</summary>
     private HeldTarget? CaptureWorld(IBone endpoint)
     {
         RefreshCache(endpoint);
-        if (BoneWorld(endpoint) is not { } tip)
+        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip)
             return null;
         var authored = GetModification(endpoint);
         return new HeldTarget(
@@ -1247,8 +1234,8 @@ public unsafe class BonePosingService : IBonePosingService
     {
         RefreshCache(endpoint);
         RefreshCache(target);
-        if (BoneWorld(endpoint) is not { } tip
-            || BoneWorld(target) is not { } anchor)
+        if (global::Poser.Entities.BoneWorld.Of(endpoint) is not { } tip
+            || global::Poser.Entities.BoneWorld.Of(target) is not { } anchor)
             return null;
         var authored = GetModification(endpoint);
         return new HeldTarget(
@@ -1282,7 +1269,7 @@ public unsafe class BonePosingService : IBonePosingService
                     || !targetSkeleton.IsValid)
                     return null;
                 targetSkeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
-                if (BoneWorld(targetBone) is not { } anchor)
+                if (global::Poser.Entities.BoneWorld.Of(targetBone) is not { } anchor)
                     return null;
                 worldPosition = anchor.Position + capture.Target;
                 worldRotation = Quaternion.Normalize(anchor.Rotation * capture.Rotation);
@@ -1300,12 +1287,12 @@ public unsafe class BonePosingService : IBonePosingService
         // frame⁻¹ * world. The authored turn since capture rides on the
         // end, where the delta stack puts it.
         var frame = global::Poser.Transform.FromMatrix(skeleton.GetModelMatrix()).Rotation;
-        if (!AllFinite(frame) || frame.LengthSquared() < 1e-6f)
+        if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(frame) || frame.LengthSquared() < 1e-6f)
             return null;
         var rotation = Quaternion.Normalize(
             Quaternion.Inverse(Quaternion.Normalize(frame)) * worldRotation
             * Quaternion.Inverse(capture.RotationDelta) * authoredRotation);
-        if (!AllFinite(position) || !AllFinite(rotation))
+        if (!global::Poser.Domain.Transforms.TransformMath.IsFinite(position) || !global::Poser.Domain.Transforms.TransformMath.IsFinite(rotation))
             return null;
         return (position, rotation);
     }
@@ -1317,12 +1304,6 @@ public unsafe class BonePosingService : IBonePosingService
         if (bone.Skeleton is global::Poser.Entities.Skeleton skeleton && skeleton.IsValid)
             skeleton.UpdateBoneTransforms(global::Poser.Entities.BoneCacheTypes.LastTransform);
     }
-
-    private static bool AllFinite(Vector3 v) =>
-        float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z);
-
-    private static bool AllFinite(Quaternion q) =>
-        float.IsFinite(q.X) && float.IsFinite(q.Y) && float.IsFinite(q.Z) && float.IsFinite(q.W);
 
     public bool IsIkTwoJointAvailable(IBone bone)
     {

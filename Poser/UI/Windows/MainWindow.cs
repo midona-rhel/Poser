@@ -119,9 +119,6 @@ public class MainWindow : Window
     private IReadOnlyList<BoneId>? _ctxOverlayBones;
     private string? _ctxOverlayMemoryKey;
     private bool _overlayCtxOpenRequested;
-    private bool _renameOpen;
-    private string _renameValue = "";
-    private ActorId? _renameTarget;
     // Bone-visibility presets: the menu applies them to one actor, the manager
     // owns the shared store. Both hold an id, never a descriptor.
     private ActorId? _presetActorId;
@@ -582,15 +579,6 @@ public class MainWindow : Window
         _poseInspector.GetSwapRotationXY = () =>
             Config.ConfigurationService.Instance.Config.UI.SwapRotationXY;
         _selection.Live.CompanionResolver = ResolveSiblingBone;
-        _poseInspector.DescriptorDisplayName = ActorDisplayName;
-        appearancePane.DisplayNameProvider = ActorDisplayName;
-        // Transitional: the inspector still takes entity display lookups until
-        // its own migration; route them through the lineage nickname store.
-        _poseInspector.ActorDisplayNameProvider = actor =>
-            _bindings.GetActorId(actor) is { } displayId
-                ? Config.ConfigurationService.Instance.GetDisplayName(
-                    displayId.LogicalId, DisplayName(actor.Name))
-                : DisplayName(actor.Name);
 
         _poseRail = poseRail;
         _vm.OnCollapse = collapsed =>
@@ -620,9 +608,8 @@ public class MainWindow : Window
             if (!cameraResolved.Success
                 || cameraResolved.Value is not { IsValid: true } trackCamera)
                 return;
-            string trackLabel = FindActor(trackActorId.LogicalId) is { } tracked
-                ? Config.ConfigurationService.Instance.GetDisplayName(
-                    trackActorId.LogicalId, DisplayName(tracked.Name))
+            string trackLabel = _scene.Snapshot.FindActor(trackActorId.LogicalId) is { } tracked
+                ? ActorNames.Display(tracked)
                 : "Actor";
             _cameraPane.FollowActor(trackActorId, trackLabel, trackCamera);
         };
@@ -1320,12 +1307,12 @@ public class MainWindow : Window
         {
             { Kind: SceneEntityKind.Actor or SceneEntityKind.GazeTarget,
                 Actor: { } actorId } =>
-                FindActor(actorId.LogicalId) is { } actor
-                    ? ActorDisplayName(actor)
+                _scene.Snapshot.FindActor(actorId.LogicalId) is { } actor
+                    ? ActorNames.Display(actor)
                     : "Poser",
             { Kind: SceneEntityKind.Bone, Bone: { } boneId } =>
-                FindActor(boneId.Skeleton.Actor.LogicalId) is { } owner
-                    ? ActorDisplayName(owner)
+                _scene.Snapshot.FindActor(boneId.Skeleton.Actor.LogicalId) is { } owner
+                    ? ActorNames.Display(owner)
                     : "Poser",
             { Kind: SceneEntityKind.Environment } => "Environment",
             { Kind: SceneEntityKind.Light } => LightTitle(primary.Value),
@@ -1424,7 +1411,6 @@ public class MainWindow : Window
         DrawWorldObjectContextMenu();
         DrawGroupContextMenu();
         DrawSelectionContextMenu();
-        DrawRenameModal();
         DrawEntityRenameModal();
         DrawBonePresetManager();
         // Both file-dialog pumps live at the shell, so a dialog opened from a
@@ -2215,8 +2201,7 @@ public class MainWindow : Window
             row.ActorPaused = !_animation.AnyPlaying(state.Id);
             row.ActorTargeted = targetLineage == state.Id.LogicalId;
 
-            string label = Config.ConfigurationService.Instance.GetDisplayName(
-                state.Id.LogicalId, state.RawName);
+            string label = ActorNames.Display(state.Id, state.RawName);
             if (string.Equals(label, row.Label, StringComparison.Ordinal))
                 continue;
             row.Label = label;
@@ -2301,7 +2286,7 @@ public class MainWindow : Window
                     disabled: locked || actor == null,
                     help: actor == null
                         ? "Choose an actor first"
-                        : $"Choose exact bones on {ActorDisplayName(actor)}",
+                        : $"Choose exact bones on {ActorNames.Display(actor)}",
                     id: "camera-track-select-bones");
                 // Picking in the view: a click takes a bone, Ctrl-click
                 // keeps adding. Another actor's bone moves the tracking
@@ -2444,7 +2429,7 @@ public class MainWindow : Window
         };
         _cameraTrackingBonePicker.OpenMulti(
             $"camera-tracking-bones:{cameraId}:{actorId}",
-            ActorDisplayName(actor),
+            ActorNames.Display(actor),
             _cameraBoneChoices,
             choice => choice.Label,
             choice => choice.Key,
@@ -2496,7 +2481,7 @@ public class MainWindow : Window
 
     private ActorDescriptor? ResolveActorDescriptor(ActorId actorId) =>
         ResolveExactActor(actorId)
-            ? _scene.Snapshot.Actors.FirstOrDefault(actor => actor.Id == actorId)
+            ? _scene.Snapshot.FindActor(actorId)
             : null;
 
     private HashSet<string> TrackedBoneKeys(
@@ -2839,10 +2824,7 @@ public class MainWindow : Window
         switch (id)
         {
             case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
-                foreach (var actor in _scene.Snapshot.Actors)
-                    if (actor.Id.Equals(actorId))
-                        return true;
-                return false;
+                return _scene.Snapshot.FindActor(actorId) is not null;
             case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
                 foreach (var prop in _scene.Snapshot.Props)
                     if (prop.Id.Equals(propId))
@@ -2889,9 +2871,8 @@ public class MainWindow : Window
         // The snapshot's raw name is fixed until the next revision, so the
         // object-index strip runs here and the warm-frame label refresh is
         // a pair of dictionary lookups.
-        string rawName = DisplayName(actor.Name);
-        string actorLabel = Config.ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, rawName);
+        string rawName = ActorNames.Clean(actor.Name);
+        string actorLabel = ActorNames.Display(actor);
 
         List<ActorDescriptor>? companions = null;
         foreach (var candidate in snapshot)
@@ -3437,7 +3418,7 @@ public class MainWindow : Window
         IReadOnlyList<ActorDescriptor> snapshot,
         string filter)
     {
-        if (MatchesSidebarFilter(filter, ActorDisplayName(actor), actor.Name))
+        if (MatchesSidebarFilter(filter, ActorNames.Display(actor), actor.Name))
             return true;
 
         foreach (var skeleton in actor.Skeletons)
@@ -3681,17 +3662,6 @@ public class MainWindow : Window
         return null;
     }
 
-    /// <summary>Nickname, else the anonymous mask when enabled, else the
-    /// cleaned snapshot name — one stable-id display API for every surface,
-    /// the pop-out windows included.</summary>
-    internal static string ActorDisplayName(ActorDescriptor actor)
-        => Config.ConfigurationService.Instance.GetDisplayName(
-            actor.Id.LogicalId, DisplayName(actor.Name));
-
-    /// <summary>Strips the raw object-index suffix ("Name (201)") for display.</summary>
-    internal static string DisplayName(string name)
-        => System.Text.RegularExpressions.Regex.Replace(name, @"\s*\(\d+\)$", "");
-
     private Action? _openLibrary;
 
     private void BuildTabs(SelectionId? primary)
@@ -3843,7 +3813,7 @@ public class MainWindow : Window
             _statusRevision = _scene.Revision;
             _statusBoneActor = statusActor;
             int bones = 0;
-            if (statusActor is { } owner && FindActor(owner.LogicalId) is { } descriptor)
+            if (statusActor is { } owner && _scene.Snapshot.FindActor(owner.LogicalId) is { } descriptor)
                 foreach (var skeleton in descriptor.Skeletons)
                     bones += skeleton.Bones.Count;
             _statusBones = bones;
@@ -3859,14 +3829,6 @@ public class MainWindow : Window
         _vm.StatusRight = _statusBones > 0
             ? $"{_statusBones} bones · {fps} fps"
             : $"{fps} fps";
-    }
-
-    private ActorDescriptor? FindActor(Guid lineage)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-            if (actor.Id.LogicalId == lineage)
-                return actor;
-        return null;
     }
 
     /// <summary>Catalog spawns carry their spawn kind's icon; slot
@@ -4604,16 +4566,7 @@ public class MainWindow : Window
     }
 
 
-    private ActorId? SelectedActorId() =>
-        _selection.Primary switch
-        {
-            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-                bone.Skeleton.Actor,
-            // A gaze anchor is still the actor's; the toolbar stays live on it.
-            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeOwner } => gazeOwner,
-            _ => null,
-        };
+    private ActorId? SelectedActorId() => _selection.PrimaryActor;
 
     private readonly Game.PropSpawnService _propService;
     private readonly PropsPane _propsPane;
@@ -4959,20 +4912,20 @@ public class MainWindow : Window
                 else
                     _animation.Resume(actorId);
             },
-            () =>
-            {
-                _renameTarget = actorId;
-                // Seeds what the UI shows — nickname, else the mask while
-                // anonymous mode is on. Prefilling the raw name would leak it.
-                _renameValue = Config.ConfigurationService.Instance.GetDisplayName(
-                    actorId.LogicalId, DisplayName(actor.Name));
-                _renameOpen = true;
-            },
+            // Seeds what the UI shows — nickname, else the mask while
+            // anonymous mode is on. Prefilling the raw name would leak it.
+            () => _names.Open(
+                "Rename actor",
+                ActorNames.Display(actorId, actor.Name),
+                name => Config.ConfigurationService.Instance.SetNickname(
+                    actorId.LogicalId, name),
+                clear: () => Config.ConfigurationService.Instance.SetNickname(
+                    actorId.LogicalId, null),
+                clearHelp: "Remove the nickname and show the real name"),
             null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save actor to library",
-                Config.ConfigurationService.Instance.GetDisplayName(
-                    actorId.LogicalId, DisplayName(actor.Name)),
+                ActorNames.Display(actorId, actor.Name),
                 name => SaveOwnedActorEntry(actorId, name)),
             () => SetTreeCollapsed("actor:" + actorId, false, subtree: false),
             () => SetTreeCollapsed("actor:" + actorId, true, subtree: false),
@@ -5036,8 +4989,7 @@ public class MainWindow : Window
             () => _poseFileSection.RequestExportMenu(),
             () => _cleanPose.Stash(
                 actor,
-                Config.ConfigurationService.Instance.GetDisplayName(
-                    actorId.LogicalId, DisplayName(actor.Name))),
+                ActorNames.Display(actorId, actor.Name)),
             () => _cleanPose.ApplyStash(actor),
         };
 
@@ -5055,7 +5007,7 @@ public class MainWindow : Window
             actions.Add(null);
             actions.Add(() =>
             {
-                string name = DisplayName(actor.Name);
+                string name = ActorNames.Clean(actor.Name);
                 // Through the seam, exactly as Clone is: spawning an actor
                 // is a history step; destroying is undoable only when Poser
                 // spawned it and can respawn it.
@@ -5115,7 +5067,7 @@ public class MainWindow : Window
 
     private ContextMenuItem[] BuildBonePresetSubmenu(ActorId actorId)
     {
-        if (FindActor(actorId.LogicalId) is not { } actor)
+        if (_scene.Snapshot.FindActor(actorId.LogicalId) is not { } actor)
             return Array.Empty<ContextMenuItem>();
         _presetActorId = actorId;
         _bonePresetItems.Clear();
@@ -5173,7 +5125,7 @@ public class MainWindow : Window
     {
         if (!_presetManagerOpen)
             return;
-        var actor = _presetActorId is { } id ? FindActor(id.LogicalId) : null;
+        var actor = _presetActorId is { } id ? _scene.Snapshot.FindActor(id.LogicalId) : null;
         float gap = 8f * ImGuiHelpers.GlobalScale;
         Crystarium.Modal(
             "##bone-presets-manage",
@@ -5241,7 +5193,7 @@ public class MainWindow : Window
         if (_ctxBoneId is not { } boneId)
             return;
 
-        var owner = FindActor(boneId.Skeleton.Actor.LogicalId);
+        var owner = _scene.Snapshot.FindActor(boneId.Skeleton.Actor.LogicalId);
         var bones = owner?.GetSkeleton(boneId.Slot)?.Bones;
         var descriptor = bones?.FirstOrDefault(candidate => candidate.Id.Equals(boneId));
         if (bones == null || descriptor == null)
@@ -6679,7 +6631,7 @@ public class MainWindow : Window
     {
         if (!withPose || !actor.HasSkeleton)
             return _lifecycle.SpawnActor(
-                $"Duplicate actor '{DisplayName(actor.Name)}'",
+                $"Duplicate actor '{ActorNames.Clean(actor.Name)}'",
                 () => CloneWearingCollection(actor));
         return DuplicateActorWithPose(actor);
     }
@@ -6691,7 +6643,7 @@ public class MainWindow : Window
     private IActor? DuplicateActorWithPose(IActor actor)
     {
         var clone = _lifecycle.SpawnActorWithPose(
-            $"Duplicate actor '{DisplayName(actor.Name)}' with pose",
+            $"Duplicate actor '{ActorNames.Clean(actor.Name)}' with pose",
             () => CloneWearingCollection(actor),
             actor);
         if (clone == null || _bindings.GetActorId(clone) is not { } cloneId)
@@ -6750,43 +6702,4 @@ public class MainWindow : Window
     /// live entity at open; a stale entity write is a no-op on an invalid
     /// native, exactly as the pane's own name row would be.</summary>
     private void DrawEntityRenameModal() => _names.Draw();
-
-    /// <summary>One text input between the two bars: header 44 + padded
-    /// input row + footer 44.</summary>
-    private const float NamePromptHeight = 152f;
-
-    private void DrawRenameModal()
-    {
-        if (!_renameOpen || _renameTarget is not { } target) return;
-        Crystarium.Modal(
-            "##rename-actor",
-            _renameOpen,
-            next => _renameOpen = next,
-            "Rename actor",
-            height: NamePromptHeight,
-            body: () => Crystarium.TextInput(
-                "##rename-input", _renameValue, next => _renameValue = next),
-            footer: () =>
-        {
-            bool submit =
-                ImGui.IsKeyPressed(ImGuiKey.Enter, repeat: false) ||
-                ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, repeat: false);
-            if (Crystarium.Button("Clear", id: "rename-clear",
-                help: "Remove the nickname and show the real name"))
-            {
-                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, null);
-                _renameOpen = false;
-            }
-            ImGui.SameLine(0f, 8f * ImGuiHelpers.GlobalScale);
-            if (Crystarium.Button(
-                    "Save",
-                    variant: ButtonVariant.Primary,
-                    id: "rename-save") || submit)
-            {
-                Config.ConfigurationService.Instance.SetNickname(target.LogicalId, _renameValue);
-                _renameOpen = false;
-            }
-        });
-    }
-
 }

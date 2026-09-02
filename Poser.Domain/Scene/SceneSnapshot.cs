@@ -256,6 +256,24 @@ public sealed record SceneSnapshot
 
     public ulong Revision { get; init; }
 
+    /// <summary>The actor with this exact id, or null.</summary>
+    public ActorDescriptor? FindActor(ActorId id)
+    {
+        foreach (var actor in Actors)
+            if (actor.Id.Equals(id))
+                return actor;
+        return null;
+    }
+
+    /// <summary>The actor of this lineage, whatever its generation.</summary>
+    public ActorDescriptor? FindActor(Guid lineage)
+    {
+        foreach (var actor in Actors)
+            if (actor.Id.LogicalId == lineage)
+                return actor;
+        return null;
+    }
+
     public IReadOnlyList<ActorDescriptor> Actors
     {
         get;

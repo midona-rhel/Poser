@@ -82,7 +82,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 return FromBinding(resolved.Status, resolved.Detail);
             _actors.SetTransformOverride(
                 resolved.Value!,
-                ToLegacy(desired));
+                LegacyTransform.FromPose(desired));
             return TransformPortResult.Ok();
         }
 
@@ -107,8 +107,8 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
                 // diverges on face partials.
                 _bones.ApplyTransform(
                     bone,
-                    ToLegacy(desired),
-                    rawBaseline ? bone.LastRawTransform : ToLegacy(baseline.Transform));
+                    LegacyTransform.FromPose(desired),
+                    rawBaseline ? bone.LastRawTransform : LegacyTransform.FromPose(baseline.Transform));
             }
             finally
             {
@@ -123,7 +123,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(lightId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(desired);
+            resolved.Value!.Transform = LegacyTransform.FromPose(desired);
             return TransformPortResult.Ok();
         }
 
@@ -133,7 +133,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(applyPropId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(desired);
+            resolved.Value!.Transform = LegacyTransform.FromPose(desired);
             return TransformPortResult.Ok();
         }
 
@@ -143,7 +143,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(applyWorldId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(desired);
+            resolved.Value!.Transform = LegacyTransform.FromPose(desired);
             return TransformPortResult.Ok();
         }
 
@@ -166,7 +166,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             if (state.HasOverride)
                 _actors.SetTransformOverride(
                     resolved.Value!,
-                    ToLegacy(state.Transform));
+                    LegacyTransform.FromPose(state.Transform));
             else
                 _actors.ClearTransformOverride(resolved.Value!);
             return TransformPortResult.Ok();
@@ -190,7 +190,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(lightId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(state.Transform);
+            resolved.Value!.Transform = LegacyTransform.FromPose(state.Transform);
             return TransformPortResult.Ok();
         }
 
@@ -200,7 +200,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(restorePropId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(state.Transform);
+            resolved.Value!.Transform = LegacyTransform.FromPose(state.Transform);
             return TransformPortResult.Ok();
         }
 
@@ -210,7 +210,7 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             var resolved = _bindings.Resolve(restoreWorldId);
             if (!resolved.Success)
                 return FromBinding(resolved.Status, resolved.Detail);
-            resolved.Value!.Transform = ToLegacy(state.Transform);
+            resolved.Value!.Transform = LegacyTransform.FromPose(state.Transform);
             return TransformPortResult.Ok();
         }
 
@@ -380,9 +380,6 @@ public sealed class TransformRuntimePort : ITransformRuntimePort
             : System.Numerics.Vector3.One;
         return new LegacyTransform(position, rotation, scale);
     }
-
-    private static LegacyTransform ToLegacy(DomainTransform value) =>
-        new(value.Position, value.Rotation, value.Scale);
 
     private static IReadOnlyList<LegacyLayer> ToLegacyLayers(BonePose pose) =>
         pose.InteractiveOnly().Layers.Select(layer =>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Poser.Domain.Transforms;
 using Dalamud.Game;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
@@ -469,7 +470,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         var scene = &native->Camera.CameraBase.SceneCamera;
         Vector3 baseLookAt = scene->LookAtVector;
         Vector2 zoomLimits = camera.ZoomLimits;
-        if (!IsFinite(pivot) || !IsFinite(baseLookAt) ||
+        if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(baseLookAt) ||
             !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
             zoomLimits.X > zoomLimits.Y)
             return CameraCenterResult.Refused("Center: no usable actor or camera pivot.");
@@ -517,8 +518,8 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             return CameraCenterResult.Refused("Center: clear the camera position pin first.");
 
         skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-        var world = Poser.Transform.FromMatrix(
-            bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
+        if (BoneWorld.Of(bone) is not { } world)
+            return CameraCenterResult.Refused("Center: no usable bone or camera pivot.");
         float reportedHeight = MathF.Abs(gameObject->CameraOffset.Y);
         float actorHeight = reportedHeight is >= 0.5f and <= 5f
             ? reportedHeight
@@ -530,7 +531,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         var scene = &native->Camera.CameraBase.SceneCamera;
         Vector3 baseLookAt = scene->LookAtVector;
         Vector2 zoomLimits = camera.ZoomLimits;
-        if (!IsFinite(pivot) || !IsFinite(baseLookAt) ||
+        if (!TransformMath.IsFinite(pivot) || !TransformMath.IsFinite(baseLookAt) ||
             !float.IsFinite(zoomLimits.X) || !float.IsFinite(zoomLimits.Y) ||
             zoomLimits.X > zoomLimits.Y)
             return CameraCenterResult.Refused("Center: no usable bone or camera pivot.");
@@ -539,10 +540,6 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         camera.Zoom = Math.Clamp(framingHeight * 2f, zoomLimits.X, zoomLimits.Y);
         return CameraCenterResult.Centered();
     }
-
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z);
 
     /// <summary>The spawned camera's default name. Bare number, no "#": every
     /// other numbered entity in the scene (lights, props) is named
@@ -1169,11 +1166,7 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
             }
             if (_trackRefreshed.Add(skeleton))
                 skeleton.UpdateBoneTransforms(BoneCacheTypes.LastTransform);
-            var world = Poser.Transform.FromMatrix(
-                bone.LastTransform.ToMatrix() * skeleton.GetModelMatrix());
-            if (!float.IsFinite(world.Position.X) ||
-                !float.IsFinite(world.Position.Y) ||
-                !float.IsFinite(world.Position.Z))
+            if (BoneWorld.Of(bone) is not { } world)
                 continue;
             sum += world.Position;
             count++;

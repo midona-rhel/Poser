@@ -378,11 +378,7 @@ public sealed class PoseLibraryPane
 
     // The three file modals. Each freezes its target PATH at open: tile
     // indices do not survive a refilter, paths do.
-    private bool _renameOpen;
-    private string _renamePath = string.Empty;
-    private string _renameName = string.Empty;
-    private string _renameCandidate = string.Empty;
-    private bool _renameTaken;
+    private readonly global::Poser.UI.Controls.EntityNameModal _renameModal = new();
 
     private bool _metaOpen;
     private string _metaPath = string.Empty;
@@ -629,7 +625,7 @@ public sealed class PoseLibraryPane
         PoseLibraryView.Draw(_vm, origin, StepResize(size));
         DrawApplyMenu();
         DrawTileMenu();
-        DrawRenameModal();
+        _renameModal.Draw();
         // While the image picker is open the modal is not begun: an ImGui
         // modal that is begun blocks every other window, picker included,
         // and dims over it. Its state is untouched, so it resumes where it
@@ -658,8 +654,8 @@ public sealed class PoseLibraryPane
                     continue;
                 _applyTargets.Add(actor);
                 string name = _bindings.GetActorId(actor) is { } id
-                    ? _config.GetDisplayName(id.LogicalId, Clean(actor.Name))
-                    : Clean(actor.Name);
+                    ? ActorNames.Display(id, actor.Name)
+                    : ActorNames.Clean(actor.Name);
                 items.Add(new ContextMenuItem(name, TablerIcon.UserPlus));
             }
             if (items.Count == 0)
@@ -1285,11 +1281,7 @@ public sealed class PoseLibraryPane
                 OpenMetadataEditor(index);
                 break;
             case TileMenuAction.Rename:
-                _renamePath = path;
-                _renameName = System.IO.Path.GetFileNameWithoutExtension(path);
-                _renameCandidate = string.Empty;
-                _renameTaken = false;
-                _renameOpen = true;
+                OpenRename(path);
                 break;
             case TileMenuAction.Reveal:
                 RevealFile(path);
@@ -1322,7 +1314,7 @@ public sealed class PoseLibraryPane
         var result = PoseLibraryFileActions.Default.Probe(path);
         if (!result.Succeeded)
         {
-            _notices.Failed("Retry: " + result.Detail);
+            _notices.Failed("Retry", result.Detail);
             return;
         }
         // A clean read says nothing: the badge that prompted the retry simply
@@ -1342,7 +1334,7 @@ public sealed class PoseLibraryPane
         var result = PoseLibraryFileActions.Default.Quarantine(path);
         if (!result.Succeeded)
         {
-            _notices.Failed("Quarantine: " + result.Detail);
+            _notices.Failed("Quarantine", result.Detail);
             return;
         }
         FavoritePathChanged(path, null);
@@ -1397,7 +1389,7 @@ public sealed class PoseLibraryPane
             if (moved.Succeeded)
                 FavoritePathChanged(more, moved.ResultPath);
             else
-                _notices.Failed("Move: " + moved.Detail);
+                _notices.Failed("Move", moved.Detail);
         }
         _moveMore.Clear();
         var result = PoseLibraryFileActions.Default.Move(path, destination);
@@ -1407,7 +1399,7 @@ public sealed class PoseLibraryPane
             _library.RequestScan();
         }
         else
-            _notices.Failed("Move: " + result.Detail);
+            _notices.Failed("Move", result.Detail);
     }
 
     /// <summary>Opens Explorer with the file selected. A refusal is stated,
@@ -1430,7 +1422,7 @@ public sealed class PoseLibraryPane
         }
         catch (Exception ex)
         {
-            _notices.Failed("Reveal: " + ex.Message);
+            _notices.Failed("Reveal", ex.Message);
         }
     }
 
@@ -1465,100 +1457,47 @@ public sealed class PoseLibraryPane
         return new string(kept, 0, count);
     }
 
-    /// <summary>The rename modal: name input, inline validation (required,
-    /// no silent overwrite), Rename/Cancel. The typed result lands in the
-    /// footer note and a success rescans.</summary>
-    private void DrawRenameModal()
+    /// <summary>The file rename: the shared name prompt with the library's
+    /// rules — a name is required, an existing sibling is never overwritten,
+    /// the extension is kept. A success rescans.</summary>
+    private void OpenRename(string path)
     {
-        if (!_renameOpen)
-            return;
-        Crystarium.Modal(
-            "##library-rename",
-            _renameOpen,
-            next => _renameOpen = next,
+        string folder = System.IO.Path.GetDirectoryName(path) ?? string.Empty;
+        string extension = System.IO.Path.GetExtension(path);
+        string checkedCandidate = string.Empty;
+        bool taken = false;
+        _renameModal.Open(
             "Rename file",
-            height: 200f,
-            body: () =>
-        {
-            float scale = ImGuiHelpers.GlobalScale;
-            var theme = Crystarium.ActiveTheme;
-            var captionStyle = new TextStyle
+            System.IO.Path.GetFileNameWithoutExtension(path),
+            name =>
             {
-                Size = theme.Typography.CaptionSize,
-                Color = theme.FormHint,
-            };
-            float captionAdvance = (theme.Typography.CaptionSize + 4f) * scale;
-            float rowGap = 8f * scale;
-
-            Crystarium.TextAt(
-                ImGui.GetCursorScreenPos(), "Name", captionStyle);
-            ImGui.Dummy(new Vector2(1f, captionAdvance));
-            Crystarium.TextInput(
-                "##library-rename-name", _renameName,
-                next => _renameName = SanitizeFileName(next),
-                placeholder: "File name");
-            ImGui.Dummy(new Vector2(0f, rowGap));
-
-            string trimmed = _renameName.Trim();
-            string candidate = trimmed.Length == 0
-                ? string.Empty
-                : System.IO.Path.Combine(
-                    System.IO.Path.GetDirectoryName(_renamePath) ?? string.Empty,
-                    trimmed + System.IO.Path.GetExtension(_renamePath));
-            if (!string.Equals(
-                    candidate, _renameCandidate,
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                _renameCandidate = candidate;
-                _renameTaken = candidate.Length > 0
-                    && !string.Equals(
-                        candidate, _renamePath,
-                        StringComparison.OrdinalIgnoreCase)
-                    && System.IO.File.Exists(candidate);
-            }
-            string? problem = trimmed.Length == 0
-                ? "A name is required."
-                : _renameTaken
-                    ? "That name already exists here."
-                    : null;
-            if (problem is not null)
-            {
-                Crystarium.TextAt(
-                    ImGui.GetCursorScreenPos(), problem, captionStyle);
-                ImGui.Dummy(new Vector2(1f, captionAdvance));
-            }
-            ImGui.Dummy(new Vector2(0f, rowGap));
-
-            float gap = theme.Page.ActionGap * scale;
-            float half = (ImGui.GetContentRegionAvail().X - gap) * 0.5f / scale;
-            var pairStyle = new ControlStyle
-            {
-                Width = UiWidth.Fixed(MathF.Max(1f, half)),
-            };
-            if (Crystarium.Button(
-                    "Rename",
-                    variant: ButtonVariant.Primary,
-                    style: pairStyle,
-                    disabled: problem is not null,
-                    help: problem,
-                    id: "library-rename-confirm"))
-            {
-                var result = PoseLibraryFileActions.Default.Rename(
-                    _renamePath, trimmed);
+                var result = PoseLibraryFileActions.Default.Rename(path, name);
                 if (result.Succeeded)
                 {
-                    FavoritePathChanged(_renamePath, result.ResultPath);
+                    FavoritePathChanged(path, result.ResultPath);
                     _library.RequestScan();
                 }
                 else
-                    _notices.Failed("Rename: " + result.Detail);
-                _renameOpen = false;
-            }
-            ImGui.SameLine(0f, gap);
-            if (Crystarium.Button(
-                    "Cancel", style: pairStyle, id: "library-rename-cancel"))
-                _renameOpen = false;
-        });
+                    _notices.Failed("Rename", result.Detail);
+            },
+            confirm: "Rename",
+            validate: name =>
+            {
+                string trimmed = name.Trim();
+                if (trimmed.Length == 0)
+                    return "A name is required.";
+                string candidate = System.IO.Path.Combine(folder, trimmed + extension);
+                // The disk is asked once per candidate, not once per frame.
+                if (!string.Equals(candidate, checkedCandidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    checkedCandidate = candidate;
+                    taken = !string.Equals(candidate, path, StringComparison.OrdinalIgnoreCase)
+                        && System.IO.File.Exists(candidate);
+                }
+                return taken ? "That name already exists here." : null;
+            },
+            sanitize: SanitizeFileName,
+            placeholder: "File name");
     }
 
     /// <summary>The metadata modal: author and comma-separated tags, written
@@ -1648,7 +1587,7 @@ public sealed class PoseLibraryPane
                         if (read.Succeeded && encoded is { Length: > 0 })
                             _metaImage = PosePreviewImageEdit.Set(encoded);
                         else
-                            _notices.Failed("Preview image: " + read.Detail);
+                            _notices.Failed("Preview image", read.Detail);
                     });
             ImGui.SameLine(0f, gap);
             if (Crystarium.Button(
@@ -1683,7 +1622,7 @@ public sealed class PoseLibraryPane
                     _library.RequestScan();
                 }
                 else
-                    _notices.Failed("Metadata: " + result.Detail);
+                    _notices.Failed("Metadata", result.Detail);
                 _metaOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -1753,7 +1692,7 @@ public sealed class PoseLibraryPane
                     if (gone.Succeeded)
                         FavoritePathChanged(more, null);
                     else
-                        _notices.Failed("Delete: " + gone.Detail);
+                        _notices.Failed("Delete", gone.Detail);
                 }
                 _deleteMore.Clear();
                 var result = PoseLibraryFileActions.Default.Delete(_deletePath);
@@ -1766,7 +1705,7 @@ public sealed class PoseLibraryPane
                         _library.RequestScan();
                 }
                 else
-                    _notices.Failed("Delete: " + result.Detail);
+                    _notices.Failed("Delete", result.Detail);
                 _deleteOpen = false;
             }
             ImGui.SameLine(0f, gap);
@@ -2964,16 +2903,7 @@ public sealed class PoseLibraryPane
     /// the actor being posed is still the actor a pose lands on.</summary>
     private IActor? TargetActor()
     {
-        var actorId = _selection.Primary switch
-        {
-            { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-            { Kind: SceneEntityKind.Bone, Bone: { } bone } =>
-                bone.Skeleton.Actor,
-            { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } =>
-                gazeActor,
-            _ => (ActorId?)null,
-        };
-        if (actorId is not { } id)
+        if (_selection.PrimaryActor is not { } id)
             return null;
         var resolved = _bindings.Resolve(id);
         return resolved.Success ? resolved.Value : null;
@@ -3049,8 +2979,8 @@ public sealed class PoseLibraryPane
         {
             var actor = _applyTargets[i];
             _vm.ApplyTargetNames[i] = _bindings.GetActorId(actor) is { } id
-                ? _config.GetDisplayName(id.LogicalId, Clean(actor.Name))
-                : Clean(actor.Name);
+                ? ActorNames.Display(id, actor.Name)
+                : ActorNames.Clean(actor.Name);
         }
         int index = _applyChoice != null ? _applyTargets.IndexOf(_applyChoice) : -1;
         if (index < 0)
@@ -3245,19 +3175,6 @@ public sealed class PoseLibraryPane
     {
         _previewBinder.Close();
         _files.SetPreviewVisible(false);
-    }
-
-    /// <summary>Strips the raw object-index suffix ("Name (201)") the scene
-    /// names carry, matching what every other surface displays.</summary>
-    private static string Clean(string name)
-    {
-        int open = name.LastIndexOf('(');
-        if (open <= 0 || name[^1] != ')')
-            return name;
-        for (int i = open + 1; i < name.Length - 1; i++)
-            if (name[i] is < '0' or > '9')
-                return name;
-        return name.AsSpan(0, open).TrimEnd().ToString();
     }
 
     // ── the import components ────────────────────────────────────────────
@@ -3686,7 +3603,7 @@ public sealed class PoseLibraryPane
         }
         var begun = _integration.BeginImport(id, _vm.Tiles[index].ThumbKey);
         if (!begun.Success)
-            _notices.Failed("Import: " + begun.Detail);
+            _notices.Failed("Import", begun.Detail);
     }
 
     private void Spawn(int index)

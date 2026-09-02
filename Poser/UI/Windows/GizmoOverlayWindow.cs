@@ -583,9 +583,6 @@ public class GizmoOverlayWindow : Window
         return counted == 0 ? null : sum / counted;
     }
 
-    private static Transform ToLegacy(Domain.Transforms.PoseTransform value) =>
-        new() { Position = value.Position, Rotation = value.Rotation, Scale = value.Scale };
-
     /// <summary>Validates the active gesture against current editor state.</summary>
     private GizmoGesture? GuardGesture(
         TransformTool currentTool,
@@ -733,31 +730,31 @@ public class GizmoOverlayWindow : Window
         else if (isBone &&
             _viewport.GetBoneModelTransform(primaryBone!.Value) is { } boneRest)
         {
-            currentTransform = ToLegacy(boneRest);
+            currentTransform = Transform.FromPose(boneRest);
         }
         else if (primaryActor is { } actorTarget &&
             _viewport.GetActorTransform(actorTarget) is { } actorRest)
         {
-            currentTransform = ToLegacy(actorRest);
+            currentTransform = Transform.FromPose(actorRest);
         }
         else if (primaryLight is { } lightTarget &&
             _viewport.GetModelTransform(TransformTargetId.ForLight(lightTarget))
                 is { } lightRest)
         {
-            currentTransform = ToLegacy(lightRest);
+            currentTransform = Transform.FromPose(lightRest);
         }
         else if (primaryProp is { } propTarget &&
             _viewport.GetModelTransform(TransformTargetId.ForProp(propTarget))
                 is { } propRest)
         {
-            currentTransform = ToLegacy(propRest);
+            currentTransform = Transform.FromPose(propRest);
         }
         else if (primaryWorldObject is { } worldObjectTarget &&
             _viewport.GetModelTransform(
                 TransformTargetId.ForWorldObject(worldObjectTarget))
                 is { } worldObjectRest)
         {
-            currentTransform = ToLegacy(worldObjectRest);
+            currentTransform = Transform.FromPose(worldObjectRest);
         }
         else
         {

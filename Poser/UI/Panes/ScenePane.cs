@@ -78,7 +78,7 @@ public sealed class ScenePane
     /// having to navigate anywhere. Choosing another folder is still allowed
     /// and sticks for the rest of the session.
     /// </summary>
-    private string _lastPath;
+    private readonly global::Poser.UI.Controls.RememberedFolder _folder;
 
     private string _description = string.Empty;
 
@@ -320,9 +320,8 @@ public sealed class ScenePane
     /// anchored BeginLoad a library activation runs.</summary>
     public void OpenEntryLoad()
     {
-        _entryBrowser.Open(_lastPath, path =>
+        _folder.Open(_entryBrowser, path =>
         {
-            _lastPath = System.IO.Path.GetDirectoryName(path) ?? _lastPath;
             var options = new SceneLoadOptions();
             var mode = _config.Config.DefaultSpawnPlacement;
             if (mode != global::Poser.Files.ObjectPlacementMode.AsSaved
@@ -372,7 +371,7 @@ public sealed class ScenePane
         _place = place;
         _notices = notices;
         _libraryConfig = config.Config.Library;
-        _lastPath = config.Config.Library.EnsureSceneRootExists();
+        _folder = new(config.Config.Library.EnsureSceneRootExists());
 
         // The verdict column is not a reserved rectangle: it states what the
         // highlighted file IS, and says so in its own words when nothing is
@@ -1214,9 +1213,8 @@ public sealed class ScenePane
 
     // ── actions ──────────────────────────────────────────────────────────
 
-    private void OpenSave() => _saveBrowser.Open(_lastPath, path =>
+    private void OpenSave() => _folder.Open(_saveBrowser, path =>
     {
-        _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         if (!path.EndsWith(SceneFile.Extension, StringComparison.OrdinalIgnoreCase))
             path += SceneFile.Extension;
         var started = _workflow.BeginSave(
@@ -1229,9 +1227,8 @@ public sealed class ScenePane
             _notices.Failed(started.Detail ?? "The scene could not be saved.");
     });
 
-    private void OpenLoad() => _loadBrowser.Open(_lastPath, path =>
+    private void OpenLoad() => _folder.Open(_loadBrowser, path =>
     {
-        _lastPath = Path.GetDirectoryName(path) ?? _lastPath;
         BeginLoad(path);
     });
 

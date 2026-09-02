@@ -107,8 +107,6 @@ public sealed class AppearancePane
     private ActorId? _mcdfActor;
     private string _mcdfDescription = string.Empty;
 
-    public Func<ActorDescriptor, string>? DisplayNameProvider;
-
     public AppearancePane(
         ActorPresentationSession presentation,
         ActorModelIdSession model,
@@ -157,7 +155,7 @@ public sealed class AppearancePane
 
         Crystarium.Page("appearance", origin, size, page =>
         {
-            if (TargetActor() is not { } actor)
+            if (_scene.Selection.PrimaryActor is not { } actor)
             {
                 page.EmptyState();
                 return;
@@ -208,7 +206,7 @@ public sealed class AppearancePane
                 form => CharacterFileRows(form, actor, external));
             // A body taken from the world is handed back from its own page,
             // as a borrowed light is from its page.
-            if (Describe(actor) is { IsAdopted: true })
+            if (_scene.Snapshot.FindActor(actor) is { IsAdopted: true })
                 page.Section("Scene", _openScene,
                     next => _openScene = next,
                     form => form.Actions(string.Empty, actions =>
@@ -231,7 +229,7 @@ public sealed class AppearancePane
             return;
         }
         if (_spawn.RemoveActorFromScene(live))
-            _notices.Done($"Released '{Describe(id)?.Name ?? live.Name}'.");
+            _notices.Done($"Released '{_scene.Snapshot.FindActor(id)?.Name ?? live.Name}'.");
         else
             _notices.Failed("Release: the actor could not be handed back.");
     }
@@ -708,7 +706,7 @@ public sealed class AppearancePane
             // Character data leaves Poser only for an actor Poser spawned or
             // the player's own character; a friend posed in GPose is not
             // the user's to export.
-            bool owned = Describe(actor)?.IsOwned ?? false;
+            bool owned = _scene.Snapshot.FindActor(actor)?.IsOwned ?? false;
             bool exportable =
                 owned && penumbra.Available && glamourer.Available && !mcdfOwnedNow;
             form.ReadOnlyWithActions(
@@ -846,8 +844,8 @@ public sealed class AppearancePane
     private void OpenMcdfExport(ActorId actor)
     {
         _mcdfActor = actor;
-        _mcdfDescription = Describe(actor) is { } described
-            ? DisplayNameProvider?.Invoke(described) ?? described.Name
+        _mcdfDescription = _scene.Snapshot.FindActor(actor) is { } described
+            ? ActorNames.Display(described)
             : "Actor";
         _mcdfExportBrowser.Open(_mcdfPath, chosen =>
         {
@@ -885,24 +883,6 @@ public sealed class AppearancePane
     private WetnessState CurrentWetness(ActorId actor) =>
         _presentation.OverridesFor(actor).Wetness
         ?? (_presentation.Read(actor) is { } reading ? reading.Wetness : default);
-
-    private ActorId? TargetActor() => _scene.Selection.Primary switch
-    {
-        { Kind: SceneEntityKind.Actor, Actor: { } actor } => actor,
-        { Kind: SceneEntityKind.Bone, Bone: { } bone } => bone.Skeleton.Actor,
-        { Kind: SceneEntityKind.GazeTarget, Actor: { } gazeActor } => gazeActor,
-        _ => null,
-    };
-
-    private ActorDescriptor? Describe(ActorId id)
-    {
-        foreach (var actor in _scene.Snapshot.Actors)
-        {
-            if (actor.Id.Equals(id))
-                return actor;
-        }
-        return null;
-    }
 
     private void RefreshReadouts(ActorId actor)
     {

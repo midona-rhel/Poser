@@ -176,6 +176,16 @@ public readonly record struct SelectionId
     public OverlayId? Overlay { get; }
     public WorldObjectId? WorldObject { get; }
 
+    /// <summary>The actor a selection edits: the actor itself, a bone's
+    /// owner, or a gaze anchor's owner. Null for every other kind.</summary>
+    public ActorId? OwningActor => Kind switch
+    {
+        SceneEntityKind.Actor => Actor,
+        SceneEntityKind.Bone => Bone?.Skeleton.Actor,
+        SceneEntityKind.GazeTarget => Actor,
+        _ => null,
+    };
+
     public Guid? ActorLineage =>
         Actor?.LogicalId ??
         Bone?.Skeleton.Actor.LogicalId ??

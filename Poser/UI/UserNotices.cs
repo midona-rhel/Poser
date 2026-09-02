@@ -42,6 +42,11 @@ public sealed class UserNotices
     /// <summary>An action ran and failed.</summary>
     public void Failed(string message) => Post(message, NotificationType.Error);
 
+    /// <summary>"Verb: detail" — the shape a failed file verb reports in.</summary>
+    public void Failed(string verb, string detail) => Failed(verb + ": " + detail);
+
+    public void Refused(string verb, string detail) => Refused(verb + ": " + detail);
+
     private void Post(string message, NotificationType type)
     {
         if (string.IsNullOrWhiteSpace(message))

@@ -64,7 +64,7 @@ public sealed class OverlayPane
 
     /// <summary>The node a create or duplicate made, selected once the scene
     /// refresh has bound it.</summary>
-    private OverlayNodeHandle? _pendingSelect;
+    private readonly global::Poser.UI.Composition.PendingSelection<OverlayNodeHandle> _pendingSelect = new();
 
     private string _status = string.Empty;
 
@@ -101,7 +101,7 @@ public sealed class OverlayPane
     public void SelectWhenBound(OverlayNodeHandle? node)
     {
         if (node != null)
-            _pendingSelect = node;
+            _pendingSelect.Arm(node);
     }
 
     /// <summary>The shell's every-frame pump. A node created from the spawn
@@ -558,7 +558,7 @@ public sealed class OverlayPane
         };
         if (_lifecycle.SpawnOverlay(document) is OverlayNodeHandle copy)
         {
-            _pendingSelect = copy;
+            _pendingSelect.Arm(copy);
             _status = string.Empty;
             return copy;
         }
@@ -597,17 +597,12 @@ public sealed class OverlayPane
     /// refresh has bound the new node, select it and forget it.</summary>
     private void ReconcilePendingSelect()
     {
-        if (_pendingSelect is not { } pending)
-            return;
-        if (!pending.IsValid)
-        {
-            _pendingSelect = null;
-            return;
-        }
-        if (_bindings.GetOverlayId(pending) is not { } id)
-            return;
-        _scene.Selection.Select(SelectionId.ForOverlay(id));
-        _pendingSelect = null;
+        _pendingSelect.Reconcile(
+            node => _bindings.GetOverlayId(node) is { } id
+                ? SelectionId.ForOverlay(id)
+                : null,
+            _scene.Selection,
+            stillValid: node => node.IsValid);
     }
 
     private static string ContentTitle(OverlayNodeKind kind) => kind switch

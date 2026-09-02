@@ -208,7 +208,7 @@ public class ConfigurationService : IDisposable
             return nickname;
 
         if (!Config.Display.AnonymousMode)
-            return rawName;
+            return StripObjectIndex(rawName);
 
         if (!_lineageAnonymousNames.TryGetValue(actorLineage, out var anonName))
         {
@@ -216,6 +216,20 @@ public class ConfigurationService : IDisposable
             _lineageAnonymousNames[actorLineage] = anonName;
         }
         return anonName;
+    }
+
+    /// <summary>Strips the object-index suffix a scene name carries
+    /// ("Name (201)"). The ONE place the rule lives, so every surface shows
+    /// the same name.</summary>
+    public static string StripObjectIndex(string rawName)
+    {
+        int open = rawName.LastIndexOf('(');
+        if (open <= 0 || open >= rawName.Length - 2 || rawName[^1] != ')')
+            return rawName;
+        for (int i = open + 1; i < rawName.Length - 1; i++)
+            if (rawName[i] is < '0' or > '9')
+                return rawName;
+        return rawName.AsSpan(0, open).TrimEnd().ToString();
     }
 
     // Lineage-keyed nicknames: the stable-id UI keys display names by the
