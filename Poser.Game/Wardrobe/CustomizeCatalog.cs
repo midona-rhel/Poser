@@ -55,7 +55,85 @@ public sealed class CustomizeCatalog : ICustomizeCatalog
     public CustomizeMenu? Menu(byte clan, byte gender)
     {
         LoadMenus();
-        return _menus!.TryGetValue((clan, gender), out var menu) ? menu : null;
+        if (!_menus!.TryGetValue((clan, gender), out var menu))
+            return null;
+        if (_discovered.Add((clan, gender)))
+            _menus[(clan, gender)] = menu = Discover(menu);
+        return menu;
+    }
+
+    private readonly HashSet<(byte, byte)> _discovered = new();
+
+    /// <summary>The faces and hairs the sheet does not list but the model
+    /// files hold — the NPC ones — found by probing the file paths, as
+    /// Ktisis does. They list without an icon, after the sheet's own, in
+    /// order. Four clans share their faces with a hundred added, and those
+    /// echoes are left out.</summary>
+    private CustomizeMenu Discover(CustomizeMenu menu)
+    {
+        ushort dataId = DataIdFor(menu.Clan, menu.Gender);
+        var features = new Dictionary<CustomizeKey, CustomizeFeature>(menu.Features);
+        if (features.TryGetValue(CustomizeKey.Face, out var face))
+        {
+            bool echoes = menu.Clan is 4 or 6 or 8 or 10;
+            var known = new HashSet<byte>();
+            foreach (var option in face.Options)
+            {
+                known.Add(option.Value);
+                if (echoes)
+                    known.Add((byte)(option.Value + 100));
+            }
+            var found = new List<CustomizeOption>(face.Options);
+            for (int i = 0; i <= byte.MaxValue; i++)
+            {
+                if (known.Contains((byte)i))
+                    continue;
+                if (_data.FileExists(string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "chara/human/c{0:D4}/obj/face/f{1:D4}/model/c{0:D4}f{1:D4}_fac.mdl", dataId, i)))
+                    found.Add(new CustomizeOption((byte)i, 0));
+            }
+            features[CustomizeKey.Face] = face with { Options = found };
+        }
+        if (features.TryGetValue(CustomizeKey.Hairstyle, out var hair))
+        {
+            var known = new HashSet<byte>();
+            foreach (var option in hair.Options)
+                known.Add(option.Value);
+            var found = new List<CustomizeOption>(hair.Options);
+            for (int i = 0; i <= byte.MaxValue; i++)
+            {
+                if (known.Contains((byte)i))
+                    continue;
+                if (_data.FileExists(string.Format(
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        "chara/human/c{0:D4}/obj/hair/h{1:D4}/model/c{0:D4}h{1:D4}_hir.mdl", dataId, i)))
+                    found.Add(new CustomizeOption((byte)i, 0));
+            }
+            features[CustomizeKey.Hairstyle] = hair with { Options = found };
+        }
+        return menu with { Features = features };
+    }
+
+    /// <summary>The model folder a clan and gender draw from.</summary>
+    private static ushort DataIdFor(byte clan, byte gender)
+    {
+        bool feminine = gender == 1;
+        int race = (clan + 1) / 2;
+        int id = clan switch
+        {
+            1 => feminine ? 201 : 101,
+            2 => feminine ? 401 : 301,
+            _ => race switch
+            {
+                2 => feminine ? 601 : 501,
+                4 => feminine ? 801 : 701,
+                5 => feminine ? 1001 : 901,
+                3 => feminine ? 1201 : 1101,
+                _ => 1301 + (race - 6) * 200 + (feminine ? 100 : 0),
+            },
+        };
+        return (ushort)id;
     }
 
     public CustomizePalettes Palettes

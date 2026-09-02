@@ -263,6 +263,11 @@ public static partial class Crystarium
         /// <summary>Arms the surface under the tile that owns it. The anchor is
         /// the TILE's rect rather than the last reserved item, so the trailing
         /// steppers cannot move the surface.</summary>
+        /// <summary>Arms the surface under a tile the caller drew — a
+        /// bigger one than the field's own.</summary>
+        public void OpenAt(uint selected, Vector2 anchorMin, Vector2 anchorMax) =>
+            Open(selected, anchorMin, anchorMax);
+
         private void Open(uint selected, Vector2 min, Vector2 max)
         {
             _selected = selected;

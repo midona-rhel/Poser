@@ -11,19 +11,22 @@ namespace Poser.UI;
 
 /// <summary>
 /// The Appearance view: the actor's customization, through Glamourer,
-/// with the choices the character-making sheet offers its clan and
-/// gender. Body first (race, clan and gender redraw, so they wear the
-/// disruptive step), then the face as icon tiles and named options, the
-/// colours as palette tiles that open the game's own palettes, and the
-/// face paint. Every value is a journal step; a slider folds while it
-/// drags. Without Glamourer everything disables in place and says why.
+/// with the choices the game offers its clan and gender — the sheet's,
+/// plus the faces and hairs found by probing the model files, as Ktisis
+/// lists them. Body: race and clan on one row with the gender symbol as
+/// a swap, then height beside the bust or muscle slider. Face: the four
+/// tiles (face, hair, tail or ears, face paint) in one row, each with a
+/// plus and minus that step only through valid values; the named options
+/// three per row as plus and minus wells; the features as one row of
+/// small tiles. Colours three per row, the switches under them. Every
+/// value is a journal step; a slider folds while it drags. Without
+/// Glamourer everything disables in place and says why.
 /// </summary>
 public sealed partial class AppearancePane
 {
     private bool _openBody = true;
     private bool _openFace = true;
     private bool _openColours = true;
-    private bool _openPaint = true;
 
     private static readonly TimeSpan CustomizeInterval = TimeSpan.FromSeconds(1);
     private ActorId? _customizeActor;
@@ -31,7 +34,10 @@ public sealed partial class AppearancePane
     private CustomizeState? _customizeState;
     private string? _customizeDetail;
 
-    private static readonly string[] GenderLabels = ["Male", "Female"];
+    private static readonly CustomizeKey[] TileKeys =
+    {
+        CustomizeKey.Face, CustomizeKey.Hairstyle, CustomizeKey.TailShape, CustomizeKey.FacePaint,
+    };
 
     // The palette picker and what opened it.
     private readonly Crystarium.PalettePicker _palette = new("appearance-palette");
@@ -42,7 +48,6 @@ public sealed partial class AppearancePane
     // One tile picker per clan, gender and feature: its dropped ids are
     // its own, and a clan's faces are not another's.
     private readonly Dictionary<(byte Clan, byte Gender, CustomizeKey Key), Crystarium.TexturePicker> _tilePickers = new();
-    private readonly Dictionary<(byte Clan, byte Gender, CustomizeKey Key), Dictionary<uint, uint>> _tileIcons = new();
 
     // ── the view ────────────────────────────────────────────────────────
 
@@ -62,99 +67,86 @@ public sealed partial class AppearancePane
         {
             if (why is not null)
                 form.Status(why);
-            BodyRows(form, actor, state, live, why);
+            BodyRow(form, actor, state, live, why);
+            form.PairRows();
             form.Slider("Height", state?.Value(CustomizeKey.Height) ?? 0, 0f, 100f,
                 value => Set(actor, CustomizeKey.Height, (int)MathF.Round(value), "Set height"),
                 help: live ? "How tall" : why, disabled: !live, onBegin: _customizeSession.Seal);
             if (menu?.Feature(CustomizeKey.BustSize) is { } bust)
-                form.Slider(bust.Name, state?.Value(CustomizeKey.BustSize) ?? 0, 0f, 100f,
+                form.Slider("Bust", state?.Value(CustomizeKey.BustSize) ?? 0, 0f, 100f,
                     value => Set(actor, CustomizeKey.BustSize, (int)MathF.Round(value), "Set bust size"),
-                    help: live ? "Bust size" : why, disabled: !live, onBegin: _customizeSession.Seal);
-            if (menu?.Feature(CustomizeKey.MuscleMass) is { } muscle)
-                form.Slider(muscle.Name, state?.Value(CustomizeKey.MuscleMass) ?? 0, 0f, 100f,
+                    help: live ? bust.Name : why, disabled: !live, onBegin: _customizeSession.Seal);
+            else if (menu?.Feature(CustomizeKey.MuscleMass) is { } muscle)
+                form.Slider("Muscle", state?.Value(CustomizeKey.MuscleMass) ?? 0, 0f, 100f,
                     value => Set(actor, CustomizeKey.MuscleMass, (int)MathF.Round(value), "Set muscle"),
-                    help: live ? "Muscle mass" : why, disabled: !live, onBegin: _customizeSession.Seal);
+                    help: live ? muscle.Name : why, disabled: !live, onBegin: _customizeSession.Seal);
+            form.EndPair();
         }, divider: false);
 
         page.Section("Face", _openFace, next => _openFace = next, form =>
         {
-            form.Pair(
-                "Face", cell => TileField(cell, actor, menu, state, CustomizeKey.Face, live, why),
-                "Hair", cell => TileField(cell, actor, menu, state, CustomizeKey.Hairstyle, live, why),
-                help: "The face and the hair, off the game's own tiles");
-            form.PairRows();
-            OptionRow(form, actor, menu, state, CustomizeKey.Eyebrows, "Eyebrows", live, why);
-            OptionRow(form, actor, menu, state, CustomizeKey.EyeShape, "Eyes", live, why);
-            OptionRow(form, actor, menu, state, CustomizeKey.Nose, "Nose", live, why);
-            OptionRow(form, actor, menu, state, CustomizeKey.Jaw, "Jaw", live, why);
-            OptionRow(form, actor, menu, state, CustomizeKey.Mouth, "Mouth", live, why);
-            form.Switch("Small iris", (state?.Value(CustomizeKey.SmallIris) ?? 0) != 0,
-                on => Set(actor, CustomizeKey.SmallIris, on ? Flag(CustomizeKey.SmallIris) : 0, on ? "Small iris" : "Large iris"),
-                help: live ? "Smaller irises" : why, disabled: !live);
-            form.EndPair();
+            TilesRow(form, actor, menu, state, live, why);
+            form.Cells(cells =>
+            {
+                cells.Cell("Brows", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Eyebrows, live, why));
+                cells.Cell("Eyes", cell => OptionCell(cell, actor, menu, state, CustomizeKey.EyeShape, live, why));
+                cells.Cell("Nose", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Nose, live, why));
+            }, help: "Step through the shapes the clan offers");
+            form.Cells(cells =>
+            {
+                cells.Cell("Jaw", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Jaw, live, why));
+                cells.Cell("Mouth", cell => OptionCell(cell, actor, menu, state, CustomizeKey.Mouth, live, why));
+                cells.Cell("Small iris", cell => cell.Switch("appearance-small-iris",
+                    (state?.Value(CustomizeKey.SmallIris) ?? 0) != 0,
+                    on => Set(actor, CustomizeKey.SmallIris, on ? Flag(CustomizeKey.SmallIris) : 0, on ? "Small iris" : "Large iris"),
+                    !live, live ? "Smaller irises" : why));
+            }, help: "Step through the shapes the clan offers");
             FeatureRow(form, actor, menu, state, live, why);
-            if (menu?.Feature(CustomizeKey.TailShape) is { } tail)
-                form.Pair(
-                    tail.Name, cell => TileField(cell, actor, menu, state, CustomizeKey.TailShape, live, why),
-                    string.Empty, _ => { },
-                    help: "The ears or the tail");
         });
 
         page.Section("Colours", _openColours, next => _openColours = next, form =>
         {
-            form.Pair(
-                "Skin", cell => ColorField(cell, actor, state, CustomizeKey.SkinColor, menu?.SkinColors, live, why),
-                "Hair", cell => ColorField(cell, actor, state, CustomizeKey.HairColor, menu?.HairColors, live, why),
-                help: "The skin and the hair");
             bool highlights = (state?.Value(CustomizeKey.Highlights) ?? 0) != 0;
-            form.Pair(
-                "Highlights", cell => cell.Switch("appearance-highlights", highlights,
-                    on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),
-                    !live, live ? "Highlight the hair" : why),
-                "Tint", cell => ColorField(cell, actor, state, CustomizeKey.HighlightsColor,
-                    _customize.Palettes.Highlights, live && highlights,
-                    live && !highlights ? "Highlights are off" : why),
-                help: "Hair highlights and their colour");
-            form.Pair(
-                "Right eye", cell => ColorField(cell, actor, state, CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why),
-                "Left eye", cell => ColorField(cell, actor, state, CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why),
-                help: "Each eye has its own colour");
             bool lipstick = (state?.Value(CustomizeKey.Lipstick) ?? 0) != 0;
-            form.Pair(
-                "Lipstick", cell => cell.Switch("appearance-lipstick", lipstick,
+            form.Cells(cells =>
+            {
+                cells.Cell("Skin", cell => ColorCell(cell, actor, state, CustomizeKey.SkinColor, menu?.SkinColors, live, why));
+                cells.Cell("Hair", cell => ColorCell(cell, actor, state, CustomizeKey.HairColor, menu?.HairColors, live, why));
+                cells.Cell("Highlight", cell => ColorCell(cell, actor, state, CustomizeKey.HighlightsColor,
+                    _customize.Palettes.Highlights, live && highlights, live && !highlights ? "Highlights are off" : why));
+            }, help: "Each opens the game's own palette");
+            form.Cells(cells =>
+            {
+                cells.Cell("Right eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorRight, _customize.Palettes.Eyes, live, why));
+                cells.Cell("Left eye", cell => ColorCell(cell, actor, state, CustomizeKey.EyeColorLeft, _customize.Palettes.Eyes, live, why));
+                cells.Cell("Lips", cell => ColorCell(cell, actor, state, CustomizeKey.LipColor,
+                    _customize.Palettes.Lips, live && lipstick, live && !lipstick ? "Lipstick is off" : why));
+            }, help: "Each eye has its own colour");
+            form.Cells(cells =>
+            {
+                cells.Cell("Tattoo", cell => ColorCell(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why));
+                cells.Cell("Paint", cell => ColorCell(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why));
+                cells.Cell(string.Empty, _ => { });
+            }, help: "The facial features' and the face paint's colour");
+            form.Checkboxes("Options",
+                new Crystarium.CheckItem("Highlights", highlights,
+                    on => Set(actor, CustomizeKey.Highlights, on ? Flag(CustomizeKey.Highlights) : 0, on ? "Highlights on" : "Highlights off"),
+                    live ? "Highlight the hair" : why, !live),
+                new Crystarium.CheckItem("Lipstick", lipstick,
                     on => Set(actor, CustomizeKey.Lipstick, on ? Flag(CustomizeKey.Lipstick) : 0, on ? "Lipstick on" : "Lipstick off"),
-                    !live, live ? "Colour the lips" : why),
-                "Lips", cell => ColorField(cell, actor, state, CustomizeKey.LipColor,
-                    _customize.Palettes.Lips, live && lipstick,
-                    live && !lipstick ? "Lipstick is off" : why),
-                help: "Lipstick and its colour");
-            form.Pair(
-                "Tattoo", cell => ColorField(cell, actor, state, CustomizeKey.TattooColor, _customize.Palettes.Tattoo, live, why),
-                string.Empty, _ => { },
-                help: "The colour of the facial features and tattoos");
-        });
-
-        page.Section("Face paint", _openPaint, next => _openPaint = next, form =>
-        {
-            bool reversed = (state?.Value(CustomizeKey.FacePaintReversed) ?? 0) != 0;
-            form.Pair(
-                "Paint", cell => TileField(cell, actor, menu, state, CustomizeKey.FacePaint, live, why),
-                "Reversed", cell => cell.Switch("appearance-paint-reversed", reversed,
+                    live ? "Colour the lips" : why, !live),
+                new Crystarium.CheckItem("Reversed paint", (state?.Value(CustomizeKey.FacePaintReversed) ?? 0) != 0,
                     on => Set(actor, CustomizeKey.FacePaintReversed, on ? Flag(CustomizeKey.FacePaintReversed) : 0, on ? "Reverse face paint" : "Face paint forward"),
-                    !live, live ? "Mirror the paint" : why),
-                help: "The face paint and its mirror");
-            form.Pair(
-                "Colour", cell => ColorField(cell, actor, state, CustomizeKey.FacePaintColor, _customize.Palettes.FacePaint, live, why),
-                string.Empty, _ => { },
-                help: "The colour of the face paint");
+                    live ? "Mirror the face paint" : why, !live));
         });
     }
 
     // ── body ────────────────────────────────────────────────────────────
 
-    /// <summary>Race, clan and gender: each redraws the actor, so each is a
-    /// disruptive step whose inverse is the triple read before.</summary>
-    private void BodyRows(
+    /// <summary>Race and clan as dropdowns and the gender as a symbol that
+    /// swaps, on one row. Each redraws, so each is a disruptive step whose
+    /// inverse is the values read before.</summary>
+    private void BodyRow(
         Crystarium.FormScope form, ActorId actor, CustomizeState? state, bool live, string? why)
     {
         var races = _customize.Races;
@@ -171,23 +163,6 @@ public sealed partial class AppearancePane
             if (races[i].Race == race)
                 raceIndex = i;
         }
-        form.Dropdown("Race", raceNames, raceIndex, index =>
-        {
-            var chosen = races[index];
-            byte firstClan = 0;
-            foreach (var entry in clans)
-                if (entry.Race == chosen.Race)
-                {
-                    firstClan = entry.Clan;
-                    break;
-                }
-            Body(actor, state, "Change race", new Dictionary<CustomizeKey, int>
-            {
-                [CustomizeKey.Race] = chosen.Race,
-                [CustomizeKey.Clan] = firstClan,
-            });
-        }, help: live ? "Redraws the actor" : why, disabled: !live);
-
         var clanRows = new List<ClanEntry>();
         foreach (var entry in clans)
             if (entry.Race == race)
@@ -200,20 +175,47 @@ public sealed partial class AppearancePane
             if (clanRows[i].Clan == clan)
                 clanIndex = i;
         }
-        form.Dropdown("Clan", clanNames, clanIndex, index =>
-            Body(actor, state, "Change clan", new Dictionary<CustomizeKey, int>
-            {
-                [CustomizeKey.Race] = clanRows[index].Race,
-                [CustomizeKey.Clan] = clanRows[index].Clan,
-            }),
-            help: live ? "Redraws the actor" : why, disabled: !live || clanRows.Count == 0);
 
-        form.Dropdown("Gender", GenderLabels, Math.Clamp(gender, 0, 1), index =>
-            Body(actor, state, "Change gender", new Dictionary<CustomizeKey, int>
+        form.Cells(cells =>
+        {
+            cells.Cell("Race", cell => cell.Dropdown("appearance-race", raceNames, raceIndex, index =>
             {
-                [CustomizeKey.Gender] = index,
-            }),
-            help: live ? "Redraws the actor" : why, disabled: !live);
+                var chosen = races[index];
+                byte firstClan = 0;
+                foreach (var entry in clans)
+                    if (entry.Race == chosen.Race)
+                    {
+                        firstClan = entry.Clan;
+                        break;
+                    }
+                Body(actor, state, "Change race", new Dictionary<CustomizeKey, int>
+                {
+                    [CustomizeKey.Race] = chosen.Race,
+                    [CustomizeKey.Clan] = firstClan,
+                });
+            }, !live, live ? "Redraws the actor" : why));
+            cells.Cell("Clan", cell => cell.Dropdown("appearance-clan", clanNames, clanIndex, index =>
+                Body(actor, state, "Change clan", new Dictionary<CustomizeKey, int>
+                {
+                    [CustomizeKey.Race] = clanRows[index].Race,
+                    [CustomizeKey.Clan] = clanRows[index].Clan,
+                }), !live || clanRows.Count == 0, live ? "Redraws the actor" : why));
+            cells.Cell("Gender", cell =>
+            {
+                var theme = Crystarium.ActiveTheme;
+                float square = theme.Controls.WorkspaceHeight;
+                ImGui.SetCursorScreenPos(cell.Center(square));
+                Crystarium.IconButton(
+                    gender == 1 ? TablerIcon.GenderFemale : TablerIcon.GenderMale,
+                    () => Body(actor, state, "Swap gender", new Dictionary<CustomizeKey, int>
+                    {
+                        [CustomizeKey.Gender] = gender == 1 ? 0 : 1,
+                    }),
+                    ControlStyle.Square(square), !live,
+                    live ? (gender == 1 ? "Female · swap" : "Male · swap") : why,
+                    id: "appearance-gender");
+            });
+        }, help: "Race, clan and gender redraw the actor");
     }
 
     private void Body(
@@ -229,72 +231,134 @@ public sealed partial class AppearancePane
         InvalidateCustomize();
     }
 
-    // ── rows ────────────────────────────────────────────────────────────
+    // ── tiles ───────────────────────────────────────────────────────────
 
-    /// <summary>A named option — eyebrows, eyes, nose — as a dropdown of
-    /// the values the sheet offers.</summary>
-    private void OptionRow(
+    /// <summary>Face, hair, tail or ears, and face paint: four columns,
+    /// each a tile two rows tall that opens the grid, over a plus and
+    /// minus well that steps only through the values the clan has.</summary>
+    private void TilesRow(
         Crystarium.FormScope form, ActorId actor, CustomizeMenu? menu,
-        CustomizeState? state, CustomizeKey key, string label, bool live, string? why)
+        CustomizeState? state, bool live, string? why)
     {
-        var feature = menu?.Feature(key);
-        var options = feature?.Options ?? Array.Empty<CustomizeOption>();
-        var names = new string[options.Count];
-        int current = state?.Value(key) ?? 0;
-        int selected = -1;
-        for (int i = 0; i < options.Count; i++)
+        var theme = Crystarium.ActiveTheme;
+        float tile = theme.Controls.FormRowHeight * 2f;
+        float square = theme.Controls.WorkspaceHeight;
+        float gap = theme.Page.ActionGap;
+        form.Custom("Look", tile + gap + square, row =>
         {
-            names[i] = (i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (options[i].Value == current)
-                selected = i;
-        }
-        form.Dropdown(label, names, selected,
-            index => Set(actor, key, options[index].Value, $"Set {label.ToLowerInvariant()}"),
-            help: live ? (feature?.Name is { Length: > 0 } name ? name : label) : why,
-            disabled: !live || options.Count == 0);
+            float s = row.Scale;
+            float column = MathF.Max(1f, (row.ControlWidth - gap * s * 3f) / 4f);
+            float side = MathF.Min(tile * s, column);
+            for (int i = 0; i < TileKeys.Length; i++)
+            {
+                var key = TileKeys[i];
+                var feature = menu?.Feature(key);
+                float x = row.ControlOrigin.X + i * (column + gap * s);
+                var tileMin = new Vector2(x + (column - side) * 0.5f, row.Origin.Y);
+                int current = state?.Value(key) ?? 0;
+                var option = feature is null ? null : OptionOf(feature, current);
+                bool has = live && feature is not null;
+                string name = feature?.Name is { Length: > 0 } n ? n : TileName(key);
+                ImGui.SetCursorScreenPos(tileMin);
+                bool opened = Crystarium.ImageTile(
+                    $"appearance-tile-{key}",
+                    option is { Icon: not 0 } ? ResolveIcon(option.Icon) : 0,
+                    side / s,
+                    null,
+                    help: has ? name : (feature is null ? "Not for this clan" : why),
+                    disabled: !has);
+                if (opened && feature is not null && menu is not null)
+                    TilePicker(menu, feature).OpenAt((uint)current, ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
+                StepperAt(
+                    new Vector2(x, row.Origin.Y + side + gap * s), column, s,
+                    $"appearance-step-{key}", feature, current, has, why,
+                    next => Set(actor, key, next, $"Set {name.ToLowerInvariant()}"));
+            }
+        }, help: "Face, hair, tail or ears, face paint");
     }
 
-    /// <summary>A face, hair, tail or face paint off its tiles: the
-    /// texture picker's shape, fed the sheet's icons.</summary>
-    private void TileField(
+    /// <summary>A named option — brows, eyes, nose — as a plus and minus
+    /// well that steps only through the values the clan has.</summary>
+    private void OptionCell(
         in Crystarium.FormPairCell cell, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, CustomizeKey key, bool live, string? why)
     {
-        if (menu is null || menu.Feature(key) is not { } feature)
-        {
-            cell.Text("—", unavailable: true);
-            return;
-        }
-        var picker = TilePicker(menu, feature);
-        uint current = (uint)(state?.Value(key) ?? 0);
-        picker.Field(cell, current,
-            next => Set(actor, key, (int)next, $"Set {feature.Name.ToLowerInvariant()}"),
-            disabled: !live,
-            help: live ? feature.Name : why);
+        var theme = Crystarium.ActiveTheme;
+        var feature = menu?.Feature(key);
+        int current = state?.Value(key) ?? 0;
+        var seat = cell.Center(theme.Controls.WorkspaceHeight);
+        string name = feature?.Name is { Length: > 0 } n ? n : key.ToString();
+        StepperAt(seat, cell.Width, cell.Scale, $"appearance-step-{key}", feature, current,
+            live && feature is not null, feature is null ? "Not for this clan" : why,
+            next => Set(actor, key, next, $"Set {name.ToLowerInvariant()}"));
     }
 
-    /// <summary>The seven facial features and the legacy tattoo as icon
-    /// tiles, each a toggle.</summary>
+    /// <summary>[−] [value] [+] across a width: the well drags and snaps to
+    /// the nearest valid value, the steppers walk the list.</summary>
+    private void StepperAt(
+        Vector2 at, float width, float s, string id, CustomizeFeature? feature,
+        int current, bool enabled, string? why, Action<int> apply)
+    {
+        var theme = Crystarium.ActiveTheme;
+        float square = theme.Controls.WorkspaceHeight;
+        float tight = theme.Spacing.One * s;
+        float wellW = MathF.Max(theme.Form.AxisWellMinimumWidth * s, width - (square * s + tight) * 2f);
+        var options = feature?.Options ?? Array.Empty<CustomizeOption>();
+        int index = IndexOf(options, current);
+        bool canDown = enabled && options.Count > 0 && index != 0;
+        bool canUp = enabled && options.Count > 0 && index < options.Count - 1;
+        string? help = enabled ? null : why;
+
+        ImGui.SetCursorScreenPos(at);
+        Crystarium.IconButton(TablerIcon.Minus,
+            () => apply(options[index < 0 ? 0 : index - 1].Value),
+            ControlStyle.Square(square), !canDown, help ?? "Previous", id: id + "-down");
+        ImGui.SetCursorScreenPos(new Vector2(at.X + square * s + tight, at.Y));
+        Crystarium.AxisWell(
+            id + "-well",
+            string.Empty,
+            current,
+            next =>
+            {
+                int snapped = Nearest(options, (int)MathF.Round(next));
+                if (snapped != current)
+                    apply(snapped);
+            },
+            null,
+            theme.FormValue,
+            0.05f,
+            "0",
+            ControlStyle.Workspace with { Width = UiWidth.Fixed(wellW / s) },
+            disabled: !enabled || options.Count == 0);
+        ImGui.SetCursorScreenPos(new Vector2(at.X + square * s + tight + wellW + tight, at.Y));
+        Crystarium.IconButton(TablerIcon.Plus,
+            () => apply(options[index < 0 ? 0 : index + 1].Value),
+            ControlStyle.Square(square), !canUp, help ?? "Next", id: id + "-up");
+    }
+
+    /// <summary>The seven facial features and the legacy tattoo as one row
+    /// of small icon tiles, each a toggle.</summary>
     private void FeatureRow(
         Crystarium.FormScope form, ActorId actor, CustomizeMenu? menu,
         CustomizeState? state, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
-        float side = theme.Controls.FormRowHeight * 1.5f;
-        float gap = theme.Page.ActionGap;
-        form.Custom("Features", side * 2f + gap, row =>
+        float square = theme.Controls.WorkspaceHeight;
+        form.Custom("Features", theme.Controls.FormRowHeight, row =>
         {
             float s = row.Scale;
+            float gap = theme.Spacing.Three * s;
+            float side = MathF.Min(square * s, (row.ControlWidth - gap * 7f) / 8f);
             byte face = (byte)(state?.Value(CustomizeKey.Face) ?? 0);
-            uint[] icons = Array.Empty<uint>();
-            if (menu is not null && !menu.FaceFeatureIcons.TryGetValue(face, out icons!))
+            uint[]? icons = null;
+            if (menu is not null && !menu.FaceFeatureIcons.TryGetValue(face, out icons))
                 foreach (var any in menu.FaceFeatureIcons.Values)
                 {
                     icons = any;
                     break;
                 }
             icons ??= Array.Empty<uint>();
-            int perLine = 4;
+            var seat = row.CenterControl(side / s);
             for (int i = 0; i < 8; i++)
             {
                 var key = i < 7 ? CustomizeKey.FacialFeature1 + i : CustomizeKey.LegacyTattoo;
@@ -302,15 +366,12 @@ public sealed partial class AppearancePane
                 nint texture = i < 7
                     ? (i < icons.Length ? ResolveIcon(icons[i]) : 0)
                     : LegacyTattooHandle();
-                var at = row.ControlOrigin + new Vector2(
-                    (i % perLine) * (side + gap) * s,
-                    (i / perLine) * (side + gap) * s);
-                ImGui.SetCursorScreenPos(at);
+                ImGui.SetCursorScreenPos(new Vector2(seat.X + i * (side + gap), seat.Y));
                 int index = i;
                 Crystarium.ImageTile(
                     $"appearance-feature-{i}",
                     texture,
-                    side,
+                    side / s,
                     () => Set(actor, key, on ? 0 : Flag(key),
                         index < 7 ? $"Feature {index + 1} {(on ? "off" : "on")}" : $"Legacy tattoo {(on ? "off" : "on")}"),
                     help: live ? (index < 7 ? $"Feature {index + 1}" : "Legacy tattoo") : why,
@@ -322,7 +383,7 @@ public sealed partial class AppearancePane
 
     /// <summary>A colour off its palette: the tile shows the colour and
     /// opens the grid under itself.</summary>
-    private void ColorField(
+    private void ColorCell(
         in Crystarium.FormPairCell cell, ActorId actor, CustomizeState? state,
         CustomizeKey key, uint[]? palette, bool live, string? why)
     {
@@ -373,6 +434,47 @@ public sealed partial class AppearancePane
         InvalidateCustomize();
     }
 
+    private static CustomizeOption? OptionOf(CustomizeFeature feature, int value)
+    {
+        foreach (var option in feature.Options)
+            if (option.Value == value)
+                return option;
+        return null;
+    }
+
+    private static int IndexOf(IReadOnlyList<CustomizeOption> options, int value)
+    {
+        for (int i = 0; i < options.Count; i++)
+            if (options[i].Value == value)
+                return i;
+        return -1;
+    }
+
+    private static int Nearest(IReadOnlyList<CustomizeOption> options, int value)
+    {
+        int best = value;
+        int distance = int.MaxValue;
+        foreach (var option in options)
+        {
+            int d = Math.Abs(option.Value - value);
+            if (d < distance)
+            {
+                distance = d;
+                best = option.Value;
+            }
+        }
+        return best;
+    }
+
+    private static string TileName(CustomizeKey key) => key switch
+    {
+        CustomizeKey.Face => "Face",
+        CustomizeKey.Hairstyle => "Hair",
+        CustomizeKey.TailShape => "Tail",
+        CustomizeKey.FacePaint => "Face paint",
+        _ => key.ToString(),
+    };
+
     private List<Vector4> PaletteColors(uint[] palette)
     {
         if (_paletteColors.TryGetValue(palette, out var colors))
@@ -384,6 +486,8 @@ public sealed partial class AppearancePane
         return colors;
     }
 
+    /// <summary>The grid for a tile: the texture picker fed the feature's
+    /// icons. A value without an icon still lists, as a bare tile.</summary>
     private Crystarium.TexturePicker TilePicker(CustomizeMenu menu, CustomizeFeature feature)
     {
         var key = (menu.Clan, menu.Gender, feature.Key);
@@ -396,19 +500,20 @@ public sealed partial class AppearancePane
             icons[option.Value] = option.Icon;
             top = Math.Max(top, option.Value);
         }
-        _tileIcons[key] = icons;
         picker = new Crystarium.TexturePicker(
             $"appearance-{menu.Clan}-{menu.Gender}-{feature.Key}",
             (uint id, out nint handle, out Vector2 pixels) =>
             {
                 pixels = Vector2.Zero;
                 handle = 0;
-                if (!icons.TryGetValue(id, out uint icon) || icon == 0)
+                if (!icons.TryGetValue(id, out uint icon))
                     return TextureProbe.Missing;
+                if (icon == 0)
+                    return TextureProbe.Ready;
                 handle = ResolveIcon(icon);
                 if (handle != 0)
                     return TextureProbe.Ready;
-                return _missingIcons.Contains(icon) ? TextureProbe.Missing : TextureProbe.Pending;
+                return _missingIcons.Contains(icon) ? TextureProbe.Ready : TextureProbe.Pending;
             },
             top + 1);
         _tilePickers[key] = picker;
@@ -428,8 +533,8 @@ public sealed partial class AppearancePane
         }
     }
 
-    /// <summary>Runs the palette and the tile pickers of the current menu
-    /// and lands their picks on the actor captured when they opened.</summary>
+    /// <summary>Runs the palette and the tile pickers and lands their picks
+    /// on the actor captured when they opened.</summary>
     private void DrainCustomizePickers()
     {
         if (_palette.Draw() is { } index && _paletteActor is { } actor)
@@ -438,7 +543,7 @@ public sealed partial class AppearancePane
         {
             if (picker.Draw() is not { } id || _customizeActor is not { } owner)
                 continue;
-            Set(owner, key.Key, (int)id, $"Set {key.Key.ToString().ToLowerInvariant()}");
+            Set(owner, key.Key, (int)id, $"Set {TileName(key.Key).ToLowerInvariant()}");
         }
     }
 
