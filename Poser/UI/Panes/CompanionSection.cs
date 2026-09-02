@@ -25,6 +25,7 @@ public sealed class CompanionSection
     private readonly CompanionCatalog _catalog;
     private readonly IActorSpawnService _spawn;
     private readonly IEntityBindings _bindings;
+    private readonly Game.Journal.ActorValueSession _values;
 
     private readonly Crystarium.SearchPicker<CompanionEntry> _picker =
         new("companion");
@@ -74,8 +75,10 @@ public sealed class CompanionSection
         CompanionCatalog catalog,
         IActorSpawnService spawn,
         IEntityBindings bindings,
-        ITextureProvider textures)
+        ITextureProvider textures,
+        Game.Journal.ActorValueSession values)
     {
+        _values = values;
         _catalog = catalog;
         _spawn = spawn;
         _bindings = bindings;
@@ -134,7 +137,7 @@ public sealed class CompanionSection
         // One call both attaches and swaps: the backend empties the slot
         // before it fills it. A failure is the service's log line — the menu
         // item that opens this surface is gated on the slot existing.
-        _spawn.SetCompanion(
+        _values.SetCompanion(
             owner,
             new CompanionAttachment(chosen.Item.Kind, chosen.Item.Id));
     }

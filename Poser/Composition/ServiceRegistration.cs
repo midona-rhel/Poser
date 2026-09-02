@@ -208,6 +208,15 @@ internal static class ServiceRegistration
         services.AddSingleton<Game.Journal.OverlaySession>();
         services.AddSingleton<Game.Journal.LightSession>();
         services.AddSingleton<Game.Journal.CameraSession>();
+        services.AddSingleton<Game.Journal.EnvironmentSession>();
+        services.AddSingleton<Game.Journal.ActorValueSession>();
+        services.AddSingleton(sp => new Game.Journal.EntitySessions(
+            sp.GetRequiredService<Game.Journal.ActorValueSession>(),
+            sp.GetRequiredService<Game.Journal.LightSession>(),
+            sp.GetRequiredService<Game.Journal.CameraSession>(),
+            sp.GetRequiredService<Game.Journal.PropSession>(),
+            sp.GetRequiredService<Game.Journal.WorldObjectSession>(),
+            sp.GetRequiredService<Game.Journal.OverlaySession>()));
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();

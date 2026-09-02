@@ -36,6 +36,7 @@ public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
+    private readonly Game.Journal.EntitySessions _sessions;
     private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawns;
 
@@ -49,8 +50,10 @@ public sealed class SelectionSection
         SceneSession scene,
         IEntityBindings bindings,
         ISceneLifecycleHistory lifecycle,
-        IActorSpawnService spawns)
+        IActorSpawnService spawns,
+        Game.Journal.EntitySessions sessions)
     {
+        _sessions = sessions;
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
@@ -163,13 +166,13 @@ public sealed class SelectionSection
     private void SetVisible(ResolvedGroup group, bool visible)
     {
         foreach (var actor in group.Actors)
-            _spawns.SetVisibility(actor, visible);
+            _sessions.Actors.SetVisibility(actor, visible);
         foreach (var prop in group.Props)
-            prop.Visible = visible;
+            _sessions.Props.SetVisible(prop, visible);
         foreach (var light in group.Lights)
-            light.IsOn = visible;
+            _sessions.Lights.SetIsOn(light, visible);
         foreach (var overlay in group.Overlays)
-            overlay.Visible = visible;
+            _sessions.Overlays.SetVisible(overlay, visible);
     }
 
     private void Remove(ResolvedGroup group)

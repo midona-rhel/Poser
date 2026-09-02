@@ -115,7 +115,7 @@ public partial class MainWindow
         {
             () => _actorManager.SetGPoseTarget(actor),
             () => _cameraPane.CenterOnActor(actorId),
-            () => _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor)),
+            () => _sessions.Actors.SetVisibility(actor, !_spawnService.IsVisible(actor)),
             () =>
             {
                 if (_animation.AnyPlaying(actorId))
@@ -590,7 +590,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => node.Visible = !node.Visible,
+            () => _sessions.Overlays.SetVisible(node, !node.Visible),
             () => OpenEntityRename(
                 "Rename overlay", node.Name, next => node.Name = next),
             () => _overlayPane.Duplicate(node),
@@ -736,7 +736,7 @@ public partial class MainWindow
         };
         var actions = new List<Action?>
         {
-            () => light.IsOn = !light.IsOn,
+            () => _sessions.Lights.SetIsOn(light, !light.IsOn),
             () => OpenEntityRename(
                 "Rename light", light.Name, next => light.Name = next),
             () => _lifecycle.CloneLight(light),
@@ -814,7 +814,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => prop.Visible = !prop.Visible,
+            () => _sessions.Props.SetVisible(prop, !prop.Visible),
             () => OpenEntityRename(
                 "Rename object", prop.Name, next => prop.Name = next),
             () =>
@@ -901,7 +901,7 @@ public partial class MainWindow
                     }
                 }
             },
-            () => _cameraValues.SetLocked(camera, !camera.IsLocked),
+            () => _sessions.Cameras.SetLocked(camera, !camera.IsLocked),
             () => RecenterCameraOnTrackedActor(cameraId),
             () => OpenEntityRename(
                 "Rename camera", camera.Name, next => camera.Name = next),
@@ -984,7 +984,7 @@ public partial class MainWindow
         };
         var actions = new Action?[]
         {
-            () => worldObject.Visible = !worldObject.Visible,
+            () => _sessions.WorldObjects.SetVisible(worldObject, !worldObject.Visible),
             () => OpenEntityRename(
                 "Rename object", worldObject.Name,
                 next => worldObject.Name = next),

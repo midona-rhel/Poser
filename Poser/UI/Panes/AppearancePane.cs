@@ -38,6 +38,7 @@ public sealed class AppearancePane
     /// <summary>Stores action results for the notification channel.</summary>
     private readonly UserNotices _notices;
     private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
+    private readonly Game.Journal.ActorValueSession _values;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -118,8 +119,10 @@ public sealed class AppearancePane
         ITextureProvider textures,
         Config.ConfigurationService config,
         Game.Integration.InvisibleSkinService invisibleSkin,
-        UserNotices notices)
+        UserNotices notices,
+        Game.Journal.ActorValueSession values)
     {
+        _values = values;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -324,7 +327,7 @@ public sealed class AppearancePane
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
         Crystarium.Button("Reset",
-            () => ReportModel(_model.Reset(id), "Reset model"),
+            () => ReportModel(_values.ResetModelId(id), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
             variant: ButtonVariant.Disruptive,
@@ -354,7 +357,7 @@ public sealed class AppearancePane
                 out var next)
             && next >= 0)
         {
-            ReportModel(_model.Apply(id, next), "Model id");
+            ReportModel(_values.ApplyModelId(id, next), "Model id");
             return;
         }
         _notices.Refused("Model id must be a whole number.");
@@ -406,7 +409,7 @@ public sealed class AppearancePane
             || _modelPickerActor is not { } target)
             return;
         ReportModel(
-            _model.Apply(target, pick.Item.ModelCharaId), pick.Item.Name);
+            _values.ApplyModelId(target, pick.Item.ModelCharaId), pick.Item.Name);
     }
 
     private PickerOptions<ModelCatalogEntry> ModelPickerOptions() => new()
@@ -514,8 +517,8 @@ public sealed class AppearancePane
     {
         var glamourer = _integration.Glamourer;
         form.Slider("Opacity", owned.Opacity ?? reading.Opacity, 0f, 1f,
-            value => Report(_presentation.SetOpacity(actor, value), "Opacity"),
-            help: "Fade the whole actor");
+            value => Report(_values.SetOpacity(actor, value), "Opacity"),
+            help: "Fade the whole actor", onBegin: _values.Seal);
 
         form.Actions("Appearance", actions =>
         {
@@ -533,7 +536,7 @@ public sealed class AppearancePane
                 () => ReportExternal(_integration.Redraw(actor), "Redraw"),
                 variant: ButtonVariant.Disruptive);
             actions.Button("Reset",
-                () => Report(_presentation.ResetActor(actor), "Reset appearance"),
+                () => Report(_values.ResetPresentation(actor), "Reset appearance"),
                 variant: ButtonVariant.Disruptive);
             bool human = _invisibleSkin.IsHuman(actor);
             actions.Button("Clothing only",
@@ -562,7 +565,7 @@ public sealed class AppearancePane
                 $"appearance-tint-{what}",
                 TintFor(owned, reading, model) ?? Vector4.One,
                 value => Report(
-                    _presentation.SetTint(actor, model, value), what));
+                    _values.SetTint(actor, model, value), what));
         }
 
         form.Cells(cells =>
@@ -585,7 +588,7 @@ public sealed class AppearancePane
         form.PairRows();
         form.Switch("Override", owned.Wetness != null,
             value => Report(
-                _presentation.SetWetnessEnabled(actor, value), "Wetness override"),
+                _values.SetWetnessEnabled(actor, value), "Wetness override"),
             help: "Hold wetness against weather and water");
 
         // Read the latest override after the switch callback.
@@ -594,20 +597,20 @@ public sealed class AppearancePane
         WetnessState wet = refreshed.Wetness ?? reading.Wetness;
 
         form.Slider("Weather", wet.Weather, 0f, 1f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Weather = value }), "Weather"),
             help: "Rain wetness",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Swimming", wet.Swimming, 0f, 1f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Swimming = value }), "Swimming"),
             help: "Water soaking",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
         form.Slider("Depth", wet.Depth, 0f, 3f,
-            value => Report(_presentation.SetWetness(
+            value => Report(_values.SetWetness(
                 actor, CurrentWetness(actor) with { Depth = value }), "Depth"),
             help: "How far up the body it reaches",
-            disabled: !wetOn);
+            disabled: !wetOn, onBegin: _values.Seal);
     }
 
     private void ExternalAppearanceRows(

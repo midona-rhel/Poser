@@ -289,7 +289,7 @@ public partial class MainWindow
         _vm.OnActorVisibility = row =>
         {
             if (ResolveActorRow(row) is { } actor)
-                _spawnService.SetVisibility(actor, !_spawnService.IsVisible(actor));
+                _sessions.Actors.SetVisibility(actor, !_spawnService.IsVisible(actor));
         };
         _vm.OnActorPause = row =>
         {
@@ -329,7 +329,7 @@ public partial class MainWindow
                 return;
             if (!handle.IsVfx)
                 return;
-            handle.VfxPaused = !handle.VfxPaused;
+            _sessions.WorldObjects.SetVfxPaused(handle, !handle.VfxPaused);
             row.Paused = handle.VfxPaused;
         };
         // The scenery row's sun/moon seat: the same night state the
@@ -343,7 +343,7 @@ public partial class MainWindow
             if (!night.Success ||
                 night.Value is not { IsValid: true, IsVfx: false } handle)
                 return;
-            handle.NightState = !handle.NightState;
+            _sessions.WorldObjects.SetNightState(handle, !handle.NightState);
             row.Night = handle.NightState;
         };
         _vm.OnLightVisibility = row =>
@@ -367,7 +367,7 @@ public partial class MainWindow
                 var prop = _bindings.Resolve(propId);
                 if (!prop.Success || prop.Value is not { IsValid: true } handle)
                     return;
-                handle.Visible = !handle.Visible;
+                _sessions.Props.SetVisible(handle, !handle.Visible);
                 row.LightOn = handle.Visible;
                 return;
             }
@@ -380,7 +380,7 @@ public partial class MainWindow
                 if (!overlay.Success ||
                     overlay.Value is not { IsValid: true } node)
                     return;
-                node.Visible = !node.Visible;
+                _sessions.Overlays.SetVisible(node, !node.Visible);
                 row.LightOn = node.Visible;
                 return;
             }
@@ -394,7 +394,7 @@ public partial class MainWindow
                 if (!worldObject.Success ||
                     worldObject.Value is not { IsValid: true } claim)
                     return;
-                claim.Visible = !claim.Visible;
+                _sessions.WorldObjects.SetVisible(claim, !claim.Visible);
                 row.LightOn = claim.Visible;
                 return;
             }
@@ -404,7 +404,7 @@ public partial class MainWindow
             var resolved = _bindings.Resolve(lightId);
             if (!resolved.Success || resolved.Value is not { IsValid: true } light)
                 return;
-            light.IsOn = !light.IsOn;
+            _sessions.Lights.SetIsOn(light, !light.IsOn);
             row.LightOn = light.IsOn;
         };
         // The camera's inline verb, reachable without selecting it first:
@@ -448,7 +448,7 @@ public partial class MainWindow
                 resolved.Value is not { IsValid: true } camera ||
                 _bindings.GetCameraId(camera) != rowCameraId)
                 return;
-            _cameraValues.SetLocked(camera, !camera.IsLocked);
+            _sessions.Cameras.SetLocked(camera, !camera.IsLocked);
             row.CameraLocked = camera.IsLocked;
         };
         _vm.OnOverlayVisibility = row =>

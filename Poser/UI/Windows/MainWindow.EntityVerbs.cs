@@ -63,9 +63,9 @@ public partial class MainWindow
                         { Success: true, Value: { IsValid: true } handle })
                     return;
                 if (handle.IsVfx)
-                    handle.VfxPaused = !playing;
+                    _sessions.WorldObjects.SetVfxPaused(handle, !playing);
                 else if (!handle.Spawned)
-                    handle.AnimationPaused = !playing;
+                    _sessions.WorldObjects.SetAnimationPaused(handle, !playing);
                 break;
         }
     }
@@ -85,7 +85,7 @@ public partial class MainWindow
         if (id is { Kind: SceneEntityKind.WorldObject, WorldObject: { } objectId }
             && _bindings.Resolve(objectId) is
                 { Success: true, Value: { IsValid: true, IsVfx: false } handle })
-            handle.NightState = night;
+            _sessions.WorldObjects.SetNightState(handle, night);
     }
 
     private bool? IsEntityVisible(SelectionId id)
@@ -118,23 +118,23 @@ public partial class MainWindow
         {
             case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
                 if (_bindings.Resolve(actorId) is { Success: true, Value: { } actor })
-                    _spawnService.SetVisibility(actor, visible);
+                    _sessions.Actors.SetVisibility(actor, visible);
                 break;
             case { Kind: SceneEntityKind.Light, Light: { } lightId }:
                 if (_bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light })
-                    light.IsOn = visible;
+                    _sessions.Lights.SetIsOn(light, visible);
                 break;
             case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
                 if (_bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop })
-                    prop.Visible = visible;
+                    _sessions.Props.SetVisible(prop, visible);
                 break;
             case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
                 if (_bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed })
-                    borrowed.Visible = visible;
+                    _sessions.WorldObjects.SetVisible(borrowed, visible);
                 break;
             case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
                 if (_bindings.Resolve(overlayId) is { Success: true, Value: { } node })
-                    node.Visible = visible;
+                    _sessions.Overlays.SetVisible(node, visible);
                 break;
         }
     }
@@ -148,28 +148,28 @@ public partial class MainWindow
                 case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
                     if (_bindings.Resolve(actorId) is
                             { Success: true, Value: { } actor })
-                        _spawnService.SetVisibility(actor, visible);
+                        _sessions.Actors.SetVisibility(actor, visible);
                     break;
                 case { Kind: SceneEntityKind.Light, Light: { } lightId }:
                     if (_bindings.Resolve(lightId) is
                             { Success: true, Value: { IsValid: true } light })
-                        light.IsOn = visible;
+                        _sessions.Lights.SetIsOn(light, visible);
                     break;
                 case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
                     if (_bindings.Resolve(propId) is
                             { Success: true, Value: { IsValid: true } prop })
-                        prop.Visible = visible;
+                        _sessions.Props.SetVisible(prop, visible);
                     break;
                 case { Kind: SceneEntityKind.WorldObject,
                         WorldObject: { } borrowedId }:
                     if (_bindings.Resolve(borrowedId) is
                             { Success: true, Value: { IsValid: true } borrowed })
-                        borrowed.Visible = visible;
+                        _sessions.WorldObjects.SetVisible(borrowed, visible);
                     break;
                 case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
                     if (_bindings.Resolve(overlayId) is
                             { Success: true, Value: { } node })
-                        node.Visible = visible;
+                        _sessions.Overlays.SetVisible(node, visible);
                     break;
             }
         }
