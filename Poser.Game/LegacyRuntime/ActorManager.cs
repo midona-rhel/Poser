@@ -287,10 +287,10 @@ public class ActorManager : IActorManager
             {
                 var reference = _objectTable.CreateObjectReference(address);
                 if (reference is null || !reference.IsValid())
-                    continue;
+                    return;
                 var draw = ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address)->DrawObject;
                 if (draw == null)
-                    continue;
+                    return;
                 draw->Object.Position = seat.Position;
                 draw->Object.Rotation = seat.Rotation;
                 draw->Object.Scale = seat.Scale;
