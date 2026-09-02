@@ -295,6 +295,7 @@ public static partial class Crystarium
                     region =>
                     {
                         for (int i = 0; i < items.Count; i++)
+                        {
                             if (region.ListRow(
                                     $"{id}-row-{i}",
                                     items[i],
@@ -306,6 +307,11 @@ public static partial class Crystarium
                                     },
                                     labelSize: labelSize))
                                 clicked = i;
+                            // The highlighted entry is the one the wheel
+                            // moves: the list scrolls to keep it in view.
+                            if (i == selected)
+                                ImGui.SetScrollHereY(0.5f);
+                        }
                     },
                     gutterWidth: gutter);
                 Interactive.EndOwner(owner);
