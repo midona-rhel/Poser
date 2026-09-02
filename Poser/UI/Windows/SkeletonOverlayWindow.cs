@@ -286,8 +286,8 @@ public class SkeletonOverlayWindow : Window, IDisposable
             return false;
         try
         {
-            _dotPlain ??= BakeDot(ringWidth: DotSpriteRadius / 7f);
-            _dotSelected ??= BakeDot(ringWidth: DotSpriteRadius * 2.5f / 8f);
+            _dotPlain ??= BakeDot(ringWidth: DotSpriteRadius / 4f);
+            _dotSelected ??= BakeDot(ringWidth: DotSpriteRadius * 3f / 8f);
             return true;
         }
         catch (Exception ex)

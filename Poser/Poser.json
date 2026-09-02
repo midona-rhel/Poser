@@ -20,5 +20,5 @@
   "CanUnloadAsync": false,
   "LoadPriority": 0,
   "AcceptsFeedback": true,
-  "Changelog": "Third beta. Undo for everything the UI changes, restored from a snapshot when the actor changed underneath. Equipment and Appearance views through Glamourer. A cheaper bone overlay. Report an issue from the burger menu: an anonymized log of your last actions, saved to a file, never sent. Full notes in the repository's docs/release/CHANGELOG.md."
+  "Changelog": "Third beta. Spawn any map model or effect by name from a catalog of a hundred thousand, dye and pause scenery, switch it between day and night, and move animated scenery with its motion riding along. Take world actors and effects by reference and give them back. Duplicate anything, with or without its pose. Groups nest four deep with hide, pause and night gates. IK gets FABRIK chains, a swivel, ropes and targets that hold a world point or follow a bone. Undo for everything the UI changes. Equipment and Appearance views through Glamourer. Settings with search and live preview, one burger menu, a cheaper bone overlay. Report an issue from the burger menu: an anonymized log of your last actions saved to a file, never sent. Full notes in the repository's docs/release/CHANGELOG.md."
 }
