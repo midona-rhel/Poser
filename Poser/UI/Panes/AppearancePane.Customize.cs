@@ -245,7 +245,7 @@ public sealed partial class AppearancePane
         CustomizeState? state, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
-        float tile = theme.Controls.FormRowHeight * 1.2f;
+        float tile = theme.Controls.FormRowHeight * 1.56f;
         float square = theme.Controls.WorkspaceHeight;
         float gap = theme.Page.ActionGap;
         form.Custom("Look", tile + gap + square, row =>
@@ -350,12 +350,14 @@ public sealed partial class AppearancePane
         CustomizeState? state, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
-        float big = theme.Controls.FormRowHeight * 1.5f;
+        float big = theme.Controls.FormRowHeight * 2f;
         form.Custom("Features", big, row =>
         {
             float s = row.Scale;
             float gap = theme.Spacing.Three * s;
             float side = MathF.Min(big * s, (row.ControlWidth - gap * 7f) / 8f);
+            // The eight tiles sit centred in the control column, not flush left.
+            float left = row.ControlOrigin.X + (row.ControlWidth - (side * 8f + gap * 7f)) * 0.5f;
             byte face = (byte)(state?.Value(CustomizeKey.Face) ?? 0);
             uint[]? icons = null;
             if (menu is not null && !menu.FaceFeatureIcons.TryGetValue(face, out icons))
@@ -373,7 +375,7 @@ public sealed partial class AppearancePane
                 nint texture = i < 7
                     ? (i < icons.Length ? ResolveIcon(icons[i]) : 0)
                     : LegacyTattooHandle();
-                ImGui.SetCursorScreenPos(new Vector2(seat.X + i * (side + gap), seat.Y));
+                ImGui.SetCursorScreenPos(new Vector2(left + i * (side + gap), seat.Y));
                 int index = i;
                 Crystarium.ImageTile(
                     $"appearance-feature-{i}",
@@ -522,7 +524,9 @@ public sealed partial class AppearancePane
                     return TextureProbe.Ready;
                 return _missingIcons.Contains(icon) ? TextureProbe.Ready : TextureProbe.Pending;
             },
-            top + 1);
+            top + 1,
+            columns: 5,
+            tileSize: 72f);
         _tilePickers[key] = picker;
         return picker;
     }
