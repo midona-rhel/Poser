@@ -11,10 +11,10 @@ namespace Poser.UI;
 
 /// <summary>
 /// The Equipment view: what the actor wears, through Glamourer. A card
-/// per slot — the icon two rows tall beside the item picker, which IS the
-/// value, with the remove and prop verbs under it — then the two dyes as
-/// colour-filled rows under one label; the facewear; the visibility
-/// switches; the raw model ids, closed; and the outfit verbs last. Every
+/// per slot — the icon two rows tall opens the item picker; the name
+/// reads beside it and the two dyes fill the line under the name as
+/// colour boxes — a Prop verb under each weapon; the facewear; the
+/// visibility switches; the outfit verbs; the raw model ids, closed. Every
 /// change is one journal step through
 /// <see cref="Game.Journal.WardrobeSession"/>. Without Glamourer
 /// everything disables in place and says why.
@@ -48,7 +48,6 @@ public sealed partial class AppearancePane
 
     private bool _openGear = true;
     private bool _openModelIds;
-    private bool _openOutfit = true;
 
     private static readonly TimeSpan WardrobeInterval = TimeSpan.FromSeconds(1);
     private ActorId? _wardrobeActor;
@@ -68,6 +67,10 @@ public sealed partial class AppearancePane
     private EquipSlot _itemMemoSlot;
     private IReadOnlyList<WardrobeItem> _itemMemo = Array.Empty<WardrobeItem>();
     private List<PropRow>? _propRows;
+    private List<DyeEntry>? _dyeRows;
+    private List<FacewearEntry>? _facewearRows;
+    private static readonly DyeEntry NoDye = new(0, "None", 0);
+    private static readonly FacewearEntry NoFacewear = new(0, "None", 0);
 
     private static readonly Func<WardrobeItem, string> WardrobeItemName = static item => item.Name;
     private static readonly Func<WardrobeItem, string> WardrobeItemKey =
@@ -112,8 +115,11 @@ public sealed partial class AppearancePane
                         form.Divider();
                     ItemRow(form, actor, LeftTrack[i], state, ready, blocked);
                     ItemRow(form, actor, RightTrack[i], state, ready, blocked);
-                    DyeRow(form, actor, LeftTrack[i], state, ready, blocked);
-                    DyeRow(form, actor, RightTrack[i], state, ready, blocked);
+                    if (i == 0)
+                    {
+                        PropVerbRow(form, actor, LeftTrack[i], ready, blocked);
+                        PropVerbRow(form, actor, RightTrack[i], ready, blocked);
+                    }
                 }
             }
             else
@@ -123,7 +129,8 @@ public sealed partial class AppearancePane
                     if (i > 0)
                         form.Divider();
                     ItemRow(form, actor, Stacked[i], state, ready, blocked);
-                    DyeRow(form, actor, Stacked[i], state, ready, blocked);
+                    if (i < 2)
+                        PropVerbRow(form, actor, Stacked[i], ready, blocked);
                 }
             }
             form.Divider();
@@ -140,10 +147,8 @@ public sealed partial class AppearancePane
                 new Crystarium.CheckItem("Weapon", state?.WeaponVisible ?? true,
                     on => Switch(actor, MetaSwitch.WeaponVisible, on),
                     ready ? "Show the weapons" : blocked, !ready));
-        }, divider: false);
-
-        page.Section("Outfit", _openOutfit, next => _openOutfit = next, form =>
-            form.Actions(string.Empty, actions =>
+            // The outfits are a labelled row of verbs, not a section.
+            form.Actions("Outfit", actions =>
             {
                 actions.Button("Remove all",
                     () => Outfit(actor, "Remove all", static _ => new WardrobeSlot(0, 0, 0)),
@@ -157,7 +162,8 @@ public sealed partial class AppearancePane
                 actions.Button("Invisible",
                     () => Outfit(actor, "Wear invisible clothes", InvisibleFor),
                     disabled: !ready, help: ready ? "Clothes that do not draw" : blocked);
-            }, fullWidth: true));
+            }, help: "Dress every slot at once");
+        }, divider: false);
 
         page.Section("Model ids", _openModelIds, next => _openModelIds = next, form =>
         {
@@ -168,9 +174,12 @@ public sealed partial class AppearancePane
 
     // ── rows ────────────────────────────────────────────────────────────
 
-    /// <summary>The slot's card head: the icon two rows tall opens the
+    /// <summary>The slot's card: the icon two rows tall opens the item
     /// picker; beside it the item's name reads on the first line and the
-    /// remove and prop verbs sit on the second.</summary>
+    /// two dyes fill the second as colour boxes that open the dye picker.
+    /// Nothing removes or clears here — "None" in the dye list clears a
+    /// dye, and clothes come off through Remove all — so the card holds
+    /// no verbs at all.</summary>
     private void ItemRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot,
         WardrobeState? state, bool ready, string? blocked)
@@ -200,7 +209,6 @@ public sealed partial class AppearancePane
 
             float x = origin.X + side + gap;
             float width = MathF.Max(1f, row.ControlWidth - side - gap);
-            float square = theme.Controls.WorkspaceHeight;
             var nameStyle = new TextStyle
             {
                 Size = theme.Typography.LabelSize,
@@ -214,73 +222,47 @@ public sealed partial class AppearancePane
                     worn is { } w2 ? WornName(w2, item) : "—", nameStyle, width),
                 nameStyle);
 
-            float second = origin.Y + half + (half - square * s) * 0.5f;
             bool empty = worn is not { } w3 || WardrobeIds.IsNothing(w3.ItemId);
-            ImGui.SetCursorScreenPos(new Vector2(x, second));
-            Crystarium.IconButton(TablerIcon.X,
-                () => SetItem(actor, slot, 0, 0, 0, $"Remove {SlotName(slot).ToLowerInvariant()}"),
-                ControlStyle.Square(square), !ready || empty,
-                ready ? "Remove" : blocked,
-                id: $"wardrobe-{slot}-clear");
-            if (slot is EquipSlot.MainHand or EquipSlot.OffHand)
+            bool dyeable = ready && !empty;
+            string? why = !ready ? blocked : empty ? "Nothing is worn here" : null;
+            float square = theme.Controls.WorkspaceHeight;
+            float second = origin.Y + half + (half - square * s) * 0.5f;
+            float dyeW = MathF.Max(1f, (width - gap) * 0.5f);
+            for (int which = 0; which < 2; which++)
             {
-                ImGui.SetCursorScreenPos(new Vector2(x + square * s + gap, second));
-                Crystarium.IconButton(TablerIcon.Wand,
-                    () => OpenPropPicker(actor, slot),
-                    ControlStyle.Square(square), !ready,
-                    ready ? "Wear a prop" : blocked,
-                    id: $"wardrobe-{slot}-prop");
+                byte dyeId = worn is { } d ? (which == 0 ? d.Dye1 : d.Dye2) : (byte)0;
+                var dye = dyeId != 0 ? _wardrobe.Dye(dyeId) : null;
+                int index = which;
+                ImGui.SetCursorScreenPos(new Vector2(x + which * (dyeW + gap), second));
+                Crystarium.ColorTile(
+                    $"wardrobe-{slot}-dye{which}",
+                    dye is { } paint ? DyeColor(paint.Color) : null,
+                    dyeW / s,
+                    square,
+                    () => OpenDyePicker(actor, slot, index),
+                    label: dye is null ? "None" : null,
+                    help: dyeable ? (dye?.Name ?? (which == 0 ? "Choose the first dye" : "Choose the second dye")) : why,
+                    disabled: !dyeable);
             }
         }, help: SlotHelp(slot));
     }
 
-    /// <summary>The two dyes on one row, each half a box filled with its
-    /// colour — the colour is the value — and the clear beside it. Neither
-    /// reference gates a dye by the item and the sheet's dye count lies
-    /// for some items, so nothing is gated but an empty slot: the game
-    /// ignores a dye on a channel the item lacks.</summary>
-    private void DyeRow(
+    /// <summary>Under a weapon's card, the one verb: a prop in its place.</summary>
+    private void PropVerbRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot,
-        WardrobeState? state, bool ready, string? blocked)
+        bool ready, string? blocked)
     {
         var theme = Crystarium.ActiveTheme;
-        form.Custom("Dye", theme.Controls.FormRowHeight, row =>
+        form.Custom(string.Empty, theme.Controls.FormRowHeight, row =>
         {
-            float s = row.Scale;
-            float gap = theme.Page.ActionGap * s;
-            float square = theme.Controls.WorkspaceHeight;
-            WardrobeSlot? worn = state?.Slot(slot);
-            bool empty = worn is not { } w || WardrobeIds.IsNothing(w.ItemId);
-            bool enabled = ready && !empty;
-            string? why = !ready ? blocked : empty ? "Nothing is worn here" : null;
-
-            var seat = row.CenterControl(square);
-            float half = MathF.Max(1f, (row.ControlWidth - gap) * 0.5f);
-            float fillW = MathF.Max(1f, half - square * s - gap);
-            for (int which = 0; which < 2; which++)
-            {
-                float x = seat.X + which * (half + gap);
-                byte dyeId = worn is { } d ? (which == 0 ? d.Dye1 : d.Dye2) : (byte)0;
-                var dye = dyeId != 0 ? _wardrobe.Dye(dyeId) : null;
-                int index = which;
-                ImGui.SetCursorScreenPos(new Vector2(x, seat.Y));
-                Crystarium.ColorTile(
-                    $"wardrobe-{slot}-dye{which}",
-                    dye is { } paint ? DyeColor(paint.Color) : null,
-                    fillW / s,
-                    square,
-                    () => OpenDyePicker(actor, slot, index),
-                    label: dye?.Name ?? "No dye",
-                    help: enabled ? (which == 0 ? "Choose the first dye" : "Choose the second dye") : why,
-                    disabled: !enabled);
-                ImGui.SetCursorScreenPos(new Vector2(x + fillW + gap, seat.Y));
-                Crystarium.IconButton(TablerIcon.X,
-                    () => SetDye(actor, slot, index, 0),
-                    ControlStyle.Square(square), !enabled || dyeId == 0,
-                    enabled ? "Clear the dye" : why,
-                    id: $"wardrobe-{slot}-dye{which}-clear");
-            }
-        }, help: "The item's two dyes");
+            ImGui.SetCursorScreenPos(row.CenterControl(theme.Controls.WorkspaceHeight));
+            Crystarium.Button("Prop",
+                () => OpenPropPicker(actor, slot),
+                style: ControlStyle.Workspace with { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
+                disabled: !ready,
+                help: ready ? "Wear a prop instead" : blocked,
+                id: $"wardrobe-{slot}-prop");
+        });
     }
 
     private void FacewearRow(
@@ -310,7 +292,6 @@ public sealed partial class AppearancePane
 
             float x = origin.X + side + gap;
             float width = MathF.Max(1f, row.ControlWidth - side - gap);
-            float square = theme.Controls.WorkspaceHeight;
             var nameStyle = new TextStyle
             {
                 Size = theme.Typography.LabelSize,
@@ -323,12 +304,6 @@ public sealed partial class AppearancePane
                 Crystarium.TruncateText(
                     state is null ? "—" : entry?.Name ?? "None", nameStyle, width),
                 nameStyle);
-            ImGui.SetCursorScreenPos(new Vector2(x, origin.Y + half + (half - square * s) * 0.5f));
-            Crystarium.IconButton(TablerIcon.X,
-                () => SetFacewear(actor, 0, "Remove facewear"),
-                ControlStyle.Square(square), !ready || entry is null,
-                ready ? "Remove" : blocked,
-                id: "wardrobe-facewear-clear");
         }, help: "Glasses and other facewear");
     }
 
@@ -596,12 +571,17 @@ public sealed partial class AppearancePane
         _pickerDye = which;
         var worn = ReadWardrobe(actor)?.Slot(slot);
         byte current = worn is { } w ? (which == 0 ? w.Dye1 : w.Dye2) : (byte)0;
+        if (_dyeRows is null)
+        {
+            _dyeRows = new List<DyeEntry> { NoDye };
+            _dyeRows.AddRange(_wardrobe.Dyes);
+        }
         _dyePicker.Open(
             which == 0 ? "Dye 1" : "Dye 2",
-            _wardrobe.Dyes,
+            _dyeRows,
             DyeName,
             DyeKey,
-            current == 0 ? null : current.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            current.ToString(System.Globalization.CultureInfo.InvariantCulture),
             null,
             new PickerOptions<DyeEntry> { RowFill = _dyeRowFill });
     }
@@ -610,14 +590,19 @@ public sealed partial class AppearancePane
     {
         _wardrobePickerActor = actor;
         ulong worn = ReadWardrobe(actor)?.Facewear ?? 0;
+        if (_facewearRows is null)
+        {
+            _facewearRows = new List<FacewearEntry> { NoFacewear };
+            _facewearRows.AddRange(_wardrobe.Facewear);
+        }
         _facewearPicker.Open(
             "Facewear",
-            _wardrobe.Facewear,
+            _facewearRows,
             FacewearName,
             FacewearKey,
             FacewearById(worn) is { } known
                 ? known.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : null,
+                : "0",
             null,
             new PickerOptions<FacewearEntry> { Texture = _facewearTexture });
     }
@@ -673,7 +658,8 @@ public sealed partial class AppearancePane
         if (_dyePicker.Draw() is { } dye)
             SetDye(actor, _pickerSlot, _pickerDye, dye.Item.Id);
         if (_facewearPicker.Draw() is { } facewear)
-            SetFacewear(actor, facewear.Item.Id, $"Wear {facewear.Item.Name}");
+            SetFacewear(actor, facewear.Item.Id,
+                facewear.Item.Id == 0 ? "Remove facewear" : $"Wear {facewear.Item.Name}");
         if (_propPicker.Draw() is { } prop)
         {
             var model = prop.Item.Model;

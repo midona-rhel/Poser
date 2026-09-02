@@ -149,7 +149,7 @@ public sealed partial class AppearancePane
         _names = names;
         _wardrobeItemTexture = item => ResolveIcon(item.Icon);
         _wardrobeItemBadge = item => "#" + item.Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        _dyeRowFill = dye => DyeColor(dye.Color);
+        _dyeRowFill = dye => dye.Id == 0 ? null : DyeColor(dye.Color);
         _facewearTexture = entry => ResolveIcon(entry.Icon);
         _values = values;
         _disruptive = disruptive;
