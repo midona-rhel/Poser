@@ -629,6 +629,26 @@ public class MainWindow : Window
                 && _groups.Find(lockTag.Id) is { } lockGroup)
                 _groups.SetLocked(lockTag.Id, !lockGroup.Locked);
         };
+        _vm.OnGroupVisibility = row =>
+        {
+            if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
+                SetGroupVisible(group, group.VisibleOverride switch
+                {
+                    null => false,
+                    false => true,
+                    _ => null,
+                });
+        };
+        _vm.OnGroupPause = row =>
+        {
+            if (row.Tag is GroupRowTag tag && _groups.Find(tag.Id) is { } group)
+                SetGroupPlaying(group, group.PlayingOverride switch
+                {
+                    null => false,
+                    false => true,
+                    _ => null,
+                });
+        };
         _vm.OnGizmoOperation = i => _editorState.TransformTool = (TransformTool)i;
         _vm.OnGizmoSpace = i => _editorState.TransformOrientation = (TransformOrientation)i;
         _vm.OnRotationPivot = i => _editorState.RotationPivot = (Core.RotationPivot)i;
@@ -1866,6 +1886,8 @@ public class MainWindow : Window
                 DropContainer = !group.Locked,
                 GroupActions = true,
                 GroupLocked = group.Locked,
+                GroupVisible = group.VisibleOverride,
+                GroupPlaying = group.PlayingOverride,
                 HasChildren = group.Members.Count > 0,
                 ExpandKey = key,
                 Expanded = expanded,
@@ -4074,7 +4096,7 @@ public class MainWindow : Window
                                     group.Members, name)),
                             help: "Save the group as a library entry");
                         actions.Button("Ungroup",
-                            () => _groups.Dissolve(group.Id),
+                            () => DissolveGroup(group.Id),
                             help: "Dissolve the group; nothing is destroyed");
                     }
                     else
@@ -4197,7 +4219,11 @@ public class MainWindow : Window
             && position == RowDropPosition.Into)
         {
             foreach (var id in moved)
+            {
+                LeaveGroupOverrides(id);
                 _groups.AddMember(intoGroup.Id, id);
+                JoinGroupOverrides(id);
+            }
             return;
         }
 
@@ -4210,7 +4236,9 @@ public class MainWindow : Window
                 index++;
             foreach (var id in moved)
             {
+                LeaveGroupOverrides(id);
                 _groups.AddMember(host.Id, id, index);
+                JoinGroupOverrides(id);
                 index = host.Members.IndexOf(id) + 1;
             }
             return;
@@ -4225,6 +4253,7 @@ public class MainWindow : Window
             bool after = position == RowDropPosition.After;
             foreach (var id in moved)
             {
+                LeaveGroupOverrides(id);
                 _groups.RemoveMember(id);
                 _groups.MoveRoot(RootSlot.For(id), anchor, after);
                 anchor = RootSlot.For(id);
@@ -4237,6 +4266,7 @@ public class MainWindow : Window
         // caret at the tree's tail marks exactly this.
         foreach (var id in moved)
         {
+            LeaveGroupOverrides(id);
             _groups.RemoveMember(id);
             _groups.MoveRootToEnd(RootSlot.For(id));
         }
@@ -5597,7 +5627,7 @@ public class MainWindow : Window
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(group.Members, name)),
             () => _groups.SetLocked(groupId, !group.Locked),
-            () => _groups.Dissolve(groupId),
+            () => DissolveGroup(groupId),
             null, // separator
             // The members go through each kind's own lifetime seam; the
             // emptied group dissolves through the scene prune.
@@ -5702,7 +5732,7 @@ public class MainWindow : Window
             items.Add(new ContextMenuItem("Ungroup", TablerIcon.X,
                 disabled: matched.Locked,
                 help: "Dissolve the group; nothing is destroyed"));
-            actions.Add(() => _groups.Dissolve(matched.Id));
+            actions.Add(() => DissolveGroup(matched.Id));
         }
         else
         {
@@ -5779,6 +5809,166 @@ public class MainWindow : Window
     /// <summary>One visibility for the whole selection — actors' draw,
     /// objects' and overlays' eyes, lights' on-state. Cameras have no
     /// visibility and skip.</summary>
+    // ── group overrides: the group's flag over every member, each member's
+    // own flag remembered and given back when the override clears ────────
+
+    /// <summary>Ungrouping gives every member its own flags back first.</summary>
+    private void DissolveGroup(Guid id)
+    {
+        if (_groups.Find(id) is { } group)
+        {
+            SetGroupVisible(group, null);
+            SetGroupPlaying(group, null);
+        }
+        _groups.Dissolve(id);
+    }
+
+    private void SetGroupVisible(global::Poser.Application.Scene.SceneGroup group, bool? visible)
+    {
+        if (visible is { } forced)
+        {
+            foreach (var member in group.Members)
+            {
+                if (!group.RememberedVisible.ContainsKey(member)
+                    && IsEntityVisible(member) is { } own)
+                    group.RememberedVisible[member] = own;
+                SetEntityVisible(member, forced);
+            }
+        }
+        else
+        {
+            foreach (var (member, own) in group.RememberedVisible)
+                SetEntityVisible(member, own);
+            group.RememberedVisible.Clear();
+        }
+        group.VisibleOverride = visible;
+        _groups.Touch();
+    }
+
+    private void SetGroupPlaying(global::Poser.Application.Scene.SceneGroup group, bool? playing)
+    {
+        if (playing is { } forced)
+        {
+            foreach (var member in group.Members)
+            {
+                if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                    continue;
+                if (!group.RememberedPlaying.ContainsKey(member))
+                    group.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
+                if (forced)
+                    _animation.Resume(actorId);
+                else
+                    _animation.Pause(actorId);
+            }
+        }
+        else
+        {
+            foreach (var (member, own) in group.RememberedPlaying)
+            {
+                if (member is not { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+                    continue;
+                if (own)
+                    _animation.Resume(actorId);
+                else
+                    _animation.Pause(actorId);
+            }
+            group.RememberedPlaying.Clear();
+        }
+        group.PlayingOverride = playing;
+        _groups.Touch();
+    }
+
+    /// <summary>A member joining a group under an override takes it and
+    /// remembers its own flag the same way the founding members did.</summary>
+    private void JoinGroupOverrides(SelectionId member)
+    {
+        if (_groups.GroupOf(member) is not { } group)
+            return;
+        if (group.VisibleOverride is { } visible)
+        {
+            if (IsEntityVisible(member) is { } own)
+                group.RememberedVisible[member] = own;
+            SetEntityVisible(member, visible);
+        }
+        if (group.PlayingOverride is { } playing
+            && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        {
+            group.RememberedPlaying[member] = _animation.AnyPlaying(actorId);
+            if (playing)
+                _animation.Resume(actorId);
+            else
+                _animation.Pause(actorId);
+        }
+    }
+
+    /// <summary>A member leaving a group gets its own flags back.</summary>
+    private void LeaveGroupOverrides(SelectionId member)
+    {
+        if (_groups.GroupOf(member) is not { } group)
+            return;
+        if (group.RememberedVisible.Remove(member, out var visible))
+            SetEntityVisible(member, visible);
+        if (group.RememberedPlaying.Remove(member, out var playing)
+            && member is { Kind: SceneEntityKind.Actor, Actor: { } actorId })
+        {
+            if (playing)
+                _animation.Resume(actorId);
+            else
+                _animation.Pause(actorId);
+        }
+    }
+
+    private bool? IsEntityVisible(SelectionId id)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                return _bindings.Resolve(actorId) is { Success: true, Value: { } actor }
+                    ? _spawnService.IsVisible(actor) : null;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                return _bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light }
+                    ? light.IsOn : null;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                return _bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop }
+                    ? prop.Visible : null;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
+                return _bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed }
+                    ? borrowed.Visible : null;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                return _bindings.Resolve(overlayId) is { Success: true, Value: { } node }
+                    ? node.Visible : null;
+            default:
+                return null;
+        }
+    }
+
+    private void SetEntityVisible(SelectionId id, bool visible)
+    {
+        switch (id)
+        {
+            case { Kind: SceneEntityKind.Actor, Actor: { } actorId }:
+                if (_bindings.Resolve(actorId) is { Success: true, Value: { } actor })
+                    _spawnService.SetVisibility(actor, visible);
+                break;
+            case { Kind: SceneEntityKind.Light, Light: { } lightId }:
+                if (_bindings.Resolve(lightId) is { Success: true, Value: { IsValid: true } light })
+                    light.IsOn = visible;
+                break;
+            case { Kind: SceneEntityKind.Prop, Prop: { } propId }:
+                if (_bindings.Resolve(propId) is { Success: true, Value: { IsValid: true } prop })
+                    prop.Visible = visible;
+                break;
+            case { Kind: SceneEntityKind.WorldObject, WorldObject: { } borrowedId }:
+                if (_bindings.Resolve(borrowedId) is { Success: true, Value: { IsValid: true } borrowed })
+                    borrowed.Visible = visible;
+                break;
+            case { Kind: SceneEntityKind.Overlay, Overlay: { } overlayId }:
+                if (_bindings.Resolve(overlayId) is { Success: true, Value: { } node })
+                    node.Visible = visible;
+                break;
+        }
+    }
+
     private void SetSelectionVisible(bool visible)
     {
         foreach (var id in _selection.Selected)

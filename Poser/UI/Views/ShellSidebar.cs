@@ -253,7 +253,7 @@ public sealed class ShellSidebar
                     row.ActorActions ? 4
                         : row.CameraActions ? 4
                         : row.LightActions ? (row.PauseAction ? 3 : 2)
-                        : row.GroupActions ? 1
+                        : row.GroupActions ? 3
                         : row.OverlayBones != null ? 1 : 0,
                     0f,
                     rowHeight));
@@ -392,6 +392,8 @@ public sealed class ShellSidebar
     private ShellSidebarRow? _dragSource;
     private ShellSidebarRow? _dropTarget;
     private RowDropPosition _dropPosition;
+    private bool _dropOnSelf;
+    private bool _paintDropOnSelf;
     private ShellSidebarRow? _paintDropTarget;
     private RowDropPosition _paintDropPosition;
 
@@ -409,8 +411,10 @@ public sealed class ShellSidebar
         // whichever row the pointer crosses.
         _paintDropTarget = _dropTarget;
         _paintDropPosition = _dropPosition;
+        _paintDropOnSelf = _dropOnSelf;
         _dropTarget = null;
         _dropPosition = RowDropPosition.Out;
+        _dropOnSelf = false;
 
         var clipper = new ImGuiListClipper();
         clipper.Begin(_slotCount, _pitch * scale);
@@ -436,7 +440,7 @@ public sealed class ShellSidebar
             // No row is the candidate: the drop lands at the END of the
             // root list, leaving any group — the caret at the tree's tail
             // says so instead of saying nothing.
-            if (_paintDropTarget == null)
+            if (_paintDropTarget == null && !_paintDropOnSelf)
             {
                 var tailDl = ImGui.GetWindowDrawList();
                 float tailY = origin.Y + _totalHeight * scale;
@@ -474,7 +478,8 @@ public sealed class ShellSidebar
 
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
-                _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
+                if (!_dropOnSelf && !_paintDropOnSelf)
+                    _vm.OnRowDrop?.Invoke(dragging, _dropTarget, _dropPosition);
                 _dragSource = null;
                 _dropTarget = null;
                 _dirty = true;
@@ -511,6 +516,16 @@ public sealed class ShellSidebar
         // candidate. Only a CONTAINER (a group head) takes an INTO drop,
         // and never from another container — one depth, always. Every
         // other row splits at its midline into before/after.
+        if (_dragSource is { } self && ReferenceEquals(self, row))
+        {
+            // Over the row being dragged: nothing to do, and no caret —
+            // an empty target used to read as "to the end of the root".
+            float selfHeight = entry.Height * scale;
+            var selfMouse = ImGui.GetMousePos();
+            if (selfMouse.X >= at.X && selfMouse.X < at.X + width * scale
+                && selfMouse.Y >= at.Y && selfMouse.Y < at.Y + selfHeight)
+                _dropOnSelf = true;
+        }
         if (_dragSource is { } source && !ReferenceEquals(source, row))
         {
             float rowHeight = entry.Height * scale;
@@ -852,6 +867,39 @@ public sealed class ShellSidebar
                         id: "##group-lock",
                         dimmed: !row.GroupLocked))
                     _vm.OnGroupLock?.Invoke(row);
+
+                // The group's own flags cycle: inherit -> hidden -> shown
+                // -> inherit (and paused -> playing for animation). A
+                // dimmed icon means the members keep their own flag.
+                ImGui.SetCursorScreenPos(origin + new Vector2(step, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupVisible == false ? TablerIcon.EyeOff : TablerIcon.Eye,
+                        selected: false,
+                        style: square,
+                        help: row.GroupVisible switch
+                        {
+                            null => "Hide the whole group",
+                            false => "Show the whole group",
+                            _ => "Let each member keep its own visibility",
+                        },
+                        id: "##group-visible",
+                        dimmed: row.GroupVisible == null))
+                    _vm.OnGroupVisibility?.Invoke(row);
+
+                ImGui.SetCursorScreenPos(origin + new Vector2(step * 2f, 0f));
+                if (Crystarium.TemporaryIconToggle(
+                        row.GroupPlaying == false ? TablerIcon.PlayerPause : TablerIcon.PlayerPlay,
+                        selected: false,
+                        style: square,
+                        help: row.GroupPlaying switch
+                        {
+                            null => "Pause every actor in the group",
+                            false => "Play every actor in the group",
+                            _ => "Let each actor keep its own play state",
+                        },
+                        id: "##group-play",
+                        dimmed: row.GroupPlaying == null))
+                    _vm.OnGroupPause?.Invoke(row);
                 return;
             }
 

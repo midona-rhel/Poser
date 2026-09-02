@@ -35,6 +35,9 @@ public sealed class ShellSidebarRow
     /// <summary>Group-head rows: the lock action seat.</summary>
     public bool GroupActions;
     public bool GroupLocked;
+    /// <summary>A group row's overrides: null = members keep their own.</summary>
+    public bool? GroupVisible;
+    public bool? GroupPlaying;
     /// <summary>Camera rows: the kind letter between the live and lock
     /// seats — M main, F free, C camera. A marker, not a control.</summary>
     public string CameraMark = "";
@@ -315,6 +318,8 @@ public sealed class AppShellViewModel
     public Action<ShellSidebarRow>? OnRowContextMenu;
     public Action<ShellSidebarRow>? OnRowExpandToggled;
     public Action<ShellSidebarRow>? OnGroupLock;
+    public Action<ShellSidebarRow>? OnGroupVisibility;
+    public Action<ShellSidebarRow>? OnGroupPause;
     public Action<ShellSidebarRow>? OnCameraRecenter;
     public Action<ShellSidebarRow>? OnActorTarget;
     public Action<ShellSidebarRow>? OnActorVisibility;

@@ -19,6 +19,17 @@ public sealed class SceneGroup
     /// 2026-08-31; the whole-placement reading was wrong). Visibility
     /// and animation stay free.</summary>
     public bool Locked { get; set; }
+
+    /// <summary>The group's own visibility: null lets every member keep its
+    /// own flag; true or false is imposed on all of them, and what each
+    /// member had before is remembered so clearing the override gives it
+    /// back.</summary>
+    public bool? VisibleOverride { get; set; }
+    public readonly Dictionary<SelectionId, bool> RememberedVisible = new();
+
+    /// <summary>The same for animation play, actors only.</summary>
+    public bool? PlayingOverride { get; set; }
+    public readonly Dictionary<SelectionId, bool> RememberedPlaying = new();
 }
 
 /// <summary>One root slot of the outliner: an ungrouped entity or a
@@ -42,6 +53,10 @@ public readonly record struct RootSlot(SelectionId? Entity, Guid GroupId)
 public sealed class SceneGroups
 {
     private readonly List<SceneGroup> _groups = new();
+
+    /// <summary>Marks a change made on a group object directly (an
+    /// override), so the sidebar rebuilds.</summary>
+    public void Touch() => Revision++;
 
     /// <summary>Forgets every group and the root order.</summary>
     public void Clear()
