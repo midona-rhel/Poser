@@ -500,6 +500,49 @@ public class Skeleton : EntityBase, ISkeleton
 
         var partialCount = gameSkeleton->PartialSkeletonCount;
 
+        // The draw-phase refresh asks for the display snapshot only. That
+        // is the finalize hook's contract: a bone that nobody read within
+        // two frames keeps its last snapshot, so this walks the registered
+        // bones — not every native index through a tuple-keyed lookup —
+        // and skips the unwanted ones. Traced at 0.46 ms a call on one
+        // actor before (2026-09-02); an overlay shows dozens of bones of
+        // hundreds.
+        if (caches == BoneCacheTypes.LastTransform)
+        {
+            hkaPose*[]? poses = null;
+            foreach (var pair in _bonesByIndex)
+            {
+                var bone = pair.Value;
+                if (!bone.TransformWanted)
+                    continue;
+                var (partialIdx, boneIdx) = pair.Key;
+                if (partialIdx < 0 || partialIdx >= partialCount)
+                    continue;
+                poses ??= new hkaPose*[partialCount];
+                var pose = poses[partialIdx];
+                if (pose == null)
+                {
+                    pose = gameSkeleton->PartialSkeletons[partialIdx].GetHavokPose(0);
+                    if (pose == null)
+                        continue;
+                    poses[partialIdx] = pose;
+                }
+                if (boneIdx < 0 || boneIdx >= pose->Skeleton->Bones.Length)
+                    continue;
+                var wantedPtr = pose->AccessBoneModelSpace(boneIdx, hkaPose.PropagateOrNot.DontPropagate);
+                if (wantedPtr == null)
+                    continue;
+                ref var wanted = ref *wantedPtr;
+                bone.LastTransform = new Transform
+                {
+                    Position = new Vector3(wanted.Translation.X, wanted.Translation.Y, wanted.Translation.Z),
+                    Rotation = new Quaternion(wanted.Rotation.X, wanted.Rotation.Y, wanted.Rotation.Z, wanted.Rotation.W),
+                    Scale = new Vector3(wanted.Scale.X, wanted.Scale.Y, wanted.Scale.Z)
+                };
+            }
+            return;
+        }
+
         for (int partialIdx = 0; partialIdx < partialCount; partialIdx++)
         {
             var partial = &gameSkeleton->PartialSkeletons[partialIdx];
