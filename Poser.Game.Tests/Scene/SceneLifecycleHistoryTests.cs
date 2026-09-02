@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Numerics;
 using System.Reflection;
 using Poser.Application.Transforms;
@@ -129,7 +129,7 @@ public sealed class SceneLifecycleHistoryTests
         Assert.Equal("Add spot light", world.History.UndoDescription);
         Assert.True(world.Undo());
         Assert.Equal("edit", world.History.UndoDescription);
-        world.History.Reconcile(static _ => false);
+        world.History.Reconcile(static _ => false, _ => true);
         Assert.True(world.History.CanUndo);
 
         var disabled = new World(capacity: 0);

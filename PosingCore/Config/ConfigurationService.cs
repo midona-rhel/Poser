@@ -144,6 +144,10 @@ public class ConfigurationService : IDisposable
             && Math.Abs(Config.Skeleton.BoneDotRadius - 3.4f) < 0.01f)
             Config.Skeleton.BoneDotRadius = new SkeletonConfiguration().BoneDotRadius;
 
+        // The old default depth was 200; a config still at it takes the
+        // new default. A depth the user chose stays.
+        if (Config.Version < 5 && Config.UndoDepth == 200)
+            Config.UndoDepth = 500;
         Config.Version = PoserConfiguration.LatestVersion;
         Save();
     }

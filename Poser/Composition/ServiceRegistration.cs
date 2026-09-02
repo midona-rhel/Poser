@@ -186,6 +186,22 @@ internal static class ServiceRegistration
             return new TransformHistory(() => configuration.Config.UndoDepth);
         });
         services.AddSingleton<TransformGestureService>();
+        services.AddSingleton<IUndoRunner>(sp => sp.GetRequiredService<TransformGestureService>());
+        services.AddSingleton<ActorDisruptionEpochs>();
+        services.AddSingleton<IActorStateKeySource, ActorStateKeySource>();
+        services.AddSingleton<IPoseSnapshotPort, Game.Journal.PoseSnapshotPort>();
+        // Lazy: the snapshot port restores through the pose facade, which
+        // reaches the gesture service the journal sits above.
+        services.AddSingleton(sp => new System.Lazy<IPoseSnapshotPort>(
+            sp.GetRequiredService<IPoseSnapshotPort>));
+        services.AddSingleton<JournalContexts>();
+        services.AddSingleton(sp => new UndoJournal(
+            sp.GetRequiredService<TransformHistory>(),
+            sp.GetRequiredService<IUndoRunner>(),
+            sp.GetRequiredService<IActorStateKeySource>(),
+            sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>(),
+            System.IO.File.Exists,
+            sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();

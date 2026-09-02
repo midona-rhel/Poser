@@ -4,7 +4,12 @@ namespace Poser.Application.Transforms;
 /// One undoable action. Transform entries restore captured state; lifecycle
 /// entries run the inverse action through the service that owns the entity.
 /// </summary>
-public abstract record HistoryEntry(string Description);
+public abstract record HistoryEntry(string Description)
+{
+    /// <summary>The keys and snapshots the step was recorded under; null
+    /// for an entry that never invalidates.</summary>
+    public StepContext? Context { get; init; }
+}
 
 public sealed record TransformPatch(
     string Description,
@@ -28,7 +33,7 @@ public sealed class TransformHistory
 {
     /// <summary>The depth used when no setting is supplied (tests, and the
     /// parameterless construction the DI default would use).</summary>
-    public const int DefaultCapacity = 200;
+    public const int DefaultCapacity = 500;
 
     private static readonly Func<int> FixedDefault = static () => DefaultCapacity;
 
@@ -121,14 +126,42 @@ public sealed class TransformHistory
     /// entry whose light has been undone away is precisely the entry that
     /// must survive to be redone.</para>
     /// </summary>
-    public void Reconcile(Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent)
+    /// <summary>
+    /// Drops what can never come back. A transform patch with a stale target
+    /// survives only while it carries snapshots and every actor it keyed
+    /// still exists — a new generation is an invalidation, not a loss. Any
+    /// keyed entry goes when one of its actors is gone for good.
+    /// </summary>
+    public void Reconcile(
+        Func<Poser.Domain.Identity.TransformTargetId, bool> isCurrent,
+        Func<Guid, bool> lineagePresent)
     {
-        bool Stale(HistoryEntry entry) =>
-            entry is TransformPatch patch &&
-            (patch.Before.Any(state => !isCurrent(state.Target)) ||
-                patch.After.Any(state => !isCurrent(state.Target)));
+        bool ActorsGone(HistoryEntry entry) =>
+            entry.Context is { } context &&
+            context.Keys.Any(key => !lineagePresent(key.Lineage));
+        bool Stale(HistoryEntry entry)
+        {
+            if (ActorsGone(entry))
+                return true;
+            if (entry is not TransformPatch patch)
+                return false;
+            bool staleTarget =
+                patch.Before.Any(state => !isCurrent(state.Target)) ||
+                patch.After.Any(state => !isCurrent(state.Target));
+            if (!staleTarget)
+                return false;
+            return patch.Context is not { Before.Count: > 0 };
+        }
         _undo.RemoveAll(entry => Stale(entry));
         _redo.RemoveAll(entry => Stale(entry));
+    }
+
+    /// <summary>Forgets one entry wherever it sits, without an event: the
+    /// journal's answer to a restore that outlived its place.</summary>
+    public void Drop(HistoryEntry entry)
+    {
+        _undo.Remove(entry);
+        _redo.Remove(entry);
     }
 
     /// <summary>

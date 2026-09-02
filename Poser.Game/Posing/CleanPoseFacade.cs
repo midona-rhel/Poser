@@ -226,7 +226,7 @@ public sealed class CleanPoseFacade
         if (plan == null)
             return PoseEditResult.Fail("The pose file could not be read.");
         return BeginImport(actor, plan, options,
-            $"Import {System.IO.Path.GetFileName(path)}", onReceipt);
+            $"Import {System.IO.Path.GetFileName(path)}", onReceipt, asset: path);
     }
 
     /// <summary>In-memory variant of the file import — same plan builder,
@@ -382,7 +382,8 @@ public sealed class CleanPoseFacade
         PoseImportPlan plan,
         PoseImportOptions options,
         string description,
-        Action<OperationReceipt>? onReceipt = null)
+        Action<OperationReceipt>? onReceipt = null,
+        string? asset = null)
     {
         // Synchronous validation BEFORE the pause side effect: both
         // ImportPose overloads build the plan before calling here (a bad
@@ -565,7 +566,8 @@ public sealed class CleanPoseFacade
                         arm.Operation,
                         plan,
                         expression: options.AsExpression,
-                        suppressHistory: options.SuppressHistory);
+                        suppressHistory: options.SuppressHistory,
+                        asset: asset);
                     if (!begun.Success)
                     {
                         _log.Warning(

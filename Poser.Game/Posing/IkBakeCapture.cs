@@ -80,6 +80,7 @@ public sealed class IkBakeCapture : IDisposable
     private readonly ITransformRuntimePort _runtime;
     private readonly TransformHistory _history;
     private readonly TransformGestureService _gestures;
+    private readonly JournalContexts _journal;
     private readonly IPluginLog _log;
 
     /// <summary>One slot skeleton's share of a bake: the file collection the
@@ -111,6 +112,7 @@ public sealed class IkBakeCapture : IDisposable
         public readonly HashSet<TransformTargetId> Written = new();
         public string? Failure;
         public bool Completing;
+        public JournalContexts.StepScope? Journal;
     }
 
     private Bake? _pending;
@@ -125,10 +127,12 @@ public sealed class IkBakeCapture : IDisposable
         ITransformRuntimePort runtime,
         TransformHistory history,
         TransformGestureService gestures,
+        JournalContexts journal,
         IPluginLog log)
     {
         _framework = framework;
         _bindings = bindings;
+        _journal = journal;
         _posing = posing;
         _skeletons = skeletons;
         _poseFiles = poseFiles;
@@ -205,7 +209,7 @@ public sealed class IkBakeCapture : IDisposable
             return GestureResult.Fail(
                 $"Bone {boneId.CanonicalName} did not resolve.");
         var actor = endpoint.Skeleton.Actor;
-        if (_bindings.GetActorId(actor) is null)
+        if (_bindings.GetActorId(actor) is not { } actorId)
             return GestureResult.Fail("This bone's actor has no stable binding.");
 
         var config = _posing.GetIkConfiguration(endpoint);
@@ -280,6 +284,8 @@ public sealed class IkBakeCapture : IDisposable
 
         if (bake.Slots.Count == 0)
             return GestureResult.Fail("No bone of this actor could be bound for a bake.");
+        // The scope opens BEFORE step 2 resets the stacks.
+        bake.Journal = _journal.BeginActorStep([actorId.LogicalId]);
 
         // STEP 2 — clear the authored stacks of every covered bone. Named
         // service layers stay: see the class remarks.
@@ -481,8 +487,40 @@ public sealed class IkBakeCapture : IDisposable
         if (before.Count == 0)
             return "The bake changed nothing.";
 
-        _history.Append(new TransformPatch("Bake IK", before, after));
+        // One step, one inverse: undoing the bake puts the bones back AND
+        // re-arms the chains it disarmed; redoing it bakes the bones and
+        // disarms them again.
+        var slots = bake.Slots.Select(slot => slot.Skeleton).ToArray();
+        _history.Append(new JournalStep(
+            "Bake IK",
+            () => RestoreStates(before) && RearmChains(bake),
+            () =>
+            {
+                if (!RestoreStates(after))
+                    return false;
+                foreach (var skeleton in slots)
+                    _posing.ClearIkConfigurations(skeleton);
+                return true;
+            })
+        {
+            Context = bake.Journal?.Complete(),
+        });
         return null;
+    }
+
+    private bool RestoreStates(IReadOnlyList<TransformTargetState> states)
+    {
+        bool landed = true;
+        foreach (var state in states)
+        {
+            var restored = _runtime.Restore(state);
+            if (!restored.Success)
+            {
+                _log.Warning($"IK bake step: {restored.Detail ?? state.Target.ToString()}");
+                landed = false;
+            }
+        }
+        return landed;
     }
 
     /// <summary>Puts back every captured stack and re-arms every chain the bake
@@ -504,13 +542,25 @@ public sealed class IkBakeCapture : IDisposable
             }
         }
 
+        RearmChains(bake);
+    }
+
+    /// <summary>Re-arms every chain the bake disarmed, on the bones that
+    /// still bind. True when every bound chain took its configuration.</summary>
+    private bool RearmChains(Bake bake)
+    {
+        bool armed = true;
         foreach (var (bone, config) in bake.Chains)
         {
             if (_bindings.GetBoneId(bone) is null)
                 continue;
             if (_posing.SetIkConfiguration(bone, config) is { } rearm)
+            {
                 _log.Warning($"IK bake could not re-arm {bone.BoneName}: {rearm}");
+                armed = false;
+            }
         }
+        return armed;
     }
 
     /// <summary>The per-slot collection a snapshot puts a slot's bones in —

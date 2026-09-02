@@ -22,3 +22,29 @@ canonical names whose applied state comes from that mask.
 Precision wells support modifiers, numeric entry, Escape cancellation, and
 wheel steps. A wheel notch belongs to the hovered well, uses that well's drag
 modifiers, and commits one undo step; unclaimed wheel input scrolls the surface.
+
+## The journal
+
+Every change made through the UI is one step with an inverse. Undo runs
+the inverse; redo runs the step again. Drags are one step on release;
+typed fields are one step on commit. Selection is never a step.
+
+Each step remembers the state of every actor it touched: the exact actor
+and skeleton generations, the timeline and loop choices, and the
+disruption epoch that a redraw, a character file or an appearance apply
+bumps. When an actor's state no longer matches, the step is invalid: undo
+does not apply its delta to a body that is not the one it was recorded
+on. It restores the actor's whole pose from the snapshot the step kept,
+and says so in one notice. A restore is a pose import, so an animating
+actor pauses for it.
+
+A step that came from a file (a pose import, a scene load) checks the
+file before redo and refuses with one notice when it is gone.
+
+Baking IK is one step: undoing it puts the bones back and re-arms the
+chains the bake disarmed.
+
+Transport (play, pause, scrub, speed) is never a step. Choosing a
+timeline and toggling loop are. A locked camera never journals.
+
+The depth is 500 steps by default (Settings › Undo steps).

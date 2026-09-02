@@ -39,6 +39,10 @@ public sealed class UserNotices
     /// </summary>
     public void Refused(string message) => Post(message, NotificationType.Warning);
 
+    /// <summary>One line of information: nothing failed, nothing was
+    /// refused, but the user should know what happened.</summary>
+    public void Note(string message) => Post(message, NotificationType.Info);
+
     /// <summary>An action ran and failed.</summary>
     public void Failed(string message) => Post(message, NotificationType.Error);
 

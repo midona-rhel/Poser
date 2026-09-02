@@ -14,14 +14,18 @@ public sealed class CleanTransformFacade
     private readonly TransformGestureService _gestures;
     private readonly TransformCommandService _commands;
 
+    private readonly UndoJournal _journal;
+
     public CleanTransformFacade(
         SceneSession scene,
         TransformGestureService gestures,
-        TransformCommandService commands)
+        TransformCommandService commands,
+        UndoJournal journal)
     {
         _scene = scene;
         _gestures = gestures;
         _commands = commands;
+        _journal = journal;
     }
 
     public TransformGestureId? ActiveGesture =>
@@ -31,12 +35,10 @@ public sealed class CleanTransformFacade
     /// handle on a target the pivot makes orbit.</summary>
     public Vector3? ActivePivot => _gestures.ActivePivot;
 
-    public bool CanUndo => _gestures.History.CanUndo;
-    public bool CanRedo => _gestures.History.CanRedo;
-    public string? UndoDescription =>
-        _gestures.History.UndoDescription;
-    public string? RedoDescription =>
-        _gestures.History.RedoDescription;
+    public bool CanUndo => _journal.CanUndo;
+    public bool CanRedo => _journal.CanRedo;
+    public string? UndoDescription => _journal.UndoDescription;
+    public string? RedoDescription => _journal.RedoDescription;
 
     /// <summary>
     /// Stable-id gesture entry: expands linked-bone and symmetry partners
@@ -84,8 +86,8 @@ public sealed class CleanTransformFacade
     public GestureResult Cancel(TransformGestureId id) =>
         _gestures.Cancel(id);
 
-    public GestureResult Undo() => _gestures.Undo();
-    public GestureResult Redo() => _gestures.Redo();
+    public GestureResult Undo() => _journal.Undo();
+    public GestureResult Redo() => _journal.Redo();
 
     /// <summary>Stable-id atomic absolute write (non-interactive command).</summary>
     public GestureResult SetAbsolute(

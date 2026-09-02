@@ -18,7 +18,7 @@ public class PoserConfiguration : IPluginConfiguration
     /// <summary>The version a config written by THIS build carries. A stored
     /// config below it goes through <c>ConfigurationService.MigrateConfig</c>
     /// once, in ascending step order.</summary>
-    public const int LatestVersion = 4;
+    public const int LatestVersion = 5;
 
     public SkeletonConfiguration Skeleton { get; set; } = new();
     public GizmoConfiguration Gizmo { get; set; } = new();
@@ -105,7 +105,7 @@ public class PoserConfiguration : IPluginConfiguration
     /// <c>TransformHistory.DefaultCapacity</c>, which this assembly cannot
     /// reference (config sits below the application layer).
     /// </summary>
-    public int UndoDepth { get; set; } = 200;
+    public int UndoDepth { get; set; } = 500;
 
     /// <summary>
     /// Freeze every actor the spawn browser adds to the scene the moment it

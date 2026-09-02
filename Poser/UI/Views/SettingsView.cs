@@ -50,7 +50,7 @@ public sealed class SettingsViewModel
     public bool LinkSiblingBones;
     public bool FollowGameTarget = true;
     public bool TargetFollowsSelection;
-    public int UndoDepth = 200;
+    public int UndoDepth = 500;
 
     /// <summary>Whether the frame profiler records and shows its panel.
     /// </summary>
@@ -251,7 +251,7 @@ public static class SettingsView
         (TablerIcon.Info, "About"),
     };
 
-    private static readonly float[] UndoDepthMarks = [0f, 200f];
+    private static readonly float[] UndoDepthMarks = [0f, 500f];
 
     public static int PageCount => Nav.Length;
 
