@@ -459,6 +459,11 @@ public class PoseRailPane
             // The knob shows the gesture, clamped to the disc, and
             // springs home on release.
             _padOffset += step;
+            // The same hide and readout every rail drag gets: the move
+            // since the press, in screen pixels.
+            ManipulationDrag.HoldFromShell(
+                mouse + new Vector2(18f, 14f) * s,
+                $"X {_padOffset.X / s:+0;-0} px  Y {_padOffset.Y / s:+0;-0} px");
             var shown = _padOffset;
             float length = shown.Length();
             if (length > discRadius)
