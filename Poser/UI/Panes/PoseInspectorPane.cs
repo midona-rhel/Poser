@@ -145,7 +145,18 @@ public class PoseInspectorPane
     private static readonly string[] NoOtherActors = ["No other actors"];
     private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD", "FABRIK", "Rope"];
     private static readonly string[] CcdSolverItems = ["CCD", "FABRIK", "Rope"];
-    private static readonly string[] TargetModeItems = ["Relative", "Fixed"];
+    private static readonly string[] TargetModeItems = ["Actor", "World", "Bone"];
+
+    /// <summary>Bone-mode target picking: the actor whose bones the list
+    /// shows, the picker, and the choices the host builds (its categorised
+    /// bone list, shared with the camera's tracking picker).</summary>
+    private global::Poser.Domain.Identity.ActorId? _ikBoneActor;
+    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice> _ikBonePicker =
+        new("ik-bone-target");
+    private IReadOnlyList<global::Poser.UI.BoneChoice> _ikBoneChoices =
+        Array.Empty<global::Poser.UI.BoneChoice>();
+    public Func<global::Poser.Domain.Scene.ActorDescriptor,
+        IReadOnlyList<global::Poser.UI.BoneChoice>>? BuildBoneChoices;
 
     private static readonly string[] ArmJointLabels =
         ["Shoulder", "Elbow", "Hand"];
@@ -2094,6 +2105,81 @@ public class PoseInspectorPane
         return chains;
     }
 
+    /// <summary>Bone mode's rows: whose bone, which bone (a list or a pick
+    /// in the view). The pick keeps the tip's offset from the bone.</summary>
+    private void DrawIkBoneTarget(
+        Crystarium.FormScope form,
+        global::Poser.Domain.Identity.BoneId endpoint,
+        TransformTargetId ikTarget)
+    {
+        var actors = _scene.Snapshot.Actors;
+        var current = _ikPort.BoneTarget(ikTarget);
+        var shownActor = _ikBoneActor ?? current?.Skeleton.Actor ?? endpoint.Skeleton.Actor;
+        int actorIndex = -1;
+        var names = new string[actors.Count];
+        for (int i = 0; i < actors.Count; i++)
+        {
+            names[i] = DescriptorDisplayName?.Invoke(actors[i]) ?? actors[i].Id.ToString();
+            if (actors[i].Id == shownActor)
+                actorIndex = i;
+        }
+        form.Dropdown(
+            "Actor",
+            names,
+            Math.Max(0, actorIndex),
+            next => _ikBoneActor = actors[next].Id,
+            disabled: actors.Count == 0,
+            help: "Whose bone to follow");
+        var actorDescriptor = actorIndex >= 0 ? actors[actorIndex] : null;
+        string boneLabel = current is { } picked
+            ? _ikBoneChoices.FirstOrDefault(choice => choice.BoneId == picked)?.Label
+                ?? picked.CanonicalName
+            : "Choose a bone";
+        void Aim(global::Poser.Domain.Identity.BoneId bone)
+        {
+            if (_ikPort.SetBoneTarget(ikTarget, bone) is { Success: false } failed)
+                _notices.Failed($"IK target: {failed.Detail}");
+            else
+                _ikBoneActor = bone.Skeleton.Actor;
+        }
+        form.Actions("Bone", actions =>
+        {
+            actions.Button(
+                boneLabel,
+                () =>
+                {
+                    if (actorDescriptor == null || BuildBoneChoices == null)
+                        return;
+                    _ikBoneChoices = BuildBoneChoices(actorDescriptor);
+                    var options = new PickerOptions<global::Poser.UI.BoneChoice>
+                    {
+                        Query = IkBoneSearch,
+                        Badge = choice => choice.Badge,
+                    };
+                    _ikBonePicker.Open(
+                        $"ik-bone:{endpoint.CanonicalName}",
+                        _ikBoneChoices,
+                        choice => choice.Label,
+                        choice => choice.Key,
+                        options: in options);
+                },
+                disabled: actorDescriptor == null,
+                help: "Pick the bone from a list");
+            actions.IconButton(
+                TablerIcon.Crosshair,
+                () => global::Poser.UI.Controls.BonePick.Begin(multi: false, Aim),
+                help: "Pick the bone in the view");
+        });
+        if (_ikBonePicker.Draw() is { } chosen)
+            Aim(chosen.Item.BoneId);
+    }
+
+    private IReadOnlyList<global::Poser.UI.BoneChoice> IkBoneSearch(string query) =>
+        query.Length == 0
+            ? _ikBoneChoices
+            : _ikBoneChoices.Where(choice => choice.SearchText.Contains(
+                query, StringComparison.OrdinalIgnoreCase)).ToArray();
+
     private void DrawIk(Crystarium.FormScope form)
     {
         if (_primary is not { Kind: SceneEntityKind.Bone, Bone: { } boneId })
@@ -2191,23 +2277,31 @@ public class PoseInspectorPane
             next => Apply(config with { SwivelDegrees = next }),
             format: "0°",
             help: "Spin the bend around the line from root to tip, degrees");
+        int modeIndex = config.TargetMode switch
+        {
+            Domain.Posing.IkTargetMode.World => 1,
+            Domain.Posing.IkTargetMode.Bone => 2,
+            _ => 0,
+        };
+        form.Dropdown(
+            "Target",
+            TargetModeItems,
+            modeIndex,
+            next => Apply(config with
+            {
+                TargetMode = next switch
+                {
+                    1 => Domain.Posing.IkTargetMode.World,
+                    2 => Domain.Posing.IkTargetMode.Bone,
+                    _ => Domain.Posing.IkTargetMode.Actor,
+                },
+            }),
+            help: "Actor moves the target with the actor, World holds it where it is, Bone follows another bone");
+        if (config.TargetMode == Domain.Posing.IkTargetMode.Bone)
+            DrawIkBoneTarget(form, boneId, ikTarget);
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
-            int modeIndex =
-                config.TargetMode == Domain.Posing.IkTargetMode.Fixed ? 1 : 0;
-            form.Dropdown(
-                "Target",
-                TargetModeItems,
-                modeIndex,
-                next =>
-                    Apply(config with
-                    {
-                        TargetMode = next == 1
-                            ? Domain.Posing.IkTargetMode.Fixed
-                            : Domain.Posing.IkTargetMode.Relative,
-                    }),
-                help: "Relative lets the animation carry the target; Fixed pins it to a spot on the actor captured when you switched");
             form.Switch(
                 "Constraints",
                 config.EnforceConstraints,

@@ -593,7 +593,7 @@ public sealed class IkBakeCapture : IDisposable
     /// holds its captured target with or without an authored delta, a
     /// Relative one solves only for a translation.</summary>
     private bool HasSolveInput(IBone endpoint, IkChainConfig config) =>
-        config.TargetMode == IkTargetMode.Fixed ||
+        config.TargetMode != IkTargetMode.Actor ||
         _posing.GetModification(endpoint) is { } modification &&
         modification.Position != System.Numerics.Vector3.Zero;
 

@@ -142,10 +142,10 @@ public class MainWindow : Window
     private readonly ILightingService _lightingService;
     private readonly CameraPane _cameraPane;
     private readonly IVirtualCameraService _cameraService;
-    private readonly Crystarium.SearchPicker<CameraBoneChoice>
+    private readonly Crystarium.SearchPicker<global::Poser.UI.BoneChoice>
         _cameraTrackingBonePicker = new("camera-tracking-bones");
-    private IReadOnlyList<CameraBoneChoice> _cameraBoneChoices =
-        Array.Empty<CameraBoneChoice>();
+    private IReadOnlyList<global::Poser.UI.BoneChoice> _cameraBoneChoices =
+        Array.Empty<global::Poser.UI.BoneChoice>();
     private CameraId? _cameraBonePickerCamera;
     private ActorId? _cameraBonePickerActor;
     private readonly EnvironmentPane _environmentPane;
@@ -568,6 +568,7 @@ public class MainWindow : Window
         _animationCatalog = animationCatalog;
         _companionCatalog = companionCatalog;
         _poseInspector.DrawMapInline = graphicalBonePane.DrawInline;
+        _poseInspector.BuildBoneChoices = BuildCameraBoneChoices;
         _poseInspector.DrawExpressionRow = animationPane.DrawExpressionRow;
         graphicalBonePane.SidesSwapped =
             Config.ConfigurationService.Instance.Config.UI.MapMirrorSelection;
@@ -2265,12 +2266,6 @@ public class MainWindow : Window
         ["Follow", "Pan", "Follow and pan", "None"];
 
     /// <summary>One exact bone in the flat tracking picker.</summary>
-    private sealed record CameraBoneChoice(
-        string Key,
-        string Label,
-        string SearchText,
-        BoneId BoneId,
-        string? Badge);
 
     /// <summary>Draws one exact actor and its flat concrete-bone picker.</summary>
     private void DrawCameraTrackingActors(
@@ -2288,7 +2283,7 @@ public class MainWindow : Window
             "Tracking",
             camera.IsTracking,
             value => camera.IsTracking = value,
-            help: "Steer the orbit pivot at the tracked bones every frame",
+            help: "Keep the tracked bones in view every frame",
             disabled: locked);
         form.Dropdown(
             "Mode",
@@ -2301,19 +2296,36 @@ public class MainWindow : Window
 
         form.Actions(
             string.Empty,
-            actions => actions.Button(
-                "Select bones",
-                () =>
-                {
-                    if (actor != null)
-                        OpenCameraBonePicker(cameraId, actor.Id, camera);
-                },
-                style: ControlStyle.Workspace with { Width = UiWidth.Fill },
-                disabled: locked || actor == null,
-                help: actor == null
-                    ? "Choose an actor first"
-                    : $"Choose exact bones on {ActorDisplayName(actor)}",
-                id: "camera-track-select-bones"));
+            actions =>
+            {
+                actions.Button(
+                    "Select bones",
+                    () =>
+                    {
+                        if (actor != null)
+                            OpenCameraBonePicker(cameraId, actor.Id, camera);
+                    },
+                    style: ControlStyle.Workspace with { Width = UiWidth.Fill },
+                    disabled: locked || actor == null,
+                    help: actor == null
+                        ? "Choose an actor first"
+                        : $"Choose exact bones on {ActorDisplayName(actor)}",
+                    id: "camera-track-select-bones");
+                // Picking in the view: a click takes a bone, Ctrl-click
+                // keeps adding. Another actor's bone moves the tracking
+                // to that actor, as the list does.
+                actions.IconButton(
+                    TablerIcon.Crosshair,
+                    () => global::Poser.UI.Controls.BonePick.Begin(
+                        multi: true,
+                        bone =>
+                        {
+                            if (ResolveExactCamera(cameraId, camera) && !camera.IsLocked)
+                                _cameraPane.ToggleTrackedBone(camera, bone);
+                        }),
+                    disabled: locked,
+                    help: "Pick bones in the view");
+            });
 
         PumpCameraBonePicker(cameraId, camera, actor);
     }
@@ -2413,7 +2425,7 @@ public class MainWindow : Window
         else if (_cameraTrackingBonePicker.IsOpen)
         {
             _cameraTrackingBonePicker.UpdateItems(
-                Array.Empty<CameraBoneChoice>());
+                Array.Empty<global::Poser.UI.BoneChoice>());
             _cameraTrackingBonePicker.UpdateSelection(
                 new HashSet<string>(StringComparer.Ordinal));
         }
@@ -2430,7 +2442,7 @@ public class MainWindow : Window
         _cameraBonePickerCamera = cameraId;
         _cameraBonePickerActor = actorId;
         _cameraBoneChoices = BuildCameraBoneChoices(actor);
-        var options = new PickerOptions<CameraBoneChoice>
+        var options = new PickerOptions<global::Poser.UI.BoneChoice>
         {
             Query = CameraBoneSearch,
             Badge = choice => choice.Badge,
@@ -2450,7 +2462,7 @@ public class MainWindow : Window
     private void ToggleCameraTrackedBone(
         CameraId cameraId,
         ActorId actorId,
-        CameraBoneChoice choice,
+        global::Poser.UI.BoneChoice choice,
         IVirtualCamera camera)
     {
         var boneId = choice.BoneId;
@@ -2501,10 +2513,10 @@ public class MainWindow : Window
             .Select(id => id!.Value.ToString())
             .ToHashSet(StringComparer.Ordinal);
 
-    private IReadOnlyList<CameraBoneChoice> BuildCameraBoneChoices(
+    private IReadOnlyList<global::Poser.UI.BoneChoice> BuildCameraBoneChoices(
         ActorDescriptor actor)
     {
-        var rows = new List<CameraBoneChoice>();
+        var rows = new List<global::Poser.UI.BoneChoice>();
         var skeleton = actor.CharacterSkeleton;
         if (skeleton != null)
         {
@@ -2541,7 +2553,7 @@ public class MainWindow : Window
             {
                 if (bone.IsHidden || IsBoneSuppressed(bone))
                     continue;
-                rows.Add(new CameraBoneChoice(
+                rows.Add(new global::Poser.UI.BoneChoice(
                     bone.Id.ToString(),
                     bone.DisplayName,
                     $"{label} {bone.DisplayName} {bone.Id.CanonicalName}",
@@ -2553,7 +2565,7 @@ public class MainWindow : Window
     }
 
     private static void AddCameraCategoryBones(
-        List<CameraBoneChoice> rows,
+        List<global::Poser.UI.BoneChoice> rows,
         BuiltCategory category,
         string[] ancestors)
     {
@@ -2564,7 +2576,7 @@ public class MainWindow : Window
             AddCameraCategoryBones(rows, child, contexts);
         string searchContext = string.Join(' ', contexts);
         foreach (var bone in category.VisibleBones)
-            rows.Add(new CameraBoneChoice(
+            rows.Add(new global::Poser.UI.BoneChoice(
                 bone.Id.ToString(),
                 bone.DisplayName,
                 $"{searchContext} {bone.DisplayName} "
@@ -2573,7 +2585,7 @@ public class MainWindow : Window
                 category.Label));
     }
 
-    private IReadOnlyList<CameraBoneChoice> CameraBoneSearch(string query) =>
+    private IReadOnlyList<global::Poser.UI.BoneChoice> CameraBoneSearch(string query) =>
         query.Length == 0
             ? _cameraBoneChoices
             : _cameraBoneChoices.Where(choice => choice.SearchText.Contains(

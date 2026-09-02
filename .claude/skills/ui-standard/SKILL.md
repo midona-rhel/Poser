@@ -749,6 +749,16 @@ never "Search poses", "Filter bones", "Search everything spawnable".
 The field's surroundings already say what is being searched; naming it
 again is chrome talking to itself (swept 2026-08-30).
 
+## Picking a bone from the view
+
+Anything that needs a bone (IK's Bone target, the camera's tracked
+bones) offers BOTH a list picker and a crosshair seat that starts
+overlay picking (`BonePick.Begin`): every actor's bones show until one
+is clicked. Single picks take the first click; multi picks keep going
+on Ctrl-click. Escape, right-click or a click on nothing ends it, and
+nothing is selected by a pick. Every SearchPicker focuses its search
+field the frame it opens.
+
 ## Tooltips
 
 A hover is a LABEL, not an explanation. Its length follows the verb's

@@ -54,4 +54,12 @@ public interface IIkConfigurationPort
     /// <summary>Restores the chain's defaults while preserving its current
     /// Enabled state.</summary>
     IkPortResult ResetDefaults(TransformTargetId target);
+
+    /// <summary>Points the chain at another bone (Bone mode): the endpoint
+    /// keeps its current offset from that bone and follows it.</summary>
+    IkPortResult SetBoneTarget(
+        TransformTargetId target, global::Poser.Domain.Identity.BoneId bone);
+
+    /// <summary>The bone a Bone-mode chain follows, if one was picked.</summary>
+    global::Poser.Domain.Identity.BoneId? BoneTarget(TransformTargetId target);
 }

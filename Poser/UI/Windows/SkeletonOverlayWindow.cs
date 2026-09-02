@@ -362,8 +362,11 @@ public class SkeletonOverlayWindow : Window
         // handle is the only route to it from the viewport, so it draws
         // whenever the scene holds lights — Ktisis and Brio both draw their
         // light handles unconditionally. Alt still hides everything.
+        // Picking shows everything: every actor, every opted-out bone.
+        bool picking = global::Poser.UI.Controls.BonePick.Active;
         bool drawArmature =
-            (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor();
+            (UserVisible && _presentation.AnyVisible) || AnySelectionAnchor()
+            || picking;
         // Published for the gizmo's armature-visibility gate: the master
         // toggle alone — the per-skeleton half is the presentation's
         // AnyVisibleFor, asked at the gizmo, so a hidden actor beside a
@@ -599,7 +602,8 @@ public class SkeletonOverlayWindow : Window
         {
             // Bones of the active actor only: the one actor the selection
             // belongs to. Several actors selected is not bone work.
-            if (Config.OnlyActiveActorBones && onlyActor != actor.Id.LogicalId)
+            if (Config.OnlyActiveActorBones && !picking
+                && onlyActor != actor.Id.LogicalId)
                 continue;
             var actorSelectionId = SelectionId.ForActor(actor.Id);
             float armatureOpacity = ActorOpacity(actor.Id, activeLineage);
@@ -658,7 +662,8 @@ public class SkeletonOverlayWindow : Window
                 // SELECTED bone draws regardless — the anchor rule, which is
                 // what stops the switch stranding an edit with no on-screen
                 // handle.
-                bool shown = UserVisible && _presentation.IsVisible(bone.Id);
+                bool shown = picking
+                    || (UserVisible && _presentation.IsVisible(bone.Id));
                 if (bone.IsHidden
                     || (!shown
                         && !selectedIds.Contains(
@@ -1348,6 +1353,37 @@ public class SkeletonOverlayWindow : Window
     /// <summary>The group dot's press: press and release on the SAME
     /// group selects its whole membership and makes it the active group —
     /// the sidebar head-click, from the viewport.</summary>
+    /// <summary>Overlay picking: a release over a bone hands it to the
+    /// picker (Ctrl keeps a multi-pick going); a release over nothing, a
+    /// right-click or Escape ends the pick. Nothing is selected.</summary>
+    private void UpdateBonePick(SelectionId? target, bool pointerBlocked)
+    {
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape)
+            || ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+        {
+            global::Poser.UI.Controls.BonePick.Cancel();
+            _pressedWorldTarget = null;
+            return;
+        }
+        if (pointerBlocked)
+        {
+            _pressedWorldTarget = null;
+            return;
+        }
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+            _pressedWorldTarget = target;
+        if (!ImGui.IsMouseReleased(ImGuiMouseButton.Left))
+            return;
+        if (_pressedWorldTarget is { } pressed
+            && target is { } released
+            && pressed.Equals(released)
+            && released.Bone is { } bone)
+            global::Poser.UI.Controls.BonePick.Take(bone, ImGui.GetIO().KeyCtrl);
+        else if (_pressedWorldTarget == null && target == null)
+            global::Poser.UI.Controls.BonePick.Cancel();
+        _pressedWorldTarget = null;
+    }
+
     private void UpdateGroupPress(Guid? target, bool pointerBlocked)
     {
         if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
@@ -1422,6 +1458,11 @@ public class SkeletonOverlayWindow : Window
         SelectionId? target,
         bool pointerBlocked)
     {
+        if (global::Poser.UI.Controls.BonePick.Active)
+        {
+            UpdateBonePick(target, pointerBlocked);
+            return;
+        }
         if (pointerBlocked || Controls.GizmoPointerOwnership.Owned)
         {
             _pressedWorldTarget = null;

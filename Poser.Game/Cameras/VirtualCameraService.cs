@@ -104,6 +104,9 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
     // Free-cam frame inputs, written by the input detour, consumed by the
     // scene-update detour (Brio's _forward/_lastMousePosition pair).
     private Vector3 _freeForward;
+    /// <summary>Where the tracked pivot was last frame: a free camera in
+    /// Follow moves by the pivot's motion, not to the pivot.</summary>
+    private Vector3? _freeFollowPivot;
     private Vector2 _freeMouseDelta;
     private float _freeMoveSpeed = DefaultMovementSpeed;
 
@@ -972,6 +975,29 @@ public sealed unsafe class VirtualCameraService : IVirtualCameraService
         rotation.Y = live.DelimitAngle
             ? rotation.Y + mouse.Y
             : Math.Clamp(rotation.Y + mouse.Y, -1.5f, 1.5f);
+        // Tracking on a free camera: Follow carries the camera with the
+        // pivot's motion, Pan turns it onto the pivot, both do both.
+        if (live.IsTracking && _trackedPivot is { } pivot)
+        {
+            var mode = live.TrackingMode;
+            if (mode is CameraTrackingMode.Follow or CameraTrackingMode.FollowAndPan
+                && _freeFollowPivot is { } last)
+                position += pivot - last;
+            if (mode is CameraTrackingMode.Pan or CameraTrackingMode.FollowAndPan)
+            {
+                var toPivot = pivot - position;
+                if (toPivot.LengthSquared() > 1e-6f)
+                {
+                    float flat = MathF.Sqrt(
+                        toPivot.X * toPivot.X + toPivot.Z * toPivot.Z);
+                    rotation.X = MathF.Atan2(toPivot.X, toPivot.Z);
+                    rotation.Y = MathF.Atan2(toPivot.Y, flat);
+                }
+            }
+            _freeFollowPivot = pivot;
+        }
+        else
+            _freeFollowPivot = null;
         live.Position = position;
         live.Rotation = rotation;
 
