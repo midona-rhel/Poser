@@ -55,6 +55,10 @@ public class PoseRailPane
     /// statement about how the user is working, not about this bone.</summary>
     private int _lockedAxis = RotationGizmoRings.NoLock;
     private Vector2 _joyAccumulated;
+    /// <summary>Below every orb, before the transform grid: enough that the
+    /// grid's legends sit under the inspector's bottom edge at its minimum
+    /// height, so a folded-small inspector ends on the orb.</summary>
+    private const float OrbBottomMargin = 32f;
 
     private static Vector4 AxisX => Crystarium.ActiveTheme.Palette.AxisX;
     private static Vector4 AxisY => Crystarium.ActiveTheme.Palette.AxisY;
@@ -412,7 +416,7 @@ public class PoseRailPane
                 overRing ? "Roll the camera" : "Pan the camera");
         }
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 
     // ── The overlay pad ──────────────────────────────────────────────
@@ -486,7 +490,7 @@ public class PoseRailPane
                 mouse - new Vector2(4f, 4f), mouse + new Vector2(4f, 4f),
                 "Move the overlay");
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 
     private float DrawRotationGizmo(ImDrawListPtr dl, Vector2 cursor, float width, float s)
@@ -527,7 +531,7 @@ public class PoseRailPane
         var rings = RotationGizmoRings.Project(
             _camera, center, frameWorld, widgetRadius);
         if (!rings.Valid)
-            return d + 8f * s;
+            return d + OrbBottomMargin * s;
 
         int hoverAxis = -1;
         _hoverHit = null;
@@ -613,6 +617,6 @@ public class PoseRailPane
                     : "right-click to lock this axis"));
         }
 
-        return d + 8f * s;
+        return d + OrbBottomMargin * s;
     }
 }
