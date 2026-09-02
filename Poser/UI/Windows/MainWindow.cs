@@ -2714,7 +2714,10 @@ public class MainWindow : Window
             return;
         // The branch lines below this head: a trunk continues at this
         // level while a later sibling follows the group.
-        var childLines = depth == 0 ? RootTreeLines : Descend(lines, isLast);
+        // Index k of the lines is level k; a root head's children still
+        // descend one level (index 0 is the root and draws nothing), or
+        // every trunk below sits one level too far left.
+        var childLines = Descend(lines, isLast);
         int memberStart = _sceneSection.Rows.Count;
         for (int m = 0; m < group.Members.Count; m++)
             AddGroupMemberRow(
