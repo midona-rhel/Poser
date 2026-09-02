@@ -177,9 +177,9 @@ public sealed partial class AppearancePane
     /// <summary>The slot's card: the icon two rows tall opens the item
     /// picker; beside it the item's name reads on the first line and the
     /// two dyes fill the second as colour boxes that open the dye picker.
-    /// Nothing removes or clears here — "None" in the dye list clears a
-    /// dye, and clothes come off through Remove all — so the card holds
-    /// no verbs at all.</summary>
+    /// The card holds no verbs: Ctrl-click on the icon takes the item
+    /// off and Ctrl-click on a dye box clears that dye (the rule), "None"
+    /// leads the dye list, and clothes come off through Remove all.</summary>
     private void ItemRow(
         Crystarium.FormScope form, ActorId actor, EquipSlot slot,
         WardrobeState? state, bool ready, string? blocked)
@@ -203,7 +203,17 @@ public sealed partial class AppearancePane
                 $"wardrobe-{slot}-tile",
                 ResolveIcon(item?.Icon ?? FallbackIcon(slot)),
                 tile,
-                () => OpenItemPicker(actor, slot),
+                () =>
+                {
+                    if (ImGui.GetIO().KeyCtrl)
+                    {
+                        if (worn is { } w4 && !WardrobeIds.IsNothing(w4.ItemId))
+                            SetItem(actor, slot, 0, w4.Dye1, w4.Dye2,
+                                $"Remove {SlotName(slot).ToLowerInvariant()}");
+                    }
+                    else
+                        OpenItemPicker(actor, slot);
+                },
                 help: ready ? "Choose an item" : blocked,
                 disabled: !ready);
 
@@ -239,7 +249,16 @@ public sealed partial class AppearancePane
                     dye is { } paint ? DyeColor(paint.Color) : null,
                     dyeW / s,
                     square,
-                    () => OpenDyePicker(actor, slot, index),
+                    () =>
+                    {
+                        if (ImGui.GetIO().KeyCtrl)
+                        {
+                            if (dyeId != 0)
+                                SetDye(actor, slot, index, 0);
+                        }
+                        else
+                            OpenDyePicker(actor, slot, index);
+                    },
                     label: dye is null ? "None" : null,
                     help: dyeable ? (dye?.Name ?? (which == 0 ? "Choose the first dye" : "Choose the second dye")) : why,
                     disabled: !dyeable);
@@ -286,7 +305,16 @@ public sealed partial class AppearancePane
                 "wardrobe-facewear-tile",
                 ResolveIcon(entry?.Icon ?? FallbackIcon(null)),
                 tile,
-                () => OpenFacewearPicker(actor),
+                () =>
+                {
+                    if (ImGui.GetIO().KeyCtrl)
+                    {
+                        if (entry is not null)
+                            SetFacewear(actor, 0, "Remove facewear");
+                    }
+                    else
+                        OpenFacewearPicker(actor);
+                },
                 help: ready ? "Choose a facewear" : blocked,
                 disabled: !ready);
 

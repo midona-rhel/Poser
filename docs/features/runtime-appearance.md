@@ -42,7 +42,10 @@ id is Glamourer's: a sheet row, zero for nothing, a sentinel under the
 packed model id (model, weapon type, variant), which is how a slot wears
 what no item names and how a weapon wears a prop. Every change is one
 journal step whose inverse is the slot's previous state, read before the
-write. Without Glamourer the view disables in place and says why.
+write. The cards carry no verbs: Ctrl-click on an item's icon, a dye box
+or the facewear removes it, "None" leads the dye and facewear lists, and
+Remove all takes everything off. Without Glamourer the view disables in
+place and says why.
 
 An MCDF is never rendered on a CharaView preview body. The library inspector
 may read its header without extraction or claiming an actor. Open in Glamourer

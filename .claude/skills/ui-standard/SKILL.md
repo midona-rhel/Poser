@@ -606,6 +606,9 @@ navigation, not a scrollbar — may shift anything.
   proportional digits make a changing value wiggle inside its well —
   the no-reflow rule at glyph scale. Applies to every numeric readout,
   well, and matrix cell.
+- Ctrl-click on a wardrobe tile — an item's icon, a dye box, the
+  facewear — REMOVES what it wears (ruled 2026-09-02); the tiles carry
+  no remove verbs.
 
 - A destructive whole-set verb (Destroy all) requires an armed
   confirmation — the first press arms ("Confirm destroy all"), the
