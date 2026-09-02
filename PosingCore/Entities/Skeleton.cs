@@ -584,10 +584,20 @@ public class Skeleton : EntityBase, ISkeleton
     /// slot's native base: the wanted bones' snapshots refreshed and the
     /// model matrix. Resolving the base twice a frame per skeleton was a
     /// third of the overlay's cost (traced 2026-09-03).</summary>
+    /// <summary>Ticks spent resolving the slot's native base in the draw
+    /// refresh, and the calls, for the bridge's profile: the sampler
+    /// charged the resolver a fifth of a millisecond a frame that its
+    /// few pointer reads cannot cost.</summary>
+    public static long ResolveTicks;
+    public static long ResolveCalls;
+
     public unsafe Matrix4x4? RefreshForDraw()
     {
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
         var charaBase = (FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase*)
             _resolveCharacterBase(Actor);
+        ResolveTicks += System.Diagnostics.Stopwatch.GetTimestamp() - started;
+        ResolveCalls++;
         if (charaBase == null)
             return null;
         CharacterBaseAddress = (nint)charaBase;

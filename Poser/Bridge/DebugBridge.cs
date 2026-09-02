@@ -271,6 +271,10 @@ public sealed class DebugBridge : IDisposable
                     peakMs = Math.Round(global::Poser.UI.FrameProfiler.PeakFrameMs, 1),
                     gc0 = GC.CollectionCount(0), gc1 = GC.CollectionCount(1), gc2 = GC.CollectionCount(2),
                     allocated = GC.GetTotalAllocatedBytes(false),
+                    resolveUs = global::Poser.Entities.Skeleton.ResolveCalls == 0 ? 0.0
+                        : Math.Round(global::Poser.Entities.Skeleton.ResolveTicks * 1_000_000.0
+                            / System.Diagnostics.Stopwatch.Frequency / global::Poser.Entities.Skeleton.ResolveCalls, 2),
+                    resolveCalls = global::Poser.Entities.Skeleton.ResolveCalls,
                     units,
                 });
             }

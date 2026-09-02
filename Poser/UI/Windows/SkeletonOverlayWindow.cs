@@ -223,12 +223,59 @@ public class SkeletonOverlayWindow : Window, IDisposable
     private Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap? _dotSelected;
     private bool _dotSpritesFailed;
 
+    // A connector is the same idea: a strip baked once, white with a soft
+    // band along each edge, drawn as one tinted quad turned along the
+    // bone. A path-stroked line call per bone cost 0.25 ms a frame.
+    private const int LineSpriteLength = 64;
+    private const int LineSpriteHeight = 8;
+    private Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap? _lineSprite;
+
     public void Dispose()
     {
         _dotPlain?.Dispose();
         _dotSelected?.Dispose();
+        _lineSprite?.Dispose();
         _dotPlain = null;
         _dotSelected = null;
+        _lineSprite = null;
+    }
+
+    private bool EnsureLineSprite()
+    {
+        if (_lineSprite != null)
+            return true;
+        if (_dotSpritesFailed)
+            return false;
+        try
+        {
+            int w = LineSpriteLength, h = LineSpriteHeight;
+            var pixels = new byte[w * h * 4];
+            for (int y = 0; y < h; y++)
+            {
+                // Full inside, fading over two rows at each edge.
+                float edge = MathF.Min(y + 0.5f, h - 0.5f - y);
+                byte alpha = (byte)MathF.Round(255f * Math.Clamp(edge / 2f, 0f, 1f));
+                for (int x = 0; x < w; x++)
+                {
+                    int at = (y * w + x) * 4;
+                    pixels[at] = 255;
+                    pixels[at + 1] = 255;
+                    pixels[at + 2] = 255;
+                    pixels[at + 3] = alpha;
+                }
+            }
+            _lineSprite = _textures.CreateFromRaw(
+                Dalamud.Interface.Textures.RawImageSpecification.Rgba32(w, h),
+                pixels,
+                "Poser bone line");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _dotSpritesFailed = true;
+            _log.Warning($"[Overlay] line sprite could not be baked; drawing lines: {ex.Message}");
+            return false;
+        }
     }
 
     private bool EnsureDotSprites()
@@ -2013,6 +2060,21 @@ public class SkeletonOverlayWindow : Window, IDisposable
         bool toCircle = LineToCircle;
         float radius = DotRadius;
         float thickness = priority ? LineThickness * 1.75f : LineThickness;
+        bool sprite = EnsureLineSprite();
+        int count = 0;
+        if (sprite)
+        {
+            foreach (ref readonly var bone in CollectionsMarshal.AsSpan(bones))
+                if (bone.ParentScreenPos != null && IsPriorityBone(bone) == priority)
+                    count++;
+            if (count == 0)
+                return;
+            drawList.PushTextureID(_lineSprite!.Handle);
+            drawList.PrimReserve(count * 6, count * 4);
+        }
+        // The soft band is two of the sprite's eight rows on each side; the
+        // quad is widened so that band lands about a pixel wide on screen.
+        float halfWidth = thickness * 0.5f + 1f;
 
         foreach (var bone in bones)
         {
@@ -2040,8 +2102,27 @@ public class SkeletonOverlayWindow : Window, IDisposable
                 from = shortened.From;
                 to = shortened.To;
             }
-            drawList.AddLine(from, to, color, thickness);
+            if (!sprite)
+            {
+                drawList.AddLine(from, to, color, thickness);
+                continue;
+            }
+            var direction = to - from;
+            float length = direction.Length();
+            if (length < 0.5f)
+            {
+                // A reserved slot must be filled: a degenerate quad draws nothing.
+                drawList.PrimQuadUV(from, from, from, from, Vector2.Zero, Vector2.Zero, Vector2.Zero, Vector2.Zero, 0);
+                continue;
+            }
+            var normal = new Vector2(-direction.Y, direction.X) * (halfWidth / length);
+            drawList.PrimQuadUV(
+                from - normal, to - normal, to + normal, from + normal,
+                new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(0f, 1f),
+                color);
         }
+        if (sprite)
+            drawList.PopTextureID();
     }
 
     /// <summary>Both ends of a segment pulled back by <paramref name="inset"/>
