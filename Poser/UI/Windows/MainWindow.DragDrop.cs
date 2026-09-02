@@ -72,7 +72,7 @@ public partial class MainWindow
             foreach (var id in moved)
             {
                 LeaveGroupOverrides(id);
-                _groups.AddMember(intoGroup.Id, id);
+                _groupSteps.AddMember(intoGroup.Id, id);
                 JoinGroupOverrides(id);
             }
             return;
@@ -88,7 +88,7 @@ public partial class MainWindow
             foreach (var id in moved)
             {
                 LeaveGroupOverrides(id);
-                _groups.AddMember(host.Id, id, index);
+                _groupSteps.AddMember(host.Id, id, index);
                 JoinGroupOverrides(id);
                 index = host.Members.IndexOf(id) + 1;
             }
@@ -103,7 +103,7 @@ public partial class MainWindow
             foreach (var id in moved)
             {
                 LeaveGroupOverrides(id);
-                _groups.AddMember(parentId, id);
+                _groupSteps.AddMember(parentId, id);
                 JoinGroupOverrides(id);
             }
             return;
@@ -119,8 +119,8 @@ public partial class MainWindow
             foreach (var id in moved)
             {
                 LeaveGroupOverrides(id);
-                _groups.RemoveMember(id);
-                _groups.MoveRoot(RootSlot.For(id), anchor, after);
+                _groupSteps.RemoveMember(id);
+                _groupSteps.MoveRoot(RootSlot.For(id), anchor, after);
                 anchor = RootSlot.For(id);
                 after = true;
             }
@@ -132,8 +132,8 @@ public partial class MainWindow
         foreach (var id in moved)
         {
             LeaveGroupOverrides(id);
-            _groups.RemoveMember(id);
-            _groups.MoveRootToEnd(RootSlot.For(id));
+            _groupSteps.RemoveMember(id);
+            _groupSteps.MoveRootToEnd(RootSlot.For(id));
         }
     }
 
@@ -213,7 +213,7 @@ public partial class MainWindow
         if (target?.Tag is GroupRowTag intoGroup && position == RowDropPosition.Into)
         {
             if (_groups.CanNest(groupId, intoGroup.Id, out var reason))
-                _log.Debug($"Sidebar drop: nest -> {_groups.Nest(groupId, intoGroup.Id)}");
+                _log.Debug($"Sidebar drop: nest -> {_groupSteps.Nest(groupId, intoGroup.Id)}");
             else
                 _notices.Failed($"Group not moved: {reason}");
             return;
@@ -230,7 +230,7 @@ public partial class MainWindow
             int index = target.Tag is GroupRowTag sibling ? host.Children.IndexOf(sibling.Id) : -1;
             if (index >= 0 && position == RowDropPosition.After)
                 index++;
-            _groups.Nest(groupId, host.Id, index);
+            _groupSteps.Nest(groupId, host.Id, index);
             return;
         }
         // The root order.
@@ -239,15 +239,15 @@ public partial class MainWindow
             && RootSlotOf(target) is { } anchor)
         {
             if (_groups.Find(groupId) is { ParentId: not null })
-                _groups.Unnest(groupId, anchor, position == RowDropPosition.After);
+                _groupSteps.Unnest(groupId, anchor, position == RowDropPosition.After);
             else
-                _groups.MoveRoot(slot, anchor, position == RowDropPosition.After);
+                _groupSteps.MoveRoot(slot, anchor, position == RowDropPosition.After);
             return;
         }
         if (_groups.Find(groupId) is { ParentId: not null })
-            _groups.Unnest(groupId);
+            _groupSteps.Unnest(groupId);
         else
-            _groups.MoveRootToEnd(slot);
+            _groupSteps.MoveRootToEnd(slot);
     }
 
     /// <summary>The group a row sits INSIDE: a member's group, or a nested

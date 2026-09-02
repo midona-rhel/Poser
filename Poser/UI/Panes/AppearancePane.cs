@@ -9,6 +9,7 @@ using Poser.Application.Appearance;
 using Poser.Application.Integration;
 using Poser.Application.Operations;
 using Poser.Application.Presentation;
+using Poser.Application.Transforms;
 using Poser.Application.Scene;
 using Poser.Domain.Appearance;
 using Poser.Domain.Identity;
@@ -39,6 +40,8 @@ public sealed class AppearancePane
     private readonly UserNotices _notices;
     private readonly Game.Integration.InvisibleSkinService _invisibleSkin;
     private readonly Game.Journal.ActorValueSession _values;
+    private readonly Game.Journal.DisruptiveSteps _disruptive;
+    private readonly TransformHistory _history;
 
     private bool _openModel = true;
     private bool _openGeneral = true;
@@ -120,9 +123,13 @@ public sealed class AppearancePane
         Config.ConfigurationService config,
         Game.Integration.InvisibleSkinService invisibleSkin,
         UserNotices notices,
-        Game.Journal.ActorValueSession values)
+        Game.Journal.ActorValueSession values,
+        Game.Journal.DisruptiveSteps disruptive,
+        TransformHistory history)
     {
         _values = values;
+        _disruptive = disruptive;
+        _history = history;
         _notices = notices;
         _invisibleSkin = invisibleSkin;
         _mcdfPath = config.Config.Library.EnsureMcdfRootExists();
@@ -222,6 +229,41 @@ public sealed class AppearancePane
 
     private bool _openScene = true;
 
+
+    /// <summary>What undoes an appearance apply: the previous assignment
+    /// when there was one, the reset when there was not.</summary>
+    private Func<IntegrationResult> CollectionInverse(ActorId actor)
+    {
+        var before = _integration.ReadCollection(actor);
+        return before is { Success: true, Value: { HasIndividualAssignment: true } was }
+            ? () => _integration.SetCollection(actor, was.EffectiveId, was.EffectiveName)
+            : () => _integration.ResetCollection(actor);
+    }
+
+    private Func<IntegrationResult> BodyProfileInverse(ActorId actor)
+    {
+        var before = _integration.OverridesFor(actor);
+        return before.TemporaryBodyProfile is { } profile
+            ? () => _integration.SetBodyProfile(actor, profile, before.BodyProfileName ?? "Profile")
+            : () => _integration.ResetBodyProfile(actor);
+    }
+
+    /// <summary>A model id change redraws: a disruptive step whose inverse
+    /// is the previous id, or the reset when none was owned.</summary>
+    private PresentationResult ModelStep(ActorId actor, string description, Func<PresentationResult> verb)
+    {
+        var before = _model.IsOwned(actor) ? _model.Read(actor) : null;
+        Func<IntegrationResult> inverse = before is { } previous
+            ? () => AsIntegration(_model.Apply(actor, previous))
+            : () => AsIntegration(_model.Reset(actor));
+        PresentationResult outcome = PresentationResult.Ok();
+        _disruptive.Run(actor, description, () => AsIntegration(outcome = verb()), inverse);
+        return outcome;
+    }
+
+    private static IntegrationResult AsIntegration(PresentationResult result) =>
+        result.Success ? IntegrationResult.Ok() : IntegrationResult.Fail(result.Detail ?? "Refused.");
+
     private void ReleaseAdopted(ActorId id)
     {
         var resolved = _bindings.Resolve(id);
@@ -230,8 +272,17 @@ public sealed class AppearancePane
             _notices.Failed("Release: the actor is no longer in the scene.");
             return;
         }
+        var address = live.Address;
         if (_spawn.RemoveActorFromScene(live))
+        {
             _notices.Done($"Released '{_scene.Snapshot.FindActor(id)?.Name ?? live.Name}'.");
+            _history.Append(new JournalStep(
+                "Release actor",
+                () => _spawn.AdoptFromWorld(address) is not null,
+                () => _bindings.Resolve(id) is { Success: true, Value: { } again }
+                    ? _spawn.RemoveActorFromScene(again)
+                    : _scene.Snapshot.FindActor(id.LogicalId) is null));
+        }
         else
             _notices.Failed("Release: the actor could not be handed back.");
     }
@@ -327,7 +378,7 @@ public sealed class AppearancePane
         float tx = row.ControlOrigin.X + row.ControlWidth - trailW;
         ImGui.SetCursorScreenPos(new Vector2(tx, top));
         Crystarium.Button("Reset",
-            () => ReportModel(_values.ResetModelId(id), "Reset model"),
+            () => ReportModel(ModelStep(id, "Reset model id", () => _model.Reset(id)), "Reset model"),
             style: ControlStyle.Workspace with
             { Width = UiWidth.Fixed(theme.Form.VerbWidth) },
             variant: ButtonVariant.Disruptive,
@@ -357,7 +408,7 @@ public sealed class AppearancePane
                 out var next)
             && next >= 0)
         {
-            ReportModel(_values.ApplyModelId(id, next), "Model id");
+            ReportModel(ModelStep(id, "Set model id", () => _model.Apply(id, next)), "Model id");
             return;
         }
         _notices.Refused("Model id must be a whole number.");
@@ -409,7 +460,7 @@ public sealed class AppearancePane
             || _modelPickerActor is not { } target)
             return;
         ReportModel(
-            _values.ApplyModelId(target, pick.Item.ModelCharaId), pick.Item.Name);
+            ModelStep(target, "Set model id", () => _model.Apply(target, pick.Item.ModelCharaId)), pick.Item.Name);
     }
 
     private PickerOptions<ModelCatalogEntry> ModelPickerOptions() => new()
@@ -496,12 +547,15 @@ public sealed class AppearancePane
             return;
         var picked = pick.Owner switch
         {
-            "Collection" => _integration.SetCollection(
-                target, pick.Item.Id, pick.Item.Name),
-            "Design" => _integration.ApplyDesign(
-                target, pick.Item.Id, pick.Item.Name),
-            "Body profile" => _integration.SetBodyProfile(
-                target, pick.Item.Id, pick.Item.Name),
+            "Collection" => _disruptive.Run(target, "Set collection",
+                () => _integration.SetCollection(target, pick.Item.Id, pick.Item.Name),
+                CollectionInverse(target)),
+            "Design" => _disruptive.Run(target, "Apply design",
+                () => _integration.ApplyDesign(target, pick.Item.Id, pick.Item.Name),
+                () => _integration.ResetDesign(target)),
+            "Body profile" => _disruptive.Run(target, "Set body profile",
+                () => _integration.SetBodyProfile(target, pick.Item.Id, pick.Item.Name),
+                BodyProfileInverse(target)),
             _ => IntegrationResult.Ok(),
         };
         if (!picked.Success)
@@ -533,7 +587,8 @@ public sealed class AppearancePane
                 disabled: !glamourer.Available,
                 help: glamourer.Available ? null : glamourer.Detail);
             actions.Button("Redraw",
-                () => ReportExternal(_integration.Redraw(actor), "Redraw"),
+                () => ReportExternal(
+                    _disruptive.Run(actor, "Redraw", () => _integration.Redraw(actor)), "Redraw"),
                 variant: ButtonVariant.Disruptive);
             actions.Button("Reset",
                 () => Report(_values.ResetPresentation(actor), "Reset appearance"),
@@ -630,7 +685,8 @@ public sealed class AppearancePane
             _collectionReadout,
             () => OpenPicker(
                 actor, "Collection", _integration.ListCollections, _collectionKey),
-            () => ReportExternal(_integration.ResetCollection(actor), "Reset Collection"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset collection",
+                () => _integration.ResetCollection(actor), CollectionInverse(actor)), "Reset Collection"),
             available: penumbra.Available && !mcdfOwned,
             owned: external.CollectionOwned,
             disruptive: true,
@@ -646,7 +702,8 @@ public sealed class AppearancePane
             "Design",
             external.DesignOwned ? external.DesignName ?? "Design" : "None applied",
             () => OpenPicker(actor, "Design", _integration.ListDesigns),
-            () => ReportExternal(_integration.ResetDesign(actor), "Reset Design"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset design",
+                () => _integration.ResetDesign(actor)), "Reset Design"),
             available: glamourer.Available && !mcdfOwned,
             owned: external.DesignOwned,
             disruptive: true,
@@ -664,8 +721,8 @@ public sealed class AppearancePane
                 ? external.BodyProfileName ?? "Profile"
                 : "Automatic",
             () => OpenPicker(actor, "Body profile", _integration.ListBodyProfiles),
-            () => ReportExternal(
-                _integration.ResetBodyProfile(actor), "Reset Body profile"),
+            () => ReportExternal(_disruptive.Run(actor, "Reset body profile",
+                () => _integration.ResetBodyProfile(actor), BodyProfileInverse(actor)), "Reset Body profile"),
             available: customize.Available && !mcdfOwned && !_bodyBlocked,
             owned: external.TemporaryBodyProfile != null,
             disruptive: true,
@@ -745,8 +802,8 @@ public sealed class AppearancePane
                     {
                         actions.Button(
                             mcdfOwnedNow ? "Reset MCDF" : "Retry cleanup",
-                            () => ReportExternal(
-                                _integration.ResetMcdf(actor), "Reset MCDF"),
+                            () => ReportExternal(_disruptive.Run(actor, "Reset MCDF",
+                                () => _integration.ResetMcdf(actor)), "Reset MCDF"),
                             help: mcdfOwnedNow
                                 ? "Remove everything the imported character file applied to this actor"
                                 : "Retry deleting extracted files left behind by a failed import",
@@ -832,7 +889,9 @@ public sealed class AppearancePane
             || _bindings.GetActorId(dress.Body) is not { } bound)
             return;
         _pendingMcdfDress = null;
-        var begun = _integration.BeginImport(bound, dress.Path);
+        var begun = _disruptive.Run(bound, "Import character file",
+            () => _integration.BeginImport(bound, dress.Path),
+            () => _integration.ResetMcdf(bound), asset: dress.Path);
         if (!begun.Success)
             _notices.Failed($"Import: {begun.Detail}");
     }
@@ -845,7 +904,9 @@ public sealed class AppearancePane
             _mcdfPath = System.IO.Path.GetDirectoryName(chosen) ?? _mcdfPath;
             if (_mcdfActor is not { } frozen)
                 return;
-            var begun = _integration.BeginImport(frozen, chosen);
+            var begun = _disruptive.Run(frozen, "Import character file",
+                () => _integration.BeginImport(frozen, chosen),
+                () => _integration.ResetMcdf(frozen), asset: chosen);
             if (!begun.Success)
                 _notices.Failed($"Import: {begun.Detail}");
             _readoutAt = DateTime.MinValue;

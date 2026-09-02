@@ -220,7 +220,10 @@ public sealed partial class PoseLibraryPane
             _notices.Refused("Select an actor to apply a character file to.");
             return;
         }
-        var begun = _integration.BeginImport(id, _vm.Tiles[index].ThumbKey);
+        string path = _vm.Tiles[index].ThumbKey;
+        var begun = _disruptive.Run(id, "Import character file",
+            () => _integration.BeginImport(id, path),
+            () => _integration.ResetMcdf(id), asset: path);
         if (!begun.Success)
             _notices.Failed("Import", begun.Detail);
     }

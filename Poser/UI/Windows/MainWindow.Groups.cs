@@ -29,16 +29,41 @@ public partial class MainWindow
 {
     /// <summary>Ungrouping opens every gate first so each member gets its
     /// own state back.</summary>
-    private void DissolveGroup(Guid id)
-    {
-        if (_groups.Find(id) is { } group)
+    private void DissolveGroup(Guid id) =>
+        _groupSteps.Run("Dissolve group", () =>
         {
-            SetGroupHidden(group, false);
-            SetGroupPaused(group, false);
-            SetGroupNight(group, false);
+            if (_groups.Find(id) is { } group)
+            {
+                SetGroupHiddenCore(group, false);
+                SetGroupPausedCore(group, false);
+                SetGroupNightCore(group, false);
+            }
+            _groups.Dissolve(id);
+        });
+
+    /// <summary>Makes the world match every group's gates, after the model
+    /// was put back: the journal's way to undo a gate or a dissolve.</summary>
+    private void ReapplyGroupGates()
+    {
+        foreach (var group in _groups.All)
+        {
+            SetGate(group, group.Hidden, group.RememberedVisible, g => g.Hidden,
+                IsEntityVisible, SetEntityVisible, imposed: false);
+            SetGate(group, group.Paused, group.RememberedPlaying, g => g.Paused,
+                PlayingOf, SetPlaying, imposed: false);
+            SetGate(group, group.Night, group.RememberedNight, g => g.Night,
+                NightOf, SetNight, imposed: true);
         }
-        _groups.Dissolve(id);
     }
+
+    private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden) =>
+        _groupSteps.Run(hidden ? "Hide group" : "Show group", () => SetGroupHiddenCore(group, hidden));
+
+    private void SetGroupPaused(global::Poser.Application.Scene.SceneGroup group, bool paused) =>
+        _groupSteps.Run(paused ? "Pause group" : "Resume group", () => SetGroupPausedCore(group, paused));
+
+    private void SetGroupNight(global::Poser.Application.Scene.SceneGroup group, bool night) =>
+        _groupSteps.Run(night ? "Group night on" : "Group night off", () => SetGroupNightCore(group, night));
 
     private bool UnderClosedGate(SelectionId member, Func<global::Poser.Application.Scene.SceneGroup, bool> closed)
     {
@@ -86,7 +111,7 @@ public partial class MainWindow
         _groups.Touch();
     }
 
-    private void SetGroupHidden(global::Poser.Application.Scene.SceneGroup group, bool hidden)
+    private void SetGroupHiddenCore(global::Poser.Application.Scene.SceneGroup group, bool hidden)
     {
         if (group.Hidden == hidden)
             return;
@@ -95,7 +120,7 @@ public partial class MainWindow
             IsEntityVisible, SetEntityVisible, imposed: false);
     }
 
-    private void SetGroupPaused(global::Poser.Application.Scene.SceneGroup group, bool paused)
+    private void SetGroupPausedCore(global::Poser.Application.Scene.SceneGroup group, bool paused)
     {
         if (group.Paused == paused)
             return;
@@ -104,7 +129,7 @@ public partial class MainWindow
             PlayingOf, SetPlaying, imposed: false);
     }
 
-    private void SetGroupNight(global::Poser.Application.Scene.SceneGroup group, bool night)
+    private void SetGroupNightCore(global::Poser.Application.Scene.SceneGroup group, bool night)
     {
         if (group.Night == night)
             return;

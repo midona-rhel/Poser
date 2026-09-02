@@ -15,6 +15,31 @@ public sealed class ValueJournal
     private readonly TransformHistory _history;
     private readonly JournalContexts? _contexts;
     private OpenStep? _open;
+    private int _suspended;
+
+    /// <summary>
+    /// While held, sets and records still write but append nothing: the
+    /// inverse of a composite step re-runs the surface's own routines, and
+    /// those must not journal again inside the undo.
+    /// </summary>
+    public IDisposable Suspend()
+    {
+        _suspended++;
+        return new Resume(this);
+    }
+
+    public bool IsSuspended => _suspended > 0;
+
+    private sealed class Resume(ValueJournal owner) : IDisposable
+    {
+        private bool _done;
+        public void Dispose()
+        {
+            if (_done) return;
+            _done = true;
+            owner._suspended--;
+        }
+    }
 
     public ValueJournal(TransformHistory history, JournalContexts? contexts = null)
     {
@@ -45,6 +70,11 @@ public sealed class ValueJournal
         var current = read();
         if (EqualityComparer<T>.Default.Equals(current, value))
             return;
+        if (_suspended > 0)
+        {
+            write(value);
+            return;
+        }
         if (_open is { } open
             && open.Key.Equals(key)
             && ReferenceEquals(_history.PeekUndo(), open.Entry))
@@ -79,7 +109,7 @@ public sealed class ValueJournal
         Action<T> write,
         Func<bool>? alive = null)
     {
-        if (EqualityComparer<T>.Default.Equals(before, after))
+        if (EqualityComparer<T>.Default.Equals(before, after) || _suspended > 0)
             return;
         _history.Append(new JournalStep(
             description,

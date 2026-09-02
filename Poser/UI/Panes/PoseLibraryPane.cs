@@ -171,6 +171,7 @@ public sealed partial class PoseLibraryPane
     private readonly SceneLoadPreferences _sceneOptions;
 
     private readonly SelectionSession _selection;
+    private readonly Game.Journal.DisruptiveSteps _disruptive;
 
     private readonly IEntityBindings _bindings;
 
@@ -455,8 +456,10 @@ public sealed partial class PoseLibraryPane
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,
         ISceneLifecycleHistory lifecycle,
-        UserNotices notices)
+        UserNotices notices,
+        Game.Journal.DisruptiveSteps disruptive)
     {
+        _disruptive = disruptive;
         _lifecycle = lifecycle;
         _config = config;
         _library = library;

@@ -1056,13 +1056,13 @@ public partial class MainWindow
         {
             () => OpenEntityRename(
                 "Rename group", group.Name,
-                next => _groups.Rename(groupId, next)),
+                next => _groupSteps.Rename(groupId, next)),
             null, // Duplicate — child clicks are read separately.
             () => OpenEntityRename(
                 "Save group to library", group.Name,
                 name => _scenePane.SaveGroupEntry(
                     group.Members, name, AllActorsOwned(group.Members))),
-            () => _groups.SetLocked(groupId, !group.Locked),
+            () => _groupSteps.SetLocked(groupId, !group.Locked),
             null, // separator
             () => SetGroupHidden(group, !group.Hidden),
             () => SetGroupPaused(group, !group.Paused),
@@ -1192,7 +1192,7 @@ public partial class MainWindow
             actions.Add(() => OpenEntityRename(
                 "Name the group",
                 $"Group {_groups.All.Count + 1}",
-                name => _groups.Create(name, _selection.Selected)));
+                name => _groupSteps.Create(name, _selection.Selected)));
         }
         items.Add(new ContextMenuItem("Deselect", TablerIcon.X));
         actions.Add(() => _selection.Clear());

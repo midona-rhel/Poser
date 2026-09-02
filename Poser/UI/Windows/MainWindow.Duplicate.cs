@@ -182,9 +182,9 @@ public partial class MainWindow
                 continue;
             }
             if (copy.Parent is { } parentId && _groups.Find(parentId) != null)
-                _groups.Nest(made.Id, parentId, copy.Index);
+                _groupSteps.Nest(made.Id, parentId, copy.Index);
             else if (copy.Anchor is { } anchor)
-                _groups.MoveRoot(
+                _groupSteps.MoveRoot(
                     global::Poser.Application.Scene.RootSlot.ForGroup(made.Id), anchor, after: true);
         }
     }
@@ -212,11 +212,11 @@ public partial class MainWindow
                 children.Add(made);
         if (ids.Count + children.Count == 0)
             return null;
-        var group = _groups.Create(copy.Name, ids, allowThin: true);
+        var group = _groupSteps.Create(copy.Name, ids, allowThin: true);
         if (group == null)
             return null;
         foreach (var child in children)
-            _groups.Nest(child.Id, group.Id);
+            _groupSteps.Nest(child.Id, group.Id);
         if (copy.Hidden)
             SetGroupHidden(group, true);
         if (copy.Paused)

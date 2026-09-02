@@ -464,7 +464,7 @@ public partial class MainWindow
             {
                 if (matched is { } named)
                     form.TextInput("Name", named.Name,
-                        value => _groups.Rename(named.Id, value));
+                        value => _groupSteps.Rename(named.Id, value));
                 for (int i = 0; i < 5; i++)
                     if (_multiCounts[i] > 0)
                         form.ReadOnly(MultiKindLabels[i], _multiCountText[i]);
@@ -486,7 +486,7 @@ public partial class MainWindow
                             () => OpenEntityRename(
                                 "Name the group",
                                 $"Group {_groups.All.Count + 1}",
-                                name => _groups.Create(
+                                name => _groupSteps.Create(
                                     name, _selection.Selected)));
                     }
                     actions.Button("Move to camera", MoveSelectionToCamera);

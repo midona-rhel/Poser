@@ -627,4 +627,52 @@ public sealed class SceneGroups
                 return true;
         return false;
     }
+
+    /// <summary>The whole model, frozen. The journal keeps one before and
+    /// one after every group verb.</summary>
+    public GroupsSnapshot Capture()
+    {
+        var groups = new List<GroupRecord>(_groups.Count);
+        foreach (var group in _groups)
+            groups.Add(new GroupRecord(
+                group.Id, group.Name,
+                group.Members.ToArray(), group.Children.ToArray(),
+                group.ParentId, group.Locked, group.Hidden, group.Paused, group.Night,
+                new Dictionary<SelectionId, bool>(group.RememberedVisible),
+                new Dictionary<SelectionId, bool>(group.RememberedPlaying),
+                new Dictionary<SelectionId, bool>(group.RememberedNight)));
+        return new GroupsSnapshot(groups, _order.ToArray(), ActiveGroupId);
+    }
+
+    /// <summary>Puts a frozen model back, ids and all.</summary>
+    public void Restore(GroupsSnapshot snapshot)
+    {
+        _groups.Clear();
+        foreach (var record in snapshot.Groups)
+        {
+            var group = new SceneGroup
+            {
+                Id = record.Id,
+                Name = record.Name,
+                Members = new List<SelectionId>(record.Members),
+                ParentId = record.ParentId,
+                Locked = record.Locked,
+                Hidden = record.Hidden,
+                Paused = record.Paused,
+                Night = record.Night,
+            };
+            group.Children.AddRange(record.Children);
+            foreach (var (member, value) in record.RememberedVisible)
+                group.RememberedVisible[member] = value;
+            foreach (var (member, value) in record.RememberedPlaying)
+                group.RememberedPlaying[member] = value;
+            foreach (var (member, value) in record.RememberedNight)
+                group.RememberedNight[member] = value;
+            _groups.Add(group);
+        }
+        _order.Clear();
+        _order.AddRange(snapshot.Order);
+        ActiveGroupId = snapshot.ActiveGroupId;
+        Revision++;
+    }
 }

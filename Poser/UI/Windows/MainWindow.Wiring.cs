@@ -81,7 +81,7 @@ public partial class MainWindow
         {
             if (row.Tag is GroupRowTag lockTag
                 && _groups.Find(lockTag.Id) is { } lockGroup)
-                _groups.SetLocked(lockTag.Id, !lockGroup.Locked);
+                _groupSteps.SetLocked(lockTag.Id, !lockGroup.Locked);
         };
         _vm.OnGroupVisibility = row =>
         {

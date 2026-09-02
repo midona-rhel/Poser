@@ -67,6 +67,10 @@ public interface IActorSpawnService : IDisposable
     /// </summary>
     bool RemoveActorFromScene(IActor actor);
 
+    /// <summary>Takes the overworld actor at this address into the scene by
+    /// reference — the undo of a release. Null when it could not.</summary>
+    IActor? AdoptFromWorld(nint address) => null;
+
     /// <summary>
     /// The reason <see cref="RemoveActorFromScene"/> would refuse this actor
     /// right now, in the user's words — or null when removal is admitted.

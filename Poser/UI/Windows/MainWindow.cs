@@ -83,6 +83,7 @@ public partial class MainWindow : Window
     private readonly Dalamud.Plugin.Services.IPluginLog _log;
 
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
+    private readonly global::Poser.Application.Scene.GroupSteps _groupSteps;
 
     /// <summary>A group row's click target — selects the whole membership.
     /// </summary>
@@ -532,6 +533,7 @@ public partial class MainWindow : Window
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
         global::Poser.Application.Scene.SceneGroups groups,
+        global::Poser.Application.Scene.GroupSteps groupSteps,
         Controls.EntityNameModal names,
         Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
@@ -627,6 +629,8 @@ public partial class MainWindow : Window
         _notices = notices;
         _log = log;
         _groups = groups;
+        _groupSteps = groupSteps;
+        _groupSteps.ReapplyGates = ReapplyGroupGates;
         _gameCamera = gameCamera;
         _viewportProjection = viewportProjection;
         _sessions = sessions;

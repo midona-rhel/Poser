@@ -5,6 +5,7 @@ using Dalamud.Plugin.Services;
 using Poser.Application.Actors;
 using Poser.Application.Animation;
 using Poser.Application.Selection;
+using Poser.Application.Transforms;
 using Poser.Config;
 using Poser.Domain.Identity;
 using Poser.Entities;
@@ -162,8 +163,12 @@ public sealed class WorldAdoptionSource
         AnimationSession animation,
         ConfigurationService configuration,
         IPluginLog log,
-        UserNotices notices)
+        UserNotices notices,
+        TransformHistory history,
+        IActorSpawnService spawns)
     {
+        _history = history;
+        _spawns = spawns;
         _worldActors = worldActors;
         _lighting = lighting;
         _worldObjects = worldObjects;
@@ -417,6 +422,9 @@ public sealed class WorldAdoptionSource
         _nextRefreshMs = 0;
     }
 
+    private readonly TransformHistory _history;
+    private readonly IActorSpawnService _spawns;
+
     private void AdoptActor(WorldActorCandidateId id)
     {
         var result = _worldActors.CloneCandidate(id, out var clone);
@@ -425,6 +433,17 @@ public sealed class WorldAdoptionSource
             // The clone is bound by the scene's own rescan, so the wrapper the
             // typed import hands back is resolved on a later tick.
             _pendingSelectActor = clone;
+            if (clone is { } adopted)
+            {
+                // The undo hands the body back; the redo adopts it again
+                // from the listing, and refuses if the listing has moved on.
+                var address = adopted.Address;
+                _history.Append(new JournalStep(
+                    "Add actor from the world",
+                    () => _spawns.RemoveActorFromScene(adopted)
+                        || _spawns.AdoptFromWorld(address) is null,
+                    () => _spawns.AdoptFromWorld(address) is not null));
+            }
             return;
         }
         Refuse(
