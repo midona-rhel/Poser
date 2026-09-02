@@ -30,6 +30,11 @@ public sealed class SkeletonOverlayPresentation
 
     public bool IsVisible(BoneId bone) => _shown.Contains(bone);
 
+    /// <summary>Bumps whenever the shown set changes, so a surface can keep
+    /// a per-skeleton mask instead of hashing a bone id per bone per
+    /// frame (0.18 ms a frame on a thousand bones, traced 2026-09-03).</summary>
+    public int Version { get; private set; }
+
     /// <summary>Whether any bone of the SAME ACTOR is shown — the gizmo's
     /// armature gate asks per skeleton, because a hidden actor standing
     /// beside a visible one must still lose its gizmo.</summary>
@@ -69,6 +74,7 @@ public sealed class SkeletonOverlayPresentation
 
     public void SetVisible(IReadOnlyList<BoneId> bones, bool visible)
     {
+        Version++;
         foreach (var bone in bones)
         {
             if (visible)
@@ -85,6 +91,7 @@ public sealed class SkeletonOverlayPresentation
     {
         if (string.IsNullOrWhiteSpace(key) || bones.Count == 0)
             return;
+        Version++;
 
         var state = Resolve(bones);
         if (state != OverlayVisibility.None)
@@ -128,6 +135,7 @@ public sealed class SkeletonOverlayPresentation
         if (snapshot.Revision == _reconciledRevision)
             return;
         _reconciledRevision = snapshot.Revision;
+        Version++;
         var present = _present;
         present.Clear();
         foreach (var actor in snapshot.Actors)
@@ -148,6 +156,7 @@ public sealed class SkeletonOverlayPresentation
 
     public void Clear()
     {
+        Version++;
         _shown.Clear();
         _hiddenSubsets.Clear();
     }

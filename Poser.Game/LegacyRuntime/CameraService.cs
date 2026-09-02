@@ -60,47 +60,59 @@ public class CameraService : ICameraService
             : Vector3.Zero;
     }
 
-    /// <summary>The composed view-projection, once per frame: every
-    /// overlay point used to re-read the camera and re-multiply the two
-    /// matrices (audited 2026-09-03).</summary>
+    /// <summary>The composed view-projection and the display centre, once
+    /// per frame: every overlay point used to re-read the camera and
+    /// re-multiply the two matrices (audited 2026-09-03).</summary>
     private Matrix4x4 _viewProjection;
+    private Vector2 _center;
     private int _viewProjectionFrame = -1;
 
-    public unsafe bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
+    public bool TryGetProjection(out ScreenProjection projection)
+    {
+        if (!Compose())
+        {
+            projection = default;
+            return false;
+        }
+        projection = new ScreenProjection(_viewProjection, _center);
+        return true;
+    }
+
+    public bool WorldToScreen(Vector3 worldPos, out Vector2 screenPos)
+    {
+        if (!Compose())
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+        return new ScreenProjection(_viewProjection, _center).Project(worldPos, out screenPos);
+    }
+
+    /// <summary>Composes the view-projection and the display centre once
+    /// per frame.</summary>
+    private unsafe bool Compose()
     {
         int frame = Dalamud.Bindings.ImGui.ImGui.GetFrameCount();
         if (frame == _viewProjectionFrame)
-            return WorldToScreenDepth(_viewProjection, worldPos, out screenPos);
+            return true;
         var cameraManager = CameraManager.Instance();
         if (cameraManager == null)
-        {
-            screenPos = Vector2.Zero;
             return false;
-        }
-
         var camera = cameraManager->GetActiveCamera();
         if (camera == null)
-        {
-            screenPos = Vector2.Zero;
             return false;
-        }
-
-        // Use Ktisis-style projection that only filters behind-camera, not off-screen
+        // Ktisis-style projection that only filters behind-camera, not off-screen.
         var sceneCamera = camera->CameraBase.SceneCamera;
         var viewMatrix = sceneCamera.ViewMatrix;
         viewMatrix.M44 = 1f;
-
         var renderCamera = sceneCamera.RenderCamera;
         if (renderCamera == null)
-        {
-            screenPos = Vector2.Zero;
             return false;
-        }
-
-        var matrix = viewMatrix * renderCamera->ProjectionMatrix;
-        _viewProjection = matrix;
+        _viewProjection = viewMatrix * renderCamera->ProjectionMatrix;
+        var display = Dalamud.Bindings.ImGui.ImGui.GetIO().DisplaySize;
+        _center = new Vector2(display.X / 2f, display.Y / 2f);
         _viewProjectionFrame = frame;
-        return WorldToScreenDepth(matrix, worldPos, out screenPos);
+        return true;
     }
 
     private static bool WorldToScreenDepth(Matrix4x4 m, Vector3 v, out Vector2 screenPos)

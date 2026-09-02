@@ -21,7 +21,7 @@ namespace Poser.UI;
 /// Overlay window that draws skeleton bones on screen for bone selection.
 /// Visual style based on Ktisis - simple dots with lines, hover popup for overlapping bones.
 /// </summary>
-public class SkeletonOverlayWindow : Window
+public class SkeletonOverlayWindow : Window, IDisposable
 {
     private readonly ICameraService _cameraService;
     private readonly SelectionSession _selection;
@@ -186,8 +186,99 @@ public class SkeletonOverlayWindow : Window
     /// wide record struct, and building and hashing one per bone per frame
     /// was the overlay's second cost (traced 2026-09-02).</summary>
     private bool[] _selectedScratch = Array.Empty<bool>();
+    /// <summary>Which descriptor indices the presentation shows, per
+    /// skeleton, rebuilt only when the presentation's version or the
+    /// descriptors change.</summary>
+    private readonly Dictionary<Domain.Identity.SkeletonId,
+        (IReadOnlyList<BoneDescriptor> Source, int Version, bool[] Mask)> _visibleMasks = new();
+
+    private bool[] VisibleMaskFor(SkeletonDescriptor skeleton)
+    {
+        int version = _presentation.Version;
+        if (_visibleMasks.TryGetValue(skeleton.Id, out var cached)
+            && cached.Version == version
+            && ReferenceEquals(cached.Source, skeleton.Bones))
+            return cached.Mask;
+        var mask = cached.Mask is { } old && old.Length == skeleton.Bones.Count
+            ? old
+            : new bool[skeleton.Bones.Count];
+        for (int b = 0; b < skeleton.Bones.Count; b++)
+            mask[b] = _presentation.IsVisible(skeleton.Bones[b].Id);
+        _visibleMasks[skeleton.Id] = (skeleton.Bones, version, mask);
+        return mask;
+    }
     private readonly Dictionary<SkeletonId,
-        (IReadOnlyList<BoneDescriptor> Source, Dictionary<BoneId, int> Map)> _indexMaps = new();
+        (IReadOnlyList<BoneDescriptor> Source, Dictionary<BoneId, int> Map, int[] Parents)> _indexMaps = new();
+
+    private readonly Dalamud.Plugin.Services.ITextureProvider _textures;
+
+    // The dots are CIRCLES baked once — a white disc under a black ring,
+    // anti-aliased at 64 px — and drawn as one tinted quad each: the tint
+    // colours the disc and leaves the ring black. Two tessellated circles
+    // per bone were the overlay's largest cost (0.95 ms a frame on a
+    // thousand bones, traced 2026-09-03); a quad is four vertices.
+    private const int DotSpriteSize = 64;
+    private const float DotSpriteRadius = 26f;
+    private Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap? _dotPlain;
+    private Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap? _dotSelected;
+    private bool _dotSpritesFailed;
+
+    public void Dispose()
+    {
+        _dotPlain?.Dispose();
+        _dotSelected?.Dispose();
+        _dotPlain = null;
+        _dotSelected = null;
+    }
+
+    private bool EnsureDotSprites()
+    {
+        if (_dotPlain != null && _dotSelected != null)
+            return true;
+        if (_dotSpritesFailed)
+            return false;
+        try
+        {
+            _dotPlain ??= BakeDot(ringWidth: DotSpriteRadius / 7f);
+            _dotSelected ??= BakeDot(ringWidth: DotSpriteRadius * 2.5f / 8f);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _dotSpritesFailed = true;
+            _log.Warning($"[Overlay] dot sprites could not be baked; drawing polygons: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>A disc of the sprite radius under a ring of the given width,
+    /// both edges anti-aliased over one pixel; white inside, black ring.</summary>
+    private Dalamud.Interface.Textures.TextureWraps.IDalamudTextureWrap BakeDot(float ringWidth)
+    {
+        int size = DotSpriteSize;
+        var pixels = new byte[size * size * 4];
+        float centre = size / 2f;
+        float inner = DotSpriteRadius - ringWidth;
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float dx = x + 0.5f - centre;
+            float dy = y + 0.5f - centre;
+            float d = MathF.Sqrt(dx * dx + dy * dy);
+            float outer = Math.Clamp(DotSpriteRadius - d + 0.5f, 0f, 1f);
+            float fill = Math.Clamp(inner - d + 0.5f, 0f, 1f);
+            byte grey = (byte)MathF.Round(255f * fill);
+            int at = (y * size + x) * 4;
+            pixels[at] = grey;
+            pixels[at + 1] = grey;
+            pixels[at + 2] = grey;
+            pixels[at + 3] = (byte)MathF.Round(255f * outer);
+        }
+        return _textures.CreateFromRaw(
+            Dalamud.Interface.Textures.RawImageSpecification.Rgba32(size, size),
+            pixels,
+            "Poser bone dot");
+    }
     /// <summary>Brio's popup: the cluster FROZEN at the press or the
     /// wheel notch that opened it, so its order and its entries never
     /// change while it is open — the reference's stability. Its rect is
@@ -249,7 +340,8 @@ public class SkeletonOverlayWindow : Window
         WorldAdoptionSource adoption,
         Application.Scene.SceneGroups groups,
         IActorManager actorManager,
-        Dalamud.Plugin.Services.IPluginLog log)
+        Dalamud.Plugin.Services.IPluginLog log,
+        Dalamud.Plugin.Services.ITextureProvider textures)
         : base("##poser_skeleton_overlay",
             ImGuiWindowFlags.NoBackground |
             ImGuiWindowFlags.NoDecoration |
@@ -274,6 +366,7 @@ public class SkeletonOverlayWindow : Window
         _groups = groups;
         _actorManager = actorManager;
         _log = log;
+        _textures = textures;
 
         RespectCloseHotkey = false;
     }
@@ -627,6 +720,7 @@ public class SkeletonOverlayWindow : Window
         // descriptors give identity/hierarchy, the viewport projection gives
         // model-space facts, and the camera service projects to screen.
         var onlyActor = Config.OnlyActiveActorBones ? SelectionActorLineage() : null;
+        bool hasProjection = _cameraService.TryGetProjection(out var projection);
         if (drawArmature)
         foreach (var actor in _scene.Snapshot.Actors)
         {
@@ -660,6 +754,8 @@ public class SkeletonOverlayWindow : Window
             var armedIkBones = CollectArmedIkBones(slotSkeleton.Id);
             bool showNsfw = ShowNsfwBones;
             var index = IndexMapFor(slotSkeleton);
+            var parents = _indexMaps[slotSkeleton.Id].Parents;
+            var visibleMask = VisibleMaskFor(slotSkeleton);
             int count = descriptors.Count;
             EnsureScratch(count);
             var selectedMask = _selectedScratch;
@@ -718,7 +814,7 @@ public class SkeletonOverlayWindow : Window
                 // what stops the switch stranding an edit with no on-screen
                 // handle.
                 bool shown = picking
-                    || (UserVisible && _presentation.IsVisible(bone.Id));
+                    || (UserVisible && visibleMask[b]);
                 if (bone.IsHidden
                     || (!shown
                         && !selectedMask[b]
@@ -731,7 +827,9 @@ public class SkeletonOverlayWindow : Window
                     continue;
                 var worldPos = Vector3.Transform(liveBone.LastTransform.Position, modelMatrix);
                 // The projection refuses what lies behind the camera.
-                if (!_cameraService.WorldToScreen(worldPos, out var screenPos))
+                if (hasProjection
+                    ? !projection.Project(worldPos, out var screenPos)
+                    : !_cameraService.WorldToScreen(worldPos, out screenPos))
                     continue;
                 screen[b] = viewportPos + screenPos;
                 world[b] = worldPos;
@@ -743,9 +841,8 @@ public class SkeletonOverlayWindow : Window
                     continue;
                 var bone = descriptors[b];
                 Vector2? parentScreenPos = null;
-                if (bone.Parent is { } parentId
-                    && index.TryGetValue(parentId, out int parentAt)
-                    && placed[parentAt])
+                int parentAt = parents[b];
+                if (parentAt >= 0 && placed[parentAt])
                     parentScreenPos = screen[parentAt];
                 var selectionId = SelectionId.ForBone(bone.Id);
                 bones.Add(new BoneDisplayData
@@ -1208,11 +1305,19 @@ public class SkeletonOverlayWindow : Window
         // whatever size the dot is drawn at.
         var radius = MathF.Max(DotRadius, ReferenceDotRadius) * ImGuiHelpers.GlobalScale;
         var isOctahedraMode = _editorState.SkeletonViewMode == SkeletonViewMode.Octahedra;
+        // The pointer and the window rect once, then plain arithmetic per
+        // bone: the rect test was an interop call per bone per frame.
+        float reach = radius + HoverPadding;
+        var clipMin = ImGui.GetWindowPos();
+        var clipMax = clipMin + ImGui.GetWindowSize();
+        bool pointerInWindow = mousePos.X >= clipMin.X && mousePos.X <= clipMax.X
+            && mousePos.Y >= clipMin.Y && mousePos.Y <= clipMax.Y;
 
         foreach (ref var bone in CollectionsMarshal.AsSpan(bones))
         {
-            // Ktisis uses IsMouseHoveringRect with padding
-            var hoveredByDot = IsHoveringDot(bone.ScreenPos, radius);
+            var hoveredByDot = pointerInWindow
+                && MathF.Abs(mousePos.X - bone.ScreenPos.X) <= reach
+                && MathF.Abs(mousePos.Y - bone.ScreenPos.Y) <= reach;
 
             if (isOctahedraMode && bone.ParentScreenPos != null && !hoveredByDot)
             {
@@ -1734,7 +1839,13 @@ public class SkeletonOverlayWindow : Window
         var map = new Dictionary<BoneId, int>(skeleton.Bones.Count);
         for (int b = 0; b < skeleton.Bones.Count; b++)
             map[skeleton.Bones[b].Id] = b;
-        _indexMaps[skeleton.Id] = (skeleton.Bones, map);
+        // The parent's index per bone, resolved once with the map: the
+        // per-bone lookup by id was 0.11 ms a frame on a thousand bones.
+        var parents = new int[skeleton.Bones.Count];
+        for (int b = 0; b < skeleton.Bones.Count; b++)
+            parents[b] = skeleton.Bones[b].Parent is { } parentId
+                && map.TryGetValue(parentId, out int at) ? at : -1;
+        _indexMaps[skeleton.Id] = (skeleton.Bones, map, parents);
         return map;
     }
 
@@ -1962,7 +2073,52 @@ public class SkeletonOverlayWindow : Window
         // Ktisis style: filled circle with bone color, black outline
         // Selected: radius +1, outline thickness 2.5
         // Normal: outline thickness 1.0
+        if (!EnsureDotSprites())
+        {
+            DrawDotPassPolygons(drawList, bones, priority);
+            return;
+        }
+        // Two batches — plain, then selected — each ONE texture push and
+        // ONE reserve for every dot it holds, then a bare rectangle write
+        // per bone. AddImage per bone did the push, the reserve and the
+        // rectangle a thousand times a frame.
+        DrawDotBatch(drawList, bones, priority, selected: false);
+        DrawDotBatch(drawList, bones, priority, selected: true);
+    }
 
+    private void DrawDotBatch(
+        ImDrawListPtr drawList, List<BoneDisplayData> bones, bool priority, bool selected)
+    {
+        int count = 0;
+        var span = CollectionsMarshal.AsSpan(bones);
+        foreach (ref readonly var bone in span)
+            if (bone.IsSelected == selected && IsPriorityBone(bone) == priority)
+                count++;
+        if (count == 0)
+            return;
+        var sprite = selected ? _dotSelected! : _dotPlain!;
+        float half = (DotRadius + (selected ? 1f : 0f)) * (DotSpriteSize * 0.5f / DotSpriteRadius);
+        drawList.PushTextureID(sprite.Handle);
+        drawList.PrimReserve(count * 6, count * 4);
+        foreach (ref readonly var bone in span)
+        {
+            if (bone.IsSelected != selected || IsPriorityBone(bone) != priority)
+                continue;
+            var color = ResolveBoneColor(bone, useHover: HoverLit(bone), BoneColor);
+            if (bone.Opacity < 1f)
+                color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
+            drawList.PrimRectUV(
+                new Vector2(bone.ScreenPos.X - half, bone.ScreenPos.Y - half),
+                new Vector2(bone.ScreenPos.X + half, bone.ScreenPos.Y + half),
+                Vector2.Zero, Vector2.One, color);
+        }
+        drawList.PopTextureID();
+    }
+
+    /// <summary>The tessellated dots, for when the sprites could not bake.</summary>
+    private void DrawDotPassPolygons(
+        ImDrawListPtr drawList, List<BoneDisplayData> bones, bool priority)
+    {
         foreach (var bone in bones)
         {
             if (IsPriorityBone(bone) != priority) continue;
@@ -1971,7 +2127,6 @@ public class SkeletonOverlayWindow : Window
             var color = ResolveBoneColor(bone, useHover: HoverLit(bone), BoneColor);
             if (bone.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
-
             if (bone.IsSelected)
             {
                 radius += 1.0f;
@@ -1981,7 +2136,6 @@ public class SkeletonOverlayWindow : Window
             {
                 outlineThickness = 1.0f;
             }
-
             drawList.AddCircleFilled(bone.ScreenPos, radius, color, 16);
             drawList.AddCircle(bone.ScreenPos, radius, OutlineColor, 16, outlineThickness);
         }
