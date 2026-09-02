@@ -206,8 +206,34 @@ public sealed class AppearancePane
             page.Section("Character file (MCDF)", _openCharacterFile,
                 next => _openCharacterFile = next,
                 form => CharacterFileRows(form, actor, external));
+            // A body taken from the world is handed back from its own page,
+            // as a borrowed light is from its page.
+            if (Describe(actor) is { IsAdopted: true })
+                page.Section("Scene", _openScene,
+                    next => _openScene = next,
+                    form => form.Actions(string.Empty, actions =>
+                        actions.Button(
+                            "Release",
+                            () => ReleaseAdopted(actor),
+                            help: "Hand this actor back to the world")));
 
         });
+    }
+
+    private bool _openScene = true;
+
+    private void ReleaseAdopted(ActorId id)
+    {
+        var resolved = _bindings.Resolve(id);
+        if (!resolved.Success || resolved.Value is not { } live)
+        {
+            _notices.Failed("Release: the actor is no longer in the scene.");
+            return;
+        }
+        if (_spawn.RemoveActorFromScene(live))
+            _notices.Done($"Released '{Describe(id)?.Name ?? live.Name}'.");
+        else
+            _notices.Failed("Release: the actor could not be handed back.");
     }
 
     /// <summary>Edits the actor's model id and supports named model search.</summary>

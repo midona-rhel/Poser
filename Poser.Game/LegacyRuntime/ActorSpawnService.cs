@@ -1717,6 +1717,13 @@ public unsafe class ActorSpawnService : IActorSpawnService
 
         try
         {
+            // An adopted body is released: seated back where it was taken
+            // and forgotten by the scene; the world keeps it.
+            if (_actorManager.IsAdopted(actor))
+            {
+                _actorManager.ReleaseWorldActor(actor.Address);
+                return true;
+            }
             if (_ownership.TryGetBound(actor, out _))
                 return DestroyActor(actor);
 

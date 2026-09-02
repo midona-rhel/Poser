@@ -331,7 +331,8 @@ public sealed class StableBindingRegistry
                 !_spawn.IsVisible(actor),
                 IsOwned: _spawn.IsSpawnedActor(actor)
                     || _actors.IsLocalPlayer(actor)
-                    || _actors.IsAdopted(actor)));
+                    || _actors.IsAdopted(actor),
+                IsAdopted: _actors.IsAdopted(actor)));
             descriptorAddresses.Add(actor.Address);
             if (!actor.IsCompanion)
                 CollectAttachments(actor.Address, actorId, companionOwners);

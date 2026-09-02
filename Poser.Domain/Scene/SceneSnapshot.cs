@@ -32,8 +32,11 @@ public sealed record ActorDescriptor(
     bool IsCompanion = false,
     bool IsHidden = false,
     ActorId? OwnerActor = null,
-    bool IsOwned = true)
+    bool IsOwned = true,
+    bool IsAdopted = false)
 {
+    /// <summary><see cref="IsAdopted"/>: an overworld body taken into the
+    /// scene by reference; it is released, never destroyed.</summary>
     /// <summary><see cref="IsOwned"/>: the actor was spawned by Poser or
     /// is the player's own character. Only an owned actor's character
     /// data — appearance, MCDF — may be exported or saved; anyone else's
