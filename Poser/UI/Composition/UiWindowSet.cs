@@ -237,6 +237,14 @@ public sealed class UiWindowSet : IDisposable
         _configService.ApplyChange();
     }
 
+    /// <summary>Reference images live for the GPose session: leaving it
+    /// closes every one, roster included.</summary>
+    public void CloseReferenceImages()
+    {
+        foreach (var image in System.Linq.Enumerable.ToArray(_referenceImages.Instances))
+            _referenceImages.Close(image);
+    }
+
     public void CloseAll()
     {
         SetPrimaryOpen(false);

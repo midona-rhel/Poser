@@ -2138,21 +2138,11 @@ public sealed class PoseLibraryPane
         // Rows that stand keep their rail row and its span: a kick that leaves
         // them showing must not filter them out from under the user while the
         // worker runs.
-        if (!_autoRows)
-        {
-            _rangeStart = -1;
-            _rangeEnd = -1;
-            _vm.SelectedFolder = 0;
-            _vm.Folders.Clear();
-            _vm.Tiles.Clear();
-            _tileTags.Clear();
-            _tileAuthors.Clear();
-            _tileStatus.Clear();
-            _tileKinds.Clear();
-            _vm.Selected = -1;
-            _vm.EmptyText = ScanningText;
-            _refilter = true;
-        }
+        // The previous view stays on screen until the new one is ready to
+        // present; only a scan still running after the grace shows the
+        // Scanning state, so a fast scan never flashes an empty grid.
+        _autoAwaitSince = ImGui.GetTime();
+        _autoAwaiting = !_autoRows;
 
         _autoPending = true;
 
@@ -2291,10 +2281,39 @@ public sealed class PoseLibraryPane
 
     /// <summary>Polls the worker's completed slot. An idle frame costs one
     /// volatile read: no lock, no allocation, nothing to drain.</summary>
+    private const double PresentGraceSeconds = 0.3;
+    private double _autoAwaitSince;
+    private bool _autoAwaiting;
+
+    /// <summary>The Scanning state, shown only when a scan outlives the
+    /// presentation grace: the rail and the grid empty, the word in the
+    /// middle.</summary>
+    private void ShowAutoSavesScanning()
+    {
+        _autoAwaiting = false;
+            _rangeStart = -1;
+            _rangeEnd = -1;
+            _vm.SelectedFolder = 0;
+            _vm.Folders.Clear();
+            _vm.Tiles.Clear();
+            _tileTags.Clear();
+            _tileAuthors.Clear();
+            _tileStatus.Clear();
+            _tileKinds.Clear();
+            _vm.Selected = -1;
+            _vm.EmptyText = ScanningText;
+            _refilter = true;
+            }
+
     private void TakeAutoSaves()
     {
         if (Volatile.Read(ref _autoResult) is null)
+        {
+            if (_autoAwaiting && ImGui.GetTime() - _autoAwaitSince >= PresentGraceSeconds)
+                ShowAutoSavesScanning();
             return;
+        }
+        _autoAwaiting = false;
         // Interlocked rather than a plain null-out: a pass finishing between
         // the read above and the clear is then picked up on the next frame
         // instead of being overwritten.
