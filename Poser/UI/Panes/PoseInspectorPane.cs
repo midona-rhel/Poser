@@ -1088,6 +1088,15 @@ public class PoseInspectorPane
 
                 var stack = new SectionStack(
                     "pose-surface", origin, contentWidth);
+                // IK leads the actor's page (Midona, 2026-09-02).
+                if (skeleton != null)
+                    stack.Section(
+                        "actor-ik",
+                        "IK",
+                        _openSurfaceActorIk,
+                        next => _openSurfaceActorIk = next,
+                        form => DrawActorIk(form, skeleton),
+                        divider: stack.Any);
                 if (actor != null && OwningActorId() is { } actorId)
                     stack.Section(
                         "camera",
@@ -1116,13 +1125,6 @@ public class PoseInspectorPane
                         _openSurfacePose,
                         next => _openSurfacePose = next,
                         form => DrawPoseActions(form, skeleton, wide: true),
-                        divider: stack.Any);
-                    stack.Section(
-                        "actor-ik",
-                        "IK",
-                        _openSurfaceActorIk,
-                        next => _openSurfaceActorIk = next,
-                        form => DrawActorIk(form, skeleton),
                         divider: stack.Any);
                     stack.Section(
                         "files",
