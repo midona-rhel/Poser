@@ -46,10 +46,6 @@ internal interface IWorldActorTableAdapter
     /// player: the one Player-kind actor the world may lend.</summary>
     ulong LocalPlayerId => 0;
 
-    /// <summary>Shows or hides a world actor's draw object: a borrowed
-    /// actor leaves the world while its clone stands in the scene.</summary>
-    void SetDrawn(nint address, bool drawn) { }
-
     /// <summary>Raw union of the overworld enumerations (character manager,
     /// client, stand objects — Ktisis ActorService.GetOverworldActors' exact
     /// union). Unfiltered: eligibility is the discovery core's job.</summary>
@@ -77,16 +73,6 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 
     public ulong LocalPlayerId => _objectTable.LocalPlayer?.GameObjectId ?? 0;
 
-    public void SetDrawn(nint address, bool drawn)
-    {
-        if (address == nint.Zero)
-            return;
-        var gameObject = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)address;
-        if (drawn)
-            gameObject->EnableDraw();
-        else
-            gameObject->DisableDraw();
-    }
 
     public IReadOnlyList<WorldActorObservation> EnumerateOverworld()
     {
@@ -170,7 +156,7 @@ internal unsafe sealed class WorldActorTableAdapter : IWorldActorTableAdapter
 /// at its own 201–439 index through the ordinary registry scan. The source is
 /// never adopted, mutated, or deleted.
 /// </summary>
-public sealed class WorldActorDiscovery : IWorldActorReadPort, IDisposable
+public sealed class WorldActorDiscovery : IWorldActorReadPort
 {
     private readonly IWorldActorTableAdapter _adapter;
     private readonly IGPoseService _gPose;
@@ -231,8 +217,6 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IDisposable
         _cloneSource = cloneSource;
         _framework = framework;
         _log = log;
-        if (_framework != null)
-            _framework.Update += OnFrameworkUpdate;
     }
 
     /// <summary>Object-table reads and the clone both belong to the framework
@@ -403,71 +387,8 @@ public sealed class WorldActorDiscovery : IWorldActorReadPort, IDisposable
         if (clone is null)
             return WorldActorImportResult.Failed(
                 "The clone failed — GPose may be full or spawning unavailable.");
-        // The borrowed actor leaves the world while its clone stands in
-        // the scene, as a borrowed light or effect does; it comes back
-        // when the clone goes or GPose ends.
-        try
-        {
-            _adapter.SetDrawn(fresh.Address, false);
-            _hidden[clone.Address] = fresh;
-        }
-        catch (Exception ex)
-        {
-            _log?.Warning($"WorldActorDiscovery: could not hide the source: {ex.Message}");
-        }
         spawned = clone;
         return WorldActorImportResult.Ok();
-    }
-
-    /// <summary>Sources hidden for a clone, keyed by the clone's address.
-    /// Restored when the clone is gone from the scene or GPose ends; a
-    /// source that has itself left the world is simply forgotten.</summary>
-    private readonly Dictionary<nint, WorldActorObservation> _hidden = new();
-
-    private void RestoreHiddenSources(bool all)
-    {
-        if (_hidden.Count == 0)
-            return;
-        HashSet<nint>? alive = null;
-        if (!all)
-        {
-            alive = new HashSet<nint>();
-            foreach (var actor in _actorManager.Actors)
-                alive.Add(actor.Address);
-        }
-        var restore = new List<nint>();
-        foreach (var (cloneAddress, _) in _hidden)
-            if (all || alive is null || !alive.Contains(cloneAddress))
-                restore.Add(cloneAddress);
-        foreach (var cloneAddress in restore)
-        {
-            if (!_hidden.Remove(cloneAddress, out var source))
-                continue;
-            try
-            {
-                if (_adapter.Revalidate(source) is { } present
-                    && present.Address == source.Address)
-                    _adapter.SetDrawn(source.Address, true);
-            }
-            catch (Exception ex)
-            {
-                _log?.Warning($"WorldActorDiscovery: could not restore a source: {ex.Message}");
-            }
-        }
-    }
-
-    private void OnFrameworkUpdate(IFramework framework)
-    {
-        if (_hidden.Count == 0)
-            return;
-        RestoreHiddenSources(all: !_gPose.IsGPosing);
-    }
-
-    public void Dispose()
-    {
-        if (_framework != null)
-            _framework.Update -= OnFrameworkUpdate;
-        RestoreHiddenSources(all: true);
     }
 
     private List<WorldActorObservation> Collect()
