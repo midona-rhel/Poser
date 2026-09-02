@@ -333,6 +333,27 @@ public sealed class PoseLibraryViewModel
     /// <summary>Told an index into <see cref="Tiles"/>: a single click.
     /// </summary>
     public Action<int>? OnSelect;
+    /// <summary>A click with its modifiers: Ctrl toggles, Shift ranges
+    /// from the primary, plain selects alone.</summary>
+    public Action<int, bool, bool>? OnSelectWith;
+    /// <summary>A marquee's catch, with whether Ctrl held (additive).</summary>
+    public Action<IReadOnlyList<int>, bool>? OnMarquee;
+    /// <summary>Every tile in the selection; <see cref="Selected"/> is its
+    /// primary. Bulk verbs act on the set.</summary>
+    internal readonly HashSet<int> SelectedSet = new();
+    /// <summary>The tiles painted this frame with their rects — what a
+    /// marquee is tested against.</summary>
+    internal readonly List<(int Index, Vector2 Min, Vector2 Max)> TileRects = new();
+    internal Vector2? MarqueeStart;
+    /// <summary>The grid's visible height, logical: the empty state centres
+    /// in it.</summary>
+    internal float GridHeight;
+    /// <summary>The actor the footer's Apply goes to, for poses and character
+    /// files: a dropdown beside the verb, the selection's actor by default.</summary>
+    internal bool ShowApplyTarget;
+    internal string[] ApplyTargetNames = [];
+    internal int ApplyTargetIndex = -1;
+    internal Action<int>? OnApplyTarget;
 
     /// <summary>Double click, the footer's primary, and the context menu.
     /// </summary>
@@ -698,8 +719,18 @@ public static class PoseLibraryView
                 vm.OnPlacement!,
                 help: "Where a spawned entry lands");
         }
-        // The primary opens the ACTOR PICKER — the pose applies to whoever
-        // is chosen there, not silently to the selection.
+        // Poses and character files apply to the actor named beside the
+        // verb — the selection's actor by default, any scene actor by choice.
+        if (vm.ShowApplyTarget)
+        {
+            scope.Label("Apply to");
+            scope.Dropdown(
+                "apply-target",
+                vm.ApplyTargetNames,
+                Math.Max(0, vm.ApplyTargetIndex),
+                vm.OnApplyTarget!,
+                help: "The actor the file applies to");
+        }
         scope.Button(
             vm.ApplyLabel,
             vm.ApplyMenuClick!,
@@ -1021,6 +1052,7 @@ public static class PoseLibraryView
         bool selected = vm.Selected >= 0 && vm.Selected < vm.Tiles.Count
             && HasStripContent(vm.Tiles[vm.Selected]);
         float strip = selected ? InfoStripHeight : 0f;
+        vm.GridHeight = body.Size.Y / scale - strip;
         ImGui.SetCursorScreenPos(body.Min);
         Crystarium.ScrollRegion(
             GridId,
@@ -1106,7 +1138,7 @@ public static class PoseLibraryView
             ImGui.Dummy(new Vector2(0f, pad));
             if (vm.Visible.Count == 0)
             {
-                EmptyLine(vm.EmptyText, region.ContentWidth, scale, theme);
+                EmptyLine(vm.EmptyText, region.ContentWidth, vm.GridHeight, scale, theme);
             }
             else
             {
@@ -1114,6 +1146,17 @@ public static class PoseLibraryView
                 // A header's box runs from the first tile column to under the
                 // scroll bar; its own content stops a gutter early.
                 float width = MathF.Max(1f, usable + inset) * scale;
+                // The grid's ground is an ITEM under the tiles: a press on
+                // empty ground starts a marquee and never moves the window;
+                // the tiles, drawn after, take their own hover.
+                vm.TileRects.Clear();
+                ImGui.InvisibleButton(
+                    "##grid-ground",
+                    new Vector2(width, MathF.Max(1f, vm.BandsHeight * scale)));
+                ImGui.SetItemAllowOverlap();
+                if (ImGui.IsItemActivated())
+                    vm.MarqueeStart = ImGui.GetMousePos();
+                ImGui.SetCursorScreenPos(origin);
                 var clipper = new ImGuiListClipper();
                 clipper.Begin(vm.SlotCount, pitchY * scale);
                 while (clipper.Step())
@@ -1134,6 +1177,7 @@ public static class PoseLibraryView
                     }
                 }
                 clipper.End();
+                DrawMarquee(vm, theme);
 
                 // The clipper's seek stops at the last whole slot; this is what
                 // makes the scroll extent the real content height.
@@ -1352,6 +1396,7 @@ public static class PoseLibraryView
         var tile = vm.Tiles[index];
         var size = new Vector2(icon, icon + CaptionHeight) * scale;
         var draw = ImGui.GetWindowDrawList();
+        vm.TileRects.Add((index, min, min + size));
 
         // The tile's path seeds the ID stack, so the two reserves below need
         // no per-tile string and still hash to a per-tile identity.
@@ -1371,7 +1416,7 @@ public static class PoseLibraryView
 
             bool onStar = ImGui.IsMouseHoveringRect(starMin, starMax);
             bool hovered = hit.Hovered || starHit.Hovered;
-            bool selected = vm.Selected == index;
+            bool selected = vm.Selected == index || vm.SelectedSet.Contains(index);
 
             var fill = selected
                 ? theme.Chrome.SidebarSelected
@@ -1432,7 +1477,13 @@ public static class PoseLibraryView
                 return;
             }
             if (hit.Clicked)
-                vm.OnSelect?.Invoke(index);
+            {
+                var io = ImGui.GetIO();
+                if (vm.OnSelectWith != null)
+                    vm.OnSelectWith(index, io.KeyCtrl, io.KeyShift);
+                else
+                    vm.OnSelect?.Invoke(index);
+            }
             if (hit.DoubleClicked)
                 vm.OnApplyTile?.Invoke(index);
             if (hovered && ImGui.IsMouseClicked(ImGuiMouseButton.Right))
@@ -1557,11 +1608,49 @@ public static class PoseLibraryView
 
     /// <summary>The grid's empty state: one caption on a row band, centred
     /// over the columns that would have been there.</summary>
-    private static void EmptyLine(
-        string text, float contentWidth, float scale, Theme theme)
+    /// <summary>The grid's marquee: a rectangle from the press on empty
+    /// ground to the pointer; on release the tiles it touches are handed
+    /// over (Ctrl adds). A rectangle that touches nothing changes nothing.</summary>
+    private static void DrawMarquee(PoseLibraryViewModel vm, Theme theme)
     {
-        var min = ImGui.GetCursorScreenPos();
+        if (vm.MarqueeStart is not { } start)
+            return;
+        var mouse = ImGui.GetMousePos();
+        var rmin = Vector2.Min(start, mouse);
+        var rmax = Vector2.Max(start, mouse);
+        bool isDrag = (rmax - rmin).LengthSquared() > 16f;
+        if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            if (isDrag)
+            {
+                var fg = ImGui.GetForegroundDrawList();
+                fg.AddRectFilled(rmin, rmax, Packed(theme.Chrome.AccentFill));
+                fg.AddRect(rmin, rmax, Packed(theme.AccentHover));
+            }
+            return;
+        }
+        if (isDrag)
+        {
+            var caught = new List<int>();
+            foreach (var (index, min, max) in vm.TileRects)
+                if (min.X <= rmax.X && max.X >= rmin.X
+                    && min.Y <= rmax.Y && max.Y >= rmin.Y)
+                    caught.Add(index);
+            if (caught.Count > 0)
+                vm.OnMarquee?.Invoke(caught, ImGui.GetIO().KeyCtrl);
+        }
+        vm.MarqueeStart = null;
+    }
+
+    private static void EmptyLine(
+        string text, float contentWidth, float gridHeight, float scale, Theme theme)
+    {
         float height = theme.Controls.ListRowHeight * scale;
+        // Centred in the grid's whole height, the same on every tab.
+        float above = MathF.Max(0f, (gridHeight * scale - height) * 0.5f - GridVPad * scale);
+        if (above > 0f)
+            ImGui.Dummy(new Vector2(0f, above));
+        var min = ImGui.GetCursorScreenPos();
         Crystarium.TextInBand(
             min,
             new Vector2(contentWidth * scale, height),
