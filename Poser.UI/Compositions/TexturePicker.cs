@@ -126,15 +126,18 @@ public static partial class Crystarium
         /// <summary>The grid's columns and tile side, per picker: a face
         /// grid runs five small tiles across, a sky grid three big ones.</summary>
         private readonly int _columns;
+        private readonly int _rows;
         private readonly float _tileSize;
 
         public TexturePicker(
             string id, TexturePreview preview, uint count = 1000,
             Func<uint, string>? caption = null,
-            int columns = TextureGridColumns, float tileSize = TextureTileSize)
+            int columns = TextureGridColumns, float tileSize = TextureTileSize,
+            int rows = TextureGridRows)
         {
             ArgumentNullException.ThrowIfNull(preview);
             _columns = Math.Max(1, columns);
+            _rows = Math.Max(1, rows);
             _tileSize = tileSize;
             _popupId = $"##texture-picker-{id}";
             _gridId = $"{_popupId}-grid";
@@ -174,7 +177,7 @@ public static partial class Crystarium
                 - TextureTileGap
                 + theme.Scrollbar.GutterWidth;
             float height = pad * 2f
-                + TextureGridRows * pitch - TextureTileGap;
+                + _rows * pitch - TextureTileGap;
 
             _picked = null;
             FloatingSurface.Popup(
@@ -339,7 +342,7 @@ public static partial class Crystarium
                 _columns * (_tileSize + TextureTileGap)
                     - TextureTileGap
                     + ActiveTheme.Scrollbar.GutterWidth,
-                TextureGridRows * pitch - TextureTileGap,
+                _rows * pitch - TextureTileGap,
                 _grid);
             if (_picked != null)
                 ImGui.CloseCurrentPopup();
