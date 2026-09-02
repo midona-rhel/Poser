@@ -421,8 +421,14 @@ public static class Interactive
             ImGui.EndDisabled();
         var max = min + size;
 
-        bool occluded = PointerOccluded(owner, ImGui.GetMousePos());
-        bool hovered = ImGui.IsItemHovered() && !disabled && !occluded;
+        var mouse = ImGui.GetMousePos();
+        bool occluded = PointerOccluded(owner, mouse);
+        // Hover is exclusive by geometry: the pointer is inside THIS
+        // item's own half-open rect, whatever ImGui's item test says of
+        // its neighbours. Two abutting rows can never both light.
+        bool inside = mouse.X >= min.X && mouse.X < max.X
+            && mouse.Y >= min.Y && mouse.Y < max.Y;
+        bool hovered = ImGui.IsItemHovered() && inside && !disabled && !occluded;
         bool active = ImGui.IsItemActive() && !disabled && !occluded;
         bool clicked = ImGui.IsItemClicked() && !disabled && !occluded;
         bool doubleClicked = hovered
