@@ -34,6 +34,24 @@ public sealed class BoneVisibilityPresetService
         _presentation = presentation;
         _config = config;
         _save = save;
+        SeedDefaults();
+    }
+
+    /// <summary>The stock filters, added once: a name the user already
+    /// holds is theirs and is left alone.</summary>
+    private void SeedDefaults()
+    {
+        var skeleton = _config().Skeleton;
+        if (skeleton.DefaultBonePresetsSeeded)
+            return;
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var preset in skeleton.BoneVisibilityPresets)
+            existing.Add(preset.Name);
+        foreach (var preset in DefaultBonePresets.Build())
+            if (existing.Add(preset.Name))
+                skeleton.BoneVisibilityPresets.Add(preset);
+        skeleton.DefaultBonePresetsSeeded = true;
+        _save();
     }
 
     private List<BoneVisibilityPreset> Store =>
