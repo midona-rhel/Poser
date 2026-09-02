@@ -148,8 +148,13 @@ public class PoseFileService : IPoseFileService
         return poseFile;
     }
 
-    private static bool IsZeroRotation(Quaternion rotation) =>
-        rotation.X == 0f && rotation.Y == 0f && rotation.Z == 0f && rotation.W == 0f;
+    /// <summary>Finite but too short to be a rotation — the same bar the
+    /// file validator applies; NaN is not this, NaN is corruption.</summary>
+    private static bool IsZeroRotation(Quaternion rotation)
+    {
+        float length = rotation.LengthSquared();
+        return float.IsFinite(length) && length < PoseFileLimits.MinQuaternionLengthSquared;
+    }
 
     public bool ExportPose(IReadOnlyList<ISkeleton> slots, string path)
     {

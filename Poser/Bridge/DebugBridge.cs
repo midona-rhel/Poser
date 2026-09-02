@@ -384,6 +384,23 @@ public sealed class DebugBridge : IDisposable
                 var byPartial = differ.GroupBy(x => x.Split(':')[0]).ToDictionary(g => g.Key, g => g.Take(6).ToArray());
                 return Json(new { same, differ = differ.Count, missing = missing.Count, perPartial = perPartial.ToDictionary(k => k.Key.ToString(), v => $"{v.Value.Same} same / {v.Value.Diff} diff"), examples = byPartial, missingExamples = missing.Take(6).ToArray() });
             }
+            case "/rotatebone":
+            {
+                string name = query["name"]; int part = query.TryGetValue("partial", out var rp) ? int.Parse(rp) : 0;
+                float deg = float.Parse(query["deg"], CultureInfo.InvariantCulture);
+                var turn = System.Numerics.Quaternion.CreateFromAxisAngle(System.Numerics.Vector3.UnitY, deg * MathF.PI / 180f);
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            var raw = bone.LastRawTransform;
+                            var wanted = new global::Poser.Transform(raw.Position, System.Numerics.Quaternion.Normalize(raw.Rotation * turn), raw.Scale);
+                            _bonePosing.ApplyTransform(bone, wanted, raw);
+                            var m = _bonePosing.GetModification(bone);
+                            return Json(new { ok = true, modification = m is { } mod ? new { mod.Rotation.X, mod.Rotation.Y, mod.Rotation.Z, mod.Rotation.W } : null });
+                        }
+                return Json(new { error = "no such bone" });
+            }
             case "/scalebone":
             {
                 string name = query["name"]; int part = int.Parse(query["partial"]); float sc = float.Parse(query["s"], CultureInfo.InvariantCulture);
