@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -42,7 +43,7 @@ public class PoseInspectorPane
     private readonly SceneSession _scene;
     private readonly global::Poser.Application.Scene.SceneGroups _groups;
     private readonly IEntityBindings _bindings;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IViewportReads _viewport;
     private readonly ExpressionInspectorSection _expressionSection;
     private readonly PoseFileInspectorSection _poseFileSection;
 
@@ -178,7 +179,7 @@ public class PoseInspectorPane
         IEditorState editorState,
         SceneSession scene,
         IEntityBindings bindings,
-        Game.Viewport.ViewportProjection viewport,
+        IViewportReads viewport,
         ExpressionInspectorSection expressionSection,
         PoseFileInspectorSection poseFileSection,
         Application.Posing.IIkConfigurationPort ikPort,

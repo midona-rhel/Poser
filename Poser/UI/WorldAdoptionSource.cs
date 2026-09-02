@@ -137,7 +137,7 @@ public sealed class WorldAdoptionSource
     // (release-and-restore), so it goes through the seam that files one in the
     // same history the transforms use — unlike the actor clone and the light
     // capture beside it, for neither of which this seam can state an inverse.
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IEntityBindings _bindings;
     private readonly SelectionSession _selection;
     private readonly AnimationSession _animation;
@@ -156,7 +156,7 @@ public sealed class WorldAdoptionSource
         ILightingService lighting,
         Game.WorldObjects.WorldObjectService worldObjects,
         ICameraService camera,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         IEntityBindings bindings,
         SelectionSession selection,
         AnimationSession animation,

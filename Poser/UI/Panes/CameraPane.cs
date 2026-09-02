@@ -35,7 +35,7 @@ public sealed class CameraPane
     private readonly IActorSpawnService _spawnService;
 
     /// <summary>Camera creation and removal use the lifecycle history.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ICameraFileService _cameraFiles;
     private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly global::Poser.Files.ObjectPlacementPreferences _placement;
@@ -83,7 +83,7 @@ public sealed class CameraPane
         IEntityBindings bindings,
         IVirtualCameraService cameras,
         IActorSpawnService spawnService,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ICameraFileService cameraFiles,
         Game.Scene.PlacementAnchorSource anchors,
         global::Poser.Files.ObjectPlacementPreferences placement,

@@ -1,4 +1,5 @@
 using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -25,7 +26,7 @@ public class SkeletonOverlayWindow : Window
     private readonly ICameraService _cameraService;
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IViewportReads _viewport;
     private readonly IEditorState _editorState;
     private readonly SkeletonOverlayPresentation _presentation;
     private readonly Application.Posing.IIkConfigurationPort _ikPort;
@@ -234,7 +235,7 @@ public class SkeletonOverlayWindow : Window
     public SkeletonOverlayWindow(
         IBonePosingService bonePosing,
         SceneSession scene,
-        Game.Viewport.ViewportProjection viewport,
+        IViewportReads viewport,
         ICameraService cameraService,
         IEditorState editorState,
         SkeletonOverlayPresentation presentation,

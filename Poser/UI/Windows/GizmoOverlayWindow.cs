@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -45,7 +46,7 @@ public class GizmoOverlayWindow : Window
 {
     private readonly SelectionSession _selection;
     private readonly SceneSession _scene;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IViewportReads _viewport;
     private readonly IEditorState _editorState;
     private readonly ICameraService _cameraService;
     private readonly IBonePosingService _bonePosingService;
@@ -173,7 +174,7 @@ public class GizmoOverlayWindow : Window
 
     public GizmoOverlayWindow(
         SceneSession scene,
-        Game.Viewport.ViewportProjection viewport,
+        IViewportReads viewport,
         IEditorState editorState,
         ICameraService cameraService,
         IBonePosingService bonePosingService,

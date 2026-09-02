@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -74,7 +75,7 @@ public partial class MainWindow : Window
 
     /// <summary>Every entity the shell adds or removes goes through this, so
     /// the act lands in the same history the transforms do.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private readonly UserNotices _notices;
 
@@ -111,7 +112,7 @@ public partial class MainWindow : Window
 
     private readonly global::Poser.Services.ICameraService _gameCamera;
 
-    private readonly Game.Viewport.ViewportProjection _viewportProjection;
+    private readonly IViewportReads _viewportProjection;
 
     // actor context menu + rename modal: stable ids only; the lifetime
     // services still take legacy actors, so ids resolve per frame through the
@@ -525,7 +526,7 @@ public partial class MainWindow : Window
         ReferenceImageSession referenceImages,
         WorldAdoptionSource worldAdoption,
         IGazeService gazeService,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         global::Poser.Application.Integration.ActorIntegrationSession integration,
         UserNotices notices,
         Dalamud.Plugin.Services.IPluginLog log,
@@ -533,7 +534,7 @@ public partial class MainWindow : Window
         Controls.EntityNameModal names,
         Game.Scene.SceneWorkflow sceneWorkflow,
         global::Poser.Services.ICameraService gameCamera,
-        Game.Viewport.ViewportProjection viewportProjection,
+        IViewportReads viewportProjection,
         IEventBus eventBus)
         : base($"{PluginConstants.PluginName}###poser_main_window",
             ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoCollapse |

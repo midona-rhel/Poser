@@ -36,7 +36,7 @@ public sealed class SelectionSection
 {
     private readonly SceneSession _scene;
     private readonly IEntityBindings _bindings;
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly IActorSpawnService _spawns;
 
     /// <summary>The selection the removal was armed against. The arm is only
@@ -48,7 +48,7 @@ public sealed class SelectionSection
     public SelectionSection(
         SceneSession scene,
         IEntityBindings bindings,
-        SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         IActorSpawnService spawns)
     {
         _scene = scene;

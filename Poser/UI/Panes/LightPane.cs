@@ -1,4 +1,5 @@
 ﻿using System;
+using Poser.Application.Viewport;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -41,12 +42,12 @@ public sealed class LightPane
 
     /// <summary>Adding and removing a light goes through the lifecycle seam,
     /// so both land in the shell's undo history.</summary>
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
     private readonly ILightFileService _lightFiles;
     private readonly ObjectPlacementPreferences _placement;
     private readonly Game.Scene.PlacementAnchorSource _anchors;
     private readonly CleanTransformFacade _cleanTransforms;
-    private readonly Game.Viewport.ViewportProjection _viewport;
+    private readonly IViewportReads _viewport;
     private readonly ICameraService _camera;
     private readonly ITextureProvider _textures;
 
@@ -122,12 +123,12 @@ public sealed class LightPane
         SceneSession scene,
         IEntityBindings bindings,
         ILightingService lighting,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ILightFileService lightFiles,
         ObjectPlacementPreferences placement,
         Game.Scene.PlacementAnchorSource anchors,
         CleanTransformFacade cleanTransforms,
-        Game.Viewport.ViewportProjection viewport,
+        IViewportReads viewport,
         ICameraService camera,
         ITextureProvider textures,
         UserNotices notices,

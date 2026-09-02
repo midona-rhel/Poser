@@ -338,7 +338,7 @@ internal sealed class WorldObjectServiceLifecycle : IWorldObjectLifecycle
 /// slots go with it (<see cref="TransformHistory.Cleared"/>), so a slot never
 /// outlives the session that made it.</para>
 /// </summary>
-public sealed class SceneLifecycleHistory
+public sealed class SceneLifecycleHistory : ISceneLifecycleHistory
 {
     private readonly TransformHistory _history;
     private readonly ILightingService _lighting;

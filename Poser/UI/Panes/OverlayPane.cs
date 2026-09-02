@@ -38,7 +38,7 @@ public sealed class OverlayPane
 
     /// <summary>Adding and removing a node goes through the lifecycle seam, so
     /// both land in the shell's undo history.</summary>
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private readonly GameIconResolver _icons;
 
@@ -78,7 +78,7 @@ public sealed class OverlayPane
         SceneSession scene,
         IEntityBindings bindings,
         StatusIconCatalog statusIcons,
-        SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ITextureProvider textures,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names)

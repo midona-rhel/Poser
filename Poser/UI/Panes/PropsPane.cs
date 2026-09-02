@@ -37,7 +37,7 @@ public sealed class PropsPane
     /// the seam that files one in the same history the transforms use — not
     /// through the spawn service, which owns the native object and no
     /// history.</summary>
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private bool _openProp = true;
 
@@ -48,7 +48,7 @@ public sealed class PropsPane
     public PropsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         StainCatalog stains,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names)

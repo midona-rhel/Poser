@@ -1,4 +1,5 @@
 using System.Numerics;
+using Poser.Application.Viewport;
 using Dalamud.Plugin.Services;
 using Poser.Domain.Identity;
 using Poser.Domain.Transforms;
@@ -20,7 +21,7 @@ namespace Poser.Game.Viewport;
 /// baselines through <c>TransformGestureService.Begin</c> capture — never
 /// through these reads.</para>
 /// </summary>
-public sealed class ViewportProjection
+public sealed class ViewportProjection : IViewportReads
 {
     private readonly IFramework _framework;
     private readonly StableBindingRegistry _bindings;

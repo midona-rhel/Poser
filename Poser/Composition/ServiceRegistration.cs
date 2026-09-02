@@ -193,7 +193,9 @@ internal static class ServiceRegistration
         // Entity lifecycle lands in the transform history, so
         // undo stays one ordered story rather than two.
         services.AddSingleton<Game.Scene.SceneLifecycleHistory>();
+        services.AddSingleton<ISceneLifecycleHistory>(sp => sp.GetRequiredService<Game.Scene.SceneLifecycleHistory>());
         services.AddSingleton<Game.Viewport.ViewportProjection>();
+        services.AddSingleton<Application.Viewport.IViewportReads>(sp => sp.GetRequiredService<Game.Viewport.ViewportProjection>());
         services.AddSingleton<CleanPoseFacade>();
         services.AddSingleton<IIkConfigurationPort, IkConfigurationPort>();
         return services;

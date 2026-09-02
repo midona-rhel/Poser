@@ -44,7 +44,7 @@ public sealed class WorldObjectsPane
     /// <summary>Releasing is a scene-lifecycle act, so it goes through the seam
     /// that files one in the same history the transforms use — the seam whose
     /// undo re-adopts the same address.</summary>
-    private readonly SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     private bool _openObject = true;
 
@@ -58,7 +58,7 @@ public sealed class WorldObjectsPane
     public WorldObjectsPane(
         SceneSession scene,
         IEntityBindings bindings,
-        SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
         Game.WorldObjects.WorldAssetCatalog assets)

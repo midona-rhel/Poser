@@ -164,7 +164,7 @@ public sealed partial class PoseLibraryPane
 
     private readonly ICameraFileService _cameraFiles;
 
-    private readonly Game.Scene.SceneLifecycleHistory _lifecycle;
+    private readonly ISceneLifecycleHistory _lifecycle;
 
     /// <summary>The standing load options, so a scene started from a TILE is
     /// the same load the scene workspace's dialog would have run.</summary>
@@ -454,7 +454,7 @@ public sealed partial class PoseLibraryPane
         ICameraFileService cameraFiles,
         ObjectPlacementPreferences placement,
         IEnvironmentService environment,
-        Game.Scene.SceneLifecycleHistory lifecycle,
+        ISceneLifecycleHistory lifecycle,
         UserNotices notices)
     {
         _lifecycle = lifecycle;
