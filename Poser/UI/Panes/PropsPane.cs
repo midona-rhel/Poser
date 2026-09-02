@@ -44,6 +44,7 @@ public sealed class PropsPane
     /// <summary>Anything that changes the list, run after the page has drawn.
     /// </summary>
     private Action? _pending;
+    private readonly Game.Journal.PropSession _values;
 
     public PropsPane(
         SceneSession scene,
@@ -51,12 +52,14 @@ public sealed class PropsPane
         ISceneLifecycleHistory lifecycle,
         StainCatalog stains,
         ScenePane scenePane,
-        global::Poser.UI.Controls.EntityNameModal names)
+        global::Poser.UI.Controls.EntityNameModal names,
+        Game.Journal.PropSession values)
     {
         _scene = scene;
         _bindings = bindings;
         _lifecycle = lifecycle;
         _stains = stains;
+        _values = values;
         _scenePane = scenePane;
         _names = names;
     }
@@ -94,7 +97,7 @@ public sealed class PropsPane
             var next = channel == 0
                 ? target.Model with { Stain0 = picked.Item.Id }
                 : target.Model with { Stain1 = picked.Item.Id };
-            _status = target.Respawn(next, out var refusal)
+            _status = _values.SetModel(target, next, out var refusal)
                 ? string.Empty
                 : refusal ?? "The dye could not be applied.";
         }
@@ -129,13 +132,13 @@ public sealed class PropsPane
         form.TextInput(
             "Name",
             prop.Name,
-            next => prop.Name = next,
+            next => _values.SetName(prop, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         form.Switch(
             "Visible",
             prop.Visible,
-            next => prop.Visible = next,
+            next => _values.SetVisible(prop, next),
             help: "Hide this object without destroying it");
         // The dyes bake at creation, so choosing one respawns the weapon
         // in place — handle, name, and placement survive.

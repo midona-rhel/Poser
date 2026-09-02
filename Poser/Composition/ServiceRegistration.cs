@@ -202,6 +202,10 @@ internal static class ServiceRegistration
             sp.GetRequiredService<System.Lazy<IPoseSnapshotPort>>(),
             System.IO.File.Exists,
             sp.GetRequiredService<global::Poser.UI.UserNotices>().Note));
+        services.AddSingleton<ValueJournal>();
+        services.AddSingleton<Game.Journal.WorldObjectSession>();
+        services.AddSingleton<Game.Journal.PropSession>();
+        services.AddSingleton<Game.Journal.OverlaySession>();
         services.AddSingleton<TransformCommandService>();
         services.AddSingleton<PoseEditService>();
         services.AddSingleton<PoseTransferService>();

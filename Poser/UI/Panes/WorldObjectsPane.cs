@@ -61,8 +61,10 @@ public sealed class WorldObjectsPane
         ISceneLifecycleHistory lifecycle,
         ScenePane scenePane,
         global::Poser.UI.Controls.EntityNameModal names,
-        Game.WorldObjects.WorldAssetCatalog assets)
+        Game.WorldObjects.WorldAssetCatalog assets,
+        Game.Journal.WorldObjectSession values)
     {
+        _values = values;
         _names = names;
         _scene = scene;
         _bindings = bindings;
@@ -72,6 +74,7 @@ public sealed class WorldObjectsPane
     }
 
     private readonly ScenePane _scenePane;
+    private readonly Game.Journal.WorldObjectSession _values;
 
     public void Draw(Vector2 origin, Vector2 size)
     {
@@ -227,7 +230,7 @@ public sealed class WorldObjectsPane
         form.TextInput(
             "Name",
             worldObject.Name,
-            next => worldObject.Name = next,
+            next => _values.SetName(worldObject, next),
             placeholder: "Object",
             help: "What the sidebar calls this object");
         // A SPAWNED object's model is editable — an explicit-apply field,
@@ -283,7 +286,7 @@ public sealed class WorldObjectsPane
             cell => cell.Switch(
                 "##world-object-visible",
                 worldObject.Visible,
-                next => worldObject.Visible = next,
+                next => _values.SetVisible(worldObject, next),
                 help: "Hide this object without moving it"),
             "Opacity",
             cell => cell.Slider(
@@ -291,16 +294,17 @@ public sealed class WorldObjectsPane
                 worldObject.Opacity,
                 0f,
                 1f,
-                next => worldObject.Opacity = next,
-                help: "Fade the whole object"));
+                next => _values.SetOpacity(worldObject, next),
+                help: "Fade the whole object",
+                onBegin: _values.Seal));
         var tint = worldObject.Tint ?? new Vector3(1f, 1f, 1f);
         if (worldObject.IsVfx)
         {
             form.ColorWells("Tint", wells => wells.Well(
                 "Tint",
                 new Vector4(tint, 1f),
-                value => worldObject.Tint =
-                    new Vector3(value.X, value.Y, value.Z)),
+                value => _values.SetTint(
+                    worldObject, new Vector3(value.X, value.Y, value.Z))),
                 help: "Multiply the effect's colours");
         }
         else
@@ -313,8 +317,8 @@ public sealed class WorldObjectsPane
                 cell => cell.ColorWell(
                     "##world-object-tint",
                     new Vector4(tint, 1f),
-                    value => worldObject.Tint =
-                        new Vector3(value.X, value.Y, value.Z),
+                    value => _values.SetTint(
+                        worldObject, new Vector3(value.X, value.Y, value.Z)),
                     disabled: undyeable,
                     help: undyeable
                         ? "This model takes no dye"
@@ -323,7 +327,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##world-object-night",
                     worldObject.NightState,
-                    next => worldObject.NightState = next,
+                    next => _values.SetNightState(worldObject, next),
                     help: "Toggles night state"));
             // BORROWED scenery only: a spawned copy cannot be animated
             // by the game (the layout drives only its own instances), so
@@ -333,7 +337,7 @@ public sealed class WorldObjectsPane
                 form.Switch(
                     "Paused",
                     worldObject.AnimationPaused,
-                    next => worldObject.AnimationPaused = next,
+                    next => _values.SetAnimationPaused(worldObject, next),
                     help: "Pauses the animation");
         }
         if (worldObject.IsVfx)
@@ -344,7 +348,7 @@ public sealed class WorldObjectsPane
                 cell => cell.Switch(
                     "##vfx-loop",
                     worldObject.LoopVfx,
-                    next => worldObject.LoopVfx = next,
+                    next => _values.SetLoopVfx(worldObject, next),
                     help: "Replay the effect when it runs out"),
                 "Speed",
                 cell => cell.Slider(
@@ -352,14 +356,15 @@ public sealed class WorldObjectsPane
                     worldObject.VfxSpeed,
                     0f,
                     3f,
-                    next => worldObject.VfxSpeed = next,
-                    help: "Playback speed"));
+                    next => _values.SetVfxSpeed(worldObject, next),
+                    help: "Playback speed",
+                    onBegin: _values.Seal));
             form.Pair(
                 "Paused",
                 cell => cell.Switch(
                     "##vfx-paused",
                     worldObject.VfxPaused,
-                    next => worldObject.VfxPaused = next,
+                    next => _values.SetVfxPaused(worldObject, next),
                     help: "Freeze the effect mid-frame"),
                 "Intensity",
                 cell => cell.Slider(
@@ -367,8 +372,9 @@ public sealed class WorldObjectsPane
                     worldObject.VfxIntensity,
                     0f,
                     4f,
-                    next => worldObject.VfxIntensity = next,
-                    help: "Brighten or dim the effect"));
+                    next => _values.SetVfxIntensity(worldObject, next),
+                    help: "Brighten or dim the effect",
+                    onBegin: _values.Seal));
         }
         form.Actions("Library", actions =>
             actions.Button(

@@ -2048,7 +2048,9 @@ public static partial class Crystarium
             IReadOnlyList<float>? marks = null,
             string? help = null,
             float logCurvature = 99f,
-            float? altReset = null)
+            float? altReset = null,
+            Action? onBegin = null,
+            Action? onCommit = null)
         {
             float readoutWidth = ActiveTheme.Form.ValueColumnWidth * Scale;
             float track = MathF.Max(
@@ -2070,7 +2072,9 @@ public static partial class Crystarium
                 help,
                 scale: scale,
                 logCurvature: logCurvature,
-                altReset: altReset);
+                altReset: altReset,
+                onBegin: onBegin,
+                onCommit: onCommit);
             // Custom values use text; numeric values use the standard readout.
             var bandOrigin = new Vector2(Origin.X + Width - readoutWidth, Origin.Y);
             if (readout is { } custom)
