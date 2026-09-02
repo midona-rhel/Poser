@@ -48,6 +48,7 @@ public sealed class DebugBridge : IDisposable
     private readonly global::Poser.Game.Posing.IkBakeCapture _ikBake;
     private readonly global::Poser.Services.IBonePosingService _bonePosing;
     private readonly ITransformFacade _transforms;
+    private readonly global::Poser.UI.SkeletonOverlayWindow _overlay;
     private readonly global::Poser.Application.Viewport.IViewportReads _viewport;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
@@ -71,10 +72,12 @@ public sealed class DebugBridge : IDisposable
         global::Poser.Game.Posing.IkBakeCapture ikBake,
         global::Poser.Library.IPoseLibraryService library,
         ITransformFacade transforms,
-        global::Poser.Application.Viewport.IViewportReads viewport)
+        global::Poser.Application.Viewport.IViewportReads viewport,
+        global::Poser.UI.SkeletonOverlayWindow overlay)
     {
         _transforms = transforms;
         _viewport = viewport;
+        _overlay = overlay;
         _ikBake = ikBake;
         _catalog = catalog;
         _worldObjects = worldObjects;
@@ -205,7 +208,7 @@ public sealed class DebugBridge : IDisposable
                     endpoints = new[]
                     {
                         "/actors",
-                        "/history", "/undo", "/redo",
+                        "/history", "/undo", "/redo", "/overlay?all=1&visible=1",
                         "/glamstate?actor", "/wardrobe?actor", "/setitem?actor&slot=3&item=ID&dye1=0&dye2=0",
                         "/customize?actor", "/setcustomize?actor&key=Hairstyle&value=5",
                         "/setbone?actor&name=j_ude_a_l&partial=0&deg=30&axis=x|y|z  (journaled)",
@@ -247,6 +250,17 @@ public sealed class DebugBridge : IDisposable
         {
             case "/actors":
                 return Json(ListActors());
+            case "/overlay":
+            {
+                // The overlay's scope and visibility, for perf captures:
+                // all=1 shows every actor's bones, visible=1 shows them.
+                var skeleton = global::Poser.Config.ConfigurationService.Instance.Config.Skeleton;
+                if (query.TryGetValue("all", out var all))
+                    skeleton.OnlyActiveActorBones = all != "1";
+                if (query.TryGetValue("visible", out var visible))
+                    _overlay.UserVisible = visible == "1";
+                return Json(new { onlyActiveActor = skeleton.OnlyActiveActorBones, visible = _overlay.UserVisible, open = _overlay.IsOpen });
+            }
             case "/history":
                 return Json(History());
             case "/undo":
