@@ -194,8 +194,6 @@ public class SkeletonOverlayWindow : Window
     private readonly List<string> _popupLabels = new();
     private bool _popupOpen;
     private Vector2 _popupAnchor;
-    private Vector2 _popupMin;
-    private Vector2 _popupMax;
     /// <summary>Ktisis' dot radius: the hit box is at least this dot.</summary>
     private const float ReferenceDotRadius = 7f;
 
@@ -1554,12 +1552,12 @@ public class SkeletonOverlayWindow : Window
         && left.Light.Handle == right.Light.Handle
         && left.WorldObject == right.WorldObject;
 
-    /// <summary>The hover list, per reference. Ktisis: it rides 20 px
-    /// right of the pointer whenever a dot is hovered, one entry or many,
-    /// the highlight is the persistent index and the click takes it. Brio:
-    /// a preview at (+15, +10) that only shows what is hovered and what
-    /// is selected, taking no input; the popup, once open, replaces it.
-    /// Both are painted on the foreground, above the gizmo.</summary>
+    /// <summary>The hover list, per reference, in the standard's own
+    /// surface. Ktisis: it rides 20 px right of the pointer whenever a dot
+    /// is hovered, one entry or many, the highlight is the persistent
+    /// index and the click takes it. Brio: a preview at (+15, +10) that
+    /// shows what is hovered and marks what is selected, taking no input;
+    /// the popup, once open, replaces it. Both sit above the gizmo.</summary>
     private void DrawHoverList(Vector2 mousePos, bool brio)
     {
         if (_popupOpen)
@@ -1570,22 +1568,22 @@ public class SkeletonOverlayWindow : Window
         if (_hoveredBones.Count == 0)
             return;
         float s = ImGuiHelpers.GlobalScale;
+        float gap = Crystarium.ActiveTheme.Floating.AnchorGap;
+        int marked = -1;
         if (brio)
-            PaintList(
-                mousePos + new Vector2(15f, 10f) * s,
-                _hoverLabels,
-                highlight: -1,
-                selected: i => _selection.IsSelected(_hoveredBones[i].Id),
-                muted: true,
-                out _, out _);
-        else
-            PaintList(
-                mousePos + new Vector2(20f, 0f) * s,
-                _hoverLabels,
-                highlight: _hoverIndex,
-                selected: static _ => false,
-                muted: false,
-                out _, out _);
+            for (int i = 0; i < _hoveredBones.Count; i++)
+                if (_selection.IsSelected(_hoveredBones[i].Id))
+                    marked = i;
+        var anchor = brio
+            ? mousePos + new Vector2(MathF.Max(0f, 15f - gap), 10f) * s
+            : mousePos + new Vector2(MathF.Max(0f, 20f - gap), 0f) * s;
+        Crystarium.FloatingSurface.HoverList(
+            HoverListOwnerId,
+            anchor,
+            _hoverLabels,
+            brio ? marked : _hoverIndex,
+            InteractionLayer.OverlaySurface,
+            onTop: true);
     }
 
     private void OpenPopup(Vector2 at)
@@ -1619,25 +1617,26 @@ public class SkeletonOverlayWindow : Window
         for (int i = 0; i < _popupItems.Count; i++)
             if (_selection.IsSelected(_popupItems[i].Id))
                 selectedIndex = i;
-        int hoveredRow = PaintList(
+        bool multi = io.KeyCtrl || io.KeyShift;
+        int clicked = Crystarium.FloatingSurface.HoverList(
+            HoverListOwnerId,
             _popupAnchor,
             _popupLabels,
-            highlight: -1,
-            selected: i => _selection.IsSelected(_popupItems[i].Id),
-            muted: false,
-            out _popupMin, out _popupMax);
-        bool inside = io.MousePos.X >= _popupMin.X && io.MousePos.X < _popupMax.X
-            && io.MousePos.Y >= _popupMin.Y && io.MousePos.Y < _popupMax.Y;
-        if (inside)
+            selectedIndex,
+            InteractionLayer.OverlaySurface,
+            onTop: true);
+        if (clicked >= 0 && clicked < _popupItems.Count)
         {
-            io.WantCaptureMouse = true;
-            ImGui.SetNextFrameWantCaptureMouse(true);
+            SelectNow(_popupItems[clicked].Id, multi);
+            _popupOpen = false;
+            return;
         }
-        bool multi = io.KeyCtrl || io.KeyShift;
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        bool inside = Interactive.TryGetOwnerBounds(
+                HoverListOwnerId, out var listMin, out var listMax)
+            && io.MousePos.X >= listMin.X && io.MousePos.X < listMax.X
+            && io.MousePos.Y >= listMin.Y && io.MousePos.Y < listMax.Y;
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !inside)
         {
-            if (hoveredRow >= 0)
-                SelectNow(_popupItems[hoveredRow].Id, multi);
             _popupOpen = false;
             return;
         }
@@ -1659,81 +1658,6 @@ public class SkeletonOverlayWindow : Window
             io.WantCaptureMouse = true;
             ImGui.SetNextFrameWantCaptureMouse(true);
         }
-    }
-
-    /// <summary>Paints a list of names on the FOREGROUND draw list — above
-    /// every window, the gizmo included — anchored at a point and kept on
-    /// screen. Answers the row under the pointer, or -1.</summary>
-    private static int PaintList(
-        Vector2 anchor,
-        IReadOnlyList<string> labels,
-        int highlight,
-        Func<int, bool> selected,
-        bool muted,
-        out Vector2 min,
-        out Vector2 max)
-    {
-        var theme = Crystarium.ActiveTheme;
-        float s = ImGuiHelpers.GlobalScale;
-        var style = new TextStyle
-        {
-            Size = theme.Typography.BodySize,
-            Family = FontFamily.Default,
-            Weight = FontWeight.Regular,
-        };
-        float padding = theme.Spacing.Three * s;
-        float rowHeight = (theme.Typography.BodySize + theme.Spacing.Two * 2f) * s;
-        float widest = 0f;
-        float lineHeight = 0f;
-        for (int i = 0; i < labels.Count; i++)
-        {
-            var measured = Crystarium.MeasureText(labels[i], style);
-            widest = MathF.Max(widest, measured.X);
-            lineHeight = MathF.Max(lineHeight, measured.Y);
-        }
-        float width = MathF.Max(
-            theme.Floating.MenuMinWidth * s, widest + padding * 4f);
-        float height = labels.Count * rowHeight + padding * 2f;
-        var display = ImGui.GetIO().DisplaySize;
-        min = anchor;
-        if (min.X + width > display.X)
-            min.X = MathF.Max(0f, display.X - width);
-        if (min.Y + height > display.Y)
-            min.Y = MathF.Max(0f, display.Y - height);
-        max = min + new Vector2(width, height);
-        var dl = ImGui.GetForegroundDrawList();
-        Crystarium.FloatingSurface.DrawChrome(dl, min, max, theme.Radii.Surface * s);
-        var mouse = ImGui.GetMousePos();
-        int hoveredRow = -1;
-        var font = FontRegistry.Resolve(style.Family, style.Weight ?? FontWeight.Regular, theme.Typography.BodySize);
-        bool pushed = font is { Available: true };
-        if (pushed) font!.Push();
-        try
-        {
-            uint ink = ImGui.ColorConvertFloat4ToU32(muted ? theme.TextMuted : theme.Text);
-            uint strong = ImGui.ColorConvertFloat4ToU32(theme.Accent with { W = 0.35f });
-            uint faint = ImGui.ColorConvertFloat4ToU32(theme.Accent with { W = 0.18f });
-            for (int i = 0; i < labels.Count; i++)
-            {
-                var rowMin = new Vector2(min.X + padding, min.Y + padding + rowHeight * i);
-                var rowMax = new Vector2(max.X - padding, rowMin.Y + rowHeight);
-                bool under = mouse.X >= rowMin.X && mouse.X < rowMax.X
-                    && mouse.Y >= rowMin.Y && mouse.Y < rowMax.Y;
-                if (under)
-                    hoveredRow = i;
-                bool lit = i == highlight || (highlight < 0 && under && !muted);
-                if (lit || selected(i))
-                    dl.AddRectFilled(rowMin, rowMax, lit ? strong : faint, theme.Radii.Control * s);
-                dl.AddText(
-                    new Vector2(rowMin.X + padding, rowMin.Y + (rowHeight - lineHeight) * 0.5f),
-                    ink, labels[i]);
-            }
-        }
-        finally
-        {
-            if (pushed) font!.Pop();
-        }
-        return hoveredRow;
     }
 
     /// <summary>Selection, now: the press or the wheel decided.</summary>
@@ -1991,8 +1915,7 @@ public class SkeletonOverlayWindow : Window
             if (IsPriorityBone(bone) != priority) continue;
             var radius = DotRadius;
             float outlineThickness;
-            bool brioDots = Config.BonePickBehavior == BonePickBehavior.Brio;
-            var color = ResolveBoneColor(bone, useHover: brioDots, BoneColor);
+            var color = ResolveBoneColor(bone, useHover: false, BoneColor);
             if (bone.Opacity < 1f)
                 color = SetAlpha(color, GetAlpha(color) * bone.Opacity);
 
@@ -2006,12 +1929,6 @@ public class SkeletonOverlayWindow : Window
                 outlineThickness = 1.0f;
             }
 
-            if (brioDots && !bone.IsSelected && !bone.IsHovered)
-            {
-                // Brio: a ring at rest, filled only when hovered or selected.
-                drawList.AddCircle(bone.ScreenPos, radius, color, 16, 1f);
-                continue;
-            }
             drawList.AddCircleFilled(bone.ScreenPos, radius, color, 16);
             drawList.AddCircle(bone.ScreenPos, radius, OutlineColor, 16, outlineThickness);
         }

@@ -227,7 +227,8 @@ public static partial class Crystarium
             Vector2 anchor,
             IReadOnlyList<string> items,
             int selected,
-            InteractionLayer layer = InteractionLayer.HoverSurface)
+            InteractionLayer layer = InteractionLayer.HoverSurface,
+            bool onTop = false)
         {
             if (items.Count == 0)
                 return -1;
@@ -276,6 +277,11 @@ public static partial class Crystarium
             int clicked = -1;
             if (visible)
             {
+                // On top: above the overlays that draw after it, the gizmo's
+                // window included — a list beside the pointer is never
+                // under anything.
+                if (onTop)
+                    ImGuiP.BringWindowToDisplayFront(ImGuiP.GetCurrentWindow());
                 var owner = Interactive.BeginOwner(
                     id,
                     layer,
