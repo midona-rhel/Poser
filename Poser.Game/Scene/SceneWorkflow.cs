@@ -2074,8 +2074,13 @@ public sealed class SceneWorkflow : IDisposable, ISceneWorkflow
     /// permanently, tokens cancel, and the active task is joined inside the
     /// bound. An abandoned task cannot mutate anything — every phase
     /// re-guards on the cancelled token.</summary>
+    /// <summary>Idempotent: the container disposes a singleton once per
+    /// registration, and the workflow is registered as itself and as its
+    /// port. The second call must not cancel a disposed source.</summary>
     public void Dispose()
     {
+        if (_disposed)
+            return;
         _disposed = true;
         _cancellation?.Cancel();
         _disposal.Cancel();
