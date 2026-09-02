@@ -176,9 +176,17 @@ public sealed partial class AppearancePane
                 clanIndex = i;
         }
 
-        form.Cells(cells =>
+        var theme = Crystarium.ActiveTheme;
+        form.Custom("Body", theme.Controls.FormRowHeight, row =>
         {
-            cells.Cell("Race", cell => cell.Dropdown("appearance-race", raceNames, raceIndex, index =>
+            float s = row.Scale;
+            float gap = theme.Page.ActionGap * s;
+            float square = theme.Controls.WorkspaceHeight;
+            float dropW = MathF.Max(1f, (row.ControlWidth - gap * 2f - square * s) * 0.5f);
+            var seat = row.CenterControl(square);
+            var style = ControlStyle.Workspace with { Width = UiWidth.Fixed(dropW / s) };
+            ImGui.SetCursorScreenPos(seat);
+            Crystarium.Dropdown("appearance-race", raceNames, raceIndex, index =>
             {
                 var chosen = races[index];
                 byte firstClan = 0;
@@ -193,28 +201,24 @@ public sealed partial class AppearancePane
                     [CustomizeKey.Race] = chosen.Race,
                     [CustomizeKey.Clan] = firstClan,
                 });
-            }, !live, live ? "Redraws the actor" : why));
-            cells.Cell("Clan", cell => cell.Dropdown("appearance-clan", clanNames, clanIndex, index =>
+            }, style, !live, live ? "The race · redraws" : why);
+            ImGui.SetCursorScreenPos(new Vector2(seat.X + dropW + gap, seat.Y));
+            Crystarium.Dropdown("appearance-clan", clanNames, clanIndex, index =>
                 Body(actor, state, "Change clan", new Dictionary<CustomizeKey, int>
                 {
                     [CustomizeKey.Race] = clanRows[index].Race,
                     [CustomizeKey.Clan] = clanRows[index].Clan,
-                }), !live || clanRows.Count == 0, live ? "Redraws the actor" : why));
-            cells.Cell("Gender", cell =>
-            {
-                var theme = Crystarium.ActiveTheme;
-                float square = theme.Controls.WorkspaceHeight;
-                ImGui.SetCursorScreenPos(cell.Center(square));
-                Crystarium.IconButton(
-                    gender == 1 ? TablerIcon.GenderFemale : TablerIcon.GenderMale,
-                    () => Body(actor, state, "Swap gender", new Dictionary<CustomizeKey, int>
-                    {
-                        [CustomizeKey.Gender] = gender == 1 ? 0 : 1,
-                    }),
-                    ControlStyle.Square(square), !live,
-                    live ? (gender == 1 ? "Female · swap" : "Male · swap") : why,
-                    id: "appearance-gender");
-            });
+                }), style, !live || clanRows.Count == 0, live ? "The clan · redraws" : why);
+            ImGui.SetCursorScreenPos(new Vector2(seat.X + (dropW + gap) * 2f, seat.Y));
+            Crystarium.IconButton(
+                gender == 1 ? TablerIcon.GenderFemale : TablerIcon.GenderMale,
+                () => Body(actor, state, "Swap gender", new Dictionary<CustomizeKey, int>
+                {
+                    [CustomizeKey.Gender] = gender == 1 ? 0 : 1,
+                }),
+                ControlStyle.Square(square), !live,
+                live ? (gender == 1 ? "Female · swap" : "Male · swap") : why,
+                id: "appearance-gender");
         }, help: "Race, clan and gender redraw the actor");
     }
 
@@ -241,7 +245,7 @@ public sealed partial class AppearancePane
         CustomizeState? state, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
-        float tile = theme.Controls.FormRowHeight * 2f;
+        float tile = theme.Controls.FormRowHeight * 1.2f;
         float square = theme.Controls.WorkspaceHeight;
         float gap = theme.Page.ActionGap;
         form.Custom("Look", tile + gap + square, row =>
@@ -301,8 +305,11 @@ public sealed partial class AppearancePane
     {
         var theme = Crystarium.ActiveTheme;
         float square = theme.Controls.WorkspaceHeight;
+        // The steppers are narrow: the value is the control, they only walk it.
+        float narrow = square * 0.6f;
+        var stepStyle = ControlStyle.Square(square) with { Width = UiWidth.Fixed(narrow) };
         float tight = theme.Spacing.One * s;
-        float wellW = MathF.Max(theme.Form.AxisWellMinimumWidth * s, width - (square * s + tight) * 2f);
+        float wellW = MathF.Max(1f, width - (narrow * s + tight) * 2f);
         var options = feature?.Options ?? Array.Empty<CustomizeOption>();
         int index = IndexOf(options, current);
         bool canDown = enabled && options.Count > 0 && index != 0;
@@ -312,8 +319,8 @@ public sealed partial class AppearancePane
         ImGui.SetCursorScreenPos(at);
         Crystarium.IconButton(TablerIcon.Minus,
             () => apply(options[index < 0 ? 0 : index - 1].Value),
-            ControlStyle.Square(square), !canDown, help ?? "Previous", id: id + "-down");
-        ImGui.SetCursorScreenPos(new Vector2(at.X + square * s + tight, at.Y));
+            stepStyle, !canDown, help ?? "Previous", id: id + "-down");
+        ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight, at.Y));
         Crystarium.AxisWell(
             id + "-well",
             string.Empty,
@@ -330,10 +337,10 @@ public sealed partial class AppearancePane
             "0",
             ControlStyle.Workspace with { Width = UiWidth.Fixed(wellW / s) },
             disabled: !enabled || options.Count == 0);
-        ImGui.SetCursorScreenPos(new Vector2(at.X + square * s + tight + wellW + tight, at.Y));
+        ImGui.SetCursorScreenPos(new Vector2(at.X + narrow * s + tight + wellW + tight, at.Y));
         Crystarium.IconButton(TablerIcon.Plus,
             () => apply(options[index < 0 ? 0 : index + 1].Value),
-            ControlStyle.Square(square), !canUp, help ?? "Next", id: id + "-up");
+            stepStyle, !canUp, help ?? "Next", id: id + "-up");
     }
 
     /// <summary>The seven facial features and the legacy tattoo as one row
@@ -343,12 +350,12 @@ public sealed partial class AppearancePane
         CustomizeState? state, bool live, string? why)
     {
         var theme = Crystarium.ActiveTheme;
-        float square = theme.Controls.WorkspaceHeight;
-        form.Custom("Features", theme.Controls.FormRowHeight, row =>
+        float big = theme.Controls.FormRowHeight * 1.5f;
+        form.Custom("Features", big, row =>
         {
             float s = row.Scale;
             float gap = theme.Spacing.Three * s;
-            float side = MathF.Min(square * s, (row.ControlWidth - gap * 7f) / 8f);
+            float side = MathF.Min(big * s, (row.ControlWidth - gap * 7f) / 8f);
             byte face = (byte)(state?.Value(CustomizeKey.Face) ?? 0);
             uint[]? icons = null;
             if (menu is not null && !menu.FaceFeatureIcons.TryGetValue(face, out icons))
