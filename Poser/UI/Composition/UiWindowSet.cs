@@ -241,7 +241,7 @@ public sealed class UiWindowSet : IDisposable
     /// closes every one, roster included.</summary>
     public void CloseReferenceImages()
     {
-        foreach (var image in System.Linq.Enumerable.ToArray(_referenceImages.Instances))
+        foreach (var image in global::System.Linq.Enumerable.ToArray(_referenceImages.Instances))
             _referenceImages.Close(image);
     }
 
