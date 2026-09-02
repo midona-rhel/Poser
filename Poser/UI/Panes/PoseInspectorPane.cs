@@ -20,6 +20,7 @@ using Poser.Domain.Scene;
 using Poser.Game.Bindings;
 using Poser.UI.Controls;
 using Poser.UI.Views;
+using Poser.Files;
 using DomainOperation = Poser.Domain.Transforms.TransformOperation;
 using DomainSpace = Poser.Domain.Transforms.TransformSpace;
 using DomainDelta = Poser.Domain.Transforms.TransformDelta;
@@ -117,6 +118,8 @@ public class PoseInspectorPane
     private bool _openExpression = true;
     private bool _openGaze = true;
     private bool _openIk;
+    private bool _openActorIk;
+    private bool _openSurfaceActorIk;
     private bool _openPose = true;
 
     // Rail and workspace disclosure states are independent.
@@ -140,8 +143,9 @@ public class PoseInspectorPane
     ];
 
     private static readonly string[] NoOtherActors = ["No other actors"];
-    private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD"];
-    private static readonly string[] CcdSolverItems = ["CCD"];
+    private static readonly string[] TwoJointSolverItems = ["Two Joint", "CCD", "FABRIK"];
+    private static readonly string[] CcdSolverItems = ["CCD", "FABRIK"];
+    private static readonly string[] DroopFalloffItems = ["Even", "Root", "Tip"];
     private static readonly string[] TargetModeItems = ["Relative", "Fixed"];
 
     private static readonly string[] ArmJointLabels =
@@ -176,9 +180,11 @@ public class PoseInspectorPane
         IActorSpawnService spawnService,
         CameraPane cameraPane,
         OverlayPane overlayPane,
+        SkeletonOverlayPresentation overlayPresentation,
         global::Poser.Application.Scene.SceneGroups groups)
     {
         _groups = groups;
+        _overlayPresentation = overlayPresentation;
         _ikPort = ikPort;
         _ikBake = ikBake;
         _spawnService = spawnService;
@@ -233,6 +239,7 @@ public class PoseInspectorPane
 
     private readonly CameraPane _cameraPane;
     private readonly OverlayPane _overlayPane;
+    private readonly SkeletonOverlayPresentation _overlayPresentation;
     private bool _openCameraTracking = true;
 
     private bool IsCreature(IActor actor) =>
@@ -786,12 +793,20 @@ public class PoseInspectorPane
                     form => _expressionSection.Draw(
                         form, actor, OwningActorId(), paired: false));
             if (skeleton != null)
+            {
                 stack.Section(
                     "pose",
                     "Pose",
                     _openPose,
                     next => _openPose = next,
                     form => DrawPoseActions(form, skeleton, wide: false));
+                stack.Section(
+                    "actor-ik",
+                    "IK",
+                    _openActorIk,
+                    next => _openActorIk = next,
+                    form => DrawActorIk(form, skeleton));
+            }
         }
 
         stack.Finish();
@@ -1102,6 +1117,13 @@ public class PoseInspectorPane
                         _openSurfacePose,
                         next => _openSurfacePose = next,
                         form => DrawPoseActions(form, skeleton, wide: true),
+                        divider: stack.Any);
+                    stack.Section(
+                        "actor-ik",
+                        "IK",
+                        _openSurfaceActorIk,
+                        next => _openSurfaceActorIk = next,
+                        form => DrawActorIk(form, skeleton),
                         divider: stack.Any);
                     stack.Section(
                         "files",
@@ -1985,7 +2007,6 @@ public class PoseInspectorPane
     }
 
     // Keep raw hinge-axis values while dragging.
-    private Vector3? _ikAxisScratch;
 
     // Bake refusals are scoped to their target bone.
     private (TransformTargetId Target, string Text)? _ikBakeNote;
@@ -2040,12 +2061,15 @@ public class PoseInspectorPane
               " below"
             : "Live IK across every limb of this actor";
 
-    private IReadOnlyList<TransformTargetId> ActorIkChains(BoneId owner)
+    private IReadOnlyList<TransformTargetId> ActorIkChains(BoneId owner) =>
+        ActorIkChains(owner.Skeleton.Actor);
+
+    private IReadOnlyList<TransformTargetId> ActorIkChains(ActorId owner)
     {
         var chains = new List<TransformTargetId>();
         foreach (var actor in _scene.Snapshot.Actors)
         {
-            if (actor.Id.LogicalId != owner.Skeleton.Actor.LogicalId)
+            if (actor.Id.LogicalId != owner.LogicalId)
                 continue;
             foreach (var endpoint in Domain.Posing.IkChains.SupportedEndpoints)
             foreach (var skeleton in actor.Skeletons)
@@ -2086,7 +2110,7 @@ public class PoseInspectorPane
 
         DrawIkChainList(form, boneId, ikTarget);
 
-        form.SwitchActions(
+        form.Switch(
             "Live IK",
             armed,
             next =>
@@ -2094,35 +2118,30 @@ public class PoseInspectorPane
                 if (config != null)
                     Apply(config with { Enabled = next });
             },
-            actions =>
-            {
-                actions.Button(
-                    "Reset",
-                    () =>
-                    {
-                        _ikPort.ResetDefaults(ikTarget);
-                        config = _ikPort.Get(ikTarget);
-                    },
-                    disabled: !eligible,
-                    help: "Restore this chain's default IK settings. Live IK stays as it is.");
-                actions.Button(
-                    "Bake",
-                    () =>
-                    {
-                        _ikBakeNote = _ikBake.Begin(ikTarget)
-                            is { Success: false } failed
-                            ? (ikTarget, $"Bake: {failed.Detail}")
-                            : null;
-                        config = _ikPort.Get(ikTarget);
-                    },
-                    disabled: !canBake,
-                    help: "Write the solved limb into the pose as one undoable "
-                        + "edit, then turn Live IK off");
-            },
             disabled: !eligible,
-            help: eligible
-                ? "Bend the bones above this one to follow it as you move it"
-                : "This bone has no parent for IK to bend");
+            help: eligible ? null : "This bone has no parent for IK to bend");
+        form.Actions(string.Empty, actions =>
+        {
+            actions.Button(
+                "Reset",
+                () =>
+                {
+                    _ikPort.ResetDefaults(ikTarget);
+                    config = _ikPort.Get(ikTarget);
+                },
+                disabled: !eligible);
+            actions.Button(
+                "Bake",
+                () =>
+                {
+                    _ikBakeNote = _ikBake.Begin(ikTarget)
+                        is { Success: false } failed
+                        ? (ikTarget, $"Bake: {failed.Detail}")
+                        : null;
+                    config = _ikPort.Get(ikTarget);
+                },
+                disabled: !canBake);
+        });
         if ((_ikBake.Note ?? _ikBakeNote) is { } note &&
             note.Target.Equals(ikTarget))
             form.Status(note.Text);
@@ -2132,25 +2151,45 @@ public class PoseInspectorPane
         bool twoJointAvailable = _ikPort.IsTwoJointAvailable(ikTarget);
         var solverItems = twoJointAvailable
             ? TwoJointSolverItems : CcdSolverItems;
-        int solverIndex = config.Solver == Domain.Posing.IkSolver.Ccd
-            ? solverItems.Length - 1
-            : 0;
+        // The list is Two Joint, CCD, FABRIK on a limb and CCD, FABRIK
+        // elsewhere; the offset folds the two into one index space.
+        int offset = twoJointAvailable ? 0 : 1;
+        int solverIndex = config.Solver switch
+        {
+            Domain.Posing.IkSolver.TwoJoint => 0,
+            Domain.Posing.IkSolver.Ccd => 1 - offset,
+            _ => 2 - offset,
+        };
         form.Dropdown(
             "Solver",
             solverItems,
             solverIndex,
             next =>
             {
-                var solver = twoJointAvailable && solverIndex == 0
-                    ? Domain.Posing.IkSolver.TwoJoint
-                    : Domain.Posing.IkSolver.Ccd;
-                if (twoJointAvailable)
-                    solver = next == 0
-                        ? Domain.Posing.IkSolver.TwoJoint
-                        : Domain.Posing.IkSolver.Ccd;
-                Apply(config with { Solver = solver });
+                var solver = (next + offset) switch
+                {
+                    0 => Domain.Posing.IkSolver.TwoJoint,
+                    1 => Domain.Posing.IkSolver.Ccd,
+                    _ => Domain.Posing.IkSolver.Fabrik,
+                };
+                // The game's CCD stops at 20; a deeper FABRIK chain folds
+                // back to that when CCD is chosen.
+                Apply(config with
+                {
+                    Solver = solver,
+                    CcdDepth = Math.Min(
+                        config.CcdDepth, Domain.Posing.IkChainConfig.MaxDepthFor(solver)),
+                });
             },
-            help: "Two Joint bends the limb like a real arm or leg; CCD bends several bones up the chain");
+            help: "Two Joint is a real arm or leg; CCD and FABRIK bend a chain of bones");
+        form.Slider(
+            "Swivel",
+            config.SwivelDegrees,
+            -Domain.Posing.IkChainConfig.MaxSwivelDegrees,
+            Domain.Posing.IkChainConfig.MaxSwivelDegrees,
+            next => Apply(config with { SwivelDegrees = next }),
+            format: "0°",
+            help: "Spin the bend around the line from root to tip, degrees");
 
         if (config.Solver == Domain.Posing.IkSolver.TwoJoint)
         {
@@ -2233,23 +2272,6 @@ public class PoseInspectorPane
                     }),
                 format: "0°",
                 help: "Widest bend allowed at the elbow or knee");
-
-            form.Label(
-                "Hinge axis",
-                "The axis the elbow or knee bends around, relative to the bone itself");
-            var axis = _ikAxisScratch ?? config.HingeAxis;
-            form.AxisVector(
-                "",
-                axis,
-                next =>
-                {
-                    _ikAxisScratch = next;
-                    Apply(config with { HingeAxis = next });
-                },
-                () => _ikAxisScratch = null,
-                0.005f,
-                "0.000",
-                fullWidth: true);
         }
         else
         {
@@ -2261,8 +2283,8 @@ public class PoseInspectorPane
             form.Slider(
                 "Depth",
                 config.CcdDepth,
-                1f,
-                20f,
+                Domain.Posing.IkChainConfig.MinDepth,
+                Domain.Posing.IkChainConfig.MaxDepthFor(config.Solver),
                 next =>
                     Apply(config with
                     {
@@ -2282,14 +2304,209 @@ public class PoseInspectorPane
                     }),
                 format: "0",
                 help: "How many passes the solver makes each frame");
-            form.Slider(
-                "Gain",
-                config.CcdGain,
-                0f,
-                1f,
-                next => Apply(config with { CcdGain = next }),
-                help: "How far each pass moves the chain toward the target");
+            if (config.Solver == Domain.Posing.IkSolver.Ccd)
+                form.Slider(
+                    "Gain",
+                    config.CcdGain,
+                    0f,
+                    1f,
+                    next => Apply(config with { CcdGain = next }),
+                    help: "How far each pass moves the chain toward the target");
         }
+    }
+
+    // ── the actor's IK: every chain at once, and the rope ───────────────
+
+    private readonly List<TransformTargetId> _bakeQueue = new();
+    private float _droopDegrees = 60f;
+    private int _droopDepth = 10;
+    private int _droopFalloff;
+    private string? _droopNote;
+
+    /// <summary>Bake all runs the bakes one after another: a bake owns the
+    /// next apply pass, and only one can be pending.</summary>
+    private void PumpBakeQueue()
+    {
+        if (_bakeQueue.Count == 0 || _ikBake.IsPending)
+            return;
+        var next = _bakeQueue[0];
+        _bakeQueue.RemoveAt(0);
+        if (_ikBake.CanBake(next))
+            _ikBake.Begin(next);
+    }
+
+    private void DrawActorIk(Crystarium.FormScope form, ISkeleton skeleton)
+    {
+        PumpBakeQueue();
+        var actorId = OwningActorId();
+        var chains = actorId is { } owner
+            ? ActorIkChains(owner)
+            : Array.Empty<TransformTargetId>();
+        int armed = chains.Count(chain => _ikPort.Get(chain)?.Enabled == true);
+        int bakeable = chains.Count(_ikBake.CanBake);
+
+        form.ReadOnly("Chains", $"{armed} of {chains.Count} live");
+        form.Actions("Live", actions =>
+        {
+            actions.Button("Enable all",
+                () => SetEveryChain(chains, true),
+                disabled: armed == chains.Count);
+            actions.Button("Disable all",
+                () => SetEveryChain(chains, false),
+                disabled: armed == 0);
+        });
+        form.Actions("Solved", actions =>
+        {
+            actions.Button("Bake all",
+                () =>
+                {
+                    _bakeQueue.Clear();
+                    foreach (var chain in chains)
+                        if (_ikBake.CanBake(chain))
+                            _bakeQueue.Add(chain);
+                },
+                disabled: bakeable == 0 || _bakeQueue.Count > 0);
+            actions.Button("Show bones",
+                () => ShowChainBones(chains),
+                disabled: armed == 0);
+        });
+        if (_ikBake.Note is { } note)
+            form.Status(note.Text);
+        if (_droopNote != null)
+            form.Status(_droopNote);
+
+        // The rope: every selected bone is a root, and the bones below it
+        // to the depth hang in an arc under gravity.
+        var roots = SelectedRopeRoots();
+        form.Slider("Droop", _droopDegrees, 0f, 180f,
+            next => _droopDegrees = next,
+            format: "0°",
+            help: "How far the tip hangs, degrees");
+        form.Slider("Rope depth", _droopDepth,
+            Domain.Posing.IkChainConfig.MinDepth,
+            Domain.Posing.IkChainConfig.MaxDepth,
+            next => _droopDepth = (int)MathF.Round(next),
+            format: "0",
+            help: "Bones below each root that hang");
+        form.Dropdown("Falloff", DroopFalloffItems, _droopFalloff,
+            next => _droopFalloff = next,
+            help: "Where the bend gathers");
+        form.Actions(string.Empty, actions =>
+            actions.Button(
+                roots.Count == 0 ? "Droop selected" : $"Droop {roots.Count} selected",
+                () => Droop(skeleton, roots),
+                disabled: roots.Count == 0));
+    }
+
+    private void ShowChainBones(IReadOnlyList<TransformTargetId> chains)
+    {
+        var bones = new List<BoneId>();
+        foreach (var chain in chains)
+            foreach (var bone in _ikBake.AffectedChain(chain))
+                if (_bindings.GetBoneId(bone) is { } id && !bones.Contains(id))
+                    bones.Add(id);
+        if (bones.Count > 0)
+            _overlayPresentation.SetVisible(bones, true);
+    }
+
+    private List<IBone> SelectedRopeRoots()
+    {
+        var roots = new List<IBone>();
+        foreach (var id in _selection.Selected)
+            if (id is { Kind: SceneEntityKind.Bone, Bone: { } boneId }
+                && _bindings.Resolve(boneId) is { Success: true, Value: { } bone }
+                && bone is not VirtualBone
+                && !roots.Contains(bone))
+                roots.Add(bone);
+        return roots;
+    }
+
+    /// <summary>Each root's chain, first child after first child to the
+    /// depth, bends link by link toward gravity so the whole hangs in an
+    /// arc; the bend is spread by the falloff and lands as one rotation-
+    /// only pose import, so everything below follows and one undo takes
+    /// it back.</summary>
+    private void Droop(ISkeleton skeleton, IReadOnlyList<IBone> roots)
+    {
+        var actor = skeleton.Actor;
+        var down = -Vector3.UnitY;
+        if (OwningActorId() is { } actorId
+            && _viewport.GetActorTransform(actorId) is { } placement
+            && Domain.Transforms.TransformMath.IsValidRotation(placement.Rotation))
+            down = Vector3.Normalize(Vector3.Transform(
+                -Vector3.UnitY, Quaternion.Inverse(placement.Rotation)));
+
+        var pose = new PoseFile();
+        int touched = 0;
+        foreach (var root in roots)
+        {
+            // The chain: the root and its first-child line to the depth.
+            var chain = new List<IBone> { root };
+            var current = root;
+            while (chain.Count < _droopDepth + 1 && current.ChildBones.Count > 0)
+            {
+                current = current.ChildBones[0];
+                chain.Add(current);
+            }
+            int links = chain.Count - 1;
+            if (links == 0)
+                continue;
+            float totalWeight = 0f;
+            var weights = new float[links];
+            for (int k = 0; k < links; k++)
+            {
+                weights[k] = _droopFalloff switch
+                {
+                    1 => links - k,
+                    2 => k + 1,
+                    _ => 1f,
+                };
+                totalWeight += weights[k];
+            }
+            var collection = skeleton.Slot switch
+            {
+                Domain.Identity.PoseSlot.MainHand => pose.MainHand,
+                Domain.Identity.PoseSlot.OffHand => pose.OffHand,
+                _ => pose.Bones,
+            };
+            var cumulative = Quaternion.Identity;
+            for (int k = 0; k < links; k++)
+            {
+                var bone = chain[k];
+                var link = chain[k + 1].LastTransform.Position - bone.LastTransform.Position;
+                var turned = Vector3.Transform(link, cumulative);
+                if (turned.LengthSquared() < 1e-10f)
+                    continue;
+                turned = Vector3.Normalize(turned);
+                float remaining = MathF.Acos(Math.Clamp(Vector3.Dot(turned, down), -1f, 1f));
+                float step = MathF.Min(
+                    _droopDegrees * MathF.PI / 180f * weights[k] / totalWeight,
+                    remaining);
+                var axis = Vector3.Cross(turned, down);
+                if (step > 1e-5f && axis.LengthSquared() > 1e-10f)
+                    cumulative = Quaternion.Normalize(
+                        Quaternion.CreateFromAxisAngle(Vector3.Normalize(axis), step) * cumulative);
+                var raw = bone.LastTransform;
+                collection[bone.BoneName] = new PoseFile.BoneData
+                {
+                    Position = raw.Position,
+                    Rotation = Quaternion.Normalize(cumulative * raw.Rotation),
+                    Scale = raw.Scale,
+                };
+                touched++;
+            }
+        }
+        if (touched == 0)
+            return;
+        var options = new PoseImportOptions
+        {
+            ApplyRotation = true,
+            ApplyPosition = false,
+            ApplyScale = false,
+            ApplyModelTransform = false,
+        };
+        var result = _cleanPose.ImportPose(actor, pose, options, "Droop");
+        _droopNote = result.Success ? null : $"Droop: {result.Detail}";
     }
 
     private void DrawPoseActions(

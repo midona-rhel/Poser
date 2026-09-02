@@ -108,7 +108,7 @@ public sealed class IkConfigurationPort : IIkConfigurationPort
         // it can hold.
         var definition = IkChains.ForEndpoint(boneId.CanonicalName);
         return Set(target, definition == null
-            ? IkChainConfig.DefaultsForCcd(current.Enabled)
+            ? IkChainConfig.DefaultsForChain(current.Enabled)
             : IkChainConfig.DefaultsFor(definition.IsArm, current.Enabled));
     }
 }

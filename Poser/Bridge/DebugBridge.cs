@@ -394,6 +394,34 @@ public sealed class DebugBridge : IDisposable
                     Flag("rot"), Flag("pos"), Flag("scale"), Flag("physics"), Flag("roots"));
                 return Json(new { ok = true, from = from.Name, to = actor.Name });
             }
+            case "/destroy":
+            {
+                bool gone = _lifecycle.DespawnActor(actor);
+                return Json(new { ok = gone });
+            }
+            case "/ik":
+            {
+                string name = query["name"]; int part = query.TryGetValue("partial", out var ip) ? int.Parse(ip) : 0;
+                foreach (var skeleton in _skeletons.GetSkeletons(actor))
+                    foreach (var bone in skeleton.Bones)
+                        if (bone.BoneName == name && bone.PartialId == part)
+                        {
+                            var current = _bonePosing.GetIkConfiguration(bone);
+                            if (current == null)
+                                return Json(new { error = "bone cannot use IK" });
+                            var next = current with
+                            {
+                                Enabled = !query.TryGetValue("enabled", out var en) || en != "0",
+                                Solver = query.TryGetValue("solver", out var sv) ? Enum.Parse<global::Poser.Domain.Posing.IkSolver>(sv, true) : current.Solver,
+                                CcdDepth = query.TryGetValue("depth", out var dp) ? int.Parse(dp) : current.CcdDepth,
+                                CcdIterations = query.TryGetValue("iterations", out var it) ? int.Parse(it) : current.CcdIterations,
+                                SwivelDegrees = query.TryGetValue("swivel", out var sw) ? float.Parse(sw, CultureInfo.InvariantCulture) : current.SwivelDegrees,
+                            };
+                            var error = _bonePosing.SetIkConfiguration(bone, next);
+                            return Json(new { ok = error == null, error, solver = next.Solver.ToString(), depth = next.CcdDepth, swivel = next.SwivelDegrees });
+                        }
+                return Json(new { error = "no such bone" });
+            }
             case "/rotatebone":
             {
                 string name = query["name"]; int part = query.TryGetValue("partial", out var rp) ? int.Parse(rp) : 0;

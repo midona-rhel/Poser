@@ -18,11 +18,11 @@ namespace Poser.Domain.Tests;
 public sealed class UndeclaredIkChainBaselineTests
 {
     [Fact]
-    public void Ccd_defaults_are_Brios_depth_three_and_eight_iterations()
+    public void Chain_defaults_are_Brios_depth_three_and_eight_iterations()
     {
-        var defaults = IkChainConfig.DefaultsForCcd();
+        var defaults = IkChainConfig.DefaultsForChain();
 
-        Assert.Equal(IkSolver.Ccd, defaults.Solver);
+        Assert.Equal(IkSolver.Fabrik, defaults.Solver);
         Assert.Equal(3, defaults.CcdDepth);
         Assert.Equal(8, defaults.CcdIterations);
         Assert.False(defaults.Enabled);
@@ -34,7 +34,7 @@ public sealed class UndeclaredIkChainBaselineTests
     [Fact]
     public void Two_joint_is_refused_on_a_bone_with_no_declared_chain()
     {
-        var twoJoint = IkChainConfig.DefaultsForCcd() with
+        var twoJoint = IkChainConfig.DefaultsForChain() with
         {
             Solver = IkSolver.TwoJoint,
         };
@@ -53,7 +53,7 @@ public sealed class UndeclaredIkChainBaselineTests
         int depth,
         int iterations)
     {
-        var config = IkChainConfig.DefaultsForCcd() with
+        var config = IkChainConfig.DefaultsForChain() with
         {
             CcdDepth = depth,
             CcdIterations = iterations,
@@ -66,14 +66,14 @@ public sealed class UndeclaredIkChainBaselineTests
 
     [Theory]
     [InlineData(0, 8)]
-    [InlineData(21, 8)]
+    [InlineData(51, 8)]
     [InlineData(3, 0)]
     [InlineData(3, 61)]
     public void Out_of_range_depth_or_iterations_never_reach_the_solver(
         int depth,
         int iterations)
     {
-        var config = IkChainConfig.DefaultsForCcd() with
+        var config = IkChainConfig.DefaultsForChain() with
         {
             CcdDepth = depth,
             CcdIterations = iterations,

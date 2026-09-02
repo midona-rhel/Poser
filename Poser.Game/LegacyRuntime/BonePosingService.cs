@@ -1013,7 +1013,7 @@ public unsafe class BonePosingService : IBonePosingService
         if (_ikChains.TryGetValue(key, out var state))
             return state.Config;
         return definition == null
-            ? Poser.Domain.Posing.IkChainConfig.DefaultsForCcd()
+            ? Poser.Domain.Posing.IkChainConfig.DefaultsForChain()
             : Poser.Domain.Posing.IkChainConfig.DefaultsFor(definition.IsArm);
     }
 
@@ -1048,7 +1048,7 @@ public unsafe class BonePosingService : IBonePosingService
         Poser.Domain.Posing.IkChainConfig config)
     {
         var names = new List<string> { endpoint.BoneName };
-        if (config.Solver == Poser.Domain.Posing.IkSolver.Ccd)
+        if (config.Solver != Poser.Domain.Posing.IkSolver.TwoJoint)
         {
             var current = endpoint.ParentBone;
             while (current != null && names.Count < config.CcdDepth + 1)
